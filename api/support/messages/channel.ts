@@ -62,7 +62,7 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT 
         id, name, type, is_forum, awaiting_reply, unread_count,
         last_message_at, last_sender_name, last_message_preview,
-        photo_url, company_name
+        photo_url
       FROM support_channels
       WHERE id = ${channelId}
     `
@@ -157,7 +157,6 @@ export default async function handler(req: Request): Promise<Response> {
         lastSenderName: channel.last_sender_name,
         lastMessagePreview: channel.last_message_preview,
         photoUrl: channel.photo_url,
-        companyName: channel.company_name,
       },
       messages: formattedMessages,
       pagination: {
