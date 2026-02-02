@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless'
-import { identifySender, markChannelReadOnReply } from '../lib/identification'
+import { identifySender, markChannelReadOnReply } from '../lib/identification.js'
 
 export const config = {
   runtime: 'edge',
