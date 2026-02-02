@@ -1,0 +1,45 @@
+---
+description: Правила работы с Git в проекте GFSupport
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Git Workflow
+
+## Структура веток
+
+```
+main                          ← продакшен, стабильный код
+feature/support-dashboard-fsd ← текущая разработка
+```
+
+## Правила
+
+### НЕ создавать новые worktree
+- Работать ТОЛЬКО в существующих worktree
+- Основной worktree: `/Users/faxriddin/.cursor/worktrees/GFSupport/lic`
+- НЕ использовать `git worktree add`
+
+### Работа с ветками
+- Новые фичи — создавать ветки от main: `git checkout -b feature/название`
+- После завершения — merge в main и удалить ветку
+- НЕ оставлять "висящие" ветки
+
+### Коммиты
+- Формат: `тип: описание на русском`
+- Типы: `feat`, `fix`, `refactor`, `docs`, `style`, `test`
+- Примеры:
+  - `feat: добавлена страница аналитики`
+  - `fix: исправлена ошибка авторизации`
+  - `refactor: вынесены компоненты настроек`
+
+### Перед пушем
+1. Проверить билд: `npm run build`
+2. Убедиться что нет лишних файлов: `git status`
+3. НЕ коммитить: `.env`, `node_modules/`, `dist/`
+
+## Запрещено
+- ❌ Создавать worktree
+- ❌ Force push в main
+- ❌ Коммитить секреты и токены
+- ❌ Оставлять detached HEAD
