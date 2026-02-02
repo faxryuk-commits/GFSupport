@@ -1,0 +1,2 @@
+// Messages feature model
+export {}
