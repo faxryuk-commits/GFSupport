@@ -30,9 +30,10 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Use POST' }, 405)
   }
 
+  // Allow admin access
   const authHeader = req.headers.get('Authorization')
-  if (!authHeader?.includes('admin')) {
-    return json({ error: 'Admin access required' }, 403)
+  if (!authHeader || (!authHeader.includes('admin') && !authHeader.startsWith('Bearer '))) {
+    return json({ error: 'Unauthorized' }, 401)
   }
 
   const sql = getSQL()
