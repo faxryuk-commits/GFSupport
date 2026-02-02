@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw, AlertCircle, Loader2, UsersRound, Users, Zap } from 'lucide-react'
+import { 
+  Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw, 
+  AlertCircle, Loader2, UsersRound, Users, Zap, ChevronRight, Check,
+  Building2, Globe, Bot, Clock, Volume2, UserCog
+} from 'lucide-react'
 import {
   GeneralSettings,
   NotificationsSettings,
@@ -28,19 +32,28 @@ import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 
 type SettingsTab = 'general' | 'team' | 'users' | 'automations' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
-const tabs: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
-  { id: 'general', label: 'Основные', icon: Settings },
-  { id: 'team', label: 'Команда', icon: UsersRound },
-  { id: 'users', label: 'Клиенты', icon: Users },
-  { id: 'automations', label: 'Автоматизации', icon: Zap },
-  { id: 'notifications', label: 'Уведомления', icon: Bell },
-  { id: 'integrations', label: 'Интеграции', icon: Link2 },
-  { id: 'security', label: 'Безопасность', icon: Shield },
-  { id: 'api', label: 'API ключи', icon: Database },
-  { id: 'appearance', label: 'Внешний вид', icon: Palette },
+interface TabConfig {
+  id: SettingsTab
+  label: string
+  description: string
+  icon: typeof Settings
+  color: string
+  bgColor: string
+}
+
+const tabs: TabConfig[] = [
+  { id: 'general', label: 'Основные', description: 'Общие настройки системы', icon: Settings, color: 'text-blue-600', bgColor: 'bg-blue-100' },
+  { id: 'team', label: 'Команда', description: 'Управление сотрудниками', icon: UsersRound, color: 'text-violet-600', bgColor: 'bg-violet-100' },
+  { id: 'users', label: 'Клиенты', description: 'База клиентов и партнёров', icon: Users, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
+  { id: 'automations', label: 'Автоматизации', description: 'Правила и триггеры', icon: Zap, color: 'text-amber-600', bgColor: 'bg-amber-100' },
+  { id: 'notifications', label: 'Уведомления', description: 'Настройка оповещений', icon: Bell, color: 'text-rose-600', bgColor: 'bg-rose-100' },
+  { id: 'integrations', label: 'Интеграции', description: 'Telegram, AI, Whisper', icon: Link2, color: 'text-cyan-600', bgColor: 'bg-cyan-100' },
+  { id: 'security', label: 'Безопасность', description: 'Защита и доступы', icon: Shield, color: 'text-orange-600', bgColor: 'bg-orange-100' },
+  { id: 'api', label: 'API ключи', description: 'Интеграция с внешними системами', icon: Database, color: 'text-indigo-600', bgColor: 'bg-indigo-100' },
+  { id: 'appearance', label: 'Внешний вид', description: 'Тема и персонализация', icon: Palette, color: 'text-pink-600', bgColor: 'bg-pink-100' },
 ]
 
-// Initial data for local settings (not stored in backend yet)
+// Initial data for local settings
 const initialNotifications: NotificationSetting[] = [
   { id: '1', label: 'Новые сообщения', description: 'Когда клиент отправляет сообщение', email: true, push: true, inApp: true },
   { id: '2', label: 'Назначения кейсов', description: 'Когда вам назначают кейс', email: true, push: true, inApp: true },
@@ -112,7 +125,6 @@ export function SettingsPage() {
       
       setEnvStatus(env)
       
-      // Маппинг настроек бэкенда на фронтенд
       setGeneralSettings(prev => ({
         ...prev,
         botToken: settings.telegram_bot_token || '',
@@ -125,7 +137,6 @@ export function SettingsPage() {
         workingHoursEnd: `${String(settings.working_hours_end).padStart(2, '0')}:00`,
       }))
 
-      // Формируем интеграции на основе envStatus
       const telegramConnected = env.TELEGRAM_BOT_TOKEN || !!settings.telegram_bot_token
       const openaiConnected = env.OPENAI_API_KEY || !!settings.openai_api_key
       
@@ -183,7 +194,6 @@ export function SettingsPage() {
       setError(null)
       setSaveMessage(null)
       
-      // Формируем данные для отправки на сервер
       const settingsToSave: Partial<BackendSettings> = {
         auto_create_cases: generalSettings.autoCreateCases,
         working_hours_start: parseInt(responseSettings.workingHoursStart.split(':')[0]),
@@ -225,7 +235,6 @@ export function SettingsPage() {
 
   const handleConnectIntegration = async (integration: Integration) => {
     if (integration.id === '1') {
-      // Тест подключения Telegram бота
       await handleTestBot()
     }
     setIsIntegrationModalOpen(false)
@@ -250,14 +259,18 @@ export function SettingsPage() {
     setApiKeys(prev => [...prev, newKey])
   }
 
+  const activeTabConfig = tabs.find(t => t.id === activeTab)
+
   // Состояние загрузки
   if (isLoading) {
     return (
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30 p-8">
         <div className="flex items-center justify-center h-[60vh]">
           <div className="text-center">
-            <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto mb-4" />
-            <p className="text-slate-600">Загрузка настроек...</p>
+            <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+            <p className="text-slate-600 font-medium">Загрузка настроек...</p>
           </div>
         </div>
       </div>
@@ -265,169 +278,221 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      {/* Уведомление об ошибке */}
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-red-800 font-medium">Ошибка</p>
-            <p className="text-red-600 text-sm mt-1">{error}</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
+      {/* Header */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-8 py-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/25">
+                <Settings className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-800">Настройки</h1>
+                <p className="text-slate-500 text-sm">Управление параметрами системы</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={loadSettings}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                Обновить
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50 shadow-lg shadow-blue-500/25"
+              >
+                {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {isSaving ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
           </div>
-          <button 
-            onClick={() => setError(null)}
-            className="text-red-400 hover:text-red-600"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
-      {/* Уведомление об успешном сохранении */}
-      {saveMessage && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
-          <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-            <span className="text-white text-xs">✓</span>
-          </div>
-          <p className="text-green-800">{saveMessage}</p>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Настройки</h1>
-          <p className="text-slate-500 mt-0.5">Управление параметрами системы</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={loadSettings}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Обновить
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
-          >
-            {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {isSaving ? 'Сохранение...' : 'Сохранить'}
-          </button>
         </div>
       </div>
 
-      {/* Статус переменных окружения */}
-      {envStatus && (
-        <div className="mb-6 p-4 bg-slate-50 rounded-xl">
-          <p className="text-sm font-medium text-slate-700 mb-2">Статус переменных окружения:</p>
-          <div className="flex gap-4 text-sm">
-            <span className={`flex items-center gap-1.5 ${envStatus.TELEGRAM_BOT_TOKEN ? 'text-green-600' : 'text-slate-400'}`}>
-              <span className={`w-2 h-2 rounded-full ${envStatus.TELEGRAM_BOT_TOKEN ? 'bg-green-500' : 'bg-slate-300'}`}></span>
-              TELEGRAM_BOT_TOKEN
-            </span>
-            <span className={`flex items-center gap-1.5 ${envStatus.OPENAI_API_KEY ? 'text-green-600' : 'text-slate-400'}`}>
-              <span className={`w-2 h-2 rounded-full ${envStatus.OPENAI_API_KEY ? 'bg-green-500' : 'bg-slate-300'}`}></span>
-              OPENAI_API_KEY
-            </span>
-            <span className={`flex items-center gap-1.5 ${envStatus.TELEGRAM_CHAT_ID ? 'text-green-600' : 'text-slate-400'}`}>
-              <span className={`w-2 h-2 rounded-full ${envStatus.TELEGRAM_CHAT_ID ? 'bg-green-500' : 'bg-slate-300'}`}></span>
-              TELEGRAM_CHAT_ID
-            </span>
+      {/* Notifications */}
+      <div className="max-w-7xl mx-auto px-8 pt-6">
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 animate-in slide-in-from-top-2">
+            <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <AlertCircle className="w-4 h-4 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-red-800 font-medium">Ошибка</p>
+              <p className="text-red-600 text-sm mt-0.5">{error}</p>
+            </div>
+            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-xl leading-none">&times;</button>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex gap-6">
-        {/* Sidebar */}
-        <div className="w-56 space-y-1 flex-shrink-0">
-          {tabs.map(tab => {
-            const Icon = tab.icon
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors ${
-                  activeTab === tab.id ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="font-medium">{tab.label}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 space-y-6">
-          {activeTab === 'general' && (
-            <GeneralSettings
-              general={generalSettings}
-              response={responseSettings}
-              onGeneralChange={setGeneralSettings}
-              onResponseChange={setResponseSettings}
-            />
-          )}
-
-          {activeTab === 'team' && (
-            <div className="-m-6">
-              <TeamPage embedded />
+        {saveMessage && (
+          <div className="mb-4 p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-3 animate-in slide-in-from-top-2">
+            <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+              <Check className="w-4 h-4 text-emerald-600" />
             </div>
-          )}
+            <p className="text-emerald-800 font-medium">{saveMessage}</p>
+          </div>
+        )}
+      </div>
 
-          {activeTab === 'users' && (
-            <div className="-m-6">
-              <UsersPage embedded />
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-8 py-6">
+        <div className="flex gap-8">
+          {/* Sidebar */}
+          <div className="w-72 flex-shrink-0">
+            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Разделы настроек</p>
+              </div>
+              <div className="p-2">
+                {tabs.map(tab => {
+                  const Icon = tab.icon
+                  const isActive = activeTab === tab.id
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all mb-1 group ${
+                        isActive 
+                          ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100' 
+                          : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                        isActive ? tab.bgColor : 'bg-slate-100 group-hover:bg-slate-200'
+                      }`}>
+                        <Icon className={`w-5 h-5 ${isActive ? tab.color : 'text-slate-500'}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className={`block font-medium truncate ${isActive ? 'text-slate-800' : 'text-slate-600'}`}>
+                          {tab.label}
+                        </span>
+                        <span className="block text-xs text-slate-400 truncate">{tab.description}</span>
+                      </div>
+                      <ChevronRight className={`w-4 h-4 transition-all ${
+                        isActive ? 'text-blue-500 translate-x-0' : 'text-slate-300 -translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'
+                      }`} />
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          )}
 
-          {activeTab === 'automations' && (
-            <div className="-m-6">
-              <AutomationsPage embedded />
+            {/* Environment Status */}
+            {envStatus && (
+              <div className="mt-4 bg-white rounded-2xl border border-slate-200/60 shadow-sm p-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Переменные окружения</p>
+                <div className="space-y-2">
+                  {[
+                    { key: 'TELEGRAM_BOT_TOKEN', label: 'Telegram', value: envStatus.TELEGRAM_BOT_TOKEN },
+                    { key: 'OPENAI_API_KEY', label: 'OpenAI', value: envStatus.OPENAI_API_KEY },
+                    { key: 'TELEGRAM_CHAT_ID', label: 'Chat ID', value: envStatus.TELEGRAM_CHAT_ID },
+                  ].map(item => (
+                    <div key={item.key} className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${item.value ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      <span className={`text-sm ${item.value ? 'text-slate-700' : 'text-slate-400'}`}>
+                        {item.label}
+                      </span>
+                      {item.value && <Check className="w-3 h-3 text-emerald-500 ml-auto" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            {/* Content Header */}
+            {activeTabConfig && !['team', 'users', 'automations'].includes(activeTab) && (
+              <div className="mb-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${activeTabConfig.bgColor}`}>
+                    <activeTabConfig.icon className={`w-5 h-5 ${activeTabConfig.color}`} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800">{activeTabConfig.label}</h2>
+                    <p className="text-sm text-slate-500">{activeTabConfig.description}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Content Body */}
+            <div className="space-y-6">
+              {activeTab === 'general' && (
+                <GeneralSettings
+                  general={generalSettings}
+                  response={responseSettings}
+                  onGeneralChange={setGeneralSettings}
+                  onResponseChange={setResponseSettings}
+                />
+              )}
+
+              {activeTab === 'team' && (
+                <div className="-mt-6">
+                  <TeamPage embedded />
+                </div>
+              )}
+
+              {activeTab === 'users' && (
+                <div className="-mt-6">
+                  <UsersPage embedded />
+                </div>
+              )}
+
+              {activeTab === 'automations' && (
+                <div className="-mt-6">
+                  <AutomationsPage embedded />
+                </div>
+              )}
+
+              {activeTab === 'notifications' && (
+                <NotificationsSettings
+                  notifications={notifications}
+                  onToggle={handleToggleNotification}
+                />
+              )}
+
+              {activeTab === 'integrations' && (
+                <IntegrationsSettings
+                  integrations={integrations}
+                  selectedIntegration={selectedIntegration}
+                  isModalOpen={isIntegrationModalOpen}
+                  onOpenModal={(i) => { setSelectedIntegration(i); setIsIntegrationModalOpen(true) }}
+                  onCloseModal={() => setIsIntegrationModalOpen(false)}
+                  onConnect={handleConnectIntegration}
+                  onDisconnect={handleDisconnectIntegration}
+                />
+              )}
+
+              {activeTab === 'security' && (
+                <SecuritySettings
+                  settings={securitySettings}
+                  onChange={setSecuritySettings}
+                />
+              )}
+
+              {activeTab === 'api' && (
+                <ApiKeysSettings
+                  apiKeys={apiKeys}
+                  onDelete={handleDeleteApiKey}
+                  onAdd={handleAddApiKey}
+                />
+              )}
+
+              {activeTab === 'appearance' && (
+                <AppearanceSettings
+                  settings={appearanceSettings}
+                  onChange={setAppearanceSettings}
+                />
+              )}
             </div>
-          )}
-
-          {activeTab === 'notifications' && (
-            <NotificationsSettings
-              notifications={notifications}
-              onToggle={handleToggleNotification}
-            />
-          )}
-
-          {activeTab === 'integrations' && (
-            <IntegrationsSettings
-              integrations={integrations}
-              selectedIntegration={selectedIntegration}
-              isModalOpen={isIntegrationModalOpen}
-              onOpenModal={(i) => { setSelectedIntegration(i); setIsIntegrationModalOpen(true) }}
-              onCloseModal={() => setIsIntegrationModalOpen(false)}
-              onConnect={handleConnectIntegration}
-              onDisconnect={handleDisconnectIntegration}
-            />
-          )}
-
-          {activeTab === 'security' && (
-            <SecuritySettings
-              settings={securitySettings}
-              onChange={setSecuritySettings}
-            />
-          )}
-
-          {activeTab === 'api' && (
-            <ApiKeysSettings
-              apiKeys={apiKeys}
-              onDelete={handleDeleteApiKey}
-              onAdd={handleAddApiKey}
-            />
-          )}
-
-          {activeTab === 'appearance' && (
-            <AppearanceSettings
-              settings={appearanceSettings}
-              onChange={setAppearanceSettings}
-            />
-          )}
+          </div>
         </div>
       </div>
     </div>
