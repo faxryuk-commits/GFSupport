@@ -5,6 +5,7 @@ import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
+import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
 import type { Agent } from '@/entities/agent'
@@ -113,9 +114,13 @@ export function ChatsPage() {
   const { id: channelIdFromPath } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { agent } = useAuth()
   
   // Channel ID можно передать через URL path (/chats/:id) или query param (?channel=xxx)
   const channelIdFromUrl = channelIdFromPath || searchParams.get('channel') || undefined
+  
+  // Имя текущего агента для отправки сообщений
+  const currentAgentName = agent?.name || 'Support'
 
   // Данные
   const [channels, setChannels] = useState<ChannelItemData[]>([])
@@ -370,7 +375,7 @@ export function ChatsPage() {
     const tempId = `temp-${Date.now()}`
     const tempMessage: MessageData = {
       id: tempId,
-      senderName: 'Вы',
+      senderName: currentAgentName,
       text: messageText,
       time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
       isClient: false,
@@ -393,7 +398,8 @@ export function ChatsPage() {
       const sentMessage = await sendMessage(
         selectedChannel.id, 
         textToSend || (files ? '[Файл]' : ''), 
-        replyToTgId // передаём telegram_message_id для reply
+        replyToTgId, // передаём telegram_message_id для reply
+        currentAgentName
       )
       
       // Заменяем временное сообщение на реальное

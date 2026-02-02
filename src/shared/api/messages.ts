@@ -31,12 +31,19 @@ interface SendMessageResponse {
 export async function sendMessage(
   channelId: string, 
   text: string,
-  replyToMessageId?: number
+  replyToMessageId?: number,
+  senderName?: string
 ): Promise<Message> {
+  // Получаем имя агента из localStorage если не передано
+  const agentData = localStorage.getItem('support_agent_data')
+  const agent = agentData ? JSON.parse(agentData) : null
+  const name = senderName || agent?.name || 'Support'
+  
   const response = await apiPost<SendMessageResponse>('/messages/send', {
     channelId,
     text,
-    replyToMessageId
+    replyToMessageId,
+    senderName: name
   })
   
   // Преобразуем ответ API в формат Message
@@ -44,7 +51,7 @@ export async function sendMessage(
     id: response.messageId,
     channelId,
     telegramMessageId: response.telegramMessageId,
-    senderName: 'Вы',
+    senderName: name,
     senderRole: 'support',
     isFromTeam: true,
     text,
