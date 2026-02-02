@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown } from 'lucide-react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
-import { CASE_STATUS_CONFIG, KANBAN_STATUSES, type CaseStatus, type Case } from '@/entities/case'
-import { fetchCases, createCase, updateCaseStatus, assignCase, fetchChannels } from '@/shared/api'
+import { CASE_STATUS_CONFIG, KANBAN_STATUSES, ACTIVE_STATUSES, ARCHIVE_STATUSES, type CaseStatus, type Case } from '@/entities/case'
+import { fetchCases, createCase, updateCaseStatus, assignCase, fetchChannels, fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
+import type { Agent } from '@/entities/agent'
 
 // Маппинг Case в CaseCardData для отображения
 function mapCaseToCardData(c: Case): CaseCardData {
@@ -30,16 +31,20 @@ function mapCaseToCardData(c: Case): CaseCardData {
 function mapCaseToCaseDetail(c: Case): CaseDetail {
   return {
     id: c.id,
-    number: c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 8),
+    number: c.ticketNumber ? `#${c.ticketNumber}` : `CASE-${c.id.slice(0, 6).toUpperCase()}`,
+    ticketNumber: c.ticketNumber,
     title: c.title,
     description: c.description,
     company: c.companyName,
+    channelId: c.channelId,
+    channelName: c.channelName,
     contactName: '',
     contactEmail: '',
     priority: c.priority,
     category: c.category,
     status: c.status,
     createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     comments: [],
     tags: c.tags || [],
@@ -70,9 +75,12 @@ const CATEGORIES = [
 export function CasesPage() {
   const [cases, setCases] = useState<Case[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
-  const [agents] = useState<{ id: string; name: string }[]>([])
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Режим просмотра: активные или архив
+  const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
   
   // Базовые фильтры
   const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent'>('all')
@@ -91,20 +99,23 @@ export function CasesPage() {
   const [draggedCase, setDraggedCase] = useState<string | null>(null)
   const [_updatingStatus, setUpdatingStatus] = useState<string | null>(null)
 
-  // Загрузка кейсов и каналов при монтировании
+  // Загрузка кейсов, каналов и агентов при монтировании
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
       
-      // Загружаем все активные кейсы (не закрытые) с лимитом 500
-      const [casesResponse, channelsData] = await Promise.all([
-        fetchCases({ status: 'detected,in_progress,waiting,blocked,resolved' as any }),
-        fetchChannels().catch(() => [])
+      // Загружаем все кейсы (включая архивные), каналы и агентов параллельно
+      const [casesResponse, channelsData, agentsData] = await Promise.all([
+        fetchCases({ limit: 1000 }), // Загружаем все кейсы
+        fetchChannels().catch(() => []),
+        fetchAgents().catch(() => [])
       ])
       
       setCases(casesResponse.cases)
       setChannels(channelsData)
+      // Мапим агентов в формат {id, name}
+      setAgents(agentsData.map((a: Agent) => ({ id: a.id, name: a.name })))
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
@@ -140,9 +151,22 @@ export function CasesPage() {
     }
   }, [dateFilter])
 
-  // Отфильтрованные кейсы
+  // Разделение на активные и архивные
+  const activeCases = useMemo(() => 
+    cases.filter(c => ACTIVE_STATUSES.includes(c.status as any) || c.status === 'recurring'),
+    [cases]
+  )
+  
+  const archivedCases = useMemo(() => 
+    cases.filter(c => ARCHIVE_STATUSES.includes(c.status as any)),
+    [cases]
+  )
+
+  // Отфильтрованные кейсы (в зависимости от режима)
   const filteredCases = useMemo(() => {
-    return cases.filter(c => {
+    const baseCases = viewMode === 'active' ? activeCases : archivedCases
+    
+    return baseCases.filter(c => {
       // Поиск
       const matchesSearch = searchQuery === '' || 
         c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -165,7 +189,7 @@ export function CasesPage() {
       
       return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel
     })
-  }, [cases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter])
+  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter])
 
   // Количество активных фильтров
   const activeFiltersCount = useMemo(() => {
@@ -331,11 +355,50 @@ export function CasesPage() {
     <>
       <div className="h-full flex flex-col p-6 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6 flex-shrink-0">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Кейсы</h1>
-            <p className="text-slate-500 mt-0.5">Управление обращениями</p>
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">Кейсы</h1>
+              <p className="text-slate-500 mt-0.5">Управление обращениями</p>
+            </div>
+            
+            {/* Переключатель Активные / Архив */}
+            <div className="flex bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('active')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'active' 
+                    ? 'bg-white text-slate-800 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Briefcase className="w-4 h-4" />
+                Активные
+                <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                  viewMode === 'active' ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  {activeCases.length}
+                </span>
+              </button>
+              <button
+                onClick={() => setViewMode('archive')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'archive' 
+                    ? 'bg-white text-slate-800 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Archive className="w-4 h-4" />
+                Архив
+                <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                  viewMode === 'archive' ? 'bg-slate-600 text-white' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  {archivedCases.length}
+                </span>
+              </button>
+            </div>
           </div>
+          
           <div className="flex items-center gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -347,13 +410,15 @@ export function CasesPage() {
                 className="pl-10 pr-4 py-2 w-64 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
-            <button 
-              onClick={() => setIsCreateModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Новый кейс
-            </button>
+            {viewMode === 'active' && (
+              <button 
+                onClick={() => setIsCreateModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Новый кейс
+              </button>
+            )}
           </div>
         </div>
 
@@ -469,26 +534,27 @@ export function CasesPage() {
           </div>
         )}
 
-        {/* Kanban Board */}
+        {/* Kanban Board / Archive View */}
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
-          {KANBAN_STATUSES.map(status => {
+          {(viewMode === 'active' ? KANBAN_STATUSES : ARCHIVE_STATUSES).map(status => {
             const config = CASE_STATUS_CONFIG[status]
             const statusCases = getCasesByStatus(status)
+            const isArchiveStatus = ARCHIVE_STATUSES.includes(status as any)
             
             return (
               <div 
                 key={status} 
                 className="flex-shrink-0 w-72 flex flex-col"
-                onDragOver={handleDragOver}
-                onDrop={() => handleDrop(status)}
+                onDragOver={viewMode === 'active' ? handleDragOver : undefined}
+                onDrop={viewMode === 'active' ? () => handleDrop(status) : undefined}
               >
                 <div className={`px-3 py-2 rounded-t-xl ${config.bgColor}`}>
                   <div className="flex items-center justify-between">
-                    <span className={`font-medium ${status === 'resolved' ? 'text-green-800' : 'text-white'}`}>
+                    <span className={`font-medium ${isArchiveStatus ? config.color : 'text-white'}`}>
                       {config.label}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-white/20 text-white'
+                      isArchiveStatus ? 'bg-white/50 text-slate-600' : 'bg-white/20 text-white'
                     }`}>
                       {statusCases.length}
                     </span>

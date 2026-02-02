@@ -320,7 +320,36 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Created hot data and analytics indexes for 1000 groups')
     } catch (e) { /* indexes exist */ }
 
-    // Migration 18: Commitments table for promise tracking
+    // Migration 18: Fix ticket numbering for existing cases
+    try {
+      // Create sequence if not exists
+      await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
+      
+      // Get max existing ticket number
+      const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 0) as max_num FROM support_cases WHERE ticket_number IS NOT NULL`
+      const maxNum = parseInt(maxResult[0]?.max_num || '0')
+      
+      // Set sequence to max + 1
+      if (maxNum > 0) {
+        await sql`SELECT setval('support_case_ticket_seq', ${maxNum + 1}, false)`
+      }
+      
+      // Assign ticket numbers to cases without them (ordered by creation date)
+      const casesWithoutNumber = await sql`
+        SELECT id FROM support_cases 
+        WHERE ticket_number IS NULL 
+        ORDER BY created_at ASC
+      `
+      
+      for (const c of casesWithoutNumber) {
+        const nextNum = await sql`SELECT nextval('support_case_ticket_seq') as num`
+        await sql`UPDATE support_cases SET ticket_number = ${parseInt(nextNum[0].num)} WHERE id = ${c.id}`
+      }
+      
+      migrations.push(`Assigned ticket numbers to ${casesWithoutNumber.length} cases`)
+    } catch (e) { /* sequence/numbers exist */ }
+
+    // Migration 19: Commitments table for promise tracking
     try {
       await sql`
         CREATE TABLE IF NOT EXISTS support_commitments (

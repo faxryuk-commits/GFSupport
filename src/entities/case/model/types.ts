@@ -1,5 +1,10 @@
-export type CaseStatus = 'detected' | 'in_progress' | 'waiting' | 'blocked' | 'resolved' | 'closed' | 'recurring'
+export type CaseStatus = 'detected' | 'in_progress' | 'waiting' | 'blocked' | 'resolved' | 'closed' | 'cancelled' | 'recurring'
 export type CasePriority = 'low' | 'medium' | 'high' | 'urgent' | 'critical'
+
+// Активные статусы для канбана
+export const ACTIVE_STATUSES: CaseStatus[] = ['detected', 'in_progress', 'waiting', 'blocked']
+// Архивные статусы
+export const ARCHIVE_STATUSES: CaseStatus[] = ['resolved', 'closed', 'cancelled']
 
 export interface Case {
   id: string
@@ -45,6 +50,7 @@ export const CASE_STATUS_CONFIG: Record<CaseStatus, { label: string; color: stri
   blocked: { label: 'Заблокировано', color: 'text-white', bgColor: 'bg-red-500' },
   resolved: { label: 'Решено', color: 'text-green-800', bgColor: 'bg-green-100' },
   closed: { label: 'Закрыто', color: 'text-slate-600', bgColor: 'bg-slate-200' },
+  cancelled: { label: 'Отменено', color: 'text-slate-500', bgColor: 'bg-slate-100' },
   recurring: { label: 'Повторяется', color: 'text-white', bgColor: 'bg-purple-500' },
 }
 

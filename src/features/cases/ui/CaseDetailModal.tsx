@@ -1,7 +1,20 @@
 import { useState } from 'react'
-import { Trash2, Paperclip, Send, History, MessageSquare, Link2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Trash2, Paperclip, Send, History, MessageSquare, Link2, ExternalLink } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
+
+// Форматирование даты
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit', 
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 
 interface Comment {
   id: string
@@ -26,15 +39,19 @@ interface Agent {
 export interface CaseDetail {
   id: string
   number: string
+  ticketNumber?: number
   title: string
   description: string
   company: string
+  channelId?: string
+  channelName?: string
   contactName: string
   contactEmail: string
   priority: CasePriority
   category: string
   status: CaseStatus
   createdAt: string
+  updatedAt?: string
   assignee?: Agent
   comments: Comment[]
   tags: string[]
@@ -64,6 +81,7 @@ export function CaseDetailModal({
   onAddComment,
   onDelete,
 }: CaseDetailModalProps) {
+  const navigate = useNavigate()
   const [detailTab, setDetailTab] = useState('details')
   const [newComment, setNewComment] = useState('')
   const [isInternalComment, setIsInternalComment] = useState(false)
@@ -76,11 +94,23 @@ export function CaseDetailModal({
     setNewComment('')
   }
 
+  const handleOpenChat = () => {
+    if (caseData.channelId) {
+      onClose()
+      navigate(`/chats?channel=${caseData.channelId}`)
+    }
+  }
+
+  // Формируем номер тикета
+  const displayNumber = caseData.ticketNumber 
+    ? `#${caseData.ticketNumber}` 
+    : caseData.number
+
   return (
     <Modal 
       isOpen={isOpen} 
       onClose={onClose} 
-      title={`Кейс ${caseData.number}`} 
+      title={`Тикет ${displayNumber}`} 
       size="xl"
     >
       <div className="flex gap-6 -mx-6 -mb-6">
@@ -141,8 +171,14 @@ export function CaseDetailModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-500">Создан</label>
-                  <p className="mt-1 text-slate-800">{caseData.createdAt}</p>
+                  <p className="mt-1 text-slate-800">{formatDate(caseData.createdAt)}</p>
                 </div>
+                {caseData.updatedAt && caseData.updatedAt !== caseData.createdAt && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-500">Обновлён</label>
+                    <p className="mt-1 text-slate-800">{formatDate(caseData.updatedAt)}</p>
+                  </div>
+                )}
                 <div>
                   <label className="text-sm font-medium text-slate-500">Назначен</label>
                   <div className="mt-1 flex items-center gap-2">
@@ -278,12 +314,28 @@ export function CaseDetailModal({
           </select>
 
           <h4 className="font-medium text-slate-700 mb-3">Связанные чаты</h4>
-          {caseData.linkedChats.length === 0 ? (
+          {!caseData.channelId && caseData.linkedChats.length === 0 ? (
             <p className="text-sm text-slate-400 mb-4">Нет связанных чатов</p>
           ) : (
             <div className="space-y-2 mb-4">
-              {caseData.linkedChats.map(chatId => (
-                <button key={chatId} className="flex items-center gap-2 text-sm text-blue-500 hover:underline">
+              {caseData.channelId && (
+                <button 
+                  onClick={handleOpenChat}
+                  className="flex items-center gap-2 text-sm text-blue-500 hover:underline"
+                >
+                  <Link2 className="w-4 h-4" />
+                  {caseData.channelName || 'Открыть чат'}
+                </button>
+              )}
+              {caseData.linkedChats.filter(id => id !== caseData.channelId).map(chatId => (
+                <button 
+                  key={chatId} 
+                  onClick={() => {
+                    onClose()
+                    navigate(`/chats?channel=${chatId}`)
+                  }}
+                  className="flex items-center gap-2 text-sm text-blue-500 hover:underline"
+                >
                   <Link2 className="w-4 h-4" />
                   Открыть чат
                 </button>
@@ -291,10 +343,15 @@ export function CaseDetailModal({
             </div>
           )}
 
-          <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600">
-            <MessageSquare className="w-4 h-4" />
-            Открыть чат
-          </button>
+          {caseData.channelId && (
+            <button 
+              onClick={handleOpenChat}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Открыть чат
+            </button>
+          )}
         </div>
       </div>
     </Modal>
