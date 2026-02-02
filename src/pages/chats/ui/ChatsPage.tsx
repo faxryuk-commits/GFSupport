@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
@@ -81,6 +82,9 @@ const quickReplies = [
 ]
 
 export function ChatsPage() {
+  const { id: channelIdFromUrl } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+
   // Данные
   const [channels, setChannels] = useState<ChannelItemData[]>([])
   const [selectedChannel, setSelectedChannel] = useState<ChannelItemData | null>(null)
@@ -143,6 +147,21 @@ export function ChatsPage() {
       setIsLoadingMessages(false)
     }
   }, [])
+
+  // Автовыбор канала по ID из URL (для прямых ссылок)
+  useEffect(() => {
+    if (channelIdFromUrl && channels.length > 0 && !selectedChannel) {
+      const channel = channels.find(ch => ch.id === channelIdFromUrl)
+      if (channel) {
+        setSelectedChannel(channel)
+        loadMessages(channel.id)
+        // Отмечаем как прочитанный
+        if (channel.unread > 0) {
+          markChannelRead(channel.id).catch(console.error)
+        }
+      }
+    }
+  }, [channelIdFromUrl, channels, selectedChannel, loadMessages])
 
   // Прокрутка к последнему сообщению
   useEffect(() => {
@@ -215,6 +234,9 @@ export function ChatsPage() {
   const handleSelectChannel = async (channel: ChannelItemData) => {
     setSelectedChannel(channel)
     setMessages([])
+    
+    // Обновляем URL для возможности шаринга/закладок
+    navigate(`/chats/${channel.id}`, { replace: true })
     
     // Загружаем сообщения для выбранного канала
     await loadMessages(channel.id)
