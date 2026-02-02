@@ -183,6 +183,8 @@ export default async function handler(req: Request): Promise<Response> {
           isRead: m.is_read,
           readAt: m.read_at,
           replyToMessageId: m.reply_to_message_id,
+          replyToText: m.reply_to_text,
+          replyToSender: m.reply_to_sender,
           threadId: m.thread_id,
           topicId: m.thread_id,
           threadName: m.thread_name,

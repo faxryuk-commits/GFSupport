@@ -27,6 +27,8 @@ export interface Message {
   isRead: boolean
   readAt?: string
   replyToMessageId?: number
+  replyToText?: string
+  replyToSender?: string
   threadId?: number
   threadName?: string
   topicId?: number

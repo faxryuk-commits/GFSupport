@@ -19,13 +19,14 @@ export interface MediaAttachment {
 
 export interface MessageData {
   id: string
+  telegramMessageId?: number
   senderName: string
   senderAvatarUrl?: string | null
   text: string
   time: string
   isClient: boolean
   status?: 'sent' | 'delivered' | 'read'
-  replyTo?: { id: string; text: string; sender: string }
+  replyTo?: { id: string; telegramMessageId?: number; text: string; sender: string }
   attachments?: MediaAttachment[]
 }
 
@@ -343,11 +344,26 @@ export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, o
             </div>
           )}
           
-          {/* Reply preview */}
+          {/* Reply preview - стиль как в Telegram */}
           {message.replyTo && (
-            <div className={`px-3 py-1.5 mb-1 border-l-2 ${message.isClient ? 'border-slate-300 bg-slate-50' : 'border-blue-300 bg-blue-50/50'} rounded text-xs cursor-pointer hover:opacity-80`}>
-              <span className="font-medium">{message.replyTo.sender}</span>
-              <p className="text-slate-600 truncate">{message.replyTo.text}</p>
+            <div className={`flex gap-2 px-3 py-2 mb-1 rounded-lg cursor-pointer hover:opacity-80 ${
+              message.isClient ? 'bg-slate-100/80' : 'bg-blue-400/30'
+            }`}>
+              <div className={`w-0.5 rounded-full flex-shrink-0 ${
+                message.isClient ? 'bg-blue-500' : 'bg-white'
+              }`} />
+              <div className="min-w-0 flex-1">
+                <span className={`text-xs font-semibold block ${
+                  message.isClient ? 'text-blue-600' : 'text-white'
+                }`}>
+                  {message.replyTo.sender}
+                </span>
+                <p className={`text-xs truncate ${
+                  message.isClient ? 'text-slate-600' : 'text-white/80'
+                }`}>
+                  {message.replyTo.text || '[медиа]'}
+                </p>
+              </div>
             </div>
           )}
 
@@ -472,7 +488,7 @@ export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, o
             <MessageSquare className="w-4 h-4 text-slate-400" />
             <span>Цитировать</span>
           </button>
-          {onDelete && !message.isClient && (
+          {onDelete && (
             <>
               <div className="border-t border-slate-100 my-1" />
               <button

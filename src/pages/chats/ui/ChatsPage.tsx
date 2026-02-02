@@ -62,12 +62,20 @@ function mapMessageToUI(message: Message): MessageData {
 
   return {
     id: message.id,
+    telegramMessageId: message.telegramMessageId,
     senderName: message.senderName || 'Пользователь',
     senderAvatarUrl: message.senderPhotoUrl,
     text: message.text || '',
     time: formatTime(message.createdAt),
     isClient: message.senderRole === 'client',
     status: message.isRead ? 'read' : 'delivered',
+    // Reply/цитирование
+    replyTo: message.replyToMessageId && message.replyToText ? {
+      id: String(message.replyToMessageId),
+      telegramMessageId: message.replyToMessageId,
+      text: message.replyToText,
+      sender: message.replyToSender || 'Пользователь'
+    } : undefined,
     attachments: message.mediaUrl ? [{
       type: getMediaType(message.mediaType),
       url: message.mediaUrl,
@@ -119,7 +127,7 @@ export function ChatsPage() {
   const [filter, setFilter] = useState<'all' | 'unread' | 'open' | 'pending' | 'resolved'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [messageText, setMessageText] = useState('')
-  const [replyingTo, setReplyingTo] = useState<{ id: string; text: string; sender: string } | null>(null)
+  const [replyingTo, setReplyingTo] = useState<{ id: string; telegramMessageId?: number; text: string; sender: string } | null>(null)
   const [showQuickReplies, setShowQuickReplies] = useState(false)
   const [showChannelActions, setShowChannelActions] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
@@ -352,7 +360,7 @@ export function ChatsPage() {
     // Оптимистичное обновление UI
     setMessages(prev => [...prev, tempMessage])
     const textToSend = messageText
-    const replyToId = replyingTo?.id
+    const replyToTgId = replyingTo?.telegramMessageId
     setMessageText('')
     setReplyingTo(null)
     
@@ -364,7 +372,7 @@ export function ChatsPage() {
       const sentMessage = await sendMessage(
         selectedChannel.id, 
         textToSend || (files ? '[Файл]' : ''), 
-        replyToId ? parseInt(replyToId) : undefined
+        replyToTgId // передаём telegram_message_id для reply
       )
       
       // Заменяем временное сообщение на реальное
@@ -596,8 +604,30 @@ export function ChatsPage() {
                     <MessageBubble
                       key={msg.id}
                       message={msg}
-                      onReply={() => setReplyingTo({ id: msg.id, text: msg.text, sender: msg.senderName })}
+                      onReply={() => setReplyingTo({ 
+        id: msg.id, 
+        telegramMessageId: msg.telegramMessageId,
+        text: msg.text, 
+        sender: msg.senderName 
+      })}
                       onCopy={() => navigator.clipboard.writeText(msg.text)}
+                      onDelete={async () => {
+                        if (!confirm('Удалить сообщение?')) return
+                        try {
+                          const token = localStorage.getItem('support_agent_token') || ''
+                          await fetch('/api/support/messages/delete', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ messageId: msg.id })
+                          })
+                          setMessages(prev => prev.filter(m => m.id !== msg.id))
+                        } catch (e) {
+                          console.error('Ошибка удаления:', e)
+                        }
+                      }}
                     />
                   ))}
                 </>
