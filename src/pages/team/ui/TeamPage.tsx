@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail } from 'lucide-react'
+import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail, MessageCircle, Clock, Calendar } from 'lucide-react'
 import { fetchAgents } from '@/shared/api'
 import { apiPost, apiGet } from '@/shared/services/api.service'
 import { Modal } from '@/shared/ui'
@@ -23,9 +23,14 @@ interface DisplayAgent {
   role: string
   status: 'online' | 'offline'
   avatar: string
+  email?: string
+  username?: string
+  lastSeenAt?: string
+  createdAt?: string
   cases: number
   sla: number
   avgTime: string
+  messagesHandled: number
   level: { name: string; icon: string; progress: number; current: number; max: number }
 }
 
@@ -52,10 +57,15 @@ function mapAgentToDisplay(agent: Agent): DisplayAgent {
     name: agent.name,
     role: roleLabels[agent.role] || agent.role,
     status: agent.status === 'online' ? 'online' : 'offline',
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${agent.email}`,
+    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${agent.email || agent.id}`,
+    email: agent.email,
+    username: agent.username,
+    lastSeenAt: agent.lastSeenAt,
+    createdAt: agent.createdAt,
     cases: agent.metrics?.resolvedConversations || 0,
-    sla: agent.metrics?.satisfactionScore ? Math.round(agent.metrics.satisfactionScore * 100) : 0,
+    sla: agent.metrics?.satisfactionScore ? Math.round(Number(agent.metrics.satisfactionScore) * 100) : 0,
     avgTime: avgResponseMin > 0 ? `${Math.round(avgResponseMin)}м` : '—',
+    messagesHandled: agent.metrics?.messagesHandled || 0,
     level: {
       name: levelNames[levelIndex],
       icon: levelIcons[levelIndex],
@@ -83,11 +93,20 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [invites, setInvites] = useState<Invite[]>([])
+  
+  // Profile modal state
+  const [selectedAgent, setSelectedAgent] = useState<DisplayAgent | null>(null)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
 
   useEffect(() => {
     loadAgents()
     loadInvites()
   }, [])
+  
+  const handleViewProfile = (agent: DisplayAgent) => {
+    setSelectedAgent(agent)
+    setIsProfileOpen(true)
+  }
 
   async function loadAgents() {
     try {
@@ -348,10 +367,107 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       ) : (
         <div className="grid grid-cols-2 gap-6">
           {displayAgents.map(agent => (
-            <AgentCard key={agent.id} agent={agent} />
+            <AgentCard key={agent.id} agent={agent} onViewProfile={() => handleViewProfile(agent)} />
           ))}
         </div>
       )}
+
+      {/* Agent Profile Modal */}
+      <Modal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} title="Профиль сотрудника">
+        {selectedAgent && (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <img 
+                  src={selectedAgent.avatar} 
+                  alt={selectedAgent.name}
+                  className="w-20 h-20 rounded-full object-cover bg-slate-100"
+                />
+                <span className={`absolute bottom-1 right-1 w-5 h-5 rounded-full border-2 border-white ${
+                  selectedAgent.status === 'online' ? 'bg-green-500' : 'bg-slate-300'
+                }`} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">{selectedAgent.name}</h3>
+                <p className="text-slate-500">{selectedAgent.role}</p>
+                <span className={`inline-flex items-center gap-1 text-sm mt-1 ${
+                  selectedAgent.status === 'online' ? 'text-green-600' : 'text-slate-400'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    selectedAgent.status === 'online' ? 'bg-green-500' : 'bg-slate-300'
+                  }`} />
+                  {selectedAgent.status === 'online' ? 'В сети' : 'Не в сети'}
+                </span>
+              </div>
+            </div>
+
+            {/* Contact Info */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-slate-700">Контакты</h4>
+              {selectedAgent.email && (
+                <div className="flex items-center gap-3 text-slate-600">
+                  <Mail className="w-4 h-4 text-slate-400" />
+                  <span>{selectedAgent.email}</span>
+                </div>
+              )}
+              {selectedAgent.username && (
+                <div className="flex items-center gap-3 text-slate-600">
+                  <MessageCircle className="w-4 h-4 text-slate-400" />
+                  <span>@{selectedAgent.username}</span>
+                </div>
+              )}
+              {selectedAgent.lastSeenAt && (
+                <div className="flex items-center gap-3 text-slate-600">
+                  <Clock className="w-4 h-4 text-slate-400" />
+                  <span>Последняя активность: {new Date(selectedAgent.lastSeenAt).toLocaleString('ru')}</span>
+                </div>
+              )}
+              {selectedAgent.createdAt && (
+                <div className="flex items-center gap-3 text-slate-600">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  <span>В команде с {new Date(selectedAgent.createdAt).toLocaleDateString('ru')}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl">
+              <div className="text-center">
+                <span className="text-2xl font-bold text-slate-800">{selectedAgent.cases}</span>
+                <p className="text-xs text-slate-500">Решено</p>
+              </div>
+              <div className="text-center">
+                <span className="text-2xl font-bold text-slate-800">{selectedAgent.messagesHandled}</span>
+                <p className="text-xs text-slate-500">Сообщений</p>
+              </div>
+              <div className="text-center">
+                <span className="text-2xl font-bold text-slate-800">{selectedAgent.sla}%</span>
+                <p className="text-xs text-slate-500">SLA</p>
+              </div>
+            </div>
+
+            {/* Level */}
+            <div className="p-4 bg-blue-50 rounded-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">{selectedAgent.level.icon}</span>
+                <span className="font-medium text-blue-800">{selectedAgent.level.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-3 bg-blue-100 rounded-full">
+                  <div 
+                    className="h-3 bg-blue-500 rounded-full transition-all"
+                    style={{ width: `${selectedAgent.level.progress}%` }}
+                  />
+                </div>
+                <span className="text-sm text-blue-600 font-medium">
+                  {selectedAgent.level.current}/{selectedAgent.level.max} XP
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -368,7 +484,7 @@ function MetricCard({ value, label, hasOnline }: { value: string | number; label
   )
 }
 
-function AgentCard({ agent }: { agent: DisplayAgent }) {
+function AgentCard({ agent, onViewProfile }: { agent: DisplayAgent; onViewProfile: () => void }) {
   return (
     <div className={`bg-white rounded-xl p-5 border-2 ${
       agent.status === 'online' ? 'border-green-200' : 'border-slate-200'
@@ -441,7 +557,10 @@ function AgentCard({ agent }: { agent: DisplayAgent }) {
           </div>
 
           {/* Actions */}
-          <button className="text-blue-500 text-sm font-medium mt-3 hover:underline">
+          <button 
+            onClick={onViewProfile}
+            className="text-blue-500 text-sm font-medium mt-3 hover:underline"
+          >
             Профиль
           </button>
         </div>
