@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { 
   Clock, AlertTriangle, MessageSquare, ChevronRight, TrendingUp, TrendingDown,
   Users, Briefcase, Zap, RefreshCw, Bell, CheckCircle, ArrowUpRight,
-  Activity, Target
+  Activity, Target, BarChart3
 } from 'lucide-react'
 import { Avatar, Badge, EmptyState, LoadingState } from '@/shared/ui'
 import { fetchDashboardMetrics, fetchAnalytics, type DashboardMetrics, type AnalyticsData } from '@/shared/api'
@@ -11,6 +11,15 @@ import { fetchChannels } from '@/shared/api'
 import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
+import { ResponseTimeDetailsModal } from '@/pages/analytics/ui/ResponseTimeDetailsModal'
+
+interface ResponseTimeModalData {
+  bucket: string
+  bucketLabel: string
+  count: number
+  avgMinutes: number
+  color: string
+}
 
 interface AttentionItem {
   id: string
@@ -44,6 +53,7 @@ export function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [needsAttention, setNeedsAttention] = useState<AttentionItem[]>([])
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+  const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -422,6 +432,85 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Response Time Distribution */}
+      {analytics?.team?.responseTimeDistribution && analytics.team.responseTimeDistribution.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-green-500" />
+              Время первого ответа
+            </h2>
+          </div>
+          <div className="p-5">
+            <div className="grid grid-cols-5 gap-4">
+              {analytics.team.responseTimeDistribution.map((item, i) => {
+                const total = analytics.team.responseTimeDistribution!.reduce((sum, r) => sum + r.count, 0)
+                const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
+                const colors = [
+                  'bg-green-500',
+                  'bg-emerald-500',
+                  'bg-amber-500',
+                  'bg-orange-500',
+                  'bg-red-500',
+                ]
+                const bucketLabels = [
+                  'до 5 минут',
+                  'до 10 минут', 
+                  'до 30 минут',
+                  'до 1 часа',
+                  'более 1 часа'
+                ]
+                return (
+                  <button 
+                    key={i} 
+                    onClick={() => setResponseTimeModal({
+                      bucket: item.bucket,
+                      bucketLabel: bucketLabels[i] || item.bucket,
+                      count: item.count,
+                      avgMinutes: item.avgMinutes,
+                      color: colors[i] || 'bg-slate-400'
+                    })}
+                    className="text-center p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer group"
+                  >
+                    <div className="mb-2">
+                      <div className="text-3xl font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{item.count}</div>
+                      <div className="text-xs text-slate-500">{percent}%</div>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
+                      <div 
+                        className={`h-full ${colors[i] || 'bg-slate-400'} rounded-full`}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    <div className="text-sm font-medium text-slate-700">{item.bucket}</div>
+                    <div className="text-xs text-slate-400">
+                      сред. {item.avgMinutes > 0 ? `${Math.round(item.avgMinutes)} мин` : '—'}
+                    </div>
+                    <div className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 mt-1 transition-opacity">
+                      Нажмите для деталей →
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Response Time Details Modal */}
+      {responseTimeModal && (
+        <ResponseTimeDetailsModal
+          isOpen={!!responseTimeModal}
+          onClose={() => setResponseTimeModal(null)}
+          bucket={responseTimeModal.bucket}
+          bucketLabel={responseTimeModal.bucketLabel}
+          count={responseTimeModal.count}
+          avgMinutes={responseTimeModal.avgMinutes}
+          period={dateRange === 'today' ? '7d' : dateRange === 'week' ? '7d' : '30d'}
+          color={responseTimeModal.color}
+        />
+      )}
     </div>
   )
 }
