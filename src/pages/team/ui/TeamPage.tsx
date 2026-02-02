@@ -420,7 +420,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
               {selectedAgent.lastSeenAt && (
                 <div className="flex items-center gap-3 text-slate-600">
                   <Clock className="w-4 h-4 text-slate-400" />
-                  <span>Последняя активность: {new Date(selectedAgent.lastSeenAt).toLocaleString('ru')}</span>
+                  <span>В системе: {new Date(selectedAgent.lastSeenAt).toLocaleString('ru')}</span>
                 </div>
               )}
               {selectedAgent.createdAt && (
