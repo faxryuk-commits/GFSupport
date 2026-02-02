@@ -79,7 +79,7 @@ export function DashboardPage() {
       if (analyticsData.team?.dailyTrend) {
         const activities: RecentActivity[] = []
         // Add some recent activity based on analytics data
-        if (analyticsData.cases.resolved > 0) {
+        if (analyticsData?.cases?.resolved && analyticsData.cases.resolved > 0) {
           activities.push({
             id: '1',
             type: 'case_resolved',
@@ -88,7 +88,7 @@ export function DashboardPage() {
             time: 'сегодня'
           })
         }
-        if (analyticsData.messages.total > 0) {
+        if (analyticsData?.messages?.total && analyticsData.messages.total > 0) {
           activities.push({
             id: '2',
             type: 'message',
@@ -185,7 +185,7 @@ export function DashboardPage() {
     },
     { 
       label: 'Открытых кейсов', 
-      value: analytics?.cases.open || 0, 
+      value: analytics?.cases?.open || 0, 
       icon: Briefcase, 
       color: 'amber',
       trend: 'neutral' as const
@@ -194,7 +194,7 @@ export function DashboardPage() {
 
   // Calculate online agents
   const onlineAgents = agents.filter(a => a.status === 'online' || a.status === 'away')
-  const resolvedToday = analytics?.cases.resolved || 0
+  const resolvedToday = analytics?.cases?.resolved || 0
 
   return (
     <div className="p-6 space-y-6">
@@ -362,7 +362,7 @@ export function DashboardPage() {
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-2xl font-bold text-blue-600">{analytics?.messages.total || 0}</p>
+              <p className="text-2xl font-bold text-blue-600">{analytics?.messages?.total || 0}</p>
               <p className="text-sm text-blue-600/70">Сообщений</p>
             </div>
             <div className="p-4 bg-green-50 rounded-lg">
@@ -370,7 +370,7 @@ export function DashboardPage() {
               <p className="text-sm text-green-600/70">Решено кейсов</p>
             </div>
             <div className="p-4 bg-amber-50 rounded-lg">
-              <p className="text-2xl font-bold text-amber-600">{analytics?.cases.urgent || 0}</p>
+              <p className="text-2xl font-bold text-amber-600">{analytics?.cases?.urgent || 0}</p>
               <p className="text-sm text-amber-600/70">Срочных</p>
             </div>
           </div>
