@@ -128,7 +128,7 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT 
         COALESCE(root_cause, category, title) as problem,
         COUNT(*) as occurrences,
-        COUNT(DISTINCT company_id) as affected_companies
+        COUNT(DISTINCT channel_id) as affected_companies
       FROM support_cases
       WHERE created_at >= ${startDate.toISOString()}
         AND (is_recurring = true OR root_cause IS NOT NULL)
@@ -144,16 +144,16 @@ export default async function handler(req: Request): Promise<Response> {
     
     const teamPerformance = await sql`
       SELECT 
-        COALESCE(m.name, 'Unassigned') as manager_name,
+        COALESCE(a.name, c.assigned_to::text, 'Не назначен') as manager_name,
         c.assigned_to as manager_id,
         COUNT(*) as total_cases,
         COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases,
         AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes,
         COUNT(*) FILTER (WHERE c.priority IN ('urgent', 'high')) as high_priority_cases
       FROM support_cases c
-      LEFT JOIN crm_managers m ON c.assigned_to = m.id
+      LEFT JOIN support_agents a ON c.assigned_to::text = a.id::text
       WHERE c.created_at >= ${startDate.toISOString()}
-      GROUP BY c.assigned_to, m.name
+      GROUP BY c.assigned_to, a.name
       ORDER BY total_cases DESC
     `
 
@@ -183,67 +183,63 @@ export default async function handler(req: Request): Promise<Response> {
     // 4. CHURN SIGNALS
     // ============================================
     
-    // Компании с негативным sentiment
+    // Каналы с негативным sentiment
     const negativeCompanies = await sql`
       SELECT 
-        c.company_id,
-        comp.name as company_name,
+        c.id as company_id,
+        c.name as company_name,
         COUNT(*) as negative_messages,
         COUNT(DISTINCT m.id) as total_messages,
         MAX(m.created_at) as last_negative_at
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      LEFT JOIN crm_companies comp ON c.company_id = comp.id
       WHERE m.ai_sentiment IN ('negative', 'frustrated')
         AND m.created_at >= ${startDate.toISOString()}
-        AND c.company_id IS NOT NULL
-      GROUP BY c.company_id, comp.name
+      GROUP BY c.id, c.name
       HAVING COUNT(*) >= 3
       ORDER BY negative_messages DESC
       LIMIT 10
     `
 
-    // Компании с нерешёнными кейсами > 48 часов
+    // Каналы с нерешёнными кейсами > 48 часов
     const stuckCases = await sql`
       SELECT 
-        c.company_id,
-        comp.name as company_name,
+        ch.id as company_id,
+        ch.name as company_name,
         COUNT(*) as stuck_cases,
         MIN(c.created_at) as oldest_case_at,
         EXTRACT(EPOCH FROM (NOW() - MIN(c.created_at))) / 3600 as oldest_hours
       FROM support_cases c
-      LEFT JOIN crm_companies comp ON c.company_id = comp.id
+      JOIN support_channels ch ON c.channel_id = ch.id
       WHERE c.status NOT IN ('resolved', 'closed')
         AND c.created_at < NOW() - INTERVAL '48 hours'
-        AND c.company_id IS NOT NULL
-      GROUP BY c.company_id, comp.name
+      GROUP BY ch.id, ch.name
       ORDER BY oldest_hours DESC
       LIMIT 10
     `
 
-    // Компании с повторяющимися проблемами
+    // Каналы с повторяющимися проблемами
     const recurringByCompany = await sql`
       SELECT 
-        c.company_id,
-        comp.name as company_name,
+        ch.id as company_id,
+        ch.name as company_name,
         COUNT(*) as recurring_cases,
         array_agg(DISTINCT c.category) as categories
       FROM support_cases c
-      LEFT JOIN crm_companies comp ON c.company_id = comp.id
+      JOIN support_channels ch ON c.channel_id = ch.id
       WHERE c.is_recurring = true
         AND c.created_at >= ${startDate.toISOString()}
-        AND c.company_id IS NOT NULL
-      GROUP BY c.company_id, comp.name
+      GROUP BY ch.id, ch.name
       HAVING COUNT(*) >= 2
       ORDER BY recurring_cases DESC
       LIMIT 10
     `
 
-    // Churn risk score calculation (without mrr dependency)
+    // Churn risk score calculation
     const churnRiskCompanies = await sql`
       SELECT 
-        c.company_id,
-        COALESCE(comp.name, c.name) as company_name,
+        c.id as company_id,
+        c.name as company_name,
         0 as mrr,
         COALESCE(SUM(
           CASE 
@@ -256,11 +252,9 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(DISTINCT CASE WHEN cs.status NOT IN ('resolved', 'closed') THEN cs.id END) as open_cases,
         COUNT(DISTINCT CASE WHEN cs.is_recurring THEN cs.id END) as recurring_cases
       FROM support_channels c
-      LEFT JOIN crm_companies comp ON c.company_id = comp.id
       LEFT JOIN support_messages m ON m.channel_id = c.id AND m.created_at >= ${startDate.toISOString()}
-      LEFT JOIN support_cases cs ON cs.company_id = c.company_id
-      WHERE c.company_id IS NOT NULL
-      GROUP BY c.company_id, comp.name, c.name
+      LEFT JOIN support_cases cs ON cs.channel_id = c.id
+      GROUP BY c.id, c.name
       HAVING COALESCE(SUM(
         CASE 
           WHEN m.ai_sentiment IN ('negative', 'frustrated') THEN 3

@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, Loader2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { 
+  ChevronDown, Loader2, AlertTriangle, RefreshCw, MessageSquare, 
+  Briefcase, Users, TrendingUp, AlertCircle, Clock, CheckCircle,
+  BarChart3, Mic, Video
+} from 'lucide-react'
 import { fetchAnalytics, type AnalyticsData } from '@/shared/api'
+import { Badge } from '@/shared/ui'
 
 const periods = [
   { value: '7d', label: 'Последние 7 дней' },
@@ -9,7 +14,7 @@ const periods = [
 ]
 
 export function AnalyticsPage() {
-  const [period, setPeriod] = useState('7d')
+  const [period, setPeriod] = useState('30d')
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -63,48 +68,28 @@ export function AnalyticsPage() {
   }
 
   const selectedPeriod = periods.find(p => p.value === period)
-
-  // Calculate metrics
+  
+  // Расчёт метрик
   const resolutionRate = data.cases.total > 0 
     ? Math.round((data.cases.resolved / data.cases.total) * 100) 
     : 0
-
-  const metrics: Array<{ label: string; value: string | number; isPercent?: boolean }> = [
-    { label: 'Всего обращений', value: data.cases.total },
-    { label: 'Среднее время ответа', value: `${Math.round(data.channels.avgFirstResponse)}м` },
-    { label: 'Процент решения', value: resolutionRate, isPercent: true },
-    { label: 'Срочных', value: data.cases.urgent },
-  ]
-
-  // Build chart data from dailyTrend
-  const chartData = data.team?.dailyTrend?.map(d => ({
-    date: new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
-    cases: d.cases,
-    messages: d.messages,
-  })) || []
-
-  // Build category data
-  const categoryData = data.patterns?.byCategory 
-    ? Object.entries(data.patterns.byCategory).map(([name, value]) => ({ name, value }))
-    : []
-
-  const maxCategory = Math.max(...categoryData.map(c => c.value), 1)
-
-  // Build manager data
-  const managerData = data.team?.byManager || []
+  const problemRate = data.messages.total > 0 
+    ? ((data.messages.problems / data.messages.total) * 100).toFixed(1) 
+    : '0'
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 overflow-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Аналитика</h1>
-          <p className="text-slate-500 mt-0.5">Статистика и отчёты</p>
+          <h1 className="text-2xl font-bold text-slate-800">Сводная аналитика</h1>
+          <p className="text-slate-500 mt-0.5">Детальная статистика и отчёты</p>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={loadData}
             className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Обновить"
           >
             <RefreshCw className="w-5 h-5" />
           </button>
@@ -122,7 +107,7 @@ export function AnalyticsPage() {
                   <button
                     key={p.value}
                     onClick={() => { setPeriod(p.value); setIsOpen(false) }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 first:rounded-t-lg last:rounded-b-lg ${
                       period === p.value ? 'bg-blue-50 text-blue-600' : ''
                     }`}
                   >
@@ -135,88 +120,248 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Metrics */}
+      {/* Overview Cards */}
       <div className="grid grid-cols-4 gap-4">
-        {metrics.map((metric, i) => (
-          <div key={i} className="bg-white rounded-xl p-5 border border-slate-200">
-            <p className="text-sm text-slate-500 mb-1">{metric.label}</p>
-            <div className="flex items-end gap-2">
-              <span className="text-3xl font-bold text-slate-800">
-                {metric.value}{metric.isPercent && '%'}
-              </span>
+        <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-600" />
             </div>
+            <span className="text-sm text-slate-500">Всего каналов</span>
           </div>
-        ))}
+          <p className="text-3xl font-bold text-slate-800">{data.channels.total}</p>
+          <p className="text-sm text-green-600 mt-1">{data.channels.active} активных</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+              <MessageSquare className="w-5 h-5 text-purple-600" />
+            </div>
+            <span className="text-sm text-slate-500">Сообщений</span>
+          </div>
+          <p className="text-3xl font-bold text-slate-800">{data.messages.total}</p>
+          <div className="flex gap-2 mt-1 text-xs">
+            {data.messages.voice > 0 && (
+              <span className="flex items-center gap-1 text-slate-500">
+                <Mic className="w-3 h-3" /> {data.messages.voice}
+              </span>
+            )}
+            {data.messages.video > 0 && (
+              <span className="flex items-center gap-1 text-slate-500">
+                <Video className="w-3 h-3" /> {data.messages.video}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            </div>
+            <span className="text-sm text-slate-500">Решено кейсов</span>
+          </div>
+          <p className="text-3xl font-bold text-slate-800">{data.cases.resolved}/{data.cases.total}</p>
+          <p className="text-sm text-green-600 mt-1">{resolutionRate}% решено</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-orange-600" />
+            </div>
+            <span className="text-sm text-slate-500">Проблем</span>
+          </div>
+          <p className="text-3xl font-bold text-slate-800">{problemRate}%</p>
+          <p className="text-sm text-slate-500 mt-1">{data.messages.problems} сообщений</p>
+        </div>
+      </div>
+
+      {/* Metrics Row */}
+      <div className="grid grid-cols-5 gap-4">
+        <MetricCard 
+          label="Открытых кейсов" 
+          value={data.cases.open} 
+          icon={Briefcase}
+          color="blue"
+        />
+        <MetricCard 
+          label="Срочных" 
+          value={data.cases.urgent} 
+          icon={AlertTriangle}
+          color="red"
+        />
+        <MetricCard 
+          label="Повторяющихся" 
+          value={data.cases.recurring} 
+          icon={TrendingUp}
+          color="amber"
+        />
+        <MetricCard 
+          label="Среднее время ответа" 
+          value={data.channels.avgFirstResponse ? `${data.channels.avgFirstResponse}м` : '—'} 
+          icon={Clock}
+          color="green"
+        />
+        <MetricCard 
+          label="Среднее решение" 
+          value={data.cases.avgResolutionHours ? `${data.cases.avgResolutionHours}ч` : '—'} 
+          icon={CheckCircle}
+          color="emerald"
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        {/* Chart */}
+        {/* Daily Trend Chart */}
         <div className="bg-white rounded-xl p-5 border border-slate-200">
-          <h2 className="font-semibold text-slate-800 mb-4">Обращения по дням</h2>
-          {chartData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-400">
-              Нет данных за период
-            </div>
+          <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-blue-500" />
+            Обращения по дням
+          </h2>
+          {data.team.dailyTrend.length === 0 ? (
+            <EmptyChart />
           ) : (
-            <div className="h-48 flex items-end gap-2">
-              {chartData.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <div 
-                    className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
-                    style={{ height: `${Math.max((d.cases / Math.max(...chartData.map(x => x.cases), 1)) * 150, 4)}px` }}
-                    title={`${d.cases} обращений`}
-                  />
-                  <span className="text-[10px] text-slate-400 truncate w-full text-center">{d.date}</span>
-                </div>
-              ))}
+            <div className="h-48 flex items-end gap-1">
+              {data.team.dailyTrend.map((d, i) => {
+                const maxVal = Math.max(...data.team.dailyTrend.map(x => x.cases), 1)
+                const height = Math.max((d.cases / maxVal) * 140, 4)
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full flex flex-col gap-0.5">
+                      <div 
+                        className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
+                        style={{ height: `${height}px` }}
+                        title={`${d.cases} создано`}
+                      />
+                      {d.resolved > 0 && (
+                        <div 
+                          className="w-full bg-green-400 rounded-b"
+                          style={{ height: `${Math.max((d.resolved / maxVal) * 140, 2)}px` }}
+                          title={`${d.resolved} решено`}
+                        />
+                      )}
+                    </div>
+                    <span className="text-[9px] text-slate-400 truncate w-full text-center">
+                      {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )}
+          <div className="flex gap-4 mt-3 text-xs">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded" /> Создано</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded" /> Решено</span>
+          </div>
         </div>
 
         {/* Categories */}
         <div className="bg-white rounded-xl p-5 border border-slate-200">
           <h2 className="font-semibold text-slate-800 mb-4">По категориям</h2>
-          {categoryData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-400">
-              Нет данных
-            </div>
+          {data.patterns.byCategory.length === 0 ? (
+            <EmptyChart />
           ) : (
             <div className="space-y-3">
-              {categoryData.slice(0, 5).map((cat, i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-slate-700">{cat.name}</span>
-                    <span className="text-slate-500">{cat.value}</span>
+              {data.patterns.byCategory.slice(0, 6).map((cat, i) => {
+                const max = Math.max(...data.patterns.byCategory.map(c => c.count), 1)
+                return (
+                  <div key={i}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-slate-700 truncate">{cat.name || 'Без категории'}</span>
+                      <div className="flex items-center gap-2">
+                        {cat.openCount > 0 && (
+                          <span className="text-xs text-orange-500">{cat.openCount} откр.</span>
+                        )}
+                        <span className="text-slate-500 font-medium">{cat.count}</span>
+                      </div>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-blue-500 rounded-full transition-all"
+                        style={{ width: `${(cat.count / max) * 100}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-500 rounded-full transition-all"
-                      style={{ width: `${(cat.value / maxCategory) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
+      </div>
+
+      {/* Team Metrics Table */}
+      <div className="bg-white rounded-xl border border-slate-200">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Users className="w-5 h-5 text-blue-500" />
+            Метрики команды
+          </h2>
+        </div>
+        {data.team.byManager.length === 0 ? (
+          <div className="p-8 text-center text-slate-400">Нет данных по менеджерам</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-5 py-3 text-slate-600 font-medium">Менеджер</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Всего</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Решено</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">% решения</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Сред. время</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Срочные</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.team.byManager.map((m, i) => (
+                  <tr key={i} className="hover:bg-slate-50">
+                    <td className="px-5 py-3 font-medium text-slate-800">{m.name || 'Не назначен'}</td>
+                    <td className="text-center px-3 py-3 text-slate-600">{m.totalCases}</td>
+                    <td className="text-center px-3 py-3 text-slate-600">{m.resolved}</td>
+                    <td className="text-center px-3 py-3">
+                      <Badge 
+                        variant={m.resolutionRate >= 80 ? 'success' : m.resolutionRate >= 50 ? 'warning' : 'danger'}
+                        size="sm"
+                      >
+                        {m.resolutionRate}%
+                      </Badge>
+                    </td>
+                    <td className="text-center px-3 py-3 text-slate-600">
+                      {m.avgTime > 0 ? `${m.avgTime}м` : '—'}
+                    </td>
+                    <td className="text-center px-3 py-3">
+                      {m.highPriority > 0 ? (
+                        <Badge variant="danger" size="sm">{m.highPriority}</Badge>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        {/* Manager stats */}
+        {/* Recurring Problems */}
         <div className="bg-white rounded-xl p-5 border border-slate-200">
-          <h2 className="font-semibold text-slate-800 mb-4">По менеджерам</h2>
-          {managerData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-400">
-              Нет данных
-            </div>
+          <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-orange-500" />
+            Повторяющиеся проблемы
+          </h2>
+          {data.patterns.recurringProblems.length === 0 ? (
+            <EmptyChart />
           ) : (
-            <div className="space-y-3">
-              {managerData.slice(0, 5).map((m, i) => (
+            <div className="space-y-2">
+              {data.patterns.recurringProblems.slice(0, 6).map((p, i) => (
                 <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                  <span className="text-slate-700">{m.name}</span>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm text-slate-500">{m.resolved} решено</span>
-                    <span className="text-sm text-slate-500">{m.avgTime}м сред.</span>
+                  <span className="text-slate-700 text-sm truncate flex-1">{p.issue}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">{p.affected} комп.</span>
+                    <Badge variant="warning" size="sm">{p.count}</Badge>
                   </div>
                 </div>
               ))}
@@ -224,43 +369,150 @@ export function AnalyticsPage() {
           )}
         </div>
 
-        {/* Recurring problems */}
+        {/* Sentiment Distribution */}
         <div className="bg-white rounded-xl p-5 border border-slate-200">
-          <h2 className="font-semibold text-slate-800 mb-4">Частые проблемы</h2>
-          {(!data.patterns?.recurringProblems || data.patterns.recurringProblems.length === 0) ? (
-            <div className="h-48 flex items-center justify-center text-slate-400">
-              Нет данных
-            </div>
+          <h2 className="font-semibold text-slate-800 mb-4">Настроение клиентов</h2>
+          {data.patterns.bySentiment.length === 0 ? (
+            <EmptyChart />
           ) : (
-            <div className="space-y-2">
-              {data.patterns.recurringProblems.slice(0, 5).map((p, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                  <span className="text-slate-700 text-sm">{p.issue}</span>
-                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs">{p.count}</span>
-                </div>
-              ))}
+            <div className="space-y-3">
+              {data.patterns.bySentiment.map((s, i) => {
+                const max = Math.max(...data.patterns.bySentiment.map(x => x.count), 1)
+                const colors: Record<string, string> = {
+                  positive: 'bg-green-500',
+                  neutral: 'bg-slate-400',
+                  negative: 'bg-red-500',
+                  frustrated: 'bg-orange-500',
+                }
+                const labels: Record<string, string> = {
+                  positive: 'Позитивное',
+                  neutral: 'Нейтральное',
+                  negative: 'Негативное',
+                  frustrated: 'Разочарование',
+                }
+                return (
+                  <div key={i}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-slate-700">{labels[s.sentiment] || s.sentiment}</span>
+                      <span className="text-slate-500">{s.count}</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all ${colors[s.sentiment] || 'bg-slate-400'}`}
+                        style={{ width: `${(s.count / max) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="bg-white rounded-xl p-5 border border-slate-200">
-        <h2 className="font-semibold text-slate-800 mb-4">Сводка</h2>
-        <div className="grid grid-cols-3 gap-6">
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <p className="text-2xl font-bold text-blue-600">{data.messages.total}</p>
-            <p className="text-sm text-blue-600/70">Сообщений</p>
+      {/* Churn Signals Section */}
+      {(data.churnSignals.highRiskCompanies.length > 0 || 
+        data.churnSignals.negativeCompanies.length > 0 || 
+        data.churnSignals.stuckCases.length > 0) && (
+        <div className="bg-white rounded-xl border border-slate-200">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Сигналы оттока
+            </h2>
           </div>
-          <div className="p-4 bg-green-50 rounded-lg">
-            <p className="text-2xl font-bold text-green-600">{data.cases.resolved}</p>
-            <p className="text-sm text-green-600/70">Решено</p>
-          </div>
-          <div className="p-4 bg-purple-50 rounded-lg">
-            <p className="text-2xl font-bold text-purple-600">{data.channels.active}</p>
-            <p className="text-sm text-purple-600/70">Активных каналов</p>
+          <div className="grid grid-cols-3 divide-x divide-slate-100">
+            {/* High Risk Companies */}
+            <div className="p-4">
+              <h3 className="text-sm font-medium text-slate-700 mb-3">Высокий риск</h3>
+              {data.churnSignals.highRiskCompanies.length === 0 ? (
+                <p className="text-sm text-slate-400">Нет данных</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.churnSignals.highRiskCompanies.slice(0, 5).map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-700 truncate">{c.companyName || `ID: ${c.companyId}`}</span>
+                      <Badge variant="danger" size="sm">риск {c.riskScore}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Negative Companies */}
+            <div className="p-4">
+              <h3 className="text-sm font-medium text-slate-700 mb-3">Негативные отзывы</h3>
+              {data.churnSignals.negativeCompanies.length === 0 ? (
+                <p className="text-sm text-slate-400">Нет данных</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.churnSignals.negativeCompanies.slice(0, 5).map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-700 truncate">{c.companyName || `ID: ${c.companyId}`}</span>
+                      <span className="text-red-500 text-xs">{c.negativeMessages} негат.</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Stuck Cases */}
+            <div className="p-4">
+              <h3 className="text-sm font-medium text-slate-700 mb-3">Зависшие кейсы</h3>
+              {data.churnSignals.stuckCases.length === 0 ? (
+                <p className="text-sm text-slate-400">Нет данных</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.churnSignals.stuckCases.slice(0, 5).map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-700 truncate">{c.companyName || `ID: ${c.companyId}`}</span>
+                      <span className="text-orange-500 text-xs">{c.oldestHours}ч</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Footer */}
+      <div className="text-center text-xs text-slate-400 py-2">
+        Данные за {data.periodDays} дней • Обновлено: {new Date(data.generatedAt).toLocaleString('ru-RU')}
+      </div>
+    </div>
+  )
+}
+
+// Helper Components
+function MetricCard({ label, value, icon: Icon, color }: { 
+  label: string
+  value: string | number
+  icon: typeof Briefcase
+  color: string 
+}) {
+  const bgColor = `bg-${color}-100`
+  const textColor = `text-${color}-600`
+  
+  return (
+    <div className="bg-white rounded-xl p-4 border border-slate-200">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`w-8 h-8 ${bgColor} rounded-lg flex items-center justify-center`}>
+          <Icon className={`w-4 h-4 ${textColor}`} />
+        </div>
+      </div>
+      <p className="text-xl font-bold text-slate-800">{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
+    </div>
+  )
+}
+
+function EmptyChart() {
+  return (
+    <div className="h-48 flex items-center justify-center text-slate-400">
+      <div className="text-center">
+        <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">Нет данных за период</p>
       </div>
     </div>
   )
