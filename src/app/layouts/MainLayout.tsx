@@ -94,7 +94,7 @@ export function MainLayout() {
         currentUser={currentUser || undefined}
         onLogout={handleLogout}
       />
-      <main className="flex-1 h-full overflow-hidden">
+      <main className="flex-1 h-full overflow-auto">
         <Outlet />
       </main>
     </div>

@@ -48,20 +48,34 @@ export interface DashboardMetrics {
 
 export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
   // Aggregate from multiple endpoints
-  const [analytics, channels] = await Promise.all([
-    fetchAnalytics(),
-    apiGet<{ channels: any[] }>('/channels')
-  ])
+  try {
+    const [analytics, channelsData] = await Promise.all([
+      fetchAnalytics(),
+      apiGet<{ channels: any[] }>('/channels').catch(() => ({ channels: [] }))
+    ])
 
-  const awaitingChannels = channels.channels.filter(c => c.awaitingReply).length
+    const channels = channelsData?.channels || []
+    const awaitingChannels = channels.filter((c: any) => c?.awaitingReply).length
 
-  return {
-    waiting: awaitingChannels,
-    avgResponseTime: `${Math.round(analytics.channels.avgFirstResponse)}м`,
-    slaPercent: 95, // TODO: calculate from data
-    urgentCases: analytics.cases.urgent,
-    resolvedToday: analytics.cases.resolved,
-    totalChannels: analytics.channels.total,
-    activeAgents: 0 // TODO: from agents endpoint
+    return {
+      waiting: awaitingChannels,
+      avgResponseTime: `${Math.round(analytics?.channels?.avgFirstResponse || 0)}м`,
+      slaPercent: 95,
+      urgentCases: analytics?.cases?.urgent || 0,
+      resolvedToday: analytics?.cases?.resolved || 0,
+      totalChannels: analytics?.channels?.total || 0,
+      activeAgents: 0
+    }
+  } catch (error) {
+    console.error('Failed to fetch dashboard metrics:', error)
+    return {
+      waiting: 0,
+      avgResponseTime: '—',
+      slaPercent: 0,
+      urgentCases: 0,
+      resolvedToday: 0,
+      totalChannels: 0,
+      activeAgents: 0
+    }
   }
 }
