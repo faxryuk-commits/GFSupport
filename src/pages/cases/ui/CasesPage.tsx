@@ -1,113 +1,117 @@
-import { useState } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2 } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
-import { CASE_STATUS_CONFIG, KANBAN_STATUSES, type CaseStatus } from '@/entities/case'
+import { CASE_STATUS_CONFIG, KANBAN_STATUSES, type CaseStatus, type Case } from '@/entities/case'
+import { fetchCases, createCase, updateCaseStatus, assignCase } from '@/shared/api'
 
-// Mock agents
-const agents = [
-  { id: '1', name: 'Sarah Jenkins' },
-  { id: '2', name: 'Mike Chen' },
-  { id: '3', name: 'Emily Patel' },
-  { id: '4', name: 'David Lee' },
-]
+// Маппинг Case в CaseCardData для отображения
+function mapCaseToCardData(c: Case): CaseCardData {
+  return {
+    id: c.id,
+    number: c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 8),
+    title: c.title,
+    company: c.companyName,
+    priority: c.priority,
+    category: c.category,
+    time: c.createdAt,
+    assignee: c.assignedTo ? { id: c.assignedTo, name: c.assigneeName } : undefined,
+    commentsCount: c.messagesCount,
+  }
+}
 
-// Mock data
-const mockCases: CaseDetail[] = [
-  { 
-    id: '1', number: '#001', title: 'Ошибка API интеграции', 
-    description: 'Клиент сообщает об ошибке 500 при создании заказов.',
-    company: 'Acme Corp', contactName: 'John Smith', contactEmail: 'john@acmecorp.com',
-    priority: 'high', category: 'Техническая', status: 'detected', createdAt: '30 янв 2024, 10:15',
-    assignee: { id: '1', name: 'Sarah Jenkins' },
-    comments: [
-      { id: '1', author: 'John Smith', text: 'Срочно, заказы не проходят!', time: '2ч назад', isInternal: false },
-    ],
-    tags: ['API', 'Срочно'],
-    linkedChats: ['chat-123'],
-    attachments: [{ name: 'error_log.txt', size: '12 KB' }],
-    history: [{ id: '1', action: 'Кейс создан', user: 'Система', time: '2ч назад' }]
-  },
-  { 
-    id: '2', number: '#002', title: 'Ошибка платёжного шлюза',
-    description: 'Платежи не проходят для карт Visa.',
-    company: 'TechSolutions', contactName: 'Maria Garcia', contactEmail: 'maria@techsolutions.io',
-    priority: 'critical', category: 'Оплата', status: 'in_progress', createdAt: '30 янв 2024, 09:30',
-    assignee: { id: '2', name: 'Mike Chen' },
-    comments: [], tags: ['Платежи', 'Критично'], linkedChats: [], attachments: [], history: []
-  },
-  { 
-    id: '3', number: '#003', title: 'Проблема с правами доступа',
-    description: 'Админы не могут зайти в настройки.',
-    company: 'Cyberdyne', contactName: 'Alex Johnson', contactEmail: 'alex@cyberdyne.io',
-    priority: 'medium', category: 'Безопасность', status: 'waiting', createdAt: '29 янв 2024, 14:00',
-    comments: [], tags: ['Права'], linkedChats: [], attachments: [], history: []
-  },
-  { 
-    id: '4', number: '#004', title: 'Таймаут базы данных',
-    description: 'Периодические таймауты БД.',
-    company: 'Umbrella Corp', contactName: 'Emma Wilson', contactEmail: 'emma@umbrella.io',
-    priority: 'high', category: 'Инфраструктура', status: 'blocked', createdAt: '30 янв 2024, 08:00',
-    assignee: { id: '3', name: 'Emily Patel' },
-    comments: [], tags: ['БД'], linkedChats: [], attachments: [], history: []
-  },
-  { 
-    id: '5', number: '#005', title: 'Ошибка входа',
-    description: 'Пользователи не могут войти.',
-    company: 'Globex Inc', contactName: 'Robert Kim', contactEmail: 'robert@globex.io',
-    priority: 'medium', category: 'Доступ', status: 'detected', createdAt: '30 янв 2024, 07:45',
-    comments: [], tags: ['Вход'], linkedChats: [], attachments: [], history: []
-  },
-  { 
-    id: '6', number: '#006', title: 'Email рассылка не работает',
-    description: 'Уведомления не доставляются.',
-    company: 'Hooli', contactName: 'James Brown', contactEmail: 'james@hooli.io',
-    priority: 'medium', category: 'Коммуникация', status: 'resolved', createdAt: '29 янв 2024, 11:00',
-    assignee: { id: '1', name: 'Sarah Jenkins' },
-    comments: [], tags: ['Email'], linkedChats: [], attachments: [], history: []
-  },
-]
+// Маппинг Case в CaseDetail для модального окна
+function mapCaseToCaseDetail(c: Case): CaseDetail {
+  return {
+    id: c.id,
+    number: c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 8),
+    title: c.title,
+    description: c.description,
+    company: c.companyName,
+    contactName: '',
+    contactEmail: '',
+    priority: c.priority,
+    category: c.category,
+    status: c.status,
+    createdAt: c.createdAt,
+    assignee: c.assignedTo ? { id: c.assignedTo, name: c.assigneeName } : undefined,
+    comments: [],
+    tags: [],
+    linkedChats: [c.channelId],
+    attachments: [],
+    history: [],
+  }
+}
 
 export function CasesPage() {
-  const [cases, setCases] = useState(mockCases)
+  const [cases, setCases] = useState<Case[]>([])
+  const [agents] = useState<{ id: string; name: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'my' | 'urgent'>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedCase, setSelectedCase] = useState<CaseDetail | null>(null)
+  const [selectedCase, setSelectedCase] = useState<Case | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [draggedCase, setDraggedCase] = useState<string | null>(null)
+  const [_updatingStatus, setUpdatingStatus] = useState<string | null>(null)
+
+  // Загрузка кейсов при монтировании
+  const loadCases = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await fetchCases()
+      setCases(response.cases)
+    } catch (err) {
+      setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
+      console.error('Ошибка загрузки кейсов:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadCases()
+  }, [loadCases])
 
   const getCasesByStatus = (status: CaseStatus): CaseCardData[] => {
     return cases
       .filter(c => {
         const matchesStatus = c.status === status
         const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                             c.company.toLowerCase().includes(searchQuery.toLowerCase())
+                             c.companyName.toLowerCase().includes(searchQuery.toLowerCase())
         const matchesFilter = filter === 'all' || 
-                            (filter === 'my' && c.assignee?.id === '1') ||
+                            (filter === 'my' && c.assignedTo === '1') ||
                             (filter === 'urgent' && (c.priority === 'high' || c.priority === 'critical'))
         return matchesStatus && matchesSearch && matchesFilter
       })
-      .map(c => ({
-        id: c.id,
-        number: c.number,
-        title: c.title,
-        company: c.company,
-        priority: c.priority,
-        category: c.category,
-        time: c.createdAt,
-        assignee: c.assignee,
-        commentsCount: c.comments.length,
-      }))
+      .map(mapCaseToCardData)
   }
 
   const handleDragStart = (caseId: string) => setDraggedCase(caseId)
   const handleDragOver = (e: React.DragEvent) => e.preventDefault()
-  const handleDrop = (status: CaseStatus) => {
-    if (draggedCase) {
-      setCases(prev => prev.map(c => c.id === draggedCase ? { ...c, status } : c))
-      setDraggedCase(null)
+  
+  const handleDrop = async (status: CaseStatus) => {
+    if (!draggedCase) return
+    
+    const caseId = draggedCase
+    setDraggedCase(null)
+    
+    // Оптимистичное обновление UI
+    const previousCases = [...cases]
+    setCases(prev => prev.map(c => c.id === caseId ? { ...c, status } : c))
+    
+    try {
+      setUpdatingStatus(caseId)
+      await updateCaseStatus(caseId, status)
+    } catch (err) {
+      // Откат при ошибке
+      setCases(previousCases)
+      console.error('Ошибка обновления статуса:', err)
+    } finally {
+      setUpdatingStatus(null)
     }
   }
 
@@ -119,21 +123,49 @@ export function CasesPage() {
     }
   }
 
-  const handleStatusChange = (caseId: string, newStatus: CaseStatus) => {
+  const handleStatusChange = async (caseId: string, newStatus: CaseStatus) => {
+    // Оптимистичное обновление UI
+    const previousCases = [...cases]
     setCases(prev => prev.map(c => c.id === caseId ? { ...c, status: newStatus } : c))
     if (selectedCase?.id === caseId) {
       setSelectedCase(prev => prev ? { ...prev, status: newStatus } : null)
     }
+    
+    try {
+      await updateCaseStatus(caseId, newStatus)
+    } catch (err) {
+      // Откат при ошибке
+      setCases(previousCases)
+      if (selectedCase?.id === caseId) {
+        const originalCase = previousCases.find(c => c.id === caseId)
+        if (originalCase) {
+          setSelectedCase(originalCase)
+        }
+      }
+      console.error('Ошибка обновления статуса:', err)
+    }
   }
 
-  const handleAssign = (caseId: string, agent: { id: string; name: string } | null) => {
-    setCases(prev => prev.map(c => c.id === caseId ? { ...c, assignee: agent || undefined } : c))
+  const handleAssign = async (caseId: string, agent: { id: string; name: string } | null) => {
+    // Оптимистичное обновление UI
+    const previousCases = [...cases]
+    setCases(prev => prev.map(c => c.id === caseId ? { 
+      ...c, 
+      assignedTo: agent?.id || '', 
+      assigneeName: agent?.name || '' 
+    } : c))
+    
+    try {
+      await assignCase(caseId, agent?.id || '')
+    } catch (err) {
+      // Откат при ошибке
+      setCases(previousCases)
+      console.error('Ошибка назначения агента:', err)
+    }
   }
 
-  const handleAddComment = (caseId: string, text: string, isInternal: boolean) => {
-    const comment = { id: Date.now().toString(), author: 'Вы', text, time: 'Только что', isInternal }
-    setCases(prev => prev.map(c => c.id === caseId ? { ...c, comments: [...c.comments, comment] } : c))
-    setSelectedCase(prev => prev ? { ...prev, comments: [...prev.comments, comment] } : null)
+  const handleAddComment = (_caseId: string, _text: string, _isInternal: boolean) => {
+    // TODO: Implement comment API
   }
 
   const handleDeleteCase = () => {
@@ -145,21 +177,49 @@ export function CasesPage() {
     }
   }
 
-  const handleCreateCase = (data: any) => {
-    const newCase: CaseDetail = {
-      id: Date.now().toString(),
-      number: `#${String(cases.length + 1).padStart(3, '0')}`,
-      ...data,
-      status: 'detected' as CaseStatus,
-      createdAt: new Date().toLocaleString('ru-RU'),
-      comments: [],
-      tags: [],
-      linkedChats: [],
-      attachments: [],
-      history: [{ id: '1', action: 'Кейс создан', user: 'Вы', time: 'Только что' }]
+  const handleCreateCase = async (data: { title: string; description?: string; category?: string; priority?: string }) => {
+    try {
+      const newCase = await createCase({
+        channelId: '', // Будет создан без привязки к каналу
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        priority: data.priority,
+      })
+      setCases(prev => [...prev, newCase])
+      setIsCreateModalOpen(false)
+    } catch (err) {
+      console.error('Ошибка создания кейса:', err)
     }
-    setCases(prev => [...prev, newCase])
-    setIsCreateModalOpen(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <p className="text-slate-500">Загрузка кейсов...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AlertTriangle className="w-8 h-8 text-red-500" />
+          <p className="text-slate-700 font-medium">Ошибка загрузки</p>
+          <p className="text-slate-500 text-sm">{error}</p>
+          <button 
+            onClick={loadCases}
+            className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            Попробовать снова
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -196,12 +256,12 @@ export function CasesPage() {
         <div className="flex gap-2 mb-6 flex-shrink-0">
           {[
             { key: 'all', label: 'Все', icon: Filter, count: cases.length },
-            { key: 'my', label: 'Мои', icon: User, count: cases.filter(c => c.assignee?.id === '1').length },
+            { key: 'my', label: 'Мои', icon: User, count: cases.filter(c => c.assignedTo === '1').length },
             { key: 'urgent', label: 'Срочные', icon: AlertTriangle, count: cases.filter(c => c.priority === 'high' || c.priority === 'critical').length },
           ].map(f => (
             <button
               key={f.key}
-              onClick={() => setFilter(f.key as any)}
+              onClick={() => setFilter(f.key as 'all' | 'my' | 'urgent')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 filter === f.key ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
               }`}
@@ -273,7 +333,7 @@ export function CasesPage() {
       <CaseDetailModal
         isOpen={isDetailModalOpen}
         onClose={() => setIsDetailModalOpen(false)}
-        caseData={selectedCase}
+        caseData={selectedCase ? mapCaseToCaseDetail(selectedCase) : null}
         agents={agents}
         onStatusChange={handleStatusChange}
         onAssign={handleAssign}
@@ -287,7 +347,7 @@ export function CasesPage() {
         onClose={() => setIsDeleteDialogOpen(false)}
         onConfirm={handleDeleteCase}
         title="Удалить кейс"
-        message={`Вы уверены, что хотите удалить кейс ${selectedCase?.number}?`}
+        message={`Вы уверены, что хотите удалить кейс ${selectedCase?.ticketNumber ? `#${selectedCase.ticketNumber}` : selectedCase?.id}?`}
         confirmText="Удалить"
         variant="danger"
       />

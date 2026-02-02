@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw, AlertCircle, Loader2 } from 'lucide-react'
 import {
   GeneralSettings,
   NotificationsSettings,
@@ -15,6 +15,13 @@ import {
   type ApiKey,
   type AppearanceSettingsData,
 } from '@/features/settings/ui'
+import {
+  fetchSettings,
+  updateSettings,
+  testBotConnection,
+  type BackendSettings,
+  type EnvStatus,
+} from '@/shared/api'
 
 type SettingsTab = 'general' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
@@ -27,7 +34,7 @@ const tabs: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
   { id: 'appearance', label: 'Внешний вид', icon: Palette },
 ]
 
-// Initial data
+// Initial data for local settings (not stored in backend yet)
 const initialNotifications: NotificationSetting[] = [
   { id: '1', label: 'Новые сообщения', description: 'Когда клиент отправляет сообщение', email: true, push: true, inApp: true },
   { id: '2', label: 'Назначения кейсов', description: 'Когда вам назначают кейс', email: true, push: true, inApp: true },
@@ -37,28 +44,20 @@ const initialNotifications: NotificationSetting[] = [
   { id: '6', label: 'Ежедневная сводка', description: 'Ежедневный отчёт активности', email: true, push: false, inApp: false },
 ]
 
-const initialIntegrations: Integration[] = [
-  { id: '1', name: 'Telegram Bot', description: 'Подключение к Telegram', icon: '📱', status: 'connected', lastSync: '2 мин назад' },
-  { id: '2', name: 'Slack', description: 'Уведомления в Slack', icon: '💬', status: 'connected', lastSync: '5 мин назад' },
-  { id: '3', name: 'Email (SMTP)', description: 'Отправка email через SMTP', icon: '✉️', status: 'connected', lastSync: '1 час назад' },
-  { id: '4', name: 'Webhook', description: 'Отправка событий во внешние сервисы', icon: '🔗', status: 'disconnected' },
-  { id: '5', name: 'Zapier', description: 'Подключение к 5000+ приложений', icon: '⚡', status: 'error', lastSync: 'Ошибка' },
-]
-
-const initialApiKeys: ApiKey[] = [
-  { id: '1', name: 'Production API', key: 'sk_live_abc123...xyz789', createdAt: '15 янв 2024', lastUsed: 'Сегодня', permissions: ['read', 'write'] },
-  { id: '2', name: 'Development', key: 'sk_test_def456...uvw012', createdAt: '20 янв 2024', lastUsed: 'Вчера', permissions: ['read'] },
-  { id: '3', name: 'Webhook Service', key: 'sk_hook_ghi789...rst345', createdAt: '1 фев 2024', permissions: ['webhook'] },
-]
+const initialApiKeys: ApiKey[] = []
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [envStatus, setEnvStatus] = useState<EnvStatus | null>(null)
 
   // Settings state
   const [generalSettings, setGeneralSettings] = useState<GeneralSettingsData>({
     companyName: 'Support System',
-    botToken: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz',
+    botToken: '',
     defaultLanguage: 'ru',
     timezone: 'UTC+5',
     autoCreateCases: true,
@@ -76,7 +75,7 @@ export function SettingsPage() {
   })
 
   const [notifications, setNotifications] = useState(initialNotifications)
-  const [integrations, setIntegrations] = useState(initialIntegrations)
+  const [integrations, setIntegrations] = useState<Integration[]>([])
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null)
   const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState(false)
 
@@ -96,19 +95,133 @@ export function SettingsPage() {
     compactMode: false,
   })
 
-  // Handlers
+  // Загрузка настроек с сервера
+  const loadSettings = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      
+      const response = await fetchSettings()
+      const { settings, envStatus: env } = response
+      
+      setEnvStatus(env)
+      
+      // Маппинг настроек бэкенда на фронтенд
+      setGeneralSettings(prev => ({
+        ...prev,
+        botToken: settings.telegram_bot_token || '',
+        autoCreateCases: settings.auto_create_cases,
+      }))
+      
+      setResponseSettings(prev => ({
+        ...prev,
+        workingHoursStart: `${String(settings.working_hours_start).padStart(2, '0')}:00`,
+        workingHoursEnd: `${String(settings.working_hours_end).padStart(2, '0')}:00`,
+      }))
+
+      // Формируем интеграции на основе envStatus
+      const telegramConnected = env.TELEGRAM_BOT_TOKEN || !!settings.telegram_bot_token
+      const openaiConnected = env.OPENAI_API_KEY || !!settings.openai_api_key
+      
+      setIntegrations([
+        { 
+          id: '1', 
+          name: 'Telegram Bot', 
+          description: settings.telegram_bot_username ? `@${settings.telegram_bot_username}` : 'Подключение к Telegram', 
+          icon: '📱', 
+          status: telegramConnected ? 'connected' : 'disconnected',
+          lastSync: telegramConnected ? 'Подключено' : undefined
+        },
+        { 
+          id: '2', 
+          name: 'OpenAI API', 
+          description: `Модель: ${settings.ai_model}`, 
+          icon: '🤖', 
+          status: openaiConnected ? 'connected' : 'disconnected',
+          lastSync: openaiConnected ? 'Активно' : undefined
+        },
+        { 
+          id: '3', 
+          name: 'Whisper (Транскрибация)', 
+          description: `Язык: ${settings.whisper_language === 'ru' ? 'Русский' : settings.whisper_language}`, 
+          icon: '🎤', 
+          status: settings.auto_transcribe_voice ? 'connected' : 'disconnected',
+          lastSync: settings.auto_transcribe_voice ? 'Включено' : undefined
+        },
+        { 
+          id: '4', 
+          name: 'Уведомления в Telegram', 
+          description: settings.notify_chat_id ? `Chat ID: ${settings.notify_chat_id}` : 'Не настроено', 
+          icon: '🔔', 
+          status: settings.notify_on_problem && settings.notify_chat_id ? 'connected' : 'disconnected',
+          lastSync: settings.notify_on_problem ? 'Активно' : undefined
+        },
+      ])
+      
+    } catch (err) {
+      console.error('Ошибка загрузки настроек:', err)
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить настройки')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadSettings()
+  }, [loadSettings])
+
+  // Сохранение настроек
   const handleSave = async () => {
-    setIsSaving(true)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSaving(false)
+    try {
+      setIsSaving(true)
+      setError(null)
+      setSaveMessage(null)
+      
+      // Формируем данные для отправки на сервер
+      const settingsToSave: Partial<BackendSettings> = {
+        auto_create_cases: generalSettings.autoCreateCases,
+        working_hours_start: parseInt(responseSettings.workingHoursStart.split(':')[0]),
+        working_hours_end: parseInt(responseSettings.workingHoursEnd.split(':')[0]),
+      }
+      
+      const response = await updateSettings(settingsToSave)
+      
+      if (response.success) {
+        setSaveMessage(`Сохранено: ${response.updated.length} настроек`)
+        setTimeout(() => setSaveMessage(null), 3000)
+      }
+    } catch (err) {
+      console.error('Ошибка сохранения:', err)
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить настройки')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Тест подключения бота
+  const handleTestBot = async () => {
+    try {
+      const response = await testBotConnection()
+      if (response.success && response.bot) {
+        setSaveMessage(`Бот подключен: @${response.bot.username}`)
+        setTimeout(() => setSaveMessage(null), 5000)
+      } else {
+        setError(response.error || 'Не удалось подключиться к боту')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка тестирования бота')
+    }
   }
 
   const handleToggleNotification = (id: string, field: 'email' | 'push' | 'inApp') => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, [field]: !n[field] } : n))
   }
 
-  const handleConnectIntegration = (integration: Integration) => {
-    setIntegrations(prev => prev.map(i => i.id === integration.id ? { ...i, status: 'connected', lastSync: 'Только что' } : i))
+  const handleConnectIntegration = async (integration: Integration) => {
+    if (integration.id === '1') {
+      // Тест подключения Telegram бота
+      await handleTestBot()
+    }
     setIsIntegrationModalOpen(false)
   }
 
@@ -131,22 +244,94 @@ export function SettingsPage() {
     setApiKeys(prev => [...prev, newKey])
   }
 
+  // Состояние загрузки
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <div className="flex items-center justify-center h-[60vh]">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto mb-4" />
+            <p className="text-slate-600">Загрузка настроек...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {/* Уведомление об ошибке */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-red-800 font-medium">Ошибка</p>
+            <p className="text-red-600 text-sm mt-1">{error}</p>
+          </div>
+          <button 
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-600"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Уведомление об успешном сохранении */}
+      {saveMessage && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+          <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs">✓</span>
+          </div>
+          <p className="text-green-800">{saveMessage}</p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Настройки</h1>
           <p className="text-slate-500 mt-0.5">Управление параметрами системы</p>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
-        >
-          {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {isSaving ? 'Сохранение...' : 'Сохранить'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={loadSettings}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Обновить
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+          >
+            {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {isSaving ? 'Сохранение...' : 'Сохранить'}
+          </button>
+        </div>
       </div>
+
+      {/* Статус переменных окружения */}
+      {envStatus && (
+        <div className="mb-6 p-4 bg-slate-50 rounded-xl">
+          <p className="text-sm font-medium text-slate-700 mb-2">Статус переменных окружения:</p>
+          <div className="flex gap-4 text-sm">
+            <span className={`flex items-center gap-1.5 ${envStatus.TELEGRAM_BOT_TOKEN ? 'text-green-600' : 'text-slate-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${envStatus.TELEGRAM_BOT_TOKEN ? 'bg-green-500' : 'bg-slate-300'}`}></span>
+              TELEGRAM_BOT_TOKEN
+            </span>
+            <span className={`flex items-center gap-1.5 ${envStatus.OPENAI_API_KEY ? 'text-green-600' : 'text-slate-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${envStatus.OPENAI_API_KEY ? 'bg-green-500' : 'bg-slate-300'}`}></span>
+              OPENAI_API_KEY
+            </span>
+            <span className={`flex items-center gap-1.5 ${envStatus.TELEGRAM_CHAT_ID ? 'text-green-600' : 'text-slate-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${envStatus.TELEGRAM_CHAT_ID ? 'bg-green-500' : 'bg-slate-300'}`}></span>
+              TELEGRAM_CHAT_ID
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-6">
         {/* Sidebar */}

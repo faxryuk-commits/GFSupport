@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { 
   Clock, AlertTriangle, MessageSquare, ChevronRight, TrendingUp, TrendingDown,
@@ -6,17 +6,11 @@ import {
   Activity, Target
 } from 'lucide-react'
 import { Avatar, Badge, EmptyState, LoadingState } from '@/shared/ui'
-
-// Types
-interface Metric {
-  label: string
-  value: string | number
-  change?: number
-  changeLabel?: string
-  icon: typeof Clock
-  color: string
-  trend?: 'up' | 'down' | 'neutral'
-}
+import { fetchDashboardMetrics, fetchAnalytics, type DashboardMetrics, type AnalyticsData } from '@/shared/api'
+import { fetchChannels } from '@/shared/api'
+import { fetchAgents } from '@/shared/api'
+import type { Channel } from '@/entities/channel'
+import type { Agent } from '@/entities/agent'
 
 interface AttentionItem {
   id: string
@@ -35,79 +29,109 @@ interface RecentActivity {
   description: string
   time: string
   user?: string
-  userAvatar?: string
 }
-
-interface AgentStatus {
-  id: string
-  name: string
-  avatar?: string
-  status: 'online' | 'away' | 'busy' | 'offline'
-  activeCases: number
-  todayResolved: number
-}
-
-// Mock data
-const mockMetrics: Metric[] = [
-  { label: 'Waiting', value: 7, change: -2, changeLabel: 'vs yesterday', icon: Clock, color: 'blue', trend: 'down' },
-  { label: 'Avg Response', value: '4m 32s', change: -15, changeLabel: '15% faster', icon: Zap, color: 'green', trend: 'down' },
-  { label: 'SLA Met', value: '98.5%', change: 2.5, changeLabel: 'vs last week', icon: Target, color: 'emerald', trend: 'up' },
-  { label: 'Open Cases', value: 23, change: 5, changeLabel: 'new today', icon: Briefcase, color: 'amber', trend: 'up' },
-]
-
-const mockNeedsAttention: AttentionItem[] = [
-  { id: '1', name: 'Acme Corp', waitTime: '14m', issue: 'Critical API integration failure affecting orders', priority: 'urgent', type: 'chat' },
-  { id: '2', name: 'TechSolutions', waitTime: '10m', issue: 'Payment gateway returns error 500', priority: 'high', type: 'case' },
-  { id: '3', name: 'Global Finance', waitTime: '8m', issue: 'Unable to access dashboard after update', priority: 'normal', type: 'chat' },
-  { id: '4', name: 'StartupXYZ', waitTime: '5m', issue: 'Feature request for bulk export', priority: 'normal', type: 'chat' },
-]
-
-const mockRecentActivity: RecentActivity[] = [
-  { id: '1', type: 'case_resolved', title: 'Case #1234 Resolved', description: 'Payment issue for Enterprise Inc', time: '2m ago', user: 'Sarah J.' },
-  { id: '2', type: 'message', title: 'New message from VIP', description: 'Acme Corp sent a new message', time: '5m ago' },
-  { id: '3', type: 'assignment', title: 'Case assigned', description: 'Case #1235 assigned to Mike Chen', time: '12m ago', user: 'System' },
-  { id: '4', type: 'case_created', title: 'New case created', description: 'High priority issue from TechCorp', time: '18m ago' },
-  { id: '5', type: 'case_resolved', title: 'Case #1233 Resolved', description: 'Login issue for Local Café', time: '25m ago', user: 'Emily P.' },
-]
-
-const mockAgentStatuses: AgentStatus[] = [
-  { id: '1', name: 'Sarah Jenkins', status: 'online', activeCases: 5, todayResolved: 12 },
-  { id: '2', name: 'Mike Chen', status: 'busy', activeCases: 8, todayResolved: 8 },
-  { id: '3', name: 'Emily Patel', status: 'online', activeCases: 3, todayResolved: 15 },
-  { id: '4', name: 'David Lee', status: 'away', activeCases: 2, todayResolved: 6 },
-  { id: '5', name: 'Jessica Kim', status: 'offline', activeCases: 0, todayResolved: 10 },
-]
-
-const hourlyData = [
-  { hour: '8AM', messages: 12, cases: 2 },
-  { hour: '9AM', messages: 28, cases: 5 },
-  { hour: '10AM', messages: 45, cases: 8 },
-  { hour: '11AM', messages: 38, cases: 6 },
-  { hour: '12PM', messages: 22, cases: 3 },
-  { hour: '1PM', messages: 35, cases: 7 },
-  { hour: '2PM', messages: 52, cases: 9 },
-  { hour: '3PM', messages: 48, cases: 8 },
-  { hour: '4PM', messages: 40, cases: 6 },
-  { hour: '5PM', messages: 25, cases: 4 },
-]
 
 export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState('today')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  
+  // Data states
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
+  const [_channels, setChannels] = useState<Channel[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [needsAttention, setNeedsAttention] = useState<AttentionItem[]>([])
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+
+  const loadData = useCallback(async () => {
+    try {
+      setError(null)
+      
+      const [metricsData, analyticsData, channelsData, agentsData] = await Promise.all([
+        fetchDashboardMetrics(),
+        fetchAnalytics(dateRange),
+        fetchChannels(),
+        fetchAgents()
+      ])
+
+      setMetrics(metricsData)
+      setAnalytics(analyticsData)
+      setChannels(channelsData)
+      setAgents(agentsData)
+
+      // Build needs attention from channels awaiting reply
+      const attentionItems: AttentionItem[] = channelsData
+        .filter(ch => ch.awaitingReply)
+        .slice(0, 5)
+        .map(ch => ({
+          id: ch.id,
+          name: ch.name || ch.companyName || `Канал ${ch.id}`,
+          waitTime: formatWaitTime(ch.lastMessageAt ?? undefined),
+          issue: ch.lastMessageText || 'Ожидает ответа',
+          priority: ch.unreadCount > 5 ? 'urgent' : ch.unreadCount > 2 ? 'high' : 'normal',
+          type: 'chat' as const
+        }))
+      setNeedsAttention(attentionItems)
+
+      // Recent activity from analytics
+      if (analyticsData.team?.dailyTrend) {
+        const activities: RecentActivity[] = []
+        // Add some recent activity based on analytics data
+        if (analyticsData.cases.resolved > 0) {
+          activities.push({
+            id: '1',
+            type: 'case_resolved',
+            title: `${analyticsData.cases.resolved} кейсов решено`,
+            description: 'За выбранный период',
+            time: 'сегодня'
+          })
+        }
+        if (analyticsData.messages.total > 0) {
+          activities.push({
+            id: '2',
+            type: 'message',
+            title: `${analyticsData.messages.total} сообщений`,
+            description: 'Обработано за период',
+            time: 'сегодня'
+          })
+        }
+        setRecentActivity(activities)
+      }
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err)
+      setError('Не удалось загрузить данные')
+    } finally {
+      setIsLoading(false)
+      setIsRefreshing(false)
+    }
+  }, [dateRange])
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000)
-    return () => clearTimeout(timer)
-  }, [])
+    loadData()
+  }, [loadData])
 
   const handleRefresh = () => {
     setIsRefreshing(true)
-    setTimeout(() => setIsRefreshing(false), 1500)
+    loadData()
   }
 
   if (isLoading) {
-    return <LoadingState text="Loading dashboard..." />
+    return <LoadingState text="Загрузка дашборда..." />
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon={<AlertTriangle className="w-12 h-12 text-red-500" />}
+          title="Ошибка загрузки"
+          description={error}
+          action={{ label: 'Повторить', onClick: loadData }}
+        />
+      </div>
+    )
   }
 
   const priorityColors = {
@@ -130,20 +154,55 @@ export function DashboardPage() {
     assignment: 'bg-purple-100 text-purple-600',
   }
 
-  const statusColors = {
+  const statusColors: Record<string, string> = {
     online: 'bg-green-500',
     away: 'bg-amber-500',
     busy: 'bg-red-500',
     offline: 'bg-slate-300',
   }
 
+  const metricsDisplay = [
+    { 
+      label: 'Ожидают ответа', 
+      value: metrics?.waiting || 0, 
+      icon: Clock, 
+      color: 'blue',
+      trend: 'neutral' as const
+    },
+    { 
+      label: 'Среднее время', 
+      value: metrics?.avgResponseTime || '-', 
+      icon: Zap, 
+      color: 'green',
+      trend: 'neutral' as const
+    },
+    { 
+      label: 'SLA выполнено', 
+      value: `${metrics?.slaPercent || 0}%`, 
+      icon: Target, 
+      color: 'emerald',
+      trend: 'up' as const
+    },
+    { 
+      label: 'Открытых кейсов', 
+      value: analytics?.cases.open || 0, 
+      icon: Briefcase, 
+      color: 'amber',
+      trend: 'neutral' as const
+    },
+  ]
+
+  // Calculate online agents
+  const onlineAgents = agents.filter(a => a.status === 'online' || a.status === 'away')
+  const resolvedToday = analytics?.cases.resolved || 0
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-500 mt-0.5">Welcome back! Here's what's happening today.</p>
+          <h1 className="text-2xl font-bold text-slate-800">Обзор</h1>
+          <p className="text-slate-500 mt-0.5">Добро пожаловать! Вот что происходит сегодня.</p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -151,10 +210,10 @@ export function DashboardPage() {
             onChange={(e) => setDateRange(e.target.value)}
             className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
-            <option value="today">Today</option>
-            <option value="yesterday">Yesterday</option>
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
+            <option value="today">Сегодня</option>
+            <option value="yesterday">Вчера</option>
+            <option value="week">Эта неделя</option>
+            <option value="month">Этот месяц</option>
           </select>
           <button
             onClick={handleRefresh}
@@ -162,14 +221,14 @@ export function DashboardPage() {
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh
+            Обновить
           </button>
         </div>
       </div>
 
       {/* Metrics */}
       <div className="grid grid-cols-4 gap-4">
-        {mockMetrics.map((metric, i) => {
+        {metricsDisplay.map((metric, i) => {
           const Icon = metric.icon
           return (
             <div key={i} className="bg-white rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow">
@@ -177,23 +236,17 @@ export function DashboardPage() {
                 <div className={`w-10 h-10 rounded-lg bg-${metric.color}-100 flex items-center justify-center`}>
                   <Icon className={`w-5 h-5 text-${metric.color}-600`} />
                 </div>
-                {metric.change !== undefined && (
+                {metric.trend !== 'neutral' && (
                   <div className={`flex items-center gap-1 text-xs font-medium ${
-                    metric.trend === 'up' ? (metric.label === 'Open Cases' ? 'text-amber-600' : 'text-green-600') :
-                    metric.trend === 'down' ? (metric.label === 'Waiting' || metric.label === 'Avg Response' ? 'text-green-600' : 'text-red-600') :
-                    'text-slate-500'
+                    metric.trend === 'up' ? 'text-green-600' : 'text-red-600'
                   }`}>
                     {metric.trend === 'up' ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                    {Math.abs(metric.change)}%
                   </div>
                 )}
               </div>
               <div className="mt-3">
                 <p className="text-2xl font-bold text-slate-800">{metric.value}</p>
                 <p className="text-sm text-slate-500 mt-0.5">{metric.label}</p>
-                {metric.changeLabel && (
-                  <p className="text-xs text-slate-400 mt-1">{metric.changeLabel}</p>
-                )}
               </div>
             </div>
           )
@@ -206,25 +259,25 @@ export function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
-              <h2 className="font-semibold text-slate-800">Needs Attention</h2>
-              <Badge variant="warning" size="sm">{mockNeedsAttention.length}</Badge>
+              <h2 className="font-semibold text-slate-800">Требует внимания</h2>
+              <Badge variant="warning" size="sm">{needsAttention.length}</Badge>
             </div>
             <Link to="/chats" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
-              View all <ArrowUpRight className="w-3.5 h-3.5" />
+              Все <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
           </div>
           <div className="divide-y divide-slate-100">
-            {mockNeedsAttention.length === 0 ? (
+            {needsAttention.length === 0 ? (
               <EmptyState
-                title="All caught up!"
-                description="No items need your attention right now"
+                title="Всё обработано!"
+                description="Нет диалогов, требующих внимания"
                 size="sm"
               />
             ) : (
-              mockNeedsAttention.map(item => (
+              needsAttention.map(item => (
                 <Link
                   key={item.id}
-                  to={item.type === 'chat' ? `/chats/${item.id}` : `/cases/${item.id}`}
+                  to={`/chats/${item.id}`}
                   className={`flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors border-l-4 ${
                     item.priority === 'urgent' ? 'border-l-red-500 bg-red-50/30' :
                     item.priority === 'high' ? 'border-l-orange-500' :
@@ -237,20 +290,15 @@ export function DashboardPage() {
                       <span className="font-medium text-slate-800">{item.name}</span>
                       <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${priorityColors[item.priority]}`}>
                         <Clock className="w-3 h-3" />
-                        {item.waitTime} wait
+                        {item.waitTime}
                       </span>
                       {item.priority === 'urgent' && (
-                        <Badge variant="danger" size="sm">URGENT</Badge>
+                        <Badge variant="danger" size="sm">СРОЧНО</Badge>
                       )}
                     </div>
                     <p className="text-sm text-slate-600 truncate mt-0.5">{item.issue}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={item.type === 'chat' ? 'primary' : 'default'} size="sm">
-                      {item.type === 'chat' ? 'Chat' : 'Case'}
-                    </Badge>
-                    <ChevronRight className="w-5 h-5 text-slate-400" />
-                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400" />
                 </Link>
               ))
             )}
@@ -262,79 +310,83 @@ export function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-500" />
-              <h2 className="font-semibold text-slate-800">Team Status</h2>
+              <h2 className="font-semibold text-slate-800">Команда</h2>
             </div>
             <Link to="/team" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
-              Manage <ArrowUpRight className="w-3.5 h-3.5" />
+              Все <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
           </div>
           <div className="divide-y divide-slate-100">
-            {mockAgentStatuses.map(agent => (
-              <div key={agent.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
-                <div className="relative">
-                  <Avatar name={agent.name} size="sm" />
-                  <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${statusColors[agent.status]}`} />
+            {agents.length === 0 ? (
+              <EmptyState
+                title="Нет агентов"
+                description="Добавьте агентов в команду"
+                size="sm"
+              />
+            ) : (
+              agents.slice(0, 5).map(agent => (
+                <div key={agent.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                  <div className="relative">
+                    <Avatar name={agent.name} size="sm" />
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${statusColors[agent.status || 'offline']}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{agent.name}</p>
+                    <p className="text-xs text-slate-500 capitalize">{agent.status || 'offline'}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-slate-800">{agent.metrics?.resolvedConversations || 0}</p>
+                    <p className="text-xs text-slate-500">решено</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{agent.name}</p>
-                  <p className="text-xs text-slate-500 capitalize">{agent.status}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-slate-800">{agent.activeCases}</p>
-                  <p className="text-xs text-slate-500">active</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
           <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Today's resolved:</span>
-              <span className="font-semibold text-green-600">
-                {mockAgentStatuses.reduce((sum, a) => sum + a.todayResolved, 0)} cases
-              </span>
+              <span className="text-slate-600">Онлайн сейчас:</span>
+              <span className="font-semibold text-green-600">{onlineAgents.length} из {agents.length}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
-        {/* Activity Chart */}
+        {/* Stats Overview */}
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Activity className="w-5 h-5 text-blue-500" />
-              <h2 className="font-semibold text-slate-800">Today's Activity</h2>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded bg-blue-500" />
-                Messages
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded bg-emerald-500" />
-                Cases
-              </span>
+              <h2 className="font-semibold text-slate-800">Статистика за период</h2>
             </div>
           </div>
-          <div className="h-48 flex items-end gap-2">
-            {hourlyData.map((data, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex flex-col gap-0.5">
-                  <div 
-                    className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
-                    style={{ height: `${(data.messages / 60) * 120}px` }}
-                    title={`${data.messages} messages`}
-                  />
-                  <div 
-                    className="w-full bg-emerald-500 rounded-b transition-all hover:bg-emerald-600"
-                    style={{ height: `${(data.cases / 10) * 40}px` }}
-                    title={`${data.cases} cases`}
-                  />
-                </div>
-                <span className="text-[10px] text-slate-400">{data.hour}</span>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-2xl font-bold text-blue-600">{analytics?.messages.total || 0}</p>
+              <p className="text-sm text-blue-600/70">Сообщений</p>
+            </div>
+            <div className="p-4 bg-green-50 rounded-lg">
+              <p className="text-2xl font-bold text-green-600">{resolvedToday}</p>
+              <p className="text-sm text-green-600/70">Решено кейсов</p>
+            </div>
+            <div className="p-4 bg-amber-50 rounded-lg">
+              <p className="text-2xl font-bold text-amber-600">{analytics?.cases.urgent || 0}</p>
+              <p className="text-sm text-amber-600/70">Срочных</p>
+            </div>
+          </div>
+          {analytics?.patterns?.recurringProblems && analytics.patterns.recurringProblems.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-slate-700 mb-2">Частые проблемы</h3>
+              <div className="space-y-2">
+                {analytics.patterns.recurringProblems.slice(0, 3).map((problem, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-600">{problem.issue}</span>
+                    <Badge variant="default" size="sm">{problem.count}</Badge>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Recent Activity */}
@@ -342,36 +394,50 @@ export function DashboardPage() {
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <Bell className="w-5 h-5 text-purple-500" />
-              <h2 className="font-semibold text-slate-800">Recent Activity</h2>
+              <h2 className="font-semibold text-slate-800">Активность</h2>
             </div>
           </div>
           <div className="divide-y divide-slate-100 max-h-[280px] overflow-y-auto">
-            {mockRecentActivity.map(activity => {
-              const Icon = activityIcons[activity.type]
-              return (
-                <div key={activity.id} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${activityColors[activity.type]}`}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800">{activity.title}</p>
-                    <p className="text-xs text-slate-500 truncate">{activity.description}</p>
-                    <div className="flex items-center gap-2 mt-1">
+            {recentActivity.length === 0 ? (
+              <div className="p-5 text-center text-sm text-slate-500">
+                Нет активности за период
+              </div>
+            ) : (
+              recentActivity.map(activity => {
+                const Icon = activityIcons[activity.type]
+                return (
+                  <div key={activity.id} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${activityColors[activity.type]}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800">{activity.title}</p>
+                      <p className="text-xs text-slate-500 truncate">{activity.description}</p>
                       <span className="text-xs text-slate-400">{activity.time}</span>
-                      {activity.user && (
-                        <>
-                          <span className="text-xs text-slate-300">•</span>
-                          <span className="text-xs text-slate-500">{activity.user}</span>
-                        </>
-                      )}
                     </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+// Helper function
+function formatWaitTime(lastMessageAt?: string): string {
+  if (!lastMessageAt) return '-'
+  
+  const diff = Date.now() - new Date(lastMessageAt).getTime()
+  const minutes = Math.floor(diff / 60000)
+  
+  if (minutes < 1) return 'только что'
+  if (minutes < 60) return `${minutes}м`
+  
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}ч`
+  
+  return `${Math.floor(hours / 24)}д`
 }

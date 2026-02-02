@@ -1,25 +1,62 @@
-import { useState, useRef, useEffect } from 'react'
-import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video } from 'lucide-react'
-import { Avatar, EmptyState, Modal, ConfirmDialog } from '@/shared/ui'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle } from 'lucide-react'
+import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData } from '@/features/messages/ui'
+import { fetchChannels, fetchMessages, sendMessage, markChannelRead } from '@/shared/api'
+import type { SupportChannel, SupportMessage } from '@/shared/types'
 
-// Mock data
-const mockChannels: ChannelItemData[] = [
-  { id: '1', name: 'Brasserie x Delever', lastMessage: 'Нужна помощь с заказом...', time: '2м', unread: 1, status: 'open', priority: 'high', isPinned: true, tags: ['VIP', 'Заказы'] },
-  { id: '2', name: 'TechCorp Solutions', lastMessage: 'Проблема с заказом #12345', time: '5м', unread: 3, status: 'open', priority: 'urgent', tags: ['Технические'] },
-  { id: '3', name: 'Global Finance', lastMessage: 'Платёж не проходит', time: '1ч', unread: 0, status: 'pending', assignee: 'Sarah J.' },
-  { id: '4', name: 'StartupXYZ', lastMessage: 'Спасибо за помощь!', time: '2ч', unread: 0, status: 'resolved' },
-  { id: '5', name: 'Enterprise Inc', lastMessage: 'Вопрос по биллингу', time: '3ч', unread: 2, status: 'open', priority: 'normal' },
-]
+// Преобразование данных канала из API в формат UI компонента
+function mapChannelToUI(channel: SupportChannel): ChannelItemData {
+  const getRelativeTime = (dateStr: string | null) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMins / 60)
+    const diffDays = Math.floor(diffHours / 24)
+    
+    if (diffMins < 1) return 'только что'
+    if (diffMins < 60) return `${diffMins}м`
+    if (diffHours < 24) return `${diffHours}ч`
+    return `${diffDays}д`
+  }
 
-const mockMessages: MessageData[] = [
-  { id: '1', senderName: 'Brasserie x Delever', text: 'Здравствуйте, можно узнать статус заказа #98765?', time: '10:15', isClient: true },
-  { id: '2', senderName: 'Sarah Jenkins', text: 'Добрый день! Сейчас проверю информацию по вашему заказу.', time: '10:16', isClient: false, status: 'read' },
-  { id: '3', senderName: 'Brasserie x Delever', text: 'Спасибо, ждём. Клиенты спрашивают про специальное меню.', time: '10:17', isClient: true },
-  { id: '4', senderName: 'Sarah Jenkins', text: 'Вижу заказ. Была небольшая задержка из-за погодных условий. Хорошая новость - заказ уже в пути и будет доставлен сегодня до 14:00.', time: '10:18', isClient: false, status: 'read' },
-  { id: '5', senderName: 'Brasserie x Delever', text: 'Отлично! Можете прислать ссылку для отслеживания?', time: '10:19', isClient: true },
-]
+  return {
+    id: channel.id,
+    name: channel.name,
+    avatar: channel.photoUrl,
+    lastMessage: channel.lastMessageText || 'Нет сообщений',
+    time: getRelativeTime(channel.lastMessageAt),
+    unread: channel.unreadCount,
+    status: channel.awaitingReply ? 'open' : 'resolved',
+    priority: channel.awaitingReply ? 'high' : undefined,
+    isPinned: false,
+    isArchived: !channel.isActive,
+  }
+}
+
+// Преобразование сообщения из API в формат UI компонента
+function mapMessageToUI(message: SupportMessage): MessageData {
+  const formatTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  return {
+    id: message.id,
+    senderName: message.senderName,
+    text: message.text || '',
+    time: formatTime(message.createdAt),
+    isClient: message.senderRole === 'client',
+    status: message.isRead ? 'read' : 'delivered',
+    attachments: message.mediaUrl ? [{
+      type: message.mediaType?.startsWith('image') ? 'image' : 'file',
+      name: message.mediaType || 'Файл',
+      url: message.mediaUrl
+    }] : undefined,
+  }
+}
 
 const quickReplies = [
   { id: '1', label: 'Приветствие', text: 'Здравствуйте! Спасибо за обращение. Чем могу помочь?' },
@@ -28,9 +65,21 @@ const quickReplies = [
 ]
 
 export function ChatsPage() {
-  const [channels, setChannels] = useState(mockChannels)
-  const [selectedChannel, setSelectedChannel] = useState<ChannelItemData | null>(mockChannels[0])
-  const [messages, setMessages] = useState(mockMessages)
+  // Данные
+  const [channels, setChannels] = useState<ChannelItemData[]>([])
+  const [selectedChannel, setSelectedChannel] = useState<ChannelItemData | null>(null)
+  const [messages, setMessages] = useState<MessageData[]>([])
+  
+  // Состояния загрузки
+  const [isLoadingChannels, setIsLoadingChannels] = useState(true)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  
+  // Ошибки
+  const [channelsError, setChannelsError] = useState<string | null>(null)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
+  
+  // UI состояния
   const [filter, setFilter] = useState<'all' | 'unread' | 'open' | 'pending' | 'resolved'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [messageText, setMessageText] = useState('')
@@ -43,6 +92,43 @@ export function ChatsPage() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Загрузка каналов при монтировании
+  useEffect(() => {
+    const loadChannels = async () => {
+      try {
+        setIsLoadingChannels(true)
+        setChannelsError(null)
+        const data = await fetchChannels()
+        const mappedChannels = data.map(mapChannelToUI)
+        setChannels(mappedChannels)
+      } catch (error) {
+        console.error('Ошибка загрузки каналов:', error)
+        setChannelsError('Не удалось загрузить каналы')
+      } finally {
+        setIsLoadingChannels(false)
+      }
+    }
+
+    loadChannels()
+  }, [])
+
+  // Загрузка сообщений при выборе канала
+  const loadMessages = useCallback(async (channelId: string) => {
+    try {
+      setIsLoadingMessages(true)
+      setMessagesError(null)
+      const { messages: data } = await fetchMessages(channelId)
+      const mappedMessages = data.map(mapMessageToUI)
+      setMessages(mappedMessages)
+    } catch (error) {
+      console.error('Ошибка загрузки сообщений:', error)
+      setMessagesError('Не удалось загрузить сообщения')
+    } finally {
+      setIsLoadingMessages(false)
+    }
+  }, [])
+
+  // Прокрутка к последнему сообщению
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
@@ -62,11 +148,12 @@ export function ChatsPage() {
     return 0
   })
 
-  const handleSendMessage = () => {
-    if (!messageText.trim() || !selectedChannel) return
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !selectedChannel || isSending) return
 
-    const newMessage: MessageData = {
-      id: Date.now().toString(),
+    const tempId = `temp-${Date.now()}`
+    const tempMessage: MessageData = {
+      id: tempId,
       senderName: 'Вы',
       text: messageText,
       time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
@@ -75,18 +162,54 @@ export function ChatsPage() {
       replyTo: replyingTo || undefined
     }
 
-    setMessages(prev => [...prev, newMessage])
+    // Оптимистичное обновление UI
+    setMessages(prev => [...prev, tempMessage])
+    const textToSend = messageText
+    const replyToId = replyingTo?.id
     setMessageText('')
     setReplyingTo(null)
     
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, status: 'delivered' } : m))
-    }, 1000)
+    try {
+      setIsSending(true)
+      const sentMessage = await sendMessage(
+        selectedChannel.id, 
+        textToSend, 
+        replyToId ? parseInt(replyToId) : undefined
+      )
+      
+      // Заменяем временное сообщение на реальное
+      setMessages(prev => prev.map(m => 
+        m.id === tempId ? mapMessageToUI(sentMessage) : m
+      ))
+    } catch (error) {
+      console.error('Ошибка отправки сообщения:', error)
+      // Удаляем временное сообщение при ошибке
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+      setMessageText(textToSend)
+      // TODO: показать уведомление об ошибке
+    } finally {
+      setIsSending(false)
+    }
   }
 
-  const handleSelectChannel = (channel: ChannelItemData) => {
+  const handleSelectChannel = async (channel: ChannelItemData) => {
     setSelectedChannel(channel)
-    setChannels(prev => prev.map(ch => ch.id === channel.id ? { ...ch, unread: 0 } : ch))
+    setMessages([])
+    
+    // Загружаем сообщения для выбранного канала
+    await loadMessages(channel.id)
+    
+    // Отмечаем канал как прочитанный
+    if (channel.unread > 0) {
+      try {
+        await markChannelRead(channel.id)
+        setChannels(prev => prev.map(ch => 
+          ch.id === channel.id ? { ...ch, unread: 0 } : ch
+        ))
+      } catch (error) {
+        console.error('Ошибка отметки канала как прочитанного:', error)
+      }
+    }
   }
 
   const handlePinChannel = () => {
@@ -117,7 +240,7 @@ export function ChatsPage() {
   return (
     <>
       <div className="flex h-full overflow-hidden bg-slate-50">
-        {/* Channels List */}
+        {/* Список каналов */}
         <div className="w-[360px] bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-slate-100">
             <div className="flex items-center justify-between mb-3">
@@ -153,7 +276,20 @@ export function ChatsPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {filteredChannels.length === 0 ? (
+            {isLoadingChannels ? (
+              <LoadingState text="Загрузка каналов..." size="md" />
+            ) : channelsError ? (
+              <div className="flex flex-col items-center justify-center py-12 px-4">
+                <AlertCircle className="w-10 h-10 text-red-400 mb-3" />
+                <p className="text-sm text-red-600 text-center">{channelsError}</p>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="mt-3 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg"
+                >
+                  Попробовать снова
+                </button>
+              </div>
+            ) : filteredChannels.length === 0 ? (
               <EmptyState variant="search" title="Не найдено" description="Измените фильтры" size="sm" />
             ) : (
               filteredChannels.map(channel => (
@@ -168,10 +304,10 @@ export function ChatsPage() {
           </div>
         </div>
 
-        {/* Chat Area */}
+        {/* Область чата */}
         {selectedChannel ? (
           <div className="flex-1 flex flex-col bg-white min-w-0">
-            {/* Header */}
+            {/* Заголовок */}
             <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar name={selectedChannel.name} size="md" />
@@ -179,7 +315,7 @@ export function ChatsPage() {
                   <div className="flex items-center gap-2">
                     <h2 className="font-semibold text-slate-800 truncate">{selectedChannel.name}</h2>
                     <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${statusColors[selectedChannel.status]}`}>
-                      {selectedChannel.status}
+                      {selectedChannel.status === 'open' ? 'Открыт' : selectedChannel.status === 'pending' ? 'Ожидает' : 'Решён'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500">
@@ -215,24 +351,43 @@ export function ChatsPage() {
               </div>
             </div>
 
-            {/* Messages */}
+            {/* Сообщения */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div className="flex items-center justify-center">
-                <span className="px-3 py-1 text-xs text-slate-500 bg-slate-100 rounded-full">Сегодня</span>
-              </div>
+              {isLoadingMessages ? (
+                <LoadingState text="Загрузка сообщений..." size="md" />
+              ) : messagesError ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <AlertCircle className="w-10 h-10 text-red-400 mb-3" />
+                  <p className="text-sm text-red-600">{messagesError}</p>
+                  <button 
+                    onClick={() => loadMessages(selectedChannel.id)}
+                    className="mt-3 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg"
+                  >
+                    Попробовать снова
+                  </button>
+                </div>
+              ) : messages.length === 0 ? (
+                <EmptyState title="Нет сообщений" description="Начните диалог" size="sm" />
+              ) : (
+                <>
+                  <div className="flex items-center justify-center">
+                    <span className="px-3 py-1 text-xs text-slate-500 bg-slate-100 rounded-full">Сегодня</span>
+                  </div>
 
-              {messages.map(msg => (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  onReply={() => setReplyingTo({ id: msg.id, text: msg.text, sender: msg.senderName })}
-                  onCopy={() => navigator.clipboard.writeText(msg.text)}
-                />
-              ))}
+                  {messages.map(msg => (
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      onReply={() => setReplyingTo({ id: msg.id, text: msg.text, sender: msg.senderName })}
+                      onCopy={() => navigator.clipboard.writeText(msg.text)}
+                    />
+                  ))}
+                </>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
+            {/* Ввод сообщения */}
             <ChatInput
               value={messageText}
               onChange={setMessageText}
@@ -243,6 +398,7 @@ export function ChatsPage() {
               showQuickReplies={showQuickReplies}
               onToggleQuickReplies={() => setShowQuickReplies(!showQuickReplies)}
               onUseQuickReply={(text) => { setMessageText(text); setShowQuickReplies(false) }}
+              disabled={isSending}
             />
           </div>
         ) : (
@@ -252,7 +408,7 @@ export function ChatsPage() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Модальные окна */}
       <Modal isOpen={isAssignModalOpen} onClose={() => setIsAssignModalOpen(false)} title="Назначить" size="sm">
         <div className="space-y-3">
           {['Sarah Jenkins', 'Mike Chen', 'Emily Patel', 'Без назначения'].map(agent => (
