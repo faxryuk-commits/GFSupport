@@ -4,7 +4,7 @@ import { MessageSquare, Eye, EyeOff, ChevronRight } from 'lucide-react'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -15,16 +15,36 @@ export function LoginPage() {
     setError('')
     setIsLoading(true)
 
-    // Mock login
-    setTimeout(() => {
-      if (email && password) {
-        localStorage.setItem('auth', JSON.stringify({ email, role: 'admin' }))
-        navigate('/overview')
-      } else {
-        setError('Please enter email and password')
+    try {
+      const res = await fetch('/api/support/agents/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'Ошибка входа')
+        setIsLoading(false)
+        return
       }
+
+      // Сохраняем токен и данные агента
+      localStorage.setItem('support_agent_token', data.token)
+      localStorage.setItem('support_agent', JSON.stringify(data.agent))
+      localStorage.setItem('auth', JSON.stringify({ 
+        email: data.agent.username, 
+        role: data.agent.role,
+        name: data.agent.name
+      }))
+
+      navigate('/overview')
+    } catch (err: any) {
+      setError(err.message || 'Ошибка подключения к серверу')
+    } finally {
       setIsLoading(false)
-    }, 1000)
+    }
   }
 
   return (
@@ -40,28 +60,28 @@ export function LoginPage() {
 
         <div className="space-y-6">
           <h1 className="text-4xl font-bold text-white leading-tight">
-            Powerful Support<br />
-            Management System
+            Система управления<br />
+            поддержкой клиентов
           </h1>
           <p className="text-slate-300 text-lg max-w-md">
-            Streamline your customer support with AI-powered automation, 
-            real-time analytics, and seamless team collaboration.
+            Автоматизация поддержки с помощью ИИ, 
+            аналитика в реальном времени и командная работа.
           </p>
 
           <div className="flex gap-4 pt-4">
             <div className="flex items-center gap-2 text-slate-300">
               <ChevronRight className="w-5 h-5 text-blue-400" />
-              <span>AI-Powered Responses</span>
+              <span>ИИ-ответы</span>
             </div>
             <div className="flex items-center gap-2 text-slate-300">
               <ChevronRight className="w-5 h-5 text-blue-400" />
-              <span>Real-time Analytics</span>
+              <span>Аналитика</span>
             </div>
           </div>
         </div>
 
         <p className="text-slate-500 text-sm">
-          © 2024 Support System. All rights reserved.
+          © 2026 Support System. Все права защищены.
         </p>
       </div>
 
@@ -76,8 +96,8 @@ export function LoginPage() {
             <span className="font-bold text-xl text-slate-800">SUPPORT</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Welcome back</h2>
-          <p className="text-slate-500 mb-8">Enter your credentials to access your account</p>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Добро пожаловать</h2>
+          <p className="text-slate-500 mb-8">Введите данные для входа в систему</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
@@ -87,24 +107,24 @@ export function LoginPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Email</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Логин</label>
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Введите логин или email"
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Пароль</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder="Введите пароль"
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
                 <button
@@ -120,9 +140,8 @@ export function LoginPage() {
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 text-blue-500 rounded border-slate-300" />
-                <span className="text-sm text-slate-600">Remember me</span>
+                <span className="text-sm text-slate-600">Запомнить меня</span>
               </label>
-              <a href="#" className="text-sm text-blue-500 hover:underline">Forgot password?</a>
             </div>
 
             <button
@@ -130,12 +149,12 @@ export function LoginPage() {
               disabled={isLoading}
               className="w-full py-3 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Signing in...' : 'Sign in'}
+              {isLoading ? 'Вход...' : 'Войти'}
             </button>
           </form>
 
           <p className="text-center text-slate-500 text-sm mt-8">
-            Don't have an account? <a href="#" className="text-blue-500 hover:underline">Contact admin</a>
+            Нет доступа? <a href="#" className="text-blue-500 hover:underline">Обратитесь к администратору</a>
           </p>
         </div>
       </div>
