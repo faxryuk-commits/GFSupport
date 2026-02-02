@@ -129,6 +129,72 @@ async function updateChannelStats(sql: any, channelId: string, isFromClient: boo
   }
 }
 
+// Handle incoming message reactions from Telegram
+async function handleMessageReaction(sql: any, reaction: any): Promise<Response> {
+  try {
+    const chatId = String(reaction.chat.id)
+    const messageId = reaction.message_id
+    const user = extractUserInfo(reaction.user || reaction.actor_chat)
+    
+    // Find our message by telegram_message_id
+    const msgResult = await sql`
+      SELECT id, reactions FROM support_messages 
+      WHERE telegram_message_id = ${messageId}
+      LIMIT 1
+    `
+    
+    if (msgResult.length === 0) {
+      console.log('[Webhook] Reaction: message not found for telegram_message_id:', messageId)
+      return json({ ok: true })
+    }
+
+    const ourMessageId = msgResult[0].id
+    let reactions = msgResult[0].reactions || {}
+
+    // Get new reactions (array of ReactionType objects)
+    const newReactions = reaction.new_reaction || []
+    const oldReactions = reaction.old_reaction || []
+
+    // Process removed reactions
+    for (const oldR of oldReactions) {
+      const emoji = oldR.emoji
+      if (emoji && reactions[emoji]) {
+        reactions[emoji] = reactions[emoji].filter((u: string) => u !== user.fullName)
+        if (reactions[emoji].length === 0) {
+          delete reactions[emoji]
+        }
+      }
+    }
+
+    // Process added reactions
+    for (const newR of newReactions) {
+      const emoji = newR.emoji
+      if (emoji) {
+        if (!reactions[emoji]) {
+          reactions[emoji] = []
+        }
+        if (!reactions[emoji].includes(user.fullName)) {
+          reactions[emoji].push(user.fullName)
+        }
+      }
+    }
+
+    // Update in database
+    await sql`
+      UPDATE support_messages 
+      SET reactions = ${JSON.stringify(reactions)}::jsonb
+      WHERE id = ${ourMessageId}
+    `
+
+    console.log(`[Webhook] Updated reactions for message ${ourMessageId}:`, reactions)
+    return json({ ok: true })
+
+  } catch (e: any) {
+    console.error('[Webhook] Reaction handling error:', e)
+    return json({ ok: true }) // Don't fail webhook
+  }
+}
+
 // Record agent activity
 async function recordAgentActivity(sql: any, userId: string, userName: string, channelId: string) {
   try {
@@ -158,11 +224,16 @@ export default async function handler(req: Request): Promise<Response> {
     const update = await req.json()
     console.log('[Webhook] Received update:', JSON.stringify(update).slice(0, 500))
 
+    // Handle message reactions
+    if (update.message_reaction) {
+      return handleMessageReaction(sql, update.message_reaction)
+    }
+
     // Handle different update types
     const message = update.message || update.edited_message || update.channel_post
     
     if (!message) {
-      // Could be callback_query, message_reaction, etc.
+      // Could be callback_query, etc.
       console.log('[Webhook] Non-message update, ignoring')
       return json({ ok: true })
     }

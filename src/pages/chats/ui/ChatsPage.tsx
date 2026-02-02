@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
-import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser } from '@/features/messages/ui'
+import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
@@ -60,6 +60,23 @@ function mapMessageToUI(message: Message): MessageData {
     }
   }
 
+  // Преобразование реакций из { emoji: [users] } в MessageReaction[]
+  const mapReactions = (reactions?: Record<string, string[]>): MessageReaction[] | undefined => {
+    if (!reactions || typeof reactions !== 'object') return undefined
+    const result: MessageReaction[] = []
+    for (const [emoji, users] of Object.entries(reactions)) {
+      if (Array.isArray(users) && users.length > 0) {
+        result.push({
+          emoji,
+          count: users.length,
+          users,
+          isOwn: users.includes('Support') || users.includes('Вы')
+        })
+      }
+    }
+    return result.length > 0 ? result : undefined
+  }
+
   return {
     id: message.id,
     telegramMessageId: message.telegramMessageId,
@@ -81,6 +98,7 @@ function mapMessageToUI(message: Message): MessageData {
       url: message.mediaUrl,
       name: message.mediaType === 'document' ? 'Документ' : undefined,
     }] : undefined,
+    reactions: mapReactions(message.reactions as Record<string, string[]>),
   }
 }
 
@@ -122,6 +140,9 @@ export function ChatsPage() {
   // Ошибки
   const [channelsError, setChannelsError] = useState<string | null>(null)
   const [messagesError, setMessagesError] = useState<string | null>(null)
+  
+  // Участники для @ упоминаний
+  const [channelMembers, setChannelMembers] = useState<MentionUser[]>([])
   
   // UI состояния
   const [filter, setFilter] = useState<'all' | 'unread' | 'open' | 'pending' | 'resolved'>('all')
@@ -393,12 +414,29 @@ export function ChatsPage() {
   const handleSelectChannel = async (channel: ChannelItemData) => {
     setSelectedChannel(channel)
     setMessages([])
+    setChannelMembers([])
     
     // Обновляем URL для возможности шаринга/закладок
     navigate(`/chats/${channel.id}`, { replace: true })
     
-    // Загружаем сообщения для выбранного канала
-    await loadMessages(channel.id)
+    // Загружаем сообщения и участников параллельно
+    const [, membersResult] = await Promise.all([
+      loadMessages(channel.id),
+      // Загрузка участников для @ упоминаний
+      fetch(`/api/support/channels/members?channelId=${channel.id}`)
+        .then(r => r.json())
+        .catch(() => ({ members: [] }))
+    ])
+    
+    if (membersResult?.members) {
+      setChannelMembers(membersResult.members.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        username: m.username,
+        role: m.role,
+        avatarUrl: m.avatarUrl
+      })))
+    }
     
     // Отмечаем канал как прочитанный
     if (channel.unread > 0) {
@@ -605,12 +643,55 @@ export function ChatsPage() {
                       key={msg.id}
                       message={msg}
                       onReply={() => setReplyingTo({ 
-        id: msg.id, 
-        telegramMessageId: msg.telegramMessageId,
-        text: msg.text, 
-        sender: msg.senderName 
-      })}
+                        id: msg.id, 
+                        telegramMessageId: msg.telegramMessageId,
+                        text: msg.text, 
+                        sender: msg.senderName 
+                      })}
                       onCopy={() => navigator.clipboard.writeText(msg.text)}
+                      onReaction={async (emoji) => {
+                        if (!selectedChannel) return
+                        try {
+                          const token = localStorage.getItem('support_agent_token') || ''
+                          await fetch('/api/support/messages/reaction', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ 
+                              messageId: msg.id, 
+                              emoji,
+                              channelId: selectedChannel.id 
+                            })
+                          })
+                          // Оптимистичное обновление
+                          setMessages(prev => prev.map(m => {
+                            if (m.id !== msg.id) return m
+                            const reactions = [...(m.reactions || [])]
+                            const existing = reactions.find(r => r.emoji === emoji)
+                            if (existing) {
+                              if (existing.isOwn) {
+                                // Remove own reaction
+                                existing.count--
+                                existing.isOwn = false
+                                if (existing.count <= 0) {
+                                  return { ...m, reactions: reactions.filter(r => r.emoji !== emoji) }
+                                }
+                              } else {
+                                // Add own reaction
+                                existing.count++
+                                existing.isOwn = true
+                              }
+                            } else {
+                              reactions.push({ emoji, count: 1, isOwn: true, users: ['Support'] })
+                            }
+                            return { ...m, reactions }
+                          }))
+                        } catch (e) {
+                          console.error('Ошибка реакции:', e)
+                        }
+                      }}
                       onDelete={async () => {
                         if (!confirm('Удалить сообщение?')) return
                         try {
@@ -648,7 +729,7 @@ export function ChatsPage() {
               onUseQuickReply={(text) => { setMessageText(text); setShowQuickReplies(false) }}
               isLoadingAI={isLoadingAI}
               disabled={isSending}
-              mentionUsers={agents.map(a => ({
+              mentionUsers={channelMembers.length > 0 ? channelMembers : agents.map(a => ({
                 id: a.id,
                 name: a.name,
                 username: a.username,
