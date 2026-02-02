@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { 
   Clock, AlertTriangle, MessageSquare, ChevronRight, TrendingUp, TrendingDown,
   Users, Briefcase, Zap, RefreshCw, Bell, CheckCircle, ArrowUpRight,
-  Activity, Target, BarChart3
+  Activity, Target, BarChart3, Mic, Video, AlertCircle, ChevronDown, ChevronUp
 } from 'lucide-react'
 import { Avatar, Badge, EmptyState, LoadingState } from '@/shared/ui'
 import { fetchDashboardMetrics, fetchAnalytics, type DashboardMetrics, type AnalyticsData } from '@/shared/api'
@@ -54,6 +54,7 @@ export function DashboardPage() {
   const [needsAttention, setNeedsAttention] = useState<AttentionItem[]>([])
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
+  const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true)
 
   const loadData = useCallback(async () => {
     try {
@@ -510,6 +511,302 @@ export function DashboardPage() {
           period={dateRange === 'today' ? '7d' : dateRange === 'week' ? '7d' : '30d'}
           color={responseTimeModal.color}
         />
+      )}
+
+      {/* Detailed Analytics Toggle */}
+      <button
+        onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
+        className="w-full flex items-center justify-between px-5 py-4 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-blue-500" />
+          <span className="font-semibold text-slate-800">Подробная аналитика</span>
+        </div>
+        {showDetailedAnalytics ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+      </button>
+
+      {showDetailedAnalytics && analytics && (
+        <>
+          {/* Analytics Overview Cards */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Users className="w-5 h-5 text-blue-600" />
+                </div>
+                <span className="text-sm text-slate-500">Всего каналов</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-800">{analytics.channels?.total || 0}</p>
+              <p className="text-sm text-green-600 mt-1">{analytics.channels?.active || 0} активных</p>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 text-purple-600" />
+                </div>
+                <span className="text-sm text-slate-500">Сообщений</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-800">{analytics.messages?.total || 0}</p>
+              <div className="flex gap-2 mt-1 text-xs">
+                {analytics.messages?.voice && analytics.messages.voice > 0 && (
+                  <span className="flex items-center gap-1 text-slate-500">
+                    <Mic className="w-3 h-3" /> {analytics.messages.voice}
+                  </span>
+                )}
+                {analytics.messages?.video && analytics.messages.video > 0 && (
+                  <span className="flex items-center gap-1 text-slate-500">
+                    <Video className="w-3 h-3" /> {analytics.messages.video}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                </div>
+                <span className="text-sm text-slate-500">Решено кейсов</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-800">{analytics.cases?.resolved || 0}/{analytics.cases?.total || 0}</p>
+              <p className="text-sm text-green-600 mt-1">
+                {analytics.cases?.total ? Math.round((analytics.cases.resolved / analytics.cases.total) * 100) : 0}% решено
+              </p>
+            </div>
+
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5 text-orange-600" />
+                </div>
+                <span className="text-sm text-slate-500">Проблем</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-800">
+                {analytics.messages?.total ? ((analytics.messages.problems / analytics.messages.total) * 100).toFixed(1) : '0'}%
+              </p>
+              <p className="text-sm text-slate-500 mt-1">{analytics.messages?.problems || 0} сообщений</p>
+            </div>
+          </div>
+
+          {/* Metrics Row */}
+          <div className="grid grid-cols-5 gap-4">
+            <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+              <Briefcase className="w-6 h-6 text-blue-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-slate-800">{analytics.cases?.open || 0}</p>
+              <p className="text-xs text-slate-500">Открытых кейсов</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+              <AlertTriangle className="w-6 h-6 text-red-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-slate-800">{analytics.cases?.urgent || 0}</p>
+              <p className="text-xs text-slate-500">Срочных</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+              <TrendingUp className="w-6 h-6 text-amber-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-slate-800">{analytics.cases?.recurring || 0}</p>
+              <p className="text-xs text-slate-500">Повторяющихся</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+              <Clock className="w-6 h-6 text-green-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-slate-800">{analytics.channels?.avgFirstResponse || '—'}м</p>
+              <p className="text-xs text-slate-500">Сред. время ответа</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+              <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-slate-800">{analytics.cases?.avgResolutionHours || '—'}ч</p>
+              <p className="text-xs text-slate-500">Сред. решение</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+            {/* Daily Trend Chart */}
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-blue-500" />
+                Обращения по дням
+              </h2>
+              {!analytics.team?.dailyTrend || analytics.team.dailyTrend.length === 0 ? (
+                <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Нет данных</div>
+              ) : (
+                <>
+                  <div className="h-48 flex items-end gap-1">
+                    {analytics.team.dailyTrend.map((d, i) => {
+                      const maxVal = Math.max(...analytics.team.dailyTrend!.map(x => x.cases), 1)
+                      const height = Math.max((d.cases / maxVal) * 140, 4)
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <div className="w-full flex flex-col gap-0.5">
+                            <div 
+                              className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
+                              style={{ height: `${height}px` }}
+                              title={`${d.cases} создано`}
+                            />
+                            {d.resolved > 0 && (
+                              <div 
+                                className="w-full bg-green-400 rounded-b"
+                                style={{ height: `${Math.max((d.resolved / maxVal) * 140, 2)}px` }}
+                                title={`${d.resolved} решено`}
+                              />
+                            )}
+                          </div>
+                          <span className="text-[9px] text-slate-400 truncate w-full text-center">
+                            {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="flex gap-4 mt-3 text-xs">
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded" /> Создано</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded" /> Решено</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Categories */}
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <h2 className="font-semibold text-slate-800 mb-4">По категориям</h2>
+              {!analytics.patterns?.byCategory || analytics.patterns.byCategory.length === 0 ? (
+                <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Нет данных</div>
+              ) : (
+                <div className="space-y-3">
+                  {analytics.patterns.byCategory.slice(0, 6).map((cat, i) => {
+                    const max = Math.max(...analytics.patterns.byCategory.map(c => c.count), 1)
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-700 truncate">{cat.name || 'Без категории'}</span>
+                          <div className="flex items-center gap-2">
+                            {cat.openCount > 0 && (
+                              <span className="text-xs text-orange-500">{cat.openCount} откр.</span>
+                            )}
+                            <span className="text-slate-500 font-medium">{cat.count}</span>
+                          </div>
+                        </div>
+                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500 rounded-full transition-all"
+                            style={{ width: `${(cat.count / max) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Team Metrics Table */}
+          {analytics.team?.byManager && analytics.team.byManager.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200">
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-500" />
+                  Активность команды
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-5 py-3 text-slate-600 font-medium">Сотрудник</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Сообщений</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Каналов</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Кейсов</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analytics.team.byManager.slice(0, 8).map((m, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="px-5 py-3">
+                          <div className="font-medium text-slate-800">{m.name || 'Неизвестный'}</div>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          <span className="text-lg font-semibold text-blue-600">{m.totalMessages}</span>
+                        </td>
+                        <td className="text-center px-3 py-3 text-slate-600">{m.channelsServed}</td>
+                        <td className="text-center px-3 py-3">
+                          {m.totalCases > 0 ? (
+                            <span className="text-slate-600">{m.resolved}/{m.totalCases}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-6">
+            {/* Recurring Problems */}
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-orange-500" />
+                Повторяющиеся проблемы
+              </h2>
+              {!analytics.patterns?.recurringProblems || analytics.patterns.recurringProblems.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">Нет данных</div>
+              ) : (
+                <div className="space-y-2">
+                  {analytics.patterns.recurringProblems.slice(0, 6).map((p, i) => (
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                      <span className="text-slate-700 text-sm truncate flex-1">{p.issue}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">{p.affected} комп.</span>
+                        <Badge variant="warning" size="sm">{p.count}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Sentiment Distribution */}
+            <div className="bg-white rounded-xl p-5 border border-slate-200">
+              <h2 className="font-semibold text-slate-800 mb-4">Настроение клиентов</h2>
+              {!analytics.patterns?.bySentiment || analytics.patterns.bySentiment.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-sm">Нет данных</div>
+              ) : (
+                <div className="space-y-3">
+                  {analytics.patterns.bySentiment.map((s, i) => {
+                    const max = Math.max(...analytics.patterns.bySentiment.map(x => x.count), 1)
+                    const colors: Record<string, string> = {
+                      positive: 'bg-green-500',
+                      neutral: 'bg-slate-400',
+                      negative: 'bg-red-500',
+                      frustrated: 'bg-orange-500',
+                    }
+                    const labels: Record<string, string> = {
+                      positive: 'Позитивное',
+                      neutral: 'Нейтральное',
+                      negative: 'Негативное',
+                      frustrated: 'Разочарование',
+                    }
+                    return (
+                      <div key={i}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-700">{labels[s.sentiment] || s.sentiment}</span>
+                          <span className="text-slate-500">{s.count}</span>
+                        </div>
+                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full ${colors[s.sentiment] || 'bg-slate-400'} rounded-full`}
+                            style={{ width: `${(s.count / max) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
