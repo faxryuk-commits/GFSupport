@@ -32,9 +32,6 @@ const mainNavItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
-]
-
-const manageNavItems = [
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
 ]
 
@@ -132,32 +129,10 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
 
       {/* Main Navigation */}
       <nav className="flex-1 px-3 overflow-y-auto">
-        {/* Main */}
-        <div className="mb-6">
-          {!isCollapsed && (
-            <p className="px-4 mb-2 text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Основное
-            </p>
-          )}
-          <div className="space-y-1">
-            {mainNavItems.map(item => (
-              <NavItem key={item.path} {...item} />
-            ))}
-          </div>
-        </div>
-
-        {/* Manage */}
-        <div className="mb-6">
-          {!isCollapsed && (
-            <p className="px-4 mb-2 text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Управление
-            </p>
-          )}
-          <div className="space-y-1">
-            {manageNavItems.map(item => (
-              <NavItem key={item.path} {...item} />
-            ))}
-          </div>
+        <div className="space-y-1">
+          {mainNavItems.map(item => (
+            <NavItem key={item.path} {...item} />
+          ))}
         </div>
       </nav>
 
