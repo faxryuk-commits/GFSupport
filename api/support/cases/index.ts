@@ -47,7 +47,7 @@ export default async function handler(req: Request): Promise<Response> {
   // GET - список кейсов
   if (req.method === 'GET') {
     try {
-      const status = url.searchParams.get('status')
+      const statusParam = url.searchParams.get('status')
       const priority = url.searchParams.get('priority')
       const channelId = url.searchParams.get('channelId')
       const companyId = url.searchParams.get('companyId')
@@ -56,22 +56,22 @@ export default async function handler(req: Request): Promise<Response> {
       const limit = parseInt(url.searchParams.get('limit') || '50')
       const offset = parseInt(url.searchParams.get('offset') || '0')
 
-      // Базовый запрос с JOIN на связанные таблицы
-      // Примечание: updated_by JOIN убран т.к. колонка может отсутствовать в БД
+      // Парсим множественные статусы (status=open,in_progress,detected)
+      const statuses = statusParam && statusParam !== 'all' 
+        ? statusParam.split(',').map(s => s.trim())
+        : null
+
+      // Базовый запрос без JOIN на несуществующие таблицы
       let cases = await sql`
         SELECT 
           c.*,
           ch.name as channel_name,
           ch.telegram_chat_id,
-          comp.name as company_name,
-          m.name as assignee_name,
           (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        LEFT JOIN crm_companies comp ON c.company_id = comp.id
-        LEFT JOIN crm_managers m ON c.assigned_to = m.id
         WHERE 1=1
-          ${status && status !== 'all' ? sql`AND c.status = ${status}` : sql``}
+          ${statuses && statuses.length > 0 ? sql`AND c.status = ANY(${statuses})` : sql``}
           ${priority ? sql`AND c.priority = ${priority}` : sql``}
           ${channelId ? sql`AND c.channel_id = ${channelId}` : sql``}
           ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
@@ -92,7 +92,7 @@ export default async function handler(req: Request): Promise<Response> {
       const countResult = await sql`
         SELECT COUNT(*) as total FROM support_cases c
         WHERE 1=1
-          ${status && status !== 'all' ? sql`AND c.status = ${status}` : sql``}
+          ${statuses && statuses.length > 0 ? sql`AND c.status = ANY(${statuses})` : sql``}
           ${priority ? sql`AND c.priority = ${priority}` : sql``}
           ${channelId ? sql`AND c.channel_id = ${channelId}` : sql``}
           ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
@@ -113,23 +113,23 @@ export default async function handler(req: Request): Promise<Response> {
       return json({
         cases: cases.map((c: any) => ({
           id: c.id,
-          ticketNumber: c.ticket_number, // #001, #002, etc.
+          ticketNumber: c.ticket_number,
           channelId: c.channel_id,
-          channelName: c.channel_name,
+          channelName: c.channel_name || 'Без канала',
           telegramChatId: c.telegram_chat_id,
           companyId: c.company_id,
-          companyName: c.company_name,
+          companyName: c.channel_name || 'Компания', // Берём из канала
           leadId: c.lead_id,
-          title: c.title,
-          description: c.description,
-          status: c.status,
-          category: c.category,
+          title: c.title || 'Без названия',
+          description: c.description || '',
+          status: c.status || 'detected',
+          category: c.category || 'general',
           subcategory: c.subcategory,
           rootCause: c.root_cause,
-          priority: c.priority,
+          priority: c.priority || 'medium',
           severity: c.severity,
           assignedTo: c.assigned_to,
-          assigneeName: c.assignee_name,
+          assigneeName: c.assigned_to ? 'Назначен' : null, // TODO: получить имя из support_agents
           firstResponseAt: c.first_response_at,
           resolvedAt: c.resolved_at,
           resolutionTimeMinutes: c.resolution_time_minutes,
@@ -140,7 +140,7 @@ export default async function handler(req: Request): Promise<Response> {
           relatedCaseId: c.related_case_id,
           tags: c.tags || [],
           messagesCount: parseInt(c.messages_count || 0),
-          messageId: c.source_message_id, // Link to source message
+          messageId: c.source_message_id,
           createdAt: c.created_at,
           updatedAt: c.updated_at,
         })),

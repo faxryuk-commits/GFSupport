@@ -53,11 +53,9 @@ export default async function handler(req: Request): Promise<Response> {
       const channels = await sql`
         SELECT 
           c.*,
-          comp.name as company_name,
           (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
           (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
         FROM support_channels c
-        LEFT JOIN crm_companies comp ON c.company_id = comp.id
         WHERE 1=1
           ${type && type !== 'all' ? sql`AND c.type = ${type}` : sql``}
           ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
@@ -91,20 +89,20 @@ export default async function handler(req: Request): Promise<Response> {
         channels: channels.map((c: any) => ({
           id: c.id,
           telegramChatId: c.telegram_chat_id,
-          name: c.name,
-          type: c.type,
+          name: c.name || `Канал ${c.telegram_chat_id}`,
+          type: c.type || 'client',
           companyId: c.company_id,
-          companyName: c.company_name || c.name,
+          companyName: c.name || 'Компания', // Берём из имени канала
           leadId: c.lead_id,
-          isActive: c.is_active,
-          membersCount: c.members_count,
+          isActive: c.is_active !== false,
+          membersCount: c.members_count || 0,
           settings: c.settings || {},
           messagesCount: parseInt(c.messages_count || 0),
           openCasesCount: parseInt(c.open_cases_count || 0),
           unreadCount: parseInt(c.unread_count || 0),
           awaitingReply: c.awaiting_reply || false,
           lastSenderName: c.last_sender_name || null,
-          lastMessageText: c.last_message_preview || null, // Маппинг для фронтенда
+          lastMessageText: c.last_message_preview || null,
           lastMessagePreview: c.last_message_preview || null,
           lastClientMessageAt: c.last_client_message_at,
           lastTeamMessageAt: c.last_team_message_at,
