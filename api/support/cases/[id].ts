@@ -208,25 +208,45 @@ export default async function handler(req: Request): Promise<Response> {
       if (churnRiskScore !== undefined) updates.churn_risk_score = churnRiskScore
 
       // Обновляем кейс
-      await sql`
-        UPDATE support_cases SET
-          status = COALESCE(${updates.status}, status),
-          priority = COALESCE(${updates.priority}, priority),
-          severity = COALESCE(${updates.severity}, severity),
-          category = COALESCE(${updates.category}, category),
-          subcategory = COALESCE(${updates.subcategory}, subcategory),
-          root_cause = COALESCE(${updates.root_cause}, root_cause),
-          assigned_to = ${updates.assigned_to !== undefined ? updates.assigned_to : sql`assigned_to`},
-          description = COALESCE(${updates.description}, description),
-          resolution_notes = COALESCE(${updates.resolution_notes}, resolution_notes),
-          tags = COALESCE(${updates.tags}, tags),
-          impact_mrr = COALESCE(${updates.impact_mrr}, impact_mrr),
-          churn_risk_score = COALESCE(${updates.churn_risk_score}, churn_risk_score),
-          resolved_at = ${updates.resolved_at || sql`resolved_at`},
-          resolution_time_minutes = ${updates.resolution_time_minutes || sql`resolution_time_minutes`},
-          updated_at = NOW()
-        WHERE id = ${caseId}
-      `
+      if (updates.resolved_at) {
+        await sql`
+          UPDATE support_cases SET
+            status = COALESCE(${updates.status}, status),
+            priority = COALESCE(${updates.priority}, priority),
+            severity = COALESCE(${updates.severity}, severity),
+            category = COALESCE(${updates.category}, category),
+            subcategory = COALESCE(${updates.subcategory}, subcategory),
+            root_cause = COALESCE(${updates.root_cause}, root_cause),
+            assigned_to = COALESCE(${updates.assigned_to}, assigned_to),
+            description = COALESCE(${updates.description}, description),
+            resolution_notes = COALESCE(${updates.resolution_notes}, resolution_notes),
+            tags = COALESCE(${updates.tags}, tags),
+            impact_mrr = COALESCE(${updates.impact_mrr}, impact_mrr),
+            churn_risk_score = COALESCE(${updates.churn_risk_score}, churn_risk_score),
+            resolved_at = ${updates.resolved_at},
+            resolution_time_minutes = ${updates.resolution_time_minutes || 0},
+            updated_at = NOW()
+          WHERE id = ${caseId}
+        `
+      } else {
+        await sql`
+          UPDATE support_cases SET
+            status = COALESCE(${updates.status}, status),
+            priority = COALESCE(${updates.priority}, priority),
+            severity = COALESCE(${updates.severity}, severity),
+            category = COALESCE(${updates.category}, category),
+            subcategory = COALESCE(${updates.subcategory}, subcategory),
+            root_cause = COALESCE(${updates.root_cause}, root_cause),
+            assigned_to = COALESCE(${updates.assigned_to}, assigned_to),
+            description = COALESCE(${updates.description}, description),
+            resolution_notes = COALESCE(${updates.resolution_notes}, resolution_notes),
+            tags = COALESCE(${updates.tags}, tags),
+            impact_mrr = COALESCE(${updates.impact_mrr}, impact_mrr),
+            churn_risk_score = COALESCE(${updates.churn_risk_score}, churn_risk_score),
+            updated_at = NOW()
+          WHERE id = ${caseId}
+        `
+      }
 
       // Создаём записи в истории для значимых изменений
       if (status && status !== oldStatus) {
