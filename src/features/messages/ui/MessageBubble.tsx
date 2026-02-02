@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { 
   Check, CheckCheck, Reply, Copy, Forward, 
   Image as ImageIcon, File, Play, Pause, Download,
-  Volume2, X, Maximize2, FileText, Film, Music
+  Volume2, X, Maximize2, FileText, Film, Music,
+  Trash2, Pin, MessageSquare, MoreHorizontal
 } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
 
@@ -32,6 +33,9 @@ interface MessageBubbleProps {
   message: MessageData
   onReply: () => void
   onCopy: () => void
+  onForward?: () => void
+  onDelete?: () => void
+  onPin?: () => void
 }
 
 // Lightbox для просмотра изображений
@@ -276,88 +280,212 @@ function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; 
   }
 }
 
-export function MessageBubble({ message, onReply, onCopy }: MessageBubbleProps) {
-  const hasOnlyMedia = !message.text && message.attachments && message.attachments.length > 0
+export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin }: MessageBubbleProps) {
+  const [showContextMenu, setShowContextMenu] = useState(false)
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  
   const isSticker = message.attachments?.length === 1 && message.attachments[0].type === 'sticker'
 
-  return (
-    <div className={`flex ${message.isClient ? 'justify-start' : 'justify-end'} group`}>
-      <div className="max-w-[70%]">
-        {message.isClient && (
-          <div className="flex items-center gap-2 mb-1">
-            <Avatar src={message.senderAvatarUrl} name={message.senderName} size="sm" />
-            <span className="text-sm font-medium text-slate-700">{message.senderName}</span>
-            <span className="text-xs text-slate-400">{message.time}</span>
-          </div>
-        )}
-        
-        {/* Reply preview */}
-        {message.replyTo && (
-          <div className={`px-3 py-1.5 mb-1 border-l-2 ${message.isClient ? 'border-slate-300 bg-slate-50' : 'border-blue-300 bg-blue-50/50'} rounded text-xs`}>
-            <span className="font-medium">{message.replyTo.sender}</span>
-            <p className="text-slate-600 truncate">{message.replyTo.text}</p>
-          </div>
-        )}
+  // Закрытие контекстного меню при клике вне
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setShowContextMenu(false)
+      }
+    }
+    if (showContextMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showContextMenu])
 
-        <div className="relative">
-          {/* Стикеры показываем без bubble */}
-          {isSticker ? (
-            <MediaRenderer attachment={message.attachments![0]} isClient={message.isClient} />
-          ) : (
-            <div className={`rounded-2xl overflow-hidden ${
-              message.isClient 
-                ? 'bg-slate-100 text-slate-800 rounded-tl-md' 
-                : 'bg-blue-500 text-white rounded-tr-md'
-            }`}>
-              {/* Медиа вложения */}
-              {message.attachments && message.attachments.length > 0 && (
-                <div className={`${message.text ? 'p-1 pb-0' : 'p-1'}`}>
-                  {message.attachments.length === 1 ? (
-                    <MediaRenderer attachment={message.attachments[0]} isClient={message.isClient} />
-                  ) : (
-                    <div className="grid grid-cols-2 gap-1">
-                      {message.attachments.map((att, i) => (
-                        <MediaRenderer key={i} attachment={att} isClient={message.isClient} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {/* Текст сообщения */}
-              {message.text && (
-                <div className="px-4 py-3">
-                  <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                </div>
-              )}
+  // Двойной клик — ответить
+  const handleDoubleClick = () => {
+    onReply()
+  }
+
+  // Правый клик — контекстное меню
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setContextMenuPos({ x: e.clientX, y: e.clientY })
+    setShowContextMenu(true)
+  }
+
+  // Копирование текста
+  const handleCopy = () => {
+    if (message.text) {
+      navigator.clipboard.writeText(message.text)
+    }
+    onCopy()
+    setShowContextMenu(false)
+  }
+
+  // Действие из меню
+  const handleMenuAction = (action: () => void) => {
+    action()
+    setShowContextMenu(false)
+  }
+
+  return (
+    <>
+      <div 
+        className={`flex ${message.isClient ? 'justify-start' : 'justify-end'} group`}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
+      >
+        <div className="max-w-[70%]">
+          {message.isClient && (
+            <div className="flex items-center gap-2 mb-1">
+              <Avatar src={message.senderAvatarUrl} name={message.senderName} size="sm" />
+              <span className="text-sm font-medium text-slate-700">{message.senderName}</span>
+              <span className="text-xs text-slate-400">{message.time}</span>
+            </div>
+          )}
+          
+          {/* Reply preview */}
+          {message.replyTo && (
+            <div className={`px-3 py-1.5 mb-1 border-l-2 ${message.isClient ? 'border-slate-300 bg-slate-50' : 'border-blue-300 bg-blue-50/50'} rounded text-xs cursor-pointer hover:opacity-80`}>
+              <span className="font-medium">{message.replyTo.sender}</span>
+              <p className="text-slate-600 truncate">{message.replyTo.text}</p>
             </div>
           )}
 
-          {/* Message actions */}
-          <div className={`absolute top-0 ${message.isClient ? 'right-0 translate-x-full' : 'left-0 -translate-x-full'} px-2 opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
-            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm p-1">
-              <button onClick={onReply} className="p-1.5 hover:bg-slate-100 rounded" title="Ответить">
-                <Reply className="w-3.5 h-3.5 text-slate-500" />
-              </button>
-              <button onClick={onCopy} className="p-1.5 hover:bg-slate-100 rounded" title="Копировать">
-                <Copy className="w-3.5 h-3.5 text-slate-500" />
-              </button>
-              <button className="p-1.5 hover:bg-slate-100 rounded" title="Переслать">
-                <Forward className="w-3.5 h-3.5 text-slate-500" />
-              </button>
+          <div className="relative">
+            {/* Стикеры показываем без bubble */}
+            {isSticker ? (
+              <MediaRenderer attachment={message.attachments![0]} isClient={message.isClient} />
+            ) : (
+              <div className={`rounded-2xl overflow-hidden cursor-pointer select-none ${
+                message.isClient 
+                  ? 'bg-slate-100 text-slate-800 rounded-tl-md' 
+                  : 'bg-blue-500 text-white rounded-tr-md'
+              }`}>
+                {/* Медиа вложения */}
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className={`${message.text ? 'p-1 pb-0' : 'p-1'}`}>
+                    {message.attachments.length === 1 ? (
+                      <MediaRenderer attachment={message.attachments[0]} isClient={message.isClient} />
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1">
+                        {message.attachments.map((att, i) => (
+                          <MediaRenderer key={i} attachment={att} isClient={message.isClient} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Текст сообщения */}
+                {message.text && (
+                  <div className="px-4 py-3">
+                    <p className="text-sm whitespace-pre-wrap select-text">{message.text}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Hover actions */}
+            <div className={`absolute top-0 ${message.isClient ? 'right-0 translate-x-full' : 'left-0 -translate-x-full'} px-2 opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm p-1">
+                <button onClick={onReply} className="p-1.5 hover:bg-slate-100 rounded" title="Ответить (двойной клик)">
+                  <Reply className="w-3.5 h-3.5 text-slate-500" />
+                </button>
+                <button onClick={handleCopy} className="p-1.5 hover:bg-slate-100 rounded" title="Копировать">
+                  <Copy className="w-3.5 h-3.5 text-slate-500" />
+                </button>
+                {onForward && (
+                  <button onClick={onForward} className="p-1.5 hover:bg-slate-100 rounded" title="Переслать">
+                    <Forward className="w-3.5 h-3.5 text-slate-500" />
+                  </button>
+                )}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleContextMenu(e) }}
+                  className="p-1.5 hover:bg-slate-100 rounded" 
+                  title="Ещё"
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {!message.isClient && (
-          <div className="flex items-center justify-end gap-2 mt-1">
-            <span className="text-xs text-slate-500">{message.time}</span>
-            {message.status === 'sent' && <Check className="w-3.5 h-3.5 text-slate-400" />}
-            {message.status === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-slate-400" />}
-            {message.status === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-500" />}
-          </div>
-        )}
+          {!message.isClient && (
+            <div className="flex items-center justify-end gap-2 mt-1">
+              <span className="text-xs text-slate-500">{message.time}</span>
+              {message.status === 'sent' && <Check className="w-3.5 h-3.5 text-slate-400" />}
+              {message.status === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-slate-400" />}
+              {message.status === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-500" />}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Context Menu */}
+      {showContextMenu && (
+        <div 
+          ref={contextMenuRef}
+          className="fixed bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2 min-w-[180px] overflow-hidden"
+          style={{ 
+            left: Math.min(contextMenuPos.x, window.innerWidth - 200),
+            top: Math.min(contextMenuPos.y, window.innerHeight - 300)
+          }}
+        >
+          <button
+            onClick={() => handleMenuAction(onReply)}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
+          >
+            <Reply className="w-4 h-4 text-slate-400" />
+            <span>Ответить</span>
+            <span className="ml-auto text-xs text-slate-400">2x клик</span>
+          </button>
+          <button
+            onClick={handleCopy}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
+          >
+            <Copy className="w-4 h-4 text-slate-400" />
+            <span>Копировать</span>
+          </button>
+          {onForward && (
+            <button
+              onClick={() => handleMenuAction(onForward)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
+            >
+              <Forward className="w-4 h-4 text-slate-400" />
+              <span>Переслать</span>
+            </button>
+          )}
+          {onPin && (
+            <button
+              onClick={() => handleMenuAction(onPin)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
+            >
+              <Pin className="w-4 h-4 text-slate-400" />
+              <span>Закрепить</span>
+            </button>
+          )}
+          <div className="border-t border-slate-100 my-1" />
+          <button
+            onClick={() => setShowContextMenu(false)}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
+          >
+            <MessageSquare className="w-4 h-4 text-slate-400" />
+            <span>Цитировать</span>
+          </button>
+          {onDelete && !message.isClient && (
+            <>
+              <div className="border-t border-slate-100 my-1" />
+              <button
+                onClick={() => handleMenuAction(onDelete)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-red-50 text-left text-red-600"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Удалить</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </>
   )
 }

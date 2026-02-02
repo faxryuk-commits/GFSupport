@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { 
   Send, Paperclip, Smile, Mic, StopCircle, Sparkles, X, Reply,
   Image as ImageIcon, File, Film, Music, FileText, Trash2
@@ -45,6 +45,82 @@ function getFileType(file: File): 'image' | 'video' | 'audio' | 'document' {
   if (file.type.startsWith('audio/')) return 'audio'
   return 'document'
 }
+
+// Эмодзи пикер
+const EMOJI_CATEGORIES = [
+  { name: 'Часто используемые', emojis: ['👍', '❤️', '😊', '😂', '🙏', '👋', '🔥', '✅', '👌', '💪', '🎉', '😍'] },
+  { name: 'Смайлы', emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '🥲', '😋', '😛', '😜', '🤪', '😝'] },
+  { name: 'Жесты', emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜'] },
+  { name: 'Символы', emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '⭐', '🌟', '✨', '💫', '🔥', '💥'] },
+  { name: 'Объекты', emojis: ['📱', '💻', '🖥️', '📷', '📹', '🎥', '📞', '📧', '📨', '📝', '📄', '📋', '📁', '📂', '🗂️', '📅', '📆', '🗓️', '📌', '📍', '📎', '🔗', '✂️', '🔧'] },
+]
+
+function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [activeCategory, setActiveCategory] = useState(0)
+  const pickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  return (
+    <div className="relative" ref={pickerRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`p-3 rounded-xl transition-colors ${isOpen ? 'bg-amber-100 text-amber-600' : 'hover:bg-slate-100 text-slate-500'}`}
+        title="Эмодзи"
+      >
+        <Smile className="w-5 h-5" />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute bottom-full right-0 mb-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden">
+          {/* Category tabs */}
+          <div className="flex border-b border-slate-200 overflow-x-auto">
+            {EMOJI_CATEGORIES.map((cat, i) => (
+              <button
+                key={cat.name}
+                onClick={() => setActiveCategory(i)}
+                className={`px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors ${
+                  activeCategory === i 
+                    ? 'text-blue-600 border-b-2 border-blue-500 bg-blue-50' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {cat.emojis[0]} {cat.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+          
+          {/* Emojis grid */}
+          <div className="p-2 max-h-48 overflow-y-auto">
+            <div className="grid grid-cols-8 gap-1">
+              {EMOJI_CATEGORIES[activeCategory].emojis.map((emoji, i) => (
+                <button
+                  key={i}
+                  onClick={() => { onSelect(emoji); setIsOpen(false) }}
+                  className="w-8 h-8 flex items-center justify-center text-xl hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 // Форматирование размера файла
 function formatFileSize(bytes: number): string {
@@ -360,9 +436,7 @@ export function ChatInput({
               </button>
 
               {/* Emoji */}
-              <button className="p-3 hover:bg-slate-100 rounded-xl transition-colors" title="Эмодзи">
-                <Smile className="w-5 h-5 text-slate-500" />
-              </button>
+              <EmojiPicker onSelect={(emoji) => onChange(value + emoji)} />
 
               {/* Voice recording */}
               {onToggleRecording && (

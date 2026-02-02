@@ -5,7 +5,7 @@ import {
   Hash, Building, ChevronDown, ExternalLink, MoreHorizontal,
   CheckCircle, XCircle, Clock, AlertTriangle, Filter, Settings, Edit3, Power
 } from 'lucide-react'
-import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog, Input } from '@/shared/ui'
+import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog } from '@/shared/ui'
 import { fetchChannels, updateChannel, disconnectChannel } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 
@@ -416,11 +416,13 @@ export function ChannelsListPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Новое название
             </label>
-            <Input
+            <input
+              type="text"
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)}
               placeholder="Введите название..."
               autoFocus
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
           </div>
           <div className="flex justify-end gap-3">
@@ -514,8 +516,10 @@ export function ChannelsListPage() {
         onConfirm={handleDisconnect}
         title="Отключить канал?"
         message={`Вы уверены, что хотите отключить канал "${disconnectChannelData?.name}"? Бот перестанет получать сообщения из этого канала.`}
-        confirmLabel={actionLoading ? 'Отключение...' : 'Отключить'}
+        confirmText={actionLoading ? 'Отключение...' : 'Отключить'}
+        cancelText="Отмена"
         variant="danger"
+        isLoading={actionLoading}
       />
     </div>
   )
