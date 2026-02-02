@@ -88,7 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT 
           m.id as client_message_id,
           m.channel_id,
-          m.text as client_message,
+          m.text_content as client_message,
           m.created_at as client_msg_at,
           m.sender_name as client_name,
           m.sender_id as client_sender_id
@@ -131,13 +131,13 @@ export default async function handler(req: Request): Promise<Response> {
         rt.client_name,
         rt.client_message,
         rt.client_msg_at,
-        rm.text as response_message,
+        rm.text_content as response_message,
         rm.sender_name as responder_name,
         rm.sender_id as responder_id,
         rt.response_at,
         EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 as response_minutes,
         CASE 
-          WHEN rm.text ILIKE '%эскал%' OR rm.text ILIKE '%передаю%' OR rm.text ILIKE '%перенаправ%'
+          WHEN rm.text_content ILIKE '%эскал%' OR rm.text_content ILIKE '%передаю%' OR rm.text_content ILIKE '%перенаправ%'
           THEN true 
           ELSE false 
         END as was_escalated
