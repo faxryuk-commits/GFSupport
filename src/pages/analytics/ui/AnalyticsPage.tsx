@@ -345,6 +345,51 @@ export function AnalyticsPage() {
         )}
       </div>
 
+      {/* Response Time Distribution */}
+      {data.team.responseTimeDistribution && data.team.responseTimeDistribution.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-green-500" />
+              Время первого ответа
+            </h2>
+          </div>
+          <div className="p-5">
+            <div className="grid grid-cols-5 gap-4">
+              {data.team.responseTimeDistribution.map((item, i) => {
+                const total = data.team.responseTimeDistribution.reduce((sum, r) => sum + r.count, 0)
+                const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
+                const colors = [
+                  'bg-green-500',   // до 5 мин
+                  'bg-emerald-500', // до 10 мин
+                  'bg-amber-500',   // до 30 мин
+                  'bg-orange-500',  // до 1 часа
+                  'bg-red-500',     // более 1 часа
+                ]
+                return (
+                  <div key={i} className="text-center">
+                    <div className="mb-2">
+                      <div className="text-3xl font-bold text-slate-800">{item.count}</div>
+                      <div className="text-xs text-slate-500">{percent}%</div>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
+                      <div 
+                        className={`h-full ${colors[i] || 'bg-slate-400'} rounded-full`}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    <div className="text-sm font-medium text-slate-700">{item.bucket}</div>
+                    <div className="text-xs text-slate-400">
+                      сред. {item.avgMinutes > 0 ? `${Math.round(item.avgMinutes)} мин` : '—'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-6">
         {/* Recurring Problems */}
         <div className="bg-white rounded-xl p-5 border border-slate-200">

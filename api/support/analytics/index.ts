@@ -167,6 +167,32 @@ export default async function handler(req: Request): Promise<Response> {
     `
     const avgFirstResponse = responseTimeResult[0]?.avg_first_response_minutes || null
 
+    // Распределение времени первого ответа по интервалам
+    const responseTimeDistribution = await sql`
+      SELECT 
+        CASE 
+          WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 5 THEN 'до 5 мин'
+          WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 10 THEN 'до 10 мин'
+          WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 30 THEN 'до 30 мин'
+          WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 60 THEN 'до 1 часа'
+          ELSE 'более 1 часа'
+        END as bucket,
+        COUNT(*) as count,
+        ROUND(AVG(EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60)::numeric, 1) as avg_minutes
+      FROM support_cases
+      WHERE first_response_at IS NOT NULL
+        AND created_at >= ${startDate.toISOString()}
+      GROUP BY bucket
+      ORDER BY 
+        CASE bucket
+          WHEN 'до 5 мин' THEN 1
+          WHEN 'до 10 мин' THEN 2
+          WHEN 'до 30 мин' THEN 3
+          WHEN 'до 1 часа' THEN 4
+          ELSE 5
+        END
+    `
+
     // Кейсы по дням (тренд)
     const dailyTrend = await sql`
       SELECT 
@@ -333,6 +359,11 @@ export default async function handler(req: Request): Promise<Response> {
           date: d.date,
           casesCreated: parseInt(d.cases_created),
           casesResolved: parseInt(d.cases_resolved),
+        })),
+        responseTimeDistribution: responseTimeDistribution.map((r: any) => ({
+          bucket: r.bucket,
+          count: parseInt(r.count),
+          avgMinutes: parseFloat(r.avg_minutes || 0),
         })),
       },
 

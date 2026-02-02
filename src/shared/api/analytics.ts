@@ -40,6 +40,7 @@ interface ApiAnalyticsResponse {
       highPriorityCases: number
     }>
     dailyTrend: Array<{ date: string; casesCreated: number; casesResolved: number }>
+    responseTimeDistribution?: Array<{ bucket: string; count: number; avgMinutes: number }>
   }
   churnSignals: {
     negativeCompanies: Array<{
@@ -118,6 +119,7 @@ export interface AnalyticsData {
       highPriority: number
     }>
     dailyTrend: Array<{ date: string; cases: number; resolved: number; messages: number }>
+    responseTimeDistribution: Array<{ bucket: string; count: number; avgMinutes: number }>
   }
   churnSignals: {
     negativeCompanies: Array<{
@@ -214,6 +216,11 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
           resolved: d.casesResolved,
           messages: 0, // API не возвращает сообщения по дням
         })),
+        responseTimeDistribution: (raw.teamMetrics?.responseTimeDistribution || []).map(r => ({
+          bucket: r.bucket,
+          count: r.count,
+          avgMinutes: r.avgMinutes,
+        })),
       },
       churnSignals: {
         negativeCompanies: raw.churnSignals?.negativeCompanies || [],
@@ -244,7 +251,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
       messages: { total: 0, problems: 0, voice: 0, video: 0, transcribed: 0 },
       channels: { total: 0, active: 0, avgFirstResponse: 0 },
       patterns: { byCategory: [], bySentiment: [], byIntent: [], recurringProblems: [] },
-      team: { byManager: [], dailyTrend: [] },
+      team: { byManager: [], dailyTrend: [], responseTimeDistribution: [] },
       churnSignals: { negativeCompanies: [], stuckCases: [], recurringByCompany: [], highRiskCompanies: [] },
     }
   }
