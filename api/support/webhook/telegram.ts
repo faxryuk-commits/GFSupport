@@ -136,15 +136,30 @@ async function handleMessageReaction(sql: any, reaction: any): Promise<Response>
     const messageId = reaction.message_id
     const user = extractUserInfo(reaction.user || reaction.actor_chat)
     
-    // Find our message by telegram_message_id
+    console.log(`[Webhook] Processing reaction: chat=${chatId}, msg=${messageId}, user=${user.fullName}`)
+    
+    // First find channel by telegram_chat_id
+    const channelResult = await sql`
+      SELECT id FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
+    `
+    
+    if (channelResult.length === 0) {
+      console.log('[Webhook] Reaction: channel not found for chat_id:', chatId)
+      return json({ ok: true })
+    }
+    
+    const channelId = channelResult[0].id
+    
+    // Find our message by telegram_message_id AND channel_id
     const msgResult = await sql`
       SELECT id, reactions FROM support_messages 
       WHERE telegram_message_id = ${messageId}
+        AND channel_id = ${channelId}
       LIMIT 1
     `
     
     if (msgResult.length === 0) {
-      console.log('[Webhook] Reaction: message not found for telegram_message_id:', messageId)
+      console.log('[Webhook] Reaction: message not found for telegram_message_id:', messageId, 'in channel:', channelId)
       return json({ ok: true })
     }
 

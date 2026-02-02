@@ -99,7 +99,9 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'TELEGRAM_BOT_TOKEN not configured in environment' }, 500)
   }
 
-  const webhookUrl = `https://delever.io/api/support/webhook/telegram`
+  // Use custom domain if available, otherwise Vercel URL
+  const customDomain = process.env.CUSTOM_DOMAIN || 'gf-support.vercel.app'
+  const webhookUrl = `https://${customDomain}/api/support/webhook/telegram`
 
   // GET - Check current webhook status
   if (req.method === 'GET') {
