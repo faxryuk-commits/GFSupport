@@ -8,6 +8,28 @@ import { fetchAnalytics, type AnalyticsData } from '@/shared/api'
 import { Badge } from '@/shared/ui'
 import { ResponseTimeDetailsModal } from './ResponseTimeDetailsModal'
 
+// Перевод категорий на русский
+const categoryLabels: Record<string, string> = {
+  technical: 'Техническая проблема',
+  integration: 'Интеграция',
+  general: 'Общие вопросы',
+  complaint: 'Жалоба',
+  billing: 'Оплата и биллинг',
+  feature_request: 'Запрос функции',
+  onboarding: 'Подключение',
+  question: 'Вопрос',
+  feedback: 'Обратная связь',
+  order: 'Заказы',
+  delivery: 'Доставка',
+  menu: 'Меню',
+  app: 'Приложение',
+}
+
+const getCategoryLabel = (name: string): string => {
+  if (!name) return 'Без категории'
+  return categoryLabels[name.toLowerCase()] || name
+}
+
 const periods = [
   { value: '7d', label: 'Последние 7 дней' },
   { value: '30d', label: 'Последние 30 дней' },
@@ -278,7 +300,7 @@ export function AnalyticsPage() {
                 return (
                   <div key={i}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-slate-700 truncate">{cat.name || 'Без категории'}</span>
+                      <span className="text-slate-700 truncate">{getCategoryLabel(cat.name)}</span>
                       <div className="flex items-center gap-2">
                         {cat.openCount > 0 && (
                           <span className="text-xs text-orange-500">{cat.openCount} откр.</span>

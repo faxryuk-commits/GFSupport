@@ -13,6 +13,32 @@ import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 import { ResponseTimeDetailsModal } from '@/pages/analytics/ui/ResponseTimeDetailsModal'
 
+// Перевод категорий на русский
+const categoryLabels: Record<string, string> = {
+  technical: 'Техническая проблема',
+  integration: 'Интеграция',
+  general: 'Общие вопросы',
+  complaint: 'Жалоба',
+  billing: 'Оплата и биллинг',
+  feature_request: 'Запрос функции',
+  onboarding: 'Подключение',
+  question: 'Вопрос',
+  feedback: 'Обратная связь',
+  order: 'Заказы',
+  delivery: 'Доставка',
+  payment: 'Платежи',
+  menu: 'Меню',
+  app: 'Приложение',
+  website: 'Сайт',
+  pos: 'POS система',
+  aggregator: 'Агрегаторы',
+}
+
+const getCategoryLabel = (name: string): string => {
+  if (!name) return 'Без категории'
+  return categoryLabels[name.toLowerCase()] || name
+}
+
 interface ResponseTimeModalData {
   bucket: string
   bucketLabel: string
@@ -676,7 +702,7 @@ export function DashboardPage() {
                     return (
                       <div key={i}>
                         <div className="flex justify-between text-sm mb-1">
-                          <span className="text-slate-700 truncate">{cat.name || 'Без категории'}</span>
+                          <span className="text-slate-700 truncate">{getCategoryLabel(cat.name)}</span>
                           <div className="flex items-center gap-2">
                             {cat.openCount > 0 && (
                               <span className="text-xs text-orange-500">{cat.openCount} откр.</span>

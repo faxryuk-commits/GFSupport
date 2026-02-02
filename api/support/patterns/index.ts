@@ -52,17 +52,21 @@ const DEFAULT_PATTERNS = {
     { condition: 'negative_sentiment', score: 1, description: 'Негативный sentiment' },
   ],
   
-  // Categories
+  // Categories with extended keywords
   categories: [
-    { id: 'technical', name: 'Техническая проблема', keywords: ['баг', 'ошибка', 'не работает', 'xatolik'] },
-    { id: 'billing', name: 'Оплата/Биллинг', keywords: ['оплата', 'счёт', 'деньги', "to'lov", 'pul'] },
-    { id: 'integration', name: 'Интеграция', keywords: ['интеграция', 'подключение', 'API', "bog'lanish"] },
-    { id: 'onboarding', name: 'Онбординг', keywords: ['подключить', 'начать', 'настроить', 'boshlash'] },
-    { id: 'feature_request', name: 'Запрос функции', keywords: ['хочу', 'нужно', 'добавьте', 'kerak'] },
-    { id: 'complaint', name: 'Жалоба', keywords: ['жалоба', 'плохо', 'недоволен', 'yomon'] },
-    { id: 'question', name: 'Вопрос', keywords: ['как', 'почему', 'что', 'qanday', 'nima'] },
-    { id: 'feedback', name: 'Обратная связь', keywords: ['спасибо', 'отлично', 'хорошо', 'rahmat'] },
-    { id: 'general', name: 'Общее', keywords: [] },
+    { id: 'technical', name: 'Техническая проблема', keywords: ['баг', 'ошибка', 'не работает', 'xatolik', 'глючит', 'виснет', 'crash', 'падает', 'тормозит', 'лагает', 'не загружается', 'белый экран', 'ishlamay', 'buzildi', 'timeout', '500', '404'] },
+    { id: 'integration', name: 'Интеграция', keywords: ['интеграция', 'подключение', 'API', "bog'lanish", 'iiko', 'r-keeper', 'poster', 'jowi', 'wolt', 'yandex', 'express24', 'payme', 'click', 'синхронизация', 'webhook', 'не приходят заказы'] },
+    { id: 'billing', name: 'Оплата/Биллинг', keywords: ['оплата', 'счёт', 'деньги', "to'lov", 'pul', 'тариф', 'подписка', 'списание', 'возврат', 'баланс', 'касса', 'терминал', 'эквайринг', 'чек'] },
+    { id: 'complaint', name: 'Жалоба', keywords: ['жалоба', 'плохо', 'недоволен', 'yomon', 'ужас', 'кошмар', 'обман', 'хамство', 'грубо', 'претензия', 'скандал', 'shikoyat'] },
+    { id: 'feature_request', name: 'Запрос функции', keywords: ['хочу', 'нужно', 'добавьте', 'kerak', 'предлагаю', 'улучшить', 'доработать', 'новая функция', 'было бы хорошо'] },
+    { id: 'order', name: 'Заказы', keywords: ['заказ', 'order', 'buyurtma', 'zakaz', 'статус заказа', 'отменить заказ', 'изменить заказ', 'где заказ'] },
+    { id: 'delivery', name: 'Доставка', keywords: ['доставка', 'курьер', 'yetkazib', 'dostavka', 'опоздал', 'задержка', 'не доставили', 'tracking'] },
+    { id: 'menu', name: 'Меню', keywords: ['меню', 'блюдо', 'товар', 'позиция', 'цена', 'стоп-лист', 'ассортимент', 'добавить товар'] },
+    { id: 'app', name: 'Приложение', keywords: ['приложение', 'app', 'мобильный', 'android', 'ios', 'скачать', 'обновление', 'ilova'] },
+    { id: 'onboarding', name: 'Подключение', keywords: ['подключить', 'начать', 'настроить', 'boshlash', 'регистрация', 'первый раз', 'с чего начать'] },
+    { id: 'question', name: 'Вопрос', keywords: ['как', 'почему', 'что', 'qanday', 'nima', 'подскажите', 'расскажите', 'где найти'] },
+    { id: 'feedback', name: 'Обратная связь', keywords: ['спасибо', 'отлично', 'хорошо', 'rahmat', 'молодцы', 'супер', "zo'r"] },
+    { id: 'general', name: 'Общие вопросы', keywords: [] },
   ],
   
   // Commitment detection patterns (Russian)
@@ -95,7 +99,7 @@ const DEFAULT_PATTERNS = {
 
 Анализируй сообщение и верни JSON:
 {
-  "category": "одно из: technical, billing, integration, onboarding, feature_request, complaint, question, feedback, general",
+  "category": "одно из: technical, integration, billing, complaint, feature_request, order, delivery, menu, app, onboarding, question, feedback, general",
   "sentiment": "positive, neutral, negative, frustrated",
   "intent": "ask_question, report_problem, request_feature, complaint, gratitude, information, unknown",
   "urgency": "число 0-5, где 5 - критично срочно",

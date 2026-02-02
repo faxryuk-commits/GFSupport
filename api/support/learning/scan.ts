@@ -72,18 +72,70 @@ function isNegativeFeedback(text: string): boolean {
   return negativeWords.some(w => lower.includes(w))
 }
 
-// Categorize question
+// Categorize question with improved logic
 function categorizeQuestion(text: string): string {
   if (!text) return 'general'
   const lower = text.toLowerCase()
   
-  if (/ошибк|error|не работа|сломал|баг|bug|xato/i.test(lower)) return 'technical'
-  if (/оплат|счёт|счет|деньг|pul|tolov|billing/i.test(lower)) return 'billing'
-  if (/интеграц|подключ|api|webhook|iiko|r-keeper/i.test(lower)) return 'integration'
-  if (/начать|настро|установ|boshlash|sozlash/i.test(lower)) return 'onboarding'
-  if (/можно ли|хотел бы|было бы|добавьте|feature/i.test(lower)) return 'feature_request'
-  if (/жалоб|недовол|плохо|ужас|shikoyat/i.test(lower)) return 'complaint'
-  if (/как|что|где|почему|когда|qanday|nima|qayerda/i.test(lower)) return 'question'
+  // Технические проблемы (расширенный список)
+  if (/ошибк|error|не работа|сломал|баг|bug|xato|глючит|виснет|падает|crash|exception|500|404|timeout|не загруж|не открыва|зависа|тормоз|медленн|лагает|не отвеча|не реагир|белый экран|черный экран|ishlamay|buzildi/i.test(lower)) {
+    return 'technical'
+  }
+  
+  // Интеграции (POS системы, агрегаторы, API)
+  if (/интеграц|подключ|api|webhook|iiko|r-keeper|rkeeper|poster|jowi|wolt|yandex|express24|узум|payme|click|apelsin|агрегатор|синхрониз|связ.*с|не приход.*заказ|не передаёт|не синхрон|bog'lanish|ulanish/i.test(lower)) {
+    return 'integration'
+  }
+  
+  // Оплата и биллинг
+  if (/оплат|счёт|счет|деньг|pul|tolov|billing|tarif|тариф|подписк|subscription|списа|возврат|refund|чек|invoice|баланс|balance|касс|terminal|эквайринг|платёж|оплач|не оплат/i.test(lower)) {
+    return 'billing'
+  }
+  
+  // Жалобы
+  if (/жалоб|недовол|плохо|ужас|shikoyat|отврат|кошмар|безобраз|хамств|грубо|обман|мошен|разочаров|возмущ|скандал|претензи|рекламац/i.test(lower)) {
+    return 'complaint'
+  }
+  
+  // Запросы функций
+  if (/можно ли|хотел бы|было бы|добавьте|feature|предлага|улучш|доработ|реализ|внедр|новая функц|нужна возможн|kerak|qo'shsangiz/i.test(lower)) {
+    return 'feature_request'
+  }
+  
+  // Заказы
+  if (/заказ|order|buyurtma|zakaz|не приш|где заказ|статус заказ|отмен.*заказ|изменить заказ|корректир.*заказ/i.test(lower)) {
+    return 'order'
+  }
+  
+  // Доставка
+  if (/доставк|delivery|курьер|yetkazib|dostavka|опоздал|задерж.*доставк|не доставил|где курьер|tracking/i.test(lower)) {
+    return 'delivery'
+  }
+  
+  // Меню
+  if (/меню|menu|блюд|товар|продукт|позици|ассортимент|добавить.*товар|удалить.*товар|изменить.*цен|стоп-лист/i.test(lower)) {
+    return 'menu'
+  }
+  
+  // Приложение
+  if (/приложен|app|мобильн|android|ios|скачать|установ|обновлен|версия|play market|app store|ilova/i.test(lower)) {
+    return 'app'
+  }
+  
+  // Онбординг
+  if (/начать|настро|установ|boshlash|sozlash|регистрац|первый раз|как подключ|с чего начать|пошагов/i.test(lower)) {
+    return 'onboarding'
+  }
+  
+  // Вопросы (общие)
+  if (/как\s|что\s|где\s|почему|когда|qanday|nima|qayerda|подскажите|расскажите|объясните/i.test(lower)) {
+    return 'question'
+  }
+  
+  // Благодарность/отзыв
+  if (/спасибо|благодар|отлично|супер|класс|молодц|rahmat|zo'r|ajoyib/i.test(lower)) {
+    return 'feedback'
+  }
   
   return 'general'
 }
