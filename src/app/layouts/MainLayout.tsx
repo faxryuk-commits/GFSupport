@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/widgets/sidebar'
+import { ErrorBoundary } from '@/shared/ui'
 
 interface AgentData {
   id: string
@@ -95,7 +96,9 @@ export function MainLayout() {
         onLogout={handleLogout}
       />
       <main className="flex-1 h-full overflow-auto">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   )
