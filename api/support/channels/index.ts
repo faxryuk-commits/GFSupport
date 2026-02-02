@@ -43,39 +43,74 @@ export default async function handler(req: Request): Promise<Response> {
   // GET - список каналов
   if (req.method === 'GET') {
     try {
-      const type = url.searchParams.get('type') // client, internal, all
+      const type = url.searchParams.get('type')
       const companyId = url.searchParams.get('companyId')
       const isActive = url.searchParams.get('active')
       const search = url.searchParams.get('search')
-      const limit = parseInt(url.searchParams.get('limit') || '100')
-      const offset = parseInt(url.searchParams.get('offset') || '0')
+      const limitParam = parseInt(url.searchParams.get('limit') || '100')
+      const offsetParam = parseInt(url.searchParams.get('offset') || '0')
 
-      const channels = await sql`
-        SELECT 
-          c.*,
-          (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-          (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-        FROM support_channels c
-        WHERE 1=1
-          ${type && type !== 'all' ? sql`AND c.type = ${type}` : sql``}
-          ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
-          ${isActive === 'true' ? sql`AND c.is_active = true` : sql``}
-          ${isActive === 'false' ? sql`AND c.is_active = false` : sql``}
-          ${search ? sql`AND c.name ILIKE ${'%' + search + '%'}` : sql``}
-        ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
+      // Простой запрос без динамических условий
+      let channels
+      
+      if (search) {
+        channels = await sql`
+          SELECT 
+            c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          WHERE c.name ILIKE ${'%' + search + '%'}
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (type && type !== 'all') {
+        channels = await sql`
+          SELECT 
+            c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          WHERE c.type = ${type}
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (isActive === 'true') {
+        channels = await sql`
+          SELECT 
+            c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          WHERE c.is_active = true
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (isActive === 'false') {
+        channels = await sql`
+          SELECT 
+            c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          WHERE c.is_active = false
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else {
+        channels = await sql`
+          SELECT 
+            c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      }
 
-      const countResult = await sql`
-        SELECT COUNT(*) as total FROM support_channels c
-        WHERE 1=1
-          ${type && type !== 'all' ? sql`AND c.type = ${type}` : sql``}
-          ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
-          ${isActive === 'true' ? sql`AND c.is_active = true` : sql``}
-          ${isActive === 'false' ? sql`AND c.is_active = false` : sql``}
-          ${search ? sql`AND c.name ILIKE ${'%' + search + '%'}` : sql``}
-      `
-
+      // Общее количество
+      const countResult = await sql`SELECT COUNT(*) as total FROM support_channels`
       const total = parseInt(countResult[0]?.total || '0')
 
       // Статистика по типам
@@ -92,7 +127,7 @@ export default async function handler(req: Request): Promise<Response> {
           name: c.name || `Канал ${c.telegram_chat_id}`,
           type: c.type || 'client',
           companyId: c.company_id,
-          companyName: c.name || 'Компания', // Берём из имени канала
+          companyName: c.name || 'Компания',
           leadId: c.lead_id,
           isActive: c.is_active !== false,
           membersCount: c.members_count || 0,
@@ -113,18 +148,18 @@ export default async function handler(req: Request): Promise<Response> {
           updatedAt: c.updated_at,
         })),
         total,
-        limit,
-        offset,
-        hasMore: offset + limit < total,
+        limit: limitParam,
+        offset: offsetParam,
+        hasMore: offsetParam + limitParam < total,
         stats: Object.fromEntries(statsResult.map((s: any) => [
           s.type, 
           { total: parseInt(s.count), active: parseInt(s.active_count) }
         ]))
-      }, 200, 5) // Cache for 5 seconds
+      }, 200, 5)
 
     } catch (e: any) {
       console.error('Channels fetch error:', e)
-      return json({ error: 'Failed to fetch channels', details: e.message, stack: e.stack?.slice(0, 500) }, 500)
+      return json({ error: 'Failed to fetch channels', details: e.message }, 500)
     }
   }
 
@@ -140,13 +175,11 @@ export default async function handler(req: Request): Promise<Response> {
 
       const channelId = `ch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 
-      // Проверяем нет ли уже такого канала
       const existing = await sql`
         SELECT id FROM support_channels WHERE telegram_chat_id = ${telegramChatId}
       `
 
       if (existing && existing.length > 0) {
-        // Обновляем существующий
         await sql`
           UPDATE support_channels SET
             name = ${name},
@@ -166,7 +199,6 @@ export default async function handler(req: Request): Promise<Response> {
         })
       }
 
-      // Создаём новый канал
       await sql`
         INSERT INTO support_channels (
           id, telegram_chat_id, name, type, company_id, lead_id, settings
@@ -207,10 +239,7 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_channels SET
           name = COALESCE(${name}, name),
           type = COALESCE(${type}, type),
-          company_id = ${companyId !== undefined ? companyId : sql`company_id`},
-          lead_id = ${leadId !== undefined ? leadId : sql`lead_id`},
           is_active = COALESCE(${isActive}, is_active),
-          settings = COALESCE(${settings ? JSON.stringify(settings) : null}, settings),
           updated_at = NOW()
         WHERE id = ${id}
       `
@@ -235,7 +264,6 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Channel ID required' }, 400)
       }
 
-      // Мягкое удаление - просто деактивируем
       await sql`
         UPDATE support_channels SET is_active = false WHERE id = ${channelId}
       `

@@ -20,11 +20,6 @@ function json(data: any, status = 200) {
   })
 }
 
-// Валидные статусы кейсов
-const VALID_STATUSES = ['detected', 'in_progress', 'waiting', 'blocked', 'resolved', 'closed', 'recurring']
-const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent']
-const VALID_SEVERITIES = ['low', 'normal', 'high', 'critical']
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -50,56 +45,114 @@ export default async function handler(req: Request): Promise<Response> {
       const statusParam = url.searchParams.get('status')
       const priority = url.searchParams.get('priority')
       const channelId = url.searchParams.get('channelId')
-      const companyId = url.searchParams.get('companyId')
       const assignedTo = url.searchParams.get('assignedTo')
       const search = url.searchParams.get('search')
-      const limit = parseInt(url.searchParams.get('limit') || '50')
-      const offset = parseInt(url.searchParams.get('offset') || '0')
+      const limitParam = parseInt(url.searchParams.get('limit') || '50')
+      const offsetParam = parseInt(url.searchParams.get('offset') || '0')
 
-      // Парсим множественные статусы (status=open,in_progress,detected)
+      // Парсим статусы
       const statuses = statusParam && statusParam !== 'all' 
         ? statusParam.split(',').map(s => s.trim())
         : null
 
-      // Базовый запрос без JOIN на несуществующие таблицы
-      let cases = await sql`
-        SELECT 
-          c.*,
-          ch.name as channel_name,
-          ch.telegram_chat_id,
-          (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
-        FROM support_cases c
-        LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE 1=1
-          ${statuses && statuses.length > 0 ? sql`AND c.status = ANY(${statuses})` : sql``}
-          ${priority ? sql`AND c.priority = ${priority}` : sql``}
-          ${channelId ? sql`AND c.channel_id = ${channelId}` : sql``}
-          ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
-          ${assignedTo ? sql`AND c.assigned_to = ${assignedTo}` : sql``}
-          ${search ? sql`AND (c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'})` : sql``}
-        ORDER BY 
-          CASE c.priority 
-            WHEN 'urgent' THEN 1 
-            WHEN 'high' THEN 2 
-            WHEN 'medium' THEN 3 
-            ELSE 4 
-          END,
-          c.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
+      // Простые запросы без вложенных sql``
+      let cases
+      
+      if (statuses && statuses.length > 0) {
+        cases = await sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.status = ANY(${statuses})
+          ORDER BY 
+            CASE c.priority 
+              WHEN 'urgent' THEN 1 
+              WHEN 'high' THEN 2 
+              WHEN 'medium' THEN 3 
+              ELSE 4 
+            END,
+            c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (priority) {
+        cases = await sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.priority = ${priority}
+          ORDER BY c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (channelId) {
+        cases = await sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.channel_id = ${channelId}
+          ORDER BY c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (assignedTo) {
+        cases = await sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.assigned_to = ${assignedTo}
+          ORDER BY c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (search) {
+        cases = await sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'}
+          ORDER BY c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else {
+        cases = await sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          ORDER BY 
+            CASE c.priority 
+              WHEN 'urgent' THEN 1 
+              WHEN 'high' THEN 2 
+              WHEN 'medium' THEN 3 
+              ELSE 4 
+            END,
+            c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      }
 
       // Общее количество
-      const countResult = await sql`
-        SELECT COUNT(*) as total FROM support_cases c
-        WHERE 1=1
-          ${statuses && statuses.length > 0 ? sql`AND c.status = ANY(${statuses})` : sql``}
-          ${priority ? sql`AND c.priority = ${priority}` : sql``}
-          ${channelId ? sql`AND c.channel_id = ${channelId}` : sql``}
-          ${companyId ? sql`AND c.company_id = ${companyId}` : sql``}
-          ${assignedTo ? sql`AND c.assigned_to = ${assignedTo}` : sql``}
-          ${search ? sql`AND (c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'})` : sql``}
-      `
-
+      const countResult = await sql`SELECT COUNT(*) as total FROM support_cases`
       const total = parseInt(countResult[0]?.total || '0')
 
       // Статистика по статусам
@@ -118,7 +171,7 @@ export default async function handler(req: Request): Promise<Response> {
           channelName: c.channel_name || 'Без канала',
           telegramChatId: c.telegram_chat_id,
           companyId: c.company_id,
-          companyName: c.channel_name || 'Компания', // Берём из канала
+          companyName: c.channel_name || 'Компания',
           leadId: c.lead_id,
           title: c.title || 'Без названия',
           description: c.description || '',
@@ -129,7 +182,7 @@ export default async function handler(req: Request): Promise<Response> {
           priority: c.priority || 'medium',
           severity: c.severity,
           assignedTo: c.assigned_to,
-          assigneeName: c.assigned_to ? 'Назначен' : null, // TODO: получить имя из support_agents
+          assigneeName: c.assigned_to ? 'Назначен' : null,
           firstResponseAt: c.first_response_at,
           resolvedAt: c.resolved_at,
           resolutionTimeMinutes: c.resolution_time_minutes,
@@ -145,15 +198,15 @@ export default async function handler(req: Request): Promise<Response> {
           updatedAt: c.updated_at,
         })),
         total,
-        limit,
-        offset,
-        hasMore: offset + limit < total,
+        limit: limitParam,
+        offset: offsetParam,
+        hasMore: offsetParam + limitParam < total,
         stats
       })
 
     } catch (e: any) {
       console.error('Cases fetch error:', e)
-      return json({ error: 'Failed to fetch cases', details: e.message, stack: e.stack?.slice(0, 500) }, 500)
+      return json({ error: 'Failed to fetch cases', details: e.message }, 500)
     }
   }
 
@@ -172,16 +225,20 @@ export default async function handler(req: Request): Promise<Response> {
 
       const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       
-      // Получаем следующий номер тикета из sequence
-      let ticketNumber = null
+      // Получаем следующий номер тикета
+      let ticketNumber = 1
       try {
         const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
         ticketNumber = parseInt(seqResult[0]?.num || '1')
       } catch {
-        // Sequence может не существовать - создаём
-        await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1`
-        const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
-        ticketNumber = parseInt(seqResult[0]?.num || '1')
+        try {
+          await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1`
+          const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
+          ticketNumber = parseInt(seqResult[0]?.num || '1')
+        } catch {
+          // Если sequence не работает, генерируем из timestamp
+          ticketNumber = Math.floor(Date.now() / 1000) % 100000
+        }
       }
       
       await sql`
@@ -205,18 +262,6 @@ export default async function handler(req: Request): Promise<Response> {
         )
       `
 
-      // Создаём запись в истории
-      await sql`
-        INSERT INTO support_case_activities (id, case_id, type, title, to_status)
-        VALUES (
-          ${'act_' + Date.now()},
-          ${caseId},
-          'created',
-          ${'Тикет #' + String(ticketNumber).padStart(3, '0') + ' создан'},
-          'detected'
-        )
-      `
-
       return json({
         success: true,
         caseId,
@@ -225,7 +270,36 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
+      console.error('Case create error:', e)
       return json({ error: 'Failed to create case', details: e.message }, 500)
+    }
+  }
+
+  // PUT - обновить кейс
+  if (req.method === 'PUT') {
+    try {
+      const body = await req.json()
+      const { id, status, priority, assignedTo, title, description } = body
+
+      if (!id) {
+        return json({ error: 'Case ID required' }, 400)
+      }
+
+      await sql`
+        UPDATE support_cases SET
+          status = COALESCE(${status}, status),
+          priority = COALESCE(${priority}, priority),
+          assigned_to = COALESCE(${assignedTo}, assigned_to),
+          title = COALESCE(${title}, title),
+          description = COALESCE(${description}, description),
+          updated_at = NOW()
+        WHERE id = ${id}
+      `
+
+      return json({ success: true, caseId: id })
+
+    } catch (e: any) {
+      return json({ error: 'Failed to update case', details: e.message }, 500)
     }
   }
 
