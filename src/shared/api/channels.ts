@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../services/api.service'
+import { apiGet, apiPost, apiPut, apiDelete } from '../services/api.service'
 import type { Channel } from '@/entities/channel'
 
 export async function fetchChannels(): Promise<Channel[]> {
@@ -11,6 +11,18 @@ export async function fetchChannel(id: string): Promise<Channel> {
 
 export async function markChannelRead(channelId: string): Promise<void> {
   await apiPost(`/channels/${channelId}/read`, {})
+}
+
+export async function updateChannel(channelId: string, data: {
+  name?: string
+  type?: 'client' | 'partner' | 'internal'
+  isActive?: boolean
+}): Promise<void> {
+  await apiPut('/channels', { id: channelId, ...data })
+}
+
+export async function disconnectChannel(channelId: string): Promise<void> {
+  await apiDelete(`/channels?id=${channelId}`)
 }
 
 export async function updateChannelPhoto(channelId: string): Promise<string> {

@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { 
-  Search, Plus, RefreshCw, MessageSquare, Users, Activity,
+  Search, Plus, RefreshCw, MessageSquare, Activity,
   Hash, Building, ChevronDown, ExternalLink, MoreHorizontal,
-  CheckCircle, XCircle, Clock, AlertTriangle, Filter
+  CheckCircle, XCircle, Clock, AlertTriangle, Filter, Settings, Edit3, Power
 } from 'lucide-react'
-import { Badge, LoadingState, EmptyState, Modal, Avatar } from '@/shared/ui'
-import { fetchChannels } from '@/shared/api'
+import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog, Input } from '@/shared/ui'
+import { fetchChannels, updateChannel, disconnectChannel } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 
 type FilterStatus = 'all' | 'active' | 'inactive' | 'awaiting'
@@ -22,6 +22,14 @@ export function ChannelsListPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSortMenu, setShowSortMenu] = useState(false)
   const sortMenuRef = useRef<HTMLDivElement>(null)
+
+  // Модальные окна для действий
+  const [settingsChannel, setSettingsChannel] = useState<Channel | null>(null)
+  const [renameChannel, setRenameChannel] = useState<Channel | null>(null)
+  const [disconnectChannelData, setDisconnectChannelData] = useState<Channel | null>(null)
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState<'client' | 'partner' | 'internal'>('client')
+  const [actionLoading, setActionLoading] = useState(false)
 
   const loadChannels = useCallback(async () => {
     try {
@@ -50,6 +58,68 @@ export function ChannelsListPage() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Действия над каналом
+  const handleOpenSettings = (channel: Channel) => {
+    setSettingsChannel(channel)
+    setNewType(channel.type)
+  }
+
+  const handleOpenRename = (channel: Channel) => {
+    setRenameChannel(channel)
+    setNewName(channel.name || '')
+  }
+
+  const handleRename = async () => {
+    if (!renameChannel || !newName.trim()) return
+    setActionLoading(true)
+    try {
+      await updateChannel(renameChannel.id, { name: newName.trim() })
+      setChannels(prev => prev.map(ch => 
+        ch.id === renameChannel.id ? { ...ch, name: newName.trim() } : ch
+      ))
+      setRenameChannel(null)
+    } catch (err) {
+      console.error('Failed to rename channel:', err)
+      alert('Не удалось переименовать канал')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleUpdateType = async () => {
+    if (!settingsChannel) return
+    setActionLoading(true)
+    try {
+      await updateChannel(settingsChannel.id, { type: newType })
+      setChannels(prev => prev.map(ch => 
+        ch.id === settingsChannel.id ? { ...ch, type: newType } : ch
+      ))
+      setSettingsChannel(null)
+    } catch (err) {
+      console.error('Failed to update channel:', err)
+      alert('Не удалось обновить канал')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    if (!disconnectChannelData) return
+    setActionLoading(true)
+    try {
+      await disconnectChannel(disconnectChannelData.id)
+      setChannels(prev => prev.map(ch => 
+        ch.id === disconnectChannelData.id ? { ...ch, isActive: false } : ch
+      ))
+      setDisconnectChannelData(null)
+    } catch (err) {
+      console.error('Failed to disconnect channel:', err)
+      alert('Не удалось отключить канал')
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   // Фильтрация и сортировка
   const filteredChannels = channels
@@ -287,7 +357,13 @@ export function ChannelsListPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {filteredChannels.map(channel => (
-                <ChannelRow key={channel.id} channel={channel} />
+                <ChannelRow 
+                  key={channel.id} 
+                  channel={channel}
+                  onSettings={() => handleOpenSettings(channel)}
+                  onRename={() => handleOpenRename(channel)}
+                  onDisconnect={() => setDisconnectChannelData(channel)}
+                />
               ))}
             </tbody>
           </table>
@@ -328,6 +404,119 @@ export function ChannelsListPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Rename Modal */}
+      <Modal
+        isOpen={!!renameChannel}
+        onClose={() => setRenameChannel(null)}
+        title="Переименовать канал"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Новое название
+            </label>
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Введите название..."
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setRenameChannel(null)}
+              className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors text-sm"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleRename}
+              disabled={!newName.trim() || actionLoading}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              {actionLoading ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal
+        isOpen={!!settingsChannel}
+        onClose={() => setSettingsChannel(null)}
+        title="Настройки канала"
+      >
+        {settingsChannel && (
+          <div className="space-y-4">
+            <div className="p-4 bg-slate-50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <Avatar name={settingsChannel.name || ''} src={settingsChannel.photoUrl} size="lg" />
+                <div>
+                  <h3 className="font-medium text-slate-800">{settingsChannel.name}</h3>
+                  <p className="text-sm text-slate-500">#{settingsChannel.telegramChatId}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Тип канала
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['client', 'partner', 'internal'] as const).map(type => {
+                  const labels = {
+                    client: { label: 'Клиент', color: 'blue' },
+                    partner: { label: 'Партнёр', color: 'amber' },
+                    internal: { label: 'Внутренний', color: 'slate' },
+                  }
+                  const info = labels[type]
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setNewType(type)}
+                      className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                        newType === type
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {info.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setSettingsChannel(null)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors text-sm"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleUpdateType}
+                disabled={newType === settingsChannel.type || actionLoading}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                {actionLoading ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Disconnect Confirmation */}
+      <ConfirmDialog
+        isOpen={!!disconnectChannelData}
+        onClose={() => setDisconnectChannelData(null)}
+        onConfirm={handleDisconnect}
+        title="Отключить канал?"
+        message={`Вы уверены, что хотите отключить канал "${disconnectChannelData?.name}"? Бот перестанет получать сообщения из этого канала.`}
+        confirmLabel={actionLoading ? 'Отключение...' : 'Отключить'}
+        variant="danger"
+      />
     </div>
   )
 }
@@ -376,7 +565,14 @@ function Step({ number, text }: { number: number; text: string }) {
 }
 
 // Channel Row Component
-function ChannelRow({ channel }: { channel: Channel }) {
+interface ChannelRowProps {
+  channel: Channel
+  onSettings: () => void
+  onRename: () => void
+  onDisconnect: () => void
+}
+
+function ChannelRow({ channel, onSettings, onRename, onDisconnect }: ChannelRowProps) {
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -403,15 +599,11 @@ function ChannelRow({ channel }: { channel: Channel }) {
       {/* Channel Info */}
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-            channel.isActive ? 'bg-blue-100' : 'bg-slate-100'
-          }`}>
-            {channel.photoUrl ? (
-              <Avatar src={channel.photoUrl} name={channel.name || ''} size="md" />
-            ) : (
-              <MessageSquare className={`w-5 h-5 ${channel.isActive ? 'text-blue-600' : 'text-slate-400'}`} />
-            )}
-          </div>
+          <Avatar 
+            src={channel.photoUrl} 
+            name={channel.name || 'Канал'} 
+            size="md" 
+          />
           <div className="min-w-0">
             <div className="font-medium text-slate-800 truncate max-w-[200px]">
               {channel.name || 'Без названия'}
@@ -505,21 +697,34 @@ function ChannelRow({ channel }: { channel: Channel }) {
               <MoreHorizontal className="w-4 h-4" />
             </button>
             {showMenu && (
-              <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
+              <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
                 <Link
                   to={`/chats/${channel.id}`}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-slate-50"
+                  className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50"
                 >
+                  <ExternalLink className="w-4 h-4 text-slate-400" />
                   Открыть чат
                 </Link>
-                <button className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50">
+                <button 
+                  onClick={() => { setShowMenu(false); onSettings() }}
+                  className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50"
+                >
+                  <Settings className="w-4 h-4 text-slate-400" />
                   Настройки
                 </button>
-                <button className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50">
+                <button 
+                  onClick={() => { setShowMenu(false); onRename() }}
+                  className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50"
+                >
+                  <Edit3 className="w-4 h-4 text-slate-400" />
                   Переименовать
                 </button>
                 <div className="border-t border-slate-100" />
-                <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                <button 
+                  onClick={() => { setShowMenu(false); onDisconnect() }}
+                  className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Power className="w-4 h-4" />
                   Отключить
                 </button>
               </div>
