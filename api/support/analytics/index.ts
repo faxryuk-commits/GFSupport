@@ -163,32 +163,36 @@ export default async function handler(req: Request): Promise<Response> {
     let responseTimeDistribution: any[] = []
     
     try {
-      // Вычисляем время первого ответа из сообщений (за весь период)
+      // Вычисляем время ответа для КАЖДОГО сообщения клиента
+      // Находим следующий ответ поддержки после каждого сообщения клиента
       const responseTimesResult = await sql`
-        WITH channel_first_client_msg AS (
+        WITH client_messages AS (
           SELECT 
+            id,
             channel_id,
-            MIN(created_at) as first_client_msg_at
+            created_at as client_msg_at
           FROM support_messages
-          WHERE (sender_role = 'client' OR is_from_client = true)
-          GROUP BY channel_id
+          WHERE sender_role = 'client' OR is_from_client = true
         ),
-        channel_first_support_response AS (
+        response_times AS (
           SELECT 
-            m.channel_id,
-            MIN(m.created_at) as first_response_at
-          FROM support_messages m
-          JOIN channel_first_client_msg fc ON m.channel_id = fc.channel_id
-          WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
-            AND m.created_at > fc.first_client_msg_at
-          GROUP BY m.channel_id
+            cm.id as client_msg_id,
+            cm.channel_id,
+            cm.client_msg_at,
+            (
+              SELECT MIN(created_at)
+              FROM support_messages sm
+              WHERE sm.channel_id = cm.channel_id
+                AND sm.created_at > cm.client_msg_at
+                AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+            ) as response_at
+          FROM client_messages cm
         )
         SELECT 
-          fc.channel_id,
-          EXTRACT(EPOCH FROM (fr.first_response_at - fc.first_client_msg_at)) / 60 as response_minutes
-        FROM channel_first_client_msg fc
-        JOIN channel_first_support_response fr ON fc.channel_id = fr.channel_id
-        WHERE fr.first_response_at IS NOT NULL
+          EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
+        FROM response_times
+        WHERE response_at IS NOT NULL
+          AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) >= 0
       `
       
       if (responseTimesResult.length > 0) {
