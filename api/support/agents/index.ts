@@ -245,6 +245,9 @@ export default async function handler(req: Request): Promise<Response> {
         // Tables might not exist
       }
       
+      // Use status from DB if it's 'online', otherwise use computed isOnline
+      const finalStatus = r.status === 'online' ? 'online' : (isOnline ? 'online' : 'offline')
+      
       return {
         id: r.id,
         name: r.name,
@@ -252,7 +255,7 @@ export default async function handler(req: Request): Promise<Response> {
         email: r.email,
         telegramId: r.telegram_id,
         role: r.role || 'agent',
-        status: isOnline ? 'online' : 'offline',
+        status: finalStatus,
         avatarUrl: r.avatar_url,
         createdAt: r.created_at,
         lastSeenAt: lastSeenAt,
