@@ -5,15 +5,23 @@ import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
 
 // Форматирование даты
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit', 
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+function formatDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return 'Не указано'
+  
+  try {
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) return dateStr // Вернуть как есть если не парсится
+    
+    return date.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch {
+    return dateStr
+  }
 }
 
 interface Comment {

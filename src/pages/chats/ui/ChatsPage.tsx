@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
@@ -84,8 +84,12 @@ const defaultQuickReplies = [
 ]
 
 export function ChatsPage() {
-  const { id: channelIdFromUrl } = useParams<{ id: string }>()
+  const { id: channelIdFromPath } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  
+  // Channel ID можно передать через URL path (/chats/:id) или query param (?channel=xxx)
+  const channelIdFromUrl = channelIdFromPath || searchParams.get('channel') || undefined
 
   // Данные
   const [channels, setChannels] = useState<ChannelItemData[]>([])
