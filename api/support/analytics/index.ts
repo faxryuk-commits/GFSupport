@@ -157,44 +157,76 @@ export default async function handler(req: Request): Promise<Response> {
       ORDER BY total_cases DESC
     `
 
-    // Среднее время первого ответа
-    const responseTimeResult = await sql`
-      SELECT 
-        AVG(EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60) as avg_first_response_minutes
-      FROM support_cases
-      WHERE first_response_at IS NOT NULL
-        AND created_at >= ${startDate.toISOString()}
-    `
-    const avgFirstResponse = responseTimeResult[0]?.avg_first_response_minutes || null
-
-    // Распределение времени первого ответа по интервалам
+    // Время первого ответа - вычисляем из сообщений
+    // Находим разницу между первым сообщением клиента и первым ответом от поддержки для каждого канала
+    let avgFirstResponse: number | null = null
     let responseTimeDistribution: any[] = []
+    
     try {
-      responseTimeDistribution = await sql`
+      // Вычисляем время первого ответа из сообщений
+      const responseTimesResult = await sql`
+        WITH channel_first_client_msg AS (
+          SELECT 
+            channel_id,
+            MIN(created_at) as first_client_msg_at
+          FROM support_messages
+          WHERE (sender_role = 'client' OR is_from_client = true)
+            AND created_at >= ${startDate.toISOString()}
+          GROUP BY channel_id
+        ),
+        channel_first_support_response AS (
+          SELECT 
+            m.channel_id,
+            MIN(m.created_at) as first_response_at
+          FROM support_messages m
+          JOIN channel_first_client_msg fc ON m.channel_id = fc.channel_id
+          WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+            AND m.created_at > fc.first_client_msg_at
+          GROUP BY m.channel_id
+        )
         SELECT 
-          CASE 
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 5 THEN '5min'
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 10 THEN '10min'
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 30 THEN '30min'
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 60 THEN '60min'
-            ELSE '60plus'
-          END as bucket,
-          COUNT(*) as count,
-          AVG(EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60) as avg_minutes
-        FROM support_cases
-        WHERE first_response_at IS NOT NULL
-          AND created_at >= ${startDate.toISOString()}
-        GROUP BY 1
-        ORDER BY 
-          CASE 
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 5 THEN 1
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 10 THEN 2
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 30 THEN 3
-            WHEN EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60 <= 60 THEN 4
-            ELSE 5
-          END
-        LIMIT 5
+          fc.channel_id,
+          EXTRACT(EPOCH FROM (fr.first_response_at - fc.first_client_msg_at)) / 60 as response_minutes
+        FROM channel_first_client_msg fc
+        JOIN channel_first_support_response fr ON fc.channel_id = fr.channel_id
+        WHERE fr.first_response_at IS NOT NULL
       `
+      
+      if (responseTimesResult.length > 0) {
+        // Среднее время
+        const totalMinutes = responseTimesResult.reduce((sum: number, r: any) => sum + parseFloat(r.response_minutes || 0), 0)
+        avgFirstResponse = Math.round(totalMinutes / responseTimesResult.length)
+        
+        // Распределение по интервалам
+        const buckets = {
+          '5min': { count: 0, total: 0 },
+          '10min': { count: 0, total: 0 },
+          '30min': { count: 0, total: 0 },
+          '60min': { count: 0, total: 0 },
+          '60plus': { count: 0, total: 0 },
+        }
+        
+        for (const r of responseTimesResult) {
+          const mins = parseFloat(r.response_minutes || 0)
+          let bucket: keyof typeof buckets
+          if (mins <= 5) bucket = '5min'
+          else if (mins <= 10) bucket = '10min'
+          else if (mins <= 30) bucket = '30min'
+          else if (mins <= 60) bucket = '60min'
+          else bucket = '60plus'
+          
+          buckets[bucket].count++
+          buckets[bucket].total += mins
+        }
+        
+        responseTimeDistribution = Object.entries(buckets)
+          .filter(([_, v]) => v.count > 0)
+          .map(([key, v]) => ({
+            bucket: key,
+            count: v.count,
+            avg_minutes: v.count > 0 ? v.total / v.count : 0,
+          }))
+      }
     } catch (e) {
       console.error('responseTimeDistribution error:', e)
     }
