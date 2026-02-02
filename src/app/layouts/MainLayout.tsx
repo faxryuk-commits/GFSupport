@@ -87,14 +87,14 @@ export function MainLayout() {
   }, [navigate])
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
       <Sidebar 
         unreadChats={unreadChats} 
         openCases={openCases}
         currentUser={currentUser || undefined}
         onLogout={handleLogout}
       />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 h-full overflow-hidden">
         <Outlet />
       </main>
     </div>

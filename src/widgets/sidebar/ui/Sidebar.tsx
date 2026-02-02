@@ -109,7 +109,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
 
   return (
     <aside 
-      className={`bg-[#1a2b4b] min-h-screen flex flex-col transition-all duration-300 ${
+      className={`bg-[#1a2b4b] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
         isCollapsed ? 'w-[72px]' : 'w-[240px]'
       }`}
     >
