@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail, X } from 'lucide-react'
-import { fetchAgents, apiPost, apiGet } from '@/shared/api'
+import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail } from 'lucide-react'
+import { fetchAgents } from '@/shared/api'
+import { apiPost, apiGet } from '@/shared/services/api.service'
 import { Modal } from '@/shared/ui'
 import type { Agent } from '@/entities/agent'
 
@@ -105,7 +106,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   async function loadInvites() {
     try {
       const data = await apiGet<{ invites: Invite[] }>('/invites')
-      setInvites(data.invites.filter(i => !i.isUsed && !i.isExpired))
+      setInvites(data.invites.filter((i: Invite) => !i.isUsed && !i.isExpired))
     } catch (err) {
       console.error('Failed to load invites:', err)
     }
