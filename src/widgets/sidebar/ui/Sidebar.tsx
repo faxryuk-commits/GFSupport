@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { 
   LayoutDashboard, 
-  MessageSquare, 
+  MessageSquare,
+  Hash,
   Briefcase, 
   BarChart3, 
   Users,
@@ -29,6 +30,7 @@ interface SidebarProps {
 const mainNavItems = [
   { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
+  { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
   { path: '/reports', label: 'Аналитика', icon: BarChart3 },
 ]

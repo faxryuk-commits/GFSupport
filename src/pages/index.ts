@@ -1,5 +1,6 @@
 export { DashboardPage } from './dashboard'
 export { ChatsPage } from './chats'
+export { ChannelsListPage } from './channels'
 export { CasesPage } from './cases'
 export { AnalyticsPage } from './analytics'
 export { TeamPage } from './team'

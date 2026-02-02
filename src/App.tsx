@@ -2,7 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/app/layouts'
 import { 
   DashboardPage, 
-  ChatsPage, 
+  ChatsPage,
+  ChannelsListPage,
   CasesPage, 
   AnalyticsPage, 
   TeamPage, 
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/overview" element={<DashboardPage />} />
         <Route path="/chats" element={<ChatsPage />} />
         <Route path="/chats/:id" element={<ChatsPage />} />
+        <Route path="/channels" element={<ChannelsListPage />} />
         <Route path="/cases" element={<CasesPage />} />
         <Route path="/reports" element={<AnalyticsPage />} />
         
