@@ -38,6 +38,7 @@ const ANALYSIS_PROMPT = `Ты анализатор сообщений служб
   "intent": "одно из: ask_question, report_problem, request_feature, complaint, gratitude, information, unknown",
   "urgency": число от 0 до 5 (0 = не срочно, 5 = критично),
   "isProblem": true или false,
+  "needsResponse": true или false,
   "summary": "краткое резюме на русском (1-2 предложения)",
   "entities": {
     "product": "название продукта если упоминается",
@@ -48,6 +49,8 @@ const ANALYSIS_PROMPT = `Ты анализатор сообщений служб
 
 Правила определения:
 - isProblem = true если клиент сообщает о проблеме, ошибке, что-то не работает
+- needsResponse = true если сообщение требует ответа (вопрос, проблема, запрос)
+- needsResponse = false если это благодарность, подтверждение ("ок", "понял", "спасибо"), информирование
 - urgency 4-5 если критическая проблема, блокирует работу, упоминается "срочно"
 - urgency 3 если серьезная проблема но не критическая
 - urgency 1-2 для обычных вопросов
@@ -61,6 +64,7 @@ interface AnalysisResult {
   intent: string
   urgency: number
   isProblem: boolean
+  needsResponse: boolean
   summary: string
   entities: Record<string, string>
 }
@@ -134,12 +138,27 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     intent = 'gratitude'
   }
 
+  // Determine if needs response
+  // НЕ требует ответа: благодарность, подтверждение, короткие согласия
+  const noResponsePatterns = /^(ок|ok|хорошо|понял|понятно|ясно|спасибо|rahmat|да|нет|угу|ага|👍|👌|✅|🙏)\.?!?$/i
+  const isShortConfirmation = lower.trim().length < 15 && noResponsePatterns.test(lower.trim())
+  const isGratitude = intent === 'gratitude'
+  
+  const needsResponse = !isShortConfirmation && !isGratitude && (
+    isProblem || 
+    intent === 'ask_question' || 
+    intent === 'request_feature' || 
+    intent === 'complaint' ||
+    /\?$/.test(text.trim()) // Ends with question mark
+  )
+
   return {
     category,
     sentiment,
     intent,
     urgency,
     isProblem,
+    needsResponse,
     summary: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
     entities: {},
   }
@@ -184,6 +203,7 @@ async function analyzeWithAI(text: string): Promise<AnalysisResult> {
       intent: result.intent || 'information',
       urgency: Math.min(5, Math.max(0, Number(result.urgency) || 1)),
       isProblem: Boolean(result.isProblem),
+      needsResponse: result.needsResponse !== false, // Default to true if not specified
       summary: result.summary || text.slice(0, 100),
       entities: result.entities || {},
     }
@@ -221,7 +241,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Run AI analysis
       const analysis = await analyzeWithAI(text)
 
-      console.log(`[AI Analyze] Result: category=${analysis.category}, sentiment=${analysis.sentiment}, isProblem=${analysis.isProblem}, urgency=${analysis.urgency}`)
+      console.log(`[AI Analyze] Result: category=${analysis.category}, sentiment=${analysis.sentiment}, isProblem=${analysis.isProblem}, urgency=${analysis.urgency}, needsResponse=${analysis.needsResponse}`)
 
       // Update message in database
       if (messageId) {
@@ -237,6 +257,18 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE id = ${messageId}
         `
         console.log(`[AI Analyze] Updated message ${messageId}`)
+      }
+
+      // Update channel awaiting_reply based on needsResponse
+      if (channelId && !analysis.needsResponse) {
+        // If message doesn't need response (e.g., "спасибо", "ок"), 
+        // mark channel as not awaiting reply
+        await sql`
+          UPDATE support_channels SET
+            awaiting_reply = false
+          WHERE id = ${channelId} AND awaiting_reply = true
+        `
+        console.log(`[AI Analyze] Channel ${channelId} marked as not awaiting reply (message doesn't need response)`)
       }
 
       // If high urgency problem, update channel priority

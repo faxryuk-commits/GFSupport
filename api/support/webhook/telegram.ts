@@ -235,9 +235,26 @@ export default async function handler(req: Request): Promise<Response> {
     // Update channel stats
     await updateChannelStats(sql, channelId, identification.role === 'client')
 
-    // If support/team replied, record activity
+    // If support/team replied, record activity and mark messages as read
     if (identification.role !== 'client') {
       await recordAgentActivity(sql, String(user.id), user.fullName, channelId)
+      
+      // When staff replies via Telegram, they've seen the messages
+      // Mark all unread client messages as read
+      await sql`
+        UPDATE support_messages 
+        SET is_read = true, read_at = NOW()
+        WHERE channel_id = ${channelId}
+          AND is_read = false
+          AND is_from_client = true
+      `
+      
+      // Reset unread count
+      await sql`
+        UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId}
+      `
+      
+      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - marked messages as read`)
     }
 
     // Trigger AI analysis for client messages (async, don't wait)

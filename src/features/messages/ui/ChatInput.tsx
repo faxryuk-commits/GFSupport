@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { 
   Send, Paperclip, Smile, Mic, StopCircle, Sparkles, X, Reply,
-  Image as ImageIcon, File, Film, Music, FileText, Trash2
+  Image as ImageIcon, File, Film, Music, FileText, Trash2, AtSign
 } from 'lucide-react'
 
 interface ReplyData {
@@ -25,6 +25,15 @@ export interface AttachedFile {
   type: 'image' | 'video' | 'audio' | 'document'
 }
 
+// Участник для упоминаний
+export interface MentionUser {
+  id: string
+  name: string
+  username?: string
+  role?: 'support' | 'team' | 'client'
+  avatarUrl?: string
+}
+
 interface ChatInputProps {
   value: string
   onChange: (value: string) => void
@@ -39,6 +48,9 @@ interface ChatInputProps {
   onToggleRecording?: () => void
   disabled?: boolean
   isLoadingAI?: boolean
+  // Mentions support
+  mentionUsers?: MentionUser[]
+  onMention?: (user: MentionUser) => void
 }
 
 // Определение типа файла
@@ -215,17 +227,106 @@ export function ChatInput({
   onToggleRecording,
   disabled = false,
   isLoadingAI = false,
+  mentionUsers = [],
+  onMention,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
+  
+  // Mentions state
+  const [showMentions, setShowMentions] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1)
+  
+  // Filter mention users
+  const filteredMentionUsers = mentionUsers.filter(user => {
+    if (!mentionQuery) return true
+    const query = mentionQuery.toLowerCase()
+    return (
+      user.name.toLowerCase().includes(query) ||
+      user.username?.toLowerCase().includes(query)
+    )
+  }).slice(0, 6)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle mention navigation
+    if (showMentions && filteredMentionUsers.length > 0) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowMentions(false)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        insertMention(filteredMentionUsers[0])
+        return
+      }
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
+  }
+  
+  // Handle input change with @ detection
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value
+    const cursorPos = e.target.selectionStart || 0
+    
+    // Check for @ trigger
+    const textBeforeCursor = newValue.slice(0, cursorPos)
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@')
+    
+    if (lastAtIndex !== -1) {
+      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1)
+      // Check if @ is at start or after space, and no space after @
+      const charBeforeAt = lastAtIndex > 0 ? newValue[lastAtIndex - 1] : ' '
+      
+      if ((charBeforeAt === ' ' || charBeforeAt === '\n' || lastAtIndex === 0) && 
+          !textAfterAt.includes(' ') && 
+          mentionUsers.length > 0) {
+        setShowMentions(true)
+        setMentionQuery(textAfterAt)
+        setMentionStartIndex(lastAtIndex)
+      } else {
+        setShowMentions(false)
+      }
+    } else {
+      setShowMentions(false)
+    }
+    
+    onChange(newValue)
+  }
+  
+  // Insert mention into text
+  const insertMention = (user: MentionUser) => {
+    if (mentionStartIndex === -1) return
+    
+    const beforeMention = value.slice(0, mentionStartIndex)
+    const afterMention = value.slice(mentionStartIndex + mentionQuery.length + 1) // +1 for @
+    const mentionText = `@${user.username || user.name} `
+    
+    const newValue = beforeMention + mentionText + afterMention
+    onChange(newValue)
+    
+    setShowMentions(false)
+    setMentionQuery('')
+    setMentionStartIndex(-1)
+    
+    // Focus back to input and set cursor after mention
+    setTimeout(() => {
+      if (inputRef.current) {
+        const newCursorPos = beforeMention.length + mentionText.length
+        inputRef.current.focus()
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos)
+      }
+    }, 0)
+    
+    // Notify parent about mention
+    onMention?.(user)
   }
 
   const handleSend = () => {
@@ -381,13 +482,52 @@ export function ChatInput({
         <div className="p-4">
           <div className="flex items-end gap-3">
             <div className="flex-1 relative">
+              {/* Mentions dropdown */}
+              {showMentions && filteredMentionUsers.length > 0 && (
+                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                  <div className="px-3 py-1 text-xs text-slate-500 border-b border-slate-100 flex items-center gap-1">
+                    <AtSign className="w-3 h-3" />
+                    Упомянуть участника
+                  </div>
+                  {filteredMentionUsers.map((user, index) => (
+                    <button
+                      key={user.id}
+                      onClick={() => insertMention(user)}
+                      className={`w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 ${index === 0 ? 'bg-blue-50' : ''}`}
+                    >
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                        {user.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-800 truncate">{user.name}</p>
+                        {user.username && (
+                          <p className="text-xs text-slate-500">@{user.username}</p>
+                        )}
+                      </div>
+                      {user.role && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                          user.role === 'support' ? 'bg-blue-100 text-blue-600' :
+                          user.role === 'team' ? 'bg-purple-100 text-purple-600' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {user.role === 'support' ? 'Поддержка' : user.role === 'team' ? 'Команда' : 'Клиент'}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                  {filteredMentionUsers.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-slate-400">Никого не найдено</p>
+                  )}
+                </div>
+              )}
+              
               <textarea
                 ref={inputRef}
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder="Введите сообщение..."
+                placeholder="Введите сообщение... Используйте @ для упоминания"
                 rows={1}
                 disabled={disabled}
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none min-h-[48px] max-h-32 disabled:opacity-50"

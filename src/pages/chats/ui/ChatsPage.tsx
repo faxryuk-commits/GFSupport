@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
-import { MessageBubble, ChatInput, type MessageData, type AttachedFile } from '@/features/messages/ui'
-import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, type AISuggestion, type AIContext } from '@/shared/api'
+import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser } from '@/features/messages/ui'
+import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
+import type { Agent } from '@/entities/agent'
 
 // Преобразование данных канала из API в формат UI компонента
 function mapChannelToUI(channel: Channel): ChannelItemData {
@@ -92,6 +93,7 @@ export function ChatsPage() {
   const [messages, setMessages] = useState<MessageData[]>([])
   const [aiContext, setAiContext] = useState<AIContext | null>(null)
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>(defaultQuickReplies)
+  const [agents, setAgents] = useState<Agent[]>([])
   
   // Состояния загрузки
   const [isLoadingChannels, setIsLoadingChannels] = useState(true)
@@ -116,15 +118,22 @@ export function ChatsPage() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Загрузка каналов при монтировании
+  // Загрузка каналов и агентов при монтировании
   useEffect(() => {
-    const loadChannels = async () => {
+    const loadData = async () => {
       try {
         setIsLoadingChannels(true)
         setChannelsError(null)
-        const data = await fetchChannels()
-        const mappedChannels = data.map(mapChannelToUI)
+        
+        // Load channels and agents in parallel
+        const [channelsData, agentsData] = await Promise.all([
+          fetchChannels(),
+          fetchAgents().catch(() => []) // Don't fail if agents can't load
+        ])
+        
+        const mappedChannels = channelsData.map(mapChannelToUI)
         setChannels(mappedChannels)
+        setAgents(agentsData)
       } catch (error) {
         console.error('Ошибка загрузки каналов:', error)
         setChannelsError('Не удалось загрузить каналы')
@@ -133,7 +142,7 @@ export function ChatsPage() {
       }
     }
 
-    loadChannels()
+    loadData()
   }, [])
 
   // Загрузка AI контекста для канала
@@ -473,6 +482,12 @@ export function ChatsPage() {
               onUseQuickReply={(text) => { setMessageText(text); setShowQuickReplies(false) }}
               isLoadingAI={isLoadingAI}
               disabled={isSending}
+              mentionUsers={agents.map(a => ({
+                id: a.id,
+                name: a.name,
+                username: a.username,
+                role: 'support' as const,
+              }))}
             />
           </div>
         ) : (
