@@ -303,6 +303,47 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Added agent profile fields (email, phone, position, department, password_hash)')
     } catch (e) { /* columns exist */ }
 
+    // Migration 17: Hot data indexes for 1000 groups optimization
+    try {
+      // Index for hot messages (last 7 days) - fast operational queries
+      await sql`CREATE INDEX IF NOT EXISTS idx_messages_hot_7days ON support_messages(channel_id, created_at DESC) WHERE created_at > NOW() - INTERVAL '7 days'`
+      
+      // Priority channels index - awaiting reply or unread
+      await sql`CREATE INDEX IF NOT EXISTS idx_channels_priority ON support_channels(last_message_at DESC) WHERE awaiting_reply = true OR unread_count > 0`
+      
+      // Analytics aggregation index
+      await sql`CREATE INDEX IF NOT EXISTS idx_messages_analytics ON support_messages(ai_category, ai_sentiment, created_at)`
+      
+      // Sender role index for team filtering
+      await sql`CREATE INDEX IF NOT EXISTS idx_messages_sender ON support_messages(sender_id, sender_role, created_at DESC)`
+      
+      migrations.push('Created hot data and analytics indexes for 1000 groups')
+    } catch (e) { /* indexes exist */ }
+
+    // Migration 18: Commitments table for promise tracking
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_commitments (
+          id VARCHAR(50) PRIMARY KEY,
+          channel_id VARCHAR(100) NOT NULL,
+          message_id VARCHAR(100),
+          agent_id VARCHAR(100),
+          agent_name VARCHAR(255),
+          commitment_text TEXT NOT NULL,
+          commitment_type VARCHAR(30) DEFAULT 'promise',
+          due_date TIMESTAMP,
+          reminder_at TIMESTAMP,
+          status VARCHAR(20) DEFAULT 'pending',
+          completed_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_commitments_status ON support_commitments(status, due_date) WHERE status = 'pending'`
+      await sql`CREATE INDEX IF NOT EXISTS idx_commitments_channel ON support_commitments(channel_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_commitments_agent ON support_commitments(agent_id)`
+      migrations.push('Created support_commitments table')
+    } catch (e) { /* table exists */ }
+
     return json({
       success: true,
       migrations,

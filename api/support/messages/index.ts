@@ -40,19 +40,32 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
 
   // GET - список сообщений
+  // mode=hot: операционный режим (7 дней, только активные каналы, 50 msg/канал)
+  // mode=detail: детальный просмотр (90 дней, 200 msg)
+  // mode=all: все сообщения (30 дней, стандартный режим)
   if (req.method === 'GET') {
     try {
       const channelId = url.searchParams.get('channelId')
-      const limit = parseInt(url.searchParams.get('limit') || '50')
+      const mode = url.searchParams.get('mode') || 'all'
+      const limit = parseInt(url.searchParams.get('limit') || (mode === 'hot' ? '50' : '100'))
       const offset = parseInt(url.searchParams.get('offset') || '0')
 
-      console.log('[Messages API] Fetching messages, channelId:', channelId, 'limit:', limit)
+      // Настройки режимов
+      const modeConfig: Record<string, { period: string; maxChannels: number; priorityOnly: boolean }> = {
+        hot: { period: '7 days', maxChannels: 200, priorityOnly: true },
+        detail: { period: '90 days', maxChannels: 1000, priorityOnly: false },
+        all: { period: '30 days', maxChannels: 500, priorityOnly: false },
+      }
+      const config = modeConfig[mode] || modeConfig.all
+
+      console.log('[Messages API] mode:', mode, 'channelId:', channelId, 'limit:', limit, 'period:', config.period)
 
       let messages: any[]
       let countResult: any[]
 
-      // Neon не поддерживает вложенные sql`` - используем отдельные запросы
       if (channelId) {
+        // Детальный просмотр одного канала
+        const periodInterval = mode === 'detail' ? '90 days' : '30 days'
         messages = await sql`
           SELECT 
             m.*,
@@ -61,6 +74,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_messages m
           LEFT JOIN support_channels ch ON m.channel_id = ch.id
           WHERE m.channel_id = ${channelId}
+            AND m.created_at > NOW() - INTERVAL '90 days'
           ORDER BY m.created_at ASC
           LIMIT ${limit} OFFSET ${offset}
         `
@@ -68,8 +82,42 @@ export default async function handler(req: Request): Promise<Response> {
         countResult = await sql`
           SELECT COUNT(*) as total FROM support_messages
           WHERE channel_id = ${channelId}
+            AND created_at > NOW() - INTERVAL '90 days'
         `
+      } else if (mode === 'hot') {
+        // Hot mode: только активные каналы (awaiting_reply или unread)
+        // Сначала получаем приоритетные каналы
+        const priorityChannels = await sql`
+          SELECT id FROM support_channels 
+          WHERE is_active = true 
+            AND (awaiting_reply = true OR unread_count > 0)
+          ORDER BY last_message_at DESC NULLS LAST
+          LIMIT ${config.maxChannels}
+        `
+        const channelIds = priorityChannels.map((c: any) => c.id)
+        
+        if (channelIds.length > 0) {
+          messages = await sql`
+            SELECT 
+              m.*,
+              ch.name as channel_name,
+              ch.telegram_chat_id,
+              ch.awaiting_reply,
+              ch.unread_count
+            FROM support_messages m
+            LEFT JOIN support_channels ch ON m.channel_id = ch.id
+            WHERE m.channel_id = ANY(${channelIds})
+              AND m.created_at > NOW() - INTERVAL '7 days'
+            ORDER BY m.created_at DESC
+            LIMIT ${limit * Math.min(channelIds.length, 50)}
+          `
+        } else {
+          messages = []
+        }
+        
+        countResult = [{ total: messages.length }]
       } else {
+        // Standard mode
         messages = await sql`
           SELECT 
             m.*,
@@ -77,12 +125,14 @@ export default async function handler(req: Request): Promise<Response> {
             ch.telegram_chat_id
           FROM support_messages m
           LEFT JOIN support_channels ch ON m.channel_id = ch.id
+          WHERE m.created_at > NOW() - INTERVAL '30 days'
           ORDER BY m.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `
         
         countResult = await sql`
           SELECT COUNT(*) as total FROM support_messages
+          WHERE created_at > NOW() - INTERVAL '30 days'
         `
       }
 

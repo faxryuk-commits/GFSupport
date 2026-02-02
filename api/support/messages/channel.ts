@@ -1,0 +1,176 @@
+import { neon } from '@neondatabase/serverless'
+
+export const config = {
+  runtime: 'edge',
+}
+
+function getSQL() {
+  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
+  if (!connectionString) throw new Error('Database connection string not found')
+  return neon(connectionString)
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  })
+}
+
+/**
+ * GET /api/support/messages/channel?channelId=xxx&offset=0&limit=100
+ * 
+ * Детальный просмотр сообщений канала с пагинацией
+ * - Период: 90 дней
+ * - Лимит по умолчанию: 100 сообщений
+ * - Поддержка lazy loading через offset
+ */
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    })
+  }
+
+  if (req.method !== 'GET') {
+    return json({ error: 'Method not allowed' }, 405)
+  }
+
+  const url = new URL(req.url)
+  const channelId = url.searchParams.get('channelId')
+  
+  if (!channelId) {
+    return json({ error: 'channelId is required' }, 400)
+  }
+
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 200)
+  const offset = parseInt(url.searchParams.get('offset') || '0')
+  const period = url.searchParams.get('period') || '90' // days
+  
+  const sql = getSQL()
+
+  try {
+    // Get channel info
+    const channelResult = await sql`
+      SELECT 
+        id, name, type, is_forum, awaiting_reply, unread_count,
+        last_message_at, last_sender_name, last_message_preview,
+        photo_url, company_name
+      FROM support_channels
+      WHERE id = ${channelId}
+    `
+    
+    const channel = channelResult[0]
+    if (!channel) {
+      return json({ error: 'Channel not found' }, 404)
+    }
+
+    // Get messages with pagination (90 days default)
+    const messages = await sql`
+      SELECT 
+        id, telegram_message_id, sender_id, sender_name, sender_username, 
+        sender_photo_url, sender_role, text_content, content_type, media_url,
+        transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
+        is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
+        thread_id, thread_name, case_id, created_at
+      FROM support_messages
+      WHERE channel_id = ${channelId}
+        AND created_at > NOW() - INTERVAL '90 days'
+      ORDER BY created_at ASC
+      LIMIT ${limit} OFFSET ${offset}
+    `
+
+    // Get total count for pagination
+    const countResult = await sql`
+      SELECT COUNT(*) as total FROM support_messages
+      WHERE channel_id = ${channelId}
+        AND created_at > NOW() - INTERVAL '90 days'
+    `
+    const total = parseInt(countResult[0]?.total || '0')
+
+    // Resolve reply quotes from loaded messages
+    const messagesByTgId: Record<string, any> = {}
+    for (const msg of messages) {
+      if (msg.telegram_message_id) {
+        messagesByTgId[msg.telegram_message_id] = msg
+      }
+    }
+
+    const formattedMessages = messages.map((m: any) => {
+      // Fill in missing reply text
+      let replyToText = m.reply_to_text
+      let replyToSender = m.reply_to_sender
+      if (m.reply_to_message_id && !replyToText) {
+        const replyMsg = messagesByTgId[m.reply_to_message_id]
+        if (replyMsg) {
+          replyToText = replyMsg.text_content || replyMsg.transcript || '[медиа]'
+          replyToSender = replyMsg.sender_name
+        }
+      }
+
+      return {
+        id: m.id,
+        telegramMessageId: m.telegram_message_id,
+        senderId: m.sender_id,
+        senderName: m.sender_name || 'Клиент',
+        senderUsername: m.sender_username,
+        senderPhotoUrl: m.sender_photo_url,
+        senderRole: m.sender_role || 'client',
+        text: m.text_content || '',
+        contentType: m.content_type || 'text',
+        mediaUrl: m.media_url,
+        transcript: m.transcript,
+        aiCategory: m.ai_category,
+        aiUrgency: m.ai_urgency,
+        aiSummary: m.ai_summary,
+        aiSentiment: m.ai_sentiment,
+        aiIntent: m.ai_intent,
+        isRead: m.is_read,
+        isProblem: m.is_problem,
+        reactions: m.reactions || {},
+        replyToMessageId: m.reply_to_message_id,
+        replyToText,
+        replyToSender,
+        threadId: m.thread_id,
+        threadName: m.thread_name,
+        caseId: m.case_id,
+        createdAt: m.created_at,
+      }
+    })
+
+    return json({
+      channel: {
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+        isForum: channel.is_forum,
+        awaitingReply: channel.awaiting_reply,
+        unreadCount: parseInt(channel.unread_count || 0),
+        lastMessageAt: channel.last_message_at,
+        lastSenderName: channel.last_sender_name,
+        lastMessagePreview: channel.last_message_preview,
+        photoUrl: channel.photo_url,
+        companyName: channel.company_name,
+      },
+      messages: formattedMessages,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + messages.length < total,
+        nextOffset: offset + limit,
+      }
+    })
+
+  } catch (e: any) {
+    console.error('[Channel Messages] Error:', e.message)
+    return json({ error: 'Failed to fetch channel messages', details: e.message }, 500)
+  }
+}

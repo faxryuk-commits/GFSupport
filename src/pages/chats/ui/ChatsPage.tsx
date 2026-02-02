@@ -101,6 +101,12 @@ export function ChatsPage() {
   const [isSending, setIsSending] = useState(false)
   const [isLoadingAI, setIsLoadingAI] = useState(false)
   
+  // Lazy loading состояния
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMoreMessages, setHasMoreMessages] = useState(true)
+  const [messagesOffset, setMessagesOffset] = useState(0)
+  const MESSAGES_LIMIT = 100
+  
   // Ошибки
   const [channelsError, setChannelsError] = useState<string | null>(null)
   const [messagesError, setMessagesError] = useState<string | null>(null)
@@ -117,6 +123,7 @@ export function ChatsPage() {
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Загрузка каналов и агентов при монтировании
   useEffect(() => {
@@ -174,9 +181,14 @@ export function ChatsPage() {
     try {
       setIsLoadingMessages(true)
       setMessagesError(null)
-      const { messages: data } = await fetchMessages(channelId)
+      setMessagesOffset(0)
+      setHasMoreMessages(true)
+      
+      const { messages: data, hasMore } = await fetchMessages(channelId, 0, MESSAGES_LIMIT)
       const mappedMessages = data.map(mapMessageToUI)
       setMessages(mappedMessages)
+      setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
+      setMessagesOffset(data.length)
       
       // Загружаем AI контекст параллельно (не блокируем UI)
       loadAIContext(channelId)
@@ -187,6 +199,42 @@ export function ChatsPage() {
       setIsLoadingMessages(false)
     }
   }, [loadAIContext])
+
+  // Загрузка старых сообщений при скролле вверх
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedChannel || isLoadingMore || !hasMoreMessages) return
+    
+    try {
+      setIsLoadingMore(true)
+      const { messages: data, hasMore } = await fetchMessages(
+        selectedChannel.id, 
+        messagesOffset, 
+        MESSAGES_LIMIT
+      )
+      
+      if (data.length > 0) {
+        const mappedMessages = data.map(mapMessageToUI)
+        // Добавляем старые сообщения в начало
+        setMessages(prev => [...mappedMessages, ...prev])
+        setMessagesOffset(prev => prev + data.length)
+      }
+      
+      setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
+    } catch (error) {
+      console.error('Ошибка загрузки старых сообщений:', error)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [selectedChannel, isLoadingMore, hasMoreMessages, messagesOffset])
+
+  // Обработчик скролла для lazy loading
+  const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget
+    // Если прокрутили близко к верху (< 100px) - загружаем старые сообщения
+    if (container.scrollTop < 100 && hasMoreMessages && !isLoadingMore) {
+      loadMoreMessages()
+    }
+  }, [hasMoreMessages, isLoadingMore, loadMoreMessages])
 
   // Автовыбор канала по ID из URL (для прямых ссылок)
   useEffect(() => {
@@ -434,7 +482,11 @@ export function ChatsPage() {
             </div>
 
             {/* Сообщения */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div 
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto p-6 space-y-4"
+              onScroll={handleMessagesScroll}
+            >
               {isLoadingMessages ? (
                 <LoadingState text="Загрузка сообщений..." size="md" />
               ) : messagesError ? (
@@ -452,8 +504,29 @@ export function ChatsPage() {
                 <EmptyState title="Нет сообщений" description="Начните диалог" size="sm" />
               ) : (
                 <>
+                  {/* Индикатор загрузки старых сообщений */}
+                  {hasMoreMessages && (
+                    <div className="flex items-center justify-center py-2">
+                      {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-slate-500 text-sm">
+                          <div className="w-4 h-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
+                          Загрузка истории...
+                        </div>
+                      ) : (
+                        <button
+                          onClick={loadMoreMessages}
+                          className="px-4 py-1.5 text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"
+                        >
+                          Загрузить старые сообщения
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-center">
-                    <span className="px-3 py-1 text-xs text-slate-500 bg-slate-100 rounded-full">Сегодня</span>
+                    <span className="px-3 py-1 text-xs text-slate-500 bg-slate-100 rounded-full">
+                      {messages.length} сообщений за 90 дней
+                    </span>
                   </div>
 
                   {messages.map(msg => (

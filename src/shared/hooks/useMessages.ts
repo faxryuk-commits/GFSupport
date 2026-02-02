@@ -72,7 +72,7 @@ export function useMessages(channelId: string | null) {
       }
 
       setError(null)
-      const data = await fetchMessages(channelId, { limit: 50 })
+      const data = await fetchMessages(channelId, 0, 50)
       setMessages(data.messages)
       setHasMore(data.hasMore)
       cache.setMessages(channelId, toCache(data.messages, channelId))
@@ -95,11 +95,10 @@ export function useMessages(channelId: string | null) {
   const loadMore = useCallback(async () => {
     if (!channelId || loadingMore || !hasMore || messages.length === 0) return
     
-    const oldestMessage = messages[0]
-    
     try {
       setLoadingMore(true)
-      const data = await fetchMessages(channelId, { limit: 50, before: oldestMessage.createdAt })
+      // Load older messages with offset
+      const data = await fetchMessages(channelId, messages.length, 50)
       const newMessages = [...data.messages, ...messages]
       setMessages(newMessages)
       setHasMore(data.hasMore)

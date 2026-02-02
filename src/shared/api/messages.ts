@@ -9,14 +9,16 @@ interface MessagesResponse {
 
 export async function fetchMessages(
   channelId: string, 
-  options?: { limit?: number; before?: string }
+  offset = 0,
+  limit = 100
 ): Promise<MessagesResponse> {
-  const params = new URLSearchParams()
-  if (options?.limit) params.set('limit', String(options.limit))
-  if (options?.before) params.set('before', options.before)
+  const params = new URLSearchParams({
+    channelId,
+    offset: String(offset),
+    limit: String(limit),
+  })
   
-  const query = params.toString() ? `?${params}` : ''
-  return apiGet<MessagesResponse>(`/messages?channelId=${channelId}${query}`)
+  return apiGet<MessagesResponse>(`/messages?${params}`)
 }
 
 interface SendMessageResponse {
