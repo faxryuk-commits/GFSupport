@@ -6,7 +6,19 @@
       "destination": "/api/:path*"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/gfs/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/gfs/vite.svg",
+      "destination": "/vite.svg"
+    },
+    {
+      "source": "/gfs/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/((?!api/|gfs/).*)",
       "destination": "/index.html"
     }
   ],
