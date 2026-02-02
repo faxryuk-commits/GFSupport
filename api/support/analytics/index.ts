@@ -207,23 +207,31 @@ export default async function handler(req: Request): Promise<Response> {
     // ============================================
     
     // Метрики команды по сообщениям (кто сколько ответил)
+    // Связываем с таблицей agents по telegram_id для правильных имён
     // Исключаем ботов и системные аккаунты
     const teamPerformance = await sql`
       SELECT 
-        COALESCE(m.sender_name, m.sender_username, m.sender_id::text, 'Неизвестный') as manager_name,
-        m.sender_id as manager_id,
+        COALESCE(a.name, m.sender_name, m.sender_username, 'Неизвестный') as manager_name,
+        COALESCE(a.id, m.sender_id::text) as manager_id,
+        a.username as agent_username,
+        a.role as agent_role,
         COUNT(*) as total_messages,
         COUNT(DISTINCT m.channel_id) as channels_served,
         COUNT(DISTINCT DATE(m.created_at)) as active_days,
         MIN(m.created_at) as first_message_at,
         MAX(m.created_at) as last_message_at
       FROM support_messages m
+      LEFT JOIN support_agents a ON (
+        a.telegram_id = m.sender_id::text 
+        OR LOWER(a.username) = LOWER(m.sender_username)
+        OR LOWER(a.name) = LOWER(m.sender_name)
+      )
       WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
         AND m.sender_id IS NOT NULL
         AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
         AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%delever support%'
         AND LOWER(COALESCE(m.sender_username, '')) NOT LIKE '%bot%'
-      GROUP BY m.sender_id, m.sender_name, m.sender_username
+      GROUP BY a.id, a.name, a.username, a.role, m.sender_id, m.sender_name, m.sender_username
       HAVING COUNT(*) >= 1
       ORDER BY total_messages DESC
       LIMIT 20
@@ -479,6 +487,8 @@ export default async function handler(req: Request): Promise<Response> {
           return {
             managerId: t.manager_id,
             managerName: t.manager_name,
+            managerUsername: t.agent_username || null,
+            managerRole: t.agent_role || 'agent',
             totalMessages: parseInt(t.total_messages || 0),
             channelsServed: parseInt(t.channels_served || 0),
             activeDays: parseInt(t.active_days || 0),
