@@ -30,8 +30,11 @@ export function LoginPage() {
         return
       }
 
-      // Сохраняем токен и данные агента
+      // Сохраняем токен и данные агента (ключи для useAuth)
       localStorage.setItem('support_agent_token', data.token)
+      localStorage.setItem('support_agent_data', JSON.stringify(data.agent))
+      localStorage.setItem('support_agent_id', data.agent.id)
+      // Старые ключи для совместимости
       localStorage.setItem('support_agent', JSON.stringify(data.agent))
       localStorage.setItem('auth', JSON.stringify({ 
         email: data.agent.username, 

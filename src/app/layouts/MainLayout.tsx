@@ -72,12 +72,75 @@ export function MainLayout() {
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Отправляем logout на сервер
+    const token = localStorage.getItem('support_agent_token')
+    const agentId = localStorage.getItem('support_agent_id')
+    if (token && agentId) {
+      try {
+        await fetch('/api/support/agents/activity', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}` 
+          },
+          body: JSON.stringify({ action: 'logout', agentId })
+        })
+      } catch { /* ignore */ }
+    }
+    
     localStorage.removeItem('auth')
     localStorage.removeItem('support_agent')
+    localStorage.removeItem('support_agent_data')
     localStorage.removeItem('support_agent_token')
+    localStorage.removeItem('support_agent_id')
     navigate('/login')
   }
+
+  // Heartbeat для отслеживания онлайн статуса
+  useEffect(() => {
+    const token = localStorage.getItem('support_agent_token')
+    const agentId = localStorage.getItem('support_agent_id')
+    if (!token || !agentId) return
+
+    // Отправляем heartbeat каждые 60 секунд
+    const sendHeartbeat = async () => {
+      try {
+        await fetch('/api/support/agents/activity', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}` 
+          },
+          body: JSON.stringify({ 
+            action: 'heartbeat', 
+            agentId,
+            metadata: { page: window.location.pathname }
+          })
+        })
+      } catch { /* ignore */ }
+    }
+
+    // Первый heartbeat сразу
+    sendHeartbeat()
+    
+    // Затем каждую минуту
+    const interval = setInterval(sendHeartbeat, 60000)
+    
+    // При закрытии вкладки - logout
+    const handleUnload = () => {
+      navigator.sendBeacon('/api/support/agents/activity', JSON.stringify({
+        action: 'logout',
+        agentId
+      }))
+    }
+    window.addEventListener('beforeunload', handleUnload)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('beforeunload', handleUnload)
+    }
+  }, [])
 
   // Проверяем авторизацию
   useEffect(() => {
