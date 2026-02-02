@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { 
-  Search, Plus, RefreshCw, Filter, MessageSquare, Users, 
-  Clock, CheckCircle, XCircle, ExternalLink, MoreHorizontal,
-  Hash, Building, User, Bell, BellOff
+  Search, Plus, RefreshCw, MessageSquare,
+  Clock, XCircle, ExternalLink, MoreHorizontal,
+  Hash, Building, ChevronDown
 } from 'lucide-react'
-import { Badge, LoadingState, EmptyState, Modal, Dropdown } from '@/shared/ui'
+import { Badge, LoadingState, EmptyState, Modal } from '@/shared/ui'
 import { fetchChannels } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 
@@ -20,6 +20,8 @@ export function ChannelsListPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [sortBy, setSortBy] = useState<SortBy>('lastActivity')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
 
   const loadChannels = useCallback(async () => {
     try {
@@ -39,6 +41,17 @@ export function ChannelsListPage() {
     loadChannels()
   }, [loadChannels])
 
+  // Закрытие меню сортировки при клике вне
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   // Фильтрация и сортировка
   const filteredChannels = channels
     .filter(ch => {
@@ -47,7 +60,7 @@ export function ChannelsListPage() {
         const s = search.toLowerCase()
         return (
           ch.name?.toLowerCase().includes(s) ||
-          ch.telegramChatId?.toLowerCase().includes(s) ||
+          String(ch.telegramChatId || '').includes(s) ||
           ch.companyName?.toLowerCase().includes(s)
         )
       }
@@ -75,6 +88,12 @@ export function ChannelsListPage() {
 
   const activeCount = channels.filter(ch => ch.isActive).length
   const inactiveCount = channels.filter(ch => !ch.isActive).length
+
+  const sortLabels: Record<SortBy, string> = {
+    lastActivity: 'По активности',
+    name: 'По названию',
+    messages: 'По сообщениям',
+  }
 
   if (loading) {
     return <LoadingState text="Загрузка каналов..." />
@@ -172,19 +191,30 @@ export function ChannelsListPage() {
         </div>
 
         {/* Sort */}
-        <Dropdown
-          trigger={
-            <button className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors">
-              <Filter className="w-4 h-4" />
-              Сортировка
-            </button>
-          }
-          items={[
-            { label: 'По активности', onClick: () => setSortBy('lastActivity'), active: sortBy === 'lastActivity' },
-            { label: 'По названию', onClick: () => setSortBy('name'), active: sortBy === 'name' },
-            { label: 'По сообщениям', onClick: () => setSortBy('messages'), active: sortBy === 'messages' },
-          ]}
-        />
+        <div className="relative" ref={sortMenuRef}>
+          <button 
+            onClick={() => setShowSortMenu(!showSortMenu)}
+            className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors"
+          >
+            {sortLabels[sortBy]}
+            <ChevronDown className={`w-4 h-4 transition-transform ${showSortMenu ? 'rotate-180' : ''}`} />
+          </button>
+          {showSortMenu && (
+            <div className="absolute right-0 mt-2 w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
+              {(Object.keys(sortLabels) as SortBy[]).map(key => (
+                <button
+                  key={key}
+                  onClick={() => { setSortBy(key); setShowSortMenu(false) }}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 ${
+                    sortBy === key ? 'bg-blue-50 text-blue-600' : ''
+                  }`}
+                >
+                  {sortLabels[key]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Channels Grid */}
@@ -236,9 +266,28 @@ export function ChannelsListPage() {
 
 // Channel Card Component
 function ChannelCard({ channel }: { channel: Channel }) {
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
   const lastMessageTime = channel.lastMessageAt 
     ? formatRelativeTime(channel.lastMessageAt)
     : 'нет сообщений'
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const typeLabels: Record<string, string> = {
+    client: 'Клиент',
+    partner: 'Партнёр',
+    internal: 'Внутренний',
+  }
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 hover:shadow-md transition-all">
@@ -269,18 +318,30 @@ function ChannelCard({ channel }: { channel: Channel }) {
             ) : (
               <span className="w-2.5 h-2.5 bg-slate-300 rounded-full" title="Неактивен" />
             )}
-            <Dropdown
-              trigger={
-                <button className="p-1 hover:bg-slate-100 rounded transition-colors">
-                  <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                </button>
-              }
-              items={[
-                { label: 'Открыть чат', onClick: () => window.location.href = `/chats/${channel.id}` },
-                { label: 'Настройки', onClick: () => {} },
-                { label: 'Отключить', onClick: () => {}, danger: true },
-              ]}
-            />
+            <div className="relative" ref={menuRef}>
+              <button 
+                onClick={() => setShowMenu(!showMenu)}
+                className="p-1 hover:bg-slate-100 rounded transition-colors"
+              >
+                <MoreHorizontal className="w-4 h-4 text-slate-400" />
+              </button>
+              {showMenu && (
+                <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
+                  <Link
+                    to={`/chats/${channel.id}`}
+                    className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                  >
+                    Открыть чат
+                  </Link>
+                  <button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">
+                    Настройки
+                  </button>
+                  <button className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50">
+                    Отключить
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -324,8 +385,11 @@ function ChannelCard({ channel }: { channel: Channel }) {
 
         {/* Type */}
         <div className="flex items-center gap-2">
-          <Badge variant={channel.type === 'group' ? 'info' : channel.type === 'channel' ? 'warning' : 'default'} size="sm">
-            {channel.type === 'group' ? 'Группа' : channel.type === 'channel' ? 'Канал' : 'Чат'}
+          <Badge 
+            variant={channel.type === 'client' ? 'info' : channel.type === 'partner' ? 'warning' : 'default'} 
+            size="sm"
+          >
+            {typeLabels[channel.type] || channel.type}
           </Badge>
           {channel.awaitingReply && (
             <Badge variant="danger" size="sm">Ждёт ответа</Badge>
