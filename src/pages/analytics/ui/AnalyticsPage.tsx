@@ -295,50 +295,75 @@ export function AnalyticsPage() {
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-800 flex items-center gap-2">
             <Users className="w-5 h-5 text-blue-500" />
-            Метрики команды
+            Активность команды
           </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Статистика ответов сотрудников поддержки
+          </p>
         </div>
         {data.team.byManager.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">Нет данных по менеджерам</div>
+          <div className="p-8 text-center text-slate-400">Нет данных по команде</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="text-left px-5 py-3 text-slate-600 font-medium">Менеджер</th>
-                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Всего</th>
-                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Решено</th>
-                  <th className="text-center px-3 py-3 text-slate-600 font-medium">% решения</th>
-                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Сред. время</th>
-                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Срочные</th>
+                  <th className="text-left px-5 py-3 text-slate-600 font-medium">Сотрудник</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Сообщений</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Каналов</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Дней активен</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Кейсов</th>
+                  <th className="text-center px-3 py-3 text-slate-600 font-medium">Последняя активность</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {data.team.byManager.map((m, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="px-5 py-3 font-medium text-slate-800">{m.name || 'Не назначен'}</td>
-                    <td className="text-center px-3 py-3 text-slate-600">{m.totalCases}</td>
-                    <td className="text-center px-3 py-3 text-slate-600">{m.resolved}</td>
-                    <td className="text-center px-3 py-3">
-                      <Badge 
-                        variant={m.resolutionRate >= 80 ? 'success' : m.resolutionRate >= 50 ? 'warning' : 'danger'}
-                        size="sm"
-                      >
-                        {m.resolutionRate}%
-                      </Badge>
-                    </td>
-                    <td className="text-center px-3 py-3 text-slate-600">
-                      {m.avgTime > 0 ? `${m.avgTime}м` : '—'}
-                    </td>
-                    <td className="text-center px-3 py-3">
-                      {m.highPriority > 0 ? (
-                        <Badge variant="danger" size="sm">{m.highPriority}</Badge>
-                      ) : (
-                        <span className="text-slate-400">0</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {data.team.byManager.map((m, i) => {
+                  const formatLastActive = (dateStr?: string) => {
+                    if (!dateStr) return '—'
+                    const date = new Date(dateStr)
+                    const now = new Date()
+                    const diffHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+                    if (diffHours < 1) return 'только что'
+                    if (diffHours < 24) return `${diffHours}ч назад`
+                    const diffDays = Math.floor(diffHours / 24)
+                    if (diffDays < 7) return `${diffDays}д назад`
+                    return date.toLocaleDateString('ru-RU')
+                  }
+                  return (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="px-5 py-3">
+                        <div className="font-medium text-slate-800">{m.name || 'Неизвестный'}</div>
+                        {m.id && <div className="text-xs text-slate-400">ID: {String(m.id).slice(0, 8)}</div>}
+                      </td>
+                      <td className="text-center px-3 py-3">
+                        <span className="text-lg font-semibold text-blue-600">{m.totalMessages}</span>
+                      </td>
+                      <td className="text-center px-3 py-3 text-slate-600">{m.channelsServed}</td>
+                      <td className="text-center px-3 py-3 text-slate-600">{m.activeDays}</td>
+                      <td className="text-center px-3 py-3">
+                        {m.totalCases > 0 ? (
+                          <div>
+                            <span className="text-slate-600">{m.resolved}/{m.totalCases}</span>
+                            {m.resolutionRate > 0 && (
+                              <Badge 
+                                variant={m.resolutionRate >= 80 ? 'success' : m.resolutionRate >= 50 ? 'warning' : 'default'}
+                                size="sm"
+                                className="ml-1"
+                              >
+                                {m.resolutionRate}%
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="text-center px-3 py-3 text-slate-500 text-xs">
+                        {formatLastActive(m.lastActiveAt)}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

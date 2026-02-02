@@ -33,11 +33,14 @@ interface ApiAnalyticsResponse {
     byManager: Array<{
       managerId: string | null
       managerName: string
+      totalMessages: number
+      channelsServed: number
+      activeDays: number
       totalCases: number
       resolvedCases: number
       resolutionRate: number
       avgResolutionMinutes: number
-      highPriorityCases: number
+      lastActiveAt?: string
     }>
     dailyTrend: Array<{ date: string; casesCreated: number; casesResolved: number }>
     responseTimeDistribution?: Array<{ bucket: string; count: number; avgMinutes: number }>
@@ -112,11 +115,14 @@ export interface AnalyticsData {
     byManager: Array<{
       id: string | null
       name: string
+      totalMessages: number
+      channelsServed: number
+      activeDays: number
       totalCases: number
       resolved: number
       resolutionRate: number
       avgTime: number
-      highPriority: number
+      lastActiveAt?: string
     }>
     dailyTrend: Array<{ date: string; cases: number; resolved: number; messages: number }>
     responseTimeDistribution: Array<{ bucket: string; count: number; avgMinutes: number }>
@@ -204,11 +210,14 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         byManager: (raw.teamMetrics?.byManager || []).map(m => ({
           id: m.managerId,
           name: m.managerName,
-          totalCases: m.totalCases,
-          resolved: m.resolvedCases,
-          resolutionRate: m.resolutionRate,
-          avgTime: m.avgResolutionMinutes,
-          highPriority: m.highPriorityCases,
+          totalMessages: m.totalMessages || 0,
+          channelsServed: m.channelsServed || 0,
+          activeDays: m.activeDays || 0,
+          totalCases: m.totalCases || 0,
+          resolved: m.resolvedCases || 0,
+          resolutionRate: m.resolutionRate || 0,
+          avgTime: m.avgResolutionMinutes || 0,
+          lastActiveAt: m.lastActiveAt,
         })),
         dailyTrend: (raw.teamMetrics?.dailyTrend || []).map(d => ({
           date: d.date,

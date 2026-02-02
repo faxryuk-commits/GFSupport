@@ -142,20 +142,39 @@ export default async function handler(req: Request): Promise<Response> {
     // 3. TEAM METRICS
     // ============================================
     
+    // Метрики команды по сообщениям (кто сколько ответил)
     const teamPerformance = await sql`
       SELECT 
-        COALESCE(a.name, c.assigned_to::text, 'Не назначен') as manager_name,
+        COALESCE(m.sender_name, m.sender_username, m.sender_id::text, 'Неизвестный') as manager_name,
+        m.sender_id as manager_id,
+        COUNT(*) as total_messages,
+        COUNT(DISTINCT m.channel_id) as channels_served,
+        COUNT(DISTINCT DATE(m.created_at)) as active_days,
+        MIN(m.created_at) as first_message_at,
+        MAX(m.created_at) as last_message_at
+      FROM support_messages m
+      WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+        AND m.sender_id IS NOT NULL
+      GROUP BY m.sender_id, m.sender_name, m.sender_username
+      HAVING COUNT(*) >= 1
+      ORDER BY total_messages DESC
+      LIMIT 20
+    `
+
+    // Дополнительно: метрики по кейсам если есть assigned_to
+    const caseMetrics = await sql`
+      SELECT 
         c.assigned_to as manager_id,
         COUNT(*) as total_cases,
         COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases,
-        AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes,
-        COUNT(*) FILTER (WHERE c.priority IN ('urgent', 'high')) as high_priority_cases
+        AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
       FROM support_cases c
-      LEFT JOIN support_agents a ON c.assigned_to::text = a.id::text
-      WHERE c.created_at >= ${startDate.toISOString()}
-      GROUP BY c.assigned_to, a.name
-      ORDER BY total_cases DESC
+      WHERE c.assigned_to IS NOT NULL
+      GROUP BY c.assigned_to
     `
+    
+    // Объединяем данные
+    const caseMetricsMap = new Map(caseMetrics.map((c: any) => [c.manager_id?.toString(), c]))
 
     // Время первого ответа - вычисляем из сообщений
     // Находим разницу между первым сообщением клиента и первым ответом от поддержки для каждого канала
@@ -385,17 +404,25 @@ export default async function handler(req: Request): Promise<Response> {
       },
 
       teamMetrics: {
-        byManager: teamPerformance.map((t: any) => ({
-          managerId: t.manager_id,
-          managerName: t.manager_name,
-          totalCases: parseInt(t.total_cases),
-          resolvedCases: parseInt(t.resolved_cases),
-          resolutionRate: t.total_cases > 0 
-            ? Math.round(parseInt(t.resolved_cases) / parseInt(t.total_cases) * 100) 
-            : 0,
-          avgResolutionMinutes: Math.round(parseFloat(t.avg_resolution_minutes || 0)),
-          highPriorityCases: parseInt(t.high_priority_cases),
-        })),
+        byManager: teamPerformance.map((t: any) => {
+          const caseData = caseMetricsMap.get(t.manager_id?.toString()) || {}
+          const totalCases = parseInt(caseData.total_cases || 0)
+          const resolvedCases = parseInt(caseData.resolved_cases || 0)
+          return {
+            managerId: t.manager_id,
+            managerName: t.manager_name,
+            totalMessages: parseInt(t.total_messages || 0),
+            channelsServed: parseInt(t.channels_served || 0),
+            activeDays: parseInt(t.active_days || 0),
+            totalCases,
+            resolvedCases,
+            resolutionRate: totalCases > 0 
+              ? Math.round(resolvedCases / totalCases * 100) 
+              : 0,
+            avgResolutionMinutes: Math.round(parseFloat(caseData.avg_resolution_minutes || 0)),
+            lastActiveAt: t.last_message_at,
+          }
+        }),
         dailyTrend: dailyTrend.map((d: any) => ({
           date: d.date,
           casesCreated: parseInt(d.cases_created),
