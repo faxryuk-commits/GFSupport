@@ -19,16 +19,36 @@ export async function fetchMessages(
   return apiGet<MessagesResponse>(`/messages?channelId=${channelId}${query}`)
 }
 
+interface SendMessageResponse {
+  success: boolean
+  messageId: string
+  telegramMessageId: number
+  sentAt: string
+}
+
 export async function sendMessage(
   channelId: string, 
   text: string,
   replyToMessageId?: number
 ): Promise<Message> {
-  return apiPost<{ message: Message }>('/messages/send', {
+  const response = await apiPost<SendMessageResponse>('/messages/send', {
     channelId,
     text,
     replyToMessageId
-  }).then(r => r.message)
+  })
+  
+  // Преобразуем ответ API в формат Message
+  return {
+    id: response.messageId,
+    channelId,
+    telegramMessageId: response.telegramMessageId,
+    senderName: 'Вы',
+    senderRole: 'support',
+    isFromTeam: true,
+    text,
+    isRead: true,
+    createdAt: response.sentAt,
+  }
 }
 
 export async function sendMediaMessage(

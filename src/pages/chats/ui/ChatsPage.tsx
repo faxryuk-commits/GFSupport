@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
-import { MessageBubble, ChatInput, type MessageData } from '@/features/messages/ui'
+import { MessageBubble, ChatInput, type MessageData, type AttachedFile } from '@/features/messages/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
@@ -164,8 +164,9 @@ export function ChatsPage() {
     return 0
   })
 
-  const handleSendMessage = async () => {
-    if (!messageText.trim() || !selectedChannel || isSending) return
+  const handleSendMessage = async (files?: AttachedFile[]) => {
+    // Проверяем что есть текст или файлы
+    if ((!messageText.trim() && (!files || files.length === 0)) || !selectedChannel || isSending) return
 
     const tempId = `temp-${Date.now()}`
     const tempMessage: MessageData = {
@@ -187,9 +188,12 @@ export function ChatsPage() {
     
     try {
       setIsSending(true)
+      
+      // Если есть файлы — отправляем с медиа (TODO: реализовать)
+      // Пока отправляем только текст
       const sentMessage = await sendMessage(
         selectedChannel.id, 
-        textToSend, 
+        textToSend || (files ? '[Файл]' : ''), 
         replyToId ? parseInt(replyToId) : undefined
       )
       
@@ -202,7 +206,7 @@ export function ChatsPage() {
       // Удаляем временное сообщение при ошибке
       setMessages(prev => prev.filter(m => m.id !== tempId))
       setMessageText(textToSend)
-      // TODO: показать уведомление об ошибке
+      alert('Ошибка отправки сообщения. Попробуйте ещё раз.')
     } finally {
       setIsSending(false)
     }
