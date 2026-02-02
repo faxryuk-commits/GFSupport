@@ -163,7 +163,7 @@ export default async function handler(req: Request): Promise<Response> {
     let responseTimeDistribution: any[] = []
     
     try {
-      // Вычисляем время первого ответа из сообщений
+      // Вычисляем время первого ответа из сообщений (за весь период)
       const responseTimesResult = await sql`
         WITH channel_first_client_msg AS (
           SELECT 
@@ -171,7 +171,6 @@ export default async function handler(req: Request): Promise<Response> {
             MIN(created_at) as first_client_msg_at
           FROM support_messages
           WHERE (sender_role = 'client' OR is_from_client = true)
-            AND created_at >= ${startDate.toISOString()}
           GROUP BY channel_id
         ),
         channel_first_support_response AS (
