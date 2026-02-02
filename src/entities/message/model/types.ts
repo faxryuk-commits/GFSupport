@@ -7,6 +7,7 @@ export interface Message {
   senderId?: number
   senderName: string
   senderUsername?: string
+  senderPhotoUrl?: string | null
   senderRole: 'client' | 'support' | 'team'
   isFromClient?: boolean
   isFromTeam: boolean

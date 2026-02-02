@@ -47,6 +47,7 @@ function mapMessageToUI(message: Message): MessageData {
   return {
     id: message.id,
     senderName: message.senderName || 'Пользователь',
+    senderAvatarUrl: message.senderPhotoUrl,
     text: message.text || '',
     time: formatTime(message.createdAt),
     isClient: message.senderRole === 'client',

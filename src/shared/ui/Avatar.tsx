@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 interface AvatarProps {
   src?: string | null
   name: string
@@ -7,6 +9,8 @@ interface AvatarProps {
 }
 
 export function Avatar({ src, name, size = 'md', status, className = '' }: AvatarProps) {
+  const [imgError, setImgError] = useState(false)
+  
   const sizes = {
     xs: 'w-6 h-6 text-xs',
     sm: 'w-8 h-8 text-xs',
@@ -30,12 +34,12 @@ export function Avatar({ src, name, size = 'md', status, className = '' }: Avata
     busy: 'bg-red-500',
   }
 
-  const initials = name
+  const initials = (name || '?')
     .split(' ')
     .map(n => n[0])
     .join('')
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2) || '?'
 
   // Generate consistent color from name
   const colors = [
@@ -48,15 +52,18 @@ export function Avatar({ src, name, size = 'md', status, className = '' }: Avata
     'from-indigo-400 to-indigo-600',
     'from-rose-400 to-rose-600',
   ]
-  const colorIndex = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
+  const colorIndex = (name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
+
+  const showImage = src && !imgError
 
   return (
-    <div className={`relative ${className}`}>
-      {src ? (
+    <div className={`relative flex-shrink-0 ${className}`}>
+      {showImage ? (
         <img 
           src={src} 
           alt={name}
           className={`${sizes[size]} rounded-full object-cover`}
+          onError={() => setImgError(true)}
         />
       ) : (
         <div className={`${sizes[size]} rounded-full bg-gradient-to-br ${colors[colorIndex]} flex items-center justify-center text-white font-medium`}>

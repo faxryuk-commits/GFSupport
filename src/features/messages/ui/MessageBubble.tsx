@@ -4,6 +4,7 @@ import { Avatar } from '@/shared/ui'
 export interface MessageData {
   id: string
   senderName: string
+  senderAvatarUrl?: string | null
   text: string
   time: string
   isClient: boolean
@@ -24,7 +25,7 @@ export function MessageBubble({ message, onReply, onCopy }: MessageBubbleProps) 
       <div className="max-w-[70%]">
         {message.isClient && (
           <div className="flex items-center gap-2 mb-1">
-            <Avatar name={message.senderName} size="sm" />
+            <Avatar src={message.senderAvatarUrl} name={message.senderName} size="sm" />
             <span className="text-sm font-medium text-slate-700">{message.senderName}</span>
             <span className="text-xs text-slate-400">{message.time}</span>
           </div>

@@ -113,6 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
           senderId: m.sender_id,
           senderName: m.sender_name || 'Клиент',
           senderUsername: m.sender_username,
+          senderPhotoUrl: m.sender_photo_url || null,
           senderRole: m.sender_role || 'client',
           isFromClient: m.is_from_client ?? (m.sender_role === 'client'),
           isFromTeam: m.sender_role === 'support' || m.sender_role === 'team',
