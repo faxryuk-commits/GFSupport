@@ -96,8 +96,8 @@ export default async function handler(req: Request): Promise<Response> {
 
         // Record activity
         await sql`
-          INSERT INTO support_agent_activity (id, agent_id, session_id, activity_type, metadata)
-          VALUES (${activityId}, ${agentId}, ${sessionId}, 'login', ${JSON.stringify(metadata || {})})
+          INSERT INTO support_agent_activity (id, agent_id, session_id, activity_type, metadata, activity_at)
+          VALUES (${activityId}, ${agentId}, ${sessionId}, 'login', ${JSON.stringify(metadata || {})}, NOW())
         `
 
         return json({ success: true, sessionId })
@@ -118,8 +118,8 @@ export default async function handler(req: Request): Promise<Response> {
 
         // Record activity
         await sql`
-          INSERT INTO support_agent_activity (id, agent_id, session_id, activity_type, metadata)
-          VALUES (${activityId}, ${agentId}, ${sessions[0]?.id || null}, 'logout', ${JSON.stringify(metadata || {})})
+          INSERT INTO support_agent_activity (id, agent_id, session_id, activity_type, metadata, activity_at)
+          VALUES (${activityId}, ${agentId}, ${sessions[0]?.id || null}, 'logout', ${JSON.stringify(metadata || {})}, NOW())
         `
 
         return json({ success: true, sessionDuration: sessions[0]?.duration_minutes || 0 })
@@ -133,9 +133,12 @@ export default async function handler(req: Request): Promise<Response> {
         `
 
         await sql`
-          INSERT INTO support_agent_activity (id, agent_id, session_id, activity_type, metadata)
-          VALUES (${activityId}, ${agentId}, ${activeSession[0]?.id || null}, ${action}, ${JSON.stringify(metadata || {})})
+          INSERT INTO support_agent_activity (id, agent_id, session_id, activity_type, metadata, activity_at)
+          VALUES (${activityId}, ${agentId}, ${activeSession[0]?.id || null}, ${action}, ${JSON.stringify(metadata || {})}, NOW())
         `
+        
+        // Also update agent status to online
+        await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agentId}`
 
         return json({ success: true })
       }
