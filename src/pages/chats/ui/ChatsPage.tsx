@@ -125,6 +125,27 @@ export function ChatsPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
+  // Загрузка каналов
+  const loadChannels = useCallback(async (silent = false) => {
+    try {
+      if (!silent) {
+        setIsLoadingChannels(true)
+        setChannelsError(null)
+      }
+      
+      const channelsData = await fetchChannels()
+      const mappedChannels = channelsData.map(mapChannelToUI)
+      setChannels(mappedChannels)
+    } catch (error) {
+      if (!silent) {
+        console.error('Ошибка загрузки каналов:', error)
+        setChannelsError('Не удалось загрузить каналы')
+      }
+    } finally {
+      if (!silent) setIsLoadingChannels(false)
+    }
+  }, [])
+
   // Загрузка каналов и агентов при монтировании
   useEffect(() => {
     const loadData = async () => {
@@ -151,6 +172,44 @@ export function ChatsPage() {
 
     loadData()
   }, [])
+
+  // Real-time polling: обновление каналов каждые 10 секунд
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadChannels(true) // silent update
+    }, 10000)
+
+    return () => clearInterval(pollInterval)
+  }, [loadChannels])
+
+  // Real-time polling: обновление сообщений каждые 5 секунд при открытом чате
+  useEffect(() => {
+    if (!selectedChannel) return
+
+    const pollMessages = async () => {
+      try {
+        const { messages: newData } = await fetchMessages(selectedChannel.id, 0, MESSAGES_LIMIT)
+        const mappedMessages = newData.map(mapMessageToUI)
+        
+        // Только обновляем если есть новые сообщения
+        if (mappedMessages.length !== messages.length || 
+            (mappedMessages.length > 0 && messages.length > 0 && 
+             mappedMessages[mappedMessages.length - 1]?.id !== messages[messages.length - 1]?.id)) {
+          setMessages(mappedMessages)
+          // Прокрутка к новому сообщению
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }, 100)
+        }
+      } catch (error) {
+        console.error('Polling messages error:', error)
+      }
+    }
+
+    const pollInterval = setInterval(pollMessages, 5000)
+
+    return () => clearInterval(pollInterval)
+  }, [selectedChannel, messages])
 
   // Загрузка AI контекста для канала
   const loadAIContext = useCallback(async (channelId: string) => {

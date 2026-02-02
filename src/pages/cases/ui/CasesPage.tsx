@@ -9,12 +9,17 @@ import { fetchCases, createCase, updateCaseStatus, assignCase } from '@/shared/a
 function mapCaseToCardData(c: Case): CaseCardData {
   return {
     id: c.id,
-    number: c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 8),
+    number: c.ticketNumber ? `#${c.ticketNumber}` : `CASE-${c.id.slice(0, 6).toUpperCase()}`,
     title: c.title,
+    description: c.description,
     company: c.companyName,
+    channelId: c.channelId,
+    channelName: c.channelName,
     priority: c.priority,
     category: c.category,
-    time: c.createdAt,
+    tags: c.tags,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     commentsCount: c.messagesCount,
   }
