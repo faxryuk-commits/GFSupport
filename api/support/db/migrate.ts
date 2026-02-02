@@ -373,6 +373,14 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Created support_commitments table')
     } catch (e) { /* table exists */ }
 
+    // Migration 20: Add ticket_number to cases
+    try {
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS ticket_number INTEGER`
+      await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
+      await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_ticket_number ON support_cases(ticket_number) WHERE ticket_number IS NOT NULL`
+      migrations.push('Added ticket_number to support_cases')
+    } catch (e) { /* column exists */ }
+
     return json({
       success: true,
       migrations,
