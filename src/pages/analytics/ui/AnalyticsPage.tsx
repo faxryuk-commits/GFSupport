@@ -463,57 +463,152 @@ export function AnalyticsPage() {
           <div className="px-5 py-4 border-b border-slate-100">
             <h2 className="font-semibold text-slate-800 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-500" />
-              Сигналы оттока
+              Клиенты, требующие внимания
             </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Каналы с признаками неудовлетворённости или проблем
+            </p>
           </div>
           <div className="grid grid-cols-3 divide-x divide-slate-100">
             {/* High Risk Companies */}
             <div className="p-4">
-              <h3 className="text-sm font-medium text-slate-700 mb-3">Высокий риск</h3>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-slate-800">Высокий риск</h3>
+                  <p className="text-xs text-slate-500">Много негатива + проблем</p>
+                </div>
+              </div>
               {data.churnSignals.highRiskCompanies.length === 0 ? (
-                <p className="text-sm text-slate-400">Нет данных</p>
+                <p className="text-sm text-green-600 flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4" /> Всё хорошо
+                </p>
               ) : (
                 <div className="space-y-2">
-                  {data.churnSignals.highRiskCompanies.slice(0, 5).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-700 truncate">{c.companyName || `ID: ${c.companyId}`}</span>
-                      <Badge variant="danger" size="sm">риск {c.riskScore}</Badge>
-                    </div>
-                  ))}
+                  {data.churnSignals.highRiskCompanies.slice(0, 5).map((c, i) => {
+                    const maxRisk = Math.max(...data.churnSignals.highRiskCompanies.map(x => x.riskScore), 1)
+                    const riskPercent = (c.riskScore / maxRisk) * 100
+                    return (
+                      <div key={i} className="group">
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-slate-700 truncate max-w-[140px]" title={c.companyName}>
+                            {c.companyName || `Канал ${c.companyId?.slice(0, 8)}`}
+                          </span>
+                          <span className="text-xs font-medium text-red-600">{c.riskScore} баллов</span>
+                        </div>
+                        <div className="h-1.5 bg-red-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-red-500 rounded-full transition-all"
+                            style={{ width: `${riskPercent}%` }}
+                          />
+                        </div>
+                        {(c.openCases > 0 || c.recurringCases > 0) && (
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {c.openCases > 0 && `${c.openCases} откр. кейсов`}
+                            {c.openCases > 0 && c.recurringCases > 0 && ' • '}
+                            {c.recurringCases > 0 && `${c.recurringCases} повторных`}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
 
             {/* Negative Companies */}
             <div className="p-4">
-              <h3 className="text-sm font-medium text-slate-700 mb-3">Негативные отзывы</h3>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-slate-800">Негативные отзывы</h3>
+                  <p className="text-xs text-slate-500">Жалобы и недовольство</p>
+                </div>
+              </div>
               {data.churnSignals.negativeCompanies.length === 0 ? (
-                <p className="text-sm text-slate-400">Нет данных</p>
+                <p className="text-sm text-green-600 flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4" /> Всё хорошо
+                </p>
               ) : (
                 <div className="space-y-2">
-                  {data.churnSignals.negativeCompanies.slice(0, 5).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-700 truncate">{c.companyName || `ID: ${c.companyId}`}</span>
-                      <span className="text-red-500 text-xs">{c.negativeMessages} негат.</span>
-                    </div>
-                  ))}
+                  {data.churnSignals.negativeCompanies.slice(0, 5).map((c, i) => {
+                    const maxNeg = Math.max(...data.churnSignals.negativeCompanies.map(x => x.negativeMessages), 1)
+                    const negPercent = (c.negativeMessages / maxNeg) * 100
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-slate-700 truncate max-w-[140px]" title={c.companyName}>
+                            {c.companyName || `Канал ${c.companyId?.slice(0, 8)}`}
+                          </span>
+                          <span className="text-xs font-medium text-orange-600">
+                            {c.negativeMessages} сообщ.
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-orange-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-orange-500 rounded-full transition-all"
+                            style={{ width: `${negPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
 
             {/* Stuck Cases */}
             <div className="p-4">
-              <h3 className="text-sm font-medium text-slate-700 mb-3">Зависшие кейсы</h3>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-slate-800">Долго без ответа</h3>
+                  <p className="text-xs text-slate-500">Кейсы открыты &gt;48ч</p>
+                </div>
+              </div>
               {data.churnSignals.stuckCases.length === 0 ? (
-                <p className="text-sm text-slate-400">Нет данных</p>
+                <p className="text-sm text-green-600 flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4" /> Всё хорошо
+                </p>
               ) : (
                 <div className="space-y-2">
-                  {data.churnSignals.stuckCases.slice(0, 5).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-700 truncate">{c.companyName || `ID: ${c.companyId}`}</span>
-                      <span className="text-orange-500 text-xs">{c.oldestHours}ч</span>
-                    </div>
-                  ))}
+                  {data.churnSignals.stuckCases.slice(0, 5).map((c, i) => {
+                    const formatHours = (h: number) => {
+                      if (h < 24) return `${h} ч`
+                      const days = Math.floor(h / 24)
+                      const hours = h % 24
+                      return hours > 0 ? `${days} дн ${hours} ч` : `${days} дн`
+                    }
+                    const maxHours = Math.max(...data.churnSignals.stuckCases.map(x => x.oldestHours), 1)
+                    const hoursPercent = (c.oldestHours / maxHours) * 100
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-slate-700 truncate max-w-[140px]" title={c.companyName}>
+                            {c.companyName || `Канал ${c.companyId?.slice(0, 8)}`}
+                          </span>
+                          <span className="text-xs font-medium text-amber-600">
+                            {formatHours(c.oldestHours)}
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-amber-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-amber-500 rounded-full transition-all"
+                            style={{ width: `${hoursPercent}%` }}
+                          />
+                        </div>
+                        {c.stuckCases > 1 && (
+                          <p className="text-xs text-slate-400 mt-0.5">{c.stuckCases} кейсов</p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
