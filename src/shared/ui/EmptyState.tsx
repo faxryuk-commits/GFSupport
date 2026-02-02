@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Inbox, Search, AlertCircle, Plus } from 'lucide-react'
 
 interface EmptyStateProps {

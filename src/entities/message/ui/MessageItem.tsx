@@ -1,4 +1,4 @@
-import { Check, CheckCheck, Image, FileText, Mic, Play } from 'lucide-react'
+import { Check, CheckCheck, FileText, Mic, Play } from 'lucide-react'
 import type { Message } from '../model'
 
 interface MessageItemProps {
@@ -8,7 +8,7 @@ interface MessageItemProps {
   onReact?: (emoji: string) => void
 }
 
-export function MessageItem({ message, showSender = true, onReply, onReact }: MessageItemProps) {
+export function MessageItem({ message, showSender = true, onReply: _onReply, onReact }: MessageItemProps) {
   const isFromTeam = message.isFromTeam
   
   return (

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, MoreVertical, Phone, Video, Info } from 'lucide-react'
+import { ArrowLeft, MoreVertical, Info } from 'lucide-react'
 import { MessageItem, type Message } from '@/entities/message'
 import { MessageComposer } from '@/features/messages'
 import type { Channel } from '@/entities/channel'

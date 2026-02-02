@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { 
   Clock, AlertTriangle, MessageSquare, ChevronRight, TrendingUp, TrendingDown,
-  Users, Briefcase, Zap, RefreshCw, Bell, CheckCircle, XCircle, ArrowUpRight,
-  BarChart3, Activity, Target, Award, Calendar, Filter
+  Users, Briefcase, Zap, RefreshCw, Bell, CheckCircle, ArrowUpRight,
+  Activity, Target
 } from 'lucide-react'
-import { Avatar, Badge, Tabs, TabPanel, EmptyState, LoadingState } from '@/shared/ui'
+import { Avatar, Badge, EmptyState, LoadingState } from '@/shared/ui'
 
 // Types
 interface Metric {
@@ -93,7 +93,6 @@ const hourlyData = [
 
 export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
   const [dateRange, setDateRange] = useState('today')
   const [isRefreshing, setIsRefreshing] = useState(false)
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Plus, Filter, MoreHorizontal, Mail, Phone, Calendar, Shield, Edit, Trash2, Eye } from 'lucide-react'
+import { Search, Plus, Mail, Phone, Calendar, Shield, Edit, Trash2, Eye } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 
 interface User {

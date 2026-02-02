@@ -1,0 +1,47 @@
+---
+description: Feature-Sliced Design архитектура проекта
+alwaysApply: true
+---
+
+# FSD Архитектура
+
+## Слои (от верхнего к нижнему)
+
+```
+app/      → Инициализация, провайдеры, роутинг
+pages/    → Страницы приложения
+widgets/  → Композитные блоки (Header, Sidebar)
+features/ → Бизнес-функции (формы, действия)
+entities/ → Бизнес-сущности (Case, Channel, Agent)
+shared/   → Переиспользуемый код (UI, hooks, utils, api)
+```
+
+## Правила импортов
+
+✅ Импорт только из нижних слоёв:
+- `pages` → `widgets`, `features`, `entities`, `shared`
+- `features` → `entities`, `shared`
+- `entities` → только `shared`
+
+❌ Запрещено:
+- Импорт из верхних слоёв
+- Кросс-импорт внутри слоя
+
+## Структура модуля
+
+```
+features/cases/
+  ui/           # React компоненты
+    CaseCard.tsx
+    index.ts    # Публичный API
+  model/        # Логика, типы, хуки
+  api/          # API функции
+  index.ts      # Экспорт модуля
+```
+
+## При создании нового функционала
+
+1. Определи слой (feature, entity, widget?)
+2. Создай структуру `ui/`, `model/`, `api/`
+3. Экспортируй через `index.ts`
+4. Используй alias `@/` для импортов

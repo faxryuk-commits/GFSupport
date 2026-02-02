@@ -1,4 +1,16 @@
-import { Plus, Award } from 'lucide-react'
+import { Plus } from 'lucide-react'
+
+interface Agent {
+  id: string
+  name: string
+  role: string
+  status: 'online' | 'offline'
+  avatar: string
+  cases: number
+  sla: number
+  avgTime: string
+  level: { name: string; icon: string; progress: number; current: number; max: number }
+}
 
 const mockTeamMetrics = {
   onlineNow: 3,
@@ -7,12 +19,12 @@ const mockTeamMetrics = {
   casesToday: 24,
 }
 
-const mockAgents = [
+const mockAgents: Agent[] = [
   { 
     id: '1', 
     name: 'Sarah Jenkins', 
     role: 'Senior Agent',
-    status: 'online',
+    status: 'online' as const,
     avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
     cases: 45, 
     sla: 98, 
@@ -23,7 +35,7 @@ const mockAgents = [
     id: '2', 
     name: 'Michael Chen', 
     role: 'Technical Lead',
-    status: 'offline',
+    status: 'offline' as const,
     avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
     cases: 22, 
     sla: 95, 
@@ -34,7 +46,7 @@ const mockAgents = [
     id: '3', 
     name: 'Emily Patel', 
     role: 'Support Agent',
-    status: 'online',
+    status: 'online' as const,
     avatar: 'https://randomuser.me/api/portraits/women/68.jpg',
     cases: 38, 
     sla: 99, 
@@ -45,7 +57,7 @@ const mockAgents = [
     id: '4', 
     name: 'David Lee', 
     role: 'Support Agent',
-    status: 'offline',
+    status: 'offline' as const,
     avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
     cases: 15, 
     sla: 92, 
@@ -94,18 +106,6 @@ function MetricCard({ value, label, hasOnline }: { value: string | number; label
       <p className="text-sm text-slate-500 mt-1">{label}</p>
     </div>
   )
-}
-
-interface Agent {
-  id: string
-  name: string
-  role: string
-  status: 'online' | 'offline'
-  avatar: string
-  cases: number
-  sla: number
-  avgTime: string
-  level: { name: string; icon: string; progress: number; current: number; max: number }
 }
 
 function AgentCard({ agent }: { agent: Agent }) {

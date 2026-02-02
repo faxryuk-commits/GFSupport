@@ -1,4 +1,4 @@
-import { MessageSquare, CheckCircle, Clock, Award } from 'lucide-react'
+import { MessageSquare, CheckCircle, Clock } from 'lucide-react'
 import type { Agent } from '../model'
 import { AGENT_ROLE_CONFIG, getAgentLevel, formatLastActive } from '../model'
 

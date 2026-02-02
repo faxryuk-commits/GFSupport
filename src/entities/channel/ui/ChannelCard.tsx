@@ -1,4 +1,4 @@
-import { MessageSquare, Clock, AlertCircle } from 'lucide-react'
+import { MessageSquare, Clock } from 'lucide-react'
 import type { Channel } from '../model'
 
 interface ChannelCardProps {

@@ -1,6 +1,6 @@
 import { Clock, MessageSquare, User } from 'lucide-react'
 import type { Case } from '../model'
-import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG } from '../model'
+import { CASE_PRIORITY_CONFIG } from '../model'
 
 interface CaseCardProps {
   caseItem: Case

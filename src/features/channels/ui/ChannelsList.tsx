@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Search, Filter, RefreshCw } from 'lucide-react'
+import { Search, RefreshCw } from 'lucide-react'
 import { ChannelCard, type Channel, type ChannelFilters } from '@/entities/channel'
 
 interface ChannelsListProps {

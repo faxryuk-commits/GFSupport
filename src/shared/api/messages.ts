@@ -32,7 +32,7 @@ export async function sendMessage(
 }
 
 export async function sendMediaMessage(
-  channelId: string,
+  _channelId: string,
   formData: FormData
 ): Promise<Message> {
   const token = localStorage.getItem('support_agent_token') || ''

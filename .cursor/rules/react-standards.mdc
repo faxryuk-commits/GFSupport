@@ -1,0 +1,67 @@
+---
+description: React/TypeScript стандарты
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# React Стандарты
+
+## Именование
+
+```typescript
+// Компоненты — PascalCase
+export function CaseCard() {}
+
+// Хуки — camelCase с use
+export function useCases() {}
+
+// Типы/интерфейсы — PascalCase
+interface CaseCardProps {}
+type CaseStatus = 'open' | 'closed'
+```
+
+## Структура компонента
+
+```tsx
+// 1. Импорты
+import { useState } from 'react'
+import { Icon } from 'lucide-react'
+import { Button } from '@/shared/ui'
+
+// 2. Типы
+interface Props {
+  title: string
+  onSubmit: () => void
+}
+
+// 3. Компонент
+export function MyComponent({ title, onSubmit }: Props) {
+  // состояние
+  const [value, setValue] = useState('')
+  
+  // хуки
+  const data = useData()
+  
+  // обработчики
+  const handleClick = () => {}
+  
+  // рендер
+  return <div>{title}</div>
+}
+```
+
+## Запрещено
+
+```typescript
+// ❌ any
+const data: any = {}
+
+// ❌ Inline стили (используй Tailwind)
+<div style={{ color: 'red' }}>
+
+// ❌ Классовые компоненты
+class MyComponent extends React.Component {}
+
+// ❌ default export для компонентов
+export default function Component() {}
+```

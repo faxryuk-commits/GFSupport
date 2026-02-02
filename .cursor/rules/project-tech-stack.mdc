@@ -1,0 +1,45 @@
+---
+description: Технологический стек проекта
+alwaysApply: true
+---
+
+# Стек технологий
+
+## Фронтенд
+
+- **React 19** + **TypeScript**
+- **Vite** — сборщик
+- **Tailwind CSS** — стилизация
+- **React Router v7** — маршрутизация
+- **Lucide React** — иконки
+
+## Структура проекта
+
+```
+src/
+  app/          # Layouts, providers
+  pages/        # Страницы
+  widgets/      # Header, Sidebar
+  features/     # Бизнес-функции
+  entities/     # Сущности (Case, Channel, Agent)
+  shared/       # UI, hooks, utils, api, types
+```
+
+## UI Компоненты (shared/ui)
+
+Доступны готовые компоненты:
+- `Modal`, `ConfirmDialog`
+- `Button`, `Input`, `Badge`
+- `Avatar`, `AvatarGroup`
+- `Tabs`, `TabPanel`
+- `EmptyState`, `LoadingSpinner`
+- `Toast`, `Dropdown`
+
+## API
+
+Базовый URL: `/api/support/`
+
+Используй сервисы из `shared/api/`:
+- `fetchChannels`, `fetchMessages`
+- `fetchCases`, `fetchAgents`
+- `fetchAnalytics`

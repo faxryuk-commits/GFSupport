@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Send, Clock, Users, CheckCircle, XCircle, Eye, Edit, Trash2, Calendar, Filter } from 'lucide-react'
+import { Plus, Send, Clock, Users, CheckCircle, XCircle, Eye, Edit, Trash2, Calendar } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 
 interface Broadcast {

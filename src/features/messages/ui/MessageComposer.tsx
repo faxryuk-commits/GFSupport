@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Send, Paperclip, Image, Smile, X } from 'lucide-react'
+import { Send, Paperclip, X } from 'lucide-react'
 
 interface MessageComposerProps {
   channelId: string
@@ -11,7 +11,7 @@ interface MessageComposerProps {
 }
 
 export function MessageComposer({ 
-  channelId,
+  channelId: _channelId,
   onSend, 
   placeholder = 'Написать сообщение...',
   disabled,

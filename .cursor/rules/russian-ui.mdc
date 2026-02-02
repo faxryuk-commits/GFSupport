@@ -1,0 +1,53 @@
+---
+description: Русский язык в интерфейсе
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# Русский интерфейс
+
+## Все тексты UI на русском
+
+```tsx
+// ✅ Правильно
+<h1>Кейсы</h1>
+<button>Создать</button>
+<p>Не найдено</p>
+
+// ❌ Неправильно
+<h1>Cases</h1>
+<button>Create</button>
+<p>Not found</p>
+```
+
+## Стандартные переводы
+
+| English | Русский |
+|---------|---------|
+| Dashboard | Обзор |
+| Cases | Кейсы |
+| Chats | Чаты |
+| Channels | Каналы |
+| Team | Команда |
+| Settings | Настройки |
+| Analytics | Аналитика |
+| Create | Создать |
+| Save | Сохранить |
+| Cancel | Отмена |
+| Delete | Удалить |
+| Edit | Редактировать |
+| Search | Поиск |
+| Filter | Фильтр |
+| Loading | Загрузка |
+| Error | Ошибка |
+| Success | Успешно |
+
+## Статусы кейсов
+
+| Status | Русский |
+|--------|---------|
+| detected | Обнаружен |
+| in_progress | В работе |
+| waiting | Ожидание |
+| blocked | Заблокирован |
+| resolved | Решён |

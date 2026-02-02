@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { TrendingUp, TrendingDown, Clock, Star, ChevronDown } from 'lucide-react'
+import { TrendingUp, TrendingDown, Star, ChevronDown } from 'lucide-react'
 
 const periods = ['Last 7 days', 'Last 30 days', 'Last 90 days']
 
