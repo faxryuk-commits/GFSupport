@@ -15,7 +15,7 @@ function mapCaseToCardData(c: Case): CaseCardData {
     priority: c.priority,
     category: c.category,
     time: c.createdAt,
-    assignee: c.assignedTo ? { id: c.assignedTo, name: c.assigneeName } : undefined,
+    assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     commentsCount: c.messagesCount,
   }
 }
@@ -34,10 +34,10 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
     category: c.category,
     status: c.status,
     createdAt: c.createdAt,
-    assignee: c.assignedTo ? { id: c.assignedTo, name: c.assigneeName } : undefined,
+    assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     comments: [],
-    tags: [],
-    linkedChats: [c.channelId],
+    tags: c.tags || [],
+    linkedChats: c.channelId ? [c.channelId] : [],
     attachments: [],
     history: [],
   }

@@ -4,10 +4,11 @@ import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData } from '@/features/messages/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead } from '@/shared/api'
-import type { SupportChannel, SupportMessage } from '@/shared/types'
+import type { Channel } from '@/entities/channel'
+import type { Message } from '@/entities/message'
 
 // Преобразование данных канала из API в формат UI компонента
-function mapChannelToUI(channel: SupportChannel): ChannelItemData {
+function mapChannelToUI(channel: Channel): ChannelItemData {
   const getRelativeTime = (dateStr: string | null) => {
     if (!dateStr) return ''
     const date = new Date(dateStr)
@@ -25,33 +26,33 @@ function mapChannelToUI(channel: SupportChannel): ChannelItemData {
 
   return {
     id: channel.id,
-    name: channel.name,
+    name: channel.name || channel.companyName || `Канал ${channel.id.slice(0, 6)}`,
     avatar: channel.photoUrl,
     lastMessage: channel.lastMessageText || 'Нет сообщений',
     time: getRelativeTime(channel.lastMessageAt),
-    unread: channel.unreadCount,
+    unread: channel.unreadCount || 0,
     status: channel.awaitingReply ? 'open' : 'resolved',
-    priority: channel.awaitingReply ? 'high' : undefined,
+    priority: (channel.unreadCount || 0) > 3 ? 'high' : undefined,
     isPinned: false,
     isArchived: !channel.isActive,
   }
 }
 
-// Преобразование сообщения из API в формат UI компонента
-function mapMessageToUI(message: SupportMessage): MessageData {
+// Преобразование сообщения из API в формат UI компонента  
+function mapMessageToUI(message: Message): MessageData {
   const formatTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   }
 
   return {
     id: message.id,
-    senderName: message.senderName,
+    senderName: message.senderName || 'Пользователь',
     text: message.text || '',
     time: formatTime(message.createdAt),
     isClient: message.senderRole === 'client',
     status: message.isRead ? 'read' : 'delivered',
     attachments: message.mediaUrl ? [{
-      type: message.mediaType?.startsWith('image') ? 'image' : 'file',
+      type: message.mediaType === 'photo' ? 'image' : 'file',
       name: message.mediaType || 'Файл',
       url: message.mediaUrl
     }] : undefined,

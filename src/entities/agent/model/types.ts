@@ -4,12 +4,18 @@ export type AgentStatus = 'online' | 'away' | 'offline'
 export interface Agent {
   id: string
   name: string
-  email: string
+  email?: string
   username?: string
+  telegramId?: number
   role: AgentRole
   status?: AgentStatus
-  isActive: boolean
+  avatarUrl?: string
+  isActive?: boolean
   lastActiveAt?: string
+  lastSeenAt?: string
+  createdAt?: string
+  assignedChannels?: number
+  activeChats?: number
   metrics?: AgentMetrics
   points?: number
   phone?: string
