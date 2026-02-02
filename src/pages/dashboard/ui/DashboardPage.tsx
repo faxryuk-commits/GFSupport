@@ -286,6 +286,12 @@ export function DashboardPage() {
     loadData()
   }
 
+  // Generate AI recommendations - MUST be before any early returns
+  const aiRecommendations = useMemo(() => 
+    generateAIRecommendations(analytics, metrics, agents),
+    [analytics, metrics, agents]
+  )
+
   if (isLoading) {
     return <LoadingState text="Загрузка дашборда..." />
   }
@@ -364,12 +370,6 @@ export function DashboardPage() {
   // Calculate online agents
   const onlineAgents = agents.filter(a => a.status === 'online' || a.status === 'away')
   const resolvedToday = analytics?.cases?.resolved || 0
-
-  // Generate AI recommendations
-  const aiRecommendations = useMemo(() => 
-    generateAIRecommendations(analytics, metrics, agents),
-    [analytics, metrics, agents]
-  )
 
   // Icons and colors for recommendations
   const recommendationStyles = {

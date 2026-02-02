@@ -4,6 +4,7 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/gfs/',  // Base path for delever.uz/gfs
   plugins: [react()],
   resolve: {
     alias: {
