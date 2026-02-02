@@ -7,7 +7,8 @@ import {
   CasesPage, 
   BroadcastPage,
   SettingsPage,
-  LoginPage 
+  LoginPage,
+  RegisterPage 
 } from '@/pages'
 import './index.css'
 
@@ -16,6 +17,8 @@ export default function App() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/support/register/:token" element={<RegisterPage />} />
+      <Route path="/register/:token" element={<RegisterPage />} />
 
       {/* Protected routes with layout */}
       <Route element={<MainLayout />}>

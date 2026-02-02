@@ -1,7 +1,20 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, AlertCircle } from 'lucide-react'
-import { fetchAgents } from '@/shared/api'
+import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail, X } from 'lucide-react'
+import { fetchAgents, apiPost, apiGet } from '@/shared/api'
+import { Modal } from '@/shared/ui'
 import type { Agent } from '@/entities/agent'
+
+interface Invite {
+  id: string
+  token: string
+  url: string
+  email?: string
+  role: string
+  expiresAt: string
+  createdAt: string
+  isUsed: boolean
+  isExpired: boolean
+}
 
 interface DisplayAgent {
   id: string
@@ -60,9 +73,19 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Invite modal state
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'agent' | 'manager' | 'admin'>('agent')
+  const [inviteUrl, setInviteUrl] = useState('')
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
+  const [invites, setInvites] = useState<Invite[]>([])
 
   useEffect(() => {
     loadAgents()
+    loadInvites()
   }, [])
 
   async function loadAgents() {
@@ -77,6 +100,50 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function loadInvites() {
+    try {
+      const data = await apiGet<{ invites: Invite[] }>('/invites')
+      setInvites(data.invites.filter(i => !i.isUsed && !i.isExpired))
+    } catch (err) {
+      console.error('Failed to load invites:', err)
+    }
+  }
+
+  async function createInvite() {
+    try {
+      setInviteLoading(true)
+      const response = await apiPost<{ invite: Invite }>('/invites', {
+        email: inviteEmail || undefined,
+        role: inviteRole,
+        expiresInDays: 7
+      })
+      setInviteUrl(response.invite.url)
+      loadInvites()
+    } catch (err) {
+      console.error('Failed to create invite:', err)
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  function copyInviteLink() {
+    navigator.clipboard.writeText(inviteUrl)
+    setInviteCopied(true)
+    setTimeout(() => setInviteCopied(false), 2000)
+  }
+
+  function openInviteModal() {
+    setInviteEmail('')
+    setInviteRole('agent')
+    setInviteUrl('')
+    setIsInviteModalOpen(true)
+  }
+
+  function closeInviteModal() {
+    setIsInviteModalOpen(false)
+    setInviteUrl('')
   }
 
   // Calculate metrics from agents data
@@ -120,7 +187,10 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       {!embedded && (
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-800">Команда</h1>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          <button 
+            onClick={openInviteModal}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Пригласить
           </button>
@@ -128,12 +198,137 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       )}
       {embedded && (
         <div className="flex items-center justify-end">
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          <button 
+            onClick={openInviteModal}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             Пригласить
           </button>
         </div>
       )}
+
+      {/* Invite Modal */}
+      <Modal isOpen={isInviteModalOpen} onClose={closeInviteModal} title="Пригласить сотрудника">
+        <div className="space-y-4">
+          {!inviteUrl ? (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Email (необязательно)
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="employee@company.com"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Если указать email, ссылка будет привязана к нему
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Роль
+                </label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as 'agent' | 'manager' | 'admin')}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="agent">Агент поддержки</option>
+                  <option value="manager">Менеджер</option>
+                  <option value="admin">Администратор</option>
+                </select>
+              </div>
+
+              <button
+                onClick={createInvite}
+                disabled={inviteLoading}
+                className="w-full py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {inviteLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Link className="w-5 h-5" />
+                    Создать ссылку
+                  </>
+                )}
+              </button>
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800 font-medium mb-2">
+                  Ссылка создана! Отправьте её сотруднику:
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inviteUrl}
+                    readOnly
+                    className="flex-1 px-3 py-2 bg-white border border-green-300 rounded-lg text-sm"
+                  />
+                  <button
+                    onClick={copyInviteLink}
+                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+                  >
+                    {inviteCopied ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Скопировано
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        Копировать
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-green-600 mt-2">
+                  Ссылка действительна 7 дней
+                </p>
+              </div>
+
+              <button
+                onClick={() => setInviteUrl('')}
+                className="w-full py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Создать ещё одну ссылку
+              </button>
+            </div>
+          )}
+
+          {/* Active invites */}
+          {invites.length > 0 && (
+            <div className="pt-4 border-t border-slate-200">
+              <h4 className="text-sm font-medium text-slate-700 mb-2">
+                Активные приглашения ({invites.length})
+              </h4>
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {invites.map(invite => (
+                  <div key={invite.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg text-sm">
+                    <div>
+                      <span className="text-slate-700">{invite.email || 'Без email'}</span>
+                      <span className="text-slate-400 ml-2">• {invite.role}</span>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      до {new Date(invite.expiresAt).toLocaleDateString('ru')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Metrics */}
       <div className="grid grid-cols-4 gap-4">

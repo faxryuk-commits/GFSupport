@@ -5,6 +5,7 @@ export { CasesPage } from './cases'
 export { BroadcastPage } from './broadcast'
 export { SettingsPage } from './settings'
 export { LoginPage } from './login'
+export { RegisterPage } from './register'
 
 // Internal exports (used in Settings)
 export { AnalyticsPage } from './analytics'
