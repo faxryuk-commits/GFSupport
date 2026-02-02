@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { 
   Clock, AlertTriangle, MessageSquare, ChevronRight, TrendingUp, TrendingDown,
   Users, Briefcase, Zap, RefreshCw, Bell, CheckCircle, ArrowUpRight,
-  Activity, Target, BarChart3, Mic, Video, AlertCircle, ChevronDown, ChevronUp
+  Activity, Target, BarChart3, Mic, Video, AlertCircle, ChevronDown, ChevronUp,
+  Lightbulb, Shield, ThumbsUp, ThumbsDown, TrendingDown as TrendDown
 } from 'lucide-react'
 import { Avatar, Badge, EmptyState, LoadingState } from '@/shared/ui'
 import { fetchDashboardMetrics, fetchAnalytics, type DashboardMetrics, type AnalyticsData } from '@/shared/api'
@@ -12,6 +13,137 @@ import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 import { ResponseTimeDetailsModal } from '@/pages/analytics/ui/ResponseTimeDetailsModal'
+
+// AI Рекомендации на основе данных
+interface AIRecommendation {
+  id: string
+  type: 'warning' | 'success' | 'info' | 'action'
+  title: string
+  description: string
+  priority: 'high' | 'medium' | 'low'
+  action?: { label: string; link: string }
+}
+
+function generateAIRecommendations(
+  analytics: AnalyticsData | null,
+  metrics: DashboardMetrics | null,
+  agents: Agent[]
+): AIRecommendation[] {
+  const recommendations: AIRecommendation[] = []
+  
+  if (!analytics || !metrics) return recommendations
+
+  // 1. Проверка времени ответа
+  const avgResponse = analytics.channels?.avgFirstResponse || 0
+  if (avgResponse > 30) {
+    recommendations.push({
+      id: 'response-time',
+      type: 'warning',
+      title: 'Высокое время ответа',
+      description: `Среднее время первого ответа ${avgResponse} минут. Рекомендуется сократить до 15 минут для лучшего клиентского опыта.`,
+      priority: 'high',
+      action: { label: 'Посмотреть очередь', link: '/chats' }
+    })
+  } else if (avgResponse > 0 && avgResponse <= 10) {
+    recommendations.push({
+      id: 'response-time-good',
+      type: 'success',
+      title: 'Отличное время ответа!',
+      description: `Среднее время ответа ${avgResponse} минут - это отличный показатель.`,
+      priority: 'low'
+    })
+  }
+
+  // 2. Проверка срочных кейсов
+  const urgentCases = analytics.cases?.urgent || 0
+  if (urgentCases > 0) {
+    recommendations.push({
+      id: 'urgent-cases',
+      type: 'warning',
+      title: `${urgentCases} срочных кейсов`,
+      description: 'Есть кейсы требующие немедленного внимания. Приоритизируйте их обработку.',
+      priority: 'high',
+      action: { label: 'Открыть кейсы', link: '/cases?priority=urgent' }
+    })
+  }
+
+  // 3. Проверка негативного настроения
+  const frustrated = analytics.patterns?.bySentiment?.find(s => s.sentiment === 'frustrated')
+  const negative = analytics.patterns?.bySentiment?.find(s => s.sentiment === 'negative')
+  const totalNegative = (frustrated?.count || 0) + (negative?.count || 0)
+  const totalMessages = analytics.messages?.total || 1
+  const negativePercent = (totalNegative / totalMessages) * 100
+
+  if (negativePercent > 15) {
+    recommendations.push({
+      id: 'negative-sentiment',
+      type: 'warning',
+      title: 'Повышенный негатив',
+      description: `${negativePercent.toFixed(0)}% обращений с негативным настроением. Проанализируйте причины и улучшите качество сервиса.`,
+      priority: 'medium'
+    })
+  }
+
+  // 4. Команда онлайн
+  const onlineAgents = agents.filter(a => a.status === 'online').length
+  const awayAgents = agents.filter(a => a.status === 'away').length
+  const totalAgents = agents.length
+
+  if (totalAgents > 0 && onlineAgents === 0 && metrics.waiting > 0) {
+    recommendations.push({
+      id: 'no-online',
+      type: 'warning',
+      title: 'Нет агентов онлайн',
+      description: `${metrics.waiting} клиентов ожидают ответа, но все агенты офлайн.`,
+      priority: 'high'
+    })
+  } else if (onlineAgents > 0) {
+    recommendations.push({
+      id: 'team-online',
+      type: 'info',
+      title: `${onlineAgents} агентов онлайн`,
+      description: awayAgents > 0 ? `Ещё ${awayAgents} отошли ненадолго` : 'Команда готова обрабатывать обращения',
+      priority: 'low'
+    })
+  }
+
+  // 5. Повторяющиеся проблемы
+  const topProblem = analytics.patterns?.recurringProblems?.[0]
+  if (topProblem && topProblem.count >= 5) {
+    recommendations.push({
+      id: 'recurring-problem',
+      type: 'action',
+      title: `Частая проблема: ${topProblem.issue}`,
+      description: `${topProblem.count} обращений. Рассмотрите создание FAQ или автоматизацию ответа.`,
+      priority: 'medium',
+      action: { label: 'Автоматизация', link: '/settings?tab=automations' }
+    })
+  }
+
+  // 6. SLA
+  const sla = metrics.slaPercent || 0
+  if (sla < 80) {
+    recommendations.push({
+      id: 'sla-low',
+      type: 'warning',
+      title: 'SLA ниже нормы',
+      description: `Текущий SLA ${sla}%. Целевой показатель 90%+.`,
+      priority: 'high'
+    })
+  } else if (sla >= 95) {
+    recommendations.push({
+      id: 'sla-excellent',
+      type: 'success',
+      title: 'Отличный SLA!',
+      description: `${sla}% обращений обработано вовремя.`,
+      priority: 'low'
+    })
+  }
+
+  // Сортируем по приоритету
+  const priorityOrder = { high: 0, medium: 1, low: 2 }
+  return recommendations.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
+}
 
 // Перевод категорий на русский
 const categoryLabels: Record<string, string> = {
@@ -233,6 +365,20 @@ export function DashboardPage() {
   const onlineAgents = agents.filter(a => a.status === 'online' || a.status === 'away')
   const resolvedToday = analytics?.cases?.resolved || 0
 
+  // Generate AI recommendations
+  const aiRecommendations = useMemo(() => 
+    generateAIRecommendations(analytics, metrics, agents),
+    [analytics, metrics, agents]
+  )
+
+  // Icons and colors for recommendations
+  const recommendationStyles = {
+    warning: { icon: AlertTriangle, bg: 'bg-amber-50', border: 'border-amber-200', iconColor: 'text-amber-600' },
+    success: { icon: CheckCircle, bg: 'bg-green-50', border: 'border-green-200', iconColor: 'text-green-600' },
+    info: { icon: Lightbulb, bg: 'bg-blue-50', border: 'border-blue-200', iconColor: 'text-blue-600' },
+    action: { icon: Zap, bg: 'bg-purple-50', border: 'border-purple-200', iconColor: 'text-purple-600' },
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -263,31 +409,87 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
-        {metricsDisplay.map((metric, i) => {
-          const Icon = metric.icon
-          return (
-            <div key={i} className="bg-white rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between">
-                <div className={`w-10 h-10 rounded-lg bg-${metric.color}-100 flex items-center justify-center`}>
-                  <Icon className={`w-5 h-5 text-${metric.color}-600`} />
-                </div>
-                {metric.trend !== 'neutral' && (
-                  <div className={`flex items-center gap-1 text-xs font-medium ${
-                    metric.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {metric.trend === 'up' ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                  </div>
-                )}
-              </div>
-              <div className="mt-3">
-                <p className="text-2xl font-bold text-slate-800">{metric.value}</p>
-                <p className="text-sm text-slate-500 mt-0.5">{metric.label}</p>
-              </div>
+      {/* AI Recommendations */}
+      {aiRecommendations.length > 0 && (
+        <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl border border-slate-200 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+              <Lightbulb className="w-4 h-4 text-white" />
             </div>
-          )
-        })}
+            <div>
+              <h2 className="font-semibold text-slate-800">AI Рекомендации</h2>
+              <p className="text-xs text-slate-500">На основе анализа данных за период</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {aiRecommendations.slice(0, 4).map(rec => {
+              const style = recommendationStyles[rec.type]
+              const Icon = style.icon
+              return (
+                <div 
+                  key={rec.id} 
+                  className={`${style.bg} ${style.border} border rounded-lg p-3 flex items-start gap-3`}
+                >
+                  <Icon className={`w-5 h-5 ${style.iconColor} flex-shrink-0 mt-0.5`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{rec.title}</p>
+                    <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{rec.description}</p>
+                    {rec.action && (
+                      <Link 
+                        to={rec.action.link} 
+                        className="text-xs text-blue-600 hover:underline mt-1 inline-block"
+                      >
+                        {rec.action.label} →
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Stats - Ключевые метрики */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Activity className="w-4 h-4 text-slate-400" />
+          <h3 className="text-sm font-medium text-slate-600">Ключевые показатели</h3>
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          {metricsDisplay.map((metric, i) => {
+            const Icon = metric.icon
+            return (
+              <div key={i} className="bg-white rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between">
+                  <div className={`w-10 h-10 rounded-lg bg-${metric.color}-100 flex items-center justify-center`}>
+                    <Icon className={`w-5 h-5 text-${metric.color}-600`} />
+                  </div>
+                  {metric.trend !== 'neutral' && (
+                    <div className={`flex items-center gap-1 text-xs font-medium ${
+                      metric.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {metric.trend === 'up' ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <p className="text-2xl font-bold text-slate-800">{metric.value}</p>
+                  <p className="text-sm text-slate-500 mt-0.5">{metric.label}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Section: Операционная деятельность */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-slate-400" />
+          <h3 className="text-sm font-medium text-slate-600">Операционная деятельность</h3>
+          <span className="text-xs text-slate-400">• Текущие задачи и команда</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
@@ -297,6 +499,7 @@ export function DashboardPage() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
               <h2 className="font-semibold text-slate-800">Требует внимания</h2>
+              <span className="text-xs text-slate-400 ml-2">Диалоги ожидающие ответа</span>
               <Badge variant="warning" size="sm">{needsAttention.length}</Badge>
             </div>
             <Link to="/chats" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
@@ -388,6 +591,15 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* Section: Статистика и активность */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-slate-400" />
+          <h3 className="text-sm font-medium text-slate-600">Статистика и активность</h3>
+          <span className="text-xs text-slate-400">• Обзор показателей за период</span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-3 gap-6">
         {/* Stats Overview */}
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
@@ -395,6 +607,7 @@ export function DashboardPage() {
             <div className="flex items-center gap-2">
               <Activity className="w-5 h-5 text-blue-500" />
               <h2 className="font-semibold text-slate-800">Статистика за период</h2>
+              <span className="text-xs text-slate-400 ml-2">Основные показатели работы</span>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -539,14 +752,17 @@ export function DashboardPage() {
         />
       )}
 
-      {/* Detailed Analytics Toggle */}
+      {/* Section: Detailed Analytics Toggle */}
       <button
         onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
         className="w-full flex items-center justify-between px-5 py-4 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-blue-500" />
-          <span className="font-semibold text-slate-800">Подробная аналитика</span>
+          <div className="text-left">
+            <span className="font-semibold text-slate-800">Подробная аналитика</span>
+            <p className="text-xs text-slate-500">Детальные графики, категории и метрики команды</p>
+          </div>
         </div>
         {showDetailedAnalytics ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
       </button>

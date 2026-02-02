@@ -10,7 +10,7 @@ export async function fetchChannel(id: string): Promise<Channel> {
 }
 
 export async function markChannelRead(channelId: string): Promise<void> {
-  await apiPost(`/channels/${channelId}/read`, {})
+  await apiPost('/channels/mark-read', { channelId })
 }
 
 export async function updateChannel(channelId: string, data: {
