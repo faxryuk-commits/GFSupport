@@ -123,7 +123,8 @@ export default async function handler(req: Request): Promise<Response> {
       }, 200, 5) // Cache for 5 seconds
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch channels', details: e.message }, 500)
+      console.error('Channels fetch error:', e)
+      return json({ error: 'Failed to fetch channels', details: e.message, stack: e.stack?.slice(0, 500) }, 500)
     }
   }
 

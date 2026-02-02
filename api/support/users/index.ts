@@ -115,23 +115,22 @@ export default async function handler(req: Request): Promise<Response> {
         const employeeIds = users.filter((u: any) => u.role === 'employee').map((u: any) => u.telegram_id)
         
         if (employeeIds.length > 0) {
-          // Get response metrics
+          // Get response metrics (simplified query without window functions in aggregate)
           const metrics = await sql`
             SELECT 
               sender_id,
               COUNT(*) as total_messages,
-              COUNT(CASE WHEN sender_role != 'client' THEN 1 END) as responses,
-              AVG(CASE 
-                WHEN sender_role != 'client' AND LAG(sender_role) OVER (PARTITION BY channel_id ORDER BY created_at) = 'client'
-                THEN EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY channel_id ORDER BY created_at))) / 60
-              END) as avg_response_time_min
+              COUNT(CASE WHEN sender_role != 'client' THEN 1 END) as responses
             FROM support_messages
             WHERE sender_id = ANY(${employeeIds})
               AND created_at > NOW() - INTERVAL '30 days'
             GROUP BY sender_id
           `
           
-          const metricsMap = new Map(metrics.map((m: any) => [m.sender_id?.toString(), m]))
+          const metricsMap = new Map(metrics.map((m: any) => [m.sender_id?.toString(), {
+            ...m,
+            avg_response_time_min: null // TODO: calculate separately if needed
+          }]))
           
           users = users.map((u: any) => ({
             ...u,

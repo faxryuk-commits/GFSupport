@@ -152,7 +152,8 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch cases', details: e.message }, 500)
+      console.error('Cases fetch error:', e)
+      return json({ error: 'Failed to fetch cases', details: e.message, stack: e.stack?.slice(0, 500) }, 500)
     }
   }
 
