@@ -68,6 +68,53 @@ async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<strin
   return channelId
 }
 
+// Upsert user in support_users table
+async function upsertUser(sql: any, user: any, channelId: string, role: string) {
+  if (!user.id) return
+  
+  const telegramId = String(user.id)
+  
+  try {
+    // Check if user exists
+    const existing = await sql`
+      SELECT id, channels FROM support_users WHERE telegram_id = ${telegramId} LIMIT 1
+    `
+    
+    if (existing[0]) {
+      // Update existing user
+      const channels = existing[0].channels || []
+      if (!channels.includes(channelId)) {
+        channels.push(channelId)
+      }
+      
+      await sql`
+        UPDATE support_users SET
+          telegram_username = COALESCE(${user.username}, telegram_username),
+          name = COALESCE(${user.fullName}, name),
+          channels = ${JSON.stringify(channels)},
+          last_seen_at = NOW(),
+          updated_at = NOW()
+        WHERE telegram_id = ${telegramId}
+      `
+    } else {
+      // Create new user
+      const userId = generateId('user')
+      const userRole = role === 'client' ? 'client' : role === 'support' ? 'employee' : 'partner'
+      
+      await sql`
+        INSERT INTO support_users (id, telegram_id, telegram_username, name, role, channels, first_seen_at, last_seen_at)
+        VALUES (${userId}, ${telegramId}, ${user.username}, ${user.fullName}, ${userRole}, ${JSON.stringify([channelId])}, NOW(), NOW())
+        ON CONFLICT (telegram_id) DO UPDATE SET
+          telegram_username = COALESCE(EXCLUDED.telegram_username, support_users.telegram_username),
+          name = COALESCE(EXCLUDED.name, support_users.name),
+          last_seen_at = NOW()
+      `
+    }
+  } catch (e) {
+    console.error('[Webhook] Failed to upsert user:', e)
+  }
+}
+
 // Save message to database
 async function saveMessage(
   sql: any,
@@ -85,6 +132,9 @@ async function saveMessage(
 ): Promise<string> {
   const messageId = generateId('msg')
   const isFromClient = role === 'client'
+  
+  // Save/update user info
+  await upsertUser(sql, user, channelId, role)
   
   await sql`
     INSERT INTO support_messages (
