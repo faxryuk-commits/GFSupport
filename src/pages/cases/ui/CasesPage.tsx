@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CASE_STATUS_CONFIG, KANBAN_STATUSES, type CaseStatus, type Case } from '@/entities/case'
-import { fetchCases, createCase, updateCaseStatus, assignCase } from '@/shared/api'
+import { fetchCases, createCase, updateCaseStatus, assignCase, fetchChannels } from '@/shared/api'
+import type { Channel } from '@/entities/channel'
 
 // Маппинг Case в CaseCardData для отображения
 function mapCaseToCardData(c: Case): CaseCardData {
@@ -48,13 +49,41 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
   }
 }
 
+// Периоды для фильтра по дате
+const DATE_FILTERS = [
+  { key: 'today', label: 'Сегодня' },
+  { key: 'week', label: 'Неделя' },
+  { key: 'month', label: 'Месяц' },
+  { key: 'all', label: 'Все время' },
+] as const
+
+// Категории кейсов
+const CATEGORIES = [
+  { key: 'all', label: 'Все категории' },
+  { key: 'integration', label: 'Интеграция' },
+  { key: 'billing', label: 'Биллинг' },
+  { key: 'technical', label: 'Техническая' },
+  { key: 'delivery', label: 'Доставка' },
+  { key: 'general', label: 'Общее' },
+] as const
+
 export function CasesPage() {
   const [cases, setCases] = useState<Case[]>([])
+  const [channels, setChannels] = useState<Channel[]>([])
   const [agents] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'my' | 'urgent'>('all')
+  
+  // Базовые фильтры
+  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent'>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  
+  // Расширенные фильтры
+  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [channelFilter, setChannelFilter] = useState<string>('all')
+  const [showFilters, setShowFilters] = useState(false)
+  
   const [selectedCase, setSelectedCase] = useState<Case | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
@@ -62,13 +91,20 @@ export function CasesPage() {
   const [draggedCase, setDraggedCase] = useState<string | null>(null)
   const [_updatingStatus, setUpdatingStatus] = useState<string | null>(null)
 
-  // Загрузка кейсов при монтировании
-  const loadCases = useCallback(async () => {
+  // Загрузка кейсов и каналов при монтировании
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetchCases()
-      setCases(response.cases)
+      
+      // Загружаем все активные кейсы (не закрытые) с лимитом 500
+      const [casesResponse, channelsData] = await Promise.all([
+        fetchCases({ status: 'detected,in_progress,waiting,blocked,resolved' as any }),
+        fetchChannels().catch(() => [])
+      ])
+      
+      setCases(casesResponse.cases)
+      setChannels(channelsData)
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
@@ -78,22 +114,86 @@ export function CasesPage() {
   }, [])
 
   useEffect(() => {
-    loadCases()
-  }, [loadCases])
+    loadData()
+  }, [loadData])
+
+  // Фильтрация по дате
+  const filterByDate = useCallback((caseItem: Case) => {
+    if (dateFilter === 'all') return true
+    
+    const caseDate = new Date(caseItem.createdAt)
+    const now = new Date()
+    
+    switch (dateFilter) {
+      case 'today':
+        return caseDate.toDateString() === now.toDateString()
+      case 'week': {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        return caseDate >= weekAgo
+      }
+      case 'month': {
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        return caseDate >= monthAgo
+      }
+      default:
+        return true
+    }
+  }, [dateFilter])
+
+  // Отфильтрованные кейсы
+  const filteredCases = useMemo(() => {
+    return cases.filter(c => {
+      // Поиск
+      const matchesSearch = searchQuery === '' || 
+        c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.ticketNumber?.toString() || '').includes(searchQuery)
+      
+      // Быстрые фильтры
+      const matchesQuickFilter = quickFilter === 'all' || 
+        (quickFilter === 'my' && c.assignedTo === '1') ||
+        (quickFilter === 'urgent' && (c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent'))
+      
+      // Фильтр по дате
+      const matchesDate = filterByDate(c)
+      
+      // Фильтр по категории
+      const matchesCategory = categoryFilter === 'all' || c.category === categoryFilter
+      
+      // Фильтр по группе/каналу
+      const matchesChannel = channelFilter === 'all' || c.channelId === channelFilter
+      
+      return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel
+    })
+  }, [cases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter])
+
+  // Количество активных фильтров
+  const activeFiltersCount = useMemo(() => {
+    let count = 0
+    if (dateFilter !== 'all') count++
+    if (categoryFilter !== 'all') count++
+    if (channelFilter !== 'all') count++
+    return count
+  }, [dateFilter, categoryFilter, channelFilter])
+
+  // Сброс фильтров
+  const resetFilters = () => {
+    setDateFilter('all')
+    setCategoryFilter('all')
+    setChannelFilter('all')
+  }
 
   const getCasesByStatus = (status: CaseStatus): CaseCardData[] => {
-    return cases
-      .filter(c => {
-        const matchesStatus = c.status === status
-        const matchesSearch = c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                             c.companyName.toLowerCase().includes(searchQuery.toLowerCase())
-        const matchesFilter = filter === 'all' || 
-                            (filter === 'my' && c.assignedTo === '1') ||
-                            (filter === 'urgent' && (c.priority === 'high' || c.priority === 'critical'))
-        return matchesStatus && matchesSearch && matchesFilter
-      })
+    return filteredCases
+      .filter(c => c.status === status)
       .map(mapCaseToCardData)
   }
+
+  // Уникальные категории из кейсов
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set(cases.map(c => c.category).filter(Boolean))
+    return Array.from(cats)
+  }, [cases])
 
   const handleDragStart = (caseId: string) => setDraggedCase(caseId)
   const handleDragOver = (e: React.DragEvent) => e.preventDefault()
@@ -217,7 +317,7 @@ export function CasesPage() {
           <p className="text-slate-700 font-medium">Ошибка загрузки</p>
           <p className="text-slate-500 text-sm">{error}</p>
           <button 
-            onClick={loadCases}
+            onClick={loadData}
             className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
             Попробовать снова
@@ -257,28 +357,117 @@ export function CasesPage() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 mb-6 flex-shrink-0">
+        {/* Quick Filters */}
+        <div className="flex items-center gap-2 mb-4 flex-shrink-0">
           {[
-            { key: 'all', label: 'Все', icon: Filter, count: cases.length },
-            { key: 'my', label: 'Мои', icon: User, count: cases.filter(c => c.assignedTo === '1').length },
-            { key: 'urgent', label: 'Срочные', icon: AlertTriangle, count: cases.filter(c => c.priority === 'high' || c.priority === 'critical').length },
+            { key: 'all', label: 'Все', icon: Filter, count: filteredCases.length },
+            { key: 'my', label: 'Мои', icon: User, count: filteredCases.filter(c => c.assignedTo === '1').length },
+            { key: 'urgent', label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
           ].map(f => (
             <button
               key={f.key}
-              onClick={() => setFilter(f.key as 'all' | 'my' | 'urgent')}
+              onClick={() => setQuickFilter(f.key as 'all' | 'my' | 'urgent')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === f.key ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                quickFilter === f.key ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
               }`}
             >
               <f.icon className="w-4 h-4" />
               {f.label}
-              <span className={`px-1.5 py-0.5 rounded text-xs ${filter === f.key ? 'bg-white/20' : 'bg-slate-100'}`}>
+              <span className={`px-1.5 py-0.5 rounded text-xs ${quickFilter === f.key ? 'bg-white/20' : 'bg-slate-100'}`}>
                 {f.count}
               </span>
             </button>
           ))}
+          
+          <div className="h-6 w-px bg-slate-200 mx-2" />
+          
+          {/* Toggle advanced filters */}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+              showFilters || activeFiltersCount > 0 
+                ? 'bg-blue-50 text-blue-600 border border-blue-200' 
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            Фильтры
+            {activeFiltersCount > 0 && (
+              <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded-full">
+                {activeFiltersCount}
+              </span>
+            )}
+            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={resetFilters}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+            >
+              <X className="w-3 h-3" />
+              Сбросить
+            </button>
+          )}
         </div>
+
+        {/* Advanced Filters Panel */}
+        {showFilters && (
+          <div className="flex flex-wrap gap-3 mb-4 p-4 bg-slate-50 rounded-lg flex-shrink-0">
+            {/* Date Filter */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                Период
+              </label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                {DATE_FILTERS.map(f => (
+                  <option key={f.key} value={f.key}>{f.label}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Category Filter */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 flex items-center gap-1">
+                <Tag className="w-3 h-3" />
+                Категория
+              </label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="all">Все категории</option>
+                {uniqueCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Channel/Group Filter */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500 flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                Группа
+              </label>
+              <select
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[200px]"
+              >
+                <option value="all">Все группы</option>
+                {channels.map(ch => (
+                  <option key={ch.id} value={ch.id}>{ch.name || `Группа ${ch.id.slice(0, 6)}`}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         {/* Kanban Board */}
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4">

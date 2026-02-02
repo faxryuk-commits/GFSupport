@@ -58,13 +58,14 @@ export function MainLayout() {
         setUnreadChats(unread)
       }
 
-      // Открытые кейсы
-      const casesRes = await fetch('/api/support/cases?status=open,in_progress,detected', {
+      // Открытые кейсы (только активные статусы)
+      const casesRes = await fetch('/api/support/cases?status=detected,in_progress,waiting,blocked&limit=500', {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (casesRes.ok) {
         const data = await casesRes.json()
-        setOpenCases(data.total || data.cases?.length || 0)
+        // Используем длину массива отфильтрованных кейсов, не total
+        setOpenCases(data.cases?.length || 0)
       }
     } catch {
       // Игнорируем ошибки - покажем нули

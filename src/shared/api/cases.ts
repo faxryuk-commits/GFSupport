@@ -7,14 +7,19 @@ interface CasesResponse {
 }
 
 export async function fetchCases(filters?: {
-  status?: CaseStatus
+  status?: CaseStatus | string
   assignedTo?: string
   channelId?: string
+  category?: string
+  limit?: number
 }): Promise<CasesResponse> {
   const params = new URLSearchParams()
   if (filters?.status) params.set('status', filters.status)
   if (filters?.assignedTo) params.set('assignedTo', filters.assignedTo)
   if (filters?.channelId) params.set('channelId', filters.channelId)
+  if (filters?.category) params.set('category', filters.category)
+  // Увеличиваем лимит по умолчанию для канбана
+  params.set('limit', String(filters?.limit || 500))
   
   const query = params.toString() ? `?${params}` : ''
   return apiGet<CasesResponse>(`/cases${query}`)
