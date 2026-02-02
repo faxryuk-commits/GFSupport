@@ -13,7 +13,10 @@ function getSQL() {
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    }
   })
 }
 
@@ -110,36 +113,85 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // GET - List agents with real metrics
+  // ?action=sync - Sync telegram_id from messages
+  const action = url.searchParams.get('action')
+  
+  if (action === 'sync') {
+    // Auto-sync telegram_id from support_messages based on username match
+    try {
+      const agents = await sql`SELECT id, name, username, telegram_id FROM support_agents WHERE telegram_id IS NULL`
+      
+      let synced = 0
+      for (const agent of agents) {
+        if (!agent.username) continue
+        
+        // Find sender_id from messages matching this username
+        const match = await sql`
+          SELECT DISTINCT sender_id, sender_name
+          FROM support_messages 
+          WHERE LOWER(sender_username) = LOWER(${agent.username})
+            AND sender_id IS NOT NULL
+            AND (sender_role IN ('support', 'team', 'agent') OR is_from_client = false)
+          LIMIT 1
+        `
+        
+        if (match.length > 0 && match[0].sender_id) {
+          await sql`
+            UPDATE support_agents 
+            SET telegram_id = ${match[0].sender_id}::text
+            WHERE id = ${agent.id}
+          `
+          synced++
+          console.log(`[Agents Sync] Updated ${agent.name}: telegram_id = ${match[0].sender_id}`)
+        }
+      }
+      
+      return json({ success: true, synced, message: `Synced ${synced} agents` })
+    } catch (e: any) {
+      return json({ error: e.message }, 500)
+    }
+  }
+  
   try {
     const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at FROM support_agents ORDER BY name ASC`
 
     // Calculate metrics for each agent
     const agentsWithMetrics = await Promise.all(rows.map(async (r: any) => {
-      // Count messages sent by this agent (by name or username match)
+      // Count messages sent by this agent
+      // Match by: telegram_id, username, or name (partial match)
       let messagesCount = 0
       let resolvedCount = 0
       let isOnline = false
       
       try {
-        // Messages sent by this agent
+        // Build matching conditions for this agent
+        // Priority: telegram_id > username > name
         const msgResult = await sql`
           SELECT COUNT(*) as count 
           FROM support_messages 
-          WHERE (sender_name ILIKE ${r.name} OR sender_username = ${r.username})
-            AND sender_role = 'support'
+          WHERE (
+            (${r.telegram_id}::text IS NOT NULL AND sender_id::text = ${r.telegram_id}::text)
+            OR (${r.username} IS NOT NULL AND LOWER(sender_username) = LOWER(${r.username}))
+            OR (sender_name ILIKE ${'%' + r.name + '%'})
+          )
+            AND (sender_role IN ('support', 'team', 'agent') OR is_from_client = false)
             AND created_at > NOW() - INTERVAL '30 days'
         `
         messagesCount = parseInt(msgResult[0]?.count || 0)
         
-        // Conversations resolved (where agent was last responder before resolution)
+        // Conversations resolved - count unique channels where this agent responded
         const resolvedResult = await sql`
-          SELECT COUNT(DISTINCT c.id) as count
-          FROM support_conversations c
-          JOIN support_messages m ON m.channel_id = c.channel_id
-          WHERE c.status = 'resolved'
-            AND c.ended_at > NOW() - INTERVAL '30 days'
-            AND (m.sender_name ILIKE ${r.name} OR m.sender_username = ${r.username})
-            AND m.sender_role = 'support'
+          SELECT COUNT(DISTINCT m.channel_id) as count
+          FROM support_messages m
+          JOIN support_channels c ON c.id = m.channel_id
+          WHERE (
+            (${r.telegram_id}::text IS NOT NULL AND m.sender_id::text = ${r.telegram_id}::text)
+            OR (${r.username} IS NOT NULL AND LOWER(m.sender_username) = LOWER(${r.username}))
+            OR (m.sender_name ILIKE ${'%' + r.name + '%'})
+          )
+            AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+            AND c.awaiting_reply = false
+            AND m.created_at > NOW() - INTERVAL '30 days'
         `
         resolvedCount = parseInt(resolvedResult[0]?.count || 0)
         

@@ -49,12 +49,15 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  const authHeader = req.headers.get('Authorization')
-  if (!authHeader || !authHeader.includes('admin')) {
-    return json({ error: 'Admin access required' }, 403)
-  }
-
   const sql = getSQL()
+  
+  // Admin auth required only for write operations
+  if (req.method !== 'GET') {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || !authHeader.includes('admin')) {
+      return json({ error: 'Admin access required' }, 403)
+    }
+  }
 
   // Убедимся что таблица настроек существует
   try {
