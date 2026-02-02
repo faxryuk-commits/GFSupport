@@ -63,28 +63,33 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    // 3. Получаем все кейсы без номера, отсортированные по дате
-    const casesWithoutNumber = await sql`
-      SELECT id, created_at FROM support_cases 
-      WHERE ticket_number IS NULL 
-      ORDER BY created_at ASC
+    // 3. Считаем кейсы без номера
+    const countResult = await sql`
+      SELECT COUNT(*) as cnt FROM support_cases WHERE ticket_number IS NULL
     `
-    
-    steps.push(`Found ${casesWithoutNumber.length} cases without ticket number`)
+    const casesCount = parseInt(countResult[0]?.cnt || '0')
+    steps.push(`Found ${casesCount} cases without ticket number`)
 
-    // 4. Присваиваем простые номера начиная с 1001
-    let counter = 1001
-    let updated = 0
-    
-    for (const c of casesWithoutNumber) {
-      await sql`UPDATE support_cases SET ticket_number = ${counter} WHERE id = ${c.id}`
-      counter++
-      updated++
+    // 4. Присваиваем номера одним запросом через window function
+    if (casesCount > 0) {
+      await sql`
+        UPDATE support_cases 
+        SET ticket_number = sub.new_number
+        FROM (
+          SELECT id, 1000 + ROW_NUMBER() OVER (ORDER BY created_at ASC) as new_number
+          FROM support_cases 
+          WHERE ticket_number IS NULL
+        ) sub
+        WHERE support_cases.id = sub.id
+      `
+      steps.push(`Assigned numbers 1001-${1000 + casesCount} to ${casesCount} cases`)
     }
 
     // 5. Обновляем sequence
-    await sql`SELECT setval('support_case_ticket_seq', ${counter}, false)`
-    steps.push(`Assigned numbers 1001-${counter - 1} to ${updated} cases`)
+    const maxNum = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+    const nextVal = parseInt(maxNum[0]?.max_num || '1000') + 1
+    await sql`SELECT setval('support_case_ticket_seq', ${nextVal}, false)`
+    steps.push(`Sequence set to ${nextVal}`)
 
     // 6. Проверяем
     const check = await sql`
