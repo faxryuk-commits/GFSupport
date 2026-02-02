@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle } from 'lucide-react'
+import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile } from '@/features/messages/ui'
-import { fetchChannels, fetchMessages, sendMessage, markChannelRead } from '@/shared/api'
+import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, type AISuggestion, type AIContext } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
 
@@ -75,10 +75,11 @@ function mapMessageToUI(message: Message): MessageData {
   }
 }
 
-const quickReplies = [
-  { id: '1', label: 'Приветствие', text: 'Здравствуйте! Спасибо за обращение. Чем могу помочь?' },
-  { id: '2', label: 'Статус заказа', text: 'Сейчас проверю статус вашего заказа. Одну минуту.' },
-  { id: '3', label: 'Завершение', text: 'Рад был помочь! Хорошего дня!' },
+// Default quick replies (fallback)
+const defaultQuickReplies = [
+  { id: '1', label: 'Приветствие', text: 'Здравствуйте! Спасибо за обращение. Чем могу помочь?', source: 'template' as const },
+  { id: '2', label: 'Статус заказа', text: 'Сейчас проверю статус вашего заказа. Одну минуту.', source: 'template' as const },
+  { id: '3', label: 'Завершение', text: 'Рад был помочь! Хорошего дня!', source: 'template' as const },
 ]
 
 export function ChatsPage() {
@@ -89,11 +90,14 @@ export function ChatsPage() {
   const [channels, setChannels] = useState<ChannelItemData[]>([])
   const [selectedChannel, setSelectedChannel] = useState<ChannelItemData | null>(null)
   const [messages, setMessages] = useState<MessageData[]>([])
+  const [aiContext, setAiContext] = useState<AIContext | null>(null)
+  const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>(defaultQuickReplies)
   
   // Состояния загрузки
   const [isLoadingChannels, setIsLoadingChannels] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [isLoadingAI, setIsLoadingAI] = useState(false)
   
   // Ошибки
   const [channelsError, setChannelsError] = useState<string | null>(null)
@@ -132,6 +136,30 @@ export function ChatsPage() {
     loadChannels()
   }, [])
 
+  // Загрузка AI контекста для канала
+  const loadAIContext = useCallback(async (channelId: string) => {
+    try {
+      setIsLoadingAI(true)
+      const context = await fetchAIContext(channelId)
+      setAiContext(context)
+      
+      // Обновляем подсказки
+      if (context?.suggestions && context.suggestions.length > 0) {
+        setAiSuggestions(context.suggestions)
+      } else {
+        // Получаем подсказки по категории последнего сообщения
+        const lastMessage = messages[messages.length - 1]
+        const category = (lastMessage as any)?.aiCategory
+        setAiSuggestions(getQuickSuggestions(category))
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки AI контекста:', error)
+      setAiSuggestions(defaultQuickReplies)
+    } finally {
+      setIsLoadingAI(false)
+    }
+  }, [messages])
+
   // Загрузка сообщений при выборе канала
   const loadMessages = useCallback(async (channelId: string) => {
     try {
@@ -140,13 +168,16 @@ export function ChatsPage() {
       const { messages: data } = await fetchMessages(channelId)
       const mappedMessages = data.map(mapMessageToUI)
       setMessages(mappedMessages)
+      
+      // Загружаем AI контекст параллельно (не блокируем UI)
+      loadAIContext(channelId)
     } catch (error) {
       console.error('Ошибка загрузки сообщений:', error)
       setMessagesError('Не удалось загрузить сообщения')
     } finally {
       setIsLoadingMessages(false)
     }
-  }, [])
+  }, [loadAIContext])
 
   // Автовыбор канала по ID из URL (для прямых ссылок)
   useEffect(() => {
@@ -436,10 +467,11 @@ export function ChatsPage() {
               onSend={handleSendMessage}
               replyingTo={replyingTo}
               onCancelReply={() => setReplyingTo(null)}
-              quickReplies={quickReplies}
+              quickReplies={aiSuggestions}
               showQuickReplies={showQuickReplies}
               onToggleQuickReplies={() => setShowQuickReplies(!showQuickReplies)}
               onUseQuickReply={(text) => { setMessageText(text); setShowQuickReplies(false) }}
+              isLoadingAI={isLoadingAI}
               disabled={isSending}
             />
           </div>

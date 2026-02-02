@@ -14,6 +14,8 @@ interface QuickReply {
   id: string
   label: string
   text: string
+  source?: 'ai' | 'template' | 'docs' | 'rag'
+  confidence?: number
 }
 
 export interface AttachedFile {
@@ -36,6 +38,7 @@ interface ChatInputProps {
   isRecording?: boolean
   onToggleRecording?: () => void
   disabled?: boolean
+  isLoadingAI?: boolean
 }
 
 // Определение типа файла
@@ -211,6 +214,7 @@ export function ChatInput({
   isRecording = false,
   onToggleRecording,
   disabled = false,
+  isLoadingAI = false,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -390,27 +394,49 @@ export function ChatInput({
               />
             </div>
             <div className="flex items-center gap-1">
-              {/* Quick replies */}
-              {quickReplies.length > 0 && onToggleQuickReplies && (
+              {/* Quick replies / AI suggestions */}
+              {onToggleQuickReplies && (
                 <div className="relative">
                   <button 
                     onClick={onToggleQuickReplies}
-                    className="p-3 hover:bg-slate-100 rounded-xl transition-colors" 
-                    title="Быстрые ответы"
+                    className={`p-3 rounded-xl transition-colors ${isLoadingAI ? 'animate-pulse' : ''} ${showQuickReplies ? 'bg-purple-100' : 'hover:bg-slate-100'}`}
+                    title="AI подсказки"
                   >
-                    <Sparkles className="w-5 h-5 text-purple-500" />
+                    <Sparkles className={`w-5 h-5 ${showQuickReplies ? 'text-purple-600' : 'text-purple-500'}`} />
                   </button>
                   {showQuickReplies && onUseQuickReply && (
-                    <div className="absolute bottom-full right-0 mb-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-10">
-                      <p className="px-4 py-1 text-xs font-medium text-slate-500">Быстрые ответы</p>
+                    <div className="absolute bottom-full right-0 mb-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-10 max-h-80 overflow-y-auto">
+                      <div className="px-4 py-1 flex items-center justify-between">
+                        <span className="text-xs font-medium text-slate-500">AI подсказки</span>
+                        {isLoadingAI && (
+                          <span className="text-xs text-purple-500 animate-pulse">Загрузка...</span>
+                        )}
+                      </div>
+                      {quickReplies.length === 0 && !isLoadingAI && (
+                        <p className="px-4 py-3 text-sm text-slate-400">Нет подсказок</p>
+                      )}
                       {quickReplies.map(qr => (
                         <button
                           key={qr.id}
                           onClick={() => onUseQuickReply(qr.text)}
-                          className="w-full text-left px-4 py-2 hover:bg-slate-50"
+                          className="w-full text-left px-4 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0"
                         >
-                          <span className="text-sm font-medium text-slate-700">{qr.label}</span>
-                          <p className="text-xs text-slate-500 truncate">{qr.text}</p>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-slate-700">{qr.label}</span>
+                            {qr.source === 'ai' && (
+                              <span className="px-1.5 py-0.5 text-[10px] bg-purple-100 text-purple-600 rounded-full">AI</span>
+                            )}
+                            {qr.source === 'rag' && (
+                              <span className="px-1.5 py-0.5 text-[10px] bg-blue-100 text-blue-600 rounded-full">RAG</span>
+                            )}
+                            {qr.source === 'docs' && (
+                              <span className="px-1.5 py-0.5 text-[10px] bg-green-100 text-green-600 rounded-full">Docs</span>
+                            )}
+                            {qr.confidence && qr.confidence >= 0.8 && (
+                              <span className="text-[10px] text-emerald-500">✓</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 line-clamp-2">{qr.text}</p>
                         </button>
                       ))}
                     </div>

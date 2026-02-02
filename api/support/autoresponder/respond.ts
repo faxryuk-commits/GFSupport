@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import OpenAI from 'openai'
 
 export const config = {
   runtime: 'edge',
@@ -120,8 +121,95 @@ async function searchDocs(sql: any, query: string): Promise<{ title: string; url
   }
 }
 
-// Генерация AI ответа (упрощённая версия без OpenAI)
-function generateAutoResponse(
+// LLM prompt for auto-response generation
+const AUTORESPONDER_PROMPT = `Ты AI помощник службы поддержки Delever (платформа для ресторанов и доставки).
+Тебе нужно сгенерировать вежливый и полезный автоматический ответ клиенту.
+
+ПРАВИЛА:
+1. Будь вежливым и профессиональным
+2. Отвечай на русском языке
+3. Если есть информация из базы знаний - используй её
+4. Если не можешь помочь - извинись и сообщи что сотрудник свяжется
+5. Ответ должен быть кратким (2-4 предложения)
+6. НЕ выдумывай информацию которой не знаешь
+7. В конце добавь что это автоматическое сообщение
+
+КОНТЕКСТ:
+- Причина автоответа: {{REASON}}
+- Имя клиента: {{NAME}}
+{{DOC_HINT}}
+
+Сообщение клиента:
+{{MESSAGE}}
+
+Сгенерируй ответ (только текст, без HTML тегов):`
+
+// Генерация AI ответа с использованием LLM
+async function generateAutoResponse(
+  messageText: string, 
+  senderName: string,
+  reason: 'night' | 'weekend' | 'offline' | 'timeout',
+  docHint?: { title: string; url: string } | null
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY
+  
+  // Fallback response if no API key
+  const fallbackResponse = generateFallbackResponse(messageText, senderName, reason, docHint)
+  
+  if (!apiKey) {
+    console.log('[Autoresponder] No OpenAI key, using fallback')
+    return fallbackResponse
+  }
+  
+  try {
+    const openai = new OpenAI({ apiKey })
+    
+    const reasonTexts: Record<string, string> = {
+      night: 'Нерабочее время (22:00 - 08:00)',
+      weekend: 'Выходной день',
+      offline: 'Все сотрудники офлайн',
+      timeout: 'Задержка ответа более 5 минут',
+    }
+    
+    const docHintText = docHint 
+      ? `\nСтатья из базы знаний: "${docHint.title}" - ${docHint.url}`
+      : ''
+    
+    const prompt = AUTORESPONDER_PROMPT
+      .replace('{{REASON}}', reasonTexts[reason] || reason)
+      .replace('{{NAME}}', senderName || 'клиент')
+      .replace('{{DOC_HINT}}', docHintText)
+      .replace('{{MESSAGE}}', messageText || 'Сообщение клиента')
+    
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 300,
+    })
+    
+    let response = completion.choices[0]?.message?.content || fallbackResponse
+    
+    // Add automatic message indicator
+    if (!response.includes('автоматическ')) {
+      response += '\n\n🤖 Это автоматическое сообщение'
+    }
+    
+    // Add doc link if available and not already in response
+    if (docHint && !response.includes(docHint.url)) {
+      response += `\n\n📖 Возможно поможет: ${docHint.title}\n${docHint.url}`
+    }
+    
+    return response
+    
+  } catch (e: any) {
+    console.error('[Autoresponder] LLM error:', e.message)
+    return fallbackResponse
+  }
+}
+
+// Fallback response without LLM
+function generateFallbackResponse(
   messageText: string, 
   senderName: string,
   reason: 'night' | 'weekend' | 'offline' | 'timeout',
@@ -148,7 +236,7 @@ function generateAutoResponse(
   let helpText = 'Ваше сообщение зарегистрировано. Мы свяжемся с вами в ближайшее рабочее время.'
   
   if (docHint) {
-    helpText = `Возможно, вам поможет эта статья из нашей базы знаний:\n📖 <a href="${docHint.url}">${docHint.title}</a>\n\nЕсли это не решит ваш вопрос, мы ответим в ближайшее рабочее время.`
+    helpText = `Возможно, вам поможет эта статья из нашей базы знаний:\n📖 ${docHint.title}\n${docHint.url}\n\nЕсли это не решит ваш вопрос, мы ответим в ближайшее рабочее время.`
   }
   
   // Проверяем ключевые слова для быстрых ответов
@@ -162,7 +250,7 @@ function generateAutoResponse(
     helpText = `Вопросы по подключению и интеграции требуют детального обсуждения с нашим специалистом.\n\n${helpText}`
   }
   
-  return `${greeting}\n\n${reasonText}\n\n${helpText}\n\n🤖 <i>Это автоматическое сообщение</i>`
+  return `${greeting}\n\n${reasonText}\n\n${helpText}\n\n🤖 Это автоматическое сообщение`
 }
 
 export default async function handler(req: Request) {
@@ -246,8 +334,8 @@ export default async function handler(req: Request) {
         responseSource = 'docs'
       }
       
-      // 3. Generate template response
-      responseText = generateAutoResponse(
+      // 3. Generate LLM response
+      responseText = await generateAutoResponse(
         messageText || '',
         senderName || 'клиент',
         reason as any,
