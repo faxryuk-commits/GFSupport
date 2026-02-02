@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { 
   X, Clock, User, MessageSquare, Building, AlertTriangle, 
-  ChevronRight, Loader2, Calendar, ArrowRight
+  ChevronRight, Loader2, Calendar, ArrowRight, Users, TrendingUp
 } from 'lucide-react'
 import { Modal, Avatar, Badge } from '@/shared/ui'
 
@@ -10,6 +10,7 @@ interface ResponseTimeDetail {
   channelId: string
   channelName: string
   companyName: string
+  channelPhoto?: string
   clientName: string
   clientMessage: string
   clientMessageTime: string
@@ -18,7 +19,27 @@ interface ResponseTimeDetail {
   responseTime: string
   responseMinutes: number
   wasEscalated: boolean
-  assignedTo?: string
+}
+
+interface TopResponder {
+  name: string
+  count: number
+  avgMinutes: number
+}
+
+interface ApiResponse {
+  bucket: string
+  period: string
+  stats: {
+    totalCount: number
+    avgMinutes: number
+    minMinutes: number
+    maxMinutes: number
+    uniqueResponders: number
+    uniqueChannels: number
+  }
+  topResponders: TopResponder[]
+  details: ResponseTimeDetail[]
 }
 
 interface ResponseTimeDetailsModalProps {
@@ -31,53 +52,6 @@ interface ResponseTimeDetailsModalProps {
   period: string
   color: string
 }
-
-// Mock data for now - will be replaced with API call
-const mockDetails: ResponseTimeDetail[] = [
-  {
-    id: '1',
-    channelId: 'ch1',
-    channelName: 'Brasserie x Delever',
-    companyName: 'Brasserie Restaurant',
-    clientName: 'Шохрух Скуад',
-    clientMessage: 'Добрый день! Не могу оформить заказ, приложение выдаёт ошибку при оплате',
-    clientMessageTime: '2026-02-01T10:15:00',
-    responderName: 'Jamoliddin Jamolov',
-    responseMessage: 'Здравствуйте! Уже проверяем, одну минуту',
-    responseTime: '2026-02-01T10:17:00',
-    responseMinutes: 2,
-    wasEscalated: false,
-  },
-  {
-    id: '2',
-    channelId: 'ch2',
-    channelName: 'TechCorp Support',
-    companyName: 'TechCorp Solutions',
-    clientName: 'Гулрух Юсупова',
-    clientMessage: 'Срочно нужна помощь с интеграцией API',
-    clientMessageTime: '2026-02-01T14:30:00',
-    responderName: 'Fakhriddin Yusupov',
-    responseMessage: 'Привет! Смотрю ваш запрос',
-    responseTime: '2026-02-01T14:33:00',
-    responseMinutes: 3,
-    wasEscalated: false,
-  },
-  {
-    id: '3',
-    channelId: 'ch3',
-    channelName: 'Global Finance',
-    companyName: 'Global Finance Ltd',
-    clientName: 'Алексей Петров',
-    clientMessage: 'Платёж не проходит уже 2 часа, клиенты жалуются!',
-    clientMessageTime: '2026-02-01T09:00:00',
-    responderName: 'Delever Support',
-    responseMessage: 'Добрый день! Передаю техническим специалистам',
-    responseTime: '2026-02-01T10:45:00',
-    responseMinutes: 105,
-    wasEscalated: true,
-    assignedTo: 'Tech Team',
-  },
-]
 
 function formatDateTime(isoString: string): string {
   const date = new Date(isoString)
@@ -117,8 +91,12 @@ export function ResponseTimeDetailsModal({
   color
 }: ResponseTimeDetailsModalProps) {
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [details, setDetails] = useState<ResponseTimeDetail[]>([])
+  const [topResponders, setTopResponders] = useState<TopResponder[]>([])
+  const [stats, setStats] = useState<ApiResponse['stats'] | null>(null)
   const [sortBy, setSortBy] = useState<'time' | 'duration'>('duration')
+  const [showResponders, setShowResponders] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -128,24 +106,31 @@ export function ResponseTimeDetailsModal({
 
   const loadDetails = async () => {
     setLoading(true)
+    setError(null)
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/support/analytics/response-time-details?bucket=${bucket}&period=${period}`)
-      // const data = await response.json()
-      // setDetails(data)
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || 'demo'
+      const response = await fetch(
+        `/api/support/analytics/response-time-details?bucket=${encodeURIComponent(bucket)}&period=${period}&limit=100`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
       
-      // For now, use mock data filtered by bucket
-      await new Promise(resolve => setTimeout(resolve, 500))
-      const filtered = mockDetails.filter(d => {
-        if (bucket === 'до 5 мин') return d.responseMinutes <= 5
-        if (bucket === 'до 10 мин') return d.responseMinutes > 5 && d.responseMinutes <= 10
-        if (bucket === 'до 30 мин') return d.responseMinutes > 10 && d.responseMinutes <= 30
-        if (bucket === 'до 1 часа') return d.responseMinutes > 30 && d.responseMinutes <= 60
-        return d.responseMinutes > 60
-      })
-      setDetails(filtered.length > 0 ? filtered : mockDetails)
-    } catch (error) {
-      console.error('Failed to load details:', error)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const data: ApiResponse = await response.json()
+      setDetails(data.details || [])
+      setTopResponders(data.topResponders || [])
+      setStats(data.stats || null)
+    } catch (err) {
+      console.error('Failed to load details:', err)
+      setError('Не удалось загрузить данные')
+      setDetails([])
     } finally {
       setLoading(false)
     }
@@ -219,11 +204,25 @@ export function ResponseTimeDetailsModal({
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+              <span className="ml-3 text-slate-500">Загрузка данных из базы...</span>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <AlertTriangle className="w-12 h-12 text-red-300 mb-3" />
+              <p className="text-slate-700 font-medium">Ошибка загрузки</p>
+              <p className="text-slate-500 text-sm">{error}</p>
+              <button 
+                onClick={loadDetails}
+                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+              >
+                Повторить
+              </button>
             </div>
           ) : details.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Clock className="w-12 h-12 text-slate-300 mb-3" />
               <p className="text-slate-500">Нет данных для отображения</p>
+              <p className="text-slate-400 text-sm mt-1">В этом интервале нет записей о времени ответа</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
@@ -282,10 +281,10 @@ export function ResponseTimeDetailsModal({
                   </div>
 
                   {/* Footer info */}
-                  {detail.wasEscalated && detail.assignedTo && (
+                  {detail.wasEscalated && (
                     <div className="mt-3 ml-5 flex items-center gap-2 text-xs text-orange-600">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Эскалировано: {detail.assignedTo}</span>
+                      <span>Возможно эскалировано</span>
                     </div>
                   )}
                 </div>
@@ -295,9 +294,16 @@ export function ResponseTimeDetailsModal({
         </div>
 
         {/* Footer with insights */}
-        {!loading && details.length > 0 && (
+        {!loading && (details.length > 0 || stats) && (
           <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
-            <div className="grid grid-cols-3 gap-4 text-center">
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-4 text-center mb-4">
+              <div>
+                <p className="text-2xl font-bold text-slate-800">
+                  {stats?.totalCount || details.length}
+                </p>
+                <p className="text-xs text-slate-500">Всего ответов</p>
+              </div>
               <div>
                 <p className="text-2xl font-bold text-slate-800">
                   {details.filter(d => d.wasEscalated).length}
@@ -306,17 +312,54 @@ export function ResponseTimeDetailsModal({
               </div>
               <div>
                 <p className="text-2xl font-bold text-slate-800">
-                  {new Set(details.map(d => d.responderName)).size}
+                  {stats?.uniqueResponders || new Set(details.map(d => d.responderName)).size}
                 </p>
                 <p className="text-xs text-slate-500">Операторов</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-slate-800">
-                  {new Set(details.map(d => d.companyName)).size}
+                  {stats?.uniqueChannels || new Set(details.map(d => d.companyName)).size}
                 </p>
                 <p className="text-xs text-slate-500">Компаний</p>
               </div>
             </div>
+
+            {/* Top Responders */}
+            {topResponders.length > 0 && (
+              <div>
+                <button 
+                  onClick={() => setShowResponders(!showResponders)}
+                  className="w-full flex items-center justify-between py-2 text-sm text-slate-600 hover:text-slate-800"
+                >
+                  <span className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Топ операторов в этом интервале
+                  </span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${showResponders ? 'rotate-90' : ''}`} />
+                </button>
+                {showResponders && (
+                  <div className="mt-2 space-y-2">
+                    {topResponders.slice(0, 5).map((r, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 bg-white rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 flex items-center justify-center text-xs font-bold text-slate-400">
+                            {i + 1}
+                          </span>
+                          <Avatar name={r.name} size="sm" />
+                          <span className="text-sm font-medium text-slate-700">{r.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-slate-500">{r.count} ответов</span>
+                          <span className={`font-medium ${getUrgencyColor(r.avgMinutes).split(' ')[0]}`}>
+                            ~{formatDuration(r.avgMinutes)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
