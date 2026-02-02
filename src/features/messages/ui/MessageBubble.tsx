@@ -1,5 +1,20 @@
-import { Check, CheckCheck, Reply, Copy, Forward, Image, File } from 'lucide-react'
+import { useState } from 'react'
+import { 
+  Check, CheckCheck, Reply, Copy, Forward, 
+  Image as ImageIcon, File, Play, Pause, Download,
+  Volume2, X, Maximize2, FileText, Film, Music
+} from 'lucide-react'
 import { Avatar } from '@/shared/ui'
+
+export interface MediaAttachment {
+  type: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker'
+  url: string
+  name?: string
+  size?: string
+  duration?: number // для аудио/видео в секундах
+  thumbnail?: string // превью для видео
+  mimeType?: string
+}
 
 export interface MessageData {
   id: string
@@ -10,7 +25,7 @@ export interface MessageData {
   isClient: boolean
   status?: 'sent' | 'delivered' | 'read'
   replyTo?: { id: string; text: string; sender: string }
-  attachments?: { type: 'image' | 'file'; name: string; url: string; size?: string }[]
+  attachments?: MediaAttachment[]
 }
 
 interface MessageBubbleProps {
@@ -19,7 +34,252 @@ interface MessageBubbleProps {
   onCopy: () => void
 }
 
+// Lightbox для просмотра изображений
+function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div 
+      className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <button 
+        onClick={onClose}
+        className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+      >
+        <X className="w-6 h-6 text-white" />
+      </button>
+      <img 
+        src={src} 
+        alt="Preview" 
+        className="max-w-full max-h-full object-contain rounded-lg"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <a
+        href={src}
+        download
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm transition-colors"
+      >
+        <Download className="w-4 h-4" />
+        Скачать
+      </a>
+    </div>
+  )
+}
+
+// Компонент для изображений
+function ImageAttachment({ attachment, isClient }: { attachment: MediaAttachment; isClient: boolean }) {
+  const [showLightbox, setShowLightbox] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState(false)
+
+  if (error) {
+    return (
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isClient ? 'bg-white/80' : 'bg-white/20'}`}>
+        <ImageIcon className="w-5 h-5 opacity-50" />
+        <span className="text-sm opacity-70">Изображение недоступно</span>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div 
+        className="relative cursor-pointer group rounded-lg overflow-hidden"
+        onClick={() => setShowLightbox(true)}
+      >
+        {!loaded && (
+          <div className="w-48 h-32 bg-slate-200 animate-pulse rounded-lg" />
+        )}
+        <img 
+          src={attachment.url}
+          alt={attachment.name || 'Image'}
+          className={`max-w-xs max-h-64 rounded-lg object-cover ${loaded ? '' : 'hidden'}`}
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+        />
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+          <Maximize2 className="w-6 h-6 text-white drop-shadow-lg" />
+        </div>
+      </div>
+      {showLightbox && (
+        <ImageLightbox src={attachment.url} onClose={() => setShowLightbox(false)} />
+      )}
+    </>
+  )
+}
+
+// Компонент для видео
+function VideoAttachment({ attachment, isClient }: { attachment: MediaAttachment; isClient: boolean }) {
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return ''
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  return (
+    <div className="relative rounded-lg overflow-hidden max-w-xs">
+      <video
+        src={attachment.url}
+        poster={attachment.thumbnail}
+        controls
+        className="max-w-full max-h-64 rounded-lg"
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+      />
+      {attachment.duration && !isPlaying && (
+        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/70 text-white text-xs rounded">
+          {formatDuration(attachment.duration)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Компонент для аудио/голосовых сообщений
+function AudioAttachment({ attachment, isClient }: { attachment: MediaAttachment; isClient: boolean }) {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    const audio = e.currentTarget
+    setCurrentTime(audio.currentTime)
+    setProgress((audio.currentTime / audio.duration) * 100)
+  }
+
+  const isVoice = attachment.type === 'voice'
+
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2 rounded-xl min-w-[200px] ${
+      isClient ? 'bg-white/80' : 'bg-white/20'
+    }`}>
+      <audio 
+        src={attachment.url}
+        onTimeUpdate={handleTimeUpdate}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => { setIsPlaying(false); setProgress(0); setCurrentTime(0) }}
+        id={`audio-${attachment.url}`}
+      />
+      <button
+        onClick={() => {
+          const audio = document.getElementById(`audio-${attachment.url}`) as HTMLAudioElement
+          if (isPlaying) audio.pause()
+          else audio.play()
+        }}
+        className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+          isClient ? 'bg-blue-500 text-white' : 'bg-white/30 text-white'
+        }`}
+      >
+        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          {isVoice ? (
+            <Volume2 className="w-4 h-4 opacity-60" />
+          ) : (
+            <Music className="w-4 h-4 opacity-60" />
+          )}
+          <span className="text-xs opacity-70">
+            {isVoice ? 'Голосовое сообщение' : (attachment.name || 'Аудио')}
+          </span>
+        </div>
+        <div className="relative h-1 bg-black/10 rounded-full overflow-hidden">
+          <div 
+            className={`absolute h-full rounded-full transition-all ${isClient ? 'bg-blue-500' : 'bg-white'}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[10px] opacity-60 mt-0.5">
+          <span>{formatTime(currentTime)}</span>
+          <span>{attachment.duration ? formatTime(attachment.duration) : '--:--'}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Компонент для документов
+function DocumentAttachment({ attachment, isClient }: { attachment: MediaAttachment; isClient: boolean }) {
+  const getFileIcon = () => {
+    const ext = attachment.name?.split('.').pop()?.toLowerCase()
+    if (['pdf'].includes(ext || '')) return <FileText className="w-5 h-5" />
+    if (['mp4', 'mov', 'avi'].includes(ext || '')) return <Film className="w-5 h-5" />
+    if (['mp3', 'wav', 'ogg'].includes(ext || '')) return <Music className="w-5 h-5" />
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) return <ImageIcon className="w-5 h-5" />
+    return <File className="w-5 h-5" />
+  }
+
+  return (
+    <a
+      href={attachment.url}
+      download={attachment.name}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+        isClient 
+          ? 'bg-white/80 hover:bg-white' 
+          : 'bg-white/20 hover:bg-white/30'
+      }`}
+    >
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+        isClient ? 'bg-blue-100 text-blue-600' : 'bg-white/20 text-white'
+      }`}>
+        {getFileIcon()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{attachment.name || 'Документ'}</p>
+        {attachment.size && (
+          <p className="text-xs opacity-60">{attachment.size}</p>
+        )}
+      </div>
+      <Download className="w-4 h-4 opacity-50" />
+    </a>
+  )
+}
+
+// Компонент для стикеров
+function StickerAttachment({ attachment }: { attachment: MediaAttachment }) {
+  return (
+    <img 
+      src={attachment.url}
+      alt="Sticker"
+      className="w-32 h-32 object-contain"
+    />
+  )
+}
+
+// Рендер медиа вложения
+function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; isClient: boolean }) {
+  switch (attachment.type) {
+    case 'image':
+      return <ImageAttachment attachment={attachment} isClient={isClient} />
+    case 'video':
+      return <VideoAttachment attachment={attachment} isClient={isClient} />
+    case 'audio':
+    case 'voice':
+      return <AudioAttachment attachment={attachment} isClient={isClient} />
+    case 'sticker':
+      return <StickerAttachment attachment={attachment} />
+    case 'document':
+    default:
+      return <DocumentAttachment attachment={attachment} isClient={isClient} />
+  }
+}
+
 export function MessageBubble({ message, onReply, onCopy }: MessageBubbleProps) {
+  const hasOnlyMedia = !message.text && message.attachments && message.attachments.length > 0
+  const isSticker = message.attachments?.length === 1 && message.attachments[0].type === 'sticker'
+
   return (
     <div className={`flex ${message.isClient ? 'justify-start' : 'justify-end'} group`}>
       <div className="max-w-[70%]">
@@ -40,35 +300,41 @@ export function MessageBubble({ message, onReply, onCopy }: MessageBubbleProps) 
         )}
 
         <div className="relative">
-          <div className={`px-4 py-3 rounded-2xl ${
-            message.isClient 
-              ? 'bg-slate-100 text-slate-800 rounded-tl-md' 
-              : 'bg-blue-500 text-white rounded-tr-md'
-          }`}>
-            <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-            
-            {/* Attachments */}
-            {message.attachments && message.attachments.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {message.attachments.map((att, i) => (
-                  <a 
-                    key={i}
-                    href={att.url}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg ${
-                      message.isClient ? 'bg-white' : 'bg-blue-400/30'
-                    }`}
-                  >
-                    {att.type === 'image' ? <Image className="w-4 h-4" /> : <File className="w-4 h-4" />}
-                    <span className="text-sm truncate">{att.name}</span>
-                    {att.size && <span className="text-xs opacity-70">{att.size}</span>}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Стикеры показываем без bubble */}
+          {isSticker ? (
+            <MediaRenderer attachment={message.attachments![0]} isClient={message.isClient} />
+          ) : (
+            <div className={`rounded-2xl overflow-hidden ${
+              message.isClient 
+                ? 'bg-slate-100 text-slate-800 rounded-tl-md' 
+                : 'bg-blue-500 text-white rounded-tr-md'
+            }`}>
+              {/* Медиа вложения */}
+              {message.attachments && message.attachments.length > 0 && (
+                <div className={`${message.text ? 'p-1 pb-0' : 'p-1'}`}>
+                  {message.attachments.length === 1 ? (
+                    <MediaRenderer attachment={message.attachments[0]} isClient={message.isClient} />
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1">
+                      {message.attachments.map((att, i) => (
+                        <MediaRenderer key={i} attachment={att} isClient={message.isClient} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Текст сообщения */}
+              {message.text && (
+                <div className="px-4 py-3">
+                  <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Message actions */}
-          <div className={`absolute top-0 ${message.isClient ? 'right-0 translate-x-full' : 'left-0 -translate-x-full'} px-2 opacity-0 group-hover:opacity-100 transition-opacity`}>
+          <div className={`absolute top-0 ${message.isClient ? 'right-0 translate-x-full' : 'left-0 -translate-x-full'} px-2 opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
             <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm p-1">
               <button onClick={onReply} className="p-1.5 hover:bg-slate-100 rounded" title="Ответить">
                 <Reply className="w-3.5 h-3.5 text-slate-500" />

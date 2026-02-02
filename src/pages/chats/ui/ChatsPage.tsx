@@ -44,6 +44,20 @@ function mapMessageToUI(message: Message): MessageData {
     return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   }
 
+  // Маппинг типа медиа
+  const getMediaType = (mediaType?: string): 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker' => {
+    switch (mediaType) {
+      case 'photo': return 'image'
+      case 'video': return 'video'
+      case 'video_note': return 'video'
+      case 'voice': return 'voice'
+      case 'audio': return 'audio'
+      case 'sticker': return 'sticker'
+      case 'document': return 'document'
+      default: return 'document'
+    }
+  }
+
   return {
     id: message.id,
     senderName: message.senderName || 'Пользователь',
@@ -53,9 +67,9 @@ function mapMessageToUI(message: Message): MessageData {
     isClient: message.senderRole === 'client',
     status: message.isRead ? 'read' : 'delivered',
     attachments: message.mediaUrl ? [{
-      type: message.mediaType === 'photo' ? 'image' : 'file',
-      name: message.mediaType || 'Файл',
-      url: message.mediaUrl
+      type: getMediaType(message.mediaType),
+      url: message.mediaUrl,
+      name: message.mediaType === 'document' ? 'Документ' : undefined,
     }] : undefined,
   }
 }
