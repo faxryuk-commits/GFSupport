@@ -27,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     })
@@ -161,8 +161,8 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  // PATCH - обновить кейс
-  if (req.method === 'PATCH') {
+  // PUT/PATCH - обновить кейс
+  if (req.method === 'PUT' || req.method === 'PATCH') {
     try {
       const body = await req.json()
       const { 
@@ -256,13 +256,39 @@ export default async function handler(req: Request): Promise<Response> {
         `
       }
 
+      // Получаем обновлённый кейс для возврата
+      const updated = await sql`
+        SELECT c.*, ch.name as channel_name
+        FROM support_cases c
+        LEFT JOIN support_channels ch ON c.channel_id = ch.id
+        WHERE c.id = ${caseId}
+      `
+      
+      const c = updated[0]
+
       return json({
         success: true,
         caseId,
-        message: 'Case updated'
+        message: 'Case updated',
+        case: {
+          id: c.id,
+          ticketNumber: c.ticket_number,
+          channelId: c.channel_id,
+          channelName: c.channel_name || 'Без канала',
+          title: c.title,
+          description: c.description,
+          status: c.status,
+          category: c.category,
+          priority: c.priority,
+          assignedTo: c.assigned_to,
+          tags: c.tags || [],
+          createdAt: c.created_at,
+          updatedAt: c.updated_at,
+        }
       })
 
     } catch (e: any) {
+      console.error('Case update error:', e)
       return json({ error: 'Failed to update case', details: e.message }, 500)
     }
   }
