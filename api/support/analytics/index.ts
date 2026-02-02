@@ -20,6 +20,29 @@ function json(data: any, status = 200) {
   })
 }
 
+// Перевод категорий/проблем на русский
+const problemLabels: Record<string, string> = {
+  technical: 'Технические проблемы',
+  integration: 'Проблемы интеграции',
+  billing: 'Вопросы оплаты',
+  complaint: 'Жалобы клиентов',
+  feature_request: 'Запросы функций',
+  order: 'Проблемы с заказами',
+  delivery: 'Проблемы доставки',
+  menu: 'Вопросы по меню',
+  app: 'Проблемы приложения',
+  onboarding: 'Вопросы подключения',
+  question: 'Общие вопросы',
+  general: 'Прочие обращения',
+  feedback: 'Обратная связь',
+  'Множественные обращения': 'Повторные обращения',
+}
+
+function translateProblem(problem: string): string {
+  if (!problem) return 'Прочее'
+  return problemLabels[problem.toLowerCase()] || problemLabels[problem] || problem
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -123,17 +146,58 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT 10
     `
 
-    // Топ повторяющихся проблем (по root_cause)
+    // Топ повторяющихся проблем - улучшенная логика
+    // Группируем по категории + подкатегории или типу проблемы
     const recurringProblems = await sql`
+      WITH problem_patterns AS (
+        -- Группировка кейсов по категории
+        SELECT 
+          category as problem_type,
+          'category' as source,
+          COUNT(*) as occurrences,
+          COUNT(DISTINCT channel_id) as affected_companies
+        FROM support_cases
+        WHERE created_at >= ${startDate.toISOString()}
+          AND category IS NOT NULL
+        GROUP BY category
+        HAVING COUNT(*) >= 2
+        
+        UNION ALL
+        
+        -- Группировка сообщений с проблемами по категории AI
+        SELECT 
+          ai_category as problem_type,
+          'ai_category' as source,
+          COUNT(*) as occurrences,
+          COUNT(DISTINCT channel_id) as affected_companies
+        FROM support_messages
+        WHERE created_at >= ${startDate.toISOString()}
+          AND is_problem = true
+          AND ai_category IS NOT NULL
+        GROUP BY ai_category
+        HAVING COUNT(*) >= 3
+        
+        UNION ALL
+        
+        -- Каналы с множеством проблем
+        SELECT 
+          'Множественные обращения' as problem_type,
+          'multi_contact' as source,
+          COUNT(*) as occurrences,
+          COUNT(DISTINCT channel_id) as affected_companies
+        FROM support_messages
+        WHERE created_at >= ${startDate.toISOString()}
+          AND is_problem = true
+        GROUP BY channel_id
+        HAVING COUNT(*) >= 3
+      )
       SELECT 
-        COALESCE(root_cause, category, title) as problem,
-        COUNT(*) as occurrences,
-        COUNT(DISTINCT channel_id) as affected_companies
-      FROM support_cases
-      WHERE created_at >= ${startDate.toISOString()}
-        AND (is_recurring = true OR root_cause IS NOT NULL)
-      GROUP BY COALESCE(root_cause, category, title)
-      HAVING COUNT(*) > 1
+        problem_type as problem,
+        SUM(occurrences) as occurrences,
+        SUM(affected_companies) as affected_companies
+      FROM problem_patterns
+      WHERE problem_type IS NOT NULL AND problem_type != ''
+      GROUP BY problem_type
       ORDER BY occurrences DESC
       LIMIT 10
     `
@@ -143,6 +207,7 @@ export default async function handler(req: Request): Promise<Response> {
     // ============================================
     
     // Метрики команды по сообщениям (кто сколько ответил)
+    // Исключаем ботов и системные аккаунты
     const teamPerformance = await sql`
       SELECT 
         COALESCE(m.sender_name, m.sender_username, m.sender_id::text, 'Неизвестный') as manager_name,
@@ -155,6 +220,9 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_messages m
       WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
         AND m.sender_id IS NOT NULL
+        AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
+        AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%delever support%'
+        AND LOWER(COALESCE(m.sender_username, '')) NOT LIKE '%bot%'
       GROUP BY m.sender_id, m.sender_name, m.sender_username
       HAVING COUNT(*) >= 1
       ORDER BY total_messages DESC
@@ -397,7 +465,7 @@ export default async function handler(req: Request): Promise<Response> {
           count: parseInt(i.count),
         })),
         recurringProblems: recurringProblems.map((p: any) => ({
-          problem: p.problem,
+          problem: translateProblem(p.problem),
           occurrences: parseInt(p.occurrences),
           affectedCompanies: parseInt(p.affected_companies),
         })),
