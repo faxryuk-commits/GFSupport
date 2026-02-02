@@ -5,10 +5,6 @@ import {
   ChatsPage,
   ChannelsListPage,
   CasesPage, 
-  AnalyticsPage, 
-  TeamPage, 
-  UsersPage,
-  AutomationsPage,
   BroadcastPage,
   SettingsPage,
   LoginPage 
@@ -29,19 +25,19 @@ export default function App() {
         <Route path="/chats/:id" element={<ChatsPage />} />
         <Route path="/channels" element={<ChannelsListPage />} />
         <Route path="/cases" element={<CasesPage />} />
-        <Route path="/reports" element={<AnalyticsPage />} />
         
         {/* Manage */}
-        <Route path="/team" element={<TeamPage />} />
-        <Route path="/users" element={<UsersPage />} />
-        <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/broadcast" element={<BroadcastPage />} />
         
         {/* Settings */}
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
-      {/* Redirects */}
+      {/* Redirects - old routes to settings */}
+      <Route path="/reports" element={<Navigate to="/overview" replace />} />
+      <Route path="/team" element={<Navigate to="/settings" replace />} />
+      <Route path="/users" element={<Navigate to="/settings" replace />} />
+      <Route path="/automations" element={<Navigate to="/settings" replace />} />
       <Route path="/" element={<Navigate to="/overview" replace />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>

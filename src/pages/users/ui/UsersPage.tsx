@@ -9,7 +9,11 @@ const roleConfig = {
   partner: { label: 'Партнер', color: 'bg-amber-100 text-amber-700' },
 }
 
-export function UsersPage() {
+interface UsersPageProps {
+  embedded?: boolean
+}
+
+export function UsersPage({ embedded = false }: UsersPageProps) {
   const [users, setUsers] = useState<User[]>([])
   const [stats, setStats] = useState<UsersResponse['stats'] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -187,12 +191,31 @@ export function UsersPage() {
     <>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Пользователи</h1>
-            <p className="text-slate-500 mt-1">Управление базой клиентов и сотрудников</p>
+        {!embedded ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">Пользователи</h1>
+              <p className="text-slate-500 mt-1">Управление базой клиентов и сотрудников</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={loadUsers}
+                disabled={isLoading}
+                className="p-2.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
+              <button 
+                onClick={() => { resetForm(); setIsCreateModalOpen(true) }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Добавить
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+        ) : (
+          <div className="flex items-center justify-end gap-3">
             <button 
               onClick={loadUsers}
               disabled={isLoading}
@@ -208,7 +231,7 @@ export function UsersPage() {
               Добавить
             </button>
           </div>
-        </div>
+        )}
 
         {/* Error Alert */}
         {error && (

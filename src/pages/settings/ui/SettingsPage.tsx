@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw, AlertCircle, Loader2 } from 'lucide-react'
+import { Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw, AlertCircle, Loader2, UsersRound, Users, Zap } from 'lucide-react'
 import {
   GeneralSettings,
   NotificationsSettings,
@@ -22,11 +22,17 @@ import {
   type BackendSettings,
   type EnvStatus,
 } from '@/shared/api'
+import { TeamPage } from '@/pages/team/ui/TeamPage'
+import { UsersPage } from '@/pages/users/ui/UsersPage'
+import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 
-type SettingsTab = 'general' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
+type SettingsTab = 'general' | 'team' | 'users' | 'automations' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
 const tabs: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
   { id: 'general', label: 'Основные', icon: Settings },
+  { id: 'team', label: 'Команда', icon: UsersRound },
+  { id: 'users', label: 'Клиенты', icon: Users },
+  { id: 'automations', label: 'Автоматизации', icon: Zap },
   { id: 'notifications', label: 'Уведомления', icon: Bell },
   { id: 'integrations', label: 'Интеграции', icon: Link2 },
   { id: 'security', label: 'Безопасность', icon: Shield },
@@ -362,6 +368,24 @@ export function SettingsPage() {
               onGeneralChange={setGeneralSettings}
               onResponseChange={setResponseSettings}
             />
+          )}
+
+          {activeTab === 'team' && (
+            <div className="-m-6">
+              <TeamPage embedded />
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="-m-6">
+              <UsersPage embedded />
+            </div>
+          )}
+
+          {activeTab === 'automations' && (
+            <div className="-m-6">
+              <AutomationsPage embedded />
+            </div>
           )}
 
           {activeTab === 'notifications' && (

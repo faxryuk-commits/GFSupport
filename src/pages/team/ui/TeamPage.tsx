@@ -52,7 +52,11 @@ function mapAgentToDisplay(agent: Agent): DisplayAgent {
   }
 }
 
-export function TeamPage() {
+interface TeamPageProps {
+  embedded?: boolean
+}
+
+export function TeamPage({ embedded = false }: TeamPageProps) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -111,15 +115,25 @@ export function TeamPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={embedded ? "p-6 space-y-6" : "p-6 space-y-6"}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-800">Команда</h1>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-          <Plus className="w-4 h-4" />
-          Пригласить
-        </button>
-      </div>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-800">Команда</h1>
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+            <Plus className="w-4 h-4" />
+            Пригласить
+          </button>
+        </div>
+      )}
+      {embedded && (
+        <div className="flex items-center justify-end">
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+            <Plus className="w-4 h-4" />
+            Пригласить
+          </button>
+        </div>
+      )}
 
       {/* Metrics */}
       <div className="grid grid-cols-4 gap-4">

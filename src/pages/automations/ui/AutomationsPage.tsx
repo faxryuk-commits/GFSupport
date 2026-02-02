@@ -27,7 +27,11 @@ const actionLabels: Record<string, string> = {
   'notify': 'Уведомить',
 }
 
-export function AutomationsPage() {
+interface AutomationsPageProps {
+  embedded?: boolean
+}
+
+export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
   const [automations, setAutomations] = useState<Automation[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -159,12 +163,30 @@ export function AutomationsPage() {
         )}
 
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Автоматизации</h1>
-            <p className="text-slate-500 mt-1">Автоматизация рутинных задач и процессов</p>
+        {!embedded ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-800">Автоматизации</h1>
+              <p className="text-slate-500 mt-1">Автоматизация рутинных задач и процессов</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={loadAutomations}
+                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setIsCreateModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Новая автоматизация
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+        ) : (
+          <div className="flex items-center justify-end gap-3">
             <button 
               onClick={loadAutomations}
               className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
@@ -179,7 +201,7 @@ export function AutomationsPage() {
               Новая автоматизация
             </button>
           </div>
-        </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4">

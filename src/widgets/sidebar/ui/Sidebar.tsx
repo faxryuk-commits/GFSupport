@@ -32,13 +32,9 @@ const mainNavItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
-  { path: '/reports', label: 'Аналитика', icon: BarChart3 },
 ]
 
 const manageNavItems = [
-  { path: '/team', label: 'Команда', icon: UsersRound },
-  { path: '/users', label: 'Клиенты', icon: Users },
-  { path: '/automations', label: 'Автоматизации', icon: Zap },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
 ]
 
