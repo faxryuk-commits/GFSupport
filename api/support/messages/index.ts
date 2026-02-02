@@ -43,44 +43,50 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
       const channelId = url.searchParams.get('channelId')
-      const senderRole = url.searchParams.get('senderRole') // client, support, team
-      const contentType = url.searchParams.get('contentType') // text, voice, video, etc
-      const isProblem = url.searchParams.get('isProblem')
-      const isRead = url.searchParams.get('isRead')
-      const search = url.searchParams.get('search')
       const limit = parseInt(url.searchParams.get('limit') || '50')
       const offset = parseInt(url.searchParams.get('offset') || '0')
 
-      const messages = await sql`
-        SELECT 
-          m.*,
-          ch.name as channel_name,
-          ch.telegram_chat_id
-        FROM support_messages m
-        LEFT JOIN support_channels ch ON m.channel_id = ch.id
-        WHERE 1=1
-          ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
-          ${senderRole ? sql`AND m.sender_role = ${senderRole}` : sql``}
-          ${contentType ? sql`AND m.content_type = ${contentType}` : sql``}
-          ${isProblem === 'true' ? sql`AND m.is_problem = true` : sql``}
-          ${isRead === 'true' ? sql`AND m.is_read = true` : sql``}
-          ${isRead === 'false' ? sql`AND m.is_read = false` : sql``}
-          ${search ? sql`AND (m.text_content ILIKE ${'%' + search + '%'} OR m.transcript ILIKE ${'%' + search + '%'} OR m.ai_summary ILIKE ${'%' + search + '%'})` : sql``}
-        ORDER BY m.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
+      console.log('[Messages API] Fetching messages, channelId:', channelId, 'limit:', limit)
 
-      const countResult = await sql`
-        SELECT COUNT(*) as total FROM support_messages m
-        WHERE 1=1
-          ${channelId ? sql`AND m.channel_id = ${channelId}` : sql``}
-          ${senderRole ? sql`AND m.sender_role = ${senderRole}` : sql``}
-          ${contentType ? sql`AND m.content_type = ${contentType}` : sql``}
-          ${isProblem === 'true' ? sql`AND m.is_problem = true` : sql``}
-          ${isRead === 'true' ? sql`AND m.is_read = true` : sql``}
-          ${isRead === 'false' ? sql`AND m.is_read = false` : sql``}
-          ${search ? sql`AND (m.text_content ILIKE ${'%' + search + '%'} OR m.transcript ILIKE ${'%' + search + '%'} OR m.ai_summary ILIKE ${'%' + search + '%'})` : sql``}
-      `
+      let messages: any[]
+      let countResult: any[]
+
+      // Neon не поддерживает вложенные sql`` - используем отдельные запросы
+      if (channelId) {
+        messages = await sql`
+          SELECT 
+            m.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id
+          FROM support_messages m
+          LEFT JOIN support_channels ch ON m.channel_id = ch.id
+          WHERE m.channel_id = ${channelId}
+          ORDER BY m.created_at ASC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+        
+        countResult = await sql`
+          SELECT COUNT(*) as total FROM support_messages
+          WHERE channel_id = ${channelId}
+        `
+      } else {
+        messages = await sql`
+          SELECT 
+            m.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id
+          FROM support_messages m
+          LEFT JOIN support_channels ch ON m.channel_id = ch.id
+          ORDER BY m.created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+        
+        countResult = await sql`
+          SELECT COUNT(*) as total FROM support_messages
+        `
+      }
+
+      console.log('[Messages API] Found', messages.length, 'messages')
 
       const total = parseInt(countResult[0]?.total || '0')
 
@@ -105,13 +111,13 @@ export default async function handler(req: Request): Promise<Response> {
           caseId: m.case_id,
           telegramMessageId: m.telegram_message_id,
           senderId: m.sender_id,
-          senderName: m.sender_name || 'Пользователь',
+          senderName: m.sender_name || 'Клиент',
           senderUsername: m.sender_username,
-          senderRole: m.is_from_client ? 'client' : (m.sender_role || 'support'),
-          isFromClient: m.is_from_client,
-          isFromTeam: !m.is_from_client,
-          contentType: m.content_type,
-          text: m.text_content || m.transcript || '', // Маппинг для фронтенда
+          senderRole: m.sender_role || 'client',
+          isFromClient: m.is_from_client ?? (m.sender_role === 'client'),
+          isFromTeam: m.sender_role === 'support' || m.sender_role === 'team',
+          contentType: m.content_type || 'text',
+          text: m.text_content || '',
           textContent: m.text_content,
           mediaUrl: m.media_url,
           mediaType: m.content_type !== 'text' ? m.content_type : undefined,
@@ -127,11 +133,12 @@ export default async function handler(req: Request): Promise<Response> {
           readAt: m.read_at,
           replyToMessageId: m.reply_to_message_id,
           threadId: m.thread_id,
-          threadName: m.thread_name,
           topicId: m.thread_id,
+          threadName: m.thread_name,
           topicName: m.thread_name,
           reactions: m.reactions || {},
           createdAt: m.created_at,
+          timestamp: m.created_at,
         })),
         total,
         limit,
@@ -148,6 +155,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
+      console.error('[Messages API] Error:', e.message, e.stack)
       return json({ error: 'Failed to fetch messages', details: e.message }, 500)
     }
   }
@@ -183,6 +191,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true })
 
     } catch (e: any) {
+      console.error('[Messages API] PATCH Error:', e.message)
       return json({ error: 'Failed to update messages', details: e.message }, 500)
     }
   }
