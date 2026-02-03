@@ -131,11 +131,9 @@ export function useMessages(channelId: string | null) {
       let message: Message
       
       if (attachments && attachments.length > 0) {
-        const formData = new FormData()
-        formData.append('channelId', channelId)
-        formData.append('text', text)
-        attachments.forEach(file => formData.append('files', file))
-        message = await sendMediaMessage(channelId, formData)
+        // Отправляем первый файл с текстом как caption
+        const file = attachments[0]
+        message = await sendMediaMessage(channelId, file, text)
       } else {
         message = await sendMessage(channelId, text)
       }

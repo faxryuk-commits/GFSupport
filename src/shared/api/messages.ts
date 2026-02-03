@@ -114,7 +114,7 @@ export async function sendMediaMessage(
     isFromTeam: true,
     text: caption || '',
     contentType,
-    mediaUrl: response.mediaUrl,
+    mediaUrl: response.mediaUrl || undefined,
     isRead: true,
     createdAt: new Date().toISOString(),
   }

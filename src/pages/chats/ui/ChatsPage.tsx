@@ -61,6 +61,13 @@ function mapMessageToUI(message: Message): MessageData {
     }
   }
 
+  // Форматирование размера файла
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
   // Преобразование реакций из { emoji: [users] } в MessageReaction[]
   const mapReactions = (reactions?: Record<string, string[]>): MessageReaction[] | undefined => {
     if (!reactions || typeof reactions !== 'object') return undefined
@@ -402,9 +409,9 @@ export function ChatsPage() {
             status: 'sent',
             attachments: [{
               type: file.type as any,
-              url: file.previewUrl || '',
-              name: file.name,
-              size: file.size
+              url: file.preview || '',
+              name: file.file.name,
+              size: formatFileSize(file.file.size)
             }]
           }
           
