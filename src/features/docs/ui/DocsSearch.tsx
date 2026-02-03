@@ -107,7 +107,7 @@ export function DocsSearch({ onSelectDoc, category, className = '' }: DocsSearch
                     </div>
                     
                     <p className="text-sm text-slate-600 line-clamp-2">
-                      {doc.snippet || doc.content.slice(0, 150)}...
+                      {doc.snippet || (doc.content ? doc.content.slice(0, 150) + '...' : 'Нет описания')}
                     </p>
                     
                     <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">

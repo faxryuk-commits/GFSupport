@@ -180,7 +180,7 @@ export function DocsPage() {
                           </h4>
                           
                           <p className="text-sm text-slate-500 line-clamp-2 mb-3">
-                            {doc.content.slice(0, 100)}...
+                            {doc.content ? doc.content.slice(0, 100) + '...' : 'Нет описания'}
                           </p>
                           
                           <div className="flex items-center justify-between text-xs text-slate-400">
