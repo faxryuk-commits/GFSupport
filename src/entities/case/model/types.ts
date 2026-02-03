@@ -25,6 +25,7 @@ export interface Case {
   severity?: string
   assignedTo?: string
   assigneeName?: string
+  reporterName?: string // Кто инициировал тикет
   firstResponseAt?: string
   resolvedAt?: string | null
   resolutionTimeMinutes?: number

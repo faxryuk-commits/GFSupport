@@ -64,7 +64,8 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.status = ANY(${statuses})
@@ -84,7 +85,8 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.priority = ${priority}
@@ -97,7 +99,8 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.channel_id = ${channelId}
@@ -110,7 +113,8 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.assigned_to = ${assignedTo}
@@ -123,7 +127,8 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'}
@@ -136,7 +141,8 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           ORDER BY 
@@ -183,6 +189,7 @@ export default async function handler(req: Request): Promise<Response> {
           severity: c.severity,
           assignedTo: c.assigned_to,
           assigneeName: c.assigned_to ? 'Назначен' : null,
+          reporterName: c.reporter_name, // Кто инициировал тикет
           firstResponseAt: c.first_response_at,
           resolvedAt: c.resolved_at,
           resolutionTimeMinutes: c.resolution_time_minutes,

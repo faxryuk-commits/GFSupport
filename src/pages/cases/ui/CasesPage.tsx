@@ -23,6 +23,7 @@ function mapCaseToCardData(c: Case): CaseCardData {
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
+    reporterName: c.reporterName,
     commentsCount: c.messagesCount,
   }
 }

@@ -17,6 +17,7 @@ export interface CaseCardData {
   createdAt: string
   updatedAt?: string
   assignee?: { id: string; name: string }
+  reporterName?: string // Кто инициировал тикет
   commentsCount: number
 }
 
@@ -71,11 +72,19 @@ export function CaseCard({ caseItem, onView, onDragStart, isDragging }: CaseCard
         </span>
       </div>
 
-      {/* Откуда (источник/канал) */}
+      {/* Откуда (источник/канал) - увеличенный */}
       {caseItem.channelName && (
-        <div className="flex items-center gap-1 mb-1.5 text-xs text-slate-500">
-          <MessageSquare className="w-3 h-3" />
-          <span className="truncate">{caseItem.channelName}</span>
+        <div className="flex items-center gap-1.5 mb-2 text-sm text-slate-600">
+          <MessageSquare className="w-4 h-4 text-blue-500 flex-shrink-0" />
+          <span className="font-medium truncate">{caseItem.channelName}</span>
+        </div>
+      )}
+
+      {/* Кто инициировал тикет */}
+      {caseItem.reporterName && (
+        <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-amber-50 rounded-lg">
+          <User className="w-3.5 h-3.5 text-amber-600" />
+          <span className="text-xs text-amber-700">от: <span className="font-medium">{caseItem.reporterName}</span></span>
         </div>
       )}
 
