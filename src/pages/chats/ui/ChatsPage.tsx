@@ -10,6 +10,13 @@ import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
 import type { Agent } from '@/entities/agent'
 
+// Форматирование размера файла
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
 // Преобразование данных канала из API в формат UI компонента
 function mapChannelToUI(channel: Channel): ChannelItemData {
   const getRelativeTime = (dateStr: string | null) => {
@@ -59,13 +66,6 @@ function mapMessageToUI(message: Message): MessageData {
       case 'document': return 'document'
       default: return 'document'
     }
-  }
-
-  // Форматирование размера файла
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
   // Преобразование реакций из { emoji: [users] } в MessageReaction[]
