@@ -64,6 +64,8 @@ async function convertMediaUrl(mediaUrl: string | null): Promise<string | null> 
  * - Период: 90 дней
  * - Лимит по умолчанию: 100 сообщений
  * - Поддержка lazy loading через offset
+ * - Поддержка `since` для polling новых сообщений (ISO timestamp)
+ * - Поддержка `mode=latest` для получения последних сообщений (для первой загрузки)
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -89,7 +91,8 @@ export default async function handler(req: Request): Promise<Response> {
 
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 200)
   const offset = parseInt(url.searchParams.get('offset') || '0')
-  const period = url.searchParams.get('period') || '90' // days
+  const since = url.searchParams.get('since') // ISO timestamp для polling
+  const mode = url.searchParams.get('mode') // 'latest' для получения последних сообщений
   
   const sql = getSQL()
 
@@ -109,20 +112,59 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'Channel not found' }, 404)
     }
 
-    // Get messages with pagination (90 days default)
-    const messages = await sql`
-      SELECT 
-        id, telegram_message_id, sender_id, sender_name, sender_username, 
-        sender_photo_url, sender_role, text_content, content_type, media_url,
-        transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
-        is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
-        thread_id, thread_name, case_id, created_at
-      FROM support_messages
-      WHERE channel_id = ${channelId}
-        AND created_at > NOW() - INTERVAL '90 days'
-      ORDER BY created_at ASC
-      LIMIT ${limit} OFFSET ${offset}
-    `
+    let messages: any[]
+
+    // Режим polling: получить только новые сообщения после since
+    if (since) {
+      messages = await sql`
+        SELECT 
+          id, telegram_message_id, sender_id, sender_name, sender_username, 
+          sender_photo_url, sender_role, text_content, content_type, media_url,
+          transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
+          is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
+          thread_id, thread_name, case_id, created_at
+        FROM support_messages
+        WHERE channel_id = ${channelId}
+          AND created_at > ${since}::timestamptz
+        ORDER BY created_at ASC
+        LIMIT 100
+      `
+    }
+    // Режим latest: получить последние N сообщений (для первой загрузки чата)
+    else if (mode === 'latest' || offset === 0) {
+      // Сначала получаем последние сообщения (DESC), потом разворачиваем для правильного порядка
+      const latestMessages = await sql`
+        SELECT 
+          id, telegram_message_id, sender_id, sender_name, sender_username, 
+          sender_photo_url, sender_role, text_content, content_type, media_url,
+          transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
+          is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
+          thread_id, thread_name, case_id, created_at
+        FROM support_messages
+        WHERE channel_id = ${channelId}
+          AND created_at > NOW() - INTERVAL '90 days'
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `
+      // Разворачиваем чтобы старые были сначала (для отображения в чате)
+      messages = latestMessages.reverse()
+    }
+    // Обычная пагинация для загрузки старых сообщений
+    else {
+      messages = await sql`
+        SELECT 
+          id, telegram_message_id, sender_id, sender_name, sender_username, 
+          sender_photo_url, sender_role, text_content, content_type, media_url,
+          transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
+          is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
+          thread_id, thread_name, case_id, created_at
+        FROM support_messages
+        WHERE channel_id = ${channelId}
+          AND created_at > NOW() - INTERVAL '90 days'
+        ORDER BY created_at ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `
+    }
 
     // Get total count for pagination
     const countResult = await sql`

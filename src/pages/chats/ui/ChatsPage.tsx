@@ -256,11 +256,11 @@ export function ChatsPage() {
     loadData()
   }, [])
 
-  // Real-time polling: обновление каналов каждые 10 секунд
+  // Real-time polling: обновление каналов каждые 5 секунд (для актуального превью)
   useEffect(() => {
     const pollInterval = setInterval(() => {
       loadChannels(true) // silent update
-    }, 10000)
+    }, 5000)
 
     return () => clearInterval(pollInterval)
   }, [loadChannels])
@@ -285,55 +285,66 @@ export function ChatsPage() {
     return () => document.removeEventListener('keydown', handleGlobalEscape)
   }, [replyingTo, showQuickReplies, showChannelActions])
 
-  // Real-time polling: обновление сообщений каждые 3 секунд при открытом чате
+  // Real-time polling: обновление сообщений каждые 2 секунды при открытом чате
   useEffect(() => {
     if (!selectedChannel) return
+    if (messages.length === 0) return // Ждем первичной загрузки
 
     const pollMessages = async () => {
       try {
-        const { messages: newData } = await fetchMessages(selectedChannel.id, 0, MESSAGES_LIMIT)
-        const mappedMessages = newData.map(mapMessageToUI)
+        // Получаем timestamp последнего сообщения для запроса только новых
+        const lastMessage = messages[messages.length - 1]
+        const since = lastMessage?.date // ISO timestamp
+
+        // Запрашиваем только новые сообщения после последнего
+        const { messages: newData } = await fetchMessages(
+          selectedChannel.id, 
+          0, 
+          50, // меньший лимит для polling
+          since
+        )
         
-        // Проверяем есть ли новые сообщения от клиентов
-        if (mappedMessages.length > messages.length) {
-          const newMsgs = mappedMessages.slice(messages.length)
-          const clientMessages = newMsgs.filter(m => m.isClient)
+        if (newData.length > 0) {
+          const newMappedMessages = newData.map(mapMessageToUI)
           
-          // Показываем уведомление о новом сообщении от клиента
-          clientMessages.forEach(msg => {
-            showNotification({
-              type: 'message',
-              title: 'Новое сообщение',
-              message: msg.text || '[Медиа]',
-              senderName: msg.senderName,
-              senderAvatar: msg.senderAvatarUrl || undefined,
-              channelName: selectedChannel.name,
-              channelId: selectedChannel.id,
-              onClick: () => {
-                // Прокрутка к сообщению
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-              }
+          // Фильтруем только реально новые сообщения (которых нет в текущем списке)
+          const existingIds = new Set(messages.map(m => m.id))
+          const trulyNewMessages = newMappedMessages.filter(m => !existingIds.has(m.id))
+          
+          if (trulyNewMessages.length > 0) {
+            // Показываем уведомления о новых сообщениях от клиентов
+            const clientMessages = trulyNewMessages.filter(m => m.isClient)
+            clientMessages.forEach(msg => {
+              showNotification({
+                type: 'message',
+                title: 'Новое сообщение',
+                message: msg.text || '[Медиа]',
+                senderName: msg.senderName,
+                senderAvatar: msg.senderAvatarUrl || undefined,
+                channelName: selectedChannel.name,
+                channelId: selectedChannel.id,
+                onClick: () => {
+                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                }
+              })
             })
-          })
-        }
-        
-        // Обновляем если есть изменения
-        if (mappedMessages.length !== messages.length || 
-            (mappedMessages.length > 0 && messages.length > 0 && 
-             mappedMessages[mappedMessages.length - 1]?.id !== messages[messages.length - 1]?.id)) {
-          setMessages(mappedMessages)
-          // Прокрутка к новому сообщению
-          setTimeout(() => {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-          }, 100)
+
+            // Добавляем новые сообщения в конец
+            setMessages(prev => [...prev, ...trulyNewMessages])
+            
+            // Прокрутка к новому сообщению
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
+          }
         }
       } catch (error) {
         console.error('Polling messages error:', error)
       }
     }
 
-    // Быстрый polling каждые 3 секунды для актуальности данных
-    const pollInterval = setInterval(pollMessages, 3000)
+    // Быстрый polling каждые 2 секунды для актуальности данных
+    const pollInterval = setInterval(pollMessages, 2000)
 
     return () => clearInterval(pollInterval)
   }, [selectedChannel, messages, showNotification])

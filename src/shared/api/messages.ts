@@ -7,16 +7,33 @@ interface MessagesResponse {
   total: number
 }
 
+/**
+ * Загрузка сообщений канала
+ * @param channelId - ID канала
+ * @param offset - смещение для пагинации (0 = последние сообщения)
+ * @param limit - лимит сообщений
+ * @param since - ISO timestamp для получения только новых сообщений (polling)
+ */
 export async function fetchMessages(
   channelId: string, 
   offset = 0,
-  limit = 100
+  limit = 100,
+  since?: string
 ): Promise<MessagesResponse> {
   const params = new URLSearchParams({
     channelId,
     offset: String(offset),
     limit: String(limit),
   })
+  
+  // Для polling - запрашиваем только новые сообщения после since
+  if (since) {
+    params.set('since', since)
+  }
+  // Для первой загрузки - режим latest (последние сообщения)
+  else if (offset === 0) {
+    params.set('mode', 'latest')
+  }
   
   return apiGet<MessagesResponse>(`/messages?${params}`)
 }
