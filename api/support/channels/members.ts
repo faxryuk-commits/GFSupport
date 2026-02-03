@@ -23,11 +23,8 @@ function json(data: any, status = 200) {
 /**
  * GET /api/support/channels/members?channelId=xxx
  * 
- * Получить участников канала/группы для @ упоминаний
- * Собирает из:
- * 1. Telegram API getChatAdministrators (если доступно)
- * 2. Уникальных отправителей сообщений в канале
- * 3. Зарегистрированных агентов
+ * Получить ВСЕХ участников канала/группы для @ упоминаний
+ * ВАЖНО: Показываем всех кто когда-либо писал в группу!
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -72,26 +69,21 @@ export default async function handler(req: Request): Promise<Response> {
       role?: 'support' | 'team' | 'client'
       avatarUrl?: string
     }> = []
-
-    // 1. Get registered agents (support team)
-    const agents = await sql`
-      SELECT id, name, username, avatar_url, role
-      FROM support_agents
-      WHERE status != 'inactive' OR status IS NULL
-      ORDER BY name
-    `
     
-    for (const agent of agents) {
-      members.push({
-        id: `agent_${agent.id}`,
-        name: agent.name,
-        username: agent.username || undefined,
-        role: agent.role === 'admin' ? 'support' : 'team',
-        avatarUrl: agent.avatar_url || undefined
-      })
+    // Для отслеживания уже добавленных (избегаем дубликатов)
+    const addedKeys = new Set<string>()
+    
+    const addMember = (member: typeof members[0]) => {
+      // Уникальный ключ: username (если есть) или name
+      const key = (member.username || member.name).toLowerCase().trim()
+      if (addedKeys.has(key)) return false
+      addedKeys.add(key)
+      members.push(member)
+      return true
     }
 
-    // 2. Get ALL unique senders from channel messages (clients, partners, etc)
+    // 1. ГЛАВНОЕ: Получаем ВСЕХ уникальных отправителей из сообщений канала
+    // Это основной источник участников группы!
     const senders = await sql`
       SELECT 
         sender_id,
@@ -103,39 +95,62 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE channel_id = ${channelId}
         AND sender_name IS NOT NULL
         AND sender_name != ''
+        AND LENGTH(sender_name) > 0
       GROUP BY sender_id, sender_name, sender_username, sender_role
       ORDER BY last_seen DESC
       LIMIT 100
     `
 
-    console.log('[Members] Found senders:', senders.length)
+    console.log('[Members] Senders from messages:', senders.length)
 
     for (const sender of senders) {
-      // Skip if already added as agent (check by username or name)
-      const isAgent = members.some(m => 
-        (sender.sender_username && m.username === sender.sender_username) ||
-        (sender.sender_name && m.name === sender.sender_name)
-      )
+      if (!sender.sender_name) continue
       
-      if (!isAgent && sender.sender_name) {
-        // Determine role: if sender_role is 'support' or username matches agent, skip
-        const role = sender.sender_role === 'support' ? 'support' : 'client'
-        
-        // Only add non-support users (clients/partners)
-        if (role !== 'support') {
-          members.push({
-            id: `sender_${sender.sender_id || sender.sender_name.replace(/\s+/g, '_')}`,
-            name: sender.sender_name,
-            username: sender.sender_username || undefined,
-            role: 'client'
-          })
-        }
+      // Определяем роль
+      let role: 'support' | 'team' | 'client' = 'client'
+      if (sender.sender_role === 'support' || sender.sender_role === 'agent') {
+        role = 'support'
       }
-    }
-    
-    console.log('[Members] Total members after senders:', members.length)
 
-    // 3. Try to get chat administrators from Telegram (for groups)
+      addMember({
+        id: `sender_${sender.sender_id || sender.sender_name.replace(/\s+/g, '_')}`,
+        name: sender.sender_name,
+        username: sender.sender_username || undefined,
+        role
+      })
+    }
+
+    console.log('[Members] After senders:', members.length)
+
+    // 2. Добавляем зарегистрированных агентов (если их нет в списке отправителей)
+    try {
+      const agents = await sql`
+        SELECT id, name, username, avatar_url, role
+        FROM support_agents
+        WHERE status != 'inactive' OR status IS NULL
+        ORDER BY name
+      `
+      
+      console.log('[Members] Agents from DB:', agents.length)
+
+      for (const agent of agents) {
+        if (!agent.name) continue
+        
+        addMember({
+          id: `agent_${agent.id}`,
+          name: agent.name,
+          username: agent.username || undefined,
+          role: 'support',
+          avatarUrl: agent.avatar_url || undefined
+        })
+      }
+    } catch (e) {
+      console.log('[Members] Could not fetch agents:', e)
+    }
+
+    console.log('[Members] After agents:', members.length)
+
+    // 3. Пробуем получить администраторов из Telegram API
     if (botToken && chatId) {
       try {
         const adminsRes = await fetch(`https://api.telegram.org/bot${botToken}/getChatAdministrators`, {
@@ -149,21 +164,16 @@ export default async function handler(req: Request): Promise<Response> {
         if (adminsData.ok && adminsData.result) {
           for (const admin of adminsData.result) {
             const user = admin.user
-            if (!user.is_bot) {
-              const exists = members.some(m =>
-                (user.username && m.username === user.username) ||
-                m.name === [user.first_name, user.last_name].filter(Boolean).join(' ')
-              )
-              
-              if (!exists) {
-                members.push({
-                  id: `tg_${user.id}`,
-                  name: [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'User',
-                  username: user.username || undefined,
-                  role: admin.status === 'creator' ? 'support' : 'team'
-                })
-              }
-            }
+            if (user.is_bot) continue
+            
+            const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'User'
+
+            addMember({
+              id: `tg_${user.id}`,
+              name: fullName,
+              username: user.username || undefined,
+              role: admin.status === 'creator' ? 'support' : 'team'
+            })
           }
         }
       } catch (e) {
@@ -171,12 +181,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    console.log('[Members] Final result:', { 
-      channelId, 
-      total: members.length,
-      agents: members.filter(m => m.role === 'support' || m.role === 'team').length,
-      clients: members.filter(m => m.role === 'client').length
-    })
+    console.log('[Members] Final total:', members.length)
 
     return json({
       members,
