@@ -72,7 +72,7 @@ export function useMessages(channelId: string | null) {
       }
 
       setError(null)
-      const data = await fetchMessages(channelId, 0, 50)
+      const data = await fetchMessages(channelId, 50)
       setMessages(data.messages)
       setHasMore(data.hasMore)
       cache.setMessages(channelId, toCache(data.messages, channelId))
@@ -97,8 +97,10 @@ export function useMessages(channelId: string | null) {
     
     try {
       setLoadingMore(true)
-      // Load older messages with offset
-      const data = await fetchMessages(channelId, messages.length, 50)
+      // Load older messages before the oldest current message
+      const oldestMessage = messages[0]
+      const before = oldestMessage?.createdAt
+      const data = await fetchMessages(channelId, 50, { before })
       const newMessages = [...data.messages, ...messages]
       setMessages(newMessages)
       setHasMore(data.hasMore)

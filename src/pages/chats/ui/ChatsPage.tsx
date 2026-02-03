@@ -184,7 +184,6 @@ export function ChatsPage() {
   // Lazy loading состояния
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMoreMessages, setHasMoreMessages] = useState(true)
-  const [messagesOffset, setMessagesOffset] = useState(0)
   const MESSAGES_LIMIT = 100
   
   // Ошибки
@@ -299,9 +298,8 @@ export function ChatsPage() {
         // Запрашиваем только новые сообщения после последнего
         const { messages: newData } = await fetchMessages(
           selectedChannel.id, 
-          0, 
           50, // меньший лимит для polling
-          since
+          { since }
         )
         
         if (newData.length > 0) {
@@ -373,19 +371,17 @@ export function ChatsPage() {
     }
   }, [messages])
 
-  // Загрузка сообщений при выборе канала
+  // Загрузка сообщений при выборе канала (последние сообщения)
   const loadMessages = useCallback(async (channelId: string) => {
     try {
       setIsLoadingMessages(true)
       setMessagesError(null)
-      setMessagesOffset(0)
       setHasMoreMessages(true)
       
-      const { messages: data, hasMore } = await fetchMessages(channelId, 0, MESSAGES_LIMIT)
+      const { messages: data, hasMore } = await fetchMessages(channelId, MESSAGES_LIMIT)
       const mappedMessages = data.map(mapMessageToUI)
       setMessages(mappedMessages)
       setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
-      setMessagesOffset(data.length)
       
       // Загружаем AI контекст параллельно (не блокируем UI)
       loadAIContext(channelId)
@@ -397,23 +393,27 @@ export function ChatsPage() {
     }
   }, [loadAIContext])
 
-  // Загрузка старых сообщений при скролле вверх
+  // Загрузка старых сообщений при скролле вверх (cursor-based)
   const loadMoreMessages = useCallback(async () => {
-    if (!selectedChannel || isLoadingMore || !hasMoreMessages) return
+    if (!selectedChannel || isLoadingMore || !hasMoreMessages || messages.length === 0) return
     
     try {
       setIsLoadingMore(true)
+      
+      // Получаем timestamp самого старого сообщения
+      const oldestMessage = messages[0]
+      const before = oldestMessage?.date // ISO timestamp
+      
       const { messages: data, hasMore } = await fetchMessages(
         selectedChannel.id, 
-        messagesOffset, 
-        MESSAGES_LIMIT
+        MESSAGES_LIMIT,
+        { before }
       )
       
       if (data.length > 0) {
         const mappedMessages = data.map(mapMessageToUI)
         // Добавляем старые сообщения в начало
         setMessages(prev => [...mappedMessages, ...prev])
-        setMessagesOffset(prev => prev + data.length)
       }
       
       setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
@@ -422,7 +422,7 @@ export function ChatsPage() {
     } finally {
       setIsLoadingMore(false)
     }
-  }, [selectedChannel, isLoadingMore, hasMoreMessages, messagesOffset])
+  }, [selectedChannel, isLoadingMore, hasMoreMessages, messages])
 
   // Обработчик скролла для lazy loading
   const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {

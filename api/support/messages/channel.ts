@@ -90,9 +90,8 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 200)
-  const offset = parseInt(url.searchParams.get('offset') || '0')
-  const since = url.searchParams.get('since') // ISO timestamp для polling
-  const mode = url.searchParams.get('mode') // 'latest' для получения последних сообщений
+  const since = url.searchParams.get('since') // ISO timestamp для polling новых сообщений
+  const before = url.searchParams.get('before') // ISO timestamp для загрузки старых сообщений
   
   const sql = getSQL()
 
@@ -114,7 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     let messages: any[]
 
-    // Режим polling: получить только новые сообщения после since
+    // Режим polling: получить только НОВЫЕ сообщения после since
     if (since) {
       messages = await sql`
         SELECT 
@@ -130,9 +129,27 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT 100
       `
     }
-    // Режим latest: получить последние N сообщений (для первой загрузки чата)
-    else if (mode === 'latest' || offset === 0) {
-      // Сначала получаем последние сообщения (DESC), потом разворачиваем для правильного порядка
+    // Загрузка СТАРЫХ сообщений (перед before timestamp) - для подгрузки истории
+    else if (before) {
+      const olderMessages = await sql`
+        SELECT 
+          id, telegram_message_id, sender_id, sender_name, sender_username, 
+          sender_photo_url, sender_role, text_content, content_type, media_url,
+          transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
+          is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
+          thread_id, thread_name, case_id, created_at
+        FROM support_messages
+        WHERE channel_id = ${channelId}
+          AND created_at < ${before}::timestamptz
+          AND created_at > NOW() - INTERVAL '90 days'
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `
+      // Разворачиваем чтобы старые были сначала
+      messages = olderMessages.reverse()
+    }
+    // Первая загрузка: последние N сообщений
+    else {
       const latestMessages = await sql`
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
@@ -148,22 +165,6 @@ export default async function handler(req: Request): Promise<Response> {
       `
       // Разворачиваем чтобы старые были сначала (для отображения в чате)
       messages = latestMessages.reverse()
-    }
-    // Обычная пагинация для загрузки старых сообщений
-    else {
-      messages = await sql`
-        SELECT 
-          id, telegram_message_id, sender_id, sender_name, sender_username, 
-          sender_photo_url, sender_role, text_content, content_type, media_url,
-          transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
-          is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
-          thread_id, thread_name, case_id, created_at
-        FROM support_messages
-        WHERE channel_id = ${channelId}
-          AND created_at > NOW() - INTERVAL '90 days'
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `
     }
 
     // Get total count for pagination
