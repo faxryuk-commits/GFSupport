@@ -175,13 +175,24 @@ async function saveMessage(
 }
 
 // Update channel stats
-async function updateChannelStats(sql: any, channelId: string, isFromClient: boolean) {
+async function updateChannelStats(
+  sql: any, 
+  channelId: string, 
+  isFromClient: boolean,
+  senderName?: string,
+  messagePreview?: string
+) {
+  // Truncate preview to 100 chars
+  const preview = messagePreview ? messagePreview.slice(0, 100) : null
+  
   if (isFromClient) {
     // Client message - increment unread, set awaiting_reply
     await sql`
       UPDATE support_channels SET
         unread_count = unread_count + 1,
         last_message_at = NOW(),
+        last_sender_name = COALESCE(${senderName}, last_sender_name),
+        last_message_preview = COALESCE(${preview}, last_message_preview),
         awaiting_reply = true
       WHERE id = ${channelId}
     `
@@ -190,6 +201,9 @@ async function updateChannelStats(sql: any, channelId: string, isFromClient: boo
     await sql`
       UPDATE support_channels SET
         last_message_at = NOW(),
+        last_team_message_at = NOW(),
+        last_sender_name = COALESCE(${senderName}, last_sender_name),
+        last_message_preview = COALESCE(${preview}, last_message_preview),
         awaiting_reply = false
       WHERE id = ${channelId}
     `
@@ -387,8 +401,23 @@ export default async function handler(req: Request): Promise<Response> {
 
     console.log(`[Webhook] Saved message ${messageId} from ${identification.role}`)
 
-    // Update channel stats
-    await updateChannelStats(sql, channelId, identification.role === 'client')
+    // Create message preview for channel
+    let messagePreview = text || ''
+    if (!messagePreview && contentType !== 'text') {
+      const typeLabels: Record<string, string> = {
+        photo: '[Фото]',
+        video: '[Видео]',
+        voice: '[Голосовое]',
+        video_note: '[Видеосообщение]',
+        audio: '[Аудио]',
+        document: '[Документ]',
+        sticker: '[Стикер]'
+      }
+      messagePreview = typeLabels[contentType] || '[Медиа]'
+    }
+
+    // Update channel stats with preview
+    await updateChannelStats(sql, channelId, identification.role === 'client', user.fullName, messagePreview)
 
     // If support/team replied, record activity and mark messages as read
     if (identification.role !== 'client') {
