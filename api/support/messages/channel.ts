@@ -229,6 +229,8 @@ export default async function handler(req: Request): Promise<Response> {
         senderRole: m.sender_role || 'client',
         text: m.text_content || '',
         contentType: m.content_type || 'text',
+        // mediaType для UI компонентов (аудио, видео, фото и т.д.)
+        mediaType: m.content_type && m.content_type !== 'text' ? m.content_type : undefined,
         mediaUrl: convertedMediaUrls[index],
         transcript: m.transcript,
         aiCategory: m.ai_category,
