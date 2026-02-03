@@ -77,7 +77,7 @@ export default async function handler(req: Request): Promise<Response> {
     const agents = await sql`
       SELECT id, name, username, avatar_url, role
       FROM support_agents
-      WHERE is_active = true
+      WHERE status != 'inactive' OR status IS NULL
       ORDER BY name
     `
     
