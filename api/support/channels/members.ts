@@ -91,7 +91,32 @@ export default async function handler(req: Request): Promise<Response> {
       })
     }
 
-    // 2. Get unique senders from channel messages (last 100 messages)
+    // 2. Get users from support_users table for this channel
+    const users = await sql`
+      SELECT telegram_id, telegram_username, name, role
+      FROM support_users
+      WHERE ${channelId} = ANY(channels)
+      ORDER BY last_seen_at DESC NULLS LAST
+      LIMIT 50
+    `
+
+    for (const user of users) {
+      const exists = members.some(m => 
+        (user.telegram_username && m.username === user.telegram_username) ||
+        m.name === user.name
+      )
+      
+      if (!exists && user.name) {
+        members.push({
+          id: `user_${user.telegram_id || user.name}`,
+          name: user.name,
+          username: user.telegram_username || undefined,
+          role: (user.role as 'support' | 'team' | 'client') || 'client'
+        })
+      }
+    }
+
+    // 3. Get unique senders from channel messages (fallback)
     const senders = await sql`
       SELECT DISTINCT ON (sender_username, sender_name)
         sender_id, sender_name, sender_username, sender_role
@@ -99,12 +124,13 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE channel_id = ${channelId}
         AND sender_name IS NOT NULL
         AND sender_name != ''
+        AND (sender_role != 'support' OR sender_role IS NULL)
       ORDER BY sender_username, sender_name, created_at DESC
       LIMIT 50
     `
 
     for (const sender of senders) {
-      // Skip if already added as agent
+      // Skip if already added
       const exists = members.some(m => 
         (sender.sender_username && m.username === sender.sender_username) ||
         m.name === sender.sender_name
@@ -115,12 +141,12 @@ export default async function handler(req: Request): Promise<Response> {
           id: `sender_${sender.sender_id || sender.sender_name}`,
           name: sender.sender_name,
           username: sender.sender_username || undefined,
-          role: sender.sender_role as 'support' | 'team' | 'client' || 'client'
+          role: 'client'
         })
       }
     }
 
-    // 3. Try to get chat administrators from Telegram (for groups)
+    // 4. Try to get chat administrators from Telegram (for groups)
     if (botToken && chatId) {
       try {
         const adminsRes = await fetch(`https://api.telegram.org/bot${botToken}/getChatAdministrators`, {

@@ -370,13 +370,18 @@ export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, o
         onContextMenu={handleContextMenu}
       >
         <div className="max-w-[70%]">
-          {message.isClient && (
-            <div className="flex items-center gap-2 mb-1">
+          {/* Всегда показываем имя отправителя */}
+          <div className={`flex items-center gap-2 mb-1 ${message.isClient ? '' : 'justify-end'}`}>
+            {message.isClient && (
               <Avatar src={message.senderAvatarUrl} name={message.senderName} size="sm" />
-              <span className="text-sm font-medium text-slate-700">{message.senderName}</span>
+            )}
+            <span className={`text-sm font-medium ${message.isClient ? 'text-slate-700' : 'text-blue-600'}`}>
+              {message.senderName}
+            </span>
+            {message.isClient && (
               <span className="text-xs text-slate-400">{message.time}</span>
-            </div>
-          )}
+            )}
+          </div>
           
           {/* Reply preview - стиль как в Telegram */}
           {message.replyTo && (
