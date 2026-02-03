@@ -47,6 +47,7 @@ interface MessageBubbleProps {
   onDelete?: () => void
   onPin?: () => void
   onReaction?: (emoji: string) => void
+  onScrollToMessage?: (messageId: string) => void
 }
 
 // Быстрые реакции
@@ -294,7 +295,7 @@ function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; 
   }
 }
 
-export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction }: MessageBubbleProps) {
+export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage }: MessageBubbleProps) {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
   const [showReactionPicker, setShowReactionPicker] = useState(false)
@@ -302,6 +303,13 @@ export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, o
   const reactionRef = useRef<HTMLDivElement>(null)
   
   const isSticker = message.attachments?.length === 1 && message.attachments[0].type === 'sticker'
+
+  // Клик на цитату - прокрутка к оригинальному сообщению
+  const handleReplyClick = () => {
+    if (message.replyTo?.id && onScrollToMessage) {
+      onScrollToMessage(message.replyTo.id)
+    }
+  }
 
   // Закрытие reaction picker
   useEffect(() => {
@@ -384,25 +392,34 @@ export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, o
             )}
           </div>
           
-          {/* Reply preview - стиль как в Telegram */}
+          {/* Reply preview - улучшенный стиль как в Telegram */}
           {message.replyTo && (
-            <div className={`flex gap-2 px-3 py-2 mb-1 rounded-lg cursor-pointer hover:opacity-80 ${
-              message.isClient ? 'bg-slate-100/80' : 'bg-blue-400/30'
-            }`}>
-              <div className={`w-0.5 rounded-full flex-shrink-0 ${
-                message.isClient ? 'bg-blue-500' : 'bg-white'
+            <div 
+              onClick={handleReplyClick}
+              className={`flex gap-2 px-3 py-2.5 mb-1.5 rounded-xl cursor-pointer transition-all active:scale-[0.98] ${
+                message.isClient 
+                  ? 'bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 hover:border-green-300 hover:shadow-sm' 
+                  : 'bg-white/20 border border-white/30 hover:bg-white/30'
+              }`}
+            >
+              <div className={`w-1 rounded-full flex-shrink-0 ${
+                message.isClient ? 'bg-green-500' : 'bg-white'
               }`} />
               <div className="min-w-0 flex-1">
-                <span className={`text-xs font-semibold block ${
-                  message.isClient ? 'text-blue-600' : 'text-white'
+                <span className={`text-sm font-semibold block mb-0.5 ${
+                  message.isClient ? 'text-green-700' : 'text-white'
                 }`}>
                   {message.replyTo.sender}
                 </span>
-                <p className={`text-xs truncate ${
-                  message.isClient ? 'text-slate-600' : 'text-white/80'
+                <p className={`text-sm line-clamp-2 ${
+                  message.isClient ? 'text-slate-700' : 'text-white/90'
                 }`}>
                   {message.replyTo.text || '[медиа]'}
                 </p>
+              </div>
+              {/* Иконка перехода */}
+              <div className={`flex items-center ${message.isClient ? 'text-green-500' : 'text-white/70'}`}>
+                <Reply className="w-4 h-4 rotate-180" />
               </div>
             </div>
           )}

@@ -770,7 +770,7 @@ export function ChatsPage() {
                     const showDateDivider = !prevMsg || (msg.date && prevMsg.date && getDateKey(msg.date) !== getDateKey(prevMsg.date))
                     
                     return (
-                      <div key={msg.id}>
+                      <div key={msg.id} id={`message-${msg.id}`} className="transition-all duration-300 rounded-lg">
                         {showDateDivider && msg.date && <DateDivider date={msg.date} />}
                         <MessageBubble
                           message={msg}
@@ -839,6 +839,21 @@ export function ChatsPage() {
                           setMessages(prev => prev.filter(m => m.id !== msg.id))
                         } catch (e) {
                           console.error('Ошибка удаления:', e)
+                        }
+                      }}
+                      onScrollToMessage={(targetId) => {
+                        // Найти элемент сообщения и прокрутить к нему
+                        const targetMsg = messages.find(m => m.id === targetId)
+                        if (targetMsg) {
+                          const element = document.getElementById(`message-${targetId}`)
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            // Подсветка сообщения
+                            element.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
+                            setTimeout(() => {
+                              element.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
+                            }, 2000)
+                          }
                         }
                       }}
                         />
