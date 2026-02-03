@@ -7,6 +7,7 @@ import {
 import { fetchAnalytics, type AnalyticsData } from '@/shared/api'
 import { Badge } from '@/shared/ui'
 import { ResponseTimeDetailsModal } from './ResponseTimeDetailsModal'
+import { FeedbackStats } from '@/features/feedback/ui'
 
 // Перевод категорий на русский
 const categoryLabels: Record<string, string> = {
@@ -692,6 +693,11 @@ export function AnalyticsPage() {
           </div>
         </div>
       )}
+
+      {/* Feedback Stats Section */}
+      <div className="mt-6">
+        <FeedbackStats />
+      </div>
 
       {/* Footer */}
       <div className="text-center text-xs text-slate-400 py-2">

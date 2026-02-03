@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles } from 'lucide-react'
+import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
+import { AIContextPanel } from '@/features/ai-assistant/ui'
+import { CommitmentsPanel } from '@/features/commitments/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
@@ -200,6 +202,8 @@ export function ChatsPage() {
   const [replyingTo, setReplyingTo] = useState<{ id: string; telegramMessageId?: number; text: string; sender: string } | null>(null)
   const [showQuickReplies, setShowQuickReplies] = useState(false)
   const [showChannelActions, setShowChannelActions] = useState(false)
+  const [showAIPanel, setShowAIPanel] = useState(false)
+  const [showCommitmentsPanel, setShowCommitmentsPanel] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
@@ -701,6 +705,7 @@ export function ChatsPage() {
 
         {/* Область чата */}
         {selectedChannel ? (
+          <>
           <div className="flex-1 flex flex-col bg-white min-w-0">
             {/* Заголовок */}
             <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 flex-shrink-0">
@@ -721,6 +726,20 @@ export function ChatsPage() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button onClick={handlePinChannel} className={`p-2 rounded-lg transition-colors ${selectedChannel.isPinned ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}>
                   <Pin className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => setShowAIPanel(!showAIPanel)} 
+                  className={`p-2 rounded-lg transition-colors ${showAIPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}
+                  title="AI Контекст"
+                >
+                  <Brain className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => setShowCommitmentsPanel(!showCommitmentsPanel)} 
+                  className={`p-2 rounded-lg transition-colors ${showCommitmentsPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}
+                  title="Обязательства"
+                >
+                  <ClipboardList className="w-4 h-4" />
                 </button>
                 <button className="p-2 hover:bg-slate-100 rounded-lg"><Phone className="w-4 h-4 text-slate-500" /></button>
                 <button className="p-2 hover:bg-slate-100 rounded-lg"><Video className="w-4 h-4 text-slate-500" /></button>
@@ -917,6 +936,27 @@ export function ChatsPage() {
               }))}
             />
           </div>
+
+          {/* Боковые панели AI и Обязательства */}
+          {(showAIPanel || showCommitmentsPanel) && (
+            <div className="w-80 flex-shrink-0 flex flex-col border-l border-slate-200 bg-white overflow-hidden">
+              {showAIPanel && (
+                <AIContextPanel
+                  channelId={selectedChannel.id}
+                  isOpen={showAIPanel}
+                  onClose={() => setShowAIPanel(false)}
+                  className="flex-1"
+                />
+              )}
+              {showCommitmentsPanel && !showAIPanel && (
+                <CommitmentsPanel
+                  channelId={selectedChannel.id}
+                  className="flex-1 overflow-y-auto"
+                />
+              )}
+            </div>
+          )}
+        </>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-slate-50">
             <EmptyState title="Выберите чат" description="Выберите канал из списка" />

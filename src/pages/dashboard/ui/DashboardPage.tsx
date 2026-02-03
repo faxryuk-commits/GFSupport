@@ -13,6 +13,7 @@ import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 import { ResponseTimeDetailsModal } from '@/pages/analytics/ui/ResponseTimeDetailsModal'
+import { CommitmentsPanel } from '@/features/commitments/ui'
 
 // AI Рекомендации на основе данных
 interface AIRecommendation {
@@ -625,6 +626,24 @@ export function DashboardPage() {
               <span className="text-slate-600">Онлайн сейчас:</span>
               <span className="font-semibold text-green-600">{onlineAgents.length} из {agents.length}</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section: Обязательства */}
+      <div className="grid grid-cols-3 gap-6">
+        <div className="col-span-2">
+          <CommitmentsPanel className="h-full" />
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock className="w-5 h-5 text-orange-500" />
+            <h3 className="font-semibold text-slate-800">Напоминания</h3>
+          </div>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-500 text-center py-4">
+              Нет активных напоминаний
+            </p>
           </div>
         </div>
       </div>
