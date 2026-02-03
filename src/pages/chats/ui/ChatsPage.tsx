@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles } from 'lucide-react'
-import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState } from '@/shared/ui'
+import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
 import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
@@ -159,6 +159,7 @@ export function ChatsPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { agent } = useAuth()
+  const { showNotification } = useNotification()
   
   // Channel ID можно передать через URL path (/chats/:id) или query param (?channel=xxx)
   const channelIdFromUrl = channelIdFromPath || searchParams.get('channel') || undefined
@@ -264,7 +265,7 @@ export function ChatsPage() {
     return () => clearInterval(pollInterval)
   }, [loadChannels])
 
-  // Real-time polling: обновление сообщений каждые 5 секунд при открытом чате
+  // Real-time polling: обновление сообщений каждые 3 секунд при открытом чате
   useEffect(() => {
     if (!selectedChannel) return
 
@@ -273,7 +274,30 @@ export function ChatsPage() {
         const { messages: newData } = await fetchMessages(selectedChannel.id, 0, MESSAGES_LIMIT)
         const mappedMessages = newData.map(mapMessageToUI)
         
-        // Только обновляем если есть новые сообщения
+        // Проверяем есть ли новые сообщения от клиентов
+        if (mappedMessages.length > messages.length) {
+          const newMsgs = mappedMessages.slice(messages.length)
+          const clientMessages = newMsgs.filter(m => m.isClient)
+          
+          // Показываем уведомление о новом сообщении от клиента
+          clientMessages.forEach(msg => {
+            showNotification({
+              type: 'message',
+              title: 'Новое сообщение',
+              message: msg.text || '[Медиа]',
+              senderName: msg.senderName,
+              senderAvatar: msg.senderAvatarUrl || undefined,
+              channelName: selectedChannel.name,
+              channelId: selectedChannel.id,
+              onClick: () => {
+                // Прокрутка к сообщению
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+              }
+            })
+          })
+        }
+        
+        // Обновляем если есть изменения
         if (mappedMessages.length !== messages.length || 
             (mappedMessages.length > 0 && messages.length > 0 && 
              mappedMessages[mappedMessages.length - 1]?.id !== messages[messages.length - 1]?.id)) {
@@ -292,7 +316,7 @@ export function ChatsPage() {
     const pollInterval = setInterval(pollMessages, 3000)
 
     return () => clearInterval(pollInterval)
-  }, [selectedChannel, messages])
+  }, [selectedChannel, messages, showNotification])
 
   // Загрузка AI контекста для канала
   const loadAIContext = useCallback(async (channelId: string) => {

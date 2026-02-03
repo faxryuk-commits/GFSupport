@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase } from 'lucide-react'
-import { Modal, ConfirmDialog } from '@/shared/ui'
+import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CASE_STATUS_CONFIG, KANBAN_STATUSES, ACTIVE_STATUSES, ARCHIVE_STATUSES, type CaseStatus, type Case } from '@/entities/case'
 import { fetchCases, createCase, updateCaseStatus, assignCase, fetchChannels, fetchAgents } from '@/shared/api'
@@ -74,6 +74,7 @@ const CATEGORIES = [
 ] as const
 
 export function CasesPage() {
+  const { showNotification } = useNotification()
   const [cases, setCases] = useState<Case[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
@@ -318,6 +319,19 @@ export function CasesPage() {
       })
       setCases(prev => [...prev, newCase])
       setIsCreateModalOpen(false)
+      
+      // Показываем уведомление о создании тикета
+      showNotification({
+        type: 'ticket',
+        title: 'Тикет создан',
+        message: data.title,
+        ticketNumber: newCase.ticketNumber?.toString() || newCase.id.slice(0, 8),
+        caseId: newCase.id,
+        onClick: () => {
+          setSelectedCase(newCase)
+          setIsDetailModalOpen(true)
+        }
+      })
     } catch (err) {
       console.error('Ошибка создания кейса:', err)
     }
