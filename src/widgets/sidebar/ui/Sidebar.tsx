@@ -13,7 +13,9 @@ import {
   UsersRound,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Brain,
+  FileText,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -32,6 +34,8 @@ const mainNavItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
+  { path: '/knowledge', label: 'База знаний', icon: Brain },
+  { path: '/docs', label: 'Документы', icon: FileText },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
 ]
 

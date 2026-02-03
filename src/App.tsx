@@ -8,7 +8,9 @@ import {
   BroadcastPage,
   SettingsPage,
   LoginPage,
-  RegisterPage 
+  RegisterPage,
+  KnowledgePage,
+  DocsPage,
 } from '@/pages'
 import './index.css'
 
@@ -28,6 +30,10 @@ export default function App() {
         <Route path="/chats/:id" element={<ChatsPage />} />
         <Route path="/channels" element={<ChannelsListPage />} />
         <Route path="/cases" element={<CasesPage />} />
+        
+        {/* Knowledge & Docs */}
+        <Route path="/knowledge" element={<KnowledgePage />} />
+        <Route path="/docs" element={<DocsPage />} />
         
         {/* Manage */}
         <Route path="/broadcast" element={<BroadcastPage />} />
