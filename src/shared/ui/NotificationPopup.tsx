@@ -5,6 +5,121 @@ import { Avatar } from './Avatar'
 
 export type NotificationType = 'message' | 'ticket' | 'alert'
 
+// Web Audio API для генерации звуков уведомлений
+const audioContext = typeof window !== 'undefined' ? new (window.AudioContext || (window as any).webkitAudioContext)() : null
+
+// Звук для сообщения: "бип-бип-бип" - три коротких высоких тона
+function playMessageSound() {
+  if (!audioContext) return
+  
+  const now = audioContext.currentTime
+  const volume = 0.15
+  
+  // Три коротких бипа
+  for (let i = 0; i < 3; i++) {
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    
+    oscillator.frequency.value = 880 // Высокий тон (A5)
+    oscillator.type = 'sine'
+    
+    const startTime = now + i * 0.12
+    gainNode.gain.setValueAtTime(0, startTime)
+    gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.02)
+    gainNode.gain.linearRampToValueAtTime(0, startTime + 0.08)
+    
+    oscillator.start(startTime)
+    oscillator.stop(startTime + 0.1)
+  }
+}
+
+// Звук для тикета: "пам-пара-пам-пам-пам" - мелодичная последовательность
+function playTicketSound() {
+  if (!audioContext) return
+  
+  const now = audioContext.currentTime
+  const volume = 0.2
+  
+  // Мелодия: C5 - E5 - G5 - E5 - C6 (пам-пара-пам-пам-пам)
+  const notes = [523.25, 659.25, 783.99, 659.25, 1046.50] // C5, E5, G5, E5, C6
+  const durations = [0.15, 0.1, 0.15, 0.1, 0.25]
+  
+  let time = now
+  notes.forEach((freq, i) => {
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    
+    oscillator.frequency.value = freq
+    oscillator.type = 'sine'
+    
+    const duration = durations[i]
+    gainNode.gain.setValueAtTime(0, time)
+    gainNode.gain.linearRampToValueAtTime(volume, time + 0.02)
+    gainNode.gain.setValueAtTime(volume, time + duration - 0.03)
+    gainNode.gain.linearRampToValueAtTime(0, time + duration)
+    
+    oscillator.start(time)
+    oscillator.stop(time + duration + 0.01)
+    
+    time += duration + 0.05
+  })
+}
+
+// Звук для alert: низкий предупреждающий тон
+function playAlertSound() {
+  if (!audioContext) return
+  
+  const now = audioContext.currentTime
+  const volume = 0.2
+  
+  // Два низких тона
+  for (let i = 0; i < 2; i++) {
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    
+    oscillator.frequency.value = 440 // A4
+    oscillator.type = 'triangle'
+    
+    const startTime = now + i * 0.3
+    gainNode.gain.setValueAtTime(0, startTime)
+    gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.05)
+    gainNode.gain.setValueAtTime(volume, startTime + 0.15)
+    gainNode.gain.linearRampToValueAtTime(0, startTime + 0.25)
+    
+    oscillator.start(startTime)
+    oscillator.stop(startTime + 0.3)
+  }
+}
+
+// Воспроизвести звук в зависимости от типа уведомления
+function playNotificationSound(type: NotificationType) {
+  // Разблокировать AudioContext при первом взаимодействии
+  if (audioContext?.state === 'suspended') {
+    audioContext.resume()
+  }
+  
+  switch (type) {
+    case 'message':
+      playMessageSound()
+      break
+    case 'ticket':
+      playTicketSound()
+      break
+    case 'alert':
+      playAlertSound()
+      break
+  }
+}
+
 export interface NotificationData {
   id: string
   type: NotificationType
@@ -62,12 +177,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       })
     }
 
-    // Звук уведомления
-    try {
-      const audio = new Audio('/notification.mp3')
-      audio.volume = 0.3
-      audio.play().catch(() => {})
-    } catch (e) { /* ignore */ }
+    // Звук уведомления через Web Audio API
+    playNotificationSound(data.type)
   }, [])
 
   const dismissNotification = useCallback((id: string) => {
