@@ -60,11 +60,30 @@ export async function sendMessage(
   }
 }
 
+interface SendMediaResponse {
+  success: boolean
+  messageId: string
+  telegramMessageId: number
+  mediaUrl: string | null
+}
+
 export async function sendMediaMessage(
-  _channelId: string,
-  formData: FormData
+  channelId: string,
+  file: File,
+  caption?: string,
+  senderName?: string
 ): Promise<Message> {
   const token = localStorage.getItem('support_agent_token') || ''
+  const agentData = localStorage.getItem('support_agent_data')
+  const agent = agentData ? JSON.parse(agentData) : null
+  const name = senderName || agent?.name || 'Support'
+  
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('channelId', channelId)
+  formData.append('caption', caption || '')
+  formData.append('senderName', name)
+  
   const res = await fetch('/api/support/messages/send-media', {
     method: 'POST',
     headers: {
@@ -74,10 +93,31 @@ export async function sendMediaMessage(
   })
   
   if (!res.ok) {
-    throw new Error('Failed to send media')
+    const error = await res.json().catch(() => ({ error: 'Failed to send media' }))
+    throw new Error(error.error || 'Failed to send media')
   }
   
-  return res.json().then(r => r.message)
+  const response: SendMediaResponse = await res.json()
+  
+  // Определяем тип контента
+  const contentType = file.type.startsWith('image/') ? 'photo' 
+    : file.type.startsWith('video/') ? 'video'
+    : file.type.startsWith('audio/') ? 'voice'
+    : 'document'
+  
+  return {
+    id: response.messageId,
+    channelId,
+    telegramMessageId: response.telegramMessageId,
+    senderName: name,
+    senderRole: 'support',
+    isFromTeam: true,
+    text: caption || '',
+    contentType,
+    mediaUrl: response.mediaUrl,
+    isRead: true,
+    createdAt: new Date().toISOString(),
+  }
 }
 
 export async function markMessageRead(messageId: string): Promise<void> {

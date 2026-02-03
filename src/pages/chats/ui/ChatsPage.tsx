@@ -373,45 +373,88 @@ export function ChatsPage() {
     if ((!messageText.trim() && (!files || files.length === 0)) || !selectedChannel || isSending) return
 
     const tempId = `temp-${Date.now()}`
-    const tempMessage: MessageData = {
-      id: tempId,
-      senderName: currentAgentName,
-      text: messageText,
-      time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-      isClient: false,
-      status: 'sent',
-      replyTo: replyingTo || undefined
-    }
-
-    // Оптимистичное обновление UI
-    setMessages(prev => [...prev, tempMessage])
-    const textToSend = messageText
+    const hasFiles = files && files.length > 0
+    const textToSend = messageText.trim()
     const replyToTgId = replyingTo?.telegramMessageId
+    
+    // Очищаем поле ввода сразу
     setMessageText('')
     setReplyingTo(null)
     
     try {
       setIsSending(true)
       
-      // Если есть файлы — отправляем с медиа (TODO: реализовать)
-      // Пока отправляем только текст
-      const sentMessage = await sendMessage(
-        selectedChannel.id, 
-        textToSend || (files ? '[Файл]' : ''), 
-        replyToTgId, // передаём telegram_message_id для reply
-        currentAgentName
-      )
-      
-      // Заменяем временное сообщение на реальное
-      setMessages(prev => prev.map(m => 
-        m.id === tempId ? mapMessageToUI(sentMessage) : m
-      ))
+      // Если есть файлы — отправляем их
+      if (hasFiles) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const isLastFile = i === files.length - 1
+          const caption = isLastFile ? textToSend : '' // Текст только с последним файлом
+          
+          // Временное сообщение для файла
+          const tempFileId = `temp-file-${Date.now()}-${i}`
+          const tempFileMessage: MessageData = {
+            id: tempFileId,
+            senderName: currentAgentName,
+            text: caption || `[${file.type === 'image' ? 'Изображение' : 'Файл'}]`,
+            time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+            isClient: false,
+            status: 'sent',
+            attachments: [{
+              type: file.type as any,
+              url: file.previewUrl || '',
+              name: file.name,
+              size: file.size
+            }]
+          }
+          
+          setMessages(prev => [...prev, tempFileMessage])
+          
+          // Отправляем файл
+          const { sendMediaMessage } = await import('@/shared/api/messages')
+          const sentMessage = await sendMediaMessage(
+            selectedChannel.id,
+            file.file,
+            caption,
+            currentAgentName
+          )
+          
+          // Заменяем временное сообщение на реальное
+          setMessages(prev => prev.map(m => 
+            m.id === tempFileId ? mapMessageToUI(sentMessage) : m
+          ))
+        }
+      } else if (textToSend) {
+        // Только текст без файлов
+        const tempMessage: MessageData = {
+          id: tempId,
+          senderName: currentAgentName,
+          text: textToSend,
+          time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+          isClient: false,
+          status: 'sent',
+          replyTo: replyingTo || undefined
+        }
+        
+        setMessages(prev => [...prev, tempMessage])
+        
+        const sentMessage = await sendMessage(
+          selectedChannel.id, 
+          textToSend, 
+          replyToTgId,
+          currentAgentName
+        )
+        
+        setMessages(prev => prev.map(m => 
+          m.id === tempId ? mapMessageToUI(sentMessage) : m
+        ))
+      }
     } catch (error) {
       console.error('Ошибка отправки сообщения:', error)
-      // Удаляем временное сообщение при ошибке
-      setMessages(prev => prev.filter(m => m.id !== tempId))
+      // Удаляем временные сообщения при ошибке
+      setMessages(prev => prev.filter(m => !m.id.startsWith('temp-')))
       setMessageText(textToSend)
-      alert('Ошибка отправки сообщения. Попробуйте ещё раз.')
+      alert('Ошибка отправки. Попробуйте ещё раз.')
     } finally {
       setIsSending(false)
     }

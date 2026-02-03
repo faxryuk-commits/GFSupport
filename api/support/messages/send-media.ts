@@ -40,6 +40,7 @@ export default async function handler(req: Request): Promise<Response> {
     const file = formData.get('file') as File
     const channelId = formData.get('channelId') as string
     const caption = formData.get('caption') as string || ''
+    const senderName = formData.get('senderName') as string || 'Support'
 
     if (!file || !channelId) {
       return json({ error: 'file and channelId required' }, 400)
@@ -132,7 +133,7 @@ export default async function handler(req: Request): Promise<Response> {
         ${messageId},
         ${channelId},
         ${tgMessage.message_id},
-        'Support',
+        ${senderName},
         'support',
         false,
         ${contentType},
@@ -149,7 +150,7 @@ export default async function handler(req: Request): Promise<Response> {
       UPDATE support_channels SET
         last_message_at = NOW(),
         last_team_message_at = NOW(),
-        last_sender_name = 'Support',
+        last_sender_name = ${senderName},
         last_message_preview = ${caption || `[${contentType}]`},
         awaiting_reply = false
       WHERE id = ${channelId}
