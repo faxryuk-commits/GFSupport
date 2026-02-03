@@ -33,7 +33,8 @@ export async function fetchMessages(
     params.set('before', options.before)
   }
   
-  return apiGet<MessagesResponse>(`/messages?${params}`)
+  // Используем /messages/channel для cursor-based pagination (since/before)
+  return apiGet<MessagesResponse>(`/messages/channel?${params}`)
 }
 
 interface SendMessageResponse {

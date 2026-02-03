@@ -112,9 +112,12 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     let messages: any[]
+    let mode = 'latest' // Для логирования
 
     // Режим polling: получить только НОВЫЕ сообщения после since
     if (since) {
+      mode = 'polling'
+      console.log(`[Channel Messages] POLLING mode, since=${since}`)
       messages = await sql`
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
@@ -131,6 +134,8 @@ export default async function handler(req: Request): Promise<Response> {
     }
     // Загрузка СТАРЫХ сообщений (перед before timestamp) - для подгрузки истории
     else if (before) {
+      mode = 'history'
+      console.log(`[Channel Messages] HISTORY mode, before=${before}`)
       const olderMessages = await sql`
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
@@ -150,6 +155,8 @@ export default async function handler(req: Request): Promise<Response> {
     }
     // Первая загрузка: последние N сообщений
     else {
+      mode = 'latest'
+      console.log(`[Channel Messages] LATEST mode, limit=${limit}`)
       const latestMessages = await sql`
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
@@ -165,6 +172,15 @@ export default async function handler(req: Request): Promise<Response> {
       `
       // Разворачиваем чтобы старые были сначала (для отображения в чате)
       messages = latestMessages.reverse()
+    }
+    
+    // Логируем результат
+    if (messages.length > 0) {
+      const first = messages[0]
+      const last = messages[messages.length - 1]
+      console.log(`[Channel Messages] ${mode}: found ${messages.length} msgs, first=${first.created_at}, last=${last.created_at}`)
+    } else {
+      console.log(`[Channel Messages] ${mode}: no messages found`)
     }
 
     // Get total count for pagination
@@ -247,12 +263,13 @@ export default async function handler(req: Request): Promise<Response> {
         photoUrl: channel.photo_url,
       },
       messages: formattedMessages,
+      // Для совместимости с фронтендом
+      total,
+      hasMore: messages.length >= limit,
       pagination: {
         total,
         limit,
-        offset,
-        hasMore: offset + messages.length < total,
-        nextOffset: offset + limit,
+        hasMore: messages.length >= limit,
       }
     })
 
