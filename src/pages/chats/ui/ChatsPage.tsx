@@ -484,14 +484,19 @@ export function ChatsPage() {
         .catch(() => ({ members: [] }))
     ])
     
-    if (membersResult?.members) {
-      setChannelMembers(membersResult.members.map((m: any) => ({
+    console.log('[ChatsPage] Members result:', membersResult)
+    if (membersResult?.members && Array.isArray(membersResult.members)) {
+      const mapped = membersResult.members.map((m: any) => ({
         id: m.id,
         name: m.name,
         username: m.username,
         role: m.role,
         avatarUrl: m.avatarUrl
-      })))
+      }))
+      console.log('[ChatsPage] Setting channel members:', mapped.length, 'users')
+      setChannelMembers(mapped)
+    } else {
+      console.log('[ChatsPage] No members in result or invalid format')
     }
     
     // Отмечаем канал как прочитанный

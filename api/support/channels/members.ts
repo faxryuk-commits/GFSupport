@@ -91,62 +91,51 @@ export default async function handler(req: Request): Promise<Response> {
       })
     }
 
-    // 2. Get users from support_users table for this channel
-    const users = await sql`
-      SELECT telegram_id, telegram_username, name, role
-      FROM support_users
-      WHERE ${channelId} = ANY(channels)
-      ORDER BY last_seen_at DESC NULLS LAST
-      LIMIT 50
-    `
-
-    for (const user of users) {
-      const exists = members.some(m => 
-        (user.telegram_username && m.username === user.telegram_username) ||
-        m.name === user.name
-      )
-      
-      if (!exists && user.name) {
-        members.push({
-          id: `user_${user.telegram_id || user.name}`,
-          name: user.name,
-          username: user.telegram_username || undefined,
-          role: (user.role as 'support' | 'team' | 'client') || 'client'
-        })
-      }
-    }
-
-    // 3. Get unique senders from channel messages (fallback)
+    // 2. Get ALL unique senders from channel messages (clients, partners, etc)
     const senders = await sql`
-      SELECT DISTINCT ON (sender_username, sender_name)
-        sender_id, sender_name, sender_username, sender_role
+      SELECT 
+        sender_id,
+        sender_name,
+        sender_username,
+        sender_role,
+        MAX(created_at) as last_seen
       FROM support_messages
       WHERE channel_id = ${channelId}
         AND sender_name IS NOT NULL
         AND sender_name != ''
-        AND (sender_role != 'support' OR sender_role IS NULL)
-      ORDER BY sender_username, sender_name, created_at DESC
-      LIMIT 50
+      GROUP BY sender_id, sender_name, sender_username, sender_role
+      ORDER BY last_seen DESC
+      LIMIT 100
     `
 
+    console.log('[Members] Found senders:', senders.length)
+
     for (const sender of senders) {
-      // Skip if already added
-      const exists = members.some(m => 
+      // Skip if already added as agent (check by username or name)
+      const isAgent = members.some(m => 
         (sender.sender_username && m.username === sender.sender_username) ||
-        m.name === sender.sender_name
+        (sender.sender_name && m.name === sender.sender_name)
       )
       
-      if (!exists && sender.sender_name) {
-        members.push({
-          id: `sender_${sender.sender_id || sender.sender_name}`,
-          name: sender.sender_name,
-          username: sender.sender_username || undefined,
-          role: 'client'
-        })
+      if (!isAgent && sender.sender_name) {
+        // Determine role: if sender_role is 'support' or username matches agent, skip
+        const role = sender.sender_role === 'support' ? 'support' : 'client'
+        
+        // Only add non-support users (clients/partners)
+        if (role !== 'support') {
+          members.push({
+            id: `sender_${sender.sender_id || sender.sender_name.replace(/\s+/g, '_')}`,
+            name: sender.sender_name,
+            username: sender.sender_username || undefined,
+            role: 'client'
+          })
+        }
       }
     }
+    
+    console.log('[Members] Total members after senders:', members.length)
 
-    // 4. Try to get chat administrators from Telegram (for groups)
+    // 3. Try to get chat administrators from Telegram (for groups)
     if (botToken && chatId) {
       try {
         const adminsRes = await fetch(`https://api.telegram.org/bot${botToken}/getChatAdministrators`, {
@@ -181,6 +170,13 @@ export default async function handler(req: Request): Promise<Response> {
         console.log('[Members] Could not fetch Telegram admins:', e)
       }
     }
+
+    console.log('[Members] Final result:', { 
+      channelId, 
+      total: members.length,
+      agents: members.filter(m => m.role === 'support' || m.role === 'team').length,
+      clients: members.filter(m => m.role === 'client').length
+    })
 
     return json({
       members,
