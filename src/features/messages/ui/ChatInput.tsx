@@ -251,13 +251,24 @@ export function ChatInput({
   }).slice(0, 6)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Handle mention navigation
-    if (showMentions && filteredMentionUsers.length > 0) {
-      if (e.key === 'Escape') {
-        e.preventDefault()
+    // Handle Escape key - close mentions or cancel reply
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (showMentions) {
         setShowMentions(false)
         return
       }
+      if (replyingTo) {
+        onCancelReply()
+        return
+      }
+      // Также можно добавить blur с поля ввода
+      ;(e.target as HTMLTextAreaElement)?.blur()
+      return
+    }
+
+    // Handle mention navigation
+    if (showMentions && filteredMentionUsers.length > 0) {
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
         insertMention(filteredMentionUsers[0])

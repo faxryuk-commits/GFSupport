@@ -265,6 +265,26 @@ export function ChatsPage() {
     return () => clearInterval(pollInterval)
   }, [loadChannels])
 
+  // Глобальный обработчик Escape - выход из режима ответа/цитирования
+  useEffect(() => {
+    const handleGlobalEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (replyingTo) {
+          setReplyingTo(null)
+        }
+        if (showQuickReplies) {
+          setShowQuickReplies(false)
+        }
+        if (showChannelActions) {
+          setShowChannelActions(false)
+        }
+      }
+    }
+    
+    document.addEventListener('keydown', handleGlobalEscape)
+    return () => document.removeEventListener('keydown', handleGlobalEscape)
+  }, [replyingTo, showQuickReplies, showChannelActions])
+
   // Real-time polling: обновление сообщений каждые 3 секунд при открытом чате
   useEffect(() => {
     if (!selectedChannel) return
