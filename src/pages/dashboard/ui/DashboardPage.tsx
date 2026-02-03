@@ -564,22 +564,60 @@ export function DashboardPage() {
                 size="sm"
               />
             ) : (
-              agents.slice(0, 5).map(agent => (
-                <div key={agent.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
-                  <div className="relative">
-                    <Avatar name={agent.name} size="sm" />
-                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${statusColors[agent.status || 'offline']}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{agent.name}</p>
-                    <p className="text-xs text-slate-500 capitalize">{agent.status || 'offline'}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-slate-800">{agent.metrics?.resolvedConversations || 0}</p>
-                    <p className="text-xs text-slate-500">решено</p>
-                  </div>
-                </div>
-              ))
+              // Сортировка: online → away → offline
+              [...agents]
+                .sort((a, b) => {
+                  const order = { online: 0, away: 1, offline: 2 }
+                  return (order[a.status || 'offline'] || 2) - (order[b.status || 'offline'] || 2)
+                })
+                .slice(0, 6)
+                .map(agent => {
+                  // Расчёт времени онлайн
+                  const getOnlineTime = () => {
+                    if (agent.status !== 'online' && agent.status !== 'away') return null
+                    if (!agent.lastActiveAt) return 'Только что'
+                    const diff = Date.now() - new Date(agent.lastActiveAt).getTime()
+                    const hours = Math.floor(diff / 3600000)
+                    const minutes = Math.floor((diff % 3600000) / 60000)
+                    if (hours > 0) return `${hours}ч ${minutes}м онлайн`
+                    if (minutes > 0) return `${minutes}м онлайн`
+                    return 'Только что'
+                  }
+                  const onlineTime = getOnlineTime()
+                  
+                  return (
+                    <div key={agent.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                      <div className="relative">
+                        <Avatar name={agent.name} size="sm" />
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${statusColors[agent.status || 'offline']}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{agent.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {onlineTime || (agent.status === 'offline' ? 'Офлайн' : agent.status || 'Офлайн')}
+                        </p>
+                      </div>
+                      {/* Статистика агента */}
+                      <div className="flex items-center gap-3 text-xs">
+                        {/* Отвеченные сообщения */}
+                        <div className="text-center" title="Отвечено сообщений">
+                          <p className="font-semibold text-blue-600">{agent.metrics?.messagesHandled || 0}</p>
+                          <p className="text-slate-400">сообщ.</p>
+                        </div>
+                        {/* Закрытые тикеты */}
+                        <div className="text-center" title="Закрыто тикетов">
+                          <p className="font-semibold text-green-600">{agent.metrics?.resolvedConversations || 0}</p>
+                          <p className="text-slate-400">закрыто</p>
+                        </div>
+                        {/* В процессе */}
+                        <div className="text-center" title="Тикетов в процессе">
+                          <p className="font-semibold text-orange-500">{agent.activeChats || 0}</p>
+                          <p className="text-slate-400">в работе</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
             )}
           </div>
           <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-xl">
