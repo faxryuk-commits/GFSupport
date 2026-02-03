@@ -37,6 +37,25 @@ function extractUserInfo(from: any) {
   }
 }
 
+// Convert Telegram file_id to downloadable URL
+async function getFileUrl(fileId: string): Promise<string | null> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) return null
+  
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
+    const data = await response.json()
+    
+    if (data.ok && data.result?.file_path) {
+      return `https://api.telegram.org/file/bot${botToken}/${data.result.file_path}`
+    }
+  } catch (e) {
+    console.error('[Webhook] Failed to get file URL:', e)
+  }
+  
+  return null
+}
+
 // Get or create channel for chat
 async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<string> {
   const chatId = String(chat.id)
@@ -335,25 +354,25 @@ export default async function handler(req: Request): Promise<Response> {
       contentType = 'photo'
       // Get largest photo
       const photo = message.photo[message.photo.length - 1]
-      mediaUrl = `tg://photo/${photo.file_id}`
+      mediaUrl = await getFileUrl(photo.file_id) || `tg://photo/${photo.file_id}`
     } else if (message.video) {
       contentType = 'video'
-      mediaUrl = `tg://video/${message.video.file_id}`
+      mediaUrl = await getFileUrl(message.video.file_id) || `tg://video/${message.video.file_id}`
     } else if (message.video_note) {
       contentType = 'video_note'
-      mediaUrl = `tg://video_note/${message.video_note.file_id}`
+      mediaUrl = await getFileUrl(message.video_note.file_id) || `tg://video_note/${message.video_note.file_id}`
     } else if (message.voice) {
       contentType = 'voice'
-      mediaUrl = `tg://voice/${message.voice.file_id}`
+      mediaUrl = await getFileUrl(message.voice.file_id) || `tg://voice/${message.voice.file_id}`
     } else if (message.audio) {
       contentType = 'audio'
-      mediaUrl = `tg://audio/${message.audio.file_id}`
+      mediaUrl = await getFileUrl(message.audio.file_id) || `tg://audio/${message.audio.file_id}`
     } else if (message.document) {
       contentType = 'document'
-      mediaUrl = `tg://document/${message.document.file_id}`
+      mediaUrl = await getFileUrl(message.document.file_id) || `tg://document/${message.document.file_id}`
     } else if (message.sticker) {
       contentType = 'sticker'
-      mediaUrl = `tg://sticker/${message.sticker.file_id}`
+      mediaUrl = await getFileUrl(message.sticker.file_id) || `tg://sticker/${message.sticker.file_id}`
       text = message.sticker.emoji || '🎭'
     }
 

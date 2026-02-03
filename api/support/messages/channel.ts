@@ -20,6 +20,43 @@ function json(data: any, status = 200) {
   })
 }
 
+// Convert tg:// URL to real Telegram file URL
+async function convertMediaUrl(mediaUrl: string | null): Promise<string | null> {
+  if (!mediaUrl) return null
+  
+  // Already a valid URL
+  if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
+    return mediaUrl
+  }
+  
+  // tg:// format - need to convert
+  if (mediaUrl.startsWith('tg://')) {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    if (!botToken) return null
+    
+    try {
+      // Extract file_id from tg://type/file_id
+      const parts = mediaUrl.replace('tg://', '').split('/')
+      if (parts.length < 2) return null
+      
+      const fileId = parts.slice(1).join('/')
+      
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
+      const data = await response.json()
+      
+      if (data.ok && data.result?.file_path) {
+        return `https://api.telegram.org/file/bot${botToken}/${data.result.file_path}`
+      }
+    } catch (e) {
+      console.error('Failed to convert media URL:', e)
+    }
+    
+    return null
+  }
+  
+  return mediaUrl
+}
+
 /**
  * GET /api/support/messages/channel?channelId=xxx&offset=0&limit=100
  * 
@@ -103,7 +140,15 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    const formattedMessages = messages.map((m: any) => {
+    // Convert media URLs in parallel
+    const mediaConversions = messages.map((m: any) => 
+      m.media_url && m.media_url.startsWith('tg://') 
+        ? convertMediaUrl(m.media_url) 
+        : Promise.resolve(m.media_url)
+    )
+    const convertedMediaUrls = await Promise.all(mediaConversions)
+
+    const formattedMessages = messages.map((m: any, index: number) => {
       // Fill in missing reply text
       let replyToText = m.reply_to_text
       let replyToSender = m.reply_to_sender
@@ -125,7 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
         senderRole: m.sender_role || 'client',
         text: m.text_content || '',
         contentType: m.content_type || 'text',
-        mediaUrl: m.media_url,
+        mediaUrl: convertedMediaUrls[index],
         transcript: m.transcript,
         aiCategory: m.ai_category,
         aiUrgency: m.ai_urgency,
