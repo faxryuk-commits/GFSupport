@@ -57,13 +57,16 @@ export default async function handler(req: Request): Promise<Response> {
     const body = await req.json()
     const { messageId, emoji, channelId } = body
 
-    if (!messageId || !emoji || !channelId) {
-      return json({ error: 'messageId, emoji and channelId are required' }, 400)
+    if (!messageId || !emoji) {
+      return json({ error: 'messageId and emoji are required' }, 400)
     }
 
-    // Get message telegram_message_id
+    // Get message info including channel
     const msgResult = await sql`
-      SELECT telegram_message_id FROM support_messages WHERE id = ${messageId}
+      SELECT m.telegram_message_id, m.channel_id, ch.telegram_chat_id
+      FROM support_messages m
+      JOIN support_channels ch ON m.channel_id = ch.id
+      WHERE m.id = ${messageId}
     `
     
     if (msgResult.length === 0) {
@@ -71,17 +74,13 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const telegramMessageId = msgResult[0].telegram_message_id
+    const chatId = msgResult[0].telegram_chat_id
+    const msgChannelId = msgResult[0].channel_id
 
-    // Get channel telegram_chat_id
-    const channelResult = await sql`
-      SELECT telegram_chat_id FROM support_channels WHERE id = ${channelId}
-    `
-    
-    if (channelResult.length === 0) {
-      return json({ error: 'Channel not found' }, 404)
+    // Если channelId передан, проверяем что совпадает
+    if (channelId && channelId !== msgChannelId) {
+      return json({ error: 'Channel ID mismatch' }, 400)
     }
-
-    const chatId = channelResult[0].telegram_chat_id
 
     // Send reaction via Telegram Bot API
     // Note: setMessageReaction requires Bot API 7.0+

@@ -27,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     })
@@ -158,6 +158,87 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       return json({ error: 'Failed to fetch case', details: e.message }, 500)
+    }
+  }
+
+  // POST - добавить комментарий/активность к кейсу
+  if (req.method === 'POST') {
+    try {
+      const body = await req.json()
+      const { 
+        text,           // текст комментария
+        isInternal,     // внутренний комментарий (не виден клиенту)
+        type = 'comment', // comment, note, escalation
+        authorId,       // ID автора (агента/менеджера)
+        authorName      // Имя автора
+      } = body
+
+      if (!text?.trim()) {
+        return json({ error: 'Comment text is required' }, 400)
+      }
+
+      // Проверяем существование кейса
+      const caseExists = await sql`SELECT id FROM support_cases WHERE id = ${caseId}`
+      if (!caseExists || caseExists.length === 0) {
+        return json({ error: 'Case not found' }, 404)
+      }
+
+      const activityId = `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      
+      // Определяем тип и заголовок
+      const activityType = type === 'escalation' ? 'escalation' 
+        : type === 'note' ? 'internal_note' 
+        : isInternal ? 'internal_comment' 
+        : 'comment'
+      
+      const activityTitle = type === 'escalation' ? 'Эскалация'
+        : type === 'note' ? 'Внутренняя заметка'
+        : isInternal ? 'Внутренний комментарий'
+        : 'Комментарий'
+
+      await sql`
+        INSERT INTO support_case_activities (
+          id, case_id, type, title, description, manager_id, created_at
+        ) VALUES (
+          ${activityId},
+          ${caseId},
+          ${activityType},
+          ${activityTitle},
+          ${text},
+          ${authorId || null},
+          NOW()
+        )
+      `
+
+      // Обновляем время изменения кейса
+      await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${caseId}`
+
+      // Получаем созданную активность
+      const [activity] = await sql`
+        SELECT a.*, m.name as manager_name
+        FROM support_case_activities a
+        LEFT JOIN crm_managers m ON a.manager_id = m.id
+        WHERE a.id = ${activityId}
+      `
+
+      return json({
+        success: true,
+        activity: {
+          id: activity.id,
+          caseId: activity.case_id,
+          type: activity.type,
+          title: activity.title,
+          description: activity.description,
+          authorId: activity.manager_id,
+          authorName: activity.manager_name || authorName || 'Unknown',
+          isInternal: activityType.includes('internal'),
+          createdAt: activity.created_at,
+        }
+      })
+
+    } catch (e: any) {
+      console.error('Add comment error:', e)
+      return json({ error: 'Failed to add comment', details: e.message }, 500)
     }
   }
 

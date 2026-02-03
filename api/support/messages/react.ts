@@ -1,3 +1,7 @@
+/**
+ * @deprecated Use /api/support/messages/reaction instead
+ * This endpoint is kept for backwards compatibility
+ */
 import { neon } from '@neondatabase/serverless'
 
 export const config = {

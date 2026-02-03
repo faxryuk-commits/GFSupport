@@ -99,10 +99,40 @@ export default async function handler(req: Request): Promise<Response> {
       )
     `
 
+    // Загружаем созданный кейс для возврата в response
+    const [newCase] = await sql`
+      SELECT 
+        c.*,
+        ch.name as channel_name,
+        ch.telegram_chat_id
+      FROM support_cases c
+      LEFT JOIN support_channels ch ON c.channel_id = ch.id
+      WHERE c.id = ${caseId}
+    `
+
     return json({
       success: true,
       caseId,
-      message: 'Case created successfully'
+      message: 'Case created successfully',
+      case: {
+        id: newCase.id,
+        ticketNumber: newCase.ticket_number,
+        channelId: newCase.channel_id,
+        channelName: newCase.channel_name || msg.channel_name || 'Без канала',
+        telegramChatId: newCase.telegram_chat_id,
+        companyId: newCase.company_id,
+        title: newCase.title,
+        description: newCase.description || '',
+        status: newCase.status || 'open',
+        category: newCase.category || 'general',
+        priority: newCase.priority || 'medium',
+        severity: newCase.severity,
+        assignedTo: newCase.assigned_to,
+        sourceMessageId: newCase.source_message_id,
+        tags: newCase.tags || [],
+        createdAt: newCase.created_at,
+        updatedAt: newCase.updated_at,
+      }
     })
 
   } catch (e: any) {

@@ -142,7 +142,10 @@ export async function markMessageRead(messageId: string): Promise<void> {
 
 export async function reactToMessage(
   messageId: string, 
-  emoji: string
+  emoji: string,
+  channelId?: string
 ): Promise<void> {
-  await apiPost('/messages/react', { messageId, emoji })
+  // Используем /messages/reaction который отправляет реакцию в Telegram
+  // channelId опционален - если не передан, endpoint получит его из messageId
+  await apiPost('/messages/reaction', { messageId, emoji, channelId })
 }
