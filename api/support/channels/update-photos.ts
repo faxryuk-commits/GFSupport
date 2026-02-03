@@ -40,16 +40,43 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const url = new URL(req.url)
+    
+    // Поддержка обновления конкретного канала
+    const channelId = url.searchParams.get('channelId')
+    
+    // Или из body для POST запроса
+    let bodyChannelId: string | null = null
+    try {
+      const body = await req.json()
+      bodyChannelId = body.channelId || null
+    } catch {
+      // Body пустой или не JSON - это нормально
+    }
+    
+    const targetChannelId = channelId || bodyChannelId
     
     // Ensure photo_url column exists
     await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS photo_url TEXT`
     
-    // Get all channels with telegram_chat_id
-    const channels = await sql`
-      SELECT id, telegram_chat_id, name, photo_url 
-      FROM support_channels 
-      WHERE telegram_chat_id IS NOT NULL
-    `
+    // Get channels - либо конкретный, либо все
+    let channels
+    if (targetChannelId) {
+      channels = await sql`
+        SELECT id, telegram_chat_id, name, photo_url 
+        FROM support_channels 
+        WHERE id = ${targetChannelId} AND telegram_chat_id IS NOT NULL
+      `
+      if (channels.length === 0) {
+        return json({ error: 'Channel not found or has no telegram_chat_id' }, 404)
+      }
+    } else {
+      channels = await sql`
+        SELECT id, telegram_chat_id, name, photo_url 
+        FROM support_channels 
+        WHERE telegram_chat_id IS NOT NULL
+      `
+    }
     
     const results: Array<{ id: string; name: string; photoUrl: string | null; error?: string }> = []
     
