@@ -17,6 +17,42 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+// Форматирование даты для разделителя (Сегодня, Вчера, дата)
+function formatDateDivider(dateStr: string): string {
+  const date = new Date(dateStr)
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  
+  const isToday = date.toDateString() === today.toDateString()
+  const isYesterday = date.toDateString() === yesterday.toDateString()
+  
+  if (isToday) return 'Сегодня'
+  if (isYesterday) return 'Вчера'
+  
+  return date.toLocaleDateString('ru-RU', { 
+    day: 'numeric', 
+    month: 'long',
+    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+  })
+}
+
+// Получить дату без времени для группировки
+function getDateKey(dateStr: string): string {
+  return new Date(dateStr).toDateString()
+}
+
+// Компонент разделителя по дате
+function DateDivider({ date }: { date: string }) {
+  return (
+    <div className="flex items-center justify-center my-4">
+      <div className="px-3 py-1 text-xs font-medium text-slate-600 bg-slate-100 rounded-full shadow-sm">
+        {formatDateDivider(date)}
+      </div>
+    </div>
+  )
+}
+
 // Преобразование данных канала из API в формат UI компонента
 function mapChannelToUI(channel: Channel): ChannelItemData {
   const getRelativeTime = (dateStr: string | null) => {
@@ -92,6 +128,7 @@ function mapMessageToUI(message: Message): MessageData {
     senderAvatarUrl: message.senderPhotoUrl,
     text: message.text || '',
     time: formatTime(message.createdAt),
+    date: message.createdAt, // ISO date для группировки по дням
     isClient: message.senderRole === 'client',
     status: message.isRead ? 'read' : 'delivered',
     // Reply/цитирование
@@ -251,7 +288,8 @@ export function ChatsPage() {
       }
     }
 
-    const pollInterval = setInterval(pollMessages, 5000)
+    // Быстрый polling каждые 3 секунды для актуальности данных
+    const pollInterval = setInterval(pollMessages, 3000)
 
     return () => clearInterval(pollInterval)
   }, [selectedChannel, messages])
@@ -405,6 +443,7 @@ export function ChatsPage() {
             senderName: currentAgentName,
             text: caption || `[${file.type === 'image' ? 'Изображение' : 'Файл'}]`,
             time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+            date: new Date().toISOString(),
             isClient: false,
             status: 'sent',
             attachments: [{
@@ -438,6 +477,7 @@ export function ChatsPage() {
           senderName: currentAgentName,
           text: textToSend,
           time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toISOString(),
           isClient: false,
           status: 'sent',
           replyTo: replyingTo || undefined
@@ -699,18 +739,25 @@ export function ChatsPage() {
                     </span>
                   </div>
 
-                  {messages.map(msg => (
-                    <MessageBubble
-                      key={msg.id}
-                      message={msg}
-                      onReply={() => setReplyingTo({ 
-                        id: msg.id, 
-                        telegramMessageId: msg.telegramMessageId,
-                        text: msg.text, 
-                        sender: msg.senderName 
-                      })}
-                      onCopy={() => navigator.clipboard.writeText(msg.text)}
-                      onReaction={async (emoji) => {
+                  {/* Сообщения с разделителями по датам */}
+                  {messages.map((msg, index) => {
+                    // Показываем разделитель если это первое сообщение или дата изменилась
+                    const prevMsg = index > 0 ? messages[index - 1] : null
+                    const showDateDivider = !prevMsg || (msg.date && prevMsg.date && getDateKey(msg.date) !== getDateKey(prevMsg.date))
+                    
+                    return (
+                      <div key={msg.id}>
+                        {showDateDivider && msg.date && <DateDivider date={msg.date} />}
+                        <MessageBubble
+                          message={msg}
+                          onReply={() => setReplyingTo({ 
+                            id: msg.id, 
+                            telegramMessageId: msg.telegramMessageId,
+                            text: msg.text, 
+                            sender: msg.senderName 
+                          })}
+                          onCopy={() => navigator.clipboard.writeText(msg.text)}
+                          onReaction={async (emoji) => {
                         if (!selectedChannel) return
                         try {
                           const token = localStorage.getItem('support_agent_token') || ''
@@ -770,8 +817,10 @@ export function ChatsPage() {
                           console.error('Ошибка удаления:', e)
                         }
                       }}
-                    />
-                  ))}
+                        />
+                      </div>
+                    )
+                  })}
                 </>
               )}
               <div ref={messagesEndRef} />

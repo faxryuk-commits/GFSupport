@@ -31,6 +31,7 @@ export interface MessageData {
   senderAvatarUrl?: string | null
   text: string
   time: string
+  date: string // ISO date string для группировки по дням
   isClient: boolean
   status?: 'sent' | 'delivered' | 'read'
   replyTo?: { id: string; telegramMessageId?: number; text: string; sender: string }
