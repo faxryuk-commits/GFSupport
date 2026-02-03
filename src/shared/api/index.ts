@@ -9,3 +9,13 @@ export * from './users'
 export * from './automations'
 export * from './broadcast'
 export * from './ai-context'
+
+// New API modules (Phase 1)
+export * from './ai'
+export * from './autoresponder'
+export * from './commitments'
+export * from './reminders'
+export * from './docs'
+export * from './feedback'
+export * from './conversations'
+export * from './topics'
