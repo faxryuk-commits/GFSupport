@@ -152,9 +152,9 @@ export default async function handler(req: Request): Promise<Response> {
         VALUES (${inviteId}, ${token}, ${email || null}, ${role || 'agent'}, ${createdBy}, ${expiresAt.toISOString()})
       `
 
-      // Формируем ссылку
-      const baseUrl = process.env.SITE_URL || 'https://delever.uz'
-      const inviteUrl = `${baseUrl}/support/register/${token}`
+      // Формируем ссылку на новый проект
+      const baseUrl = process.env.SITE_URL || 'https://gfsupport.uz'
+      const inviteUrl = `${baseUrl}/register/${token}`
 
       return json({
         success: true,
