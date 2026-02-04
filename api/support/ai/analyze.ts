@@ -498,3 +498,4 @@ export default async function handler(req: Request): Promise<Response> {
 
   return json({ error: 'Method not allowed' }, 405)
 }
+// Force redeploy 1770210814
