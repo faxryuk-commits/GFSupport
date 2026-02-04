@@ -65,10 +65,22 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const url = new URL(req.url)
-  const period = url.searchParams.get('period') || '30d' // 7d, 30d, 90d
+  const period = url.searchParams.get('period') || '30d'
   
   // Вычисляем дату начала периода
-  const periodDays = period === '7d' ? 7 : period === '90d' ? 90 : 30
+  // Поддерживаем: today, yesterday, week, month, 7d, 30d, 90d
+  let periodDays: number
+  switch (period) {
+    case 'today': periodDays = 1; break
+    case 'yesterday': periodDays = 2; break
+    case 'week': 
+    case '7d': periodDays = 7; break
+    case 'month':
+    case '30d': periodDays = 30; break
+    case '90d': periodDays = 90; break
+    default: periodDays = 30
+  }
+  
   const startDate = new Date()
   startDate.setDate(startDate.getDate() - periodDays)
 
