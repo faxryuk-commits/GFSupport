@@ -127,7 +127,12 @@ function isPositiveFeedback(text: string): boolean {
     return true
   }
   // Uzbek
-  if (/\b(ha|yaxshi|rahmat|ishladi|ishlaypti|bo'ldi|yechildi|yordam\s+berdi|zo'r)\b/i.test(lower)) {
+  // Uzbek Latin - based on real messages: "ishladi", "rahmat", "boldi", "hop", "xop"
+  if (/\b(ha|yaxshi|rahmat|raxmat|ishladi|ishlaypti|ishlayapti|bo'ldi|boldi|yechildi|yordam\s+berdi|zo'r|zor|hop|xop|tushunarli|ajoyib)\b/i.test(lower)) {
+    return true
+  }
+  // Uzbek Cyrillic - based on real messages
+  if (/\b(ҳа|яхши|раҳмат|рахмат|ишлади|ишлаяпти|бўлди|ечилди|зўр|хоп|тушунарли|ажойиб)\b/i.test(lower)) {
     return true
   }
   // English
@@ -135,7 +140,7 @@ function isPositiveFeedback(text: string): boolean {
     return true
   }
   // Emoji positive
-  if (/[👍✅👌💯🎉🙏]/u.test(text)) {
+  if (/[👍✅👌💯🎉🙏🤝]/u.test(text)) {
     return true
   }
   return false
@@ -209,20 +214,30 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   }
 
   // Determine if problem - expanded patterns for ru/uz/en
+  // Based on real message analysis from support channels
+  
   // Russian patterns
-  const ruProblem = /не работа|не поступа|не прихо|не отобража|не загруж|не открыва|не сохран|не отправ|не получа|не видн|не могу|не удаётся|не удается|не печата|не выход|ошибк|ошибка|error|проблем|сломал|баг|bug|глючит|виснет|зависа|crash/i.test(lower)
+  const ruProblem = /не работа|не поступа|не прихо|не отобража|не загруж|не открыва|не сохран|не отправ|не получа|не видн|не могу|не удаётся|не удается|не печата|не выход|ошибк|ошибка|error|проблем|сломал|баг|bug|глючит|виснет|зависа|crash|доступа\s*нет/i.test(lower)
+  
   // Uzbek patterns (Latin + Cyrillic mixed, common in chat)
-  // Includes negative forms: -may, -madi, -maydi, -maypti, -midmi
-  const uzProblem = /ishlamay|ishlamaydi|ishlamaypti|xato|xatolik|muammo|buzilgan|kelmay|kelmaypti|yoq|yo'q|chiqmay|chiqmadi|chiqmaypti|o'zgarmay|uzgarmay|bosmay|bosmaydi|chiqmidmi|узгармидми|чкмидми|чкмади|чиқмади|ишламай|ишламаяпти|хато|муаммо|бузилган|келмай|келмаяпти|йўқ|чиқмай|тўғри\s*эмас|нотўғри|togri\s*emas|notogri|boshqa.*chiq/i.test(lower)
+  // Includes negative verb forms: -may, -madi, -maydi, -maypti, -midmi, -mayapti
+  // Real patterns from messages: urilmayapti, tushmayapti, chiqmayapti, yopilmagan, aktualmas
+  const uzProblem = /ishlamay|ishlamaydi|ishlamaypti|ishlamayapti|xato|xatolik|muammo|buzilgan|buzildi|kelmay|kelmaypti|kelmayapti|yoq|yo'q|chiqmay|chiqmadi|chiqmaypti|chiqmayapti|o'zgarmay|uzgarmay|bosmay|bosmaydi|bosmayapti|chiqmidmi|urilmay|urilmayapti|tushmay|tushmayapti|yopilmay|yopilmagan|aktualmas|oshibka|hatolik|узгармидми|чкмидми|чкмади|чиқмади|ишламай|ишламаяпти|ишламайапти|хато|хатолик|муаммо|бузилган|келмай|келмаяпти|йўқ|ёқ|чиқмай|чиқмаяпти|тўғри\s*эмас|нотўғри|togri\s*emas|notogri|boshqa.*chiq|урилмаяпти|тушмаяпти|йопилмаган|актуалмас|ошибка/i.test(lower)
+  
   // Check for "lekin" (but) pattern - often indicates problem context  
   // Also check for "бошқа" (boshqa = another/different) which indicates wrong result
-  const hasLekinProblem = /лекн|лекин|lekin|lekn|аммо|ammo|бирок|birok/i.test(lower) && /чек|chek|филиал|filial|заказ|zakaz|buyurtma|регион|region/i.test(lower)
+  const hasLekinProblem = /лекн|лекин|lekin|lekn|аммо|ammo|бирок|birok|faqat|факат/i.test(lower) && /чек|chek|филиал|filial|заказ|zakaz|buyurtma|регион|region|skidka|скидка|zakaz|заказ/i.test(lower)
+  
   // "boshqa" (another) pattern - e.g. "check from another branch"
   const hasBoshqaProblem = /бошқа|boshqa|другой|другого|другим/i.test(lower) && /чек|chek|филиал|filial|чиқ|chiq|выход/i.test(lower)
-  // English patterns
-  const enProblem = /doesn't work|not working|broken|failed|error|issue|problem|bug|crash/i.test(lower)
   
-  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || enProblem
+  // Check for error messages/JSON errors
+  const hasErrorMessage = /invalid|bad_request|exception|failed|error.*response|response.*error|correlationid/i.test(lower)
+  
+  // English patterns
+  const enProblem = /doesn't work|not working|broken|failed|error|issue|problem|bug|crash|not\s*included|access\s*denied/i.test(lower)
+  
+  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || hasErrorMessage || enProblem
 
   // Determine urgency
   let urgency = 1
