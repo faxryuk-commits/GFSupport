@@ -1,4 +1,4 @@
-import { sql } from '../lib/db.js'
+import { getSQL } from '../lib/db.js'
 
 export const config = { runtime: 'edge' }
 
@@ -10,6 +10,8 @@ const json = (data: unknown, status = 200) =>
 
 export async function GET() {
   try {
+    const sql = getSQL()
+    
     // Update 'open' -> 'detected'
     const result = await sql`
       UPDATE support_cases 
