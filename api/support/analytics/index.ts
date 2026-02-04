@@ -21,6 +21,27 @@ function json(data: any, status = 200) {
   })
 }
 
+// Format milliseconds to human-readable duration
+function formatDurationMs(ms: number): string {
+  if (!ms || ms <= 0) return '—'
+  
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}с`
+  
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}м`
+  
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (hours < 24) {
+    return remainingMinutes > 0 ? `${hours}ч ${remainingMinutes}м` : `${hours}ч`
+  }
+  
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return remainingHours > 0 ? `${days}д ${remainingHours}ч` : `${days}д`
+}
+
 // Перевод категорий/проблем на русский
 const problemLabels: Record<string, string> = {
   technical: 'Технические проблемы',
@@ -649,6 +670,31 @@ export default async function handler(req: Request): Promise<Response> {
     `
 
     // ============================================
+    // 7. SLOWEST RESPONDING CLIENTS
+    // ============================================
+    
+    const slowestClients = await sql`
+      SELECT 
+        c.id,
+        c.name,
+        c.sla_category,
+        c.client_avg_response_ms,
+        c.client_response_count,
+        -- Calculate agent avg response time for comparison
+        AVG(m.response_time_ms) FILTER (WHERE m.is_from_client = false AND m.response_time_ms IS NOT NULL) as agent_avg_response_ms,
+        COUNT(*) FILTER (WHERE m.is_from_client = false AND m.response_time_ms IS NOT NULL) as agent_response_count,
+        c.last_message_at
+      FROM support_channels c
+      LEFT JOIN support_messages m ON m.channel_id = c.id AND m.created_at >= ${startDate.toISOString()}
+      WHERE c.is_active = true
+        AND c.client_avg_response_ms IS NOT NULL
+        AND c.client_avg_response_ms > 0
+      GROUP BY c.id, c.name, c.sla_category, c.client_avg_response_ms, c.client_response_count, c.last_message_at
+      ORDER BY c.client_avg_response_ms DESC
+      LIMIT 10
+    `
+
+    // ============================================
     // RESPONSE
     // ============================================
 
@@ -798,6 +844,28 @@ export default async function handler(req: Request): Promise<Response> {
         attentionScore: Math.round(parseFloat(ch.attention_score || 0)),
         lastMessageAt: ch.last_message_at,
       })),
+
+      // Топ медленно отвечающих клиентов
+      slowestClients: slowestClients.map((ch: any) => {
+        const clientAvgMs = parseInt(ch.client_avg_response_ms || 0)
+        const agentAvgMs = Math.round(parseFloat(ch.agent_avg_response_ms || 0))
+        return {
+          id: ch.id,
+          name: ch.name,
+          slaCategory: ch.sla_category || 'client',
+          clientAvgMs,
+          clientAvgFormatted: formatDurationMs(clientAvgMs),
+          clientResponseCount: parseInt(ch.client_response_count || 0),
+          agentAvgMs,
+          agentAvgFormatted: formatDurationMs(agentAvgMs),
+          agentResponseCount: parseInt(ch.agent_response_count || 0),
+          // How much slower client is compared to agent (positive = client slower)
+          differenceMs: clientAvgMs - agentAvgMs,
+          differenceFormatted: formatDurationMs(Math.abs(clientAvgMs - agentAvgMs)),
+          slowerParty: clientAvgMs > agentAvgMs ? 'client' : 'agent',
+          lastMessageAt: ch.last_message_at,
+        }
+      }),
     })
 
   } catch (e: any) {

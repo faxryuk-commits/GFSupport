@@ -20,6 +20,27 @@ function json(data: any, status = 200) {
   })
 }
 
+// Format milliseconds to human-readable duration
+function formatDuration(ms: number): string {
+  if (!ms || ms <= 0) return '—'
+  
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}с`
+  
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}м`
+  
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (hours < 24) {
+    return remainingMinutes > 0 ? `${hours}ч ${remainingMinutes}м` : `${hours}ч`
+  }
+  
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+  return remainingHours > 0 ? `${days}д ${remainingHours}ч` : `${days}д`
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -85,7 +106,7 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT 5
       `
 
-      // Get message statistics
+      // Get message statistics including response times
       const messageStats = await sql`
         SELECT 
           COUNT(*) as total_messages,
@@ -93,7 +114,11 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE is_problem = true) as problem_messages,
           COUNT(*) FILTER (WHERE is_read = false) as unread_messages,
           MAX(created_at) FILTER (WHERE is_from_client = true) as last_client_message,
-          MAX(created_at) FILTER (WHERE is_from_client = false) as last_team_message
+          MAX(created_at) FILTER (WHERE is_from_client = false) as last_team_message,
+          AVG(response_time_ms) FILTER (WHERE is_from_client = true AND response_time_ms IS NOT NULL) as client_avg_response_ms,
+          AVG(response_time_ms) FILTER (WHERE is_from_client = false AND response_time_ms IS NOT NULL) as agent_avg_response_ms,
+          COUNT(*) FILTER (WHERE response_time_ms IS NOT NULL AND is_from_client = true) as client_response_count,
+          COUNT(*) FILTER (WHERE response_time_ms IS NOT NULL AND is_from_client = false) as agent_response_count
         FROM support_messages
         WHERE channel_id = ${channelId}
       `
@@ -190,6 +215,22 @@ export default async function handler(req: Request): Promise<Response> {
           unread: parseInt(messageStats[0]?.unread_messages || 0),
           lastClientMessage: messageStats[0]?.last_client_message,
           lastTeamMessage: messageStats[0]?.last_team_message,
+        },
+        responseTimeStats: {
+          clientAvgMs: Math.round(parseFloat(messageStats[0]?.client_avg_response_ms || channel.client_avg_response_ms || 0)),
+          agentAvgMs: Math.round(parseFloat(messageStats[0]?.agent_avg_response_ms || 0)),
+          clientResponseCount: parseInt(messageStats[0]?.client_response_count || channel.client_response_count || 0),
+          agentResponseCount: parseInt(messageStats[0]?.agent_response_count || 0),
+          // Formatted for display
+          clientAvgFormatted: formatDuration(parseFloat(messageStats[0]?.client_avg_response_ms || channel.client_avg_response_ms || 0)),
+          agentAvgFormatted: formatDuration(parseFloat(messageStats[0]?.agent_avg_response_ms || 0)),
+          // Comparison: positive means client is slower
+          comparisonMs: Math.round(
+            (parseFloat(messageStats[0]?.client_avg_response_ms || channel.client_avg_response_ms || 0)) - 
+            (parseFloat(messageStats[0]?.agent_avg_response_ms || 0))
+          ),
+          // Who is slower
+          slowerParty: (parseFloat(messageStats[0]?.client_avg_response_ms || 0)) > (parseFloat(messageStats[0]?.agent_avg_response_ms || 0)) ? 'client' : 'agent',
         },
         recentCases: recentCases.map((c: any) => ({
           id: c.id,

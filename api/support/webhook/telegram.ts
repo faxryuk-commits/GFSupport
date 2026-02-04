@@ -147,6 +147,7 @@ async function saveMessage(
     mediaUrl?: string
     replyToId?: number
     threadId?: number
+    responseTimeMs?: number
   }
 ): Promise<string> {
   const messageId = generateId('msg')
@@ -161,13 +162,13 @@ async function saveMessage(
       sender_id, sender_name, sender_username, sender_role,
       is_from_client, content_type, text_content, media_url,
       reply_to_message_id, thread_id,
-      is_read, created_at
+      is_read, response_time_ms, created_at
     ) VALUES (
       ${messageId}, ${channelId}, ${telegramMessageId},
       ${String(user.id)}, ${user.fullName}, ${user.username}, ${role},
       ${isFromClient}, ${content.contentType}, ${content.text || null}, ${content.mediaUrl || null},
       ${content.replyToId ? String(content.replyToId) : null}, ${content.threadId ? String(content.threadId) : null},
-      ${!isFromClient}, NOW()
+      ${!isFromClient}, ${content.responseTimeMs || null}, NOW()
     )
   `
   
@@ -390,6 +391,21 @@ export default async function handler(req: Request): Promise<Response> {
       text = message.sticker.emoji || '🎭'
     }
 
+    // Calculate response time for client messages
+    let responseTimeMs: number | undefined = undefined
+    
+    if (identification.role === 'client') {
+      // Get last_agent_message_at to calculate client response time
+      const channelData = await sql`
+        SELECT last_agent_message_at FROM support_channels WHERE id = ${channelId}
+      `
+      if (channelData[0]?.last_agent_message_at) {
+        const lastAgentTime = new Date(channelData[0].last_agent_message_at).getTime()
+        responseTimeMs = Date.now() - lastAgentTime
+        console.log(`[Webhook] Client response time: ${Math.round(responseTimeMs / 1000)}s`)
+      }
+    }
+
     // Save message
     const messageId = await saveMessage(sql, channelId, message.message_id, user, identification.role, {
       text,
@@ -397,6 +413,7 @@ export default async function handler(req: Request): Promise<Response> {
       mediaUrl,
       replyToId: message.reply_to_message?.message_id,
       threadId: message.message_thread_id,
+      responseTimeMs,
     })
 
     console.log(`[Webhook] Saved message ${messageId} from ${identification.role}`)
@@ -419,9 +436,39 @@ export default async function handler(req: Request): Promise<Response> {
     // Update channel stats with preview
     await updateChannelStats(sql, channelId, identification.role === 'client', user.fullName, messagePreview)
 
+    // Update response time tracking
+    if (identification.role === 'client' && responseTimeMs) {
+      // Update client average response time (incremental average)
+      await sql`
+        UPDATE support_channels SET
+          client_avg_response_ms = CASE 
+            WHEN client_response_count = 0 THEN ${responseTimeMs}
+            ELSE ((COALESCE(client_avg_response_ms, 0) * client_response_count) + ${responseTimeMs}) / (client_response_count + 1)
+          END,
+          client_response_count = COALESCE(client_response_count, 0) + 1,
+          response_comparison = jsonb_set(
+            COALESCE(response_comparison, '{}'::jsonb),
+            '{client_avg}',
+            to_jsonb(CASE 
+              WHEN client_response_count = 0 THEN ${responseTimeMs}
+              ELSE ((COALESCE(client_avg_response_ms, 0) * client_response_count) + ${responseTimeMs}) / (client_response_count + 1)
+            END)
+          )
+        WHERE id = ${channelId}
+      `
+      console.log(`[Webhook] Updated client avg response time for channel ${channelId}`)
+    }
+
     // If support/team replied, record activity and mark messages as read
     if (identification.role !== 'client') {
       await recordAgentActivity(sql, String(user.id), user.fullName, channelId)
+      
+      // Update last_agent_message_at for client response time tracking
+      await sql`
+        UPDATE support_channels SET 
+          last_agent_message_at = NOW()
+        WHERE id = ${channelId}
+      `
       
       // When staff replies via Telegram, they've seen the messages
       // Mark all unread client messages as read

@@ -1273,6 +1273,78 @@ export function DashboardPage() {
             </div>
           )}
 
+          {/* Slowest Clients - Медленно отвечающие клиенты */}
+          {analytics.slowestClients && analytics.slowestClients.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200">
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-amber-500" />
+                  Медленно отвечающие клиенты
+                  <span className="text-xs font-normal text-slate-400 ml-2">
+                    Для аргументации при претензиях о скорости
+                  </span>
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-5 py-3 text-slate-600 font-medium">Канал</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Мы отвечаем</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Клиент отвечает</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Разница</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Ответов</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analytics.slowestClients.slice(0, 10).map((ch) => (
+                      <tr key={ch.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-amber-500" />
+                            <span className="font-medium text-slate-800 truncate max-w-[200px]" title={ch.name}>
+                              {ch.name}
+                            </span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              ch.slaCategory === 'partner' ? 'bg-purple-100 text-purple-700' :
+                              ch.slaCategory === 'client_integration' ? 'bg-blue-100 text-blue-700' :
+                              ch.slaCategory === 'internal' ? 'bg-slate-100 text-slate-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {ch.slaCategory === 'partner' ? 'Партнёр' :
+                               ch.slaCategory === 'client_integration' ? 'Интеграция' :
+                               ch.slaCategory === 'internal' ? 'Внутренний' : 'Клиент'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          <span className="text-green-600 font-medium">~{ch.agentAvgFormatted}</span>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          <span className={`font-medium ${ch.slowerParty === 'client' ? 'text-amber-600' : 'text-slate-600'}`}>
+                            ~{ch.clientAvgFormatted}
+                          </span>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          {ch.slowerParty === 'client' ? (
+                            <span className="text-amber-600 text-xs">
+                              Клиент на {ch.differenceFormatted} медленнее
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="text-center px-3 py-3 text-slate-500 text-xs">
+                          {ch.clientResponseCount + ch.agentResponseCount}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Team Metrics Table */}
           {analytics.team?.byManager && analytics.team.byManager.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200">

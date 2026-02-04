@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Brain, MessageSquare, Folder, Lightbulb, User, Clock, AlertTriangle, Loader2 } from 'lucide-react'
 import { getAIContext, type AIContextResponse } from '@/shared/api/ai'
+import { ResponseTimeComparison, type ResponseTimeStats } from '@/features/response-time'
 
 interface AIContextPanelProps {
   channelId: string
@@ -11,12 +12,14 @@ interface AIContextPanelProps {
 
 export function AIContextPanel({ channelId, isOpen, onClose, className = '' }: AIContextPanelProps) {
   const [context, setContext] = useState<AIContextResponse | null>(null)
+  const [responseTimeStats, setResponseTimeStats] = useState<ResponseTimeStats | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen && channelId) {
       loadContext()
+      loadResponseTimeStats()
     }
   }, [isOpen, channelId])
 
@@ -31,6 +34,25 @@ export function AIContextPanel({ channelId, isOpen, onClose, className = '' }: A
       setError(e.message || 'Ошибка загрузки контекста')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadResponseTimeStats = async () => {
+    try {
+      const token = localStorage.getItem('support_agent_token') || ''
+      const response = await fetch(`/api/support/channels/${channelId}`, {
+        headers: {
+          Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.responseTimeStats) {
+          setResponseTimeStats(data.responseTimeStats)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load response time stats:', e)
     }
   }
 
@@ -103,6 +125,9 @@ export function AIContextPanel({ channelId, isOpen, onClose, className = '' }: A
                 </div>
               </div>
             )}
+
+            {/* Response Time Comparison */}
+            <ResponseTimeComparison stats={responseTimeStats} />
 
             {/* Client History */}
             {context.context.clientHistory && (

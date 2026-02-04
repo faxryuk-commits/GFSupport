@@ -132,6 +132,21 @@ interface ApiAnalyticsResponse {
     attentionScore: number
     lastMessageAt: string | null
   }>
+  slowestClients?: Array<{
+    id: string
+    name: string
+    slaCategory: string
+    clientAvgMs: number
+    clientAvgFormatted: string
+    clientResponseCount: number
+    agentAvgMs: number
+    agentAvgFormatted: string
+    agentResponseCount: number
+    differenceMs: number
+    differenceFormatted: string
+    slowerParty: 'client' | 'agent'
+    lastMessageAt: string | null
+  }>
 }
 
 // Экспортируемые интерфейсы для фронтенда
@@ -235,6 +250,22 @@ export interface AnalyticsData {
     recurringCases: number
     avgResponseMinutes: number | null
     attentionScore: number
+    lastMessageAt: string | null
+  }>
+  // Топ медленно отвечающих клиентов
+  slowestClients: Array<{
+    id: string
+    name: string
+    slaCategory: string
+    clientAvgMs: number
+    clientAvgFormatted: string
+    clientResponseCount: number
+    agentAvgMs: number
+    agentAvgFormatted: string
+    agentResponseCount: number
+    differenceMs: number
+    differenceFormatted: string
+    slowerParty: 'client' | 'agent'
     lastMessageAt: string | null
   }>
 }
@@ -343,6 +374,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         internal: { label: 'Внутренняя команда', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
       },
       topDemandingChannels: raw.topDemandingChannels || [],
+      slowestClients: raw.slowestClients || [],
     }
   } catch (error) {
     console.error('Failed to fetch analytics:', error)
@@ -365,6 +397,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         internal: { ...emptyCategory, label: 'Внутренняя команда' },
       },
       topDemandingChannels: [],
+      slowestClients: [],
     }
   }
 }

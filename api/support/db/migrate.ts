@@ -483,6 +483,22 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Created support_auto_templates with defaults')
     } catch (e) { /* table exists */ }
 
+    // Migration 27: Add client response time tracking to channels
+    try {
+      await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS client_avg_response_ms INTEGER`
+      await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS client_response_count INTEGER DEFAULT 0`
+      await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS last_agent_message_at TIMESTAMP`
+      await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS response_comparison JSONB DEFAULT '{}'::jsonb`
+      migrations.push('Added client response time tracking to channels')
+    } catch (e) { /* columns exist */ }
+
+    // Migration 28: Add response time to messages
+    try {
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS response_time_ms INTEGER`
+      await sql`CREATE INDEX IF NOT EXISTS idx_messages_response_time ON support_messages(response_time_ms) WHERE response_time_ms IS NOT NULL`
+      migrations.push('Added response_time_ms to messages')
+    } catch (e) { /* column exists */ }
+
     return json({
       success: true,
       migrations,
