@@ -1448,7 +1448,7 @@ export function DashboardPage() {
                     <div 
                       key={i} 
                       className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 rounded-lg px-2 -mx-2 transition-colors"
-                      onClick={() => setProblemDetailsModal({ category: p.category || p.issue, label: p.issue })}
+                      onClick={() => setProblemDetailsModal({ category: p.issue, label: p.issue })}
                     >
                       <span className="text-slate-700 text-sm truncate flex-1">{p.issue}</span>
                       <div className="flex items-center gap-2">
