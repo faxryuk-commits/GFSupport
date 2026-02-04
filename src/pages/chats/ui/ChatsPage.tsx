@@ -259,14 +259,56 @@ export function ChatsPage() {
     loadData()
   }, [])
 
-  // Real-time polling: обновление каналов каждые 5 секунд (для актуального превью)
+  // Запрос разрешения на browser notifications
   useEffect(() => {
-    const pollInterval = setInterval(() => {
-      loadChannels(true) // silent update
-    }, 5000)
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
 
-    return () => clearInterval(pollInterval)
-  }, [loadChannels])
+  // Real-time polling: обновление каналов каждые 3 секунды
+  useEffect(() => {
+    const pollChannels = async () => {
+      try {
+        const channelsData = await fetchChannels()
+        const mappedChannels = channelsData.map(mapChannelToUI)
+        
+        // Проверяем появились ли новые непрочитанные (для уведомления)
+        const oldTotalUnread = channels.reduce((sum, ch) => sum + (ch.unread || 0), 0)
+        const newTotalUnread = mappedChannels.reduce((sum, ch) => sum + (ch.unread || 0), 0)
+        
+        if (newTotalUnread > oldTotalUnread && document.visibilityState === 'hidden') {
+          // Browser notification когда вкладка скрыта
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Новые сообщения', {
+              body: `У вас ${newTotalUnread - oldTotalUnread} новых сообщений`,
+              icon: '/favicon.ico',
+              tag: 'unread-channels',
+            })
+          }
+        }
+        
+        setChannels(mappedChannels)
+      } catch (error) {
+        console.error('Polling channels error:', error)
+      }
+    }
+
+    // При возврате на вкладку - мгновенное обновление
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        pollChannels()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    const pollInterval = setInterval(pollChannels, 3000)
+
+    return () => {
+      clearInterval(pollInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [channels])
 
   // Глобальный обработчик Escape - выход из режима ответа/цитирования
   useEffect(() => {
@@ -316,28 +358,46 @@ export function ChatsPage() {
           if (trulyNewMessages.length > 0) {
             // Показываем уведомления о новых сообщениях от клиентов
             const clientMessages = trulyNewMessages.filter(m => m.isClient)
-            clientMessages.forEach(msg => {
-              showNotification({
-                type: 'message',
-                title: 'Новое сообщение',
-                message: msg.text || '[Медиа]',
-                senderName: msg.senderName,
-                senderAvatar: msg.senderAvatarUrl || undefined,
-                channelName: selectedChannel.name,
-                channelId: selectedChannel.id,
-                onClick: () => {
-                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-                }
+            
+            if (clientMessages.length > 0) {
+              // In-app уведомление
+              clientMessages.forEach(msg => {
+                showNotification({
+                  type: 'message',
+                  title: 'Новое сообщение',
+                  message: msg.text || '[Медиа]',
+                  senderName: msg.senderName,
+                  senderAvatar: msg.senderAvatarUrl || undefined,
+                  channelName: selectedChannel.name,
+                  channelId: selectedChannel.id,
+                  onClick: () => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                  }
+                })
               })
-            })
+              
+              // Browser notification когда вкладка скрыта
+              if (document.visibilityState === 'hidden' && 
+                  'Notification' in window && Notification.permission === 'granted') {
+                clientMessages.forEach(msg => {
+                  new Notification(`${selectedChannel.name}: ${msg.senderName}`, {
+                    body: msg.text || '[Медиа]',
+                    icon: '/favicon.ico',
+                    tag: `msg-${msg.id}`,
+                  })
+                })
+              }
+            }
 
             // Добавляем новые сообщения в конец
             setMessages(prev => [...prev, ...trulyNewMessages])
             
-            // Прокрутка к новому сообщению
-            setTimeout(() => {
-              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-            }, 100)
+            // Прокрутка к новому сообщению если вкладка активна
+            if (document.visibilityState === 'visible') {
+              setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+              }, 100)
+            }
           }
         }
       } catch (error) {
@@ -345,10 +405,22 @@ export function ChatsPage() {
       }
     }
 
+    // При возврате на вкладку - мгновенное обновление
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        pollMessages()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
     // Быстрый polling каждые 2 секунды для актуальности данных
     const pollInterval = setInterval(pollMessages, 2000)
 
-    return () => clearInterval(pollInterval)
+    return () => {
+      clearInterval(pollInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [selectedChannel, messages, showNotification])
 
   // Загрузка AI контекста для канала
