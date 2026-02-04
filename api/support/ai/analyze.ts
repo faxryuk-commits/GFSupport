@@ -86,8 +86,8 @@ interface AnalysisResult {
 
 // Simple intents that can be detected without AI (for performance)
 const SIMPLE_INTENT_PATTERNS: Array<{ pattern: RegExp; intent: string; autoReply: boolean }> = [
-  // Greetings (Russian + Uzbek Latin + Uzbek Cyrillic)
-  { pattern: /^(здравствуйте|привет|добрый\s+(день|вечер|утро)|salom|assalomu\s*alaykum|assalom|hi|hello|приветствую|салом|ассалому\s*алайкум)[\s!.,]*$/i, intent: 'greeting', autoReply: true },
+  // Greetings (Russian + Uzbek Latin + Uzbek Cyrillic) - allow variations with/without spaces
+  { pattern: /^(здравствуйте|привет|добрый\s*(день|вечер|утро)|salom|assalomu?\s*a?laykum|assalom|hi|hello|приветствую|салом|ассалом[уа]?\s*а?лайкум)[\s!.,]*$/i, intent: 'greeting', autoReply: true },
   
   // Gratitude (Russian + Uzbek)
   { pattern: /^(спасибо|благодар|rahmat|raxmat|thanks|thank you|отлично|супер|класс|молодцы?|рахмат|катта рахмат|katta rahmat)[\s!.,]*$/i, intent: 'gratitude', autoReply: true },
