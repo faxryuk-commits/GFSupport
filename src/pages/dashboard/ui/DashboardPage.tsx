@@ -381,7 +381,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 overflow-x-hidden">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -485,7 +485,7 @@ export function DashboardPage() {
       </div>
 
       {/* SLA Metrics by Category */}
-      {analytics?.byCategory && (
+      {analytics?.byCategory && Object.keys(analytics.byCategory).length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-slate-400" />

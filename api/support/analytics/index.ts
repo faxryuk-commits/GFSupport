@@ -433,63 +433,6 @@ export default async function handler(req: Request): Promise<Response> {
     // 5. SLA METRICS BY CATEGORY
     // ============================================
     
-    // Метрики по SLA категориям каналов
-    const slaCategoryMetrics = await sql`
-      SELECT 
-        COALESCE(ch.sla_category, 'client') as sla_category,
-        COUNT(DISTINCT ch.id) as total_channels,
-        COUNT(DISTINCT ch.id) FILTER (WHERE ch.awaiting_reply = true) as waiting_reply,
-        COUNT(DISTINCT ch.id) FILTER (WHERE ch.unread_count > 0) as with_unread,
-        SUM(COALESCE(ch.unread_count, 0)) as total_unread
-      FROM support_channels ch
-      WHERE ch.is_active = true
-      GROUP BY ch.sla_category
-    `
-    
-    // Кейсы по SLA категориям
-    const slaCasesMetrics = await sql`
-      SELECT 
-        COALESCE(ch.sla_category, 'client') as sla_category,
-        COUNT(*) as total_cases,
-        COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed')) as open_cases,
-        COUNT(*) FILTER (WHERE c.priority = 'urgent') as urgent_cases,
-        AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
-      FROM support_cases c
-      JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.created_at >= ${startDate.toISOString()}
-      GROUP BY ch.sla_category
-    `
-    
-    // Время ответа по SLA категориям
-    const slaResponseMetrics = await sql`
-      WITH response_times AS (
-        SELECT 
-          ch.sla_category,
-          cm.id as client_msg_id,
-          cm.created_at as client_msg_at,
-          (
-            SELECT MIN(sm.created_at)
-            FROM support_messages sm
-            WHERE sm.channel_id = cm.channel_id
-              AND sm.created_at > cm.created_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
-          ) as response_at
-        FROM support_messages cm
-        JOIN support_channels ch ON cm.channel_id = ch.id
-        WHERE (cm.sender_role = 'client' OR cm.is_from_client = true)
-          AND cm.created_at >= ${startDate.toISOString()}
-      )
-      SELECT 
-        COALESCE(sla_category, 'client') as sla_category,
-        AVG(EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60) as avg_response_minutes,
-        COUNT(*) FILTER (WHERE response_at IS NOT NULL) as responded_count,
-        COUNT(*) as total_messages
-      FROM response_times
-      WHERE response_at IS NOT NULL
-        AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) >= 0
-      GROUP BY sla_category
-    `
-    
     // Собираем данные по категориям
     const slaCategories = ['client', 'client_integration', 'partner', 'internal']
     const slaCategoryLabels: Record<string, string> = {
@@ -499,42 +442,113 @@ export default async function handler(req: Request): Promise<Response> {
       internal: 'Внутренняя команда',
     }
     
-    const channelsByCat = new Map(slaCategoryMetrics.map((m: any) => [m.sla_category, m]))
-    const casesByCat = new Map(slaCasesMetrics.map((m: any) => [m.sla_category, m]))
-    const responseByCat = new Map(slaResponseMetrics.map((m: any) => [m.sla_category, m]))
+    let byCategory: Record<string, any> = {}
     
-    const byCategory: Record<string, any> = {}
-    
-    for (const cat of slaCategories) {
-      const channelData = channelsByCat.get(cat) || {}
-      const caseData = casesByCat.get(cat) || {}
-      const responseData = responseByCat.get(cat) || {}
+    try {
+      // Метрики по SLA категориям каналов
+      const slaCategoryMetrics = await sql`
+        SELECT 
+          COALESCE(ch.sla_category, 'client') as sla_category,
+          COUNT(DISTINCT ch.id) as total_channels,
+          COUNT(DISTINCT ch.id) FILTER (WHERE ch.awaiting_reply = true) as waiting_reply,
+          COUNT(DISTINCT ch.id) FILTER (WHERE ch.unread_count > 0) as with_unread,
+          SUM(COALESCE(ch.unread_count, 0)) as total_unread
+        FROM support_channels ch
+        WHERE ch.is_active = true
+        GROUP BY ch.sla_category
+      `
       
-      const totalCases = parseInt(caseData.total_cases || 0)
-      const openCases = parseInt(caseData.open_cases || 0)
-      const resolvedCases = totalCases - openCases
+      // Кейсы по SLA категориям
+      const slaCasesMetrics = await sql`
+        SELECT 
+          COALESCE(ch.sla_category, 'client') as sla_category,
+          COUNT(*) as total_cases,
+          COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed')) as open_cases,
+          COUNT(*) FILTER (WHERE c.priority = 'urgent') as urgent_cases,
+          AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
+        FROM support_cases c
+        JOIN support_channels ch ON c.channel_id = ch.id
+        WHERE c.created_at >= ${startDate.toISOString()}
+        GROUP BY ch.sla_category
+      `
       
-      byCategory[cat] = {
-        label: slaCategoryLabels[cat],
-        channels: {
-          total: parseInt(channelData.total_channels || 0),
-          waitingReply: parseInt(channelData.waiting_reply || 0),
-          withUnread: parseInt(channelData.with_unread || 0),
-          totalUnread: parseInt(channelData.total_unread || 0),
-        },
-        cases: {
-          total: totalCases,
-          open: openCases,
-          resolved: resolvedCases,
-          urgent: parseInt(caseData.urgent_cases || 0),
-          avgResolutionMinutes: Math.round(parseFloat(caseData.avg_resolution_minutes || 0)),
-        },
-        response: {
-          avgMinutes: Math.round(parseFloat(responseData.avg_response_minutes || 0)),
-          respondedCount: parseInt(responseData.responded_count || 0),
-          totalMessages: parseInt(responseData.total_messages || 0),
-        },
-        slaPercent: totalCases > 0 ? Math.round(resolvedCases / totalCases * 100) : 100,
+      // Время ответа по SLA категориям
+      const slaResponseMetrics = await sql`
+        WITH response_times AS (
+          SELECT 
+            ch.sla_category,
+            cm.id as client_msg_id,
+            cm.created_at as client_msg_at,
+            (
+              SELECT MIN(sm.created_at)
+              FROM support_messages sm
+              WHERE sm.channel_id = cm.channel_id
+                AND sm.created_at > cm.created_at
+                AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+            ) as response_at
+          FROM support_messages cm
+          JOIN support_channels ch ON cm.channel_id = ch.id
+          WHERE (cm.sender_role = 'client' OR cm.is_from_client = true)
+            AND cm.created_at >= ${startDate.toISOString()}
+        )
+        SELECT 
+          COALESCE(sla_category, 'client') as sla_category,
+          AVG(EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60) as avg_response_minutes,
+          COUNT(*) FILTER (WHERE response_at IS NOT NULL) as responded_count,
+          COUNT(*) as total_messages
+        FROM response_times
+        WHERE response_at IS NOT NULL
+          AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) >= 0
+        GROUP BY sla_category
+      `
+      
+      const channelsByCat = new Map(slaCategoryMetrics.map((m: any) => [m.sla_category, m]))
+      const casesByCat = new Map(slaCasesMetrics.map((m: any) => [m.sla_category, m]))
+      const responseByCat = new Map(slaResponseMetrics.map((m: any) => [m.sla_category, m]))
+      
+      for (const cat of slaCategories) {
+        const channelData = channelsByCat.get(cat) || {}
+        const caseData = casesByCat.get(cat) || {}
+        const responseData = responseByCat.get(cat) || {}
+        
+        const totalCases = parseInt(caseData.total_cases || 0)
+        const openCases = parseInt(caseData.open_cases || 0)
+        const resolvedCases = totalCases - openCases
+        
+        byCategory[cat] = {
+          label: slaCategoryLabels[cat],
+          channels: {
+            total: parseInt(channelData.total_channels || 0),
+            waitingReply: parseInt(channelData.waiting_reply || 0),
+            withUnread: parseInt(channelData.with_unread || 0),
+            totalUnread: parseInt(channelData.total_unread || 0),
+          },
+          cases: {
+            total: totalCases,
+            open: openCases,
+            resolved: resolvedCases,
+            urgent: parseInt(caseData.urgent_cases || 0),
+            avgResolutionMinutes: Math.round(parseFloat(caseData.avg_resolution_minutes || 0)),
+          },
+          response: {
+            avgMinutes: Math.round(parseFloat(responseData.avg_response_minutes || 0)),
+            respondedCount: parseInt(responseData.responded_count || 0),
+            totalMessages: parseInt(responseData.total_messages || 0),
+          },
+          slaPercent: totalCases > 0 ? Math.round(resolvedCases / totalCases * 100) : 100,
+        }
+      }
+    } catch (e) {
+      // Если колонка sla_category не существует - создаём пустые данные
+      console.error('SLA category metrics error (column may not exist yet):', e)
+      for (const cat of slaCategories) {
+        byCategory[cat] = {
+          label: slaCategoryLabels[cat],
+          channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 },
+          cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 },
+          response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 },
+          slaPercent: 100,
+        }
       }
     }
 
