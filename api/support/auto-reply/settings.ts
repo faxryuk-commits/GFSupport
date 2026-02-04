@@ -27,9 +27,17 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     })
+  }
+
+  // Auth required for write operations
+  if (req.method === 'PUT') {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return json({ error: 'Authorization required' }, 401)
+    }
   }
 
   const sql = getSQL()

@@ -73,9 +73,13 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
 
   const saveSettings = async (newSettings: AutoReplySettingsData) => {
     try {
+      const token = localStorage.getItem('support_agent_token') || ''
       await fetch('/api/support/auto-reply/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token.startsWith('Bearer') ? token : `Bearer ${token}`,
+        },
         body: JSON.stringify({
           auto_reply_enabled: String(newSettings.enabled),
           auto_reply_greeting: String(newSettings.greetingEnabled),
@@ -111,9 +115,13 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
   const saveTemplate = async (template: AutoReplyTemplate) => {
     setSaving(true)
     try {
+      const token = localStorage.getItem('support_agent_token') || ''
       const response = await fetch('/api/support/auto-reply/templates', {
         method: template.id.startsWith('new_') ? 'POST' : 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token.startsWith('Bearer') ? token : `Bearer ${token}`,
+        },
         body: JSON.stringify(template),
       })
       if (response.ok) {
@@ -130,7 +138,13 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
   const deleteTemplate = async (id: string) => {
     if (!confirm('Удалить этот шаблон?')) return
     try {
-      await fetch(`/api/support/auto-reply/templates?id=${id}`, { method: 'DELETE' })
+      const token = localStorage.getItem('support_agent_token') || ''
+      await fetch(`/api/support/auto-reply/templates?id=${id}`, { 
+        method: 'DELETE',
+        headers: {
+          'Authorization': token.startsWith('Bearer') ? token : `Bearer ${token}`,
+        },
+      })
       await fetchTemplates()
     } catch (e) {
       console.error('Failed to delete template:', e)

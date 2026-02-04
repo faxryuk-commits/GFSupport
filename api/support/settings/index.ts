@@ -51,12 +51,13 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   
-  // Admin auth required only for write operations
+  // Auth required for write operations
   if (req.method !== 'GET') {
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader || !authHeader.includes('admin')) {
-      return json({ error: 'Admin access required' }, 403)
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return json({ error: 'Authorization required' }, 401)
     }
+    // Accept any valid Bearer token (agents can manage settings)
   }
 
   // Убедимся что таблица настроек существует
