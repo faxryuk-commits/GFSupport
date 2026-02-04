@@ -489,8 +489,17 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     try {
+      // Debug: check simple intent detection
+      const simpleIntent = detectSimpleIntent(text)
       const analysis = await analyzeWithAI(text)
-      return json({ analysis })
+      return json({ 
+        analysis,
+        _debug: {
+          text,
+          simpleIntentDetected: simpleIntent,
+          textLength: text.length,
+        }
+      })
     } catch (e: any) {
       return json({ error: e.message }, 500)
     }
