@@ -128,7 +128,7 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   
   // Determine category
   let category = 'general'
-  if (/ошибк|error|не работа|сломал|баг|bug|xato|глючит|виснет|crash|ishlamay/i.test(lower)) {
+  if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan/i.test(lower)) {
     category = 'technical'
   } else if (/интеграц|подключ|api|webhook|iiko|r-keeper|poster|wolt|payme|click/i.test(lower)) {
     category = 'integration'
@@ -162,17 +162,20 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     sentiment = 'negative'
   }
 
-  // Determine if problem
-  const isProblem = /не работа|ошибк|проблем|сломал|баг|глючит|виснет|ishlamay|xato|muammo/i.test(lower)
+  // Determine if problem - expanded patterns
+  const isProblem = /не работа|не поступа|не прихо|не отобража|не загруж|не открыва|не сохран|не отправ|не получа|не видн|не могу|не удаётся|не удается|ошибк|ошибка|error|проблем|сломал|баг|bug|глючит|виснет|зависа|crash|ishlamay|ishlamaydi|ishlamaypti|xato|xatolik|muammo|buzilgan|kelmay|kelmaypti|yoq|yo'q/i.test(lower)
 
   // Determine urgency
   let urgency = 1
-  if (/срочно|критично|urgent|tez|shoshilinch|блокир|не могу работать/i.test(lower)) {
+  if (/срочно|критично|urgent|tez|shoshilinch|блокир|не могу работать|asap|немедленно/i.test(lower)) {
     urgency = 4
   } else if (isProblem && sentiment === 'frustrated') {
     urgency = 3
   } else if (isProblem) {
     urgency = 2
+  } else if (/\?/.test(text)) {
+    // Questions deserve attention
+    urgency = 1
   } else if (sentiment === 'positive') {
     urgency = 0
   }

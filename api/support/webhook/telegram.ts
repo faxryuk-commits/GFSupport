@@ -56,34 +56,82 @@ async function getFileUrl(fileId: string): Promise<string | null> {
   return null
 }
 
+// Get chat photo URL from Telegram
+async function getChatPhotoUrl(chatId: string): Promise<string | null> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) return null
+  
+  try {
+    const chatInfoRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChat?chat_id=${chatId}`
+    )
+    const chatInfo = await chatInfoRes.json()
+    
+    if (chatInfo.ok && chatInfo.result?.photo?.small_file_id) {
+      const fileRes = await fetch(
+        `https://api.telegram.org/bot${botToken}/getFile?file_id=${chatInfo.result.photo.small_file_id}`
+      )
+      const fileData = await fileRes.json()
+      
+      if (fileData.ok) {
+        return `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`
+      }
+    }
+  } catch (e) {
+    console.log('[Webhook] Failed to get chat photo:', e)
+  }
+  return null
+}
+
 // Get or create channel for chat
 async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<string> {
   const chatId = String(chat.id)
   
   // Check existing channel
   const existing = await sql`
-    SELECT id FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
+    SELECT id, photo_url FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
   `
   
   if (existing[0]) {
+    // Update photo if missing (async, don't wait)
+    if (!existing[0].photo_url) {
+      getChatPhotoUrl(chatId).then(async (photoUrl) => {
+        if (photoUrl) {
+          try {
+            await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${existing[0].id}`
+            console.log(`[Webhook] Updated photo for channel ${existing[0].id}`)
+          } catch (e) {
+            console.log('[Webhook] Failed to update photo:', e)
+          }
+        }
+      }).catch(() => {})
+    }
     return existing[0].id
   }
   
-  // Create new channel
+  // Create new channel with photo
   const channelId = generateId('ch')
   const chatTitle = chat.title || user.fullName || `Chat ${chatId}`
   const channelType = chat.type === 'private' ? 'client' : 
                       chat.type === 'group' || chat.type === 'supergroup' ? 'partner' : 'client'
   
+  // Try to get photo (but don't block on it)
+  let photoUrl: string | null = null
+  try {
+    photoUrl = await getChatPhotoUrl(chatId)
+  } catch (e) {
+    console.log('[Webhook] Could not get photo for new channel')
+  }
+  
   await sql`
     INSERT INTO support_channels (
-      id, telegram_chat_id, name, type, is_active, created_at
+      id, telegram_chat_id, name, type, photo_url, is_active, created_at
     ) VALUES (
-      ${channelId}, ${chatId}, ${chatTitle}, ${channelType}, true, NOW()
+      ${channelId}, ${chatId}, ${chatTitle}, ${channelType}, ${photoUrl}, true, NOW()
     )
   `
   
-  console.log(`[Webhook] Created new channel: ${channelId} for chat ${chatId}`)
+  console.log(`[Webhook] Created new channel: ${channelId} for chat ${chatId}${photoUrl ? ' (with photo)' : ''}`)
   return channelId
 }
 
