@@ -55,9 +55,43 @@ export default async function handler(req: Request): Promise<Response> {
 
     const msg = msgResult[0]
 
+    // Determine priority based on AI analysis
+    function determinePriority(message: any, manualPriority?: string): string {
+      // If manually specified, use it
+      if (manualPriority && manualPriority !== 'medium') {
+        return manualPriority
+      }
+      
+      const urgency = parseInt(message.ai_urgency) || 0
+      const sentiment = message.ai_sentiment || 'neutral'
+      const isProblem = message.is_problem === true
+      
+      // Urgency-based priority
+      // 5 = urgent, 4 = high, 3 = medium, 1-2 = low
+      if (urgency >= 5) return 'urgent'
+      if (urgency === 4) return 'high'
+      
+      // Negative sentiment increases priority
+      if (sentiment === 'negative' || sentiment === 'frustrated') {
+        if (urgency >= 3) return 'high'
+        return 'medium'
+      }
+      
+      // Problem messages get at least medium
+      if (isProblem) {
+        if (urgency >= 3) return 'high'
+        return 'medium'
+      }
+      
+      // Default based on urgency
+      if (urgency >= 3) return 'medium'
+      return 'low'
+    }
+
     // Create case
     const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     const caseTitle = title || msg.ai_summary || description?.slice(0, 100) || 'Новое обращение'
+    const casePriority = determinePriority(msg, priority !== 'medium' ? priority : undefined)
 
     // Add source_message_id column if not exists
     try {
@@ -75,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
         ${caseTitle},
         ${description || msg.text_content || ''},
         ${msg.ai_category || 'general'},
-        ${priority},
+        ${casePriority},
         ${msg.ai_urgency >= 4 ? 'critical' : msg.ai_urgency >= 3 ? 'high' : 'normal'},
         'open',
         ${messageId}

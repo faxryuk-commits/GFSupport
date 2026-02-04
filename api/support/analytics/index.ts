@@ -98,7 +98,12 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE created_at >= ${startDate.toISOString()}) as new_cases_period,
         AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution_minutes,
         COUNT(*) FILTER (WHERE priority = 'urgent') as urgent_cases,
-        COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases
+        COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases,
+        -- Cases by priority for the period
+        COUNT(*) FILTER (WHERE priority = 'low' AND created_at >= ${startDate.toISOString()}) as low_priority_cases,
+        COUNT(*) FILTER (WHERE priority = 'medium' AND created_at >= ${startDate.toISOString()}) as medium_priority_cases,
+        COUNT(*) FILTER (WHERE priority = 'high' AND created_at >= ${startDate.toISOString()}) as high_priority_cases,
+        COUNT(*) FILTER (WHERE priority = 'urgent' AND created_at >= ${startDate.toISOString()}) as urgent_priority_cases
       FROM support_cases
     `
     const overview = overviewResult[0] || {}
@@ -661,6 +666,12 @@ export default async function handler(req: Request): Promise<Response> {
         avgResolutionHours: Math.round(parseFloat(overview.avg_resolution_minutes || 0) / 60 * 10) / 10,
         urgentCases: parseInt(overview.urgent_cases || 0),
         recurringCases: parseInt(overview.recurring_cases || 0),
+        casesByPriority: {
+          low: parseInt(overview.low_priority_cases || 0),
+          medium: parseInt(overview.medium_priority_cases || 0),
+          high: parseInt(overview.high_priority_cases || 0),
+          urgent: parseInt(overview.urgent_priority_cases || 0),
+        },
         totalMessages: parseInt(messages.total_messages || 0),
         problemMessages: parseInt(messages.problem_messages || 0),
         voiceMessages: parseInt(messages.voice_messages || 0),

@@ -768,9 +768,58 @@ export function DashboardPage() {
               <p className="text-2xl font-bold text-green-600">{resolvedToday}</p>
               <p className="text-sm text-green-600/70">Решено кейсов</p>
             </div>
-            <div className="p-4 bg-amber-50 rounded-lg">
-              <p className="text-2xl font-bold text-amber-600">{analytics?.cases?.urgent || 0}</p>
-              <p className="text-sm text-amber-600/70">Срочных</p>
+            {/* Stacked Bar - Cases by Priority */}
+            <div className="p-4 bg-slate-50 rounded-lg">
+              <p className="text-xs text-slate-500 mb-2">Кейсы за период</p>
+              {(() => {
+                const byPriority = analytics?.cases?.byPriority || { low: 0, medium: 0, high: 0, urgent: 0 }
+                const total = byPriority.low + byPriority.medium + byPriority.high + byPriority.urgent
+                if (total === 0) {
+                  return <p className="text-sm text-slate-400">Нет данных</p>
+                }
+                const priorities = [
+                  { key: 'urgent', label: 'Срочные', value: byPriority.urgent, color: 'bg-red-500', textColor: 'text-red-600' },
+                  { key: 'high', label: 'Высокие', value: byPriority.high, color: 'bg-orange-500', textColor: 'text-orange-600' },
+                  { key: 'medium', label: 'Средние', value: byPriority.medium, color: 'bg-amber-400', textColor: 'text-amber-600' },
+                  { key: 'low', label: 'Низкие', value: byPriority.low, color: 'bg-green-500', textColor: 'text-green-600' },
+                ]
+                return (
+                  <div className="flex gap-3">
+                    {/* Stacked Bar */}
+                    <div className="flex flex-col w-10 h-28 rounded-lg overflow-hidden border border-slate-200">
+                      {priorities.map((p) => {
+                        if (p.value === 0) return null
+                        const height = Math.max((p.value / total) * 100, 10)
+                        return (
+                          <div
+                            key={p.key}
+                            className={`${p.color} flex items-center justify-center relative group cursor-pointer transition-all hover:opacity-90`}
+                            style={{ height: `${height}%`, minHeight: p.value > 0 ? '16px' : '0' }}
+                            title={`${p.label}: ${p.value}`}
+                          >
+                            {p.value > 0 && (
+                              <span className="text-[10px] font-bold text-white drop-shadow">{p.value}</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {/* Legend */}
+                    <div className="flex flex-col justify-center gap-1 text-[10px]">
+                      {priorities.map((p) => (
+                        <div key={p.key} className="flex items-center gap-1">
+                          <span className={`w-2 h-2 rounded-sm ${p.color}`} />
+                          <span className={p.textColor}>{p.value}</span>
+                          <span className="text-slate-400">{p.label}</span>
+                        </div>
+                      ))}
+                      <div className="border-t border-slate-200 pt-1 mt-1 font-medium text-slate-700">
+                        {total} всего
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
           {analytics?.patterns?.recurringProblems && analytics.patterns.recurringProblems.length > 0 && (
@@ -987,10 +1036,24 @@ export function DashboardPage() {
               <p className="text-2xl font-bold text-slate-800">{analytics.cases?.open || 0}</p>
               <p className="text-xs text-slate-500">Открытых кейсов</p>
             </div>
-            <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
-              <AlertTriangle className="w-6 h-6 text-red-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-slate-800">{analytics.cases?.urgent || 0}</p>
-              <p className="text-xs text-slate-500">Срочных</p>
+            <div className="bg-white rounded-xl p-4 border border-slate-200">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-5 h-5 text-slate-400" />
+                <span className="text-xs text-slate-500">По приоритету</span>
+              </div>
+              {(() => {
+                const bp = analytics.cases?.byPriority || { low: 0, medium: 0, high: 0, urgent: 0 }
+                const total = bp.low + bp.medium + bp.high + bp.urgent
+                return (
+                  <div className="flex items-center gap-1 h-5 rounded overflow-hidden bg-slate-100">
+                    {bp.urgent > 0 && <div className="bg-red-500 h-full flex items-center justify-center px-1" style={{width: `${(bp.urgent/total)*100}%`, minWidth: '20px'}}><span className="text-[9px] text-white font-bold">{bp.urgent}</span></div>}
+                    {bp.high > 0 && <div className="bg-orange-500 h-full flex items-center justify-center px-1" style={{width: `${(bp.high/total)*100}%`, minWidth: '20px'}}><span className="text-[9px] text-white font-bold">{bp.high}</span></div>}
+                    {bp.medium > 0 && <div className="bg-amber-400 h-full flex items-center justify-center px-1" style={{width: `${(bp.medium/total)*100}%`, minWidth: '20px'}}><span className="text-[9px] text-white font-bold">{bp.medium}</span></div>}
+                    {bp.low > 0 && <div className="bg-green-500 h-full flex items-center justify-center px-1" style={{width: `${(bp.low/total)*100}%`, minWidth: '20px'}}><span className="text-[9px] text-white font-bold">{bp.low}</span></div>}
+                  </div>
+                )
+              })()}
+              <p className="text-lg font-bold text-slate-800 mt-1">{(analytics.cases?.byPriority?.low || 0) + (analytics.cases?.byPriority?.medium || 0) + (analytics.cases?.byPriority?.high || 0) + (analytics.cases?.byPriority?.urgent || 0)}</p>
             </div>
             <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
               <TrendingUp className="w-6 h-6 text-amber-500 mx-auto mb-2" />

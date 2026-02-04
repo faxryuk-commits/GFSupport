@@ -48,6 +48,12 @@ interface ApiAnalyticsResponse {
     avgResolutionHours: number
     urgentCases: number
     recurringCases: number
+    casesByPriority?: {
+      low: number
+      medium: number
+      high: number
+      urgent: number
+    }
     totalMessages: number
     problemMessages: number
     voiceMessages: number
@@ -143,6 +149,12 @@ export interface AnalyticsData {
     urgent: number
     recurring: number
     newPeriod: number
+    byPriority: {
+      low: number
+      medium: number
+      high: number
+      urgent: number
+    }
   }
   messages: {
     total: number
@@ -248,6 +260,12 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         urgent: raw.overview?.urgentCases || 0,
         recurring: raw.overview?.recurringCases || 0,
         newPeriod: raw.overview?.newCasesPeriod || 0,
+        byPriority: {
+          low: raw.overview?.casesByPriority?.low || 0,
+          medium: raw.overview?.casesByPriority?.medium || 0,
+          high: raw.overview?.casesByPriority?.high || 0,
+          urgent: raw.overview?.casesByPriority?.urgent || 0,
+        },
       },
       messages: {
         total: raw.overview?.totalMessages || 0,
@@ -334,7 +352,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
       period: '30d',
       periodDays: 30,
       generatedAt: new Date().toISOString(),
-      cases: { total: 0, open: 0, resolved: 0, avgResolutionTime: 0, avgResolutionHours: 0, urgent: 0, recurring: 0, newPeriod: 0 },
+      cases: { total: 0, open: 0, resolved: 0, avgResolutionTime: 0, avgResolutionHours: 0, urgent: 0, recurring: 0, newPeriod: 0, byPriority: { low: 0, medium: 0, high: 0, urgent: 0 } },
       messages: { total: 0, problems: 0, voice: 0, video: 0, transcribed: 0 },
       channels: { total: 0, active: 0, avgFirstResponse: 0 },
       patterns: { byCategory: [], bySentiment: [], byIntent: [], recurringProblems: [] },
