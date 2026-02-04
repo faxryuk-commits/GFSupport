@@ -389,6 +389,28 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Added sla_category to channels')
     } catch (e) { /* column exists */ }
 
+    // Migration 22: Recalculate case priorities based on AI data
+    try {
+      const result = await sql`
+        UPDATE support_cases c
+        SET priority = CASE
+          WHEN m.ai_urgency >= 5 THEN 'urgent'
+          WHEN m.ai_urgency = 4 THEN 'high'
+          WHEN m.ai_sentiment IN ('negative', 'frustrated') AND COALESCE(m.ai_urgency, 0) >= 3 THEN 'high'
+          WHEN m.is_problem = true THEN 'medium'
+          WHEN COALESCE(m.ai_urgency, 0) >= 3 THEN 'medium'
+          ELSE 'low'
+        END
+        FROM support_messages m
+        WHERE c.source_message_id = m.id
+          AND c.priority = 'urgent'
+        RETURNING c.id
+      `
+      migrations.push(`Recalculated priorities for ${result.length} cases`)
+    } catch (e: any) { 
+      migrations.push(`Priority recalc: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+
     return json({
       success: true,
       migrations,
