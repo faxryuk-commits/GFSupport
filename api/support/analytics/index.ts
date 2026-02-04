@@ -342,32 +342,37 @@ export default async function handler(req: Request): Promise<Response> {
       console.error('responseTimeDistribution error:', e)
     }
 
-    // Кейсы по дням (тренд) - заполняем все дни периода
-    const dailyTrend = await sql`
-      WITH date_series AS (
-        SELECT generate_series(
-          ${startDate.toISOString()}::date,
-          CURRENT_DATE,
-          '1 day'::interval
-        )::date as date
-      ),
-      daily_cases AS (
-        SELECT 
-          DATE(created_at) as date,
-          COUNT(*) as cases_created,
-          COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
-        FROM support_cases
-        WHERE created_at >= ${startDate.toISOString()}
-        GROUP BY DATE(created_at)
-      )
+    // Кейсы по дням (тренд) - получаем данные и заполняем пропуски в JS
+    const dailyCasesRaw = await sql`
       SELECT 
-        ds.date,
-        COALESCE(dc.cases_created, 0) as cases_created,
-        COALESCE(dc.cases_resolved, 0) as cases_resolved
-      FROM date_series ds
-      LEFT JOIN daily_cases dc ON ds.date = dc.date
-      ORDER BY ds.date
+        DATE(created_at) as date,
+        COUNT(*) as cases_created,
+        COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
+      FROM support_cases
+      WHERE created_at >= ${startDate.toISOString()}
+      GROUP BY DATE(created_at)
+      ORDER BY date
     `
+    
+    // Создаём массив всех дней периода и заполняем данными
+    const dailyTrend: Array<{date: Date, cases_created: number, cases_resolved: number}> = []
+    const casesMap = new Map(dailyCasesRaw.map((d: any) => [
+      new Date(d.date).toISOString().split('T')[0], 
+      { created: parseInt(d.cases_created), resolved: parseInt(d.cases_resolved) }
+    ]))
+    
+    const currentDate = new Date()
+    const iterDate = new Date(startDate)
+    while (iterDate <= currentDate) {
+      const dateStr = iterDate.toISOString().split('T')[0]
+      const data = casesMap.get(dateStr) || { created: 0, resolved: 0 }
+      dailyTrend.push({
+        date: new Date(iterDate),
+        cases_created: data.created,
+        cases_resolved: data.resolved
+      })
+      iterDate.setDate(iterDate.getDate() + 1)
+    }
 
     // ============================================
     // 4. CHURN SIGNALS
@@ -711,9 +716,9 @@ export default async function handler(req: Request): Promise<Response> {
           }
         }),
         dailyTrend: dailyTrend.map((d: any) => ({
-          date: d.date,
-          casesCreated: parseInt(d.cases_created),
-          casesResolved: parseInt(d.cases_resolved),
+          date: d.date instanceof Date ? d.date.toISOString() : d.date,
+          casesCreated: d.cases_created || 0,
+          casesResolved: d.cases_resolved || 0,
         })),
         responseTimeDistribution: responseTimeDistribution.map((r: any) => {
           const bucketLabels: Record<string, string> = {
