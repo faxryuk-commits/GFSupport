@@ -1,8 +1,22 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../services/api.service'
 import type { Channel } from '@/entities/channel'
 
-export async function fetchChannels(): Promise<Channel[]> {
-  return apiGet<{ channels: Channel[] }>('/channels').then(r => r.channels)
+export interface ChannelsResponse {
+  channels: Channel[]
+  total: number
+  stats: {
+    [key: string]: { total: number; active: number }
+  }
+}
+
+export async function fetchChannels(options?: { limit?: number }): Promise<Channel[]> {
+  const limit = options?.limit || 200
+  return apiGet<ChannelsResponse>(`/channels?limit=${limit}`).then(r => r.channels)
+}
+
+export async function fetchChannelsWithStats(options?: { limit?: number }): Promise<ChannelsResponse> {
+  const limit = options?.limit || 200
+  return apiGet<ChannelsResponse>(`/channels?limit=${limit}`)
 }
 
 export async function fetchChannel(id: string): Promise<Channel> {
