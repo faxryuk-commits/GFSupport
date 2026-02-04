@@ -381,6 +381,13 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Added ticket_number to support_cases')
     } catch (e) { /* column exists */ }
 
+    // Migration 21: Add sla_category to channels for SLA classification
+    try {
+      await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_category VARCHAR(30) DEFAULT 'client'`
+      await sql`CREATE INDEX IF NOT EXISTS idx_channels_sla_category ON support_channels(sla_category)`
+      migrations.push('Added sla_category to channels')
+    } catch (e) { /* column exists */ }
+
     return json({
       success: true,
       migrations,

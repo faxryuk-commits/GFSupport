@@ -6,7 +6,7 @@ import {
   CheckCircle, XCircle, Clock, AlertTriangle, Filter, Settings, Edit3, Power
 } from 'lucide-react'
 import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog } from '@/shared/ui'
-import { fetchChannels, updateChannel, disconnectChannel } from '@/shared/api'
+import { fetchChannels, updateChannel, disconnectChannel, type SlaCategory, SLA_CATEGORY_CONFIG } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 
 type FilterStatus = 'all' | 'active' | 'inactive' | 'awaiting'
@@ -29,6 +29,7 @@ export function ChannelsListPage() {
   const [disconnectChannelData, setDisconnectChannelData] = useState<Channel | null>(null)
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<'client' | 'partner' | 'internal'>('client')
+  const [newSlaCategory, setNewSlaCategory] = useState<SlaCategory>('client')
   const [actionLoading, setActionLoading] = useState(false)
 
   const loadChannels = useCallback(async () => {
@@ -63,6 +64,7 @@ export function ChannelsListPage() {
   const handleOpenSettings = (channel: Channel) => {
     setSettingsChannel(channel)
     setNewType(channel.type)
+    setNewSlaCategory((channel as any).slaCategory || 'client')
   }
 
   const handleOpenRename = (channel: Channel) => {
@@ -91,9 +93,9 @@ export function ChannelsListPage() {
     if (!settingsChannel) return
     setActionLoading(true)
     try {
-      await updateChannel(settingsChannel.id, { type: newType })
+      await updateChannel(settingsChannel.id, { type: newType, slaCategory: newSlaCategory })
       setChannels(prev => prev.map(ch => 
-        ch.id === settingsChannel.id ? { ...ch, type: newType } : ch
+        ch.id === settingsChannel.id ? { ...ch, type: newType, slaCategory: newSlaCategory } as Channel : ch
       ))
       setSettingsChannel(null)
     } catch (err) {
@@ -490,6 +492,36 @@ export function ChannelsListPage() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                SLA Категория
+                <span className="text-xs text-slate-400 ml-2">(для метрик дашборда)</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.entries(SLA_CATEGORY_CONFIG) as [SlaCategory, typeof SLA_CATEGORY_CONFIG[SlaCategory]][]).map(([cat, config]) => {
+                  const isPriority = config.priority === 1
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setNewSlaCategory(cat)}
+                      className={`px-3 py-2 text-sm rounded-lg border transition-colors text-left ${
+                        newSlaCategory === cat
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>{config.label}</span>
+                        {isPriority && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">P1</span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => setSettingsChannel(null)}
@@ -499,7 +531,7 @@ export function ChannelsListPage() {
               </button>
               <button
                 onClick={handleUpdateType}
-                disabled={newType === settingsChannel.type || actionLoading}
+                disabled={(newType === settingsChannel.type && newSlaCategory === ((settingsChannel as any).slaCategory || 'client')) || actionLoading}
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
               >
                 {actionLoading ? 'Сохранение...' : 'Сохранить'}

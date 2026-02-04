@@ -126,6 +126,7 @@ export default async function handler(req: Request): Promise<Response> {
           telegramChatId: c.telegram_chat_id,
           name: c.name || `Канал ${c.telegram_chat_id}`,
           type: c.type || 'client',
+          slaCategory: c.sla_category || 'client',
           companyId: c.company_id,
           companyName: c.name || 'Компания',
           leadId: c.lead_id,
@@ -229,7 +230,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { id, name, type, companyId, leadId, isActive, settings } = body
+      const { id, name, type, slaCategory, companyId, leadId, isActive, settings } = body
 
       if (!id) {
         return json({ error: 'Channel ID required' }, 400)
@@ -239,6 +240,7 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_channels SET
           name = COALESCE(${name}, name),
           type = COALESCE(${type}, type),
+          sla_category = COALESCE(${slaCategory}, sla_category),
           is_active = COALESCE(${isActive}, is_active),
           updated_at = NOW()
         WHERE id = ${id}

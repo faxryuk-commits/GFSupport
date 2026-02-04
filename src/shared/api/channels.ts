@@ -16,6 +16,7 @@ export async function markChannelRead(channelId: string): Promise<void> {
 export async function updateChannel(channelId: string, data: {
   name?: string
   type?: 'client' | 'partner' | 'internal'
+  slaCategory?: 'client' | 'client_integration' | 'partner' | 'internal'
   isActive?: boolean
 }): Promise<void> {
   await apiPut('/channels', { id: channelId, ...data })

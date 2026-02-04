@@ -1,5 +1,39 @@
 import { apiGet } from '../services/api.service'
 
+// SLA категории каналов
+export type SlaCategory = 'client' | 'client_integration' | 'partner' | 'internal'
+
+export const SLA_CATEGORY_CONFIG: Record<SlaCategory, { label: string; priority: number; color: string }> = {
+  client: { label: 'Delever + Клиенты', priority: 1, color: 'blue' },
+  client_integration: { label: 'Delever + Клиенты + Интеграция', priority: 1, color: 'purple' },
+  partner: { label: 'Delever + Партнёры', priority: 2, color: 'green' },
+  internal: { label: 'Внутренняя команда', priority: 3, color: 'slate' },
+}
+
+// Метрики по SLA категории
+export interface SlaCategoryMetrics {
+  label: string
+  channels: {
+    total: number
+    waitingReply: number
+    withUnread: number
+    totalUnread: number
+  }
+  cases: {
+    total: number
+    open: number
+    resolved: number
+    urgent: number
+    avgResolutionMinutes: number
+  }
+  response: {
+    avgMinutes: number
+    respondedCount: number
+    totalMessages: number
+  }
+  slaPercent: number
+}
+
 // Интерфейсы для данных с API
 interface ApiAnalyticsResponse {
   period: string
@@ -75,6 +109,7 @@ interface ApiAnalyticsResponse {
       recurringCases: number
     }>
   }
+  byCategory?: Record<SlaCategory, SlaCategoryMetrics>
 }
 
 // Экспортируемые интерфейсы для фронтенда
@@ -155,6 +190,8 @@ export interface AnalyticsData {
       recurringCases: number
     }>
   }
+  // Метрики по SLA категориям
+  byCategory: Record<SlaCategory, SlaCategoryMetrics>
 }
 
 export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
@@ -248,9 +285,16 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
           recurringCases: c.recurringCases,
         })),
       },
+      byCategory: raw.byCategory || {
+        client: { label: 'Delever + Клиенты', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
+        client_integration: { label: 'Delever + Клиенты + Интеграция', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
+        partner: { label: 'Delever + Партнёры', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
+        internal: { label: 'Внутренняя команда', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
+      },
     }
   } catch (error) {
     console.error('Failed to fetch analytics:', error)
+    const emptyCategory: SlaCategoryMetrics = { label: '', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 }
     // Возвращаем пустые данные при ошибке
     return {
       period: '30d',
@@ -262,6 +306,12 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
       patterns: { byCategory: [], bySentiment: [], byIntent: [], recurringProblems: [] },
       team: { byManager: [], dailyTrend: [], responseTimeDistribution: [] },
       churnSignals: { negativeCompanies: [], stuckCases: [], recurringByCompany: [], highRiskCompanies: [] },
+      byCategory: {
+        client: { ...emptyCategory, label: 'Delever + Клиенты' },
+        client_integration: { ...emptyCategory, label: 'Delever + Клиенты + Интеграция' },
+        partner: { ...emptyCategory, label: 'Delever + Партнёры' },
+        internal: { ...emptyCategory, label: 'Внутренняя команда' },
+      },
     }
   }
 }
