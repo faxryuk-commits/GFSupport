@@ -11,6 +11,7 @@ import {
   SecuritySettings,
   ApiKeysSettings,
   AppearanceSettings,
+  AutoReplySettings,
   type GeneralSettingsData,
   type ResponseSettingsData,
   type NotificationSetting,
@@ -18,6 +19,7 @@ import {
   type SecuritySettingsData,
   type ApiKey,
   type AppearanceSettingsData,
+  type AutoReplySettingsData,
 } from '@/features/settings/ui'
 import {
   fetchSettings,
@@ -30,7 +32,7 @@ import { TeamPage } from '@/pages/team/ui/TeamPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 
-type SettingsTab = 'general' | 'team' | 'users' | 'automations' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
+type SettingsTab = 'general' | 'team' | 'users' | 'automations' | 'autoreply' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
 interface TabConfig {
   id: SettingsTab
@@ -46,6 +48,7 @@ const tabs: TabConfig[] = [
   { id: 'team', label: 'Команда', description: 'Управление сотрудниками', icon: UsersRound, color: 'text-violet-600', bgColor: 'bg-violet-100' },
   { id: 'users', label: 'Клиенты', description: 'База клиентов и партнёров', icon: Users, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
   { id: 'automations', label: 'Автоматизации', description: 'Правила и триггеры', icon: Zap, color: 'text-amber-600', bgColor: 'bg-amber-100' },
+  { id: 'autoreply', label: 'AI Автоответы', description: 'Приветствия, FAQ, шаблоны', icon: Bot, color: 'text-purple-600', bgColor: 'bg-purple-100' },
   { id: 'notifications', label: 'Уведомления', description: 'Настройка оповещений', icon: Bell, color: 'text-rose-600', bgColor: 'bg-rose-100' },
   { id: 'integrations', label: 'Интеграции', description: 'Telegram, AI, Whisper', icon: Link2, color: 'text-cyan-600', bgColor: 'bg-cyan-100' },
   { id: 'security', label: 'Безопасность', description: 'Защита и доступы', icon: Shield, color: 'text-orange-600', bgColor: 'bg-orange-100' },
@@ -112,6 +115,14 @@ export function SettingsPage() {
     primaryColor: '#3b82f6',
     sidebarCollapsed: false,
     compactMode: false,
+  })
+
+  const [autoReplySettings, setAutoReplySettings] = useState<AutoReplySettingsData>({
+    enabled: true,
+    greetingEnabled: true,
+    gratitudeEnabled: true,
+    faqEnabled: true,
+    delaySeconds: 1,
   })
 
   // Загрузка настроек с сервера
@@ -449,6 +460,13 @@ export function SettingsPage() {
                 <div className="-mt-6">
                   <AutomationsPage embedded />
                 </div>
+              )}
+
+              {activeTab === 'autoreply' && (
+                <AutoReplySettings
+                  settings={autoReplySettings}
+                  onSettingsChange={setAutoReplySettings}
+                />
               )}
 
               {activeTab === 'notifications' && (
