@@ -47,10 +47,53 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
   const [editingTemplate, setEditingTemplate] = useState<AutoReplyTemplate | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Fetch templates on mount
+  // Fetch templates and settings on mount
   useEffect(() => {
     fetchTemplates()
+    fetchSettings()
   }, [])
+
+  const fetchSettings = async () => {
+    try {
+      const response = await fetch('/api/support/auto-reply?action=settings')
+      const data = await response.json()
+      if (data.settings) {
+        onSettingsChange({
+          enabled: data.settings.auto_reply_enabled !== 'false',
+          greetingEnabled: data.settings.auto_reply_greeting !== 'false',
+          gratitudeEnabled: data.settings.auto_reply_gratitude !== 'false',
+          faqEnabled: data.settings.auto_reply_faq !== 'false',
+          delaySeconds: parseInt(data.settings.auto_reply_delay_seconds || '1'),
+        })
+      }
+    } catch (e) {
+      console.error('Failed to fetch settings:', e)
+    }
+  }
+
+  const saveSettings = async (newSettings: AutoReplySettingsData) => {
+    try {
+      await fetch('/api/support/auto-reply/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auto_reply_enabled: String(newSettings.enabled),
+          auto_reply_greeting: String(newSettings.greetingEnabled),
+          auto_reply_gratitude: String(newSettings.gratitudeEnabled),
+          auto_reply_faq: String(newSettings.faqEnabled),
+          auto_reply_delay_seconds: String(newSettings.delaySeconds),
+        }),
+      })
+    } catch (e) {
+      console.error('Failed to save settings:', e)
+    }
+  }
+
+  // Auto-save settings on change
+  const handleSettingsChange = (newSettings: AutoReplySettingsData) => {
+    onSettingsChange(newSettings)
+    saveSettings(newSettings)
+  }
 
   const fetchTemplates = async () => {
     setLoading(true)
@@ -130,7 +173,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
               label="Включить автоответы"
               description="Автоматически отвечать на простые сообщения (приветствия, благодарности, FAQ)"
               checked={settings.enabled}
-              onChange={(v) => onSettingsChange({ ...settings, enabled: v })}
+              onChange={(v) => handleSettingsChange({ ...settings, enabled: v })}
             />
           </div>
 
@@ -142,19 +185,19 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                   label="Приветствия"
                   description="Отвечать на 'Привет', 'Здравствуйте', 'Добрый день'"
                   checked={settings.greetingEnabled}
-                  onChange={(v) => onSettingsChange({ ...settings, greetingEnabled: v })}
+                  onChange={(v) => handleSettingsChange({ ...settings, greetingEnabled: v })}
                 />
                 <Toggle
                   label="Благодарности"
                   description="Отвечать на 'Спасибо', 'Благодарю'"
                   checked={settings.gratitudeEnabled}
-                  onChange={(v) => onSettingsChange({ ...settings, gratitudeEnabled: v })}
+                  onChange={(v) => handleSettingsChange({ ...settings, gratitudeEnabled: v })}
                 />
                 <Toggle
                   label="FAQ вопросы"
                   description="Отвечать на типовые вопросы (цены, график, контакты)"
                   checked={settings.faqEnabled}
-                  onChange={(v) => onSettingsChange({ ...settings, faqEnabled: v })}
+                  onChange={(v) => handleSettingsChange({ ...settings, faqEnabled: v })}
                 />
               </div>
 
@@ -173,7 +216,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                     min="0"
                     max="30"
                     value={settings.delaySeconds}
-                    onChange={(e) => onSettingsChange({ ...settings, delaySeconds: Number(e.target.value) })}
+                    onChange={(e) => handleSettingsChange({ ...settings, delaySeconds: Number(e.target.value) })}
                     className="w-20 px-3 py-2 bg-white border border-slate-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300"
                   />
                   <span className="text-sm text-slate-500">сек</span>
