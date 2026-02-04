@@ -110,6 +110,22 @@ interface ApiAnalyticsResponse {
     }>
   }
   byCategory?: Record<SlaCategory, SlaCategoryMetrics>
+  topDemandingChannels?: Array<{
+    id: string
+    name: string
+    slaCategory: string
+    awaitingReply: boolean
+    unreadCount: number
+    messagesCount: number
+    problemCount: number
+    negativeCount: number
+    urgentCount: number
+    openCases: number
+    recurringCases: number
+    avgResponseMinutes: number | null
+    attentionScore: number
+    lastMessageAt: string | null
+  }>
 }
 
 // Экспортируемые интерфейсы для фронтенда
