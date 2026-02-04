@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 
+// API Version: 2.0 - SLA Categories support
 export const config = {
   runtime: 'edge',
 }
