@@ -15,7 +15,7 @@ export interface Message {
   text: string
   textContent?: string
   mediaUrl?: string
-  mediaType?: 'photo' | 'video' | 'document' | 'voice' | 'sticker' | 'video_note'
+  mediaType?: 'photo' | 'video' | 'document' | 'voice' | 'sticker' | 'video_note' | 'audio'
   transcript?: string
   aiSummary?: string
   aiCategory?: string
