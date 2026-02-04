@@ -119,6 +119,50 @@ function detectSimpleIntent(text: string): { intent: string; autoReply: boolean 
   return null
 }
 
+// Check if text is positive feedback (resolved confirmation)
+function isPositiveFeedback(text: string): boolean {
+  const lower = text.toLowerCase()
+  // Russian
+  if (/\b(да|решен|решено|решена|все\s+ок|всё\s+ок|хорошо|спасибо|работает|заработало|помогло|норм|отлично|супер|класс|ок|все\s+хорошо|всё\s+хорошо|получилось)\b/i.test(lower)) {
+    return true
+  }
+  // Uzbek
+  if (/\b(ha|yaxshi|rahmat|ishladi|ishlaypti|bo'ldi|yechildi|yordam\s+berdi|zo'r)\b/i.test(lower)) {
+    return true
+  }
+  // English
+  if (/\b(yes|resolved|works|working|fixed|thanks|thank\s+you|great|good|ok|okay|perfect|awesome|done)\b/i.test(lower)) {
+    return true
+  }
+  // Emoji positive
+  if (/[👍✅👌💯🎉🙏]/u.test(text)) {
+    return true
+  }
+  return false
+}
+
+// Check if text is negative feedback (not resolved)
+function isNegativeFeedback(text: string): boolean {
+  const lower = text.toLowerCase()
+  // Russian
+  if (/\b(нет|не\s+решен|не\s+работает|не\s+помогло|всё\s+ещё|все\s+еще|проблема|ошибка|опять|снова|не\s+так|не\s+то)\b/i.test(lower)) {
+    return true
+  }
+  // Uzbek  
+  if (/\b(yoq|yo'q|ishlamaydi|hal\s+bo'lmadi|muammo|xato|yana)\b/i.test(lower)) {
+    return true
+  }
+  // English
+  if (/\b(no|not\s+resolved|not\s+working|still|problem|error|issue|again|doesn't\s+work|didn't\s+help)\b/i.test(lower)) {
+    return true
+  }
+  // Emoji negative
+  if (/[👎❌😞😤]/u.test(text)) {
+    return true
+  }
+  return false
+}
+
 // Fallback analysis without AI
 function analyzeWithoutAI(text: string): AnalysisResult {
   const lower = text.toLowerCase()
@@ -311,8 +355,59 @@ export default async function handler(req: Request): Promise<Response> {
 
       console.log(`[AI Analyze] Analyzing message ${messageId}: "${text.slice(0, 50)}..."`)
 
+      // Check if there's a case awaiting feedback for this channel
+      let pendingFeedbackCase = null
+      if (channelId) {
+        const feedbackCases = await sql`
+          SELECT id, ticket_number FROM support_cases
+          WHERE channel_id = ${channelId}
+            AND status = 'resolved'
+            AND resolution_notes LIKE '%[Awaiting feedback]%'
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `
+        if (feedbackCases.length > 0) {
+          pendingFeedbackCase = feedbackCases[0]
+          console.log(`[AI Analyze] Found case awaiting feedback: ${pendingFeedbackCase.id}`)
+        }
+      }
+
       // Run AI analysis
       const analysis = await analyzeWithAI(text)
+      
+      // If there's a pending feedback case, check if this is feedback
+      let feedbackResult = null
+      if (pendingFeedbackCase && telegramChatId) {
+        const isFeedbackPositive = isPositiveFeedback(text)
+        const isFeedbackNegative = isNegativeFeedback(text)
+        
+        if (isFeedbackPositive || isFeedbackNegative) {
+          console.log(`[AI Analyze] Detected feedback: positive=${isFeedbackPositive}, negative=${isFeedbackNegative}`)
+          
+          // Call resolve-notify API with appropriate action
+          const resolveUrl = process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}/api/support/cases/resolve-notify`
+            : null
+          
+          if (resolveUrl) {
+            try {
+              const feedbackAction = isFeedbackPositive ? 'feedback_yes' : 'feedback_no'
+              const response = await fetch(resolveUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  caseId: pendingFeedbackCase.id, 
+                  action: feedbackAction 
+                }),
+              })
+              feedbackResult = await response.json()
+              console.log(`[AI Analyze] Feedback processed: ${JSON.stringify(feedbackResult)}`)
+            } catch (e: any) {
+              console.log(`[AI Analyze] Feedback processing failed: ${e.message}`)
+            }
+          }
+        }
+      }
 
       console.log(`[AI Analyze] Result: intent=${analysis.intent}, sentiment=${analysis.sentiment}, autoReply=${analysis.autoReplyAllowed}, needsResponse=${analysis.needsResponse}`)
 
@@ -474,6 +569,7 @@ export default async function handler(req: Request): Promise<Response> {
         messageId,
         autoReply: autoReplyResult,
         ticket: ticketResult,
+        feedback: feedbackResult,
       })
 
     } catch (e: any) {

@@ -358,6 +358,88 @@ async function recordAgentActivity(sql: any, userId: string, userName: string, c
   }
 }
 
+// Answer callback query (acknowledge button press)
+async function answerCallbackQuery(callbackQueryId: string, text?: string) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) return
+  
+  await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      text: text || '',
+    }),
+  })
+}
+
+// Handle callback query (inline button clicks)
+async function handleCallbackQuery(sql: any, callbackQuery: any): Promise<Response> {
+  try {
+    const { id, data, from, message } = callbackQuery
+    console.log(`[Webhook] Callback query: ${data} from ${from?.first_name}`)
+    
+    // Acknowledge the button press immediately
+    await answerCallbackQuery(id)
+    
+    // Parse callback data: format is "action:caseId:value"
+    const parts = data?.split(':') || []
+    const action = parts[0]
+    const caseId = parts[1]
+    const value = parts[2]
+    
+    if (action === 'case_resolved' && caseId) {
+      // Call resolve-notify API
+      const resolveUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}/api/support/cases/resolve-notify`
+        : null
+      
+      if (resolveUrl) {
+        const feedbackAction = value === 'yes' ? 'feedback_yes' : 'feedback_no'
+        
+        try {
+          const response = await fetch(resolveUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              caseId, 
+              action: feedbackAction 
+            }),
+          })
+          const result = await response.json()
+          console.log(`[Webhook] Case feedback result: ${JSON.stringify(result)}`)
+        } catch (e: any) {
+          console.log(`[Webhook] Case feedback call failed: ${e.message}`)
+        }
+      }
+      
+      // Edit the original message to remove buttons (optional UX improvement)
+      const botToken = process.env.TELEGRAM_BOT_TOKEN
+      if (botToken && message?.chat?.id && message?.message_id) {
+        try {
+          await fetch(`https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: message.chat.id,
+              message_id: message.message_id,
+              reply_markup: { inline_keyboard: [] }
+            }),
+          })
+        } catch (e) {
+          // Ignore error - message might be too old
+        }
+      }
+    }
+    
+    return json({ ok: true })
+    
+  } catch (e: any) {
+    console.error('[Webhook] Callback query error:', e)
+    return json({ ok: true }) // Don't fail webhook
+  }
+}
+
 // Main webhook handler
 export default async function handler(req: Request): Promise<Response> {
   // Only accept POST requests
@@ -376,11 +458,16 @@ export default async function handler(req: Request): Promise<Response> {
       return handleMessageReaction(sql, update.message_reaction)
     }
 
+    // Handle callback queries (inline button clicks)
+    if (update.callback_query) {
+      return handleCallbackQuery(sql, update.callback_query)
+    }
+
     // Handle different update types
     const message = update.message || update.edited_message || update.channel_post
     
     if (!message) {
-      // Could be callback_query, etc.
+      // Could be other update types
       console.log('[Webhook] Non-message update, ignoring')
       return json({ ok: true })
     }

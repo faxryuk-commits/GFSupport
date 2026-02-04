@@ -118,17 +118,39 @@ function personalizeTemplate(template: string, vars: Record<string, string>): st
   return result.trim()
 }
 
-// Detect language from text (ru or uz)
-function detectLanguage(text: string): 'ru' | 'uz' {
+// Detect language from text (ru, uz, or en)
+function detectLanguage(text: string): 'ru' | 'uz' | 'en' {
   const lower = text.toLowerCase()
-  // Uzbek indicators (Latin)
-  const uzLatinWords = /\b(salom|rahmat|xayr|kerak|qanday|nima|yordam|yaxshi|bormi|bor|yoq|ha|yo'q)\b/i
-  // Uzbek indicators (Cyrillic)
-  const uzCyrillicWords = /\b(салом|рахмат|хайр|керак|қандай|нима|ёрдам|яхши|борми|бор|йўқ)\b/i
   
+  // English indicators
+  const enWords = /\b(hello|hi|thanks|thank you|please|help|how|what|why|where|when|can|could|would|issue|problem|order|need|want)\b/i
+  // Check if mostly ASCII (English text)
+  const asciiRatio = text.replace(/[^a-zA-Z]/g, '').length / Math.max(text.replace(/\s/g, '').length, 1)
+  
+  // Uzbek indicators (Latin)
+  const uzLatinWords = /\b(salom|assalomu|rahmat|xayr|kerak|qanday|nima|yordam|yaxshi|bormi|bor|yoq|ha|yo'q|iltimos|muammo|buyurtma)\b/i
+  // Uzbek indicators (Cyrillic)
+  const uzCyrillicWords = /\b(салом|ассалому|рахмат|хайр|керак|қандай|нима|ёрдам|яхши|борми|бор|йўқ|илтимос)\b/i
+  
+  // Russian indicators (Cyrillic)
+  const ruWords = /\b(здравствуйте|привет|спасибо|пожалуйста|помогите|как|что|почему|где|когда|можно|проблема|заказ|нужно)\b/i
+  
+  // Check Uzbek first (has unique patterns)
   if (uzLatinWords.test(lower) || uzCyrillicWords.test(lower)) {
     return 'uz'
   }
+  
+  // Check Russian (Cyrillic text)
+  if (ruWords.test(lower) || /[а-яё]/i.test(text)) {
+    return 'ru'
+  }
+  
+  // Check English
+  if (enWords.test(lower) || asciiRatio > 0.7) {
+    return 'en'
+  }
+  
+  // Default to Russian
   return 'ru'
 }
 
@@ -219,8 +241,16 @@ async function processAutoReply(
       faq_hours: 'Biz dushanbadan jumagacha 09:00 dan 22:00 gacha ishlaymiz. Dam olish kunlari 10:00 dan 18:00 gacha.',
       faq_contacts: 'Bu chat orqali yoki saytdagi telefon raqami orqali bog\'lanishingiz mumkin.',
     }
+    const defaultsEn: Record<string, string> = {
+      greeting: 'Hello{client_name}! Thank you for reaching out. How can I help you?',
+      gratitude: 'Glad we could help! If you have any questions - feel free to reach out.',
+      closing: 'Thank you for contacting us! Have a great day!',
+      faq_pricing: 'Pricing information is available on our website. If you need a consultation - we will respond shortly.',
+      faq_hours: 'We work from 09:00 to 22:00 on weekdays. On weekends from 10:00 to 18:00.',
+      faq_contacts: 'You can contact us through this chat or by phone listed on our website.',
+    }
     
-    const defaults = lang === 'uz' ? defaultsUz : defaultsRu
+    const defaults = lang === 'uz' ? defaultsUz : lang === 'en' ? defaultsEn : defaultsRu
     if (defaults[intent]) {
       template = { text: defaults[intent], vars: ['{client_name}'] }
     }
@@ -240,9 +270,10 @@ async function processAutoReply(
   }
   
   // Personalize template
+  const defaultClientName = lang === 'uz' ? 'mijoz' : lang === 'en' ? 'customer' : 'клиент'
   const vars: Record<string, string> = {
     client_name: clientName ? `, ${clientName}` : '',
-    name: clientName || (lang === 'uz' ? 'mijoz' : 'клиент'),
+    name: clientName || defaultClientName,
   }
   
   const responseText = personalizeTemplate(template.text, vars)

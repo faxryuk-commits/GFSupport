@@ -1,0 +1,276 @@
+import { neon } from '@neondatabase/serverless'
+
+export const config = { runtime: 'edge' }
+
+function getSQL() {
+  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
+  if (!connectionString) throw new Error('Database connection string not found')
+  return neon(connectionString)
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  })
+}
+
+// Detect language from recent messages in channel
+async function detectChannelLanguage(sql: any, channelId: string): Promise<'ru' | 'uz' | 'en'> {
+  const recentMessages = await sql`
+    SELECT text_content FROM support_messages
+    WHERE channel_id = ${channelId}
+      AND is_from_client = true
+      AND text_content IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 5
+  `
+  
+  const allText = recentMessages.map((m: any) => m.text_content).join(' ')
+  const lower = allText.toLowerCase()
+  
+  // Check Uzbek
+  if (/\b(salom|assalomu|rahmat|kerak|qanday|nima|yordam|yaxshi|bormi|yo'q|салом|рахмат|керак|яхши)\b/i.test(lower)) {
+    return 'uz'
+  }
+  
+  // Check English
+  if (/\b(hello|hi|thanks|please|help|how|what|why|where|problem|issue|order)\b/i.test(lower)) {
+    const asciiRatio = allText.replace(/[^a-zA-Z]/g, '').length / Math.max(allText.replace(/\s/g, '').length, 1)
+    if (asciiRatio > 0.7) return 'en'
+  }
+  
+  return 'ru'
+}
+
+// Get localized messages
+function getLocalizedMessages(lang: 'ru' | 'uz' | 'en') {
+  const messages = {
+    ru: {
+      resolved: '✅ Ваше обращение #{ticketNumber} было обработано.\n\n<b>Проблема решена?</b>\n\nЕсли у вас остались вопросы - просто напишите нам.',
+      thanks: '🙏 Спасибо за обратную связь! Рады, что смогли помочь. Если возникнут вопросы - обращайтесь!',
+      reopened: '📋 Понял вас. Мы переоткрыли обращение и скоро свяжемся с вами для решения вопроса.',
+      btnYes: '✅ Да, решена',
+      btnNo: '❌ Нет, есть вопросы',
+    },
+    uz: {
+      resolved: '✅ Sizning #{ticketNumber} raqamli murojaatingiz ko\'rib chiqildi.\n\n<b>Muammo hal bo\'ldimi?</b>\n\nSavollaringiz bo\'lsa - bizga yozing.',
+      thanks: '🙏 Fikr-mulohazangiz uchun rahmat! Yordam berganimizdan xursandmiz. Savollar bo\'lsa - murojaat qiling!',
+      reopened: '📋 Tushundim. Murojaatingizni qayta ochdik va tez orada siz bilan bog\'lanamiz.',
+      btnYes: '✅ Ha, hal bo\'ldi',
+      btnNo: '❌ Yo\'q, savollar bor',
+    },
+    en: {
+      resolved: '✅ Your request #{ticketNumber} has been processed.\n\n<b>Is the issue resolved?</b>\n\nIf you have any questions - just write to us.',
+      thanks: '🙏 Thank you for your feedback! Glad we could help. If you have any questions - feel free to reach out!',
+      reopened: '📋 Got it. We have reopened your request and will contact you shortly to resolve the issue.',
+      btnYes: '✅ Yes, resolved',
+      btnNo: '❌ No, I have questions',
+    },
+  }
+  return messages[lang]
+}
+
+// Send message with inline keyboard to Telegram
+async function sendTelegramMessageWithButtons(
+  chatId: string | number, 
+  text: string,
+  buttons: Array<{ text: string; callback_data: string }>
+) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
+  
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [buttons.map(btn => ({ text: btn.text, callback_data: btn.callback_data }))]
+      }
+    }),
+  })
+  
+  return response.json()
+}
+
+// Send simple message
+async function sendTelegramMessage(chatId: string | number, text: string) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
+  
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+    }),
+  })
+  
+  return response.json()
+}
+
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    })
+  }
+
+  if (req.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, 405)
+  }
+
+  try {
+    const sql = getSQL()
+    const { caseId, action } = await req.json()
+
+    if (!caseId) {
+      return json({ error: 'caseId required' }, 400)
+    }
+
+    // Get case details
+    const caseResult = await sql`
+      SELECT c.*, ch.telegram_chat_id, ch.name as channel_name
+      FROM support_cases c
+      LEFT JOIN support_channels ch ON c.channel_id = ch.id
+      WHERE c.id = ${caseId}
+    `
+
+    if (caseResult.length === 0) {
+      return json({ error: 'Case not found' }, 404)
+    }
+
+    const caseData = caseResult[0]
+    const telegramChatId = caseData.telegram_chat_id
+
+    if (!telegramChatId) {
+      return json({ error: 'No telegram chat associated with this case' }, 400)
+    }
+
+    // Detect language
+    const lang = await detectChannelLanguage(sql, caseData.channel_id)
+    const messages = getLocalizedMessages(lang)
+
+    // Action: notify - Send resolution notification with buttons
+    if (action === 'notify' || !action) {
+      const text = messages.resolved.replace('{ticketNumber}', caseData.ticket_number || caseId)
+      
+      const result = await sendTelegramMessageWithButtons(telegramChatId, text, [
+        { text: messages.btnYes, callback_data: `case_resolved:${caseId}:yes` },
+        { text: messages.btnNo, callback_data: `case_resolved:${caseId}:no` },
+      ])
+
+      if (!result.ok) {
+        return json({ error: 'Failed to send Telegram message', details: result }, 500)
+      }
+
+      // Save message to DB
+      const msgId = `msg_notify_${Date.now()}`
+      await sql`
+        INSERT INTO support_messages (
+          id, channel_id, telegram_message_id, sender_name, sender_role,
+          is_from_client, content_type, text_content, ai_intent, created_at
+        ) VALUES (
+          ${msgId}, ${caseData.channel_id}, ${result.result?.message_id},
+          'AI Помощник', 'auto_reply', false, 'text', ${text}, 'case_resolved_notify', NOW()
+        )
+      `
+
+      // Record that we're waiting for feedback
+      await sql`
+        UPDATE support_cases 
+        SET resolution_notes = COALESCE(resolution_notes, '') || '[Awaiting feedback]',
+            updated_at = NOW()
+        WHERE id = ${caseId}
+      `
+
+      return json({ 
+        success: true, 
+        action: 'notify',
+        messageId: result.result?.message_id,
+        language: lang
+      })
+    }
+
+    // Action: feedback_yes - Client confirmed resolved
+    if (action === 'feedback_yes') {
+      const text = messages.thanks
+      
+      await sendTelegramMessage(telegramChatId, text)
+
+      // Update case
+      await sql`
+        UPDATE support_cases 
+        SET status = 'resolved',
+            resolution_notes = REPLACE(COALESCE(resolution_notes, ''), '[Awaiting feedback]', '[Confirmed resolved by client]'),
+            updated_at = NOW()
+        WHERE id = ${caseId}
+      `
+
+      // Record feedback
+      await sql`
+        INSERT INTO support_case_activities (id, case_id, type, title, description, created_at)
+        VALUES (
+          ${'act_' + Date.now()},
+          ${caseId},
+          'client_feedback',
+          'Клиент подтвердил решение',
+          'Клиент подтвердил что проблема решена',
+          NOW()
+        )
+      `
+
+      return json({ success: true, action: 'feedback_yes', status: 'resolved' })
+    }
+
+    // Action: feedback_no - Client says not resolved, reopen
+    if (action === 'feedback_no') {
+      const text = messages.reopened
+      
+      await sendTelegramMessage(telegramChatId, text)
+
+      // Reopen case
+      await sql`
+        UPDATE support_cases 
+        SET status = 'open',
+            priority = CASE WHEN priority = 'low' THEN 'medium' ELSE priority END,
+            resolution_notes = REPLACE(COALESCE(resolution_notes, ''), '[Awaiting feedback]', '[Reopened by client]'),
+            updated_at = NOW()
+        WHERE id = ${caseId}
+      `
+
+      // Record escalation
+      await sql`
+        INSERT INTO support_case_activities (id, case_id, type, title, description, created_at)
+        VALUES (
+          ${'act_' + Date.now()},
+          ${caseId},
+          'reopened',
+          'Тикет переоткрыт',
+          'Клиент сообщил что проблема не решена',
+          NOW()
+        )
+      `
+
+      return json({ success: true, action: 'feedback_no', status: 'reopened' })
+    }
+
+    return json({ error: 'Invalid action' }, 400)
+
+  } catch (e: any) {
+    console.error('Resolve notify error:', e)
+    return json({ error: e.message }, 500)
+  }
+}
