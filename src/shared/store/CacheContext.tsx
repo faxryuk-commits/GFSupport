@@ -26,6 +26,13 @@ export interface CachedMessage {
   status?: 'sent' | 'delivered' | 'read'
   replyTo?: { id: string; text: string; sender: string }
   attachments?: { type: string; name: string; url: string; size?: string }[]
+  // Media fields
+  mediaType?: string
+  mediaUrl?: string
+  thumbnailUrl?: string
+  fileName?: string
+  fileSize?: number
+  mimeType?: string
 }
 
 export interface CachedUser {

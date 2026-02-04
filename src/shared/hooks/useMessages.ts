@@ -26,7 +26,14 @@ export function useMessages(channelId: string | null) {
       isFromTeam: !m.isClient,
       text: m.text,
       isRead: true,
-      createdAt: new Date(m.timestamp).toISOString()
+      createdAt: new Date(m.timestamp).toISOString(),
+      // Media fields
+      mediaType: m.mediaType as Message['mediaType'],
+      mediaUrl: m.mediaUrl,
+      thumbnailUrl: m.thumbnailUrl,
+      fileName: m.fileName,
+      fileSize: m.fileSize,
+      mimeType: m.mimeType,
     }))
   }, [])
 
@@ -41,7 +48,14 @@ export function useMessages(channelId: string | null) {
       time: new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
       timestamp: new Date(m.createdAt).getTime(),
       isClient: m.senderRole === 'client',
-      status: m.isRead ? 'read' : 'delivered'
+      status: m.isRead ? 'read' : 'delivered',
+      // Media fields
+      mediaType: m.mediaType,
+      mediaUrl: m.mediaUrl,
+      thumbnailUrl: m.thumbnailUrl,
+      fileName: m.fileName,
+      fileSize: m.fileSize,
+      mimeType: m.mimeType,
     }))
   }, [])
 
