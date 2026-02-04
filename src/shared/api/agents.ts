@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../services/api.service'
+import { apiGet, apiPost, apiPut } from '../services/api.service'
 import type { Agent } from '@/entities/agent'
 
 interface AgentsResponse {
@@ -11,6 +11,30 @@ export async function fetchAgents(): Promise<Agent[]> {
 
 export async function fetchAgent(id: string): Promise<Agent> {
   return apiGet<{ agent: Agent }>(`/agents/${id}`).then(r => r.agent)
+}
+
+export async function updateAgent(id: string, data: {
+  name?: string
+  username?: string
+  email?: string
+  role?: string
+  password?: string
+  phone?: string
+  permissions?: string[]
+}): Promise<void> {
+  await apiPut('/agents', { id, ...data })
+}
+
+export async function createAgent(data: {
+  name: string
+  username?: string
+  email?: string
+  role?: string
+  password?: string
+  phone?: string
+  permissions?: string[]
+}): Promise<{ agentId: string }> {
+  return apiPost('/agents', data)
 }
 
 export async function loginAgent(

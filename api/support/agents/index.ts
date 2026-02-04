@@ -39,12 +39,16 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`
     await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS email VARCHAR(255)`
+    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`
+    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS position VARCHAR(100)`
+    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS department VARCHAR(100)`
+    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb`
   } catch (e) { /* columns exist or table doesn't exist yet */ }
 
   // POST - Create new agent
   if (req.method === 'POST') {
     try {
-      const { name, username, email, telegramId, role, password } = await req.json()
+      const { name, username, email, telegramId, role, password, phone, position, department, permissions } = await req.json()
 
       if (!name) {
         return json({ error: 'Name is required' }, 400)
@@ -52,10 +56,11 @@ export default async function handler(req: Request): Promise<Response> {
 
       const id = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const passwordHash = password ? hashPassword(password) : null
+      const permissionsJson = permissions ? JSON.stringify(permissions) : '[]'
 
       await sql`
-        INSERT INTO support_agents (id, name, username, email, telegram_id, role, status, password_hash)
-        VALUES (${id}, ${name}, ${username || null}, ${email || null}, ${telegramId || null}, ${role || 'agent'}, 'offline', ${passwordHash})
+        INSERT INTO support_agents (id, name, username, email, telegram_id, role, status, password_hash, phone, position, department, permissions)
+        VALUES (${id}, ${name}, ${username || null}, ${email || null}, ${telegramId || null}, ${role || 'agent'}, 'offline', ${passwordHash}, ${phone || null}, ${position || null}, ${department || null}, ${permissionsJson}::jsonb)
       `
 
       return json({ success: true, agentId: id })
@@ -67,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
   // PUT - Update agent
   if (req.method === 'PUT') {
     try {
-      const { id, name, username, email, telegramId, role, password, status } = await req.json()
+      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions } = await req.json()
 
       if (!id) {
         return json({ error: 'Agent ID is required' }, 400)
@@ -81,7 +86,10 @@ export default async function handler(req: Request): Promise<Response> {
           email = COALESCE(${email || null}, email),
           telegram_id = COALESCE(${telegramId || null}, telegram_id),
           role = COALESCE(${role || null}, role),
-          status = COALESCE(${status || null}, status)
+          status = COALESCE(${status || null}, status),
+          phone = COALESCE(${phone || null}, phone),
+          position = COALESCE(${position || null}, position),
+          department = COALESCE(${department || null}, department)
         WHERE id = ${id}
       `
 
@@ -89,6 +97,12 @@ export default async function handler(req: Request): Promise<Response> {
       if (password) {
         const passwordHash = hashPassword(password)
         await sql`UPDATE support_agents SET password_hash = ${passwordHash} WHERE id = ${id}`
+      }
+
+      // Update permissions if provided
+      if (permissions !== undefined) {
+        const permissionsJson = JSON.stringify(permissions)
+        await sql`UPDATE support_agents SET permissions = ${permissionsJson}::jsonb WHERE id = ${id}`
       }
 
       return json({ success: true })
@@ -153,7 +167,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
   
   try {
-    const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at FROM support_agents ORDER BY name ASC`
+    const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at, phone, position, department, permissions FROM support_agents ORDER BY name ASC`
 
     // Calculate metrics for each agent
     const agentsWithMetrics = await Promise.all(rows.map(async (r: any) => {
@@ -276,6 +290,14 @@ export default async function handler(req: Request): Promise<Response> {
       // Use status from DB if it's 'online', otherwise use computed isOnline
       const finalStatus = r.status === 'online' ? 'online' : (isOnline ? 'online' : 'offline')
       
+      // Parse permissions
+      let permissions: string[] = []
+      try {
+        if (r.permissions) {
+          permissions = typeof r.permissions === 'string' ? JSON.parse(r.permissions) : r.permissions
+        }
+      } catch (e) { /* invalid json */ }
+
       return {
         id: r.id,
         name: r.name,
@@ -287,6 +309,10 @@ export default async function handler(req: Request): Promise<Response> {
         avatarUrl: r.avatar_url,
         createdAt: r.created_at,
         lastSeenAt: lastSeenAt,
+        phone: r.phone,
+        position: r.position,
+        department: r.department,
+        permissions: permissions,
         assignedChannels: resolvedCount,
         activeChats: activeChatsCount,
         metrics: {

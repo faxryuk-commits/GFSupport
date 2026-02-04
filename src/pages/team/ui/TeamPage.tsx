@@ -1,9 +1,26 @@
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail, MessageCircle, Clock, Calendar } from 'lucide-react'
-import { fetchAgents } from '@/shared/api'
+import { Plus, Loader2, AlertCircle, Copy, Check, Link, Mail, MessageCircle, Clock, Calendar, Eye, EyeOff } from 'lucide-react'
+import { fetchAgents, updateAgent } from '@/shared/api'
 import { apiPost, apiGet } from '@/shared/services/api.service'
 import { Modal } from '@/shared/ui'
 import type { Agent } from '@/entities/agent'
+
+// Available permission modules
+const PERMISSION_MODULES = [
+  { id: 'cases', label: 'Кейсы' },
+  { id: 'channels', label: 'Каналы' },
+  { id: 'messages', label: 'Сообщения' },
+  { id: 'analytics', label: 'Аналитика' },
+  { id: 'users', label: 'Пользователи' },
+  { id: 'automations', label: 'Автоматизации' },
+  { id: 'settings', label: 'Настройки' },
+]
+
+const ROLE_OPTIONS = [
+  { value: 'agent', label: 'Агент' },
+  { value: 'manager', label: 'Менеджер' },
+  { value: 'admin', label: 'Администратор' },
+]
 
 interface Invite {
   id: string
@@ -97,6 +114,20 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   // Profile modal state
   const [selectedAgent, setSelectedAgent] = useState<DisplayAgent | null>(null)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  
+  // Edit modal state
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
+  const [editForm, setEditForm] = useState({
+    name: '',
+    username: '',
+    email: '',
+    role: 'agent',
+    password: '',
+    phone: '',
+    permissions: [] as string[],
+  })
+  const [showPassword, setShowPassword] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadAgents()
@@ -106,6 +137,56 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   const handleViewProfile = (agent: DisplayAgent) => {
     setSelectedAgent(agent)
     setIsProfileOpen(true)
+  }
+
+  // Open edit modal
+  function openEditModal(agent: Agent) {
+    setEditingAgent(agent)
+    setEditForm({
+      name: agent.name || '',
+      username: agent.username || '',
+      email: agent.email || '',
+      role: agent.role || 'agent',
+      password: '',
+      phone: (agent as any).phone || '',
+      permissions: (agent as any).permissions || [],
+    })
+    setShowPassword(false)
+  }
+
+  // Save agent changes
+  async function saveAgent() {
+    if (!editingAgent) return
+    
+    setSaving(true)
+    try {
+      await updateAgent(editingAgent.id, {
+        name: editForm.name,
+        username: editForm.username,
+        email: editForm.email,
+        role: editForm.role,
+        password: editForm.password || undefined,
+        phone: editForm.phone,
+        permissions: editForm.permissions,
+      })
+      setEditingAgent(null)
+      loadAgents()
+    } catch (err) {
+      console.error('Failed to save agent:', err)
+      alert('Ошибка сохранения')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Toggle permission
+  function togglePermission(moduleId: string) {
+    setEditForm(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(moduleId)
+        ? prev.permissions.filter(p => p !== moduleId)
+        : [...prev.permissions, moduleId]
+    }))
   }
 
   async function loadAgents() {
@@ -366,9 +447,17 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-6">
-          {displayAgents.map(agent => (
-            <AgentCard key={agent.id} agent={agent} onViewProfile={() => handleViewProfile(agent)} />
-          ))}
+          {displayAgents.map(agent => {
+            const fullAgent = agents.find(a => a.id === agent.id)
+            return (
+              <AgentCard 
+                key={agent.id} 
+                agent={agent} 
+                onViewProfile={() => handleViewProfile(agent)}
+                onEdit={() => fullAgent && openEditModal(fullAgent)}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -468,6 +557,137 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
           </div>
         )}
       </Modal>
+
+      {/* Edit Agent Modal */}
+      <Modal
+        isOpen={!!editingAgent}
+        onClose={() => setEditingAgent(null)}
+        title="Редактировать сотрудника"
+        size="md"
+      >
+        <div className="space-y-5">
+          {/* Name */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Имя *</label>
+            <input
+              type="text"
+              value={editForm.name}
+              onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Имя сотрудника"
+            />
+          </div>
+
+          {/* Telegram Username */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Telegram username</label>
+            <div className="flex">
+              <span className="inline-flex items-center px-3 border border-r-0 border-slate-300 rounded-l-lg bg-slate-50 text-slate-500">
+                @
+              </span>
+              <input
+                type="text"
+                value={editForm.username}
+                onChange={e => setEditForm(prev => ({ ...prev, username: e.target.value.replace('@', '') }))}
+                className="flex-1 px-4 py-2.5 border border-slate-300 rounded-r-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="username"
+              />
+            </div>
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={editForm.email}
+              onChange={e => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="email@example.com"
+            />
+          </div>
+
+          {/* Role */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
+            <select
+              value={editForm.role}
+              onChange={e => setEditForm(prev => ({ ...prev, role: e.target.value }))}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+            >
+              {ROLE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Password */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Новый пароль <span className="text-slate-400 font-normal">(оставьте пустым, чтобы не менять)</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={editForm.password}
+                onChange={e => setEditForm(prev => ({ ...prev, password: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Permissions */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-3">Доступ к модулям</label>
+            <div className="grid grid-cols-2 gap-3">
+              {PERMISSION_MODULES.map(mod => (
+                <label
+                  key={mod.id}
+                  className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    editForm.permissions.includes(mod.id)
+                      ? 'bg-blue-50 border-blue-200 text-blue-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={editForm.permissions.includes(mod.id)}
+                    onChange={() => togglePermission(mod.id)}
+                    className="w-4 h-4 text-blue-500 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium">{mod.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400 mt-2">* Доступы определяются ролью сотрудника</p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-4 border-t border-slate-200">
+            <button
+              onClick={() => setEditingAgent(null)}
+              className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={saveAgent}
+              disabled={saving || !editForm.name.trim()}
+              className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -484,7 +704,7 @@ function MetricCard({ value, label, hasOnline }: { value: string | number; label
   )
 }
 
-function AgentCard({ agent, onViewProfile }: { agent: DisplayAgent; onViewProfile: () => void }) {
+function AgentCard({ agent, onViewProfile, onEdit }: { agent: DisplayAgent; onViewProfile: () => void; onEdit?: () => void }) {
   return (
     <div className={`bg-white rounded-xl p-5 border-2 ${
       agent.status === 'online' ? 'border-green-200' : 'border-slate-200'
@@ -557,12 +777,22 @@ function AgentCard({ agent, onViewProfile }: { agent: DisplayAgent; onViewProfil
           </div>
 
           {/* Actions */}
-          <button 
-            onClick={onViewProfile}
-            className="text-blue-500 text-sm font-medium mt-3 hover:underline"
-          >
-            Профиль
-          </button>
+          <div className="flex gap-4 mt-3">
+            <button 
+              onClick={onViewProfile}
+              className="text-blue-500 text-sm font-medium hover:underline"
+            >
+              Профиль
+            </button>
+            {onEdit && (
+              <button 
+                onClick={onEdit}
+                className="text-slate-500 text-sm font-medium hover:underline hover:text-slate-700"
+              >
+                Редактировать
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
