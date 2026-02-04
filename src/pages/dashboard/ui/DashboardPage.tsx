@@ -14,6 +14,7 @@ import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 import { ResponseTimeDetailsModal } from '@/pages/analytics/ui/ResponseTimeDetailsModal'
 import { CommitmentsPanel } from '@/features/commitments/ui'
+import { ProblemDetailsModal } from './ProblemDetailsModal'
 
 // AI Рекомендации на основе данных
 interface AIRecommendation {
@@ -214,6 +215,7 @@ export function DashboardPage() {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
   const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true)
+  const [problemDetailsModal, setProblemDetailsModal] = useState<{ category: string; label: string } | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -1436,17 +1438,23 @@ export function DashboardPage() {
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-orange-500" />
                 Повторяющиеся проблемы
+                <span className="text-xs text-slate-400 font-normal ml-auto">Кликните для деталей</span>
               </h2>
               {!analytics.patterns?.recurringProblems || analytics.patterns.recurringProblems.length === 0 ? (
                 <div className="py-8 text-center text-slate-400 text-sm">Нет данных</div>
               ) : (
                 <div className="space-y-2">
                   {analytics.patterns.recurringProblems.slice(0, 6).map((p, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                    <div 
+                      key={i} 
+                      className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 rounded-lg px-2 -mx-2 transition-colors"
+                      onClick={() => setProblemDetailsModal({ category: p.category || p.issue, label: p.issue })}
+                    >
                       <span className="text-slate-700 text-sm truncate flex-1">{p.issue}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-400">{p.affected} комп.</span>
                         <Badge variant="warning" size="sm">{p.count}</Badge>
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
                       </div>
                     </div>
                   ))}
@@ -1495,6 +1503,16 @@ export function DashboardPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Problem Details Modal */}
+      {problemDetailsModal && (
+        <ProblemDetailsModal
+          isOpen={!!problemDetailsModal}
+          onClose={() => setProblemDetailsModal(null)}
+          category={problemDetailsModal.category}
+          categoryLabel={problemDetailsModal.label}
+        />
       )}
     </div>
   )
