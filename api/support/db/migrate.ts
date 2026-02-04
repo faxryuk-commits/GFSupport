@@ -499,6 +499,21 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Added response_time_ms to messages')
     } catch (e) { /* column exists */ }
 
+    // Migration 29: Add media metadata fields to messages
+    try {
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size BIGINT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`
+      migrations.push('Added media metadata fields (thumbnail_url, file_name, file_size, mime_type)')
+    } catch (e) { /* columns exist */ }
+
+    // Migration 30: Add photo_url to channels
+    try {
+      await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS photo_url TEXT`
+      migrations.push('Added photo_url to channels')
+    } catch (e) { /* column exists */ }
+
     return json({
       success: true,
       migrations,
