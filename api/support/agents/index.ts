@@ -161,21 +161,31 @@ export default async function handler(req: Request): Promise<Response> {
       // Match by: telegram_id, username, or name (partial match)
       let messagesCount = 0
       let resolvedCount = 0
+      let activeChatsCount = 0
       let isOnline = false
       
       try {
         // Build matching conditions for this agent
-        // Priority: telegram_id > username > name
+        // Match by: telegram_id, username, or exact/similar name
+        const agentName = r.name || ''
+        const agentUsername = r.username || ''
+        const agentTelegramId = r.telegram_id || ''
+        
         const msgResult = await sql`
           SELECT COUNT(*) as count 
           FROM support_messages 
-          WHERE (
-            (${r.telegram_id}::text IS NOT NULL AND sender_id::text = ${r.telegram_id}::text)
-            OR (${r.username} IS NOT NULL AND LOWER(sender_username) = LOWER(${r.username}))
-            OR (sender_name ILIKE ${'%' + r.name + '%'})
-          )
-            AND (sender_role IN ('support', 'team', 'agent') OR is_from_client = false)
+          WHERE (sender_role IN ('support', 'team', 'agent') OR is_from_client = false)
             AND created_at > NOW() - INTERVAL '30 days'
+            AND (
+              -- Match by telegram_id
+              (${agentTelegramId} != '' AND sender_id::text = ${agentTelegramId})
+              -- Match by username (case insensitive)
+              OR (${agentUsername} != '' AND LOWER(sender_username) = LOWER(${agentUsername}))
+              -- Match by exact name
+              OR (${agentName} != '' AND sender_name = ${agentName})
+              -- Match by similar name (contains)
+              OR (${agentName} != '' AND LENGTH(${agentName}) >= 3 AND sender_name ILIKE ${`%${agentName}%`})
+            )
         `
         messagesCount = parseInt(msgResult[0]?.count || 0)
         
@@ -184,16 +194,34 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT COUNT(DISTINCT m.channel_id) as count
           FROM support_messages m
           JOIN support_channels c ON c.id = m.channel_id
-          WHERE (
-            (${r.telegram_id}::text IS NOT NULL AND m.sender_id::text = ${r.telegram_id}::text)
-            OR (${r.username} IS NOT NULL AND LOWER(m.sender_username) = LOWER(${r.username}))
-            OR (m.sender_name ILIKE ${'%' + r.name + '%'})
-          )
-            AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
-            AND c.awaiting_reply = false
+          WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
             AND m.created_at > NOW() - INTERVAL '30 days'
+            AND c.awaiting_reply = false
+            AND (
+              (${agentTelegramId} != '' AND m.sender_id::text = ${agentTelegramId})
+              OR (${agentUsername} != '' AND LOWER(m.sender_username) = LOWER(${agentUsername}))
+              OR (${agentName} != '' AND m.sender_name = ${agentName})
+              OR (${agentName} != '' AND LENGTH(${agentName}) >= 3 AND m.sender_name ILIKE ${`%${agentName}%`})
+            )
         `
         resolvedCount = parseInt(resolvedResult[0]?.count || 0)
+        
+        // Active chats - channels awaiting reply where this agent participated
+        const activeChatsResult = await sql`
+          SELECT COUNT(DISTINCT m.channel_id) as count
+          FROM support_messages m
+          JOIN support_channels c ON c.id = m.channel_id
+          WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+            AND m.created_at > NOW() - INTERVAL '7 days'
+            AND c.awaiting_reply = true
+            AND (
+              (${agentTelegramId} != '' AND m.sender_id::text = ${agentTelegramId})
+              OR (${agentUsername} != '' AND LOWER(m.sender_username) = LOWER(${agentUsername}))
+              OR (${agentName} != '' AND m.sender_name = ${agentName})
+              OR (${agentName} != '' AND LENGTH(${agentName}) >= 3 AND m.sender_name ILIKE ${`%${agentName}%`})
+            )
+        `
+        activeChatsCount = parseInt(activeChatsResult[0]?.count || 0)
         
         // Check if agent is online based on recent activity (last 10 minutes)
         const activityResult = await sql`
@@ -259,8 +287,8 @@ export default async function handler(req: Request): Promise<Response> {
         avatarUrl: r.avatar_url,
         createdAt: r.created_at,
         lastSeenAt: lastSeenAt,
-        assignedChannels: 0,
-        activeChats: 0,
+        assignedChannels: resolvedCount,
+        activeChats: activeChatsCount,
         metrics: {
           totalConversations: messagesCount,
           resolvedConversations: resolvedCount,
