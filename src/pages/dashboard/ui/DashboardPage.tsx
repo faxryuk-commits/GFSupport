@@ -1017,39 +1017,58 @@ export function DashboardPage() {
                 Обращения по дням
               </h2>
               {!analytics.team?.dailyTrend || analytics.team.dailyTrend.length === 0 ? (
-                <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Нет данных</div>
+                <div className="h-40 flex items-center justify-center text-slate-400 text-sm">Нет данных</div>
               ) : (
                 <>
-                  <div className="h-48 flex items-end gap-1">
+                  <div className="h-44 flex items-end gap-0.5 px-1">
                     {analytics.team.dailyTrend.map((d, i) => {
-                      const maxVal = Math.max(...analytics.team.dailyTrend!.map(x => x.cases), 1)
-                      const height = Math.max((d.cases / maxVal) * 140, 4)
+                      const maxVal = Math.max(...analytics.team.dailyTrend!.map(x => Math.max(x.cases, x.resolved)), 1)
+                      const createdHeight = Math.max((d.cases / maxVal) * 100, d.cases > 0 ? 8 : 2)
+                      const resolvedHeight = Math.max((d.resolved / maxVal) * 100, d.resolved > 0 ? 6 : 0)
+                      const showLabel = d.cases > 0 || d.resolved > 0
+                      
                       return (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                          <div className="w-full flex flex-col gap-0.5">
-                            <div 
-                              className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600"
-                              style={{ height: `${height}px` }}
-                              title={`${d.cases} создано`}
-                            />
+                        <div key={i} className="flex-1 flex flex-col items-center min-w-0">
+                          {/* Число над столбцом */}
+                          {showLabel && (
+                            <div className="text-[9px] text-slate-600 font-medium mb-0.5 leading-none">
+                              {d.cases > 0 ? d.cases : ''}
+                            </div>
+                          )}
+                          {!showLabel && <div className="h-3" />}
+                          
+                          {/* Столбцы */}
+                          <div className="w-full flex flex-col gap-px" style={{ height: `${createdHeight + resolvedHeight}px` }}>
+                            {d.cases > 0 && (
+                              <div 
+                                className="w-full bg-blue-500 rounded-sm transition-all hover:bg-blue-600 cursor-pointer"
+                                style={{ height: `${createdHeight}px`, minHeight: '4px' }}
+                                title={`${d.cases} создано`}
+                              />
+                            )}
                             {d.resolved > 0 && (
                               <div 
-                                className="w-full bg-green-400 rounded-b"
-                                style={{ height: `${Math.max((d.resolved / maxVal) * 140, 2)}px` }}
+                                className="w-full bg-green-400 rounded-sm cursor-pointer"
+                                style={{ height: `${resolvedHeight}px`, minHeight: '4px' }}
                                 title={`${d.resolved} решено`}
                               />
                             )}
+                            {d.cases === 0 && d.resolved === 0 && (
+                              <div className="w-full bg-slate-200 rounded-sm" style={{ height: '2px' }} />
+                            )}
                           </div>
-                          <span className="text-[9px] text-slate-400 truncate w-full text-center">
-                            {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                          
+                          {/* Дата */}
+                          <span className="text-[8px] text-slate-400 truncate w-full text-center mt-1 leading-none">
+                            {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '')}
                           </span>
                         </div>
                       )
                     })}
                   </div>
-                  <div className="flex gap-4 mt-3 text-xs">
-                    <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded" /> Создано</span>
-                    <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded" /> Решено</span>
+                  <div className="flex gap-4 mt-2 text-xs">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-blue-500 rounded-sm" /> Создано</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-green-400 rounded-sm" /> Решено</span>
                   </div>
                 </>
               )}
