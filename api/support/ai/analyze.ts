@@ -86,26 +86,26 @@ interface AnalysisResult {
 
 // Simple intents that can be detected without AI (for performance)
 const SIMPLE_INTENT_PATTERNS: Array<{ pattern: RegExp; intent: string; autoReply: boolean }> = [
-  // Greetings
-  { pattern: /^(здравствуйте|привет|добрый\s+(день|вечер|утро)|salom|assalomu|hi|hello|приветствую)[\s!.,]*$/i, intent: 'greeting', autoReply: true },
+  // Greetings (Russian + Uzbek Latin + Uzbek Cyrillic)
+  { pattern: /^(здравствуйте|привет|добрый\s+(день|вечер|утро)|salom|assalomu\s*alaykum|assalom|hi|hello|приветствую|салом|ассалому\s*алайкум)[\s!.,]*$/i, intent: 'greeting', autoReply: true },
   
-  // Gratitude
-  { pattern: /^(спасибо|благодар|rahmat|thanks|thank you|отлично|супер|класс|молодцы?)[\s!.,]*$/i, intent: 'gratitude', autoReply: true },
+  // Gratitude (Russian + Uzbek)
+  { pattern: /^(спасибо|благодар|rahmat|raxmat|thanks|thank you|отлично|супер|класс|молодцы?|рахмат|катта рахмат|katta rahmat)[\s!.,]*$/i, intent: 'gratitude', autoReply: true },
   
-  // Closing
-  { pattern: /^(до свидания|пока|всего доброго|xayr|goodbye|bye|удачи)[\s!.,]*$/i, intent: 'closing', autoReply: true },
+  // Closing (Russian + Uzbek)
+  { pattern: /^(до свидания|пока|всего доброго|xayr|hayr|xo'?sh|хайр|хуш|goodbye|bye|удачи|ko'rishguncha|кўришгунча)[\s!.,]*$/i, intent: 'closing', autoReply: true },
   
-  // Short confirmations (no response needed)
-  { pattern: /^(ок|ok|хорошо|понял|понятно|ясно|да|нет|угу|ага|👍|👌|✅|🙏|принято|отлично)[\s!.,]*$/i, intent: 'response', autoReply: false },
+  // Short confirmations (no response needed) - Russian + Uzbek
+  { pattern: /^(ок|ok|хорошо|понял|понятно|ясно|да|нет|угу|ага|👍|👌|✅|🙏|принято|отлично|yaxshi|яхши|ha|xa|yo'q|йўқ|tushundim|тушундим|bo'ldi|бўлди|mayli|майли)[\s!.,]*$/i, intent: 'response', autoReply: false },
   
-  // FAQ - pricing
-  { pattern: /(сколько стоит|какая цена|тариф|стоимость|прайс|narxi|qancha|price)/i, intent: 'faq_pricing', autoReply: true },
+  // FAQ - pricing (Russian + Uzbek)
+  { pattern: /(сколько стоит|какая цена|тариф|стоимость|прайс|narxi|qancha|qancha turadi|price|нархи|қанча|канча туради)/i, intent: 'faq_pricing', autoReply: true },
   
-  // FAQ - hours
-  { pattern: /(время работы|график|рабочие часы|когда работаете|working hours|soat)/i, intent: 'faq_hours', autoReply: true },
+  // FAQ - hours (Russian + Uzbek)
+  { pattern: /(время работы|график|рабочие часы|когда работаете|working hours|soat|ish vaqti|qachon ishlaysiz|иш вақти|соат|качон ишлайсиз)/i, intent: 'faq_hours', autoReply: true },
   
-  // FAQ - contacts
-  { pattern: /(телефон|контакт|адрес|как связаться|номер|manzil|telefon|contact)/i, intent: 'faq_contacts', autoReply: true },
+  // FAQ - contacts (Russian + Uzbek)
+  { pattern: /(телефон|контакт|адрес|как связаться|номер|manzil|telefon|contact|aloqa|bog'lanish|манзил|алоқа|боғланиш)/i, intent: 'faq_contacts', autoReply: true },
 ]
 
 // Quick detection of simple intents without AI
@@ -376,6 +376,7 @@ export default async function handler(req: Request): Promise<Response> {
                 intent: analysis.intent,
                 senderName: senderName || '',
                 telegramId: telegramId || null,
+                originalText: text, // Pass original text for language detection
               }),
             })
             autoReplyResult = await response.json()
@@ -386,11 +387,90 @@ export default async function handler(req: Request): Promise<Response> {
         }
       }
 
+      // Auto-create ticket for problems (urgent: >= 2, or isProblem with needsResponse)
+      let ticketResult = null
+      if (analysis.isProblem && analysis.needsResponse && analysis.urgency >= 2 && messageId && channelId) {
+        console.log(`[AI Analyze] Auto-creating ticket for problem message (urgency=${analysis.urgency})`)
+        
+        try {
+          // Check if ticket already exists for this message
+          const existingCase = await sql`
+            SELECT id FROM support_cases WHERE source_message_id = ${messageId} LIMIT 1
+          `
+          
+          if (existingCase.length === 0) {
+            // Get channel info for case creation
+            const channelInfo = await sql`
+              SELECT name, company_id, telegram_chat_id FROM support_channels WHERE id = ${channelId}
+            `
+            
+            const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+            const casePriority = analysis.urgency >= 5 ? 'urgent' : 
+                                 analysis.urgency >= 4 ? 'high' : 
+                                 analysis.urgency >= 3 ? 'medium' : 'low'
+            const caseSeverity = analysis.urgency >= 4 ? 'critical' : 
+                                 analysis.urgency >= 3 ? 'high' : 'normal'
+            
+            // Add column if not exists
+            try {
+              await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS source_message_id VARCHAR(64)`
+            } catch (e) { /* column exists */ }
+            
+            await sql`
+              INSERT INTO support_cases (
+                id, channel_id, company_id, title, description,
+                category, priority, severity, status, source_message_id,
+                reporter_name, created_at
+              ) VALUES (
+                ${caseId},
+                ${channelId},
+                ${channelInfo[0]?.company_id || null},
+                ${analysis.summary || text.slice(0, 100)},
+                ${text},
+                ${analysis.category || 'general'},
+                ${casePriority},
+                ${caseSeverity},
+                'open',
+                ${messageId},
+                ${senderName || 'Клиент'},
+                NOW()
+              )
+            `
+            
+            // Link message to case
+            await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId}`
+            
+            // Create activity
+            await sql`
+              INSERT INTO support_case_activities (id, case_id, type, title, description, created_at)
+              VALUES (
+                ${'act_' + Date.now()},
+                ${caseId},
+                'auto_created',
+                'Тикет создан автоматически',
+                ${'AI определил проблему: ' + (analysis.summary || analysis.category)},
+                NOW()
+              )
+            `
+            
+            ticketResult = { success: true, caseId, priority: casePriority }
+            console.log(`[AI Analyze] Auto-created ticket ${caseId} with priority ${casePriority}`)
+          } else {
+            console.log(`[AI Analyze] Ticket already exists for message ${messageId}`)
+            ticketResult = { success: false, reason: 'Ticket already exists', existingCaseId: existingCase[0].id }
+          }
+        } catch (e: any) {
+          console.log(`[AI Analyze] Auto-ticket creation failed: ${e.message}`)
+          ticketResult = { success: false, error: e.message }
+        }
+      }
+
       return json({
         success: true,
         analysis,
         messageId,
         autoReply: autoReplyResult,
+        ticket: ticketResult,
       })
 
     } catch (e: any) {

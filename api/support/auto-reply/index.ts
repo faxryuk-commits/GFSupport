@@ -118,6 +118,30 @@ function personalizeTemplate(template: string, vars: Record<string, string>): st
   return result.trim()
 }
 
+// Detect language from text (ru or uz)
+function detectLanguage(text: string): 'ru' | 'uz' {
+  const lower = text.toLowerCase()
+  // Uzbek indicators (Latin)
+  const uzLatinWords = /\b(salom|rahmat|xayr|kerak|qanday|nima|yordam|yaxshi|bormi|bor|yoq|ha|yo'q)\b/i
+  // Uzbek indicators (Cyrillic)
+  const uzCyrillicWords = /\b(салом|рахмат|хайр|керак|қандай|нима|ёрдам|яхши|борми|бор|йўқ)\b/i
+  
+  if (uzLatinWords.test(lower) || uzCyrillicWords.test(lower)) {
+    return 'uz'
+  }
+  return 'ru'
+}
+
+// Check if this is an ongoing conversation (has recent activity)
+async function isOngoingConversation(sql: any, channelId: string): Promise<boolean> {
+  const recentMessages = await sql`
+    SELECT COUNT(*) as cnt FROM support_messages
+    WHERE channel_id = ${channelId}
+      AND created_at > NOW() - INTERVAL '24 hours'
+  `
+  return parseInt(recentMessages[0]?.cnt || '0') > 1
+}
+
 // Process auto-reply based on intent
 async function processAutoReply(
   sql: any,
@@ -125,7 +149,8 @@ async function processAutoReply(
   telegramChatId: string,
   intent: string,
   senderName: string,
-  telegramId?: string
+  telegramId?: string,
+  originalText?: string
 ): Promise<{ success: boolean; message?: string; skipped?: boolean; reason?: string }> {
   
   // Get settings
@@ -148,6 +173,15 @@ async function processAutoReply(
     return { success: false, skipped: true, reason: 'FAQ auto-reply disabled' }
   }
   
+  // IMPORTANT: Don't send greeting in ongoing conversations!
+  if (intent === 'greeting') {
+    const isOngoing = await isOngoingConversation(sql, channelId)
+    if (isOngoing) {
+      console.log(`[Auto-Reply] Skipping greeting - ongoing conversation in channel ${channelId}`)
+      return { success: false, skipped: true, reason: 'Ongoing conversation - no greeting needed' }
+    }
+  }
+  
   // Check if we already sent auto-reply recently (spam protection)
   const recentAutoReply = await sql`
     SELECT id FROM support_messages
@@ -160,12 +194,16 @@ async function processAutoReply(
     return { success: false, skipped: true, reason: 'Recent auto-reply exists' }
   }
   
+  // Detect language from original message
+  const lang = originalText ? detectLanguage(originalText) : 'ru'
+  console.log(`[Auto-Reply] Detected language: ${lang}`)
+  
   // Get template for this intent
   let template = await getTemplate(sql, intent)
   
-  // Fallback to default templates if not found
+  // Fallback to default templates with language support
   if (!template) {
-    const defaults: Record<string, string> = {
+    const defaultsRu: Record<string, string> = {
       greeting: 'Здравствуйте{client_name}! Спасибо за обращение. Чем могу помочь?',
       gratitude: 'Рады были помочь! Если возникнут вопросы - обращайтесь.',
       closing: 'Спасибо за обращение! Хорошего дня!',
@@ -173,6 +211,16 @@ async function processAutoReply(
       faq_hours: 'Мы работаем с 09:00 до 22:00 по будням. В выходные с 10:00 до 18:00.',
       faq_contacts: 'Вы можете связаться с нами через этот чат или по телефону, указанному на сайте.',
     }
+    const defaultsUz: Record<string, string> = {
+      greeting: 'Assalomu alaykum{client_name}! Murojaat uchun rahmat. Qanday yordam bera olaman?',
+      gratitude: 'Yordamimiz tegdi - xursandmiz! Savollar bo\'lsa - murojaat qiling.',
+      closing: 'Murojaat uchun rahmat! Yaxshi kun tilaymiz!',
+      faq_pricing: 'Tariflar haqida ma\'lumot saytimizda. Maslahat kerak bo\'lsa - tez javob beramiz.',
+      faq_hours: 'Biz dushanbadan jumagacha 09:00 dan 22:00 gacha ishlaymiz. Dam olish kunlari 10:00 dan 18:00 gacha.',
+      faq_contacts: 'Bu chat orqali yoki saytdagi telefon raqami orqali bog\'lanishingiz mumkin.',
+    }
+    
+    const defaults = lang === 'uz' ? defaultsUz : defaultsRu
     if (defaults[intent]) {
       template = { text: defaults[intent], vars: ['{client_name}'] }
     }
@@ -194,7 +242,7 @@ async function processAutoReply(
   // Personalize template
   const vars: Record<string, string> = {
     client_name: clientName ? `, ${clientName}` : '',
-    name: clientName || 'клиент',
+    name: clientName || (lang === 'uz' ? 'mijoz' : 'клиент'),
   }
   
   const responseText = personalizeTemplate(template.text, vars)
@@ -259,7 +307,7 @@ export default async function handler(req: Request) {
   if (req.method === 'POST') {
     try {
       const body = await req.json()
-      const { channelId, telegramChatId, intent, senderName, telegramId } = body
+      const { channelId, telegramChatId, intent, senderName, telegramId, originalText } = body
 
       if (!channelId || !telegramChatId || !intent) {
         return json({ error: 'channelId, telegramChatId, and intent required' }, 400)
@@ -267,7 +315,7 @@ export default async function handler(req: Request) {
 
       console.log(`[Auto-Reply] Processing intent="${intent}" for channel ${channelId}`)
 
-      const result = await processAutoReply(sql, channelId, telegramChatId, intent, senderName, telegramId)
+      const result = await processAutoReply(sql, channelId, telegramChatId, intent, senderName, telegramId, originalText)
 
       console.log(`[Auto-Reply] Result: success=${result.success}, skipped=${result.skipped}`)
 
