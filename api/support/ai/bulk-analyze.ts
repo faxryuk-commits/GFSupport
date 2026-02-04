@@ -368,10 +368,14 @@ export default async function handler(req: Request): Promise<Response> {
                         analysis.problemType.includes('notWorking') ? 'technical' :
                         analysis.problemType.includes('order') ? 'order' : 'general'
         
+        // Get next ticket number
+        const maxNum = await sql`SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_num FROM support_cases`
+        const ticketNumber = maxNum[0]?.next_num || 1
+        
         await sql`
           INSERT INTO support_cases (
             id, channel_id, company_id, title, description,
-            category, priority, status, source_message_id, reporter_name, created_at
+            category, priority, status, source_message_id, reporter_name, ticket_number, created_at
           ) VALUES (
             ${caseId},
             ${msg.channel_id},
@@ -383,6 +387,7 @@ export default async function handler(req: Request): Promise<Response> {
             'detected',
             ${msg.id},
             ${msg.sender_name || 'Клиент'},
+            ${ticketNumber},
             NOW()
           )
         `
