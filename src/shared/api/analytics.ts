@@ -192,6 +192,23 @@ export interface AnalyticsData {
   }
   // Метрики по SLA категориям
   byCategory: Record<SlaCategory, SlaCategoryMetrics>
+  // Топ каналов требующих внимания
+  topDemandingChannels: Array<{
+    id: string
+    name: string
+    slaCategory: SlaCategory
+    awaitingReply: boolean
+    unreadCount: number
+    messagesCount: number
+    problemCount: number
+    negativeCount: number
+    urgentCount: number
+    openCases: number
+    recurringCases: number
+    avgResponseMinutes: number | null
+    attentionScore: number
+    lastMessageAt: string | null
+  }>
 }
 
 export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
@@ -291,6 +308,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         partner: { label: 'Delever + Партнёры', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
         internal: { label: 'Внутренняя команда', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
       },
+      topDemandingChannels: raw.topDemandingChannels || [],
     }
   } catch (error) {
     console.error('Failed to fetch analytics:', error)
@@ -312,6 +330,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         partner: { ...emptyCategory, label: 'Delever + Партнёры' },
         internal: { ...emptyCategory, label: 'Внутренняя команда' },
       },
+      topDemandingChannels: [],
     }
   }
 }

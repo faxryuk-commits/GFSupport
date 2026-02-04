@@ -1089,6 +1089,108 @@ export function DashboardPage() {
             </div>
           </div>
 
+          {/* Top Demanding Channels - Каналы требующие внимания */}
+          {analytics.topDemandingChannels && analytics.topDemandingChannels.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200">
+              <div className="px-5 py-4 border-b border-slate-100">
+                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-orange-500" />
+                  Каналы требующие внимания
+                  <span className="text-xs font-normal text-slate-400 ml-2">
+                    Топ по нагрузке, проблемам и срочности
+                  </span>
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-5 py-3 text-slate-600 font-medium">Канал</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Индекс</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Проблемы</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Негатив</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Срочные</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Кейсы</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analytics.topDemandingChannels.slice(0, 10).map((ch, i) => (
+                      <tr key={ch.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className={`w-2 h-2 rounded-full ${
+                                ch.attentionScore >= 30 ? 'bg-red-500' : 
+                                ch.attentionScore >= 15 ? 'bg-orange-500' : 'bg-yellow-500'
+                              }`}
+                            />
+                            <span className="font-medium text-slate-800 truncate max-w-[200px]" title={ch.name}>
+                              {ch.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            ch.attentionScore >= 30 ? 'bg-red-100 text-red-700' : 
+                            ch.attentionScore >= 15 ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {ch.attentionScore}
+                          </span>
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          {ch.problemCount > 0 ? (
+                            <span className="text-red-600 font-medium">{ch.problemCount}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          {ch.negativeCount > 0 ? (
+                            <span className="text-orange-600 font-medium">{ch.negativeCount}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          {ch.urgentCount > 0 ? (
+                            <span className="text-amber-600 font-medium">{ch.urgentCount}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          {ch.openCases > 0 ? (
+                            <span className="text-blue-600 font-medium">{ch.openCases}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          <div className="flex items-center justify-center gap-1">
+                            {ch.awaitingReply && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700">
+                                Ждёт
+                              </span>
+                            )}
+                            {ch.unreadCount > 0 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                                {ch.unreadCount}
+                              </span>
+                            )}
+                            {!ch.awaitingReply && ch.unreadCount === 0 && (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Team Metrics Table */}
           {analytics.team?.byManager && analytics.team.byManager.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200">

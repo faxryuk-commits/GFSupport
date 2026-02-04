@@ -581,6 +581,64 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // ============================================
+    // 6. TOP DEMANDING CHANNELS
+    // ============================================
+    
+    // Топ каналов требующих внимания (по нагрузке, проблемам, срочности)
+    const topDemandingChannels = await sql`
+      WITH channel_metrics AS (
+        SELECT 
+          c.id,
+          c.name,
+          c.sla_category,
+          c.awaiting_reply,
+          c.unread_count,
+          c.last_message_at,
+          -- Количество сообщений за период
+          COUNT(DISTINCT m.id) FILTER (WHERE m.created_at >= ${startDate.toISOString()}) as messages_count,
+          -- Количество проблемных сообщений
+          COUNT(DISTINCT m.id) FILTER (WHERE m.is_problem = true AND m.created_at >= ${startDate.toISOString()}) as problem_count,
+          -- Количество негативных сообщений
+          COUNT(DISTINCT m.id) FILTER (WHERE m.ai_sentiment IN ('negative', 'frustrated') AND m.created_at >= ${startDate.toISOString()}) as negative_count,
+          -- Количество срочных запросов
+          COUNT(DISTINCT m.id) FILTER (WHERE m.ai_urgency >= 4 AND m.created_at >= ${startDate.toISOString()}) as urgent_count,
+          -- Открытые кейсы
+          COUNT(DISTINCT cs.id) FILTER (WHERE cs.status NOT IN ('resolved', 'closed')) as open_cases,
+          -- Повторяющиеся кейсы
+          COUNT(DISTINCT cs.id) FILTER (WHERE cs.is_recurring = true) as recurring_cases,
+          -- Среднее время ответа
+          AVG(EXTRACT(EPOCH FROM (
+            (SELECT MIN(sm.created_at) FROM support_messages sm 
+             WHERE sm.channel_id = c.id AND sm.created_at > m.created_at 
+             AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false))
+            - m.created_at
+          )) / 60) FILTER (WHERE m.is_from_client = true OR m.sender_role = 'client') as avg_response_minutes
+        FROM support_channels c
+        LEFT JOIN support_messages m ON m.channel_id = c.id
+        LEFT JOIN support_cases cs ON cs.channel_id = c.id
+        WHERE c.is_active = true
+        GROUP BY c.id, c.name, c.sla_category, c.awaiting_reply, c.unread_count, c.last_message_at
+      )
+      SELECT 
+        *,
+        -- Расчёт "индекса внимания" (attention score)
+        (
+          COALESCE(messages_count, 0) * 0.1 +
+          COALESCE(problem_count, 0) * 3 +
+          COALESCE(negative_count, 0) * 4 +
+          COALESCE(urgent_count, 0) * 5 +
+          COALESCE(open_cases, 0) * 2 +
+          COALESCE(recurring_cases, 0) * 3 +
+          CASE WHEN awaiting_reply THEN 10 ELSE 0 END +
+          COALESCE(unread_count, 0) * 0.5
+        ) as attention_score
+      FROM channel_metrics
+      WHERE messages_count > 0 OR open_cases > 0 OR unread_count > 0
+      ORDER BY attention_score DESC
+      LIMIT 10
+    `
+
+    // ============================================
     // RESPONSE
     // ============================================
 
@@ -706,6 +764,24 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Метрики по SLA категориям
       byCategory,
+
+      // Топ каналов требующих внимания
+      topDemandingChannels: topDemandingChannels.map((ch: any) => ({
+        id: ch.id,
+        name: ch.name,
+        slaCategory: ch.sla_category || 'client',
+        awaitingReply: ch.awaiting_reply || false,
+        unreadCount: parseInt(ch.unread_count || 0),
+        messagesCount: parseInt(ch.messages_count || 0),
+        problemCount: parseInt(ch.problem_count || 0),
+        negativeCount: parseInt(ch.negative_count || 0),
+        urgentCount: parseInt(ch.urgent_count || 0),
+        openCases: parseInt(ch.open_cases || 0),
+        recurringCases: parseInt(ch.recurring_cases || 0),
+        avgResponseMinutes: ch.avg_response_minutes ? Math.round(parseFloat(ch.avg_response_minutes)) : null,
+        attentionScore: Math.round(parseFloat(ch.attention_score || 0)),
+        lastMessageAt: ch.last_message_at,
+      })),
     })
 
   } catch (e: any) {
