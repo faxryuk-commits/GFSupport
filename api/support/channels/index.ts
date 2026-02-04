@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 
+// Channels API v2.1 - SLA Categories support
 export const config = {
   runtime: 'edge',
 }
