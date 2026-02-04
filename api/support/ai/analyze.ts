@@ -539,11 +539,16 @@ export default async function handler(req: Request): Promise<Response> {
             `
             
             const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+            // Более консервативная логика приоритетов:
+            // urgent: только критичные (urgency 5)
+            // high: срочные проблемы (urgency 4)
+            // medium: обычные проблемы (urgency 2-3)
+            // low: простые обращения (urgency 0-1)
             const casePriority = analysis.urgency >= 5 ? 'urgent' : 
                                  analysis.urgency >= 4 ? 'high' : 
-                                 analysis.urgency >= 3 ? 'medium' : 'low'
-            const caseSeverity = analysis.urgency >= 4 ? 'critical' : 
-                                 analysis.urgency >= 3 ? 'high' : 'normal'
+                                 analysis.urgency >= 2 ? 'medium' : 'low'
+            const caseSeverity = analysis.urgency >= 5 ? 'critical' : 
+                                 analysis.urgency >= 4 ? 'high' : 'normal'
             
             // Add column if not exists
             try {
