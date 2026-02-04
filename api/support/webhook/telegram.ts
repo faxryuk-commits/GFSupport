@@ -618,13 +618,18 @@ export default async function handler(req: Request): Promise<Response> {
     // Trigger AI analysis for ALL messages (clients AND team can report problems)
     // But auto-reply only for clients
     if (text && text.length > 3) {
-      // Call AI analyze endpoint asynchronously (includes auto-reply logic)
-      const analyzeUrl = process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}/api/support/ai/analyze`
-        : null
+      // Get base URL from request or environment
+      const requestUrl = new URL(req.url)
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}`
+        : `${requestUrl.protocol}//${requestUrl.host}`
       
-      if (analyzeUrl) {
-        fetch(analyzeUrl, {
+      const analyzeUrl = `${baseUrl}/api/support/ai/analyze`
+      console.log(`[Webhook] Calling AI analyze at: ${analyzeUrl}`)
+      
+      // Must await to ensure it runs in Edge runtime
+      try {
+        const analyzeResponse = await fetch(analyzeUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -637,7 +642,11 @@ export default async function handler(req: Request): Promise<Response> {
             // Pass sender role so analyze can decide on auto-reply
             senderRole: identification.role,
           }),
-        }).catch(e => console.log('[Webhook] AI analyze call failed:', e.message))
+        })
+        const analyzeResult = await analyzeResponse.json()
+        console.log(`[Webhook] AI analyze result: isProblem=${analyzeResult.analysis?.isProblem}, ticket=${analyzeResult.ticket?.success}`)
+      } catch (e: any) {
+        console.log(`[Webhook] AI analyze call failed: ${e.message}`)
       }
     }
 

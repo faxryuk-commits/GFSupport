@@ -212,13 +212,17 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   // Russian patterns
   const ruProblem = /не работа|не поступа|не прихо|не отобража|не загруж|не открыва|не сохран|не отправ|не получа|не видн|не могу|не удаётся|не удается|не печата|не выход|ошибк|ошибка|error|проблем|сломал|баг|bug|глючит|виснет|зависа|crash/i.test(lower)
   // Uzbek patterns (Latin + Cyrillic mixed, common in chat)
-  const uzProblem = /ishlamay|ishlamaydi|ishlamaypti|xato|xatolik|muammo|buzilgan|kelmay|kelmaypti|yoq|yo'q|chiqmay|chiqmadi|chiqmaypti|o'zgarmay|uzgarmay|bosmay|bosmaydi|chiqmidmi|узгармидми|чкмидми|чкмади|чиқмади|ишламай|ишламаяпти|хато|муаммо|бузилган|келмай|келмаяпти|йўқ|чиқмай/i.test(lower)
-  // Check for "lekin" (but) pattern - often indicates problem context
-  const hasLekinProblem = /лекн|lekin|lekn|аммо|ammo/i.test(lower) && /чек|chek|филиал|filial|заказ|zakaz|buyurtma/i.test(lower)
+  // Includes negative forms: -may, -madi, -maydi, -maypti, -midmi
+  const uzProblem = /ishlamay|ishlamaydi|ishlamaypti|xato|xatolik|muammo|buzilgan|kelmay|kelmaypti|yoq|yo'q|chiqmay|chiqmadi|chiqmaypti|o'zgarmay|uzgarmay|bosmay|bosmaydi|chiqmidmi|узгармидми|чкмидми|чкмади|чиқмади|ишламай|ишламаяпти|хато|муаммо|бузилган|келмай|келмаяпти|йўқ|чиқмай|тўғри\s*эмас|нотўғри|togri\s*emas|notogri|boshqa.*chiq/i.test(lower)
+  // Check for "lekin" (but) pattern - often indicates problem context  
+  // Also check for "бошқа" (boshqa = another/different) which indicates wrong result
+  const hasLekinProblem = /лекн|лекин|lekin|lekn|аммо|ammo|бирок|birok/i.test(lower) && /чек|chek|филиал|filial|заказ|zakaz|buyurtma|регион|region/i.test(lower)
+  // "boshqa" (another) pattern - e.g. "check from another branch"
+  const hasBoshqaProblem = /бошқа|boshqa|другой|другого|другим/i.test(lower) && /чек|chek|филиал|filial|чиқ|chiq|выход/i.test(lower)
   // English patterns
   const enProblem = /doesn't work|not working|broken|failed|error|issue|problem|bug|crash/i.test(lower)
   
-  const isProblem = ruProblem || uzProblem || hasLekinProblem || enProblem
+  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || enProblem
 
   // Determine urgency
   let urgency = 1
@@ -367,7 +371,8 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Text too short for analysis' }, 400)
       }
 
-      console.log(`[AI Analyze] Analyzing message ${messageId} from ${senderRole || 'unknown'}: "${text.slice(0, 50)}..."`)
+      console.log(`[AI Analyze] Analyzing message ${messageId} from ${senderRole || 'unknown'}: "${text.slice(0, 100)}..."`)
+      console.log(`[AI Analyze] Channel: ${channelId}, TelegramChat: ${telegramChatId}`)
 
       // Check if there's a case awaiting feedback for this channel
       let pendingFeedbackCase = null
@@ -501,6 +506,8 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Auto-create ticket for problems (urgent: >= 2, or isProblem with needsResponse)
       let ticketResult = null
+      console.log(`[AI Analyze] Ticket check: isProblem=${analysis.isProblem}, needsResponse=${analysis.needsResponse}, urgency=${analysis.urgency}, messageId=${!!messageId}, channelId=${!!channelId}`)
+      
       if (analysis.isProblem && analysis.needsResponse && analysis.urgency >= 2 && messageId && channelId) {
         console.log(`[AI Analyze] Auto-creating ticket for problem message (urgency=${analysis.urgency})`)
         
