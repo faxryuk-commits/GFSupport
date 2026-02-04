@@ -615,8 +615,9 @@ export default async function handler(req: Request): Promise<Response> {
       console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - marked messages as read`)
     }
 
-    // Trigger AI analysis for client messages (async, don't wait)
-    if (identification.role === 'client' && text && text.length > 3) {
+    // Trigger AI analysis for ALL messages (clients AND team can report problems)
+    // But auto-reply only for clients
+    if (text && text.length > 3) {
       // Call AI analyze endpoint asynchronously (includes auto-reply logic)
       const analyzeUrl = process.env.VERCEL_URL 
         ? `https://${process.env.VERCEL_URL}/api/support/ai/analyze`
@@ -633,6 +634,8 @@ export default async function handler(req: Request): Promise<Response> {
             telegramChatId: String(chat.id),
             senderName: user.fullName,
             telegramId: user.id ? String(user.id) : null,
+            // Pass sender role so analyze can decide on auto-reply
+            senderRole: identification.role,
           }),
         }).catch(e => console.log('[Webhook] AI analyze call failed:', e.message))
       }

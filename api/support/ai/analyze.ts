@@ -172,9 +172,9 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   
   // Determine category
   let category = 'general'
-  if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan/i.test(lower)) {
+  if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan|чкмидми|chiqmay|bosmay|узгармидми|o'zgarmay/i.test(lower)) {
     category = 'technical'
-  } else if (/интеграц|подключ|api|webhook|iiko|r-keeper|poster|wolt|payme|click/i.test(lower)) {
+  } else if (/интеграц|подключ|api|webhook|iiko|r-keeper|poster|wolt|payme|click|uzsmart|uzkassa/i.test(lower)) {
     category = 'integration'
   } else if (/оплат|счёт|счет|деньг|pul|tolov|тариф|подписк/i.test(lower)) {
     category = 'billing'
@@ -182,10 +182,12 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     category = 'complaint'
   } else if (/можно ли|хотел бы|добавьте|kerak|предлага|улучш/i.test(lower)) {
     category = 'feature_request'
-  } else if (/заказ|order|buyurtma|zakaz/i.test(lower)) {
+  } else if (/заказ|order|buyurtma|zakaz|чек|chek/i.test(lower)) {
     category = 'order'
   } else if (/доставк|курьер|yetkazib|dostavka/i.test(lower)) {
     category = 'delivery'
+  } else if (/филиал|filial|регион|region|адрес|address|manzil/i.test(lower)) {
+    category = 'technical' // филиал/регион issues are usually technical
   } else if (/меню|блюд|товар|позици|цен/i.test(lower)) {
     category = 'menu'
   } else if (/приложен|app|мобильн|android|ios|ilova/i.test(lower)) {
@@ -206,8 +208,17 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     sentiment = 'negative'
   }
 
-  // Determine if problem - expanded patterns
-  const isProblem = /не работа|не поступа|не прихо|не отобража|не загруж|не открыва|не сохран|не отправ|не получа|не видн|не могу|не удаётся|не удается|ошибк|ошибка|error|проблем|сломал|баг|bug|глючит|виснет|зависа|crash|ishlamay|ishlamaydi|ishlamaypti|xato|xatolik|muammo|buzilgan|kelmay|kelmaypti|yoq|yo'q/i.test(lower)
+  // Determine if problem - expanded patterns for ru/uz/en
+  // Russian patterns
+  const ruProblem = /не работа|не поступа|не прихо|не отобража|не загруж|не открыва|не сохран|не отправ|не получа|не видн|не могу|не удаётся|не удается|не печата|не выход|ошибк|ошибка|error|проблем|сломал|баг|bug|глючит|виснет|зависа|crash/i.test(lower)
+  // Uzbek patterns (Latin + Cyrillic mixed, common in chat)
+  const uzProblem = /ishlamay|ishlamaydi|ishlamaypti|xato|xatolik|muammo|buzilgan|kelmay|kelmaypti|yoq|yo'q|chiqmay|chiqmadi|chiqmaypti|o'zgarmay|uzgarmay|bosmay|bosmaydi|chiqmidmi|узгармидми|чкмидми|чкмади|чиқмади|ишламай|ишламаяпти|хато|муаммо|бузилган|келмай|келмаяпти|йўқ|чиқмай/i.test(lower)
+  // Check for "lekin" (but) pattern - often indicates problem context
+  const hasLekinProblem = /лекн|lekin|lekn|аммо|ammo/i.test(lower) && /чек|chek|филиал|filial|заказ|zakaz|buyurtma/i.test(lower)
+  // English patterns
+  const enProblem = /doesn't work|not working|broken|failed|error|issue|problem|bug|crash/i.test(lower)
+  
+  const isProblem = ruProblem || uzProblem || hasLekinProblem || enProblem
 
   // Determine urgency
   let urgency = 1
@@ -347,13 +358,16 @@ export default async function handler(req: Request): Promise<Response> {
   // POST - Analyze message
   if (req.method === 'POST') {
     try {
-      const { messageId, text, channelId, telegramChatId, senderName, telegramId } = await req.json()
+      const { messageId, text, channelId, telegramChatId, senderName, telegramId, senderRole } = await req.json()
+      
+      // senderRole: 'client' | 'support' | 'team' - used to decide on auto-reply
+      const isFromClient = senderRole === 'client' || !senderRole // default to client if not specified
 
       if (!text || text.length < 3) {
         return json({ error: 'Text too short for analysis' }, 400)
       }
 
-      console.log(`[AI Analyze] Analyzing message ${messageId}: "${text.slice(0, 50)}..."`)
+      console.log(`[AI Analyze] Analyzing message ${messageId} from ${senderRole || 'unknown'}: "${text.slice(0, 50)}..."`)
 
       // Check if there's a case awaiting feedback for this channel
       let pendingFeedbackCase = null
@@ -453,9 +467,9 @@ export default async function handler(req: Request): Promise<Response> {
         `
       }
 
-      // Trigger auto-reply if allowed
+      // Trigger auto-reply if allowed (ONLY for clients, not for team messages)
       let autoReplyResult = null
-      if (analysis.autoReplyAllowed && channelId && telegramChatId) {
+      if (analysis.autoReplyAllowed && channelId && telegramChatId && isFromClient) {
         console.log(`[AI Analyze] Triggering auto-reply for intent=${analysis.intent}`)
         
         // Call auto-reply endpoint
