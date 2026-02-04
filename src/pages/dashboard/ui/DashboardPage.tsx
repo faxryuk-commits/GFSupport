@@ -1195,19 +1195,36 @@ export function DashboardPage() {
           {analytics.team?.byManager && analytics.team.byManager.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-200">
               <div className="px-5 py-4 border-b border-slate-100">
-                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-blue-500" />
-                  Активность команды
-                </h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-blue-500" />
+                    Активность команды
+                  </h2>
+                  <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                    за {analytics.periodDays || 30} дней
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Статистика по сотрудникам на основе отправленных сообщений в каналах поддержки
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-5 py-3 text-slate-600 font-medium">Сотрудник</th>
-                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Сообщений</th>
-                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Каналов</th>
-                      <th className="text-center px-3 py-3 text-slate-600 font-medium">Кейсов</th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium" title="Количество отправленных сообщений">
+                        Отправлено
+                      </th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium" title="Уникальных каналов где работал сотрудник">
+                        Каналов
+                      </th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium" title="Решённых / всего кейсов">
+                        Кейсы
+                      </th>
+                      <th className="text-center px-3 py-3 text-slate-600 font-medium" title="Среднее время ответа">
+                        Ср. ответ
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1215,14 +1232,35 @@ export function DashboardPage() {
                       <tr key={i} className="hover:bg-slate-50">
                         <td className="px-5 py-3">
                           <div className="font-medium text-slate-800">{m.name || 'Неизвестный'}</div>
+                          {m.channelsServed > 10 && (
+                            <div className="text-xs text-green-600">Активный</div>
+                          )}
                         </td>
                         <td className="text-center px-3 py-3">
                           <span className="text-lg font-semibold text-blue-600">{m.totalMessages}</span>
+                          <div className="text-[10px] text-slate-400">сообщ.</div>
                         </td>
-                        <td className="text-center px-3 py-3 text-slate-600">{m.channelsServed}</td>
+                        <td className="text-center px-3 py-3">
+                          <span className="text-slate-700 font-medium">{m.channelsServed}</span>
+                          <div className="text-[10px] text-slate-400">каналов</div>
+                        </td>
                         <td className="text-center px-3 py-3">
                           {m.totalCases > 0 ? (
-                            <span className="text-slate-600">{m.resolved}/{m.totalCases}</span>
+                            <div>
+                              <span className="text-slate-700">{m.resolved}/{m.totalCases}</span>
+                              <div className="text-[10px] text-green-600">
+                                {Math.round((m.resolved / m.totalCases) * 100)}% решено
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-xs">нет кейсов</span>
+                          )}
+                        </td>
+                        <td className="text-center px-3 py-3">
+                          {m.avgTime && m.avgTime > 0 ? (
+                            <span className={`font-medium ${m.avgTime <= 15 ? 'text-green-600' : m.avgTime <= 60 ? 'text-amber-600' : 'text-red-600'}`}>
+                              {m.avgTime < 60 ? `${m.avgTime}м` : `${Math.round(m.avgTime / 60)}ч`}
+                            </span>
                           ) : (
                             <span className="text-slate-400">—</span>
                           )}
@@ -1231,6 +1269,9 @@ export function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-500 rounded-b-xl">
+                Данные собраны из сообщений где сотрудник отвечал клиентам (по telegram ID, username или имени)
               </div>
             </div>
           )}
