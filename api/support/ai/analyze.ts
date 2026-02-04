@@ -489,17 +489,8 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     try {
-      // Debug: check simple intent detection
-      const simpleIntent = detectSimpleIntent(text)
       const analysis = await analyzeWithAI(text)
-      return json({ 
-        analysis,
-        _debug: {
-          text,
-          simpleIntentDetected: simpleIntent,
-          textLength: text.length,
-        }
-      })
+      return json({ analysis })
     } catch (e: any) {
       return json({ error: e.message }, 500)
     }
@@ -507,4 +498,3 @@ export default async function handler(req: Request): Promise<Response> {
 
   return json({ error: 'Method not allowed' }, 405)
 }
-// Force redeploy 1770210814
