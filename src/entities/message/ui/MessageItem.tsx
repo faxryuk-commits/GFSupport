@@ -38,6 +38,10 @@ export function MessageItem({ message, showSender = true, onReply: _onReply, onR
           <MediaRenderer 
             type={message.mediaType} 
             url={message.mediaUrl} 
+            thumbnailUrl={message.thumbnailUrl}
+            fileName={message.fileName}
+            fileSize={message.fileSize}
+            mimeType={message.mimeType}
             isFromTeam={isFromTeam}
             text={message.text}
           />
@@ -184,32 +188,35 @@ function PhotoMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
 }
 
 // Компонент для видео
-function VideoMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
+function VideoMedia({ url, thumbnailUrl, isFromTeam }: { url: string; thumbnailUrl?: string; isFromTeam: boolean }) {
   const [showLightbox, setShowLightbox] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const [thumbError, setThumbError] = useState(false)
+
+  // Используем thumbnail если есть, иначе показываем первый кадр видео
+  const previewSrc = thumbnailUrl && !thumbError ? thumbnailUrl : undefined
 
   return (
     <>
-      <div className="relative group">
-        <video
-          ref={videoRef}
-          src={url}
-          className="w-full max-h-80 object-cover cursor-pointer"
-          onClick={() => setShowLightbox(true)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-        />
-        {!isPlaying && (
-          <div 
-            className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
-            onClick={() => setShowLightbox(true)}
-          >
-            <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center">
-              <Play className="w-8 h-8 text-slate-800 ml-1" />
-            </div>
-          </div>
+      <div className="relative group cursor-pointer" onClick={() => setShowLightbox(true)}>
+        {previewSrc ? (
+          <img 
+            src={previewSrc} 
+            alt="Video preview" 
+            className="w-full max-h-80 object-cover"
+            onError={() => setThumbError(true)}
+          />
+        ) : (
+          <video
+            src={url}
+            className="w-full max-h-80 object-cover"
+            preload="metadata"
+          />
         )}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+          <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center">
+            <Play className="w-8 h-8 text-slate-800 ml-1" />
+          </div>
+        </div>
         <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 bg-black/60 rounded text-white text-xs">
           <Film className="w-3 h-3" />
           Видео
@@ -222,10 +229,65 @@ function VideoMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
   )
 }
 
-// Компонент для видеосообщений (кружочки)
-function VideoNoteMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
+// Компонент для GIF/Animation
+function AnimationMedia({ url, thumbnailUrl, isFromTeam }: { url: string; thumbnailUrl?: string; isFromTeam: boolean }) {
   const [showLightbox, setShowLightbox] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(true)
+  const [thumbError, setThumbError] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  // При наведении показываем GIF, иначе показываем превью
+  const handleMouseEnter = () => {
+    if (videoRef.current) videoRef.current.play()
+    setIsPlaying(true)
+  }
+
+  const handleMouseLeave = () => {
+    // GIF автоплей, не останавливаем
+  }
+
+  return (
+    <>
+      <div 
+        className="relative group cursor-pointer" 
+        onClick={() => setShowLightbox(true)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        {thumbnailUrl && !isPlaying && !thumbError ? (
+          <img 
+            src={thumbnailUrl} 
+            alt="GIF preview" 
+            className="w-full max-h-80 object-cover"
+            onError={() => setThumbError(true)}
+          />
+        ) : (
+          <video
+            ref={videoRef}
+            src={url}
+            className="w-full max-h-80 object-cover"
+            autoPlay
+            loop
+            muted
+            playsInline
+            onPlay={() => setIsPlaying(true)}
+          />
+        )}
+        <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 rounded text-white text-xs font-medium">
+          GIF
+        </div>
+      </div>
+      {showLightbox && (
+        <MediaLightbox src={url} type="video" onClose={() => setShowLightbox(false)} />
+      )}
+    </>
+  )
+}
+
+// Компонент для видеосообщений (кружочки)
+function VideoNoteMedia({ url, thumbnailUrl, isFromTeam }: { url: string; thumbnailUrl?: string; isFromTeam: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false)
+  const [thumbError, setThumbError] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const togglePlay = () => {
@@ -238,13 +300,22 @@ function VideoNoteMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean 
     }
   }
 
+  const showThumb = thumbnailUrl && !isPlaying && !thumbError
+
   return (
-    <>
-      <div className="p-2 flex justify-center">
-        <div 
-          className="relative w-48 h-48 rounded-full overflow-hidden cursor-pointer border-4 border-white shadow-lg"
-          onClick={togglePlay}
-        >
+    <div className="p-2 flex justify-center">
+      <div 
+        className="relative w-48 h-48 rounded-full overflow-hidden cursor-pointer border-4 border-white shadow-lg"
+        onClick={togglePlay}
+      >
+        {showThumb ? (
+          <img 
+            src={thumbnailUrl} 
+            alt="Video note preview" 
+            className="w-full h-full object-cover"
+            onError={() => setThumbError(true)}
+          />
+        ) : (
           <video
             ref={videoRef}
             src={url}
@@ -254,19 +325,16 @@ function VideoNoteMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean 
             onEnded={() => setIsPlaying(false)}
             loop
           />
-          {!isPlaying && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-              <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
-                <Play className="w-6 h-6 text-slate-800 ml-0.5" />
-              </div>
+        )}
+        {!isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
+              <Play className="w-6 h-6 text-slate-800 ml-0.5" />
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-      {showLightbox && (
-        <MediaLightbox src={url} type="video" onClose={() => setShowLightbox(false)} />
-      )}
-    </>
+    </div>
   )
 }
 
@@ -357,9 +425,10 @@ function VoiceMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
 }
 
 // Компонент для аудио файлов
-function AudioMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
+function AudioMedia({ url, thumbnailUrl, fileName, isFromTeam }: { url: string; thumbnailUrl?: string; fileName?: string; isFromTeam: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [thumbError, setThumbError] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
 
   const togglePlay = () => {
@@ -371,6 +440,9 @@ function AudioMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
       }
     }
   }
+  
+  const displayName = fileName || 'Аудио'
+  const hasAlbumArt = thumbnailUrl && !thumbError
 
   return (
     <div className={`flex items-center gap-3 px-4 py-3 m-1 rounded-xl ${
@@ -388,19 +460,40 @@ function AudioMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
         onPause={() => setIsPlaying(false)}
         onEnded={() => { setIsPlaying(false); setProgress(0) }}
       />
-      <button
-        onClick={togglePlay}
-        className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-          isFromTeam ? 'bg-white text-blue-500' : 'bg-blue-500 text-white'
-        }`}
-      >
-        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-      </button>
+      
+      {/* Album art или кнопка play */}
+      {hasAlbumArt ? (
+        <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer" onClick={togglePlay}>
+          <img 
+            src={thumbnailUrl} 
+            alt="Album art" 
+            className="w-full h-full object-cover"
+            onError={() => setThumbError(true)}
+          />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            {isPlaying ? (
+              <Pause className="w-5 h-5 text-white" />
+            ) : (
+              <Play className="w-5 h-5 text-white ml-0.5" />
+            )}
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={togglePlay}
+          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isFromTeam ? 'bg-white text-blue-500' : 'bg-blue-500 text-white'
+          }`}
+        >
+          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+        </button>
+      )}
+      
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <Music className={`w-4 h-4 ${isFromTeam ? 'text-blue-100' : 'text-slate-500'}`} />
-          <span className={`text-xs ${isFromTeam ? 'text-blue-100' : 'text-slate-500'}`}>
-            Аудио
+          <span className={`text-xs truncate ${isFromTeam ? 'text-blue-100' : 'text-slate-500'}`}>
+            {displayName}
           </span>
         </div>
         <div className={`relative h-1.5 rounded-full overflow-hidden ${
@@ -416,7 +509,7 @@ function AudioMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
       </div>
       <a 
         href={url} 
-        download 
+        download={displayName}
         onClick={e => e.stopPropagation()}
         className={`p-2 rounded-full ${isFromTeam ? 'hover:bg-blue-300' : 'hover:bg-slate-200'}`}
       >
@@ -427,11 +520,27 @@ function AudioMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
 }
 
 // Компонент для документов
-function DocumentMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }) {
-  // Определяем тип документа по URL
-  const getFileInfo = (fileUrl: string) => {
-    const ext = fileUrl.split('.').pop()?.toLowerCase() || ''
-    const fileName = fileUrl.split('/').pop() || 'Документ'
+function DocumentMedia({ 
+  url, 
+  thumbnailUrl, 
+  fileName: propFileName, 
+  fileSize, 
+  mimeType,
+  isFromTeam 
+}: { 
+  url: string
+  thumbnailUrl?: string
+  fileName?: string
+  fileSize?: number
+  mimeType?: string
+  isFromTeam: boolean 
+}) {
+  const [showLightbox, setShowLightbox] = useState(false)
+  const [thumbError, setThumbError] = useState(false)
+  
+  // Определяем тип документа
+  const getFileInfo = (name: string, mime?: string) => {
+    const ext = name.split('.').pop()?.toLowerCase() || ''
     
     const icons: Record<string, { icon: typeof FileText; color: string; label: string }> = {
       pdf: { icon: FileText, color: 'text-red-500', label: 'PDF документ' },
@@ -449,43 +558,108 @@ function DocumentMedia({ url, isFromTeam }: { url: string; isFromTeam: boolean }
       py: { icon: FileCode, color: 'text-green-500', label: 'Python' },
       json: { icon: FileCode, color: 'text-slate-500', label: 'JSON' },
       txt: { icon: FileText, color: 'text-slate-500', label: 'Текстовый файл' },
+      png: { icon: ImageIcon, color: 'text-purple-500', label: 'Изображение PNG' },
+      jpg: { icon: ImageIcon, color: 'text-purple-500', label: 'Изображение JPG' },
+      jpeg: { icon: ImageIcon, color: 'text-purple-500', label: 'Изображение JPEG' },
+      gif: { icon: ImageIcon, color: 'text-purple-500', label: 'GIF' },
+      webp: { icon: ImageIcon, color: 'text-purple-500', label: 'Изображение WebP' },
+      mp4: { icon: Film, color: 'text-indigo-500', label: 'Видео MP4' },
+      webm: { icon: Film, color: 'text-indigo-500', label: 'Видео WebM' },
+      mov: { icon: Film, color: 'text-indigo-500', label: 'Видео MOV' },
+      mp3: { icon: Music, color: 'text-pink-500', label: 'Аудио MP3' },
+      wav: { icon: Music, color: 'text-pink-500', label: 'Аудио WAV' },
+      ogg: { icon: Music, color: 'text-pink-500', label: 'Аудио OGG' },
+    }
+
+    // Также проверяем по MIME type
+    if (mime?.startsWith('image/')) {
+      return { icon: ImageIcon, color: 'text-purple-500', label: 'Изображение', ext }
+    }
+    if (mime?.startsWith('video/')) {
+      return { icon: Film, color: 'text-indigo-500', label: 'Видео', ext }
+    }
+    if (mime?.startsWith('audio/')) {
+      return { icon: Music, color: 'text-pink-500', label: 'Аудио', ext }
     }
 
     const info = icons[ext] || { icon: File, color: 'text-slate-500', label: 'Файл' }
-    return { ...info, fileName, ext }
+    return { ...info, ext }
+  }
+  
+  const displayName = propFileName || url.split('/').pop() || 'Документ'
+  const fileInfo = getFileInfo(displayName, mimeType)
+  const IconComponent = fileInfo.icon
+  
+  // Форматируем размер файла
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return ''
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
 
-  const fileInfo = getFileInfo(url)
-  const IconComponent = fileInfo.icon
+  // Определяем можно ли показать превью
+  const isImage = mimeType?.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(fileInfo.ext || '')
+  const canShowPreview = thumbnailUrl && !thumbError
 
   return (
-    <a
-      href={url}
-      download
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`flex items-center gap-3 px-4 py-3 m-1 rounded-xl transition-colors ${
-        isFromTeam 
-          ? 'bg-blue-400 hover:bg-blue-300' 
-          : 'bg-slate-100 hover:bg-slate-200'
-      }`}
-    >
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-        isFromTeam ? 'bg-white/20' : 'bg-white'
-      }`}>
-        <IconComponent className={`w-6 h-6 ${isFromTeam ? 'text-white' : fileInfo.color}`} />
+    <>
+      <div className="m-1">
+        {/* Превью если есть */}
+        {canShowPreview && (
+          <div 
+            className="relative cursor-pointer group mb-1 rounded-t-xl overflow-hidden"
+            onClick={() => isImage && setShowLightbox(true)}
+          >
+            <img 
+              src={thumbnailUrl} 
+              alt="Preview" 
+              className="w-full max-h-48 object-cover"
+              onError={() => setThumbError(true)}
+            />
+            {isImage && (
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <Maximize2 className="w-8 h-8 text-white drop-shadow-lg" />
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Информация о файле */}
+        <a
+          href={url}
+          download={displayName}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`flex items-center gap-3 px-4 py-3 ${canShowPreview ? 'rounded-b-xl' : 'rounded-xl'} transition-colors ${
+            isFromTeam 
+              ? 'bg-blue-400 hover:bg-blue-300' 
+              : 'bg-slate-100 hover:bg-slate-200'
+          }`}
+        >
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+            isFromTeam ? 'bg-white/20' : 'bg-white'
+          }`}>
+            <IconComponent className={`w-6 h-6 ${isFromTeam ? 'text-white' : fileInfo.color}`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-medium truncate ${isFromTeam ? 'text-white' : 'text-slate-800'}`}>
+              {displayName}
+            </p>
+            <p className={`text-xs ${isFromTeam ? 'text-blue-100' : 'text-slate-500'}`}>
+              {fileInfo.label}
+              {fileInfo.ext && ` • .${fileInfo.ext.toUpperCase()}`}
+              {fileSize && ` • ${formatSize(fileSize)}`}
+            </p>
+          </div>
+          <Download className={`w-5 h-5 flex-shrink-0 ${isFromTeam ? 'text-blue-100' : 'text-slate-400'}`} />
+        </a>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-medium truncate ${isFromTeam ? 'text-white' : 'text-slate-800'}`}>
-          {fileInfo.fileName}
-        </p>
-        <p className={`text-xs ${isFromTeam ? 'text-blue-100' : 'text-slate-500'}`}>
-          {fileInfo.label}
-          {fileInfo.ext && ` • .${fileInfo.ext.toUpperCase()}`}
-        </p>
-      </div>
-      <Download className={`w-5 h-5 flex-shrink-0 ${isFromTeam ? 'text-blue-100' : 'text-slate-400'}`} />
-    </a>
+      
+      {showLightbox && thumbnailUrl && (
+        <MediaLightbox src={url} type="image" onClose={() => setShowLightbox(false)} />
+      )}
+    </>
   )
 }
 
@@ -517,11 +691,19 @@ function StickerMedia({ url }: { url: string }) {
 function MediaRenderer({ 
   type, 
   url, 
+  thumbnailUrl,
+  fileName,
+  fileSize,
+  mimeType,
   isFromTeam,
   text 
 }: { 
   type: string
   url: string
+  thumbnailUrl?: string
+  fileName?: string
+  fileSize?: number
+  mimeType?: string
   isFromTeam: boolean
   text?: string
 }) {
@@ -535,6 +717,7 @@ function MediaRenderer({
         {type === 'photo' && <ImageIcon className="w-5 h-5" />}
         {type === 'video' && <Film className="w-5 h-5" />}
         {type === 'video_note' && <Film className="w-5 h-5" />}
+        {type === 'animation' && <Film className="w-5 h-5" />}
         {type === 'voice' && <Mic className="w-5 h-5" />}
         {type === 'audio' && <Music className="w-5 h-5" />}
         {type === 'document' && <FileText className="w-5 h-5" />}
@@ -543,9 +726,10 @@ function MediaRenderer({
           {type === 'photo' && '[Фото]'}
           {type === 'video' && '[Видео]'}
           {type === 'video_note' && '[Видеосообщение]'}
+          {type === 'animation' && '[GIF]'}
           {type === 'voice' && '[Голосовое]'}
           {type === 'audio' && '[Аудио]'}
-          {type === 'document' && '[Документ]'}
+          {type === 'document' && (fileName ? `[${fileName}]` : '[Документ]')}
           {type === 'sticker' && '[Стикер]'}
         </span>
       </div>
@@ -556,19 +740,21 @@ function MediaRenderer({
     case 'photo':
       return <PhotoMedia url={url} isFromTeam={isFromTeam} />
     case 'video':
-      return <VideoMedia url={url} isFromTeam={isFromTeam} />
+      return <VideoMedia url={url} thumbnailUrl={thumbnailUrl} isFromTeam={isFromTeam} />
+    case 'animation':
+      return <AnimationMedia url={url} thumbnailUrl={thumbnailUrl} isFromTeam={isFromTeam} />
     case 'video_note':
-      return <VideoNoteMedia url={url} isFromTeam={isFromTeam} />
+      return <VideoNoteMedia url={url} thumbnailUrl={thumbnailUrl} isFromTeam={isFromTeam} />
     case 'voice':
       return <VoiceMedia url={url} isFromTeam={isFromTeam} />
     case 'audio':
-      return <AudioMedia url={url} isFromTeam={isFromTeam} />
+      return <AudioMedia url={url} thumbnailUrl={thumbnailUrl} fileName={fileName} isFromTeam={isFromTeam} />
     case 'sticker':
       return <StickerMedia url={url} />
     case 'document':
-      return <DocumentMedia url={url} isFromTeam={isFromTeam} />
+      return <DocumentMedia url={url} thumbnailUrl={thumbnailUrl} fileName={fileName} fileSize={fileSize} mimeType={mimeType} isFromTeam={isFromTeam} />
     default:
-      return <DocumentMedia url={url} isFromTeam={isFromTeam} />
+      return <DocumentMedia url={url} thumbnailUrl={thumbnailUrl} fileName={fileName} fileSize={fileSize} mimeType={mimeType} isFromTeam={isFromTeam} />
   }
 }
 

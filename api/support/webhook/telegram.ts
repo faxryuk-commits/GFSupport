@@ -193,6 +193,10 @@ async function saveMessage(
     text?: string
     contentType: string
     mediaUrl?: string
+    thumbnailUrl?: string
+    fileName?: string
+    fileSize?: number
+    mimeType?: string
     replyToId?: number
     threadId?: number
     responseTimeMs?: number
@@ -204,17 +208,27 @@ async function saveMessage(
   // Save/update user info
   await upsertUser(sql, user, channelId, role)
   
+  // Ensure columns exist (will be ignored if they already exist)
+  try {
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT`
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size BIGINT`
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`
+  } catch (e) { /* columns exist */ }
+  
   await sql`
     INSERT INTO support_messages (
       id, channel_id, telegram_message_id,
       sender_id, sender_name, sender_username, sender_role,
       is_from_client, content_type, text_content, media_url,
+      thumbnail_url, file_name, file_size, mime_type,
       reply_to_message_id, thread_id,
       is_read, response_time_ms, created_at
     ) VALUES (
       ${messageId}, ${channelId}, ${telegramMessageId},
       ${String(user.id)}, ${user.fullName}, ${user.username}, ${role},
       ${isFromClient}, ${content.contentType}, ${content.text || null}, ${content.mediaUrl || null},
+      ${content.thumbnailUrl || null}, ${content.fileName || null}, ${content.fileSize || null}, ${content.mimeType || null},
       ${content.replyToId ? String(content.replyToId) : null}, ${content.threadId ? String(content.threadId) : null},
       ${!isFromClient}, ${content.responseTimeMs || null}, NOW()
     )
@@ -413,32 +427,92 @@ export default async function handler(req: Request): Promise<Response> {
     let contentType = 'text'
     let text = message.text || message.caption || ''
     let mediaUrl: string | undefined
+    let thumbnailUrl: string | undefined
+    let fileName: string | undefined
+    let fileSize: number | undefined
+    let mimeType: string | undefined
 
     if (message.photo) {
       contentType = 'photo'
       // Get largest photo
       const photo = message.photo[message.photo.length - 1]
       mediaUrl = await getFileUrl(photo.file_id) || `tg://photo/${photo.file_id}`
+      fileSize = photo.file_size
+      // For photos, the media itself is the preview
+      thumbnailUrl = mediaUrl
+    } else if (message.animation) {
+      // GIF/Animation - handle before document!
+      contentType = 'animation'
+      const anim = message.animation
+      mediaUrl = await getFileUrl(anim.file_id) || `tg://animation/${anim.file_id}`
+      fileName = anim.file_name
+      fileSize = anim.file_size
+      mimeType = anim.mime_type
+      // Get thumbnail
+      if (anim.thumbnail?.file_id) {
+        thumbnailUrl = await getFileUrl(anim.thumbnail.file_id) || undefined
+      }
     } else if (message.video) {
       contentType = 'video'
-      mediaUrl = await getFileUrl(message.video.file_id) || `tg://video/${message.video.file_id}`
+      const video = message.video
+      mediaUrl = await getFileUrl(video.file_id) || `tg://video/${video.file_id}`
+      fileName = video.file_name
+      fileSize = video.file_size
+      mimeType = video.mime_type
+      // Get thumbnail
+      if (video.thumbnail?.file_id) {
+        thumbnailUrl = await getFileUrl(video.thumbnail.file_id) || undefined
+      }
     } else if (message.video_note) {
       contentType = 'video_note'
-      mediaUrl = await getFileUrl(message.video_note.file_id) || `tg://video_note/${message.video_note.file_id}`
+      const vn = message.video_note
+      mediaUrl = await getFileUrl(vn.file_id) || `tg://video_note/${vn.file_id}`
+      fileSize = vn.file_size
+      // Get thumbnail
+      if (vn.thumbnail?.file_id) {
+        thumbnailUrl = await getFileUrl(vn.thumbnail.file_id) || undefined
+      }
     } else if (message.voice) {
       contentType = 'voice'
-      mediaUrl = await getFileUrl(message.voice.file_id) || `tg://voice/${message.voice.file_id}`
+      const voice = message.voice
+      mediaUrl = await getFileUrl(voice.file_id) || `tg://voice/${voice.file_id}`
+      fileSize = voice.file_size
+      mimeType = voice.mime_type
     } else if (message.audio) {
       contentType = 'audio'
-      mediaUrl = await getFileUrl(message.audio.file_id) || `tg://audio/${message.audio.file_id}`
+      const audio = message.audio
+      mediaUrl = await getFileUrl(audio.file_id) || `tg://audio/${audio.file_id}`
+      fileName = audio.file_name || audio.title
+      fileSize = audio.file_size
+      mimeType = audio.mime_type
+      // Audio can have album art thumbnail
+      if (audio.thumbnail?.file_id) {
+        thumbnailUrl = await getFileUrl(audio.thumbnail.file_id) || undefined
+      }
     } else if (message.document) {
       contentType = 'document'
-      mediaUrl = await getFileUrl(message.document.file_id) || `tg://document/${message.document.file_id}`
+      const doc = message.document
+      mediaUrl = await getFileUrl(doc.file_id) || `tg://document/${doc.file_id}`
+      fileName = doc.file_name
+      fileSize = doc.file_size
+      mimeType = doc.mime_type
+      // Documents can have thumbnails (PDFs, images, etc)
+      if (doc.thumbnail?.file_id) {
+        thumbnailUrl = await getFileUrl(doc.thumbnail.file_id) || undefined
+      }
     } else if (message.sticker) {
       contentType = 'sticker'
-      mediaUrl = await getFileUrl(message.sticker.file_id) || `tg://sticker/${message.sticker.file_id}`
-      text = message.sticker.emoji || '🎭'
+      const sticker = message.sticker
+      mediaUrl = await getFileUrl(sticker.file_id) || `tg://sticker/${sticker.file_id}`
+      fileSize = sticker.file_size
+      // Sticker thumbnail
+      if (sticker.thumbnail?.file_id) {
+        thumbnailUrl = await getFileUrl(sticker.thumbnail.file_id) || mediaUrl
+      }
+      text = sticker.emoji || '🎭'
     }
+    
+    console.log(`[Webhook] Media: type=${contentType}, file=${fileName}, thumb=${thumbnailUrl ? 'yes' : 'no'}`)
 
     // Calculate response time for client messages
     let responseTimeMs: number | undefined = undefined
@@ -460,6 +534,10 @@ export default async function handler(req: Request): Promise<Response> {
       text,
       contentType,
       mediaUrl,
+      thumbnailUrl,
+      fileName,
+      fileSize,
+      mimeType,
       replyToId: message.reply_to_message?.message_id,
       threadId: message.message_thread_id,
       responseTimeMs,

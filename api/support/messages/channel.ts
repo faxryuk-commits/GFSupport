@@ -122,6 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
           sender_photo_url, sender_role, text_content, content_type, media_url,
+          thumbnail_url, file_name, file_size, mime_type,
           transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
           is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
           thread_id, thread_name, case_id, created_at
@@ -140,6 +141,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
           sender_photo_url, sender_role, text_content, content_type, media_url,
+          thumbnail_url, file_name, file_size, mime_type,
           transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
           is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
           thread_id, thread_name, case_id, created_at
@@ -161,6 +163,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT 
           id, telegram_message_id, sender_id, sender_name, sender_username, 
           sender_photo_url, sender_role, text_content, content_type, media_url,
+          thumbnail_url, file_name, file_size, mime_type,
           transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
           is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
           thread_id, thread_name, case_id, created_at
@@ -206,6 +209,14 @@ export default async function handler(req: Request): Promise<Response> {
         : Promise.resolve(m.media_url)
     )
     const convertedMediaUrls = await Promise.all(mediaConversions)
+    
+    // Convert thumbnail URLs in parallel
+    const thumbConversions = messages.map((m: any) => 
+      m.thumbnail_url && m.thumbnail_url.startsWith('tg://') 
+        ? convertMediaUrl(m.thumbnail_url) 
+        : Promise.resolve(m.thumbnail_url)
+    )
+    const convertedThumbUrls = await Promise.all(thumbConversions)
 
     const formattedMessages = messages.map((m: any, index: number) => {
       // Fill in missing reply text
@@ -232,6 +243,10 @@ export default async function handler(req: Request): Promise<Response> {
         // mediaType для UI компонентов (аудио, видео, фото и т.д.)
         mediaType: m.content_type && m.content_type !== 'text' ? m.content_type : undefined,
         mediaUrl: convertedMediaUrls[index],
+        thumbnailUrl: convertedThumbUrls[index],
+        fileName: m.file_name,
+        fileSize: m.file_size ? parseInt(m.file_size) : undefined,
+        mimeType: m.mime_type,
         transcript: m.transcript,
         aiCategory: m.ai_category,
         aiUrgency: m.ai_urgency,
