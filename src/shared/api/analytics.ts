@@ -212,7 +212,7 @@ export interface AnalyticsData {
   topDemandingChannels: Array<{
     id: string
     name: string
-    slaCategory: SlaCategory
+    slaCategory: string
     awaitingReply: boolean
     unreadCount: number
     messagesCount: number
