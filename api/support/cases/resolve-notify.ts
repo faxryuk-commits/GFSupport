@@ -46,60 +46,29 @@ async function detectChannelLanguage(sql: any, channelId: string): Promise<'ru' 
   return 'ru'
 }
 
-// Get localized messages
+// Get localized messages - natural conversational style
 function getLocalizedMessages(lang: 'ru' | 'uz' | 'en') {
   const messages = {
     ru: {
-      resolved: '✅ Ваше обращение #{ticketNumber} было обработано.\n\n<b>Проблема решена?</b>\n\nЕсли у вас остались вопросы - просто напишите нам.',
-      thanks: '🙏 Спасибо за обратную связь! Рады, что смогли помочь. Если возникнут вопросы - обращайтесь!',
-      reopened: '📋 Понял вас. Мы переоткрыли обращение и скоро свяжемся с вами для решения вопроса.',
-      btnYes: '✅ Да, решена',
-      btnNo: '❌ Нет, есть вопросы',
+      resolved: '✅ Готово! Подскажите, всё ли работает?\n\nЕсли остались вопросы - пишите, разберёмся.',
+      thanks: '🙏 Отлично, рады что помогли! Если что - пишите.',
+      reopened: '📋 Понял, сейчас посмотрим ещё раз. Скоро вернёмся с решением.',
     },
     uz: {
-      resolved: '✅ Sizning #{ticketNumber} raqamli murojaatingiz ko\'rib chiqildi.\n\n<b>Muammo hal bo\'ldimi?</b>\n\nSavollaringiz bo\'lsa - bizga yozing.',
-      thanks: '🙏 Fikr-mulohazangiz uchun rahmat! Yordam berganimizdan xursandmiz. Savollar bo\'lsa - murojaat qiling!',
-      reopened: '📋 Tushundim. Murojaatingizni qayta ochdik va tez orada siz bilan bog\'lanamiz.',
-      btnYes: '✅ Ha, hal bo\'ldi',
-      btnNo: '❌ Yo\'q, savollar bor',
+      resolved: '✅ Tayyor! Hammasi ishlayaptimi?\n\nSavollar bo\'lsa - yozing, hal qilamiz.',
+      thanks: '🙏 Zo\'r, yordam berganimizdan xursandmiz! Kerak bo\'lsa - yozing.',
+      reopened: '📋 Tushundim, yana qarab chiqamiz. Tez orada javob beramiz.',
     },
     en: {
-      resolved: '✅ Your request #{ticketNumber} has been processed.\n\n<b>Is the issue resolved?</b>\n\nIf you have any questions - just write to us.',
-      thanks: '🙏 Thank you for your feedback! Glad we could help. If you have any questions - feel free to reach out!',
-      reopened: '📋 Got it. We have reopened your request and will contact you shortly to resolve the issue.',
-      btnYes: '✅ Yes, resolved',
-      btnNo: '❌ No, I have questions',
+      resolved: '✅ Done! Is everything working now?\n\nIf you have any questions - just let us know.',
+      thanks: '🙏 Great, glad we could help! Feel free to reach out anytime.',
+      reopened: '📋 Got it, we\'ll take another look. We\'ll get back to you shortly.',
     },
   }
   return messages[lang]
 }
 
-// Send message with inline keyboard to Telegram
-async function sendTelegramMessageWithButtons(
-  chatId: string | number, 
-  text: string,
-  buttons: Array<{ text: string; callback_data: string }>
-) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
-  if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
-  
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [buttons.map(btn => ({ text: btn.text, callback_data: btn.callback_data }))]
-      }
-    }),
-  })
-  
-  return response.json()
-}
-
-// Send simple message
+// Send simple message to Telegram
 async function sendTelegramMessage(chatId: string | number, text: string) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
@@ -163,14 +132,11 @@ export default async function handler(req: Request): Promise<Response> {
     const lang = await detectChannelLanguage(sql, caseData.channel_id)
     const messages = getLocalizedMessages(lang)
 
-    // Action: notify - Send resolution notification with buttons
+    // Action: notify - Send natural text message (no buttons)
     if (action === 'notify' || !action) {
-      const text = messages.resolved.replace('{ticketNumber}', caseData.ticket_number || caseId)
+      const text = messages.resolved
       
-      const result = await sendTelegramMessageWithButtons(telegramChatId, text, [
-        { text: messages.btnYes, callback_data: `case_resolved:${caseId}:yes` },
-        { text: messages.btnNo, callback_data: `case_resolved:${caseId}:no` },
-      ])
+      const result = await sendTelegramMessage(telegramChatId, text)
 
       if (!result.ok) {
         return json({ error: 'Failed to send Telegram message', details: result }, 500)
