@@ -411,6 +411,78 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`Priority recalc: ${e.message?.slice(0, 80) || 'done'}`)
     }
 
+    // Migration 23: Extend support_users for client profile
+    try {
+      await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS resolved_issues JSONB DEFAULT '[]'`
+      await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS recurring_problems TEXT[]`
+      await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS communication_style VARCHAR(20) DEFAULT 'neutral'`
+      await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS avg_satisfaction DECIMAL(3,2)`
+      await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS total_conversations INTEGER DEFAULT 0`
+      await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS last_issue_summary TEXT`
+      migrations.push('Extended support_users for client profile')
+    } catch (e) { /* columns exist */ }
+
+    // Migration 24: Extend support_messages for sentiment tracking
+    try {
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sentiment_score DECIMAL(3,2)`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sentiment_change VARCHAR(20)`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS auto_reply_candidate BOOLEAN DEFAULT false`
+      migrations.push('Extended support_messages for sentiment tracking')
+    } catch (e) { /* columns exist */ }
+
+    // Migration 25: Create support_faq table
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_faq (
+          id VARCHAR(50) PRIMARY KEY,
+          question TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          keywords TEXT[],
+          category VARCHAR(50),
+          intent_match VARCHAR(50),
+          language VARCHAR(10) DEFAULT 'ru',
+          is_active BOOLEAN DEFAULT true,
+          usage_count INTEGER DEFAULT 0,
+          last_used_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_faq_intent ON support_faq(intent_match) WHERE is_active = true`
+      await sql`CREATE INDEX IF NOT EXISTS idx_faq_keywords ON support_faq USING GIN(keywords)`
+      migrations.push('Created support_faq table')
+    } catch (e) { /* table exists */ }
+
+    // Migration 26: Create support_auto_templates table
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_auto_templates (
+          id VARCHAR(50) PRIMARY KEY,
+          intent VARCHAR(50) NOT NULL,
+          template_text TEXT NOT NULL,
+          personalization_vars TEXT[],
+          tone VARCHAR(20) DEFAULT 'professional',
+          language VARCHAR(10) DEFAULT 'ru',
+          priority INTEGER DEFAULT 0,
+          is_active BOOLEAN DEFAULT true,
+          usage_count INTEGER DEFAULT 0,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_templates_intent ON support_auto_templates(intent) WHERE is_active = true`
+      
+      // Insert default templates
+      await sql`
+        INSERT INTO support_auto_templates (id, intent, template_text, personalization_vars, tone)
+        VALUES 
+          ('tpl_greeting', 'greeting', 'Здравствуйте{client_name}! Спасибо за обращение. Чем могу помочь?', ARRAY['{client_name}'], 'friendly'),
+          ('tpl_gratitude', 'gratitude', 'Рады были помочь! Если возникнут вопросы - обращайтесь.', ARRAY[]::TEXT[], 'friendly'),
+          ('tpl_closing', 'closing', 'Спасибо за обращение! Хорошего дня!', ARRAY[]::TEXT[], 'friendly'),
+          ('tpl_wait', 'acknowledgment', 'Спасибо за информацию. Сейчас проверю и вернусь с ответом.', ARRAY[]::TEXT[], 'professional')
+        ON CONFLICT (id) DO NOTHING
+      `
+      migrations.push('Created support_auto_templates with defaults')
+    } catch (e) { /* table exists */ }
+
     return json({
       success: true,
       migrations,

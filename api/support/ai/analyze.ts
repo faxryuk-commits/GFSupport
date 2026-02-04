@@ -35,10 +35,11 @@ const ANALYSIS_PROMPT = `Ты анализатор сообщений служб
 {
   "category": "одно из: technical, integration, billing, complaint, feature_request, order, delivery, menu, app, onboarding, question, feedback, general",
   "sentiment": "одно из: positive, neutral, negative, frustrated",
-  "intent": "одно из: ask_question, report_problem, request_feature, complaint, gratitude, information, unknown",
+  "intent": "одно из: greeting, gratitude, closing, faq_pricing, faq_hours, faq_contacts, ask_question, report_problem, request_feature, complaint, information, response, unknown",
   "urgency": число от 0 до 5 (0 = не срочно, 5 = критично),
   "isProblem": true или false,
   "needsResponse": true или false,
+  "autoReplyAllowed": true или false (можно ли ответить автоматически без оператора),
   "summary": "краткое резюме на русском (1-2 предложения)",
   "entities": {
     "product": "название продукта если упоминается",
@@ -47,14 +48,27 @@ const ANALYSIS_PROMPT = `Ты анализатор сообщений служб
   }
 }
 
-Правила определения:
-- isProblem = true если клиент сообщает о проблеме, ошибке, что-то не работает
-- needsResponse = true если сообщение требует ответа (вопрос, проблема, запрос)
-- needsResponse = false если это благодарность, подтверждение ("ок", "понял", "спасибо"), информирование
-- urgency 4-5 если критическая проблема, блокирует работу, упоминается "срочно"
-- urgency 3 если серьезная проблема но не критическая
-- urgency 1-2 для обычных вопросов
-- urgency 0 для благодарности, положительных отзывов
+Правила определения intent:
+- greeting = приветствие клиента ("здравствуйте", "привет", "добрый день", "salom")
+- gratitude = благодарность ("спасибо", "благодарю", "rahmat", "отлично помогли")
+- closing = завершение диалога ("до свидания", "пока", "всего доброго")
+- faq_pricing = вопрос о ценах, тарифах, стоимости
+- faq_hours = вопрос о графике работы, времени
+- faq_contacts = запрос контактов, телефона, адреса
+- ask_question = общий вопрос
+- report_problem = сообщение о проблеме
+- request_feature = запрос новой функции
+- complaint = жалоба
+- response = ответ на вопрос оператора
+- information = информирование
+
+Правила autoReplyAllowed:
+- true для: greeting, gratitude, closing, faq_pricing, faq_hours, faq_contacts
+- false для: report_problem, complaint, request_feature, сложных вопросов
+
+Правила needsResponse:
+- true если сообщение требует ответа (вопрос, проблема, запрос)
+- false если это благодарность, подтверждение ("ок", "понял", "спасибо"), closing
 
 Отвечай ТОЛЬКО JSON, без markdown блоков.`
 
@@ -65,13 +79,52 @@ interface AnalysisResult {
   urgency: number
   isProblem: boolean
   needsResponse: boolean
+  autoReplyAllowed: boolean
   summary: string
   entities: Record<string, string>
+}
+
+// Simple intents that can be detected without AI (for performance)
+const SIMPLE_INTENT_PATTERNS: Array<{ pattern: RegExp; intent: string; autoReply: boolean }> = [
+  // Greetings
+  { pattern: /^(здравствуйте|привет|добрый\s+(день|вечер|утро)|salom|assalomu|hi|hello|приветствую)[\s!.,]*$/i, intent: 'greeting', autoReply: true },
+  
+  // Gratitude
+  { pattern: /^(спасибо|благодар|rahmat|thanks|thank you|отлично|супер|класс|молодцы?)[\s!.,]*$/i, intent: 'gratitude', autoReply: true },
+  
+  // Closing
+  { pattern: /^(до свидания|пока|всего доброго|xayr|goodbye|bye|удачи)[\s!.,]*$/i, intent: 'closing', autoReply: true },
+  
+  // Short confirmations (no response needed)
+  { pattern: /^(ок|ok|хорошо|понял|понятно|ясно|да|нет|угу|ага|👍|👌|✅|🙏|принято|отлично)[\s!.,]*$/i, intent: 'response', autoReply: false },
+  
+  // FAQ - pricing
+  { pattern: /(сколько стоит|какая цена|тариф|стоимость|прайс|narxi|qancha|price)/i, intent: 'faq_pricing', autoReply: true },
+  
+  // FAQ - hours
+  { pattern: /(время работы|график|рабочие часы|когда работаете|working hours|soat)/i, intent: 'faq_hours', autoReply: true },
+  
+  // FAQ - contacts
+  { pattern: /(телефон|контакт|адрес|как связаться|номер|manzil|telefon|contact)/i, intent: 'faq_contacts', autoReply: true },
+]
+
+// Quick detection of simple intents without AI
+function detectSimpleIntent(text: string): { intent: string; autoReply: boolean } | null {
+  const trimmed = text.trim()
+  for (const { pattern, intent, autoReply } of SIMPLE_INTENT_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { intent, autoReply }
+    }
+  }
+  return null
 }
 
 // Fallback analysis without AI
 function analyzeWithoutAI(text: string): AnalysisResult {
   const lower = text.toLowerCase()
+  
+  // First, check for simple intents (fast path, no AI needed)
+  const simpleIntent = detectSimpleIntent(text)
   
   // Determine category
   let category = 'general'
@@ -124,31 +177,35 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     urgency = 0
   }
 
-  // Determine intent
-  let intent = 'information'
-  if (isProblem) {
-    intent = 'report_problem'
-  } else if (/как\s|что\s|где\s|почему|подскажите|qanday|nima/i.test(lower)) {
-    intent = 'ask_question'
-  } else if (/хочу|нужно|добавьте|kerak|можно ли/i.test(lower)) {
-    intent = 'request_feature'
-  } else if (/жалоб|претензи|shikoyat/i.test(lower)) {
-    intent = 'complaint'
-  } else if (/спасибо|благодар|rahmat/i.test(lower)) {
-    intent = 'gratitude'
+  // Determine intent - use simple detection first
+  let intent = simpleIntent?.intent || 'information'
+  let autoReplyAllowed = simpleIntent?.autoReply || false
+  
+  if (!simpleIntent) {
+    if (isProblem) {
+      intent = 'report_problem'
+      autoReplyAllowed = false
+    } else if (/как\s|что\s|где\s|почему|подскажите|qanday|nima/i.test(lower)) {
+      intent = 'ask_question'
+      autoReplyAllowed = false // Complex questions need human
+    } else if (/хочу|нужно|добавьте|kerak|можно ли/i.test(lower)) {
+      intent = 'request_feature'
+      autoReplyAllowed = false
+    } else if (/жалоб|претензи|shikoyat/i.test(lower)) {
+      intent = 'complaint'
+      autoReplyAllowed = false
+    }
   }
 
   // Determine if needs response
-  // НЕ требует ответа: благодарность, подтверждение, короткие согласия
-  const noResponsePatterns = /^(ок|ok|хорошо|понял|понятно|ясно|спасибо|rahmat|да|нет|угу|ага|👍|👌|✅|🙏)\.?!?$/i
-  const isShortConfirmation = lower.trim().length < 15 && noResponsePatterns.test(lower.trim())
-  const isGratitude = intent === 'gratitude'
-  
-  const needsResponse = !isShortConfirmation && !isGratitude && (
+  const isClosingOrGratitude = ['gratitude', 'closing', 'response'].includes(intent)
+  const needsResponse = !isClosingOrGratitude && (
     isProblem || 
     intent === 'ask_question' || 
     intent === 'request_feature' || 
     intent === 'complaint' ||
+    intent === 'greeting' ||
+    intent.startsWith('faq_') ||
     /\?$/.test(text.trim()) // Ends with question mark
   )
 
@@ -159,6 +216,7 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     urgency,
     isProblem,
     needsResponse,
+    autoReplyAllowed,
     summary: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
     entities: {},
   }
@@ -166,6 +224,13 @@ function analyzeWithoutAI(text: string): AnalysisResult {
 
 // Analyze with OpenAI
 async function analyzeWithAI(text: string): Promise<AnalysisResult> {
+  // OPTIMIZATION: Check for simple intents first (no AI call needed)
+  const simpleIntent = detectSimpleIntent(text)
+  if (simpleIntent) {
+    console.log(`[AI Analyze] Fast path: detected simple intent "${simpleIntent.intent}"`)
+    return analyzeWithoutAI(text) // Use fallback which already uses simple intent
+  }
+
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
     console.log('[AI Analyze] No OpenAI key, using fallback')
@@ -196,6 +261,10 @@ async function analyzeWithAI(text: string): Promise<AnalysisResult> {
 
     const result = JSON.parse(jsonMatch[0]) as AnalysisResult
     
+    // Determine autoReplyAllowed based on intent
+    const autoReplyIntents = ['greeting', 'gratitude', 'closing', 'faq_pricing', 'faq_hours', 'faq_contacts']
+    const autoReplyAllowed = result.autoReplyAllowed ?? autoReplyIntents.includes(result.intent)
+    
     // Validate and normalize
     return {
       category: result.category || 'general',
@@ -204,6 +273,7 @@ async function analyzeWithAI(text: string): Promise<AnalysisResult> {
       urgency: Math.min(5, Math.max(0, Number(result.urgency) || 1)),
       isProblem: Boolean(result.isProblem),
       needsResponse: result.needsResponse !== false, // Default to true if not specified
+      autoReplyAllowed,
       summary: result.summary || text.slice(0, 100),
       entities: result.entities || {},
     }
@@ -230,7 +300,7 @@ export default async function handler(req: Request): Promise<Response> {
   // POST - Analyze message
   if (req.method === 'POST') {
     try {
-      const { messageId, text, channelId } = await req.json()
+      const { messageId, text, channelId, telegramChatId, senderName, telegramId } = await req.json()
 
       if (!text || text.length < 3) {
         return json({ error: 'Text too short for analysis' }, 400)
@@ -241,7 +311,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Run AI analysis
       const analysis = await analyzeWithAI(text)
 
-      console.log(`[AI Analyze] Result: category=${analysis.category}, sentiment=${analysis.sentiment}, isProblem=${analysis.isProblem}, urgency=${analysis.urgency}, needsResponse=${analysis.needsResponse}`)
+      console.log(`[AI Analyze] Result: intent=${analysis.intent}, sentiment=${analysis.sentiment}, autoReply=${analysis.autoReplyAllowed}, needsResponse=${analysis.needsResponse}`)
 
       // Update message in database
       if (messageId) {
@@ -253,7 +323,8 @@ export default async function handler(req: Request): Promise<Response> {
             ai_urgency = ${analysis.urgency},
             is_problem = ${analysis.isProblem},
             ai_summary = ${analysis.summary},
-            ai_extracted_entities = ${JSON.stringify(analysis.entities)}
+            ai_extracted_entities = ${JSON.stringify(analysis.entities)},
+            auto_reply_candidate = ${analysis.autoReplyAllowed}
           WHERE id = ${messageId}
         `
         console.log(`[AI Analyze] Updated message ${messageId}`)
@@ -284,10 +355,42 @@ export default async function handler(req: Request): Promise<Response> {
         `
       }
 
+      // Trigger auto-reply if allowed
+      let autoReplyResult = null
+      if (analysis.autoReplyAllowed && channelId && telegramChatId) {
+        console.log(`[AI Analyze] Triggering auto-reply for intent=${analysis.intent}`)
+        
+        // Call auto-reply endpoint
+        const autoReplyUrl = process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}/api/support/auto-reply`
+          : null
+        
+        if (autoReplyUrl) {
+          try {
+            const response = await fetch(autoReplyUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                channelId,
+                telegramChatId,
+                intent: analysis.intent,
+                senderName: senderName || '',
+                telegramId: telegramId || null,
+              }),
+            })
+            autoReplyResult = await response.json()
+            console.log(`[AI Analyze] Auto-reply result: ${JSON.stringify(autoReplyResult)}`)
+          } catch (e: any) {
+            console.log(`[AI Analyze] Auto-reply call failed: ${e.message}`)
+          }
+        }
+      }
+
       return json({
         success: true,
         analysis,
         messageId,
+        autoReply: autoReplyResult,
       })
 
     } catch (e: any) {

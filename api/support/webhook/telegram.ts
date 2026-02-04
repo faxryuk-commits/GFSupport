@@ -443,7 +443,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Trigger AI analysis for client messages (async, don't wait)
     if (identification.role === 'client' && text && text.length > 3) {
-      // Call AI analyze endpoint asynchronously
+      // Call AI analyze endpoint asynchronously (includes auto-reply logic)
       const analyzeUrl = process.env.VERCEL_URL 
         ? `https://${process.env.VERCEL_URL}/api/support/ai/analyze`
         : null
@@ -452,7 +452,14 @@ export default async function handler(req: Request): Promise<Response> {
         fetch(analyzeUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messageId, text, channelId }),
+          body: JSON.stringify({ 
+            messageId, 
+            text, 
+            channelId,
+            telegramChatId: String(chat.id),
+            senderName: user.fullName,
+            telegramId: user.id ? String(user.id) : null,
+          }),
         }).catch(e => console.log('[Webhook] AI analyze call failed:', e.message))
       }
     }
