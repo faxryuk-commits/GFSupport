@@ -342,16 +342,31 @@ export default async function handler(req: Request): Promise<Response> {
       console.error('responseTimeDistribution error:', e)
     }
 
-    // Кейсы по дням (тренд)
+    // Кейсы по дням (тренд) - заполняем все дни периода
     const dailyTrend = await sql`
+      WITH date_series AS (
+        SELECT generate_series(
+          ${startDate.toISOString()}::date,
+          CURRENT_DATE,
+          '1 day'::interval
+        )::date as date
+      ),
+      daily_cases AS (
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as cases_created,
+          COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
+        FROM support_cases
+        WHERE created_at >= ${startDate.toISOString()}
+        GROUP BY DATE(created_at)
+      )
       SELECT 
-        DATE(created_at) as date,
-        COUNT(*) as cases_created,
-        COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
-      FROM support_cases
-      WHERE created_at >= ${startDate.toISOString()}
-      GROUP BY DATE(created_at)
-      ORDER BY date
+        ds.date,
+        COALESCE(dc.cases_created, 0) as cases_created,
+        COALESCE(dc.cases_resolved, 0) as cases_resolved
+      FROM date_series ds
+      LEFT JOIN daily_cases dc ON ds.date = dc.date
+      ORDER BY ds.date
     `
 
     // ============================================
