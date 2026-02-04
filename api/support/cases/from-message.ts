@@ -111,7 +111,7 @@ export default async function handler(req: Request): Promise<Response> {
         ${msg.ai_category || 'general'},
         ${casePriority},
         ${msg.ai_urgency >= 4 ? 'critical' : msg.ai_urgency >= 3 ? 'high' : 'normal'},
-        'open',
+        'detected',
         ${messageId}
       )
     `
@@ -157,7 +157,7 @@ export default async function handler(req: Request): Promise<Response> {
         companyId: newCase.company_id,
         title: newCase.title,
         description: newCase.description || '',
-        status: newCase.status || 'open',
+        status: newCase.status || 'detected',
         category: newCase.category || 'general',
         priority: newCase.priority || 'medium',
         severity: newCase.severity,

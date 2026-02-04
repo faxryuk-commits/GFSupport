@@ -350,7 +350,7 @@ export default async function handler(req: Request): Promise<Response> {
         const existingCase = await sql`
           SELECT id FROM support_cases 
           WHERE channel_id = ${msg.channel_id} 
-            AND status IN ('open', 'in_progress', 'pending')
+            AND status IN ('detected', 'in_progress', 'waiting', 'blocked')
           LIMIT 1
         `
         
@@ -380,7 +380,7 @@ export default async function handler(req: Request): Promise<Response> {
             ${msg.text_content},
             ${category},
             ${priority},
-            'open',
+            'detected',
             ${msg.id},
             ${msg.sender_name || 'Клиент'},
             NOW()

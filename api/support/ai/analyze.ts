@@ -564,7 +564,7 @@ export default async function handler(req: Request): Promise<Response> {
                 ${analysis.category || 'general'},
                 ${casePriority},
                 ${caseSeverity},
-                'open',
+                'detected',
                 ${messageId},
                 ${senderName || 'Клиент'},
                 NOW()

@@ -210,7 +210,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Reopen case
       await sql`
         UPDATE support_cases 
-        SET status = 'open',
+        SET status = 'detected',
             priority = CASE WHEN priority = 'low' THEN 'medium' ELSE priority END,
             resolution_notes = REPLACE(COALESCE(resolution_notes, ''), '[Awaiting feedback]', '[Reopened by client]'),
             updated_at = NOW()

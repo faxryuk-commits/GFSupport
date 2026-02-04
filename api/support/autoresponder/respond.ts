@@ -396,7 +396,7 @@ export default async function handler(req: Request) {
           ${caseId}, ${channelId}, 
           ${'Автоматический тикет: ' + (senderName || 'Клиент')},
           ${messageText?.slice(0, 500) || 'Сообщение в нерабочее время'},
-          'open', 'medium', 'auto-created', NOW()
+          'detected', 'medium', 'auto-created', NOW()
         )
         ON CONFLICT DO NOTHING
       `.catch(() => {}) // Игнорируем если таблица не существует

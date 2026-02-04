@@ -514,6 +514,19 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Added photo_url to channels')
     } catch (e) { /* column exists */ }
 
+    // Migration 31: Update case status 'open' -> 'detected' for UI compatibility
+    try {
+      const result = await sql`
+        UPDATE support_cases 
+        SET status = 'detected' 
+        WHERE status = 'open'
+        RETURNING id
+      `
+      if (result.length > 0) {
+        migrations.push(`Updated ${result.length} cases from 'open' to 'detected' status`)
+      }
+    } catch (e) { /* no cases to update */ }
+
     return json({
       success: true,
       migrations,
