@@ -60,26 +60,25 @@ export function useBackgroundNotifications() {
       const totalUnread = channels.reduce((sum: number, ch: Channel) => sum + (ch.unread || 0), 0)
       
       // Check for new messages
-      let hasNewMessages = false
       let newMessageChannel: Channel | null = null
       
-      channels.forEach((ch: Channel) => {
+      for (const ch of channels) {
         const prevUnread = lastChannelUnreadsRef.current.get(ch.id) || 0
         if (ch.unread > prevUnread) {
-          hasNewMessages = true
           newMessageChannel = ch
         }
         lastChannelUnreadsRef.current.set(ch.id, ch.unread)
-      })
+      }
       
       // Show notification and play sound when tab is hidden
-      if (hasNewMessages && document.visibilityState === 'hidden') {
+      if (newMessageChannel && document.visibilityState === 'hidden') {
+        const channel = newMessageChannel as Channel
         // Browser notification
-        if ('Notification' in window && Notification.permission === 'granted' && newMessageChannel) {
-          new Notification(`Новое сообщение: ${newMessageChannel.name}`, {
-            body: `${newMessageChannel.unread} непрочитанных`,
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(`Новое сообщение: ${channel.name}`, {
+            body: `${channel.unread} непрочитанных`,
             icon: '/favicon.ico',
-            tag: `channel-${newMessageChannel.id}`,
+            tag: `channel-${channel.id}`,
             requireInteraction: true, // Keep notification until user interacts
           })
         }
