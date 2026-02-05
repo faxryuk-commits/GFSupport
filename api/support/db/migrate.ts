@@ -527,7 +527,59 @@ export default async function handler(req: Request): Promise<Response> {
       }
     } catch (e) { /* no cases to update */ }
 
-    // Migration 32: Create broadcasts tables
+    // Migration 32: Add telegram_id to crm_managers for Telegram sync
+    try {
+      await sql`ALTER TABLE crm_managers ADD COLUMN IF NOT EXISTS telegram_id VARCHAR(64)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_crm_managers_telegram ON crm_managers(telegram_id) WHERE telegram_id IS NOT NULL`
+      migrations.push('Added telegram_id to crm_managers')
+    } catch (e) { /* column exists */ }
+
+    // Migration 33: Create support_agent_activity table for tracking agent actions
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_agent_activity (
+          id VARCHAR(100) PRIMARY KEY,
+          agent_id VARCHAR(100),
+          system_agent_id VARCHAR(100),
+          telegram_user_id VARCHAR(100),
+          agent_name VARCHAR(255),
+          activity_type VARCHAR(50),
+          channel_id VARCHAR(100),
+          activity_at TIMESTAMP DEFAULT NOW(),
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON support_agent_activity(agent_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_system_agent ON support_agent_activity(system_agent_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_time ON support_agent_activity(activity_at)`
+      migrations.push('Created support_agent_activity table')
+    } catch (e) { /* table exists */ }
+
+    // Migration 34: Create support_case_activity table for tracking case changes
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_case_activity (
+          id VARCHAR(100) PRIMARY KEY,
+          case_id VARCHAR(100) NOT NULL,
+          activity_type VARCHAR(50),
+          actor_name VARCHAR(255),
+          actor_id VARCHAR(100),
+          details JSONB DEFAULT '{}',
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_case_activity_case ON support_case_activity(case_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_case_activity_time ON support_case_activity(created_at)`
+      migrations.push('Created support_case_activity table')
+    } catch (e) { /* table exists */ }
+
+    // Migration 35: Add updated_by to cases for tracking who made changes
+    try {
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255)`
+      migrations.push('Added updated_by to support_cases')
+    } catch (e) { /* column exists */ }
+
+    // Migration 37: Create broadcasts tables
     try {
       await sql`
         CREATE TABLE IF NOT EXISTS support_broadcasts (
