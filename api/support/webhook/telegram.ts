@@ -409,6 +409,99 @@ async function handleMessageReaction(sql: any, reaction: any): Promise<Response>
   }
 }
 
+// Update cases when staff replies via Telegram
+async function updateCasesOnStaffReply(
+  sql: any,
+  channelId: string,
+  agentTelegramId: string,
+  agentName: string,
+  systemAgentId?: string | null,
+  messageText?: string
+) {
+  try {
+    // Find open cases for this channel
+    const openCases = await sql`
+      SELECT id, status, assigned_to, title
+      FROM support_cases 
+      WHERE channel_id = ${channelId}
+        AND status IN ('detected', 'in_progress', 'waiting')
+      ORDER BY created_at DESC
+    `
+    
+    if (openCases.length === 0) {
+      return { updated: 0 }
+    }
+    
+    // Determine if this is a resolution message (simple heuristics)
+    const textLower = (messageText || '').toLowerCase()
+    const isResolution = 
+      textLower.includes('решено') ||
+      textLower.includes('исправлено') ||
+      textLower.includes('готово') ||
+      textLower.includes('сделано') ||
+      textLower.includes('fixed') ||
+      textLower.includes('resolved') ||
+      textLower.includes('done') ||
+      textLower.includes('выполнено') ||
+      textLower.includes('закрыто')
+    
+    let updatedCount = 0
+    
+    for (const caseItem of openCases) {
+      // Determine new status
+      let newStatus = caseItem.status
+      
+      if (caseItem.status === 'detected') {
+        // First response - move to in_progress
+        newStatus = 'in_progress'
+      } else if (isResolution && caseItem.status === 'in_progress') {
+        // Resolution message - mark as resolved
+        newStatus = 'resolved'
+      }
+      
+      // Determine assigned agent
+      const assignTo = caseItem.assigned_to || systemAgentId || null
+      
+      // Update case
+      await sql`
+        UPDATE support_cases SET
+          status = ${newStatus},
+          assigned_to = COALESCE(${assignTo}, assigned_to),
+          updated_at = NOW(),
+          updated_by = ${agentName},
+          first_response_at = COALESCE(first_response_at, NOW()),
+          resolved_at = ${newStatus === 'resolved' ? sql`NOW()` : sql`resolved_at`}
+        WHERE id = ${caseItem.id}
+      `
+      
+      // Add activity log
+      await sql`
+        INSERT INTO support_case_activity (
+          id, case_id, activity_type, actor_name, actor_id, details, created_at
+        ) VALUES (
+          ${`act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`},
+          ${caseItem.id},
+          ${newStatus === 'resolved' ? 'resolved' : 'replied'},
+          ${agentName},
+          ${systemAgentId || agentTelegramId},
+          ${JSON.stringify({ via: 'telegram', previousStatus: caseItem.status, newStatus })},
+          NOW()
+        )
+      `.catch(() => {
+        // Activity table may not exist
+      })
+      
+      updatedCount++
+      console.log(`[Webhook] Updated case ${caseItem.id}: ${caseItem.status} -> ${newStatus}`)
+    }
+    
+    return { updated: updatedCount }
+  } catch (e: any) {
+    console.error('[Webhook] Error updating cases on staff reply:', e.message)
+    return { updated: 0, error: e.message }
+  }
+}
+
 // Record agent activity with system agent ID mapping
 async function recordAgentActivity(
   sql: any, 
@@ -697,7 +790,7 @@ export default async function handler(req: Request): Promise<Response> {
       console.log(`[Webhook] Updated client avg response time for channel ${channelId}`)
     }
 
-    // If support/team replied, record activity and mark messages as read
+    // If support/team replied, record activity, mark messages as read, and update cases
     if (identification.role !== 'client') {
       await recordAgentActivity(sql, String(user.id), user.fullName, channelId, identification.agentId)
       
@@ -723,7 +816,20 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId}
       `
       
-      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - marked messages as read`)
+      // Update open cases for this channel
+      // - Move 'detected' cases to 'in_progress'
+      // - Assign agent if not assigned
+      // - Mark as 'resolved' if message contains resolution keywords
+      const casesResult = await updateCasesOnStaffReply(
+        sql, 
+        channelId, 
+        String(user.id), 
+        user.fullName, 
+        identification.agentId,
+        text
+      )
+      
+      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated`)
     }
 
     // Trigger AI analysis for ALL messages (clients AND team can report problems)
