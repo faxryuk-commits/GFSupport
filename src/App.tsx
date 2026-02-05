@@ -11,6 +11,7 @@ import {
   RegisterPage,
   KnowledgePage,
   DocsPage,
+  ProblemAnalysisPage,
 } from '@/pages'
 import './index.css'
 
@@ -34,6 +35,9 @@ export default function App() {
         {/* Knowledge & Docs */}
         <Route path="/knowledge" element={<KnowledgePage />} />
         <Route path="/docs" element={<DocsPage />} />
+        
+        {/* Learning & AI */}
+        <Route path="/learning/problems" element={<ProblemAnalysisPage />} />
         
         {/* Manage */}
         <Route path="/broadcast" element={<BroadcastPage />} />

@@ -280,101 +280,144 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
           </select>
         </div>
 
-        {/* Table */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {/* Table with fixed height and scroll */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 380px)', minHeight: '400px' }}>
           {isLoading && users.length === 0 ? (
-            <div className="flex items-center justify-center py-20">
+            <div className="flex items-center justify-center py-20 flex-1">
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 flex-1">
               <Search className="w-12 h-12 mb-4 opacity-30" />
               <p className="text-lg font-medium">Пользователи не найдены</p>
               <p className="text-sm">Попробуйте изменить параметры поиска</p>
             </div>
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="text-left px-6 py-4 text-sm font-medium text-slate-600">Пользователь</th>
-                  <th className="text-left px-6 py-4 text-sm font-medium text-slate-600">Telegram</th>
-                  <th className="text-left px-6 py-4 text-sm font-medium text-slate-600">Роль</th>
-                  <th className="text-left px-6 py-4 text-sm font-medium text-slate-600">Каналы</th>
-                  <th className="text-left px-6 py-4 text-sm font-medium text-slate-600">Последняя активность</th>
-                  <th className="text-right px-6 py-4 text-sm font-medium text-slate-600">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map(user => (
-                  <tr key={user.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {user.photoUrl ? (
-                          <img 
-                            src={user.photoUrl} 
-                            alt={user.name}
-                            className="w-10 h-10 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium">
-                            {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+            <>
+              {/* Fixed Header */}
+              <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th className="text-left px-6 py-4 text-sm font-medium text-slate-600 w-[250px]">Пользователь</th>
+                      <th className="text-left px-6 py-4 text-sm font-medium text-slate-600 w-[150px]">Telegram</th>
+                      <th className="text-left px-6 py-4 text-sm font-medium text-slate-600 w-[120px]">Роль</th>
+                      <th className="text-left px-6 py-4 text-sm font-medium text-slate-600 w-[200px]">Каналы</th>
+                      <th className="text-left px-6 py-4 text-sm font-medium text-slate-600 w-[150px]">Последняя активность</th>
+                      <th className="text-right px-6 py-4 text-sm font-medium text-slate-600 w-[120px]">Действия</th>
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+              {/* Scrollable Body */}
+              <div className="overflow-y-auto flex-1">
+                <table className="w-full">
+                  <tbody>
+                    {filteredUsers.map(user => (
+                      <tr key={user.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 w-[250px]">
+                          <div className="flex items-center gap-3">
+                            {user.photoUrl ? (
+                              <img 
+                                src={user.photoUrl} 
+                                alt={user.name}
+                                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium flex-shrink-0">
+                                {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-800 truncate">{user.name}</p>
+                              {user.position && (
+                                <p className="text-sm text-slate-500 truncate">{user.position}</p>
+                              )}
+                            </div>
                           </div>
-                        )}
-                        <div>
-                          <p className="font-medium text-slate-800">{user.name}</p>
-                          {user.position && (
-                            <p className="text-sm text-slate-500">{user.position}</p>
+                        </td>
+                        <td className="px-6 py-4 w-[150px]">
+                          {user.telegramUsername ? (
+                            <span className="text-sm text-blue-600">@{user.telegramUsername}</span>
+                          ) : (
+                            <span className="text-sm text-slate-400">-</span>
                           )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {user.telegramUsername ? (
-                        <span className="text-sm text-blue-600">@{user.telegramUsername}</span>
-                      ) : (
-                        <span className="text-sm text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${roleConfig[user.role]?.color || 'bg-slate-100 text-slate-700'}`}>
-                        {roleConfig[user.role]?.label || user.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {user.channels?.length || 0}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-500">
-                      {formatLastSeen(user.lastSeenAt)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => { setSelectedUser(user); setIsViewModalOpen(true) }}
-                          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="Просмотр"
-                        >
-                          <Eye className="w-4 h-4 text-slate-500" />
-                        </button>
-                        <button 
-                          onClick={() => openEditModal(user)}
-                          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="Редактировать"
-                        >
-                          <Edit className="w-4 h-4 text-slate-500" />
-                        </button>
-                        <button 
-                          onClick={() => { setSelectedUser(user); setIsDeleteDialogOpen(true) }}
-                          className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Удалить"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="px-6 py-4 w-[120px]">
+                          <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${roleConfig[user.role]?.color || 'bg-slate-100 text-slate-700'}`}>
+                            {roleConfig[user.role]?.label || user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 w-[200px]">
+                          {user.channels && user.channels.length > 0 ? (
+                            <div className="relative group">
+                              <button 
+                                onClick={() => { setSelectedUser(user); setIsViewModalOpen(true) }}
+                                className="flex items-center gap-1 text-sm text-slate-600 hover:text-blue-600 transition-colors"
+                              >
+                                <MessageSquare className="w-4 h-4" />
+                                <span>{user.channels.length} {user.channels.length === 1 ? 'канал' : user.channels.length < 5 ? 'канала' : 'каналов'}</span>
+                              </button>
+                              {/* Tooltip with channel names */}
+                              <div className="absolute left-0 top-full mt-1 z-20 hidden group-hover:block">
+                                <div className="bg-slate-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg max-w-[250px]">
+                                  <p className="font-medium mb-1">Каналы:</p>
+                                  <div className="space-y-1">
+                                    {user.channels.slice(0, 5).map((channel, idx) => (
+                                      <p key={idx} className="truncate opacity-90">{channel.name || channel.id}</p>
+                                    ))}
+                                    {user.channels.length > 5 && (
+                                      <p className="opacity-70">...и ещё {user.channels.length - 5}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-500 w-[150px]">
+                          {formatLastSeen(user.lastSeenAt)}
+                        </td>
+                        <td className="px-6 py-4 w-[120px]">
+                          <div className="flex items-center justify-end gap-1">
+                            <button 
+                              onClick={() => { setSelectedUser(user); setIsViewModalOpen(true) }}
+                              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                              title="Просмотр"
+                            >
+                              <Eye className="w-4 h-4 text-slate-500" />
+                            </button>
+                            <button 
+                              onClick={() => openEditModal(user)}
+                              className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Редактировать"
+                            >
+                              <Edit className="w-4 h-4 text-blue-500" />
+                            </button>
+                            <button 
+                              onClick={() => { setSelectedUser(user); setIsDeleteDialogOpen(true) }}
+                              className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Удалить"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Footer with count */}
+              <div className="bg-slate-50 border-t border-slate-200 px-6 py-3 flex-shrink-0">
+                <p className="text-sm text-slate-500">
+                  Показано: <span className="font-medium text-slate-700">{filteredUsers.length}</span> из {stats?.total || 0} пользователей
+                </p>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -417,12 +460,27 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
 
             {selectedUser.channels && selectedUser.channels.length > 0 && (
               <div className="pt-4 border-t border-slate-200">
-                <p className="text-xs text-slate-500 mb-2">Каналы ({selectedUser.channels.length})</p>
-                <div className="flex flex-wrap gap-2">
+                <p className="text-xs text-slate-500 mb-2">Каналы и группы ({selectedUser.channels.length})</p>
+                <div className="max-h-[200px] overflow-y-auto space-y-2 pr-2">
                   {selectedUser.channels.map((channel, idx) => (
-                    <span key={idx} className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-full">
-                      {channel.name || channel.id}
-                    </span>
+                    <div 
+                      key={idx} 
+                      className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                      onClick={() => {
+                        window.open(`/chats/${channel.id}`, '_blank')
+                      }}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                        {(channel.name || channel.id).slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{channel.name || channel.id}</p>
+                        {channel.addedAt && (
+                          <p className="text-xs text-slate-400">Добавлен: {new Date(channel.addedAt).toLocaleDateString('ru-RU')}</p>
+                        )}
+                      </div>
+                      <MessageSquare className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    </div>
                   ))}
                 </div>
               </div>

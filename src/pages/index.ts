@@ -16,3 +16,6 @@ export { AutomationsPage } from './automations'
 // New pages (Phase 4)
 export { KnowledgePage } from './knowledge'
 export { DocsPage } from './docs'
+
+// Learning & AI
+export { ProblemAnalysisPage } from './learning'

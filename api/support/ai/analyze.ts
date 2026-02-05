@@ -175,49 +175,8 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   // First, check for simple intents (fast path, no AI needed)
   const simpleIntent = detectSimpleIntent(text)
   
-  // Determine category
-  let category = 'general'
-  
-  // PRIORITY 1: Onboarding/New client requests (заявки на подключение)
-  if (/подключ|подключить|подключени|регистрац|зарегистр|новый клиент|новое заведен|новый ресторан|хотим работать|хочу работать|начать работ|присоединить|сотруднича|ulanish|ro'yxatdan|yangi restoran|yangi mijoz|ishlay boshla|hamkorlik/i.test(lower)) {
-    category = 'onboarding'
-  }
-  // PRIORITY 2: Technical errors
-  else if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan|чкмидми|chiqmay|bosmay|узгармидми|o'zgarmay/i.test(lower)) {
-    category = 'technical'
-  } else if (/интеграц|api|webhook|iiko|r-keeper|poster|wolt|payme|click|uzsmart|uzkassa/i.test(lower)) {
-    category = 'integration'
-  } else if (/оплат|счёт|счет|деньг|pul|tolov|тариф|подписк/i.test(lower)) {
-    category = 'billing'
-  } else if (/жалоб|недовол|плохо|ужас|shikoyat|хамств/i.test(lower)) {
-    category = 'complaint'
-  } else if (/можно ли|хотел бы|добавьте|kerak|предлага|улучш/i.test(lower)) {
-    category = 'feature_request'
-  } else if (/заказ|order|buyurtma|zakaz|чек|chek/i.test(lower)) {
-    category = 'order'
-  } else if (/доставк|курьер|yetkazib|dostavka/i.test(lower)) {
-    category = 'delivery'
-  } else if (/филиал|filial|регион|region|адрес|address|manzil/i.test(lower)) {
-    category = 'technical' // филиал/регион issues are usually technical
-  } else if (/меню|блюд|товар|позици|цен/i.test(lower)) {
-    category = 'menu'
-  } else if (/приложен|app|мобильн|android|ios|ilova/i.test(lower)) {
-    category = 'app'
-  } else if (/как\s|что\s|где\s|почему|qanday|nima|подскажите/i.test(lower)) {
-    category = 'question'
-  } else if (/спасибо|благодар|отлично|супер|rahmat|zo'r/i.test(lower)) {
-    category = 'feedback'
-  }
-
-  // Determine sentiment
-  let sentiment = 'neutral'
-  if (/спасибо|отлично|супер|хорошо|rahmat|zo'r|молодц/i.test(lower)) {
-    sentiment = 'positive'
-  } else if (/ужас|кошмар|безобраз|хамств|обман/i.test(lower)) {
-    sentiment = 'frustrated'
-  } else if (/плохо|недовол|проблем|не работа|ошибк|жалоб/i.test(lower)) {
-    sentiment = 'negative'
-  }
+  // =========== STEP 1: Determine all problem patterns first ===========
+  // These need to be defined before category determination
 
   // Determine if problem - expanded patterns for ru/uz/en
   // Based on real message analysis from support channels
@@ -243,22 +202,97 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   // English patterns
   const enProblem = /doesn't work|not working|broken|failed|error|issue|problem|bug|crash|not\s*included|access\s*denied/i.test(lower)
   
+  // =========== NEW: Billing/Payment complaint patterns ===========
+  // Жалобы на несоответствие суммы, цены, оплаты
+  // Patterns like: "почему 175 если оплата 170", "сумма не совпадает", "неправильная цена"
+  
+  // Pattern: question about price/sum discrepancy "как за X если Y", "почему X а не Y"
+  const hasPriceDiscrepancy = /как\s+(за|так|это)\s*\d+.*если.*\d+|почему\s+\d+.*если.*\d+|почему\s+\d+.*а\s+не\s+\d+|\d+\s+(а|но|если)\s+(оплат|заказ|сумм|чек).*\d+/i.test(lower)
+  
+  // Pattern: explicit billing complaints
+  const hasBillingComplaint = /неправильн\w*\s*(сумм|цен|оплат|счёт|счет)|сумм\w*\s*(не\s*(совпад|соответств|та\b)|неправильн|лишн)|цен\w*\s*(не\s*та|другая|неправильн)|оплат\w*\s*(не\s*(та|совпад|прош)|неправильн|лишн)|переплат|недоплат|разниц\w*\s*(в\s*)?(сумм|цен)/i.test(lower)
+  
+  // Pattern: questions about money/price issues (why, how come, etc)
+  const hasMoneyQuestion = /(почему|зачем|как\s+так|откуда|с\s+чего)\s*.{0,20}(больше|меньше|дороже|дешевле|сумм|цен|оплат|денег|деньг)/i.test(lower)
+  
+  // Pattern: Uzbek billing complaints
+  const uzBillingProblem = /narx\w*\s*(xato|noto'g'ri|boshqa)|summa\s*(xato|noto'g'ri|mos\s*kel)|to'lov\s*(xato|noto'g'ri)|nega\s+\d+.*\d+|qanday\s+qilib\s+\d+/i.test(lower)
+  
+  // Combined billing problem
+  const isBillingProblem = hasPriceDiscrepancy || hasBillingComplaint || hasMoneyQuestion || uzBillingProblem
+  
   // Onboarding requests - these are important leads, treat as actionable items
   const isOnboardingRequest = /подключ|подключить|регистрац|зарегистр|новый клиент|новое заведен|хотим работать|хочу работать|начать работ|присоединить|сотруднича|ulanish|ro'yxatdan|yangi restoran|yangi mijoz|ishlay boshla|hamkorlik/i.test(lower)
   
   // Media that likely shows a problem (screenshot, video of issue)
   const isMediaProblem = /фото|скриншот|screenshot|видео|video|демонстрац|показыва|смотрите|посмотрите|вот|rasm|surat|ko'ring|qarang/i.test(lower)
   
-  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || hasErrorMessage || enProblem || isOnboardingRequest || isMediaProblem
+  // Question-complaints: questions that imply dissatisfaction or problem
+  // "А как за...", "А почему...", "А зачем...", "Как так..." with numbers or order/payment context
+  const isQuestionComplaint = /^(а\s+)?(как\s+(за|так|это)|почему|зачем|откуда|с\s+чего)/i.test(lower) && 
+    (/\d+.*\d+|\d+.*если|оплат|сумм|цен|заказ|чек|денег|деньг/i.test(lower))
+  
+  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || hasErrorMessage || enProblem || isOnboardingRequest || isMediaProblem || isBillingProblem || isQuestionComplaint
 
-  // Determine urgency
-  let urgency = 1
+  // =========== STEP 2: Determine category (using problem patterns) ===========
+  let category = 'general'
+  
+  // PRIORITY 1: Onboarding/New client requests (заявки на подключение)
+  if (isOnboardingRequest) {
+    category = 'onboarding'
+  }
+  // PRIORITY 2: Billing/Payment issues (жалобы на оплату, суммы)
+  else if (isBillingProblem || /оплат|счёт|счет|деньг|pul|tolov|тариф|подписк/i.test(lower)) {
+    category = 'billing'
+  }
+  // PRIORITY 3: Question-complaints (вопросы-жалобы)
+  else if (isQuestionComplaint || /жалоб|недовол|плохо|ужас|shikoyat|хамств/i.test(lower)) {
+    category = 'complaint'
+  }
+  // PRIORITY 4: Technical errors
+  else if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan|чкмидми|chiqmay|bosmay|узгармидми|o'zgarmay/i.test(lower)) {
+    category = 'technical'
+  } else if (/интеграц|api|webhook|iiko|r-keeper|poster|wolt|payme|click|uzsmart|uzkassa/i.test(lower)) {
+    category = 'integration'
+  } else if (/можно ли|хотел бы|добавьте|kerak|предлага|улучш/i.test(lower)) {
+    category = 'feature_request'
+  } else if (/заказ|order|buyurtma|zakaz|чек|chek/i.test(lower)) {
+    category = 'order'
+  } else if (/доставк|курьер|yetkazib|dostavka/i.test(lower)) {
+    category = 'delivery'
+  } else if (/филиал|filial|регион|region|адрес|address|manzil/i.test(lower)) {
+    category = 'technical' // филиал/регион issues are usually technical
+  } else if (/меню|блюд|товар|позици|цен/i.test(lower)) {
+    category = 'menu'
+  } else if (/приложен|app|мобильн|android|ios|ilova/i.test(lower)) {
+    category = 'app'
+  } else if (/как\s|что\s|где\s|почему|qanday|nima|подскажите/i.test(lower)) {
+    category = 'question'
+  } else if (/спасибо|благодар|отлично|супер|rahmat|zo'r/i.test(lower)) {
+    category = 'feedback'
+  }
+
+  // =========== STEP 3: Determine sentiment ===========
+  let sentiment = 'neutral'
+  if (/спасибо|отлично|супер|хорошо|rahmat|zo'r|молодц/i.test(lower)) {
+    sentiment = 'positive'
+  } else if (/ужас|кошмар|безобраз|хамств|обман/i.test(lower)) {
+    sentiment = 'frustrated'
+  } else if (/плохо|недовол|проблем|не работа|ошибк|жалоб/i.test(lower) || isBillingProblem || isQuestionComplaint) {
+    sentiment = 'negative'
+  }
+
+  // =========== STEP 4: Determine urgency ===========
+  let urgency = 1 // Default: low priority
   if (/срочно|критично|urgent|tez|shoshilinch|блокир|не могу работать|asap|немедленно/i.test(lower)) {
     urgency = 4
   } else if (isProblem && sentiment === 'frustrated') {
     urgency = 3
   } else if (isOnboardingRequest) {
     // Onboarding requests are high priority - potential new clients!
+    urgency = 3
+  } else if (isBillingProblem || isQuestionComplaint) {
+    // Billing complaints are important - money issues need quick resolution
     urgency = 3
   } else if (isProblem) {
     urgency = 2
@@ -274,7 +308,11 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   let autoReplyAllowed = simpleIntent?.autoReply || false
   
   if (!simpleIntent) {
-    if (isProblem) {
+    if (isBillingProblem || isQuestionComplaint) {
+      // Billing complaints or question-complaints need human attention
+      intent = 'complaint'
+      autoReplyAllowed = false
+    } else if (isProblem) {
       intent = 'report_problem'
       autoReplyAllowed = false
     } else if (/как\s|что\s|где\s|почему|подскажите|qanday|nima/i.test(lower)) {
