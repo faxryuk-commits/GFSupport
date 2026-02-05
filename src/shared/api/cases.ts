@@ -30,11 +30,12 @@ export async function fetchCase(id: string): Promise<Case> {
 }
 
 export async function createCase(data: {
-  channelId: string
   title: string
   description?: string
   category?: string
   priority?: string
+  channelId?: string
+  companyName?: string
 }): Promise<Case> {
   return apiPost<{ case: Case }>('/cases', data).then(r => r.case)
 }

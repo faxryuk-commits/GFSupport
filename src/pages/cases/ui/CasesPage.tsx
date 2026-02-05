@@ -308,14 +308,14 @@ export function CasesPage() {
     }
   }
 
-  const handleCreateCase = async (data: { title: string; description?: string; category?: string; priority?: string }) => {
+  const handleCreateCase = async (data: { title: string; description?: string; category?: string; priority?: string; company?: string }) => {
     try {
       const newCase = await createCase({
-        channelId: '', // Будет создан без привязки к каналу
         title: data.title,
         description: data.description,
         category: data.category,
         priority: data.priority,
+        companyName: data.company,
       })
       setCases(prev => [...prev, newCase])
       setIsCreateModalOpen(false)

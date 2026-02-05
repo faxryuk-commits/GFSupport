@@ -241,14 +241,26 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     try {
       const body = await req.json()
+      console.log('Create case request body:', JSON.stringify(body))
+      
       const { 
-        channelId, companyId, leadId, title, description,
+        channelId, companyId, companyName, leadId, title, description,
         category, subcategory, priority, severity, assignedTo, tags
       } = body
 
       if (!title) {
         return json({ error: 'Title is required' }, 400)
       }
+      
+      // Log what we're inserting
+      console.log('Creating case with:', { 
+        channelId: channelId || null, 
+        companyId: companyId || null,
+        companyName,
+        title, 
+        category, 
+        priority 
+      })
 
       const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       
