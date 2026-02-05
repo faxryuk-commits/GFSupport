@@ -300,7 +300,7 @@ export default async function handler(req: Request): Promise<Response> {
     let responseTimeDistribution: any[] = []
     
     try {
-      // Вычисляем время ответа для КАЖДОГО сообщения клиента
+      // Вычисляем время ответа для КАЖДОГО сообщения клиента ЗА ПЕРИОД
       // Находим следующий ответ поддержки после каждого сообщения клиента
       const responseTimesResult = await sql`
         WITH client_messages AS (
@@ -309,7 +309,8 @@ export default async function handler(req: Request): Promise<Response> {
             channel_id,
             created_at as client_msg_at
           FROM support_messages
-          WHERE sender_role = 'client' OR is_from_client = true
+          WHERE (sender_role = 'client' OR is_from_client = true)
+            AND created_at >= ${startDate.toISOString()}
         ),
         response_times AS (
           SELECT 
