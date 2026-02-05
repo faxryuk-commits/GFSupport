@@ -33,6 +33,14 @@
     {
       "path": "/api/support/autoresponder/check",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/support/messages/auto-process",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/support/commitments/scan",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
