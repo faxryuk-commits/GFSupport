@@ -568,6 +568,191 @@ async function recordAgentActivity(
 }
 
 
+// Send message to Telegram chat
+async function sendTelegramMessage(
+  chatId: string, 
+  text: string, 
+  replyToMessageId?: number
+): Promise<boolean> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) return false
+  
+  try {
+    const payload: any = {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+    }
+    if (replyToMessageId) {
+      payload.reply_to_message_id = replyToMessageId
+    }
+    
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json()
+    return data.ok === true
+  } catch (e) {
+    console.error('[Webhook] Failed to send Telegram message:', e)
+    return false
+  }
+}
+
+// Check if message is a ticket creation command
+function isTicketCommand(text: string, botUsername?: string): boolean {
+  const lowerText = text.toLowerCase().trim()
+  
+  // Direct commands
+  const directCommands = [
+    'создай тикет',
+    'создать тикет',
+    'новый тикет',
+    '/ticket',
+    '/тикет',
+    '/createticket',
+    'тикет',
+  ]
+  
+  for (const cmd of directCommands) {
+    if (lowerText.includes(cmd)) return true
+  }
+  
+  // Bot mention commands like "@bot создай тикет"
+  if (botUsername) {
+    const mentionPattern = new RegExp(`@${botUsername}\\s+(создай|создать|новый)?\\s*тикет`, 'i')
+    if (mentionPattern.test(text)) return true
+  }
+  
+  // Check for any bot mention with ticket command
+  if (/@\w+\s*(создай|создать|новый)?\s*тикет/i.test(text)) return true
+  
+  return false
+}
+
+// Create ticket from quoted/replied message
+async function createTicketFromReply(
+  sql: any,
+  channelId: string,
+  replyToMessage: any,
+  requestedBy: { name: string; id: number },
+  chatId: string,
+  originalMessageId: number
+): Promise<{ success: boolean; ticketNumber?: string; caseId?: string; error?: string }> {
+  try {
+    // First try to find the message in our DB by telegram_message_id
+    const existingMsg = await sql`
+      SELECT id, text_content, sender_name, ai_category, ai_urgency, ai_sentiment, is_problem
+      FROM support_messages 
+      WHERE channel_id = ${channelId} AND telegram_message_id = ${replyToMessage.message_id}
+      LIMIT 1
+    `
+    
+    let messageId: string
+    let messageText: string
+    let senderName: string
+    let aiCategory: string | null = null
+    let aiUrgency: number = 3
+    
+    if (existingMsg[0]) {
+      // Message found in DB
+      messageId = existingMsg[0].id
+      messageText = existingMsg[0].text_content || replyToMessage.text || replyToMessage.caption || ''
+      senderName = existingMsg[0].sender_name
+      aiCategory = existingMsg[0].ai_category
+      aiUrgency = parseInt(existingMsg[0].ai_urgency) || 3
+    } else {
+      // Message not in DB - save it first
+      const user = extractUserInfo(replyToMessage.from)
+      messageId = generateId('msg')
+      messageText = replyToMessage.text || replyToMessage.caption || '[Медиа контент]'
+      senderName = user.fullName
+      
+      // Determine content type
+      let contentType = 'text'
+      if (replyToMessage.photo) contentType = 'photo'
+      else if (replyToMessage.video) contentType = 'video'
+      else if (replyToMessage.document) contentType = 'document'
+      else if (replyToMessage.voice) contentType = 'voice'
+      
+      await sql`
+        INSERT INTO support_messages (
+          id, channel_id, telegram_message_id, sender_id, sender_name, sender_role,
+          is_from_client, content_type, text_content, is_read, created_at
+        ) VALUES (
+          ${messageId}, ${channelId}, ${replyToMessage.message_id},
+          ${String(user.id)}, ${senderName}, 'client',
+          true, ${contentType}, ${messageText}, true, NOW()
+        )
+        ON CONFLICT DO NOTHING
+      `
+    }
+    
+    // Check if case already exists for this message
+    const existingCase = await sql`
+      SELECT id, ticket_number FROM support_cases WHERE source_message_id = ${messageId} LIMIT 1
+    `
+    
+    if (existingCase[0]) {
+      return { 
+        success: false, 
+        error: `Тикет уже существует: #${existingCase[0].ticket_number || existingCase[0].id}` 
+      }
+    }
+    
+    // Create the case
+    const caseId = generateId('case')
+    const title = messageText.slice(0, 100) || 'Тикет из чата'
+    
+    // Determine priority
+    let priority = 'medium'
+    if (aiUrgency >= 5) priority = 'urgent'
+    else if (aiUrgency >= 4) priority = 'high'
+    else if (aiUrgency <= 2) priority = 'low'
+    
+    // Generate ticket number
+    const ticketCountResult = await sql`
+      SELECT COUNT(*) as cnt FROM support_cases WHERE channel_id = ${channelId}
+    `
+    const ticketCount = parseInt(ticketCountResult[0]?.cnt || 0) + 1
+    const ticketNumber = `T-${ticketCount.toString().padStart(4, '0')}`
+    
+    await sql`
+      INSERT INTO support_cases (
+        id, channel_id, title, description, category, priority, status,
+        source_message_id, ticket_number, created_by, created_at
+      ) VALUES (
+        ${caseId}, ${channelId}, ${title}, ${messageText},
+        ${aiCategory || 'general'}, ${priority}, 'detected',
+        ${messageId}, ${ticketNumber}, ${requestedBy.name}, NOW()
+      )
+    `
+    
+    // Link message to case
+    await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId}`
+    
+    // Log activity
+    await sql`
+      INSERT INTO support_case_activity (id, case_id, activity_type, actor_name, details, created_at)
+      VALUES (
+        ${generateId('act')}, ${caseId}, 'created_via_command',
+        ${requestedBy.name},
+        ${JSON.stringify({ via: 'telegram_command', chatId, originalMessageId })},
+        NOW()
+      )
+    `.catch(() => {})
+    
+    console.log(`[Webhook] Created ticket ${ticketNumber} from reply by ${requestedBy.name}`)
+    
+    return { success: true, ticketNumber, caseId }
+    
+  } catch (e: any) {
+    console.error('[Webhook] Create ticket from reply error:', e.message)
+    return { success: false, error: e.message }
+  }
+}
+
 // Main webhook handler
 export default async function handler(req: Request): Promise<Response> {
   // Only accept POST requests
@@ -626,6 +811,61 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Get or create channel
     const channelId = await getOrCreateChannel(sql, chat, user)
+
+    // Check for ticket creation command BEFORE processing regular message
+    const messageText = message.text || message.caption || ''
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'delever_sales_bot'
+    
+    if (isTicketCommand(messageText, botUsername) && message.reply_to_message) {
+      // This is a ticket creation command with a quoted message
+      console.log(`[Webhook] Ticket command detected from ${user.fullName}`)
+      
+      const result = await createTicketFromReply(
+        sql,
+        channelId,
+        message.reply_to_message,
+        { name: user.fullName, id: user.id },
+        String(chat.id),
+        message.message_id
+      )
+      
+      // Send confirmation message
+      if (result.success) {
+        const confirmText = `✅ <b>Тикет создан!</b>\n\n` +
+          `📋 Номер: <code>${result.ticketNumber}</code>\n` +
+          `👤 Создал: ${user.fullName}\n\n` +
+          `Тикет будет обработан в ближайшее время.`
+        
+        await sendTelegramMessage(String(chat.id), confirmText, message.message_id)
+      } else {
+        const errorText = `⚠️ ${result.error || 'Не удалось создать тикет'}`
+        await sendTelegramMessage(String(chat.id), errorText, message.message_id)
+      }
+      
+      // Still save the command message itself
+      await saveMessage(sql, channelId, message.message_id, user, identification.role, {
+        text: messageText,
+        contentType: 'text',
+      })
+      
+      return json({ 
+        ok: true, 
+        ticketCreated: result.success,
+        ticketNumber: result.ticketNumber 
+      })
+    }
+    
+    // Also check for ticket command WITHOUT reply - send instructions
+    if (isTicketCommand(messageText, botUsername) && !message.reply_to_message) {
+      const instructionText = `💡 <b>Как создать тикет:</b>\n\n` +
+        `1. Найдите сообщение с проблемой\n` +
+        `2. Ответьте на него (Reply/Цитата)\n` +
+        `3. Напишите: <code>создай тикет</code>\n\n` +
+        `Тикет будет создан из цитируемого сообщения.`
+      
+      await sendTelegramMessage(String(chat.id), instructionText, message.message_id)
+      return json({ ok: true, instruction: true })
+    }
 
     // Determine content type and extract text/media
     let contentType = 'text'
