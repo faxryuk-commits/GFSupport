@@ -187,7 +187,7 @@ export interface AnalyticsData {
     byCategory: Array<{ name: string; count: number; openCount: number; avgResolution: number }>
     bySentiment: Array<{ sentiment: string; count: number }>
     byIntent: Array<{ intent: string; count: number }>
-    recurringProblems: Array<{ issue: string; count: number; affected: number }>
+    recurringProblems: Array<{ issue: string; category?: string; count: number; affected: number }>
   }
   team: {
     byManager: Array<{
