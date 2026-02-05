@@ -115,20 +115,46 @@ export default async function handler(req: Request): Promise<Response> {
     }
     
     if (!photoUrl) {
-      return new Response(JSON.stringify({ error: 'No photo available' }), { 
-        status: 404, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      })
+      return new Response(null, { status: 404, headers: corsHeaders })
     }
     
-    // Redirect to the photo URL
-    return Response.redirect(photoUrl, 302)
+    // Proxy the image instead of redirect (Telegram URLs expire)
+    try {
+      const imageRes = await fetch(photoUrl)
+      if (!imageRes.ok) {
+        // URL expired, try fresh
+        photoUrl = await getFreshUserPhotoUrl(botToken, userId)
+        if (photoUrl) {
+          await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`
+          const freshRes = await fetch(photoUrl)
+          if (freshRes.ok) {
+            const imageData = await freshRes.arrayBuffer()
+            return new Response(imageData, {
+              headers: {
+                ...corsHeaders,
+                'Content-Type': freshRes.headers.get('Content-Type') || 'image/jpeg',
+                'Cache-Control': 'public, max-age=3600',
+              }
+            })
+          }
+        }
+        return new Response(null, { status: 404, headers: corsHeaders })
+      }
+      
+      const imageData = await imageRes.arrayBuffer()
+      return new Response(imageData, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': imageRes.headers.get('Content-Type') || 'image/jpeg',
+          'Cache-Control': 'public, max-age=3600',
+        }
+      })
+    } catch {
+      return new Response(null, { status: 404, headers: corsHeaders })
+    }
     
   } catch (e: any) {
     console.error('User photo proxy error:', e)
-    return new Response(JSON.stringify({ error: e.message }), { 
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    })
+    return new Response(null, { status: 500, headers: corsHeaders })
   }
 }

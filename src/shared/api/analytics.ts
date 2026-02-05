@@ -273,7 +273,14 @@ export interface AnalyticsData {
 }
 
 export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
-  const query = period ? `?period=${period}` : ''
+  // Support custom date range: "custom:2024-01-01:2024-01-31"
+  let query = ''
+  if (period?.startsWith('custom:')) {
+    const [, from, to] = period.split(':')
+    query = `?from=${from}&to=${to}`
+  } else if (period) {
+    query = `?period=${period}`
+  }
   
   try {
     const raw = await apiGet<ApiAnalyticsResponse>(`/analytics${query}`)

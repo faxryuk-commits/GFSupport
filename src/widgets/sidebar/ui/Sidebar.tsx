@@ -33,6 +33,18 @@ const badgeAnimationStyles = `
   100% { background-position: 200% 0; }
 }
 
+@keyframes avatarFlip {
+  0% { transform: perspective(400px) rotateY(0deg); }
+  50% { transform: perspective(400px) rotateY(90deg); }
+  100% { transform: perspective(400px) rotateY(180deg); }
+}
+
+@keyframes avatarFlipBack {
+  0% { transform: perspective(400px) rotateY(180deg); }
+  50% { transform: perspective(400px) rotateY(90deg); }
+  100% { transform: perspective(400px) rotateY(0deg); }
+}
+
 .badge-animate {
   animation: coinFlip 0.6s ease-in-out;
 }
@@ -54,16 +66,42 @@ const badgeAnimationStyles = `
   background-size: 200% 100%;
   animation: shine 1s ease-in-out;
 }
+
+.avatar-container {
+  perspective: 400px;
+  position: relative;
+}
+
+.avatar-flip {
+  transform-style: preserve-3d;
+  transition: transform 0.6s ease-in-out;
+}
+
+.avatar-flip.flipped {
+  transform: rotateY(180deg);
+}
+
+.avatar-front, .avatar-back {
+  backface-visibility: hidden;
+  position: absolute;
+  inset: 0;
+}
+
+.avatar-back {
+  transform: rotateY(180deg);
+}
 `
 
 interface SidebarProps {
   unreadChats?: number
   openCases?: number
   pendingCommitments?: number
+  onlineAgentsCount?: number
   lastUpdated?: number // Timestamp последнего обновления - для анимации
   currentUser?: {
     name: string
     avatar?: string
+    avatarUrl?: string
     role?: string
   }
   onLogout?: () => void
@@ -87,7 +125,7 @@ const bottomItems = [
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
+export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
@@ -98,6 +136,30 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
   const [animatingBadges, setAnimatingBadges] = useState<Set<string>>(new Set())
   const prevUpdatedRef = useRef(0) // Трекаем последний timestamp обновления
   const isFirstRenderRef = useRef(true) // Чтобы не анимировать при первом рендере
+  
+  // Avatar flip animation state - shows online count
+  const [showOnlineCount, setShowOnlineCount] = useState(false)
+  const flipIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  
+  // Start/stop avatar flip animation every 30 seconds
+  useEffect(() => {
+    const startFlip = () => {
+      setShowOnlineCount(true)
+      // Show online count for 3 seconds
+      setTimeout(() => setShowOnlineCount(false), 3000)
+    }
+    
+    // First flip after 5 seconds
+    const initialTimeout = setTimeout(startFlip, 5000)
+    
+    // Then flip every 30 seconds
+    flipIntervalRef.current = setInterval(startFlip, 30000)
+    
+    return () => {
+      clearTimeout(initialTimeout)
+      if (flipIntervalRef.current) clearInterval(flipIntervalRef.current)
+    }
+  }, [])
   
   const badges: Record<string, number> = {
     unreadChats,
@@ -251,23 +313,48 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
         {currentUser && (
           <div className="border-t border-white/10 pt-4">
             <div className={`flex items-center gap-3 px-2 py-2 ${isCollapsed ? 'justify-center' : ''}`}>
+              {/* Avatar with flip animation showing online count */}
               <div 
-                className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium flex-shrink-0"
-                title={isCollapsed ? currentUser.name : undefined}
+                className="avatar-container w-10 h-10 flex-shrink-0"
+                title={isCollapsed ? `${currentUser.name} • ${onlineAgentsCount} онлайн` : undefined}
               >
-                {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt="" className="w-full h-full rounded-full object-cover" />
-                ) : (
-                  currentUser.name.charAt(0).toUpperCase()
-                )}
+                <div className={`avatar-flip w-full h-full ${showOnlineCount ? 'flipped' : ''}`}>
+                  {/* Front - User Avatar */}
+                  <div className="avatar-front w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium overflow-hidden">
+                    {currentUser.avatar || currentUser.avatarUrl ? (
+                      <img 
+                        src={currentUser.avatar || currentUser.avatarUrl} 
+                        alt="" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      currentUser.name.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  {/* Back - Online Count */}
+                  <div className="avatar-back w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-bold text-sm">
+                    {onlineAgentsCount}
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900 animate-pulse" />
+                  </div>
+                </div>
               </div>
               {!isCollapsed && (
                 <>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white truncate">{currentUser.name}</p>
-                    {currentUser.role && (
-                      <p className="text-xs text-slate-400 truncate">{currentUser.role}</p>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {currentUser.role && (
+                        <p className="text-xs text-slate-400 truncate">{currentUser.role}</p>
+                      )}
+                      <span className="flex items-center gap-1 text-xs text-green-400">
+                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                        {onlineAgentsCount} онлайн
+                      </span>
+                    </div>
                   </div>
                   {onLogout && (
                     <button 

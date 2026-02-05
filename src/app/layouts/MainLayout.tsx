@@ -4,19 +4,14 @@ import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
 
-interface AgentData {
-  id: string
-  name: string
-  username: string
-  role: string
-}
 
 export function MainLayout() {
   const navigate = useNavigate()
-  const [currentUser, setCurrentUser] = useState<{ name: string; role?: string } | null>(null)
+  const [currentUser, setCurrentUser] = useState<{ name: string; role?: string; avatarUrl?: string } | null>(null)
   const [unreadChats, setUnreadChats] = useState(0)
   const [openCases, setOpenCases] = useState(0)
   const [pendingCommitments, setPendingCommitments] = useState(0)
+  const [onlineAgentsCount, setOnlineAgentsCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(0) // Timestamp последнего обновления счётчиков
   
   // Background notifications via Web Worker (works when tab is hidden)
@@ -27,12 +22,13 @@ export function MainLayout() {
     const agentData = localStorage.getItem('support_agent')
     if (agentData) {
       try {
-        const agent: AgentData = JSON.parse(agentData)
+        const agent = JSON.parse(agentData)
         setCurrentUser({
           name: agent.name || agent.username,
           role: agent.role === 'manager' ? 'Менеджер' : 
                 agent.role === 'lead' ? 'Руководитель' : 
-                agent.role === 'admin' ? 'Администратор' : 'Агент'
+                agent.role === 'admin' ? 'Администратор' : 'Агент',
+          avatarUrl: agent.avatarUrl || agent.avatar_url
         })
       } catch {
         // Fallback на старый формат
@@ -97,6 +93,16 @@ export function MainLayout() {
       if (commitmentsRes.ok) {
         const data = await commitmentsRes.json()
         setPendingCommitments(data.stats?.pending || data.commitments?.length || 0)
+      }
+      
+      // Онлайн сотрудники
+      const agentsRes = await fetch('/api/support/agents', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (agentsRes.ok) {
+        const data = await agentsRes.json()
+        const online = data.agents?.filter((a: { status?: string }) => a.status === 'online').length || 0
+        setOnlineAgentsCount(online)
       }
       
       // Обновляем timestamp последнего обновления - для анимации в сайдбаре
@@ -191,6 +197,7 @@ export function MainLayout() {
         unreadChats={unreadChats} 
         openCases={openCases}
         pendingCommitments={pendingCommitments}
+        onlineAgentsCount={onlineAgentsCount}
         currentUser={currentUser || undefined}
         onLogout={handleLogout}
         lastUpdated={lastUpdated}

@@ -124,14 +124,47 @@ export default async function handler(req: Request): Promise<Response> {
     }
     
     if (!photoUrl) {
-      return new Response(JSON.stringify({ error: 'No photo available', channelId: channel.id }), { 
+      // Return a placeholder gradient image (1x1 transparent pixel)
+      return new Response(null, { 
         status: 404, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { ...corsHeaders } 
       })
     }
     
-    // Redirect to the photo URL
-    return Response.redirect(photoUrl, 302)
+    // Proxy the image instead of redirect (Telegram URLs expire)
+    try {
+      const imageRes = await fetch(photoUrl)
+      if (!imageRes.ok) {
+        // URL expired, try to get fresh one
+        photoUrl = await getFreshPhotoUrl(botToken, channel.telegram_chat_id)
+        if (photoUrl) {
+          await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${channel.id}`
+          const freshRes = await fetch(photoUrl)
+          if (freshRes.ok) {
+            const imageData = await freshRes.arrayBuffer()
+            return new Response(imageData, {
+              headers: {
+                ...corsHeaders,
+                'Content-Type': freshRes.headers.get('Content-Type') || 'image/jpeg',
+                'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+              }
+            })
+          }
+        }
+        return new Response(null, { status: 404, headers: corsHeaders })
+      }
+      
+      const imageData = await imageRes.arrayBuffer()
+      return new Response(imageData, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': imageRes.headers.get('Content-Type') || 'image/jpeg',
+          'Cache-Control': 'public, max-age=3600',
+        }
+      })
+    } catch {
+      return new Response(null, { status: 404, headers: corsHeaders })
+    }
     
   } catch (e: any) {
     console.error('Photo proxy error:', e)

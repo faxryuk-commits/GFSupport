@@ -88,23 +88,36 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const url = new URL(req.url)
   const period = url.searchParams.get('period') || '30d'
+  const customFrom = url.searchParams.get('from')
+  const customTo = url.searchParams.get('to')
   
   // Вычисляем дату начала периода
-  // Поддерживаем: today, yesterday, week, month, 7d, 30d, 90d
+  // Поддерживаем: today, yesterday, week, month, 7d, 30d, 90d, или custom from/to
   let periodDays: number
-  switch (period) {
-    case 'today': periodDays = 1; break
-    case 'yesterday': periodDays = 2; break
-    case 'week': 
-    case '7d': periodDays = 7; break
-    case 'month':
-    case '30d': periodDays = 30; break
-    case '90d': periodDays = 90; break
-    default: periodDays = 30
-  }
+  let startDate: Date
+  let endDate: Date = new Date()
   
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - periodDays)
+  if (customFrom && customTo) {
+    // Custom date range
+    startDate = new Date(customFrom)
+    endDate = new Date(customTo)
+    endDate.setHours(23, 59, 59, 999) // Include full day
+    periodDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+  } else {
+    switch (period) {
+      case 'today': periodDays = 1; break
+      case 'yesterday': periodDays = 2; break
+      case 'week': 
+      case '7d': periodDays = 7; break
+      case 'month':
+      case '30d': periodDays = 30; break
+      case '90d': periodDays = 90; break
+      default: periodDays = 30
+    }
+    
+    startDate = new Date()
+    startDate.setDate(startDate.getDate() - periodDays)
+  }
 
   try {
     // ============================================

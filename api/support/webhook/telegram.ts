@@ -592,7 +592,9 @@ function detectCommitment(text: string): CommitmentDetection {
   const lowerText = text.toLowerCase()
 
   // Concrete time patterns - including "завтра с утра", "завтра утром"
+  // Also includes Uzbek (O'zbek) patterns
   const concretePatterns = [
+    // Russian patterns
     { pattern: /через\s+пол\s*часа/i, minutes: 30 },
     { pattern: /через\s+час/i, minutes: 60 },
     { pattern: /через\s+(\d+)\s*мин/i, minutes: null },
@@ -603,12 +605,22 @@ function detectCommitment(text: string): CommitmentDetection {
     { pattern: /10\s*минут/i, minutes: 10 },
     { pattern: /15\s*минут/i, minutes: 15 },
     { pattern: /20\s*минут/i, minutes: 20 },
-    // "завтра с утра" / "завтра утром" - next day 9 AM
     { pattern: /завтра\s+(с\s+)?утра|завтра\s+утром/i, hours: null, nextMorning: true },
     { pattern: /завтра/i, hours: 24 },
     { pattern: /сегодня/i, hours: 4 },
-    // "с утра" (without завтра) - assume next morning if it's evening
     { pattern: /с\s+утра/i, hours: null, morning: true },
+    
+    // Uzbek time patterns (O'zbek)
+    { pattern: /ertaga\s+ertalab/i, hours: null, nextMorning: true }, // завтра утром
+    { pattern: /ertaga/i, hours: 24 },                                 // завтра
+    { pattern: /bugun/i, hours: 4 },                                   // сегодня
+    { pattern: /bir\s+soat(da|dan\s+keyin)/i, minutes: 60 },          // через час
+    { pattern: /yarim\s+soat(da|dan\s+keyin)/i, minutes: 30 },        // через полчаса
+    { pattern: /(\d+)\s*daqiqa(da|dan\s+keyin)?/i, minutes: null },   // X минут
+    { pattern: /(\d+)\s*soat(da|dan\s+keyin)?/i, hours: null },       // X часов
+    { pattern: /ertalab/i, hours: null, morning: true },               // утром
+    { pattern: /kechqurun(gacha)?/i, hours: 8 },                       // к вечеру
+    { pattern: /tushlik(gacha)?/i, hours: 4 },                         // к обеду
   ]
 
   for (const p of concretePatterns) {
@@ -665,7 +677,9 @@ function detectCommitment(text: string): CommitmentDetection {
 
   // Action patterns - explicit promises to do something
   // Includes variations: singular/plural, future tense forms
+  // Russian + Uzbek patterns
   const actionPatterns = [
+    // Russian action patterns
     /сформирую\s+тикет/i,
     /создам\s+тикет/i,
     /возьм[уе]тся\s+за\s+решение/i,
@@ -706,6 +720,40 @@ function detectCommitment(text: string): CommitmentDetection {
     /постараюсь/i,         // "постараюсь сделать"
     /постараемся/i,        // "постараемся"
     /выполн[юиет]/i,       // выполню, выполним, выполнят
+    
+    // Uzbek action patterns (O'zbek)
+    /qilaman/i,            // сделаю
+    /qilamiz/i,            // сделаем
+    /qilishadi/i,          // сделают
+    /tekshiraman/i,        // проверю
+    /tekshiramiz/i,        // проверим
+    /to'g'irlayman/i,      // исправлю
+    /to'g'irlaymiz/i,      // исправим
+    /tuzataman/i,          // исправлю/починю
+    /tuzatamiz/i,          // исправим/починим
+    /hal\s+qilaman/i,      // решу
+    /hal\s+qilamiz/i,      // решим
+    /yechaman/i,           // решу (проблему)
+    /yechamiz/i,           // решим
+    /bog'lanaman/i,        // свяжусь
+    /bog'lanamiz/i,        // свяжемся
+    /xabar\s+beraman/i,    // сообщу
+    /xabar\s+beramiz/i,    // сообщим
+    /javob\s+beraman/i,    // отвечу
+    /javob\s+beramiz/i,    // ответим
+    /ishlab\s+chiqaman/i,  // отработаю
+    /ishlab\s+chiqamiz/i,  // отработаем
+    /tayyor\s+bo'ladi/i,   // будет готово
+    /amalga\s+oshiriladi/i, // будет выполнено
+    /bajariladi/i,         // будет сделано
+    /ko'raman/i,           // посмотрю
+    /ko'ramiz/i,           // посмотрим
+    /aniqlayman/i,         // уточню
+    /aniqlaymiz/i,         // уточним
+    /harakat\s+qilaman/i,  // постараюсь
+    /harakat\s+qilamiz/i,  // постараемся
+    /bajaraman/i,          // выполню
+    /bajaramiz/i,          // выполним
   ]
 
   for (const pattern of actionPatterns) {
@@ -721,8 +769,9 @@ function detectCommitment(text: string): CommitmentDetection {
     }
   }
 
-  // Vague promise patterns
+  // Vague promise patterns (Russian + Uzbek)
   const vaguePatterns = [
+    // Russian vague patterns
     /сейчас\s+(проверю|посмотрю|уточню|узнаю)/i,
     /минуточку/i,
     /подождите/i,
@@ -730,6 +779,13 @@ function detectCommitment(text: string): CommitmentDetection {
     /решим/i,
     /разберусь/i,
     /скоро/i,
+    
+    // Uzbek vague patterns
+    /hozir/i,              // сейчас
+    /kutib\s+turing/i,     // подождите
+    /bir\s+daqiqa/i,       // минуточку
+    /tez\s+orada/i,        // скоро
+    /yaqinda/i,            // скоро/в ближайшее время
   ]
 
   for (const pattern of vaguePatterns) {
