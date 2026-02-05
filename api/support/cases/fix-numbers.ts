@@ -31,11 +31,7 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  const authHeader = req.headers.get('Authorization')
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return json({ error: 'Unauthorized' }, 401)
-  }
-
+  // Temporary: no auth for migration
   const sql = getSQL()
 
   try {
