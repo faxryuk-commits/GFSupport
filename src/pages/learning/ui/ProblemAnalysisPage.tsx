@@ -81,7 +81,7 @@ export default function ProblemAnalysisPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await apiGet<AnalysisData>('/learning/analyze-history?limit=6000')
+      const result = await apiGet<AnalysisData>('/learning/problems?limit=6000')
       setData(result)
       // Автоматически раскрываем категории с проблемами
       const categoriesWithProblems = new Set<string>(result.byCategory.map((c: CategoryData) => c.category))
@@ -125,7 +125,7 @@ export default function ProblemAnalysisPage() {
   const savePatternsToDb = async () => {
     setSaving(true)
     try {
-      await apiPost('/learning/analyze-history', { action: 'save_patterns' })
+      await apiPost('/learning/problems', { action: 'save_patterns' })
       alert('Паттерны успешно сохранены в базу данных')
     } catch (e: any) {
       alert('Ошибка: ' + e.message)
