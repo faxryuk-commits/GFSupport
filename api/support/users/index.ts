@@ -155,7 +155,10 @@ export default async function handler(req: Request): Promise<Response> {
           telegramId: u.telegram_id,
           telegramUsername: u.telegram_username,
           name: u.name,
-          photoUrl: u.photo_url,
+          // Use proxy URL for photos to handle expired Telegram URLs
+          photoUrl: u.telegram_id 
+            ? `/api/support/media/user-avatar?telegramId=${u.telegram_id}` 
+            : null,
           role: u.role,
           department: u.department,
           position: u.position,

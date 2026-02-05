@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { 
   LayoutDashboard, 
@@ -17,6 +17,42 @@ import {
   Brain,
   FileText,
 } from 'lucide-react'
+
+// CSS for coin flip and shine animations
+const badgeAnimationStyles = `
+@keyframes coinFlip {
+  0% { transform: perspective(400px) rotateX(0deg); }
+  50% { transform: perspective(400px) rotateX(180deg); }
+  100% { transform: perspective(400px) rotateX(360deg); }
+}
+
+@keyframes shine {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.badge-animate {
+  animation: coinFlip 0.6s ease-in-out;
+}
+
+.badge-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg, 
+    transparent 0%, 
+    rgba(255,255,255,0.4) 50%, 
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shine 1s ease-in-out;
+}
+`
 
 interface SidebarProps {
   unreadChats?: number
@@ -52,10 +88,37 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
     return saved === 'true'
   })
   
+  // Track animated badges
+  const [animatingBadges, setAnimatingBadges] = useState<Set<string>>(new Set())
+  const prevBadgesRef = useRef({ unreadChats: 0, openCases: 0 })
+  
   const badges: Record<string, number> = {
     unreadChats,
     openCases
   }
+
+  // Trigger animation when badge values change
+  useEffect(() => {
+    const newAnimating = new Set<string>()
+    
+    if (prevBadgesRef.current.unreadChats !== unreadChats) {
+      newAnimating.add('unreadChats')
+    }
+    if (prevBadgesRef.current.openCases !== openCases) {
+      newAnimating.add('openCases')
+    }
+    
+    if (newAnimating.size > 0) {
+      setAnimatingBadges(newAnimating)
+      
+      // Remove animation class after animation completes
+      setTimeout(() => {
+        setAnimatingBadges(new Set())
+      }, 1000)
+    }
+    
+    prevBadgesRef.current = { unreadChats, openCases }
+  }, [unreadChats, openCases])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed))
@@ -73,6 +136,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
   }) => {
     const active = isActive(path)
     const badgeCount = badgeKey ? badges[badgeKey] : 0
+    const isAnimating = badgeKey && animatingBadges.has(badgeKey)
 
     return (
       <Link
@@ -89,16 +153,24 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
           <>
             <span className="flex-1 font-medium">{label}</span>
             {badgeCount > 0 && (
-              <span className={`min-w-[22px] h-5 px-1.5 flex items-center justify-center text-xs font-semibold rounded-full ${
-                active ? 'bg-white/20 text-white' : 'bg-blue-500 text-white'
-              }`}>
+              <span 
+                className={`min-w-[22px] h-5 px-1.5 flex items-center justify-center text-xs font-semibold rounded-full relative overflow-hidden ${
+                  active ? 'bg-white/20 text-white' : 'bg-blue-500 text-white'
+                } ${isAnimating ? 'badge-animate badge-shine' : ''}`}
+                style={{ transformStyle: 'preserve-3d' }}
+              >
                 {badgeCount}
               </span>
             )}
           </>
         )}
         {isCollapsed && badgeCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-xs font-semibold rounded-full bg-red-500 text-white">
+          <span 
+            className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-xs font-semibold rounded-full bg-red-500 text-white relative overflow-hidden ${
+              isAnimating ? 'badge-animate badge-shine' : ''
+            }`}
+            style={{ transformStyle: 'preserve-3d' }}
+          >
             {badgeCount}
           </span>
         )}
@@ -107,11 +179,14 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
   }
 
   return (
-    <aside 
-      className={`bg-[#1a2b4b] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
-        isCollapsed ? 'w-[72px]' : 'w-[240px]'
-      }`}
-    >
+    <>
+      {/* Inject animation styles */}
+      <style>{badgeAnimationStyles}</style>
+      <aside 
+        className={`bg-[#1a2b4b] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
+          isCollapsed ? 'w-[72px]' : 'w-[240px]'
+        }`}
+      >
       {/* Logo */}
       <div className={`p-4 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
         <Link to="/overview" className="flex items-center gap-2">
@@ -196,5 +271,6 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
         )}
       </div>
     </aside>
+    </>
   )
 }
