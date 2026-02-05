@@ -73,6 +73,24 @@ export function CommitmentsPage() {
 
   useEffect(() => {
     loadCommitments()
+    
+    // Auto-refresh every 2 minutes
+    const pollInterval = setInterval(() => {
+      loadCommitments(true)
+    }, 2 * 60 * 1000) // 2 minutes
+    
+    // Also refresh when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadCommitments(true)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      clearInterval(pollInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [loadCommitments])
 
   const handleComplete = async (id: string) => {
@@ -144,6 +162,7 @@ export function CommitmentsPage() {
     unknown: { label: 'Неизвестно', color: 'bg-slate-100 text-slate-700' },
   }
 
+  // Format date relative to now with Tashkent timezone
   const formatDueDate = (dateStr: string) => {
     const due = new Date(dateStr)
     const now = new Date()
@@ -159,6 +178,17 @@ export function CommitmentsPage() {
     if (diffHours < 24) return `Через ${diffHours} ч.`
     if (diffDays === 1) return 'Завтра'
     return `Через ${diffDays} дн.`
+  }
+  
+  // Format absolute date/time in Tashkent timezone
+  const formatDateTime = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('ru-RU', {
+      timeZone: 'Asia/Tashkent',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   const isOverdue = (dateStr: string) => new Date(dateStr) < new Date()
@@ -438,12 +468,7 @@ export function CommitmentsPage() {
 
                     {/* Created At */}
                     <div className="text-xs text-slate-400">
-                      {new Date(commitment.createdAt).toLocaleDateString('ru-RU', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatDateTime(commitment.createdAt)}
                     </div>
                   </div>
                 </div>
