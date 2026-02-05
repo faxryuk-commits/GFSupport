@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender, markChannelReadOnReply } from '../lib/identification.js'
+import OpenAI from 'openai'
 
 export const config = {
   runtime: 'edge',
@@ -54,6 +55,58 @@ async function getFileUrl(fileId: string): Promise<string | null> {
   }
   
   return null
+}
+
+// Transcribe audio/voice message using OpenAI Whisper
+async function transcribeAudio(audioUrl: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey || !audioUrl) return null
+  
+  try {
+    console.log('[Webhook] Transcribing audio:', audioUrl)
+    
+    // Download audio file
+    const audioResponse = await fetch(audioUrl)
+    if (!audioResponse.ok) {
+      console.log('[Webhook] Failed to download audio:', audioResponse.status)
+      return null
+    }
+    
+    const audioBlob = await audioResponse.blob()
+    
+    // Create form data for OpenAI
+    const formData = new FormData()
+    formData.append('file', audioBlob, 'audio.ogg')
+    formData.append('model', 'whisper-1')
+    formData.append('language', 'ru') // Support Russian primarily
+    
+    // Call OpenAI Whisper API
+    const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: formData,
+    })
+    
+    if (!transcriptionResponse.ok) {
+      console.log('[Webhook] Whisper API error:', transcriptionResponse.status)
+      return null
+    }
+    
+    const result = await transcriptionResponse.json()
+    const transcription = result.text?.trim()
+    
+    if (transcription) {
+      console.log('[Webhook] Transcription result:', transcription.slice(0, 100))
+      return transcription
+    }
+    
+    return null
+  } catch (e: any) {
+    console.error('[Webhook] Transcription error:', e.message)
+    return null
+  }
 }
 
 // Get chat photo URL from Telegram
@@ -617,7 +670,44 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Trigger AI analysis for ALL messages (clients AND team can report problems)
     // But auto-reply only for clients
-    if (text && text.length > 3) {
+    
+    // For voice/audio messages, transcribe first
+    let analysisText = text
+    let transcribedText: string | null = null
+    
+    if ((contentType === 'voice' || contentType === 'audio') && mediaUrl) {
+      transcribedText = await transcribeAudio(mediaUrl)
+      if (transcribedText) {
+        analysisText = transcribedText
+        // Update message with transcription
+        await sql`
+          UPDATE support_messages 
+          SET text_content = ${transcribedText}, transcription = ${transcribedText}
+          WHERE id = ${messageId}
+        `.catch(() => {
+          // transcription column may not exist, try adding it
+          sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS transcription TEXT`.catch(() => {})
+        })
+        console.log(`[Webhook] Transcribed voice message: ${transcribedText.slice(0, 100)}`)
+      }
+    }
+    
+    // For media without text, create context description for AI
+    if (!analysisText && contentType !== 'text') {
+      const mediaDescriptions: Record<string, string> = {
+        photo: 'Клиент отправил фото/скриншот (возможно демонстрация проблемы)',
+        video: 'Клиент отправил видео (возможно демонстрация проблемы)',
+        document: fileName ? `Клиент отправил документ: ${fileName}` : 'Клиент отправил документ',
+        voice: 'Клиент отправил голосовое сообщение (не удалось транскрибировать)',
+        video_note: 'Клиент отправил видеосообщение',
+        sticker: 'Стикер',
+        animation: 'GIF/Анимация',
+      }
+      analysisText = mediaDescriptions[contentType] || `Медиа: ${contentType}`
+    }
+    
+    // Analyze if we have content
+    if (analysisText && analysisText.length > 2) {
       // Get base URL from request or environment
       const requestUrl = new URL(req.url)
       const baseUrl = process.env.VERCEL_URL 
@@ -634,7 +724,10 @@ export default async function handler(req: Request): Promise<Response> {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             messageId, 
-            text, 
+            text: analysisText,
+            originalText: text || null,
+            transcription: transcribedText || null,
+            contentType,
             channelId,
             telegramChatId: String(chat.id),
             senderName: user.fullName,

@@ -177,9 +177,15 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   
   // Determine category
   let category = 'general'
-  if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan|чкмидми|chiqmay|bosmay|узгармидми|o'zgarmay/i.test(lower)) {
+  
+  // PRIORITY 1: Onboarding/New client requests (заявки на подключение)
+  if (/подключ|подключить|подключени|регистрац|зарегистр|новый клиент|новое заведен|новый ресторан|хотим работать|хочу работать|начать работ|присоединить|сотруднича|ulanish|ro'yxatdan|yangi restoran|yangi mijoz|ishlay boshla|hamkorlik/i.test(lower)) {
+    category = 'onboarding'
+  }
+  // PRIORITY 2: Technical errors
+  else if (/ошибк|error|не работа|не поступа|не прихо|не загруж|сломал|баг|bug|xato|xatolik|глючит|виснет|crash|ishlamay|buzilgan|чкмидми|chiqmay|bosmay|узгармидми|o'zgarmay/i.test(lower)) {
     category = 'technical'
-  } else if (/интеграц|подключ|api|webhook|iiko|r-keeper|poster|wolt|payme|click|uzsmart|uzkassa/i.test(lower)) {
+  } else if (/интеграц|api|webhook|iiko|r-keeper|poster|wolt|payme|click|uzsmart|uzkassa/i.test(lower)) {
     category = 'integration'
   } else if (/оплат|счёт|счет|деньг|pul|tolov|тариф|подписк/i.test(lower)) {
     category = 'billing'
@@ -237,13 +243,22 @@ function analyzeWithoutAI(text: string): AnalysisResult {
   // English patterns
   const enProblem = /doesn't work|not working|broken|failed|error|issue|problem|bug|crash|not\s*included|access\s*denied/i.test(lower)
   
-  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || hasErrorMessage || enProblem
+  // Onboarding requests - these are important leads, treat as actionable items
+  const isOnboardingRequest = /подключ|подключить|регистрац|зарегистр|новый клиент|новое заведен|хотим работать|хочу работать|начать работ|присоединить|сотруднича|ulanish|ro'yxatdan|yangi restoran|yangi mijoz|ishlay boshla|hamkorlik/i.test(lower)
+  
+  // Media that likely shows a problem (screenshot, video of issue)
+  const isMediaProblem = /фото|скриншот|screenshot|видео|video|демонстрац|показыва|смотрите|посмотрите|вот|rasm|surat|ko'ring|qarang/i.test(lower)
+  
+  const isProblem = ruProblem || uzProblem || hasLekinProblem || hasBoshqaProblem || hasErrorMessage || enProblem || isOnboardingRequest || isMediaProblem
 
   // Determine urgency
   let urgency = 1
   if (/срочно|критично|urgent|tez|shoshilinch|блокир|не могу работать|asap|немедленно/i.test(lower)) {
     urgency = 4
   } else if (isProblem && sentiment === 'frustrated') {
+    urgency = 3
+  } else if (isOnboardingRequest) {
+    // Onboarding requests are high priority - potential new clients!
     urgency = 3
   } else if (isProblem) {
     urgency = 2

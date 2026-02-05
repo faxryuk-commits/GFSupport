@@ -42,8 +42,24 @@ export function MainLayout() {
       }
     }
 
-    // Загружаем счётчики (можно добавить реальный API)
+    // Загружаем счётчики при старте
     fetchCounts()
+    
+    // Периодическое обновление счётчиков каждые 30 секунд
+    const countsInterval = setInterval(fetchCounts, 30000)
+    
+    // Также обновляем при возврате на вкладку
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchCounts()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      clearInterval(countsInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   const fetchCounts = async () => {
