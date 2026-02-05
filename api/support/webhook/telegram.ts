@@ -916,12 +916,11 @@ async function createTicketFromReply(
     else if (aiUrgency >= 4) priority = 'high'
     else if (aiUrgency <= 2) priority = 'low'
     
-    // Generate ticket number
-    const ticketCountResult = await sql`
-      SELECT COUNT(*) as cnt FROM support_cases WHERE channel_id = ${channelId}
+    // Generate ticket number - get max ticket_number and increment
+    const maxTicketResult = await sql`
+      SELECT COALESCE(MAX(ticket_number), 0) as max_num FROM support_cases
     `
-    const ticketCount = parseInt(ticketCountResult[0]?.cnt || 0) + 1
-    const ticketNumber = `T-${ticketCount.toString().padStart(4, '0')}`
+    const ticketNumber = parseInt(maxTicketResult[0]?.max_num || 0) + 1
     
     // Ensure created_by column exists
     await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`.catch(() => {})
@@ -951,9 +950,10 @@ async function createTicketFromReply(
       )
     `.catch(() => {})
     
-    console.log(`[Webhook] Created ticket ${ticketNumber} from reply by ${requestedBy.name}`)
+    console.log(`[Webhook] Created ticket #${ticketNumber} from reply by ${requestedBy.name}`)
     
-    return { success: true, ticketNumber, caseId }
+    // Return formatted ticket number for display
+    return { success: true, ticketNumber: `CASE-${ticketNumber}`, caseId }
     
   } catch (e: any) {
     console.error('[Webhook] Create ticket from reply error:', e.message)
