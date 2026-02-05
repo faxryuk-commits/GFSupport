@@ -70,16 +70,16 @@ export default async function handler(req: Request) {
         success: true,
         broadcast: {
           id: b.id,
-          type: b.message_type,
-          message: b.message_text,
-          filter: b.filter_type,
-          sender: b.sender_name,
+          type: b.target_type || 'all',
+          message: b.message,
+          filter: b.target_filter,
+          sender: b.created_by,
           createdAt: b.created_at,
           stats: {
-            sent: b.channels_count || 0,
-            successful: b.successful_count || 0,
-            failed: b.failed_count || 0,
-            views: b.views_count || 0,
+            sent: b.sent_count || 0,
+            successful: b.delivered_count || 0,
+            failed: 0,
+            views: b.read_count || 0,
             clicks: parseInt(clickStats[0]?.total_clicks || '0'),
             uniqueClicks: parseInt(clickStats[0]?.unique_clicks || '0'),
             forwards: parseInt(forwardStats[0]?.total_forwards || '0'),
@@ -89,13 +89,14 @@ export default async function handler(req: Request) {
       
     } else {
       // Общая статистика всех рассылок
+      // Use existing columns: sent_count, delivered_count, click_count
       const stats = await sql`
         SELECT 
           COUNT(*) as total_broadcasts,
-          COALESCE(SUM(COALESCE(channels_count, 0)), 0) as total_sent,
-          COALESCE(SUM(COALESCE(successful_count, 0)), 0) as total_successful,
-          COALESCE(SUM(COALESCE(failed_count, 0)), 0) as total_failed,
-          COALESCE(SUM(COALESCE(clicks_count, 0)), 0) as total_clicks
+          COALESCE(SUM(COALESCE(sent_count, 0)), 0) as total_sent,
+          COALESCE(SUM(COALESCE(delivered_count, 0)), 0) as total_successful,
+          0 as total_failed,
+          COALESCE(SUM(COALESCE(click_count, 0)), 0) as total_clicks
         FROM support_broadcasts
       `
       
@@ -121,14 +122,14 @@ export default async function handler(req: Request) {
         },
         recent: recent.map((b: any) => ({
           id: b.id,
-          type: b.message_type,
-          message: b.message_text?.slice(0, 100) + (b.message_text?.length > 100 ? '...' : ''),
-          filter: b.filter_type,
-          sender: b.sender_name,
+          type: b.target_type || 'all',
+          message: (b.message || '').slice(0, 100) + ((b.message || '').length > 100 ? '...' : ''),
+          filter: b.target_filter,
+          sender: b.created_by,
           createdAt: b.created_at,
-          sent: b.channels_count,
-          successful: b.successful_count,
-          failed: b.failed_count,
+          sent: b.sent_count || 0,
+          successful: b.delivered_count || 0,
+          failed: 0,
           clicks: parseInt(b.clicks || '0'),
           uniqueClicks: parseInt(b.unique_clicks || '0'),
         }))
