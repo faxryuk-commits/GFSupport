@@ -326,7 +326,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                               />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium flex-shrink-0">
-                                {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                {(user.name || 'U').split(' ').map(n => n?.[0] || '').join('').slice(0, 2) || 'U'}
                               </div>
                             )}
                             <div className="min-w-0">
@@ -364,11 +364,11 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                                 <div className="bg-slate-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg max-w-[250px]">
                                   <p className="font-medium mb-1">Каналы:</p>
                                   <div className="space-y-1">
-                                    {user.channels.slice(0, 5).map((channel, idx) => (
-                                      <p key={idx} className="truncate opacity-90">{channel.name || channel.id}</p>
+                                    {(user.channels || []).slice(0, 5).map((channel, idx) => (
+                                      <p key={idx} className="truncate opacity-90">{channel?.name || channel?.id || 'Канал'}</p>
                                     ))}
-                                    {user.channels.length > 5 && (
-                                      <p className="opacity-70">...и ещё {user.channels.length - 5}</p>
+                                    {(user.channels || []).length > 5 && (
+                                      <p className="opacity-70">...и ещё {(user.channels || []).length - 5}</p>
                                     )}
                                   </div>
                                 </div>
@@ -435,7 +435,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                 />
               ) : (
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xl font-medium">
-                  {selectedUser.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  {(selectedUser.name || 'U').split(' ').map(n => n?.[0] || '').join('').slice(0, 2) || 'U'}
                 </div>
               )}
               <div>
@@ -458,11 +458,11 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               </div>
             )}
 
-            {selectedUser.channels && selectedUser.channels.length > 0 && (
+            {selectedUser.channels && Array.isArray(selectedUser.channels) && selectedUser.channels.length > 0 && (
               <div className="pt-4 border-t border-slate-200">
                 <p className="text-xs text-slate-500 mb-2">Каналы и группы ({selectedUser.channels.length})</p>
                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-2">
-                  {selectedUser.channels.map((channel, idx) => (
+                  {selectedUser.channels.map((channel, idx) => channel && (
                     <div 
                       key={idx} 
                       className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
@@ -471,11 +471,11 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                       }}
                     >
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
-                        {(channel.name || channel.id).slice(0, 2).toUpperCase()}
+                        {(channel.name || channel.id || 'CH').slice(0, 2).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{channel.name || channel.id}</p>
-                        {channel.addedAt && (
+                        <p className="text-sm font-medium text-slate-700 truncate">{channel?.name || channel?.id || 'Канал'}</p>
+                        {channel?.addedAt && (
                           <p className="text-xs text-slate-400">Добавлен: {new Date(channel.addedAt).toLocaleDateString('ru-RU')}</p>
                         )}
                       </div>
@@ -597,7 +597,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                 />
               ) : (
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium">
-                  {selectedUser.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  {(selectedUser.name || 'U').split(' ').map(n => n?.[0] || '').join('').slice(0, 2) || 'U'}
                 </div>
               )}
               <div>
