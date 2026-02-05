@@ -527,6 +527,48 @@ export default async function handler(req: Request): Promise<Response> {
       }
     } catch (e) { /* no cases to update */ }
 
+    // Migration 32: Create broadcasts tables
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_broadcasts (
+          id VARCHAR(64) PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          message TEXT NOT NULL,
+          target_type VARCHAR(50) DEFAULT 'all',
+          target_filter JSONB DEFAULT '{}',
+          status VARCHAR(30) DEFAULT 'draft',
+          sent_count INTEGER DEFAULT 0,
+          delivered_count INTEGER DEFAULT 0,
+          read_count INTEGER DEFAULT 0,
+          click_count INTEGER DEFAULT 0,
+          created_by VARCHAR(64),
+          created_at TIMESTAMP DEFAULT NOW(),
+          sent_at TIMESTAMP,
+          completed_at TIMESTAMP
+        )
+      `
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_broadcast_scheduled (
+          id VARCHAR(64) PRIMARY KEY,
+          broadcast_id VARCHAR(64) REFERENCES support_broadcasts(id) ON DELETE CASCADE,
+          scheduled_at TIMESTAMP NOT NULL,
+          status VARCHAR(30) DEFAULT 'pending',
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_broadcast_clicks (
+          id VARCHAR(64) PRIMARY KEY,
+          broadcast_id VARCHAR(64) REFERENCES support_broadcasts(id) ON DELETE CASCADE,
+          channel_id VARCHAR(64),
+          user_id BIGINT,
+          link_url TEXT,
+          clicked_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      migrations.push('Created broadcasts tables')
+    } catch (e) { /* tables exist */ }
+
     return json({
       success: true,
       migrations,

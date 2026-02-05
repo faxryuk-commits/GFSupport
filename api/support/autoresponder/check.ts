@@ -56,11 +56,13 @@ export default async function handler(req: Request) {
     
     const autoresponderEnabled = settings[0]?.value === 'true'
     
-    // Получаем онлайн агентов
+    // Получаем онлайн агентов (через активные сессии)
     const onlineAgents = await sql`
-      SELECT id, name FROM support_agents 
-      WHERE status = 'online' 
-        AND last_activity > NOW() - INTERVAL '10 minutes'
+      SELECT DISTINCT a.id, a.name 
+      FROM support_agents a
+      LEFT JOIN support_agent_sessions s ON s.agent_id = a.id
+      WHERE a.status = 'online' 
+        AND (s.ended_at IS NULL OR s.ended_at > NOW() - INTERVAL '10 minutes')
     `
     
     const allOffline = onlineAgents.length === 0
