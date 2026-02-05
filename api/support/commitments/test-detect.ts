@@ -339,9 +339,86 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  // POST - test multiple texts
+  // POST - test multiple texts OR backfill missing commitments
   if (req.method === 'POST') {
     const body = await req.json()
+    
+    // Backfill mode - create commitments for messages without them
+    if (body.action === 'backfill') {
+      const hours = body.hours || 24
+      
+      // Find messages with commitments but no record in support_commitments
+      const messagesWithoutCommitments = await sql`
+        SELECT m.id, m.channel_id, m.text_content, m.sender_name, m.sender_role, m.created_at
+        FROM support_messages m
+        LEFT JOIN support_commitments c ON c.message_id = m.id
+        WHERE m.text_content IS NOT NULL
+          AND m.created_at > NOW() - INTERVAL '${sql.unsafe(String(hours))} hours'
+          AND (m.sender_role IN ('support', 'team') OR m.is_from_client = false)
+          AND c.id IS NULL
+        ORDER BY m.created_at DESC
+        LIMIT 100
+      `
+      
+      const created: any[] = []
+      const skipped: any[] = []
+      
+      for (const msg of messagesWithoutCommitments) {
+        const detection = detectCommitment(msg.text_content || '')
+        
+        if (detection.hasCommitment) {
+          const commitmentId = `commit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+          const deadline = detection.detectedDeadline || detection.autoDeadline
+          const reminderOffset = detection.isVague ? 30 * 60 * 1000 : 60 * 60 * 1000
+          const reminderAt = new Date(deadline.getTime() - reminderOffset)
+          
+          // Determine priority
+          let priority = 'medium'
+          const hoursUntilDeadline = (deadline.getTime() - Date.now()) / (1000 * 60 * 60)
+          if (detection.commitmentType === 'time' && hoursUntilDeadline <= 2) {
+            priority = 'high'
+          } else if (detection.isVague) {
+            priority = 'low'
+          }
+          
+          try {
+            await sql`
+              INSERT INTO support_commitments (
+                id, channel_id, message_id, agent_name, sender_role,
+                commitment_text, commitment_type, is_vague, priority,
+                due_date, reminder_at, status, created_at, updated_at
+              ) VALUES (
+                ${commitmentId}, ${msg.channel_id}, ${msg.id}, ${msg.sender_name}, ${msg.sender_role || 'support'},
+                ${detection.commitmentText}, ${detection.commitmentType}, ${detection.isVague}, ${priority},
+                ${deadline.toISOString()}::timestamptz, ${reminderAt.toISOString()}::timestamptz, 
+                'pending', ${msg.created_at}::timestamptz, NOW()
+              )
+            `
+            created.push({
+              messageId: msg.id,
+              commitmentId,
+              text: detection.commitmentText,
+              sender: msg.sender_name,
+            })
+          } catch (e: any) {
+            skipped.push({ messageId: msg.id, error: e.message })
+          }
+        } else {
+          skipped.push({ messageId: msg.id, reason: 'no commitment detected' })
+        }
+      }
+      
+      return json({
+        action: 'backfill',
+        hours,
+        processed: messagesWithoutCommitments.length,
+        created: created.length,
+        skipped: skipped.length,
+        createdCommitments: created,
+      })
+    }
+    
+    // Regular test mode
     const texts = body.texts || []
     
     const results = texts.map((text: string) => ({
