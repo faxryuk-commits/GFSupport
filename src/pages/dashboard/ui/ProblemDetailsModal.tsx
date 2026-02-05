@@ -120,26 +120,26 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
           <div className="py-20 flex justify-center">
             <LoadingSpinner />
           </div>
-        ) : !data ? (
-          <div className="py-20 text-center text-slate-500">Нет данных</div>
+        ) : !data || !data.summary ? (
+          <div className="py-20 text-center text-slate-500">Нет данных для этой категории</div>
         ) : (
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-4 gap-4">
               <div className="bg-slate-50 rounded-lg p-4">
-                <div className="text-2xl font-bold text-slate-800">{data.summary.totalCases}</div>
+                <div className="text-2xl font-bold text-slate-800">{data.summary?.totalCases ?? 0}</div>
                 <div className="text-sm text-slate-500">Всего кейсов</div>
               </div>
               <div className="bg-green-50 rounded-lg p-4">
-                <div className="text-2xl font-bold text-green-600">{data.summary.resolved}</div>
+                <div className="text-2xl font-bold text-green-600">{data.summary?.resolved ?? 0}</div>
                 <div className="text-sm text-green-600">Решено</div>
               </div>
               <div className="bg-orange-50 rounded-lg p-4">
-                <div className="text-2xl font-bold text-orange-600">{data.summary.active}</div>
+                <div className="text-2xl font-bold text-orange-600">{data.summary?.active ?? 0}</div>
                 <div className="text-sm text-orange-600">Активных</div>
               </div>
               <div className="bg-blue-50 rounded-lg p-4">
-                <div className="text-2xl font-bold text-blue-600">{data.summary.resolutionRate}%</div>
+                <div className="text-2xl font-bold text-blue-600">{data.summary?.resolutionRate ?? 0}%</div>
                 <div className="text-sm text-blue-600">Решаемость</div>
               </div>
             </div>
@@ -151,7 +151,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
                 Корневые причины
               </h3>
               <div className="space-y-3">
-                {data.rootCauses.map((cause, i) => (
+                {(data.rootCauses || []).map((cause, i) => (
                   <div key={i} className="border-b border-slate-100 last:border-0 pb-3 last:pb-0">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-slate-700">{cause.cause}</span>
@@ -196,7 +196,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
                     </tr>
                   </thead>
                   <tbody>
-                    {data.topChannels.map((ch, i) => (
+                    {(data.topChannels || []).map((ch, i) => (
                       <tr key={i} className="border-b border-slate-50 last:border-0">
                         <td className="py-2 font-medium text-slate-700">{ch.name}</td>
                         <td className="py-2 text-right">{ch.count}</td>
@@ -222,8 +222,8 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
                   По приоритету
                 </h3>
                 <div className="space-y-2">
-                  {Object.entries(data.byPriority).map(([priority, count]) => {
-                    const total = Object.values(data.byPriority).reduce((a, b) => a + b, 0)
+                  {Object.entries(data.byPriority || {}).map(([priority, count]) => {
+                    const total = Object.values(data.byPriority || {}).reduce((a, b) => a + b, 0)
                     const pct = total > 0 ? Math.round(count / total * 100) : 0
                     return (
                       <div key={priority} className="flex items-center gap-3">
@@ -243,8 +243,8 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
                   По статусу
                 </h3>
                 <div className="space-y-2">
-                  {Object.entries(data.byStatus).map(([status, count]) => {
-                    const total = Object.values(data.byStatus).reduce((a, b) => a + b, 0)
+                  {Object.entries(data.byStatus || {}).map(([status, count]) => {
+                    const total = Object.values(data.byStatus || {}).reduce((a, b) => a + b, 0)
                     const pct = total > 0 ? Math.round(count / total * 100) : 0
                     const colors: Record<string, string> = {
                       detected: 'bg-slate-500',
@@ -267,15 +267,15 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
             </div>
 
             {/* Daily Trend */}
-            {data.dailyTrend.length > 0 && (
+            {(data.dailyTrend || []).length > 0 && (
               <div className="bg-white border border-slate-200 rounded-xl p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-orange-500" />
                   Динамика по дням
                 </h3>
                 <div className="flex items-end gap-1 h-24">
-                  {data.dailyTrend.slice(-30).map((d, i) => {
-                    const max = Math.max(...data.dailyTrend.map(x => x.count), 1)
+                  {(data.dailyTrend || []).slice(-30).map((d, i) => {
+                    const max = Math.max(...(data.dailyTrend || []).map(x => x.count), 1)
                     const height = (d.count / max) * 100
                     return (
                       <div
@@ -295,14 +295,14 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
             )}
 
             {/* Sample Messages */}
-            {data.sampleMessages.length > 0 && (
+            {(data.sampleMessages || []).length > 0 && (
               <div className="bg-white border border-slate-200 rounded-xl p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <MessageSquare className="w-5 h-5 text-slate-500" />
                   Примеры обращений
                 </h3>
                 <div className="space-y-3">
-                  {data.sampleMessages.map((msg, i) => (
+                  {(data.sampleMessages || []).map((msg, i) => (
                     <div key={i} className="bg-slate-50 rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-2 text-xs text-slate-500">
                         <span className="font-medium">{msg.sender}</span>
