@@ -179,12 +179,27 @@ export default async function handler(req: Request): Promise<Response> {
           const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
           const title = text.slice(0, 100) + (text.length > 100 ? '...' : '')
           
-          // Get next ticket number
-          let ticketNumber = Math.floor(Date.now() / 1000) % 100000
+          // Get next ticket number - ensure sequence exists and get next value
+          let ticketNumber: number
           try {
+            // First ensure sequence exists
+            await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
+            
+            // Get max existing ticket number to avoid duplicates
+            const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+            const maxNum = parseInt(maxResult[0]?.max_num || '1000')
+            
+            // Set sequence to max + 1 if needed
+            await sql`SELECT setval('support_case_ticket_seq', GREATEST(nextval('support_case_ticket_seq'), ${maxNum + 1}), false)`
+            
+            // Get next value
             const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
-            ticketNumber = parseInt(seqResult[0]?.num || ticketNumber.toString())
-          } catch { /* use fallback */ }
+            ticketNumber = parseInt(seqResult[0]?.num || '1001')
+          } catch (e) {
+            // Fallback: use max + 1
+            const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+            ticketNumber = parseInt(maxResult[0]?.max_num || '1000') + 1
+          }
           
           await sql`
             INSERT INTO support_cases (

@@ -265,19 +265,19 @@ export default async function handler(req: Request): Promise<Response> {
       const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       
       // Получаем следующий номер тикета
-      let ticketNumber = 1
+      let ticketNumber: number
       try {
+        // Ensure sequence exists and synced with max ticket_number
+        await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
+        const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+        const maxNum = parseInt(maxResult[0]?.max_num || '1000')
+        await sql`SELECT setval('support_case_ticket_seq', GREATEST(nextval('support_case_ticket_seq'), ${maxNum + 1}), false)`
         const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
-        ticketNumber = parseInt(seqResult[0]?.num || '1')
+        ticketNumber = parseInt(seqResult[0]?.num || '1001')
       } catch {
-        try {
-          await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1`
-          const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
-          ticketNumber = parseInt(seqResult[0]?.num || '1')
-        } catch {
-          // Если sequence не работает, генерируем из timestamp
-          ticketNumber = Math.floor(Date.now() / 1000) % 100000
-        }
+        // Fallback: use max + 1
+        const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+        ticketNumber = parseInt(maxResult[0]?.max_num || '1000') + 1
       }
       
       await sql`
