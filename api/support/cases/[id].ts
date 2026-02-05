@@ -282,7 +282,23 @@ export default async function handler(req: Request): Promise<Response> {
       if (category !== undefined) updates.category = category
       if (subcategory !== undefined) updates.subcategory = subcategory
       if (rootCause !== undefined) updates.root_cause = rootCause
-      if (assignedTo !== undefined) updates.assigned_to = assignedTo
+      
+      // Handle assignedTo - verify agent exists or set null
+      if (assignedTo !== undefined) {
+        if (assignedTo && assignedTo !== '' && assignedTo !== 'null') {
+          // Verify agent exists
+          const agentExists = await sql`SELECT id FROM support_agents WHERE id = ${assignedTo} LIMIT 1`
+          if (agentExists.length > 0) {
+            updates.assigned_to = assignedTo
+          } else {
+            console.log(`[Cases] Agent ${assignedTo} not found, skipping assignment`)
+            // Don't update assigned_to if agent doesn't exist
+          }
+        } else {
+          // Allow unassigning (set to null)
+          updates.assigned_to = null
+        }
+      }
       if (description !== undefined) updates.description = description
       if (resolutionNotes !== undefined) updates.resolution_notes = resolutionNotes
       if (tags !== undefined) updates.tags = tags
