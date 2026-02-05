@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless'
-import { identifySender, markChannelReadOnReply } from '../lib/identification.js'
+import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../lib/identification.js'
 import OpenAI from 'openai'
 
 export const config = {
@@ -409,18 +409,67 @@ async function handleMessageReaction(sql: any, reaction: any): Promise<Response>
   }
 }
 
-// Record agent activity
-async function recordAgentActivity(sql: any, userId: string, userName: string, channelId: string) {
+// Record agent activity with system agent ID mapping
+async function recordAgentActivity(
+  sql: any, 
+  telegramUserId: string, 
+  userName: string, 
+  channelId: string,
+  systemAgentId?: string | null
+) {
   try {
+    // Create activity table if not exists
     await sql`
-      INSERT INTO support_agent_activity (
-        id, agent_id, agent_name, activity_type, channel_id, created_at
-      ) VALUES (
-        ${generateId('act')}, ${userId}, ${userName}, 'message_sent', ${channelId}, NOW()
+      CREATE TABLE IF NOT EXISTS support_agent_activity (
+        id VARCHAR(100) PRIMARY KEY,
+        agent_id VARCHAR(100),
+        system_agent_id VARCHAR(100),
+        telegram_user_id VARCHAR(100),
+        agent_name VARCHAR(255),
+        activity_type VARCHAR(50),
+        channel_id VARCHAR(100),
+        activity_at TIMESTAMP DEFAULT NOW(),
+        created_at TIMESTAMP DEFAULT NOW()
       )
     `
+    await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON support_agent_activity(agent_id)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_system_agent ON support_agent_activity(system_agent_id)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_time ON support_agent_activity(activity_at)`
+    
+    // Try to find system agent by telegram_id
+    let resolvedSystemAgentId = systemAgentId
+    if (!resolvedSystemAgentId && telegramUserId) {
+      const agent = await sql`
+        SELECT id FROM support_agents WHERE telegram_id = ${telegramUserId} LIMIT 1
+      `
+      if (agent[0]) {
+        resolvedSystemAgentId = agent[0].id
+      }
+    }
+    
+    await sql`
+      INSERT INTO support_agent_activity (
+        id, agent_id, system_agent_id, telegram_user_id, agent_name, activity_type, channel_id, activity_at, created_at
+      ) VALUES (
+        ${generateId('act')}, ${telegramUserId}, ${resolvedSystemAgentId || null}, ${telegramUserId}, ${userName}, 'telegram_reply', ${channelId}, NOW(), NOW()
+      )
+    `
+    
+    // Also update support_agent_sessions to track activity
+    if (resolvedSystemAgentId) {
+      await sql`
+        INSERT INTO support_agent_sessions (id, agent_id, started_at, is_active, source)
+        VALUES (${generateId('sess')}, ${resolvedSystemAgentId}, NOW(), true, 'telegram')
+        ON CONFLICT (agent_id, is_active) WHERE is_active = true
+        DO UPDATE SET last_activity_at = NOW()
+      `.catch(() => {
+        // Session tracking may not be supported, ignore
+      })
+    }
+    
+    console.log(`[Webhook] Recorded activity: agent=${userName}, system_id=${resolvedSystemAgentId || 'unknown'}`)
   } catch (e) {
-    // Activity table may not exist
+    // Activity table may not exist or have different schema
     console.log('[Webhook] Could not record agent activity:', e)
   }
 }
@@ -472,6 +521,15 @@ export default async function handler(req: Request): Promise<Response> {
     })
     
     console.log(`[Webhook] Identified sender: ${user.fullName} (${user.id}) as ${identification.role} via ${identification.source}`)
+
+    // Auto-bind telegram_id to agent if identified by username but telegram_id not set
+    // This allows employees using Telegram to be synced with system profiles
+    if (identification.agentId && identification.source === 'username' && user.id) {
+      const bound = await autoBindTelegramId(sql, identification.agentId, user.id)
+      if (bound) {
+        console.log(`[Webhook] Auto-bound telegram_id ${user.id} to agent ${identification.agentId}`)
+      }
+    }
 
     // Get or create channel
     const channelId = await getOrCreateChannel(sql, chat, user)
@@ -641,7 +699,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // If support/team replied, record activity and mark messages as read
     if (identification.role !== 'client') {
-      await recordAgentActivity(sql, String(user.id), user.fullName, channelId)
+      await recordAgentActivity(sql, String(user.id), user.fullName, channelId, identification.agentId)
       
       // Update last_agent_message_at for client response time tracking
       await sql`

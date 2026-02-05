@@ -142,11 +142,11 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
       <Link
         to={path}
         title={isCollapsed ? label : undefined}
-        className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all group relative ${
+        className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all group ${
           active 
             ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' 
             : 'text-slate-300 hover:bg-white/10'
-        } ${isCollapsed ? 'justify-center px-3' : ''}`}
+        } ${isCollapsed ? 'justify-center px-3 relative' : ''}`}
       >
         <Icon className="w-5 h-5 flex-shrink-0" />
         {!isCollapsed && (
@@ -154,10 +154,10 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
             <span className="flex-1 font-medium">{label}</span>
             {badgeCount > 0 && (
               <span 
-                className={`min-w-[22px] h-5 px-1.5 flex items-center justify-center text-xs font-semibold rounded-full relative overflow-hidden ${
+                className={`min-w-[22px] h-5 px-1.5 flex items-center justify-center text-xs font-semibold rounded-full overflow-hidden ${
                   active ? 'bg-white/20 text-white' : 'bg-blue-500 text-white'
                 } ${isAnimating ? 'badge-animate badge-shine' : ''}`}
-                style={{ transformStyle: 'preserve-3d' }}
+                style={{ transformStyle: 'preserve-3d', position: 'relative' }}
               >
                 {badgeCount}
               </span>
@@ -166,12 +166,12 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
         )}
         {isCollapsed && badgeCount > 0 && (
           <span 
-            className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-xs font-semibold rounded-full bg-red-500 text-white relative overflow-hidden ${
+            className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-red-500 text-white overflow-hidden ${
               isAnimating ? 'badge-animate badge-shine' : ''
             }`}
             style={{ transformStyle: 'preserve-3d' }}
           >
-            {badgeCount}
+            {badgeCount > 99 ? '99+' : badgeCount}
           </span>
         )}
       </Link>
