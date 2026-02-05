@@ -56,14 +56,15 @@ function generateAIRecommendations(
     })
   }
 
-  // 2. Проверка срочных кейсов
-  const urgentCases = analytics.cases?.urgent || 0
-  if (urgentCases > 0) {
+  // 2. Проверка срочных кейсов - только ОТКРЫТЫЕ срочные кейсы
+  // Используем urgentOpen (открытые срочные), а не urgent (все срочные включая закрытые)
+  const urgentOpenCases = analytics.cases?.urgentOpen || 0
+  if (urgentOpenCases > 0) {
     recommendations.push({
       id: 'urgent-cases',
       type: 'warning',
-      title: `${urgentCases} срочных кейсов`,
-      description: 'Есть кейсы требующие немедленного внимания. Приоритизируйте их обработку.',
+      title: `${urgentOpenCases} срочных кейсов`,
+      description: 'Есть открытые кейсы требующие немедленного внимания. Приоритизируйте их обработку.',
       priority: 'high',
       action: { label: 'Открыть кейсы', link: '/cases?priority=urgent' }
     })

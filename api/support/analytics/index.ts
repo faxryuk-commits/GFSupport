@@ -118,7 +118,10 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as resolved_cases,
         COUNT(*) FILTER (WHERE created_at >= ${startDate.toISOString()}) as new_cases_period,
         AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution_minutes,
+        -- Всего срочных кейсов (для истории)
         COUNT(*) FILTER (WHERE priority = 'urgent') as urgent_cases,
+        -- ОТКРЫТЫХ срочных кейсов (для AI рекомендаций)
+        COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('resolved', 'closed')) as urgent_open_cases,
         COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases,
         -- Cases by priority for the period
         COUNT(*) FILTER (WHERE priority = 'low' AND created_at >= ${startDate.toISOString()}) as low_priority_cases,
@@ -736,6 +739,8 @@ export default async function handler(req: Request): Promise<Response> {
         avgResolutionMinutes: Math.round(parseFloat(overview.avg_resolution_minutes || 0)),
         avgResolutionHours: Math.round(parseFloat(overview.avg_resolution_minutes || 0) / 60 * 10) / 10,
         urgentCases: parseInt(overview.urgent_cases || 0),
+        // ВАЖНО: Открытые срочные кейсы - для AI рекомендаций
+        urgentOpenCases: parseInt(overview.urgent_open_cases || 0),
         recurringCases: parseInt(overview.recurring_cases || 0),
         casesByPriority: {
           low: parseInt(overview.low_priority_cases || 0),

@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Brain,
   FileText,
+  Sparkles,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -57,6 +58,7 @@ const badgeAnimationStyles = `
 interface SidebarProps {
   unreadChats?: number
   openCases?: number
+  lastUpdated?: number // Timestamp последнего обновления - для анимации
   currentUser?: {
     name: string
     avatar?: string
@@ -71,6 +73,7 @@ const mainNavItems = [
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
   { path: '/knowledge', label: 'База знаний', icon: Brain },
+  { path: '/learning/problems', label: 'AI Обучение', icon: Sparkles },
   { path: '/docs', label: 'Документы', icon: FileText },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
 ]
@@ -81,7 +84,7 @@ const bottomItems = [
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout }: SidebarProps) {
+export function Sidebar({ unreadChats = 0, openCases = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
@@ -90,35 +93,48 @@ export function Sidebar({ unreadChats = 0, openCases = 0, currentUser, onLogout 
   
   // Track animated badges
   const [animatingBadges, setAnimatingBadges] = useState<Set<string>>(new Set())
-  const prevBadgesRef = useRef({ unreadChats: 0, openCases: 0 })
+  const prevUpdatedRef = useRef(0) // Трекаем последний timestamp обновления
+  const isFirstRenderRef = useRef(true) // Чтобы не анимировать при первом рендере
   
   const badges: Record<string, number> = {
     unreadChats,
     openCases
   }
 
-  // Trigger animation when badge values change
+  // Trigger animation when data is updated (every 30 seconds)
+  // Animation shows that the system is actively syncing, not frozen
   useEffect(() => {
-    const newAnimating = new Set<string>()
-    
-    if (prevBadgesRef.current.unreadChats !== unreadChats) {
-      newAnimating.add('unreadChats')
-    }
-    if (prevBadgesRef.current.openCases !== openCases) {
-      newAnimating.add('openCases')
+    // Skip first render to avoid animation on page load
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false
+      prevUpdatedRef.current = lastUpdated
+      return
     }
     
-    if (newAnimating.size > 0) {
-      setAnimatingBadges(newAnimating)
+    // Only animate if lastUpdated actually changed (new fetch completed)
+    if (lastUpdated > 0 && lastUpdated !== prevUpdatedRef.current) {
+      const badgesToAnimate = new Set<string>()
       
-      // Remove animation class after animation completes
-      setTimeout(() => {
-        setAnimatingBadges(new Set())
-      }, 1000)
+      // Animate badges that have non-zero values
+      if (unreadChats > 0) {
+        badgesToAnimate.add('unreadChats')
+      }
+      if (openCases > 0) {
+        badgesToAnimate.add('openCases')
+      }
+      
+      if (badgesToAnimate.size > 0) {
+        setAnimatingBadges(badgesToAnimate)
+        
+        // Remove animation class after animation completes
+        setTimeout(() => {
+          setAnimatingBadges(new Set())
+        }, 1000)
+      }
+      
+      prevUpdatedRef.current = lastUpdated
     }
-    
-    prevBadgesRef.current = { unreadChats, openCases }
-  }, [unreadChats, openCases])
+  }, [lastUpdated, unreadChats, openCases])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed))

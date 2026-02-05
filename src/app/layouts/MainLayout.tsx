@@ -16,6 +16,7 @@ export function MainLayout() {
   const [currentUser, setCurrentUser] = useState<{ name: string; role?: string } | null>(null)
   const [unreadChats, setUnreadChats] = useState(0)
   const [openCases, setOpenCases] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState(0) // Timestamp последнего обновления счётчиков
   
   // Background notifications via Web Worker (works when tab is hidden)
   useBackgroundNotifications()
@@ -87,6 +88,9 @@ export function MainLayout() {
         // Используем длину массива отфильтрованных кейсов, не total
         setOpenCases(data.cases?.length || 0)
       }
+      
+      // Обновляем timestamp последнего обновления - для анимации в сайдбаре
+      setLastUpdated(Date.now())
     } catch {
       // Игнорируем ошибки - покажем нули
     }
@@ -178,6 +182,7 @@ export function MainLayout() {
         openCases={openCases}
         currentUser={currentUser || undefined}
         onLogout={handleLogout}
+        lastUpdated={lastUpdated}
       />
       <main className="flex-1 h-full overflow-auto">
         <ErrorBoundary>
