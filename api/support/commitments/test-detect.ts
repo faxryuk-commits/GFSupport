@@ -358,7 +358,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND (m.sender_role IN ('support', 'team') OR m.is_from_client = false)
           AND c.id IS NULL
         ORDER BY m.created_at DESC
-        LIMIT 100
+        LIMIT 1000
       `
       
       const created: any[] = []
