@@ -25,8 +25,7 @@ export async function GET(req: Request) {
       SELECT 
         c.id, c.title, c.description, c.priority, c.status,
         c.channel_id, c.created_at, c.resolved_at,
-        ch.name as channel_name,
-        c.reporter_name
+        ch.name as channel_name
       FROM support_cases c
       LEFT JOIN support_channels ch ON c.channel_id = ch.id
       WHERE c.category = ${category}
