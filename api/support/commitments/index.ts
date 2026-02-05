@@ -79,10 +79,10 @@ export default async function handler(req: Request): Promise<Response> {
       if (dueSoon) {
         // Обещания со сроком в ближайшие 24 часа
         commitments = await sql`
-          SELECT c.*, ch.name as channel_name
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
           FROM support_commitments c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
-          WHERE c.status = 'pending'
+          WHERE c.status IN ('pending', 'overdue')
             AND c.due_date IS NOT NULL
             AND c.due_date < NOW() + INTERVAL '24 hours'
           ORDER BY c.due_date ASC
@@ -90,7 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else if (channelId) {
         commitments = await sql`
-          SELECT c.*, ch.name as channel_name
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
           FROM support_commitments c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.channel_id = ${channelId}
@@ -99,7 +99,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else if (agentId) {
         commitments = await sql`
-          SELECT c.*, ch.name as channel_name
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
           FROM support_commitments c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.agent_id = ${agentId}
@@ -109,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else {
         commitments = await sql`
-          SELECT c.*, ch.name as channel_name
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
           FROM support_commitments c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.status = ${status}
@@ -131,27 +131,51 @@ export default async function handler(req: Request): Promise<Response> {
         stats.map((s: any) => [s.status, parseInt(s.count)])
       )
 
+      // Check for overdue commitments and update their status
+      await sql`
+        UPDATE support_commitments 
+        SET status = 'overdue'
+        WHERE status = 'pending' 
+          AND due_date < NOW()
+      `.catch(() => {})
+
+      // Recount stats after update
+      const updatedStats = await sql`
+        SELECT 
+          status,
+          COUNT(*) as count
+        FROM support_commitments
+        GROUP BY status
+      `
+      const updatedStatsMap = Object.fromEntries(
+        updatedStats.map((s: any) => [s.status, parseInt(s.count)])
+      )
+
       return json({
         commitments: commitments.map((c: any) => ({
           id: c.id,
           channelId: c.channel_id,
           channelName: c.channel_name,
+          telegramChatId: c.telegram_chat_id,
           messageId: c.message_id,
           agentId: c.agent_id,
           agentName: c.agent_name,
+          senderRole: c.sender_role,
           text: c.commitment_text,
           type: c.commitment_type,
+          isVague: c.is_vague,
           dueDate: c.due_date,
           reminderAt: c.reminder_at,
+          reminderSent: c.reminder_sent,
           status: c.status,
           completedAt: c.completed_at,
           createdAt: c.created_at,
         })),
         stats: {
-          pending: statsMap.pending || 0,
-          completed: statsMap.completed || 0,
-          overdue: statsMap.overdue || 0,
-          cancelled: statsMap.cancelled || 0,
+          pending: updatedStatsMap.pending || 0,
+          completed: updatedStatsMap.completed || 0,
+          overdue: updatedStatsMap.overdue || 0,
+          cancelled: updatedStatsMap.cancelled || 0,
         }
       })
 

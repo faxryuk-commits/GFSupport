@@ -678,6 +678,10 @@ function detectCommitment(text: string): CommitmentDetection {
     /сделаю/i,
     /сделаем/i,
     /сделают/i,
+    /будет\s+сделано/i,    // "завтра будет сделано"
+    /будет\s+готово/i,     // "к вечеру будет готово"
+    /будет\s+исправлено/i, // "будет исправлено"
+    /будет\s+решено/i,     // "будет решено"
     /решу/i,
     /решим/i,
     /решат/i,
@@ -699,6 +703,9 @@ function detectCommitment(text: string): CommitmentDetection {
     /ребята.*отработа/i,   // "ребята отработают"
     /думаю.*отработа/i,    // "думаю отработают" 
     /обработа[юетм]/i,     // обработаю, обработают
+    /постараюсь/i,         // "постараюсь сделать"
+    /постараемся/i,        // "постараемся"
+    /выполн[юиет]/i,       // выполню, выполним, выполнят
   ]
 
   for (const pattern of actionPatterns) {
@@ -747,15 +754,21 @@ async function createCommitmentReminder(
   messageId: string,
   commitment: CommitmentDetection,
   senderName: string,
-  agentId?: string
+  agentId?: string,
+  senderRole?: string
 ): Promise<string | null> {
   if (!commitment.hasCommitment) return null
 
   const commitmentId = generateId('commit')
-  const deadline = (commitment.detectedDeadline || commitment.autoDeadline).toISOString()
+  const deadline = commitment.detectedDeadline || commitment.autoDeadline
+  const deadlineStr = deadline.toISOString()
+  
+  // Set reminder 1 hour before deadline, or 30 mins for vague commitments
+  const reminderOffset = commitment.isVague ? 30 * 60 * 1000 : 60 * 60 * 1000
+  const reminderAt = new Date(deadline.getTime() - reminderOffset)
 
   try {
-    // Use unified support_commitments table
+    // Use unified support_commitments table with extended fields
     await sql`
       CREATE TABLE IF NOT EXISTS support_commitments (
         id VARCHAR(50) PRIMARY KEY,
@@ -763,29 +776,36 @@ async function createCommitmentReminder(
         message_id VARCHAR(100),
         agent_id VARCHAR(100),
         agent_name VARCHAR(255),
+        sender_role VARCHAR(30),
         commitment_text TEXT NOT NULL,
         commitment_type VARCHAR(30) DEFAULT 'promise',
         is_vague BOOLEAN DEFAULT false,
         due_date TIMESTAMPTZ,
         reminder_at TIMESTAMPTZ,
+        reminder_sent BOOLEAN DEFAULT false,
         status VARCHAR(20) DEFAULT 'pending',
         completed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `
+    
+    // Add missing columns if needed
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`.catch(() => {})
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`.catch(() => {})
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT false`.catch(() => {})
 
     await sql`
       INSERT INTO support_commitments (
-        id, channel_id, message_id, agent_id, agent_name,
-        commitment_text, commitment_type, is_vague, due_date, status
+        id, channel_id, message_id, agent_id, agent_name, sender_role,
+        commitment_text, commitment_type, is_vague, due_date, reminder_at, status
       ) VALUES (
-        ${commitmentId}, ${channelId}, ${messageId}, ${agentId || null}, ${senderName},
+        ${commitmentId}, ${channelId}, ${messageId}, ${agentId || null}, ${senderName}, ${senderRole || 'unknown'},
         ${commitment.commitmentText}, ${commitment.commitmentType}, ${commitment.isVague},
-        ${deadline}::timestamptz, 'pending'
+        ${deadlineStr}::timestamptz, ${reminderAt.toISOString()}::timestamptz, 'pending'
       )
     `
     
-    console.log(`[Webhook] Created commitment: ${commitmentId} - "${commitment.commitmentText}" due: ${deadline}`)
+    console.log(`[Webhook] Created commitment: ${commitmentId} by ${senderRole}/${senderName} - "${commitment.commitmentText}" due: ${deadlineStr}`)
     return commitmentId
   } catch (e: any) {
     console.error('[Webhook] Failed to create commitment:', e.message)
@@ -1297,17 +1317,30 @@ export default async function handler(req: Request): Promise<Response> {
         text
       )
       
-      // Detect commitments in staff messages (promises like "завтра с утра", "сделаю", etc.)
+      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated`)
+    }
+
+    // ========================================
+    // COMMITMENT DETECTION - FOR ALL PARTICIPANTS
+    // ========================================
+    // Обязательства собираются от ВСЕХ участников: staff, client, partner
+    // Примеры: "завтра сделаю", "через час будет", "до конца дня исправим"
+    if (text && text.length > 3) {
       const commitment = detectCommitment(text)
-      let commitmentId: string | null = null
       if (commitment.hasCommitment) {
-        commitmentId = await createCommitmentReminder(sql, channelId, messageId, commitment, user.fullName, identification.agentId)
+        const commitmentId = await createCommitmentReminder(
+          sql, 
+          channelId, 
+          messageId, 
+          commitment, 
+          user.fullName, 
+          identification.agentId,
+          identification.role // Pass role to track who made the commitment
+        )
         if (commitmentId) {
-          console.log(`[Webhook] Staff commitment detected: "${commitment.commitmentText}" (${commitment.commitmentType}) - commitment ${commitmentId}`)
+          console.log(`[Webhook] Commitment detected from ${identification.role} "${user.fullName}": "${commitment.commitmentText}" (${commitment.commitmentType}) - ${commitmentId}`)
         }
       }
-      
-      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated${commitmentId ? ', commitment tracked' : ''}`)
     }
 
     // Trigger AI analysis for ALL messages (clients AND team can report problems)

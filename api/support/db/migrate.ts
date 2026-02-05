@@ -627,6 +627,36 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Created broadcasts tables')
     } catch (e) { /* tables exist */ }
 
+    // Migration: Commitments table with sender_role and reminder tracking
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_commitments (
+          id VARCHAR(50) PRIMARY KEY,
+          channel_id VARCHAR(100) NOT NULL,
+          message_id VARCHAR(100),
+          agent_id VARCHAR(100),
+          agent_name VARCHAR(255),
+          sender_role VARCHAR(30),
+          commitment_text TEXT NOT NULL,
+          commitment_type VARCHAR(30) DEFAULT 'promise',
+          is_vague BOOLEAN DEFAULT false,
+          due_date TIMESTAMPTZ,
+          reminder_at TIMESTAMPTZ,
+          reminder_sent BOOLEAN DEFAULT false,
+          status VARCHAR(20) DEFAULT 'pending',
+          completed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT false`
+      await sql`CREATE INDEX IF NOT EXISTS idx_commitments_status ON support_commitments(status)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_commitments_due_date ON support_commitments(due_date)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_commitments_channel ON support_commitments(channel_id)`
+      migrations.push('Created/updated support_commitments table')
+    } catch (e) { /* table exists */ }
+
     return json({
       success: true,
       migrations,
