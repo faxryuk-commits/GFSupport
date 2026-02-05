@@ -1,12 +1,42 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { neon } from '@neondatabase/serverless'
 
-const sql = neon(process.env.DATABASE_URL!)
+export const config = {
+  runtime: 'edge',
+}
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
+function getSQL() {
+  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
+  if (!connectionString) throw new Error('Database connection string not found')
+  return neon(connectionString)
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  })
+}
+
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    })
   }
+
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return json({ error: 'Unauthorized' }, 401)
+  }
+
+  const sql = getSQL()
 
   try {
     // Find cases with NULL or invalid ticket_number
@@ -18,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `
 
     if (invalidCases.length === 0) {
-      return res.json({ message: 'No cases need fixing', fixed: 0 })
+      return json({ message: 'No cases need fixing', fixed: 0 })
     }
 
     // Get current max ticket number
@@ -38,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
     await sql`SELECT setval('support_case_ticket_seq', ${nextNum}, false)`
 
-    return res.json({ 
+    return json({ 
       message: `Fixed ${fixed.length} cases`,
       fixed,
       nextSequenceValue: nextNum
@@ -46,6 +76,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error) {
     console.error('Error fixing ticket numbers:', error)
-    return res.status(500).json({ error: 'Failed to fix ticket numbers', details: String(error) })
+    return json({ error: 'Failed to fix ticket numbers', details: String(error) }, 500)
   }
 }
