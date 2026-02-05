@@ -19,7 +19,11 @@ function json(data: any, status = 200) {
 }
 
 // Паттерны проблем на русском и узбекском
-const PROBLEM_PATTERNS = {
+const PROBLEM_PATTERNS: Record<string, {
+  category: string
+  patterns: RegExp[]
+  description: string
+}> = {
   // ============ ТЕХНИЧЕСКИЕ ПРОБЛЕМЫ ============
   technical_not_working: {
     category: 'technical',
@@ -29,7 +33,6 @@ const PROBLEM_PATTERNS = {
       /ишламай|ишламаяпти|очилмай|юкланмай/i,
     ],
     description: 'Функционал не работает',
-    examples: []
   },
   technical_error: {
     category: 'technical',
@@ -39,7 +42,6 @@ const PROBLEM_PATTERNS = {
       /хато|хатолик|ошибка/i,
     ],
     description: 'Ошибки и сбои',
-    examples: []
   },
   technical_slow: {
     category: 'technical',
@@ -49,7 +51,6 @@ const PROBLEM_PATTERNS = {
       /секин|қотиб қол|осилиб қол/i,
     ],
     description: 'Медленная работа/зависания',
-    examples: []
   },
   
   // ============ ПРОБЛЕМЫ С ЗАКАЗАМИ ============
@@ -61,7 +62,6 @@ const PROBLEM_PATTERNS = {
       /буюртма\s*(хато|нотўғри)|чек\s*(хато|нотўғри)/i,
     ],
     description: 'Неправильный заказ/чек',
-    examples: []
   },
   order_missing: {
     category: 'order',
@@ -71,7 +71,6 @@ const PROBLEM_PATTERNS = {
       /буюртма\s*(келмай|йўқол|етиб келма)/i,
     ],
     description: 'Заказ не поступил/потерялся',
-    examples: []
   },
   order_duplicate: {
     category: 'order',
@@ -81,7 +80,6 @@ const PROBLEM_PATTERNS = {
       /икки марта|такрорий|дубликат/i,
     ],
     description: 'Дублирование заказов',
-    examples: []
   },
   
   // ============ ПРОБЛЕМЫ С ОПЛАТОЙ ============
@@ -93,7 +91,6 @@ const PROBLEM_PATTERNS = {
       /summa\s*(mos\s*kel|xato|noto'g'ri)/i,
     ],
     description: 'Несоответствие суммы оплаты',
-    examples: []
   },
   billing_payment_failed: {
     category: 'billing',
@@ -103,7 +100,6 @@ const PROBLEM_PATTERNS = {
       /тўлов\s*(ўтмай|қабул қилинма|рад этил)/i,
     ],
     description: 'Оплата не прошла',
-    examples: []
   },
   billing_refund: {
     category: 'billing',
@@ -113,7 +109,6 @@ const PROBLEM_PATTERNS = {
       /қайтариш|пулни қайтаринг/i,
     ],
     description: 'Запрос возврата',
-    examples: []
   },
   
   // ============ ПРОБЛЕМЫ С ДОСТАВКОЙ ============
@@ -125,7 +120,6 @@ const PROBLEM_PATTERNS = {
       /етказиб бериш\s*(кечик|узай)|курьер\s*(келма|кечик)/i,
     ],
     description: 'Задержка доставки',
-    examples: []
   },
   delivery_wrong_address: {
     category: 'delivery',
@@ -135,7 +129,6 @@ const PROBLEM_PATTERNS = {
       /манзил\s*(хато|нотўғри|бошқа)/i,
     ],
     description: 'Неправильный адрес доставки',
-    examples: []
   },
   
   // ============ ПРОБЛЕМЫ С МЕНЮ ============
@@ -147,7 +140,6 @@ const PROBLEM_PATTERNS = {
       /нарх\s*(мос\s*кел|хато|эскирган)/i,
     ],
     description: 'Неправильные цены в меню',
-    examples: []
   },
   menu_item_missing: {
     category: 'menu',
@@ -157,7 +149,6 @@ const PROBLEM_PATTERNS = {
       /маҳсулот\s*(йўқ|кўринмай)|меню\s*(йўқ|кўринмай)/i,
     ],
     description: 'Позиция отсутствует в меню',
-    examples: []
   },
   
   // ============ ПРОБЛЕМЫ С ФИЛИАЛАМИ ============
@@ -169,7 +160,6 @@ const PROBLEM_PATTERNS = {
       /бошқа\s*филиал|филиал\s*(хато|нотўғри)/i,
     ],
     description: 'Проблема с выбором филиала',
-    examples: []
   },
   branch_not_available: {
     category: 'technical',
@@ -179,7 +169,6 @@ const PROBLEM_PATTERNS = {
       /филиал\s*(мавжуд\s*эмас|ёпиқ|ишламай)/i,
     ],
     description: 'Филиал недоступен',
-    examples: []
   },
   
   // ============ ПРОБЛЕМЫ С ИНТЕГРАЦИЯМИ ============
@@ -190,7 +179,6 @@ const PROBLEM_PATTERNS = {
       /iiko\s*(ishlamay|xato|sinxronlanma)/i,
     ],
     description: 'Проблемы с iiko',
-    examples: []
   },
   integration_rkeeper: {
     category: 'integration',
@@ -199,7 +187,6 @@ const PROBLEM_PATTERNS = {
       /r-?keeper\s*(ishlamay|xato|sinxronlanma)/i,
     ],
     description: 'Проблемы с R-Keeper',
-    examples: []
   },
   integration_payment: {
     category: 'integration',
@@ -208,7 +195,6 @@ const PROBLEM_PATTERNS = {
       /(payme|click|uzcard|humo)\s*(ishlamay|xato)/i,
     ],
     description: 'Проблемы с платёжными системами',
-    examples: []
   },
   
   // ============ ЗАПРОСЫ НА ПОДКЛЮЧЕНИЕ ============
@@ -220,7 +206,6 @@ const PROBLEM_PATTERNS = {
       /уланиш|рўйхатдан|ишлай\s*бошла|ҳамкорлик/i,
     ],
     description: 'Запрос на подключение',
-    examples: []
   },
   
   // ============ ЖАЛОБЫ ============
@@ -232,7 +217,6 @@ const PROBLEM_PATTERNS = {
       /шикоят|норози|хизмат\s*ёмон/i,
     ],
     description: 'Жалоба на обслуживание',
-    examples: []
   },
   complaint_quality: {
     category: 'complaint',
@@ -242,12 +226,11 @@ const PROBLEM_PATTERNS = {
       /сифат\s*(ёмон|паст)|бузилган/i,
     ],
     description: 'Жалоба на качество',
-    examples: []
   },
 }
 
 // Категоризация
-const CATEGORIES = {
+const CATEGORIES: Record<string, { label: string; color: string }> = {
   technical: { label: 'Технические', color: 'red' },
   order: { label: 'Заказы', color: 'orange' },
   billing: { label: 'Оплата', color: 'yellow' },
@@ -276,7 +259,6 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
       const limit = parseInt(url.searchParams.get('limit') || '5000')
-      const onlyProblems = url.searchParams.get('onlyProblems') === 'true'
       
       // Получаем сообщения от клиентов
       const messages = await sql`
@@ -295,7 +277,7 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT ${limit}
       `
       
-      console.log(`[Analyze History] Found ${messages.length} client messages`)
+      console.log(`[Analyze Problems] Found ${messages.length} client messages`)
       
       // Анализируем каждое сообщение
       const problemStats: Record<string, { 
@@ -375,8 +357,8 @@ export default async function handler(req: Request): Promise<Response> {
       const allProblems = Object.entries(problemStats)
         .map(([key, stats]) => ({
           key,
-          description: PROBLEM_PATTERNS[key as keyof typeof PROBLEM_PATTERNS].description,
-          category: PROBLEM_PATTERNS[key as keyof typeof PROBLEM_PATTERNS].category,
+          description: PROBLEM_PATTERNS[key].description,
+          category: PROBLEM_PATTERNS[key].category,
           count: stats.count,
           examples: stats.examples
         }))
@@ -395,7 +377,7 @@ export default async function handler(req: Request): Promise<Response> {
         byCategory: Object.entries(byCategory)
           .map(([cat, data]) => ({
             category: cat,
-            label: CATEGORIES[cat as keyof typeof CATEGORIES]?.label || cat,
+            label: CATEGORIES[cat]?.label || cat,
             total: data.total,
             problems: data.problems
           }))
@@ -410,7 +392,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
       
     } catch (e: any) {
-      console.error('[Analyze History] Error:', e)
+      console.error('[Analyze Problems] Error:', e)
       return json({ error: e.message }, 500)
     }
   }
@@ -475,7 +457,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'Unknown action' }, 400)
       
     } catch (e: any) {
-      console.error('[Analyze History] POST Error:', e)
+      console.error('[Analyze Problems] POST Error:', e)
       return json({ error: e.message }, 500)
     }
   }
