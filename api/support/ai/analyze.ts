@@ -585,7 +585,65 @@ export default async function handler(req: Request): Promise<Response> {
             SELECT id FROM support_cases WHERE source_message_id = ${messageId} LIMIT 1
           `
           
-          if (existingCase.length === 0) {
+          // NEW: Check for recent open case in same channel (within 10 minutes)
+          // This groups consecutive messages from the same client into one case
+          const recentOpenCase = await sql`
+            SELECT c.id, c.title, c.description, c.created_at
+            FROM support_cases c
+            WHERE c.channel_id = ${channelId}
+              AND c.status IN ('detected', 'in_progress')
+              AND c.created_at > NOW() - INTERVAL '10 minutes'
+              -- No staff reply since case was created
+              AND NOT EXISTS (
+                SELECT 1 FROM support_messages m
+                WHERE m.channel_id = c.channel_id
+                  AND m.created_at > c.created_at
+                  AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+              )
+            ORDER BY c.created_at DESC
+            LIMIT 1
+          `
+          
+          if (recentOpenCase.length > 0) {
+            // Group message into existing case instead of creating new one
+            const existingCaseId = recentOpenCase[0].id
+            
+            // Link message to existing case
+            await sql`UPDATE support_messages SET case_id = ${existingCaseId} WHERE id = ${messageId}`
+            
+            // Update case description to include new message info
+            const currentDesc = recentOpenCase[0].description || ''
+            const separator = currentDesc ? '\n\n---\n\n' : ''
+            const newDesc = `${currentDesc}${separator}[Продолжение]: ${text.slice(0, 200)}`
+            
+            await sql`
+              UPDATE support_cases 
+              SET description = ${newDesc},
+                  updated_at = NOW()
+              WHERE id = ${existingCaseId}
+            `
+            
+            // Log activity
+            await sql`
+              INSERT INTO support_case_activities (id, case_id, type, title, description, created_at)
+              VALUES (
+                ${'act_' + Date.now()},
+                ${existingCaseId},
+                'message_added',
+                'Добавлено сообщение',
+                ${'Клиент продолжил описывать проблему: ' + text.slice(0, 100)},
+                NOW()
+              )
+            `
+            
+            ticketResult = { 
+              success: true, 
+              grouped: true, 
+              caseId: existingCaseId, 
+              message: 'Сообщение добавлено к существующему кейсу' 
+            }
+            console.log(`[AI Analyze] Message grouped into existing case ${existingCaseId}`)
+          } else if (existingCase.length === 0) {
             // Get channel info for case creation
             const channelInfo = await sql`
               SELECT name, company_id, telegram_chat_id FROM support_channels WHERE id = ${channelId}
@@ -648,7 +706,8 @@ export default async function handler(req: Request): Promise<Response> {
             
             ticketResult = { success: true, caseId, priority: casePriority }
             console.log(`[AI Analyze] Auto-created ticket ${caseId} with priority ${casePriority}`)
-          } else {
+          } else if (existingCase.length > 0) {
+            // Case already exists for this specific message
             console.log(`[AI Analyze] Ticket already exists for message ${messageId}`)
             ticketResult = { success: false, reason: 'Ticket already exists', existingCaseId: existingCase[0].id }
           }
