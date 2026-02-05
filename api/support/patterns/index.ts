@@ -110,6 +110,7 @@ const DEFAULT_PATTERNS = {
 Отвечай ТОЛЬКО JSON, без markdown.`
 }
 
+// v2 - analyze_history support
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
