@@ -56,12 +56,10 @@ export default async function handler(req: Request): Promise<Response> {
           c.*,
           ch.name as channel_name,
           ch.telegram_chat_id,
-          comp.name as company_name,
-          m.name as assignee_name
+          a.name as assignee_name
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        LEFT JOIN crm_companies comp ON c.company_id = comp.id
-        LEFT JOIN crm_managers m ON c.assigned_to = m.id
+        LEFT JOIN support_agents a ON c.assigned_to = a.id
         WHERE c.id = ${caseId}
       `
 
@@ -94,11 +92,12 @@ export default async function handler(req: Request): Promise<Response> {
       return json({
         case: {
           id: c.id,
+          ticketNumber: c.ticket_number,
           channelId: c.channel_id,
-          channelName: c.channel_name,
+          channelName: c.channel_name || 'Без канала',
           telegramChatId: c.telegram_chat_id,
           companyId: c.company_id,
-          companyName: c.company_name,
+          companyName: c.channel_name || 'Без компании', // TODO: JOIN with crm_companies
           leadId: c.lead_id,
           title: c.title,
           description: c.description,
@@ -109,7 +108,7 @@ export default async function handler(req: Request): Promise<Response> {
           priority: c.priority,
           severity: c.severity,
           assignedTo: c.assigned_to,
-          assigneeName: c.assignee_name,
+          assigneeName: c.assignee_name, // Now from support_agents
           firstResponseAt: c.first_response_at,
           resolvedAt: c.resolved_at,
           resolutionTimeMinutes: c.resolution_time_minutes,
@@ -120,6 +119,8 @@ export default async function handler(req: Request): Promise<Response> {
           relatedCaseId: c.related_case_id,
           tags: c.tags || [],
           metadata: c.metadata || {},
+          sourceMessageId: c.source_message_id, // Added: was missing
+          updatedBy: c.updated_by,
           createdAt: c.created_at,
           updatedAt: c.updated_at,
         },

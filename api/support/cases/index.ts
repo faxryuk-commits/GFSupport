@@ -58,16 +58,20 @@ export default async function handler(req: Request): Promise<Response> {
       // Простые запросы без вложенных sql``
       let cases
       
+      // Base query with JOINs for assignee name and company
       if (statuses && statuses.length > 0) {
         cases = await sql`
           SELECT 
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
+            ch.company_id as ch_company_id,
+            a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
           WHERE c.status = ANY(${statuses})
           ORDER BY 
             CASE c.priority 
@@ -85,10 +89,13 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
+            ch.company_id as ch_company_id,
+            a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
           WHERE c.priority = ${priority}
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -99,10 +106,13 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
+            ch.company_id as ch_company_id,
+            a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
           WHERE c.channel_id = ${channelId}
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -113,10 +123,13 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
+            ch.company_id as ch_company_id,
+            a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
           WHERE c.assigned_to = ${assignedTo}
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -127,10 +140,13 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
+            ch.company_id as ch_company_id,
+            a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
           WHERE c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'}
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -141,10 +157,13 @@ export default async function handler(req: Request): Promise<Response> {
             c.*,
             ch.name as channel_name,
             ch.telegram_chat_id,
+            ch.company_id as ch_company_id,
+            a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
           ORDER BY 
             CASE c.priority 
               WHEN 'urgent' THEN 1 
@@ -176,8 +195,8 @@ export default async function handler(req: Request): Promise<Response> {
           channelId: c.channel_id,
           channelName: c.channel_name || 'Без канала',
           telegramChatId: c.telegram_chat_id,
-          companyId: c.company_id,
-          companyName: c.channel_name || 'Компания',
+          companyId: c.company_id || c.ch_company_id,
+          companyName: c.channel_name || 'Без компании', // TODO: JOIN with crm_companies when available
           leadId: c.lead_id,
           title: c.title || 'Без названия',
           description: c.description || '',
@@ -188,7 +207,7 @@ export default async function handler(req: Request): Promise<Response> {
           priority: c.priority || 'medium',
           severity: c.severity,
           assignedTo: c.assigned_to,
-          assigneeName: c.assigned_to ? 'Назначен' : null,
+          assigneeName: c.assignee_name || null, // From JOIN with support_agents
           reporterName: c.reporter_name, // Кто инициировал тикет
           firstResponseAt: c.first_response_at,
           resolvedAt: c.resolved_at,
@@ -200,9 +219,10 @@ export default async function handler(req: Request): Promise<Response> {
           relatedCaseId: c.related_case_id,
           tags: c.tags || [],
           messagesCount: parseInt(c.messages_count || 0),
-          messageId: c.source_message_id,
+          sourceMessageId: c.source_message_id, // Fixed: was 'messageId'
           createdAt: c.created_at,
           updatedAt: c.updated_at,
+          updatedBy: c.updated_by,
         })),
         total,
         limit: limitParam,
@@ -269,16 +289,16 @@ export default async function handler(req: Request): Promise<Response> {
         )
       `
 
-      // Загружаем созданный кейс для возврата в response
-      const [newCase] = await sql`
-        SELECT 
-          c.*,
-          ch.name as channel_name,
-          ch.telegram_chat_id
+      // Fetch created case with channel info for full response
+      const createdCase = await sql`
+        SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, a.name as assignee_name
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id
+        LEFT JOIN support_agents a ON c.assigned_to = a.id
         WHERE c.id = ${caseId}
       `
+      
+      const c = createdCase[0]
 
       return json({
         success: true,
@@ -286,24 +306,26 @@ export default async function handler(req: Request): Promise<Response> {
         ticketNumber,
         message: 'Case created',
         case: {
-          id: newCase.id,
-          ticketNumber: newCase.ticket_number,
-          channelId: newCase.channel_id,
-          channelName: newCase.channel_name || 'Без канала',
-          telegramChatId: newCase.telegram_chat_id,
-          companyId: newCase.company_id,
-          leadId: newCase.lead_id,
-          title: newCase.title,
-          description: newCase.description || '',
-          status: newCase.status || 'detected',
-          category: newCase.category || 'general',
-          subcategory: newCase.subcategory,
-          priority: newCase.priority || 'medium',
-          severity: newCase.severity,
-          assignedTo: newCase.assigned_to,
-          tags: newCase.tags || [],
-          createdAt: newCase.created_at,
-          updatedAt: newCase.updated_at,
+          id: c.id,
+          ticketNumber: c.ticket_number,
+          channelId: c.channel_id,
+          channelName: c.channel_name || 'Без канала',
+          telegramChatId: c.telegram_chat_id,
+          companyId: c.company_id,
+          companyName: c.channel_name || 'Без компании',
+          leadId: c.lead_id,
+          title: c.title,
+          description: c.description || '',
+          status: c.status || 'detected',
+          category: c.category || 'general',
+          subcategory: c.subcategory,
+          priority: c.priority || 'medium',
+          severity: c.severity,
+          assignedTo: c.assigned_to,
+          assigneeName: c.assignee_name,
+          tags: c.tags || [],
+          createdAt: c.created_at,
+          updatedAt: c.updated_at,
         }
       })
 

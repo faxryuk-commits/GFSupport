@@ -47,9 +47,10 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'Username and password are required' }, 400)
     }
 
-    // Find agent by username, name, or email
+    // Find agent by username, name, or email - return all fields for frontend
     const agents = await sql`
-      SELECT id, name, username, email, role, status, password_hash 
+      SELECT id, name, username, email, role, status, password_hash,
+             telegram_id, avatar_url, phone, position, department, created_at
       FROM support_agents 
       WHERE username = ${username} 
          OR name = ${username}
@@ -83,7 +84,15 @@ export default async function handler(req: Request): Promise<Response> {
         id: agent.id,
         name: agent.name,
         username: agent.username,
-        role: agent.role
+        email: agent.email,
+        role: agent.role,
+        status: 'online', // Just set to online since we updated it
+        telegramId: agent.telegram_id,
+        avatarUrl: agent.avatar_url,
+        phone: agent.phone,
+        position: agent.position,
+        department: agent.department,
+        createdAt: agent.created_at
       }
     })
   } catch (e: any) {
