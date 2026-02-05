@@ -42,18 +42,40 @@ export default async function handler(req: Request) {
       id VARCHAR(50) PRIMARY KEY,
       message_text TEXT NOT NULL,
       message_type VARCHAR(30) DEFAULT 'announcement',
+      notification_type VARCHAR(30) DEFAULT 'announcement',
       filter_type VARCHAR(30) DEFAULT 'all',
-      selected_channels TEXT[], -- массив ID каналов для выборочной рассылки
+      selected_channels TEXT[],
       scheduled_at TIMESTAMP NOT NULL,
       timezone VARCHAR(50) DEFAULT 'Asia/Tashkent',
-      status VARCHAR(20) DEFAULT 'pending', -- pending, sent, cancelled, failed
+      status VARCHAR(20) DEFAULT 'pending',
+      sender_type VARCHAR(20) DEFAULT 'ai',
+      sender_id VARCHAR(64),
+      sender_name VARCHAR(255),
+      media_url TEXT,
+      media_type VARCHAR(30),
       created_by VARCHAR(255),
       created_at TIMESTAMP DEFAULT NOW(),
       sent_at TIMESTAMP,
-      broadcast_id VARCHAR(50), -- ID рассылки после отправки
-      error_message TEXT
+      broadcast_id VARCHAR(50),
+      error_message TEXT,
+      recipients_count INTEGER DEFAULT 0,
+      delivered_count INTEGER DEFAULT 0,
+      viewed_count INTEGER DEFAULT 0,
+      reaction_count INTEGER DEFAULT 0
     )
   `.catch(() => {})
+  
+  // Добавляем новые колонки если их нет
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS notification_type VARCHAR(30) DEFAULT 'announcement'`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS sender_type VARCHAR(20) DEFAULT 'ai'`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS sender_id VARCHAR(64)`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS sender_name VARCHAR(255)`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS media_url TEXT`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS media_type VARCHAR(30)`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS recipients_count INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS delivered_count INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS viewed_count INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS reaction_count INTEGER DEFAULT 0`.catch(() => {})
 
   // GET - список запланированных рассылок
   if (req.method === 'GET') {
@@ -99,16 +121,26 @@ export default async function handler(req: Request) {
           id: s.id,
           messageText: s.message_text,
           messageType: s.message_type,
+          notificationType: s.notification_type || 'announcement',
           filterType: s.filter_type,
           selectedChannels: s.selected_channels || [],
           scheduledAt: s.scheduled_at,
           timezone: s.timezone,
           status: s.status,
+          senderType: s.sender_type || 'ai',
+          senderId: s.sender_id,
+          senderName: s.sender_name,
+          mediaUrl: s.media_url,
+          mediaType: s.media_type,
           createdBy: s.created_by,
           createdAt: s.created_at,
           sentAt: s.sent_at,
           broadcastId: s.broadcast_id,
           errorMessage: s.error_message,
+          recipientsCount: s.recipients_count || 0,
+          deliveredCount: s.delivered_count || 0,
+          viewedCount: s.viewed_count || 0,
+          reactionCount: s.reaction_count || 0,
         }))
       })
     } catch (e: any) {
@@ -123,10 +155,17 @@ export default async function handler(req: Request) {
       const { 
         messageText, 
         messageType = 'announcement',
+        notificationType = 'announcement',
         filterType = 'all',
         selectedChannels = [],
         scheduledAt,
+        sendNow = false,
         timezone = 'Asia/Tashkent',
+        senderType = 'ai',
+        senderId,
+        senderName,
+        mediaUrl,
+        mediaType,
         createdBy = 'Unknown'
       } = body
       
@@ -134,12 +173,48 @@ export default async function handler(req: Request) {
         return json({ error: 'Message text is required' }, 400)
       }
       
+      // Если sendNow=true, отправляем немедленно
+      if (sendNow) {
+        // Подсчитываем количество получателей
+        let recipientsCount = 0
+        if (filterType === 'selected' && selectedChannels.length > 0) {
+          recipientsCount = selectedChannels.length
+        } else {
+          const countResult = await sql`
+            SELECT COUNT(*) as count FROM support_channels 
+            WHERE telegram_chat_id IS NOT NULL
+            ${filterType === 'clients' ? sql`AND (type = 'client' OR sla_category = 'client')` : sql``}
+            ${filterType === 'partners' ? sql`AND (type = 'partner' OR sla_category = 'partner')` : sql``}
+          `
+          recipientsCount = parseInt(countResult[0]?.count || '0')
+        }
+        
+        const id = `sch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        
+        await sql`
+          INSERT INTO support_broadcast_scheduled (
+            id, message_text, message_type, notification_type, filter_type, selected_channels,
+            scheduled_at, timezone, status, sender_type, sender_id, sender_name,
+            media_url, media_type, created_by, recipients_count
+          ) VALUES (
+            ${id}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
+            NOW(), ${timezone}, 'sending', ${senderType}, ${senderId || null}, ${senderName || null},
+            ${mediaUrl || null}, ${mediaType || null}, ${createdBy}, ${recipientsCount}
+          )
+        `
+        
+        return json({
+          success: true,
+          id,
+          sendNow: true,
+          recipientsCount,
+          message: 'Broadcast queued for immediate sending'
+        })
+      }
+      
       if (!scheduledAt) {
         return json({ error: 'Scheduled time is required' }, 400)
       }
-      
-      // scheduledAt приходит как "2026-02-01T05:50" (локальное время Ташкента)
-      // Сохраняем как есть - PostgreSQL NOW() тоже в UTC, но мы сравниваем правильно
       
       // Парсим дату
       const [datePart, timePart] = scheduledAt.split('T')
@@ -150,7 +225,6 @@ export default async function handler(req: Request) {
       const [hour, minute] = timePart.split(':').map(Number)
       
       // Создаём дату в локальном времени Ташкента (UTC+5)
-      // Для сравнения с NOW() в PostgreSQL конвертируем в UTC
       const localDate = new Date(year, month - 1, day, hour, minute, 0)
       
       // Конвертируем локальное время Ташкента в UTC (вычитаем 5 часов)
@@ -162,23 +236,31 @@ export default async function handler(req: Request) {
         return json({ error: 'Scheduled time must be in the future' }, 400)
       }
       
+      // Подсчитываем количество получателей
+      let recipientsCount = 0
+      if (filterType === 'selected' && selectedChannels.length > 0) {
+        recipientsCount = selectedChannels.length
+      } else {
+        const countResult = await sql`
+          SELECT COUNT(*) as count FROM support_channels 
+          WHERE telegram_chat_id IS NOT NULL
+          ${filterType === 'clients' ? sql`AND (type = 'client' OR sla_category = 'client')` : sql``}
+          ${filterType === 'partners' ? sql`AND (type = 'partner' OR sla_category = 'partner')` : sql``}
+        `
+        recipientsCount = parseInt(countResult[0]?.count || '0')
+      }
+      
       const id = `sch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       
-      // Сохраняем в UTC
       await sql`
         INSERT INTO support_broadcast_scheduled (
-          id, message_text, message_type, filter_type, selected_channels,
-          scheduled_at, timezone, status, created_by
+          id, message_text, message_type, notification_type, filter_type, selected_channels,
+          scheduled_at, timezone, status, sender_type, sender_id, sender_name,
+          media_url, media_type, created_by, recipients_count
         ) VALUES (
-          ${id},
-          ${messageText},
-          ${messageType},
-          ${filterType},
-          ${selectedChannels},
-          ${utcDate.toISOString()}::timestamptz,
-          ${timezone},
-          'pending',
-          ${createdBy}
+          ${id}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
+          ${utcDate.toISOString()}::timestamptz, ${timezone}, 'pending', ${senderType}, ${senderId || null}, ${senderName || null},
+          ${mediaUrl || null}, ${mediaType || null}, ${createdBy}, ${recipientsCount}
         )
       `
       
@@ -186,6 +268,7 @@ export default async function handler(req: Request) {
         success: true,
         id,
         scheduledAt,
+        recipientsCount,
         message: 'Broadcast scheduled successfully'
       })
     } catch (e: any) {

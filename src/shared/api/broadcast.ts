@@ -4,16 +4,26 @@ export interface ScheduledBroadcast {
   id: string
   messageText: string
   messageType: string
+  notificationType: string
   filterType: string
   selectedChannels: string[]
   scheduledAt: string
   timezone: string
-  status: 'pending' | 'sent' | 'cancelled' | 'failed'
+  status: 'pending' | 'sending' | 'sent' | 'cancelled' | 'failed'
+  senderType: 'ai' | 'agent'
+  senderId?: string
+  senderName?: string
+  mediaUrl?: string
+  mediaType?: string
   createdBy: string
   createdAt: string
   sentAt: string | null
   broadcastId: string | null
   errorMessage: string | null
+  recipientsCount: number
+  deliveredCount: number
+  viewedCount: number
+  reactionCount: number
 }
 
 interface BroadcastResponse {
@@ -36,15 +46,24 @@ export async function fetchBroadcasts(params?: {
   return response.scheduled || []
 }
 
-export async function createBroadcast(data: {
+export interface CreateBroadcastData {
   messageText: string
   messageType?: string
+  notificationType?: string
   filterType?: string
   selectedChannels?: string[]
-  scheduledAt: string
+  scheduledAt?: string
+  sendNow?: boolean
   timezone?: string
+  senderType?: 'ai' | 'agent'
+  senderId?: string
+  senderName?: string
+  mediaUrl?: string
+  mediaType?: string
   createdBy?: string
-}): Promise<{ success: boolean; id: string }> {
+}
+
+export async function createBroadcast(data: CreateBroadcastData): Promise<{ success: boolean; id: string; recipientsCount?: number }> {
   return apiPost('/broadcast/schedule', data)
 }
 
