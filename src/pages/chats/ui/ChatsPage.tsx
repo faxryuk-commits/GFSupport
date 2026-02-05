@@ -8,6 +8,7 @@ import { AIContextPanel } from '@/features/ai-assistant/ui'
 import { CommitmentsPanel } from '@/features/commitments/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
+import { playMessageSoundIfEnabled } from '@/shared/lib'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
 import type { Agent } from '@/entities/agent'
@@ -361,6 +362,9 @@ export function ChatsPage() {
             const clientMessages = trulyNewMessages.filter(m => m.isClient)
             
             if (clientMessages.length > 0) {
+              // Play notification sound
+              playMessageSoundIfEnabled()
+              
               // In-app уведомление
               clientMessages.forEach(msg => {
                 showNotification({

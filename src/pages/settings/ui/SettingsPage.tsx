@@ -77,14 +77,26 @@ export function SettingsPage() {
   const [envStatus, setEnvStatus] = useState<EnvStatus | null>(null)
 
   // Settings state
-  const [generalSettings, setGeneralSettings] = useState<GeneralSettingsData>({
-    companyName: 'Support System',
-    botToken: '',
-    defaultLanguage: 'ru',
-    timezone: 'UTC+5',
-    autoCreateCases: true,
-    soundNotifications: true,
-    autoAssignment: true,
+  const [generalSettings, setGeneralSettings] = useState<GeneralSettingsData>(() => {
+    // Load sound setting from localStorage
+    let soundEnabled = true
+    try {
+      const stored = localStorage.getItem('support_settings')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        soundEnabled = parsed.soundEnabled !== false
+      }
+    } catch {}
+    
+    return {
+      companyName: 'Support System',
+      botToken: '',
+      defaultLanguage: 'ru',
+      timezone: 'UTC+5',
+      autoCreateCases: true,
+      soundNotifications: soundEnabled,
+      autoAssignment: true,
+    }
   })
 
   const [responseSettings, setResponseSettings] = useState<ResponseSettingsData>({
@@ -197,6 +209,22 @@ export function SettingsPage() {
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
+
+  // Sync sound settings with localStorage for notification hooks
+  useEffect(() => {
+    const currentSettings = localStorage.getItem('support_settings')
+    let settings = {}
+    try {
+      if (currentSettings) {
+        settings = JSON.parse(currentSettings)
+      }
+    } catch {}
+    
+    localStorage.setItem('support_settings', JSON.stringify({
+      ...settings,
+      soundEnabled: generalSettings.soundNotifications,
+    }))
+  }, [generalSettings.soundNotifications])
 
   // Сохранение настроек
   const handleSave = async () => {

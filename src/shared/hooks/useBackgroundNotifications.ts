@@ -1,50 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { playMessageSoundIfEnabled } from '@/shared/lib'
 
 interface Channel {
   id: string
   name: string
   unread: number
-}
-
-// Звук уведомления - простой beep
-function playNotificationBeep() {
-  try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-    
-    // Resume if suspended (user interaction already happened)
-    if (audioContext.state === 'suspended') {
-      audioContext.resume()
-    }
-    
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    
-    // Three quick beeps
-    const now = audioContext.currentTime
-    for (let i = 0; i < 3; i++) {
-      const osc = audioContext.createOscillator()
-      const gain = audioContext.createGain()
-      
-      osc.connect(gain)
-      gain.connect(audioContext.destination)
-      
-      osc.frequency.value = 880
-      osc.type = 'sine'
-      
-      const start = now + i * 0.12
-      gain.gain.setValueAtTime(0, start)
-      gain.gain.linearRampToValueAtTime(0.15, start + 0.02)
-      gain.gain.linearRampToValueAtTime(0, start + 0.08)
-      
-      osc.start(start)
-      osc.stop(start + 0.1)
-    }
-  } catch (e) {
-    // Audio not supported
-  }
 }
 
 export function useBackgroundNotifications() {
@@ -84,7 +44,7 @@ export function useBackgroundNotifications() {
         }
         
         // Play sound even when tab is hidden
-        playNotificationBeep()
+        playMessageSoundIfEnabled()
       }
       
       lastUnreadRef.current = totalUnread

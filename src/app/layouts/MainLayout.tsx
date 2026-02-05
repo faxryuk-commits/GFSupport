@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
+import { playCaseSoundIfEnabled, playMessageSoundIfEnabled } from '@/shared/lib'
 
 
 export function MainLayout() {
@@ -13,6 +14,11 @@ export function MainLayout() {
   const [pendingCommitments, setPendingCommitments] = useState(0)
   const [onlineAgentsCount, setOnlineAgentsCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(0) // Timestamp последнего обновления счётчиков
+  
+  // Track previous values for sound notifications
+  const prevCasesRef = useRef<number>(0)
+  const prevUnreadRef = useRef<number>(0)
+  const isFirstLoadRef = useRef<boolean>(true)
   
   // Background notifications via Web Worker (works when tab is hidden)
   useBackgroundNotifications()
@@ -111,6 +117,29 @@ export function MainLayout() {
       // Игнорируем ошибки - покажем нули
     }
   }
+
+  // Sound notifications for new cases and messages
+  useEffect(() => {
+    // Skip first load to avoid sound on page refresh
+    if (isFirstLoadRef.current) {
+      prevCasesRef.current = openCases
+      prevUnreadRef.current = unreadChats
+      isFirstLoadRef.current = false
+      return
+    }
+
+    // Play sound for new cases
+    if (openCases > prevCasesRef.current) {
+      playCaseSoundIfEnabled()
+    }
+    prevCasesRef.current = openCases
+
+    // Play sound for new unread messages (only if not on chats page - to avoid double sound)
+    if (unreadChats > prevUnreadRef.current && !window.location.pathname.startsWith('/chats')) {
+      playMessageSoundIfEnabled()
+    }
+    prevUnreadRef.current = unreadChats
+  }, [openCases, unreadChats])
 
   const handleLogout = async () => {
     // Отправляем logout на сервер
