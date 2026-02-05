@@ -91,8 +91,8 @@ export async function GET(req: Request) {
     // 4. Trend by day
     const trend: Record<string, number> = {}
     for (const c of cases) {
-      const day = c.created_at?.slice(0, 10) || ''
-      trend[day] = (trend[day] || 0) + 1
+      const day = c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : ''
+      if (day) trend[day] = (trend[day] || 0) + 1
     }
     
     // 5. Priority distribution
@@ -167,7 +167,7 @@ export async function GET(req: Request) {
         text: m.text_content?.slice(0, 200),
         sender: m.sender_name,
         channel: m.channel_name,
-        date: m.created_at?.slice(0, 10)
+        date: m.created_at ? new Date(m.created_at).toISOString().slice(0, 10) : ''
       }))
     })
     
