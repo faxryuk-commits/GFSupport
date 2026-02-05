@@ -17,6 +17,7 @@ import {
   Brain,
   FileText,
   Sparkles,
+  Clock,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -58,6 +59,7 @@ const badgeAnimationStyles = `
 interface SidebarProps {
   unreadChats?: number
   openCases?: number
+  pendingCommitments?: number
   lastUpdated?: number // Timestamp последнего обновления - для анимации
   currentUser?: {
     name: string
@@ -72,6 +74,7 @@ const mainNavItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
+  { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
   { path: '/knowledge', label: 'База знаний', icon: Brain },
   { path: '/learning/problems', label: 'AI Обучение', icon: Sparkles },
   { path: '/docs', label: 'Документы', icon: FileText },
@@ -84,7 +87,7 @@ const bottomItems = [
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ unreadChats = 0, openCases = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
+export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
@@ -98,7 +101,8 @@ export function Sidebar({ unreadChats = 0, openCases = 0, lastUpdated = 0, curre
   
   const badges: Record<string, number> = {
     unreadChats,
-    openCases
+    openCases,
+    pendingCommitments
   }
 
   // Trigger animation when data is updated (every 30 seconds)
@@ -122,6 +126,9 @@ export function Sidebar({ unreadChats = 0, openCases = 0, lastUpdated = 0, curre
       if (openCases > 0) {
         badgesToAnimate.add('openCases')
       }
+      if (pendingCommitments > 0) {
+        badgesToAnimate.add('pendingCommitments')
+      }
       
       if (badgesToAnimate.size > 0) {
         setAnimatingBadges(badgesToAnimate)
@@ -134,7 +141,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, lastUpdated = 0, curre
       
       prevUpdatedRef.current = lastUpdated
     }
-  }, [lastUpdated, unreadChats, openCases])
+  }, [lastUpdated, unreadChats, openCases, pendingCommitments])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed))

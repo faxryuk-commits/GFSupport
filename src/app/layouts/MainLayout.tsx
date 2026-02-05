@@ -16,6 +16,7 @@ export function MainLayout() {
   const [currentUser, setCurrentUser] = useState<{ name: string; role?: string } | null>(null)
   const [unreadChats, setUnreadChats] = useState(0)
   const [openCases, setOpenCases] = useState(0)
+  const [pendingCommitments, setPendingCommitments] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(0) // Timestamp последнего обновления счётчиков
   
   // Background notifications via Web Worker (works when tab is hidden)
@@ -87,6 +88,15 @@ export function MainLayout() {
         const data = await casesRes.json()
         // Используем длину массива отфильтрованных кейсов, не total
         setOpenCases(data.cases?.length || 0)
+      }
+      
+      // Активные обязательства (pending)
+      const commitmentsRes = await fetch('/api/support/commitments?status=pending', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (commitmentsRes.ok) {
+        const data = await commitmentsRes.json()
+        setPendingCommitments(data.stats?.pending || data.commitments?.length || 0)
       }
       
       // Обновляем timestamp последнего обновления - для анимации в сайдбаре
@@ -180,6 +190,7 @@ export function MainLayout() {
       <Sidebar 
         unreadChats={unreadChats} 
         openCases={openCases}
+        pendingCommitments={pendingCommitments}
         currentUser={currentUser || undefined}
         onLogout={handleLogout}
         lastUpdated={lastUpdated}

@@ -13,6 +13,7 @@ import {
   DocsPage,
   ProblemAnalysisPage,
 } from '@/pages'
+import { CommitmentsPage } from '@/pages/commitments'
 import './index.css'
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/chats/:id" element={<ChatsPage />} />
         <Route path="/channels" element={<ChannelsListPage />} />
         <Route path="/cases" element={<CasesPage />} />
+        <Route path="/commitments" element={<CommitmentsPage />} />
         
         {/* Knowledge & Docs */}
         <Route path="/knowledge" element={<KnowledgePage />} />

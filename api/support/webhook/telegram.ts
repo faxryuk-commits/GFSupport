@@ -664,23 +664,41 @@ function detectCommitment(text: string): CommitmentDetection {
   }
 
   // Action patterns - explicit promises to do something
+  // Includes variations: singular/plural, future tense forms
   const actionPatterns = [
     /сформирую\s+тикет/i,
     /создам\s+тикет/i,
-    /возьмутся\s+за\s+решение/i,
-    /займусь/i,
-    /отработа/i,
-    /исправ/i,
-    /поправ/i,
+    /возьм[уе]тся\s+за\s+решение/i,
+    /возьмутся\s+за/i,
+    /займ[уе]сь/i,
+    /займ[уе]тся/i,
+    /отработа[юетм]/i,     // отработаю, отработает, отработаем, отработают
+    /исправ[люяиет]/i,     // исправлю, исправят, исправит, исправим
+    /поправ[люяиет]/i,     // поправлю, поправят, поправит
     /сделаю/i,
+    /сделаем/i,
+    /сделают/i,
     /решу/i,
+    /решим/i,
+    /решат/i,
     /проверю/i,
+    /проверим/i,
+    /проверят/i,
     /уточню/i,
+    /уточним/i,
     /узнаю/i,
+    /узнаем/i,
     /передам/i,
+    /передадим/i,
     /свяжусь/i,
+    /свяжемся/i,
     /перезвоню/i,
+    /перезвоним/i,
     /отвечу/i,
+    /ответим/i,
+    /ребята.*отработа/i,   // "ребята отработают"
+    /думаю.*отработа/i,    // "думаю отработают" 
+    /обработа[юетм]/i,     // обработаю, обработают
   ]
 
   for (const pattern of actionPatterns) {
@@ -722,53 +740,55 @@ function detectCommitment(text: string): CommitmentDetection {
   return result
 }
 
-// Create reminder from commitment
+// Create commitment/reminder from detected promise
 async function createCommitmentReminder(
   sql: any,
   channelId: string,
   messageId: string,
   commitment: CommitmentDetection,
-  senderName: string
+  senderName: string,
+  agentId?: string
 ): Promise<string | null> {
   if (!commitment.hasCommitment) return null
 
-  const reminderId = generateId('rem')
+  const commitmentId = generateId('commit')
   const deadline = (commitment.detectedDeadline || commitment.autoDeadline).toISOString()
 
   try {
-    // Ensure table exists
+    // Use unified support_commitments table
     await sql`
-      CREATE TABLE IF NOT EXISTS support_reminders (
+      CREATE TABLE IF NOT EXISTS support_commitments (
         id VARCHAR(50) PRIMARY KEY,
-        channel_id VARCHAR(50) NOT NULL,
-        message_id VARCHAR(50),
-        commitment_text TEXT,
-        commitment_type VARCHAR(20),
+        channel_id VARCHAR(100) NOT NULL,
+        message_id VARCHAR(100),
+        agent_id VARCHAR(100),
+        agent_name VARCHAR(255),
+        commitment_text TEXT NOT NULL,
+        commitment_type VARCHAR(30) DEFAULT 'promise',
         is_vague BOOLEAN DEFAULT false,
-        deadline TIMESTAMPTZ,
-        status VARCHAR(20) DEFAULT 'active',
-        created_by VARCHAR(255),
-        created_at TIMESTAMPTZ DEFAULT NOW(),
+        due_date TIMESTAMPTZ,
+        reminder_at TIMESTAMPTZ,
+        status VARCHAR(20) DEFAULT 'pending',
         completed_at TIMESTAMPTZ,
-        escalated_at TIMESTAMPTZ
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `
 
     await sql`
-      INSERT INTO support_reminders (
-        id, channel_id, message_id, commitment_text, commitment_type,
-        is_vague, deadline, status, created_by
+      INSERT INTO support_commitments (
+        id, channel_id, message_id, agent_id, agent_name,
+        commitment_text, commitment_type, is_vague, due_date, status
       ) VALUES (
-        ${reminderId}, ${channelId}, ${messageId}, ${commitment.commitmentText},
-        ${commitment.commitmentType}, ${commitment.isVague},
-        ${deadline}::timestamptz, 'active', ${senderName}
+        ${commitmentId}, ${channelId}, ${messageId}, ${agentId || null}, ${senderName},
+        ${commitment.commitmentText}, ${commitment.commitmentType}, ${commitment.isVague},
+        ${deadline}::timestamptz, 'pending'
       )
     `
     
-    console.log(`[Webhook] Created commitment reminder: ${reminderId} - "${commitment.commitmentText}" deadline: ${deadline}`)
-    return reminderId
+    console.log(`[Webhook] Created commitment: ${commitmentId} - "${commitment.commitmentText}" due: ${deadline}`)
+    return commitmentId
   } catch (e: any) {
-    console.error('[Webhook] Failed to create reminder:', e.message)
+    console.error('[Webhook] Failed to create commitment:', e.message)
     return null
   }
 }
@@ -1279,15 +1299,15 @@ export default async function handler(req: Request): Promise<Response> {
       
       // Detect commitments in staff messages (promises like "завтра с утра", "сделаю", etc.)
       const commitment = detectCommitment(text)
-      let reminderId: string | null = null
+      let commitmentId: string | null = null
       if (commitment.hasCommitment) {
-        reminderId = await createCommitmentReminder(sql, channelId, messageId, commitment, user.fullName)
-        if (reminderId) {
-          console.log(`[Webhook] Staff commitment detected: "${commitment.commitmentText}" (${commitment.commitmentType}) - reminder ${reminderId}`)
+        commitmentId = await createCommitmentReminder(sql, channelId, messageId, commitment, user.fullName, identification.agentId)
+        if (commitmentId) {
+          console.log(`[Webhook] Staff commitment detected: "${commitment.commitmentText}" (${commitment.commitmentType}) - commitment ${commitmentId}`)
         }
       }
       
-      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated${reminderId ? ', commitment tracked' : ''}`)
+      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated${commitmentId ? ', commitment tracked' : ''}`)
     }
 
     // Trigger AI analysis for ALL messages (clients AND team can report problems)
