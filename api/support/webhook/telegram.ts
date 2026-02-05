@@ -609,6 +609,11 @@ function detectCommitment(text: string): CommitmentDetection {
     { pattern: /завтра/i, hours: 24 },
     { pattern: /сегодня/i, hours: 4 },
     { pattern: /с\s+утра/i, hours: null, morning: true },
+    { pattern: /в\s+ближайшее\s+время/i, hours: 2 },           // "в ближайшее время"
+    { pattern: /ближайшее\s+время/i, hours: 2 },               // "ближайшее время"
+    { pattern: /до\s+конца\s+дня/i, hours: 8 },                // "до конца дня"
+    { pattern: /к\s+вечеру/i, hours: 6 },                      // "к вечеру"
+    { pattern: /к\s+обеду/i, hours: 4 },                       // "к обеду"
     
     // Uzbek time patterns (O'zbek)
     { pattern: /ertaga\s+ertalab/i, hours: null, nextMorning: true }, // завтра утром
@@ -621,6 +626,7 @@ function detectCommitment(text: string): CommitmentDetection {
     { pattern: /ertalab/i, hours: null, morning: true },               // утром
     { pattern: /kechqurun(gacha)?/i, hours: 8 },                       // к вечеру
     { pattern: /tushlik(gacha)?/i, hours: 4 },                         // к обеду
+    { pattern: /yaqin\s+vaqt(da)?/i, hours: 2 },                       // в ближайшее время
   ]
 
   for (const p of concretePatterns) {
@@ -687,6 +693,7 @@ function detectCommitment(text: string): CommitmentDetection {
     /займ[уе]сь/i,
     /займ[уе]тся/i,
     /отработа[юетм]/i,     // отработаю, отработает, отработаем, отработают
+    /отработать/i,         // "отработать завтра"
     /исправ[люяиет]/i,     // исправлю, исправят, исправит, исправим
     /поправ[люяиет]/i,     // поправлю, поправят, поправит
     /сделаю/i,
@@ -702,6 +709,7 @@ function detectCommitment(text: string): CommitmentDetection {
     /проверю/i,
     /проверим/i,
     /проверят/i,
+    /проверить/i,          // "надо проверить" / "завтра проверить"
     /уточню/i,
     /уточним/i,
     /узнаю/i,
@@ -722,6 +730,15 @@ function detectCommitment(text: string): CommitmentDetection {
     /постараюсь/i,         // "постараюсь сделать"
     /постараемся/i,        // "постараемся"
     /выполн[юиет]/i,       // выполню, выполним, выполнят
+    /посмотрю/i,           // "посмотрю"
+    /посмотрим/i,          // "посмотрим", "скоро посмотрим"
+    /посмотрят/i,          // "посмотрят"
+    /надо.*проверить/i,    // "надо проверить"
+    /нужно.*проверить/i,   // "нужно проверить"
+    /надо.*сделать/i,      // "надо сделать"
+    /нужно.*сделать/i,     // "нужно сделать"
+    /срочно.*проверить/i,  // "срочно проверить"
+    /срочно.*сделать/i,    // "срочно сделать"
     
     // Uzbek action patterns (O'zbek)
     /qilaman/i,            // сделаю
@@ -780,7 +797,17 @@ function detectCommitment(text: string): CommitmentDetection {
     /сделаем/i,
     /решим/i,
     /разберусь/i,
+    /разберёмся/i,
     /скоро/i,
+    /очень\s+скоро/i,      // "очень скоро посмотрим"
+    /попозже/i,            // "попозже"
+    /чуть\s+позже/i,       // "чуть позже"
+    /позже/i,              // "позже"
+    /в\s+процессе/i,       // "в процессе"
+    /работаем/i,           // "работаем над этим"
+    /разбираемся/i,        // "разбираемся"
+    /займёмся/i,           // "займёмся"
+    /возьмёмся/i,          // "возьмёмся"
     
     // Uzbek vague patterns
     /hozir/i,              // сейчас
@@ -788,6 +815,8 @@ function detectCommitment(text: string): CommitmentDetection {
     /bir\s+daqiqa/i,       // минуточку
     /tez\s+orada/i,        // скоро
     /yaqinda/i,            // скоро/в ближайшее время
+    /keyinroq/i,           // позже
+    /ishlaymiz/i,          // работаем
   ]
 
   for (const pattern of vaguePatterns) {
