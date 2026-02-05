@@ -853,6 +853,15 @@ async function createCommitmentReminder(
   // Set reminder 1 hour before deadline, or 30 mins for vague commitments
   const reminderOffset = commitment.isVague ? 30 * 60 * 1000 : 60 * 60 * 1000
   const reminderAt = new Date(deadline.getTime() - reminderOffset)
+  
+  // Determine priority based on commitment type and deadline
+  let priority = 'medium'
+  const hoursUntilDeadline = (deadline.getTime() - Date.now()) / (1000 * 60 * 60)
+  if (commitment.commitmentType === 'time' && hoursUntilDeadline <= 2) {
+    priority = 'high'
+  } else if (commitment.isVague) {
+    priority = 'low'
+  }
 
   try {
     // Use unified support_commitments table with extended fields
@@ -860,6 +869,7 @@ async function createCommitmentReminder(
       CREATE TABLE IF NOT EXISTS support_commitments (
         id VARCHAR(50) PRIMARY KEY,
         channel_id VARCHAR(100) NOT NULL,
+        case_id VARCHAR(100),
         message_id VARCHAR(100),
         agent_id VARCHAR(100),
         agent_name VARCHAR(255),
@@ -867,12 +877,15 @@ async function createCommitmentReminder(
         commitment_text TEXT NOT NULL,
         commitment_type VARCHAR(30) DEFAULT 'promise',
         is_vague BOOLEAN DEFAULT false,
+        priority VARCHAR(20) DEFAULT 'medium',
         due_date TIMESTAMPTZ,
         reminder_at TIMESTAMPTZ,
         reminder_sent BOOLEAN DEFAULT false,
         status VARCHAR(20) DEFAULT 'pending',
+        notes TEXT,
         completed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `
     
@@ -880,19 +893,23 @@ async function createCommitmentReminder(
     await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`.catch(() => {})
     await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`.catch(() => {})
     await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT false`.catch(() => {})
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium'`.catch(() => {})
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS case_id VARCHAR(100)`.catch(() => {})
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS notes TEXT`.catch(() => {})
+    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`.catch(() => {})
 
     await sql`
       INSERT INTO support_commitments (
         id, channel_id, message_id, agent_id, agent_name, sender_role,
-        commitment_text, commitment_type, is_vague, due_date, reminder_at, status
+        commitment_text, commitment_type, is_vague, priority, due_date, reminder_at, status, created_at, updated_at
       ) VALUES (
         ${commitmentId}, ${channelId}, ${messageId}, ${agentId || null}, ${senderName}, ${senderRole || 'unknown'},
-        ${commitment.commitmentText}, ${commitment.commitmentType}, ${commitment.isVague},
-        ${deadlineStr}::timestamptz, ${reminderAt.toISOString()}::timestamptz, 'pending'
+        ${commitment.commitmentText}, ${commitment.commitmentType}, ${commitment.isVague}, ${priority},
+        ${deadlineStr}::timestamptz, ${reminderAt.toISOString()}::timestamptz, 'pending', NOW(), NOW()
       )
     `
     
-    console.log(`[Webhook] Created commitment: ${commitmentId} by ${senderRole}/${senderName} - "${commitment.commitmentText}" due: ${deadlineStr}`)
+    console.log(`[Webhook] Created commitment: ${commitmentId} by ${senderRole}/${senderName} - "${commitment.commitmentText}" (${priority}) due: ${deadlineStr}`)
     return commitmentId
   } catch (e: any) {
     console.error('[Webhook] Failed to create commitment:', e.message)
