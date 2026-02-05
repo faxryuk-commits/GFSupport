@@ -319,10 +319,11 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         })),
         bySentiment: raw.patterns?.bySentiment || [],
         byIntent: raw.patterns?.byIntent || [],
-        recurringProblems: (raw.patterns?.recurringProblems || []).map(p => ({
-          issue: p.problem,
-          count: p.occurrences,
-          affected: p.affectedCompanies,
+        recurringProblems: (raw.patterns?.recurringProblems || []).map((p: any) => ({
+          issue: p.issue || p.problem || 'Неизвестная проблема',
+          category: p.category || p.problem,
+          count: p.count || p.occurrences || 0,
+          affected: p.affected || p.affectedCompanies || 0,
         })),
       },
       team: {
