@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary } from '@/shared/ui'
+import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
 
 interface AgentData {
   id: string
@@ -15,6 +16,9 @@ export function MainLayout() {
   const [currentUser, setCurrentUser] = useState<{ name: string; role?: string } | null>(null)
   const [unreadChats, setUnreadChats] = useState(0)
   const [openCases, setOpenCases] = useState(0)
+  
+  // Background notifications via Web Worker (works when tab is hidden)
+  useBackgroundNotifications()
 
   useEffect(() => {
     // Загружаем данные агента из localStorage
