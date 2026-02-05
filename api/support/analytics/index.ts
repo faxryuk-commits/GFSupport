@@ -673,24 +673,49 @@ export default async function handler(req: Request): Promise<Response> {
     // 7. SLOWEST RESPONDING CLIENTS
     // ============================================
     
+    // Calculate response times by looking at time gaps between messages
     const slowestClients = await sql`
+      WITH message_pairs AS (
+        SELECT 
+          m.channel_id,
+          m.is_from_client,
+          m.created_at,
+          LAG(m.created_at) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_created_at,
+          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
+        FROM support_messages m
+        WHERE m.created_at >= ${startDate.toISOString()}
+      ),
+      response_times AS (
+        SELECT
+          channel_id,
+          -- Agent response time: when agent replies after client message
+          CASE 
+            WHEN NOT is_from_client AND prev_is_from_client 
+            THEN EXTRACT(EPOCH FROM (created_at - prev_created_at)) * 1000 
+          END as agent_response_ms,
+          -- Client response time: when client replies after agent message
+          CASE 
+            WHEN is_from_client AND NOT prev_is_from_client 
+            THEN EXTRACT(EPOCH FROM (created_at - prev_created_at)) * 1000 
+          END as client_response_ms
+        FROM message_pairs
+        WHERE prev_created_at IS NOT NULL
+      )
       SELECT 
         c.id,
         c.name,
         c.sla_category,
-        c.client_avg_response_ms,
-        c.client_response_count,
-        -- Calculate agent avg response time for comparison
-        AVG(m.response_time_ms) FILTER (WHERE m.is_from_client = false AND m.response_time_ms IS NOT NULL) as agent_avg_response_ms,
-        COUNT(*) FILTER (WHERE m.is_from_client = false AND m.response_time_ms IS NOT NULL) as agent_response_count,
+        COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) as client_avg_response_ms,
+        COALESCE(c.client_response_count, COUNT(rt.client_response_ms)) as client_response_count,
+        AVG(rt.agent_response_ms) as agent_avg_response_ms,
+        COUNT(rt.agent_response_ms) as agent_response_count,
         c.last_message_at
       FROM support_channels c
-      LEFT JOIN support_messages m ON m.channel_id = c.id AND m.created_at >= ${startDate.toISOString()}
+      LEFT JOIN response_times rt ON rt.channel_id = c.id
       WHERE c.is_active = true
-        AND c.client_avg_response_ms IS NOT NULL
-        AND c.client_avg_response_ms > 0
       GROUP BY c.id, c.name, c.sla_category, c.client_avg_response_ms, c.client_response_count, c.last_message_at
-      ORDER BY c.client_avg_response_ms DESC
+      HAVING COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) > 0
+      ORDER BY COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) DESC
       LIMIT 10
     `
 
