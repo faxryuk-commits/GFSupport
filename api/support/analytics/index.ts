@@ -744,9 +744,10 @@ export default async function handler(req: Request): Promise<Response> {
           count: parseInt(i.count),
         })),
         recurringProblems: recurringProblems.map((p: any) => ({
-          problem: translateProblem(p.problem),
-          occurrences: parseInt(p.occurrences),
-          affectedCompanies: parseInt(p.affected_companies),
+          issue: translateProblem(p.problem),
+          category: p.problem, // Original category for API queries
+          count: parseInt(p.occurrences),
+          affected: parseInt(p.affected_companies),
         })),
       },
 
