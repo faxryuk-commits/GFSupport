@@ -138,8 +138,210 @@ export default async function handler(req: Request): Promise<Response> {
     `
   } catch (e) { /* table exists */ }
 
-  // GET - Get all patterns
+  const url = new URL(req.url)
+  const action = url.searchParams.get('action')
+
+  // GET - Get all patterns OR analyze history
   if (req.method === 'GET') {
+    // Special action: analyze message history for problems
+    if (action === 'analyze_history') {
+      try {
+        const limit = parseInt(url.searchParams.get('limit') || '5000')
+        
+        // Problem patterns for analysis
+        const PROBLEM_PATTERNS: Record<string, { category: string; patterns: RegExp[]; description: string }> = {
+          technical_not_working: {
+            category: 'technical',
+            patterns: [
+              /не работа|не открыва|не загруж|не отобража|не сохран|не отправ|не получа/i,
+              /ishlamay|ishlamaydi|ishlamaypti|ochilmay|yuklanmay/i,
+            ],
+            description: 'Функционал не работает',
+          },
+          technical_error: {
+            category: 'technical',
+            patterns: [/ошибк|error|exception|failed|crash|баг|bug|xato|xatolik/i],
+            description: 'Ошибки и сбои',
+          },
+          order_wrong: {
+            category: 'order',
+            patterns: [/неправильн\w*\s*(заказ|чек|сумм)|заказ\s*(не\s*т|неверн|ошиб)|buyurtma\s*(xato|noto'g'ri)/i],
+            description: 'Неправильный заказ/чек',
+          },
+          billing_wrong_amount: {
+            category: 'billing',
+            patterns: [
+              /сумм\w*\s*(не\s*совпад|неправильн|лишн)|переплат|недоплат/i,
+              /как\s+(за|так)\s*\d+.*если.*\d+|почему\s+\d+.*если.*\d+/i,
+            ],
+            description: 'Несоответствие суммы оплаты',
+          },
+          billing_payment_failed: {
+            category: 'billing',
+            patterns: [/оплат\w*\s*(не\s*прош|не\s*прин|отклон|ошибк)|to'lov\s*(o'tmay|qabul qilinma)/i],
+            description: 'Оплата не прошла',
+          },
+          delivery_late: {
+            category: 'delivery',
+            patterns: [/доставк\w*\s*(опазд|задерж|долго)|курьер\s*(опазд|не\s*пришёл)/i],
+            description: 'Задержка доставки',
+          },
+          menu_wrong_price: {
+            category: 'menu',
+            patterns: [/цен\w*\s*(не\s*совпад|неправильн|устарел)|прайс\s*(устарел|неверн)/i],
+            description: 'Неправильные цены в меню',
+          },
+          integration_iiko: {
+            category: 'integration',
+            patterns: [/iiko\s*(не\s*работа|ошибк|не\s*синхрон)/i],
+            description: 'Проблемы с iiko',
+          },
+          integration_rkeeper: {
+            category: 'integration',
+            patterns: [/r-?keeper\s*(не\s*работа|ошибк|не\s*синхрон)/i],
+            description: 'Проблемы с R-Keeper',
+          },
+          onboarding_new: {
+            category: 'onboarding',
+            patterns: [/подключ|подключить|регистрац|хотим\s*работать|ulanish|ro'yxatdan|hamkorlik/i],
+            description: 'Запрос на подключение',
+          },
+          complaint_service: {
+            category: 'complaint',
+            patterns: [/жалоб|недовол|плохо\s*обслуж|ужас|безобраз|shikoyat|norozi/i],
+            description: 'Жалоба на обслуживание',
+          },
+          complaint_quality: {
+            category: 'complaint',
+            patterns: [/качеств\w*\s*(плох|низк|ужас)|испорчен|некачествен/i],
+            description: 'Жалоба на качество',
+          },
+        }
+        
+        const CATEGORIES: Record<string, { label: string }> = {
+          technical: { label: 'Технические' },
+          order: { label: 'Заказы' },
+          billing: { label: 'Оплата' },
+          delivery: { label: 'Доставка' },
+          menu: { label: 'Меню' },
+          integration: { label: 'Интеграции' },
+          onboarding: { label: 'Подключение' },
+          complaint: { label: 'Жалобы' },
+        }
+
+        // Get client messages
+        const messages = await sql`
+          SELECT id, text_content, is_problem, created_at
+          FROM support_messages
+          WHERE sender_role = 'client'
+            AND text_content IS NOT NULL
+            AND LENGTH(text_content) > 3
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `
+        
+        console.log(`[Analyze History] Found ${messages.length} client messages`)
+        
+        // Initialize stats
+        const problemStats: Record<string, { count: number; examples: Array<{ id: string; text: string; date: string }> }> = {}
+        for (const key of Object.keys(PROBLEM_PATTERNS)) {
+          problemStats[key] = { count: 0, examples: [] }
+        }
+        
+        let totalProblems = 0
+        let matchedMessages = 0
+        
+        for (const msg of messages) {
+          const text = msg.text_content || ''
+          let matched = false
+          
+          for (const [key, pattern] of Object.entries(PROBLEM_PATTERNS)) {
+            for (const regex of pattern.patterns) {
+              if (regex.test(text)) {
+                matched = true
+                problemStats[key].count++
+                if (problemStats[key].examples.length < 10) {
+                  problemStats[key].examples.push({
+                    id: msg.id,
+                    text: text.slice(0, 200),
+                    date: msg.created_at
+                  })
+                }
+                break
+              }
+            }
+          }
+          
+          if (matched) matchedMessages++
+          if (msg.is_problem) totalProblems++
+        }
+        
+        // Group by category
+        const byCategory: Record<string, { total: number; problems: any[] }> = {}
+        for (const [key, pattern] of Object.entries(PROBLEM_PATTERNS)) {
+          const cat = pattern.category
+          if (!byCategory[cat]) byCategory[cat] = { total: 0, problems: [] }
+          if (problemStats[key].count > 0) {
+            byCategory[cat].total += problemStats[key].count
+            byCategory[cat].problems.push({
+              key,
+              description: pattern.description,
+              count: problemStats[key].count,
+              examples: problemStats[key].examples
+            })
+          }
+        }
+        
+        // Sort by frequency
+        for (const cat of Object.values(byCategory)) {
+          cat.problems.sort((a, b) => b.count - a.count)
+        }
+        
+        // Top problems
+        const topProblems = Object.entries(problemStats)
+          .map(([key, stats]) => ({
+            key,
+            description: PROBLEM_PATTERNS[key].description,
+            category: PROBLEM_PATTERNS[key].category,
+            count: stats.count,
+            examples: stats.examples
+          }))
+          .filter(p => p.count > 0)
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 20)
+        
+        return json({
+          summary: {
+            totalMessages: messages.length,
+            markedAsProblems: totalProblems,
+            matchedByPatterns: matchedMessages,
+            uniqueProblemTypes: topProblems.length,
+          },
+          topProblems,
+          byCategory: Object.entries(byCategory)
+            .map(([cat, data]) => ({
+              category: cat,
+              label: CATEGORIES[cat]?.label || cat,
+              total: data.total,
+              problems: data.problems
+            }))
+            .filter(c => c.total > 0)
+            .sort((a, b) => b.total - a.total),
+          patterns: Object.entries(PROBLEM_PATTERNS).map(([key, p]) => ({
+            key,
+            category: p.category,
+            description: p.description,
+            patternCount: p.patterns.length
+          }))
+        })
+        
+      } catch (e: any) {
+        console.error('[Analyze History] Error:', e)
+        return json({ error: e.message }, 500)
+      }
+    }
+    
+    // Default: Get all patterns
     try {
       const rows = await sql`
         SELECT * FROM support_ai_patterns WHERE is_active = true ORDER BY category, name
