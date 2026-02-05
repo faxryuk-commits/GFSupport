@@ -345,7 +345,8 @@ export default async function handler(req: Request): Promise<Response> {
     
     // Backfill mode - create commitments for messages without them
     if (body.action === 'backfill') {
-      const hours = body.hours || 24
+      const hours = parseInt(body.hours) || 24
+      const sinceDate = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
       
       // Find messages with commitments but no record in support_commitments
       const messagesWithoutCommitments = await sql`
@@ -353,7 +354,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_messages m
         LEFT JOIN support_commitments c ON c.message_id = m.id
         WHERE m.text_content IS NOT NULL
-          AND m.created_at > NOW() - INTERVAL '${sql.unsafe(String(hours))} hours'
+          AND m.created_at > ${sinceDate}::timestamptz
           AND (m.sender_role IN ('support', 'team') OR m.is_from_client = false)
           AND c.id IS NULL
         ORDER BY m.created_at DESC
