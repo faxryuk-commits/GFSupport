@@ -236,7 +236,8 @@ export default async function handler(req: Request): Promise<Response> {
         senderId: m.sender_id,
         senderName: m.sender_name || 'Клиент',
         senderUsername: m.sender_username,
-        senderPhotoUrl: m.sender_photo_url,
+        // Use proxy URL for avatars to avoid expired Telegram URLs
+        senderPhotoUrl: m.sender_id ? `/api/support/media/user-photo?userId=${m.sender_id}` : null,
         senderRole: m.sender_role || 'client',
         text: m.text_content || '',
         contentType: m.content_type || 'text',

@@ -75,7 +75,8 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
   return {
     id: channel.id,
     name: channel.name || channel.companyName || `Канал ${channel.id.slice(0, 6)}`,
-    avatar: channel.photoUrl,
+    // Use proxy URL to avoid expired Telegram URLs
+    avatar: channel.id ? `/api/support/media/photo?channelId=${channel.id}` : channel.photoUrl,
     lastMessage: channel.lastMessageText || 'Нет сообщений',
     time: getRelativeTime(channel.lastMessageAt),
     unread: channel.unreadCount || 0,
@@ -782,7 +783,7 @@ export function ChatsPage() {
             {/* Заголовок */}
             <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
-                <Avatar name={selectedChannel.name} size="md" />
+                <Avatar src={selectedChannel.avatar} name={selectedChannel.name} size="md" />
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="font-semibold text-slate-800 truncate">{selectedChannel.name}</h2>

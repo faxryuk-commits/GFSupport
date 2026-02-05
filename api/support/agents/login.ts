@@ -28,6 +28,40 @@ function hashPassword(password: string): string {
   return `h${Math.abs(hash).toString(36)}${password.length}`
 }
 
+// Get avatar URL from Telegram
+async function getTelegramAvatarUrl(telegramId: string): Promise<string | null> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken || !telegramId) return null
+  
+  try {
+    // Get user profile photos
+    const photosRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getUserProfilePhotos?user_id=${telegramId}&limit=1`
+    )
+    const photosData = await photosRes.json()
+    
+    if (photosData.ok && photosData.result?.photos?.length > 0) {
+      const photo = photosData.result.photos[0]
+      if (photo && photo.length > 0) {
+        const smallestPhoto = photo[0]
+        
+        const fileRes = await fetch(
+          `https://api.telegram.org/bot${botToken}/getFile?file_id=${smallestPhoto.file_id}`
+        )
+        const fileData = await fileRes.json()
+        
+        if (fileData.ok && fileData.result?.file_path) {
+          // Return proxy URL that won't expire
+          return `/api/support/media/user-photo?userId=${telegramId}`
+        }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405)
@@ -76,6 +110,16 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Generate simple token
     const token = `agent_${agent.id}_${Date.now().toString(36)}`
+    
+    // Get avatar URL - from DB or fetch from Telegram
+    let avatarUrl = agent.avatar_url
+    if (!avatarUrl && agent.telegram_id) {
+      avatarUrl = await getTelegramAvatarUrl(agent.telegram_id)
+      // Save to DB for future use
+      if (avatarUrl) {
+        await sql`UPDATE support_agents SET avatar_url = ${avatarUrl} WHERE id = ${agent.id}`.catch(() => {})
+      }
+    }
 
     return json({
       success: true,
@@ -88,7 +132,7 @@ export default async function handler(req: Request): Promise<Response> {
         role: agent.role,
         status: 'online', // Just set to online since we updated it
         telegramId: agent.telegram_id,
-        avatarUrl: agent.avatar_url,
+        avatarUrl: avatarUrl,
         phone: agent.phone,
         position: agent.position,
         department: agent.department,

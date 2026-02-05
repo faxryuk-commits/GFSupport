@@ -92,10 +92,10 @@ export default async function handler(req: Request) {
       const stats = await sql`
         SELECT 
           COUNT(*) as total_broadcasts,
-          SUM(channels_count) as total_sent,
-          SUM(successful_count) as total_successful,
-          SUM(failed_count) as total_failed,
-          SUM(clicks_count) as total_clicks
+          COALESCE(SUM(COALESCE(channels_count, 0)), 0) as total_sent,
+          COALESCE(SUM(COALESCE(successful_count, 0)), 0) as total_successful,
+          COALESCE(SUM(COALESCE(failed_count, 0)), 0) as total_failed,
+          COALESCE(SUM(COALESCE(clicks_count, 0)), 0) as total_clicks
         FROM support_broadcasts
       `
       

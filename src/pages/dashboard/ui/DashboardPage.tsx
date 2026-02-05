@@ -240,7 +240,7 @@ export function DashboardPage() {
       // Build needs attention from channels awaiting reply
       const attentionItems: AttentionItem[] = channelsData
         .filter(ch => ch.awaitingReply)
-        .slice(0, 5)
+        .slice(0, 15)
         .map(ch => ({
           id: ch.id,
           name: ch.name || ch.companyName || `Канал ${ch.id}`,
@@ -756,7 +756,7 @@ export function DashboardPage() {
                   const order = { online: 0, away: 1, offline: 2 }
                   return (order[a.status || 'offline'] || 2) - (order[b.status || 'offline'] || 2)
                 })
-                .slice(0, 6)
+                .slice(0, 15)
                 .map(agent => {
                   // Расчёт времени онлайн
                   const getOnlineTime = () => {

@@ -237,22 +237,26 @@ export default async function handler(req: Request): Promise<Response> {
         `
         activeChatsCount = parseInt(activeChatsResult[0]?.count || 0)
         
-        // Check if agent is online based on recent activity (last 10 minutes)
+        // Check if agent is online based on recent activity (last 3 minutes for more accuracy)
         const activityResult = await sql`
           SELECT COUNT(*) as count 
           FROM support_agent_activity 
           WHERE agent_id = ${r.id} 
-            AND activity_at > NOW() - INTERVAL '10 minutes'
+            AND activity_at > NOW() - INTERVAL '3 minutes'
         `
         const hasRecentActivity = parseInt(activityResult[0]?.count || 0) > 0
         
-        // Also check active sessions
+        // Also check active sessions with recent activity (within 5 minutes)
         const sessionResult = await sql`
           SELECT COUNT(*) as count 
-          FROM support_agent_sessions 
-          WHERE agent_id = ${r.id} 
-            AND is_active = true
-            AND started_at > NOW() - INTERVAL '8 hours'
+          FROM support_agent_sessions s
+          WHERE s.agent_id = ${r.id} 
+            AND s.is_active = true
+            AND EXISTS (
+              SELECT 1 FROM support_agent_activity a 
+              WHERE a.session_id = s.id 
+                AND a.activity_at > NOW() - INTERVAL '5 minutes'
+            )
         `
         const hasActiveSession = parseInt(sessionResult[0]?.count || 0) > 0
         
