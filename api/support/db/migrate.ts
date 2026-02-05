@@ -579,6 +579,12 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Added updated_by to support_cases')
     } catch (e) { /* column exists */ }
 
+    // Migration 36: Add created_by to cases for tracking who created the case
+    try {
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`
+      migrations.push('Added created_by to support_cases')
+    } catch (e) { /* column exists */ }
+
     // Migration 37: Create broadcasts tables
     try {
       await sql`

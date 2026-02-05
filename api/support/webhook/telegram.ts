@@ -718,6 +718,9 @@ async function createTicketFromReply(
     const ticketCount = parseInt(ticketCountResult[0]?.cnt || 0) + 1
     const ticketNumber = `T-${ticketCount.toString().padStart(4, '0')}`
     
+    // Ensure created_by column exists
+    await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`.catch(() => {})
+    
     await sql`
       INSERT INTO support_cases (
         id, channel_id, title, description, category, priority, status,
