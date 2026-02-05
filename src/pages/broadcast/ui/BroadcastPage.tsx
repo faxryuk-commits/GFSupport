@@ -3,12 +3,15 @@ import { Plus, Send, Clock, Users, CheckCircle, XCircle, Eye, Trash2, Calendar, 
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { fetchBroadcasts, createBroadcast, cancelBroadcast, type ScheduledBroadcast } from '@/shared/api'
 
-const statusConfig = {
+const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: 'Ожидает', color: 'bg-blue-100 text-blue-700', icon: Clock },
+  sending: { label: 'Отправляется', color: 'bg-amber-100 text-amber-700', icon: Loader2 },
   sent: { label: 'Отправлено', color: 'bg-green-100 text-green-700', icon: CheckCircle },
   cancelled: { label: 'Отменено', color: 'bg-slate-100 text-slate-600', icon: XCircle },
   failed: { label: 'Ошибка', color: 'bg-red-100 text-red-700', icon: XCircle },
 }
+
+const defaultStatusConfig = { label: 'Неизвестно', color: 'bg-slate-100 text-slate-600', icon: AlertCircle }
 
 const filterLabels: Record<string, string> = {
   all: 'Все каналы',
@@ -228,7 +231,7 @@ export function BroadcastPage() {
         ) : (
           <div className="space-y-4">
             {filteredBroadcasts.map(broadcast => {
-              const config = statusConfig[broadcast.status]
+              const config = statusConfig[broadcast.status] || defaultStatusConfig
               const StatusIcon = config.icon
               
               return (
@@ -358,8 +361,8 @@ export function BroadcastPage() {
           <div className="space-y-4">
             <div>
               <p className="text-sm text-slate-500">Статус</p>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full ${statusConfig[selectedBroadcast.status].color}`}>
-                {statusConfig[selectedBroadcast.status].label}
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full ${(statusConfig[selectedBroadcast.status] || defaultStatusConfig).color}`}>
+                {(statusConfig[selectedBroadcast.status] || defaultStatusConfig).label}
               </span>
             </div>
             <div>
