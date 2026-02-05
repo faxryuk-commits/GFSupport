@@ -550,10 +550,11 @@ export default async function handler(req: Request): Promise<Response> {
             const caseSeverity = analysis.urgency >= 5 ? 'critical' : 
                                  analysis.urgency >= 4 ? 'high' : 'normal'
             
-            // Add column if not exists
+            // Add columns if not exists
             try {
               await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS source_message_id VARCHAR(64)`
-            } catch (e) { /* column exists */ }
+              await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS reporter_name VARCHAR(255)`
+            } catch (e) { /* columns exist */ }
             
             await sql`
               INSERT INTO support_cases (

@@ -8,6 +8,19 @@ export type NotificationType = 'message' | 'ticket' | 'alert'
 // Web Audio API для генерации звуков уведомлений
 const audioContext = typeof window !== 'undefined' ? new (window.AudioContext || (window as any).webkitAudioContext)() : null
 
+// Активировать AudioContext при первом взаимодействии пользователя
+if (typeof window !== 'undefined' && audioContext) {
+  const resumeAudio = () => {
+    if (audioContext.state === 'suspended') {
+      audioContext.resume()
+    }
+  }
+  // Активировать при любом клике или касании
+  document.addEventListener('click', resumeAudio, { once: true })
+  document.addEventListener('touchstart', resumeAudio, { once: true })
+  document.addEventListener('keydown', resumeAudio, { once: true })
+}
+
 // Звук для сообщения: "бип-бип-бип" - три коротких высоких тона
 function playMessageSound() {
   if (!audioContext) return
