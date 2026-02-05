@@ -568,6 +568,211 @@ async function recordAgentActivity(
 }
 
 
+// Commitment detection for tracking promises made by staff
+interface CommitmentDetection {
+  hasCommitment: boolean
+  isVague: boolean
+  commitmentText: string | null
+  commitmentType: 'time' | 'action' | 'vague' | null
+  detectedDeadline: Date | null
+  autoDeadline: Date
+}
+
+function detectCommitment(text: string): CommitmentDetection {
+  const now = new Date()
+  const result: CommitmentDetection = {
+    hasCommitment: false,
+    isVague: false,
+    commitmentText: null,
+    commitmentType: null,
+    detectedDeadline: null,
+    autoDeadline: new Date(now.getTime() + 4 * 60 * 60 * 1000) // default 4 hours
+  }
+
+  const lowerText = text.toLowerCase()
+
+  // Concrete time patterns - including "завтра с утра", "завтра утром"
+  const concretePatterns = [
+    { pattern: /через\s+пол\s*часа/i, minutes: 30 },
+    { pattern: /через\s+час/i, minutes: 60 },
+    { pattern: /через\s+(\d+)\s*мин/i, minutes: null },
+    { pattern: /через\s+(\d+)\s*час/i, hours: null },
+    { pattern: /(\d+)\s*мин/i, minutes: null },
+    { pattern: /будет\s+готово\s+через/i, minutes: 30 },
+    { pattern: /5\s*минут/i, minutes: 5 },
+    { pattern: /10\s*минут/i, minutes: 10 },
+    { pattern: /15\s*минут/i, minutes: 15 },
+    { pattern: /20\s*минут/i, minutes: 20 },
+    // "завтра с утра" / "завтра утром" - next day 9 AM
+    { pattern: /завтра\s+(с\s+)?утра|завтра\s+утром/i, hours: null, nextMorning: true },
+    { pattern: /завтра/i, hours: 24 },
+    { pattern: /сегодня/i, hours: 4 },
+    // "с утра" (without завтра) - assume next morning if it's evening
+    { pattern: /с\s+утра/i, hours: null, morning: true },
+  ]
+
+  for (const p of concretePatterns) {
+    const match = lowerText.match(p.pattern)
+    if (match) {
+      result.hasCommitment = true
+      result.isVague = false
+      result.commitmentType = 'time'
+      result.commitmentText = match[0]
+      
+      let deadline: Date
+      
+      if ((p as any).nextMorning) {
+        // "завтра с утра" - set to next day 9:00 AM
+        deadline = new Date(now)
+        deadline.setDate(deadline.getDate() + 1)
+        deadline.setHours(9, 0, 0, 0)
+        result.detectedDeadline = deadline
+        result.autoDeadline = deadline
+      } else if ((p as any).morning) {
+        // "с утра" - if after 6 PM, set to next day 9 AM, else set to today 12 PM
+        deadline = new Date(now)
+        if (now.getHours() >= 18) {
+          deadline.setDate(deadline.getDate() + 1)
+          deadline.setHours(9, 0, 0, 0)
+        } else {
+          deadline.setHours(12, 0, 0, 0)
+        }
+        result.detectedDeadline = deadline
+        result.autoDeadline = deadline
+      } else {
+        let totalMinutes = 0
+        if (p.minutes !== null && p.minutes !== undefined) {
+          totalMinutes = p.minutes
+        } else if ((p as any).hours !== null && (p as any).hours !== undefined) {
+          totalMinutes = (p as any).hours * 60
+        } else if (match[1]) {
+          const num = parseInt(match[1])
+          if (p.pattern.toString().includes('час')) {
+            totalMinutes = num * 60
+          } else {
+            totalMinutes = num
+          }
+        }
+        
+        if (totalMinutes > 0) {
+          result.detectedDeadline = new Date(now.getTime() + totalMinutes * 60 * 1000)
+          result.autoDeadline = result.detectedDeadline
+        }
+      }
+      return result
+    }
+  }
+
+  // Action patterns - explicit promises to do something
+  const actionPatterns = [
+    /сформирую\s+тикет/i,
+    /создам\s+тикет/i,
+    /возьмутся\s+за\s+решение/i,
+    /займусь/i,
+    /отработа/i,
+    /исправ/i,
+    /поправ/i,
+    /сделаю/i,
+    /решу/i,
+    /проверю/i,
+    /уточню/i,
+    /узнаю/i,
+    /передам/i,
+    /свяжусь/i,
+    /перезвоню/i,
+    /отвечу/i,
+  ]
+
+  for (const pattern of actionPatterns) {
+    const match = lowerText.match(pattern)
+    if (match) {
+      result.hasCommitment = true
+      result.isVague = false
+      result.commitmentType = 'action'
+      result.commitmentText = match[0]
+      // Action without time = 4 hour deadline
+      result.autoDeadline = new Date(now.getTime() + 4 * 60 * 60 * 1000)
+      return result
+    }
+  }
+
+  // Vague promise patterns
+  const vaguePatterns = [
+    /сейчас\s+(проверю|посмотрю|уточню|узнаю)/i,
+    /минуточку/i,
+    /подождите/i,
+    /сделаем/i,
+    /решим/i,
+    /разберусь/i,
+    /скоро/i,
+  ]
+
+  for (const pattern of vaguePatterns) {
+    const match = lowerText.match(pattern)
+    if (match) {
+      result.hasCommitment = true
+      result.isVague = true
+      result.commitmentType = 'vague'
+      result.commitmentText = match[0]
+      result.autoDeadline = new Date(now.getTime() + 30 * 60 * 1000) // 30 min for vague
+      return result
+    }
+  }
+
+  return result
+}
+
+// Create reminder from commitment
+async function createCommitmentReminder(
+  sql: any,
+  channelId: string,
+  messageId: string,
+  commitment: CommitmentDetection,
+  senderName: string
+): Promise<string | null> {
+  if (!commitment.hasCommitment) return null
+
+  const reminderId = generateId('rem')
+  const deadline = (commitment.detectedDeadline || commitment.autoDeadline).toISOString()
+
+  try {
+    // Ensure table exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_reminders (
+        id VARCHAR(50) PRIMARY KEY,
+        channel_id VARCHAR(50) NOT NULL,
+        message_id VARCHAR(50),
+        commitment_text TEXT,
+        commitment_type VARCHAR(20),
+        is_vague BOOLEAN DEFAULT false,
+        deadline TIMESTAMPTZ,
+        status VARCHAR(20) DEFAULT 'active',
+        created_by VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ,
+        escalated_at TIMESTAMPTZ
+      )
+    `
+
+    await sql`
+      INSERT INTO support_reminders (
+        id, channel_id, message_id, commitment_text, commitment_type,
+        is_vague, deadline, status, created_by
+      ) VALUES (
+        ${reminderId}, ${channelId}, ${messageId}, ${commitment.commitmentText},
+        ${commitment.commitmentType}, ${commitment.isVague},
+        ${deadline}::timestamptz, 'active', ${senderName}
+      )
+    `
+    
+    console.log(`[Webhook] Created commitment reminder: ${reminderId} - "${commitment.commitmentText}" deadline: ${deadline}`)
+    return reminderId
+  } catch (e: any) {
+    console.error('[Webhook] Failed to create reminder:', e.message)
+    return null
+  }
+}
+
 // Send message to Telegram chat
 async function sendTelegramMessage(
   chatId: string, 
@@ -1072,7 +1277,17 @@ export default async function handler(req: Request): Promise<Response> {
         text
       )
       
-      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated`)
+      // Detect commitments in staff messages (promises like "завтра с утра", "сделаю", etc.)
+      const commitment = detectCommitment(text)
+      let reminderId: string | null = null
+      if (commitment.hasCommitment) {
+        reminderId = await createCommitmentReminder(sql, channelId, messageId, commitment, user.fullName)
+        if (reminderId) {
+          console.log(`[Webhook] Staff commitment detected: "${commitment.commitmentText}" (${commitment.commitmentType}) - reminder ${reminderId}`)
+        }
+      }
+      
+      console.log(`[Webhook] Staff ${user.fullName} replied via Telegram - messages read, ${casesResult.updated} cases updated${reminderId ? ', commitment tracked' : ''}`)
     }
 
     // Trigger AI analysis for ALL messages (clients AND team can report problems)
