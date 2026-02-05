@@ -130,14 +130,15 @@ export async function GET() {
         `
         
         if (exists.length === 0) {
-          // Add FK
-          await sql.unsafe(`
+          // Add FK - use template literal with raw SQL
+          const fkQuery = `
             ALTER TABLE ${fk.table} 
             ADD CONSTRAINT ${fk.name} 
             FOREIGN KEY (${fk.column}) 
             REFERENCES ${fk.refTable}(${fk.refColumn})
             ON DELETE ${fk.onDelete}
-          `)
+          `
+          await sql([fkQuery] as unknown as TemplateStringsArray)
           results.push(`Added FK: ${fk.name}`)
         } else {
           results.push(`FK exists: ${fk.name}`)
@@ -160,7 +161,7 @@ export async function GET() {
 
     for (const idx of indexes) {
       try {
-        await sql.unsafe(idx)
+        await sql([idx] as unknown as TemplateStringsArray)
         results.push(`Index created: ${idx.match(/idx_\w+/)?.[0] || 'unknown'}`)
       } catch (e: any) {
         results.push(`Index exists or failed: ${e.message?.slice(0, 50)}`)
