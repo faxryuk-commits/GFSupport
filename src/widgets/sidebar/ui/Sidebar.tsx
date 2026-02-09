@@ -18,6 +18,7 @@ import {
   FileText,
   Sparkles,
   Clock,
+  Target,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -113,6 +114,7 @@ const mainNavItems = [
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
   { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
+  { path: '/sla-report', label: 'SLA Отчёт', icon: Target },
   { path: '/knowledge', label: 'База знаний', icon: Brain },
   { path: '/learning/problems', label: 'AI Обучение', icon: Sparkles },
   { path: '/docs', label: 'Документы', icon: FileText },
