@@ -175,6 +175,10 @@ async function processAutoReply(
   originalText?: string
 ): Promise<{ success: boolean; message?: string; skipped?: boolean; reason?: string }> {
   
+  // ВРЕМЕННО ОТКЛЮЧЕНО - автоответы деактивированы
+  // TODO: включить обратно после доработки логики
+  return { success: false, skipped: true, reason: 'Auto-reply temporarily disabled' }
+  
   // Get settings
   const settings = await getSettings(sql)
   

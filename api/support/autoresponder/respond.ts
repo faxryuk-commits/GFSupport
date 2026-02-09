@@ -268,6 +268,10 @@ export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405)
   }
+  
+  // ВРЕМЕННО ОТКЛЮЧЕНО - автоответчик деактивирован
+  // TODO: включить обратно после доработки логики
+  return json({ success: false, skipped: true, reason: 'Autoresponder temporarily disabled' })
 
   const sql = getSQL()
   
