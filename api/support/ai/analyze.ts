@@ -517,10 +517,12 @@ export default async function handler(req: Request): Promise<Response> {
       // if (analysis.autoReplyAllowed && channelId && telegramChatId && isFromClient) { ... }
 
       // Auto-create ticket for problems (urgent: >= 2, or isProblem with needsResponse)
+      // ВАЖНО: Тикеты создаются ТОЛЬКО для сообщений от КЛИЕНТОВ, не от сотрудников!
       let ticketResult = null
-      console.log(`[AI Analyze] Ticket check: isProblem=${analysis.isProblem}, needsResponse=${analysis.needsResponse}, urgency=${analysis.urgency}, messageId=${!!messageId}, channelId=${!!channelId}`)
+      console.log(`[AI Analyze] Ticket check: isProblem=${analysis.isProblem}, needsResponse=${analysis.needsResponse}, urgency=${analysis.urgency}, isFromClient=${isFromClient}, messageId=${!!messageId}, channelId=${!!channelId}`)
       
-      if (analysis.isProblem && analysis.needsResponse && analysis.urgency >= 2 && messageId && channelId) {
+      // Добавлена проверка isFromClient чтобы не создавать дубликаты тикетов когда сотрудник отвечает
+      if (analysis.isProblem && analysis.needsResponse && analysis.urgency >= 2 && messageId && channelId && isFromClient) {
         console.log(`[AI Analyze] Auto-creating ticket for problem message (urgency=${analysis.urgency})`)
         
         try {

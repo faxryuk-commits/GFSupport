@@ -1207,17 +1207,9 @@ export default async function handler(req: Request): Promise<Response> {
       })
     }
     
-    // Also check for ticket command WITHOUT reply - send instructions
-    if (isTicketCommand(messageText, botUsername) && !message.reply_to_message) {
-      const instructionText = `💡 <b>Как создать тикет:</b>\n\n` +
-        `1. Найдите сообщение с проблемой\n` +
-        `2. Ответьте на него (Reply/Цитата)\n` +
-        `3. Напишите: <code>создай тикет</code>\n\n` +
-        `Тикет будет создан из цитируемого сообщения.`
-      
-      await sendTelegramMessage(String(chat.id), instructionText, message.message_id)
-      return json({ ok: true, instruction: true })
-    }
+    // ОТКЛЮЧЕНО: Инструкции по созданию тикета в Telegram
+    // Информирование работает только внутри системы для сотрудников
+    // if (isTicketCommand(messageText, botUsername) && !message.reply_to_message) { ... }
 
     // Determine content type and extract text/media
     let contentType = 'text'
