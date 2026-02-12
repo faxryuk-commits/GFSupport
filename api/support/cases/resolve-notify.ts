@@ -101,6 +101,14 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Method not allowed' }, 405)
   }
 
+  // ОТКЛЮЧЕНО: Уведомления клиентам в Telegram при изменении статуса тикета
+  // Информирование должно работать только внутри системы для сотрудников
+  return json({ 
+    success: false, 
+    skipped: true, 
+    reason: 'Client notifications disabled - internal system only' 
+  })
+
   try {
     const sql = getSQL()
     const { caseId, action } = await req.json()

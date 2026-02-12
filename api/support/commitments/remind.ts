@@ -20,11 +20,16 @@ function json(data: any, status = 200) {
   })
 }
 
-// Send reminder via Telegram bot
+// ОТКЛЮЧЕНО: Отправка напоминаний в Telegram-каналы клиентов
+// Информирование работает только внутри системы для сотрудников
 async function sendTelegramReminder(
   chatId: string, 
   commitment: any
 ): Promise<boolean> {
+  // Отключено - не отправляем напоминания в каналы с клиентами
+  console.log(`[Remind] Telegram notifications disabled - skipping channel ${chatId}`)
+  return false
+  
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) return false
 

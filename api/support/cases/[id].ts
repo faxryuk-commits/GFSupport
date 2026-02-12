@@ -360,25 +360,9 @@ export default async function handler(req: Request): Promise<Response> {
           )
         `
         
-        // If status changed to 'resolved', send notification to client for feedback
-        if (status === 'resolved' && oldStatus !== 'resolved') {
-          const resolveNotifyUrl = process.env.VERCEL_URL 
-            ? `https://${process.env.VERCEL_URL}/api/support/cases/resolve-notify`
-            : null
-          
-          if (resolveNotifyUrl) {
-            // Call asynchronously - don't wait for result
-            fetch(resolveNotifyUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ caseId, action: 'notify' }),
-            }).then(res => res.json()).then(result => {
-              console.log(`[Case Update] Sent resolve notification: ${JSON.stringify(result)}`)
-            }).catch(e => {
-              console.log(`[Case Update] Failed to send resolve notification: ${e.message}`)
-            })
-          }
-        }
+        // ОТКЛЮЧЕНО: Уведомления клиентам при изменении статуса
+        // Информирование работает только внутри системы для сотрудников
+        // if (status === 'resolved' && oldStatus !== 'resolved') { ... }
       }
 
       if (assignedTo !== undefined && assignedTo !== oldAssignee) {

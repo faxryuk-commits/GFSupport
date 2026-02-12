@@ -462,39 +462,10 @@ export default async function handler(req: Request): Promise<Response> {
       // Run AI analysis
       const analysis = await analyzeWithAI(text)
       
-      // If there's a pending feedback case, check if this is feedback
-      let feedbackResult = null
-      if (pendingFeedbackCase && telegramChatId) {
-        const isFeedbackPositive = isPositiveFeedback(text)
-        const isFeedbackNegative = isNegativeFeedback(text)
-        
-        if (isFeedbackPositive || isFeedbackNegative) {
-          console.log(`[AI Analyze] Detected feedback: positive=${isFeedbackPositive}, negative=${isFeedbackNegative}`)
-          
-          // Call resolve-notify API with appropriate action
-          const resolveUrl = process.env.VERCEL_URL 
-            ? `https://${process.env.VERCEL_URL}/api/support/cases/resolve-notify`
-            : null
-          
-          if (resolveUrl) {
-            try {
-              const feedbackAction = isFeedbackPositive ? 'feedback_yes' : 'feedback_no'
-              const response = await fetch(resolveUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  caseId: pendingFeedbackCase.id, 
-                  action: feedbackAction 
-                }),
-              })
-              feedbackResult = await response.json()
-              console.log(`[AI Analyze] Feedback processed: ${JSON.stringify(feedbackResult)}`)
-            } catch (e: any) {
-              console.log(`[AI Analyze] Feedback processing failed: ${e.message}`)
-            }
-          }
-        }
-      }
+      // ОТКЛЮЧЕНО: Обработка feedback и уведомления клиентам
+      // Информирование работает только внутри системы для сотрудников
+      const feedbackResult = null
+      // if (pendingFeedbackCase && telegramChatId) { ... }
 
       console.log(`[AI Analyze] Result: intent=${analysis.intent}, sentiment=${analysis.sentiment}, autoReply=${analysis.autoReplyAllowed}, needsResponse=${analysis.needsResponse}`)
 
@@ -540,37 +511,10 @@ export default async function handler(req: Request): Promise<Response> {
         `
       }
 
-      // Trigger auto-reply if allowed (ONLY for clients, not for team messages)
-      let autoReplyResult = null
-      if (analysis.autoReplyAllowed && channelId && telegramChatId && isFromClient) {
-        console.log(`[AI Analyze] Triggering auto-reply for intent=${analysis.intent}`)
-        
-        // Call auto-reply endpoint
-        const autoReplyUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}/api/support/auto-reply`
-          : null
-        
-        if (autoReplyUrl) {
-          try {
-            const response = await fetch(autoReplyUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                channelId,
-                telegramChatId,
-                intent: analysis.intent,
-                senderName: senderName || '',
-                telegramId: telegramId || null,
-                originalText: text, // Pass original text for language detection
-              }),
-            })
-            autoReplyResult = await response.json()
-            console.log(`[AI Analyze] Auto-reply result: ${JSON.stringify(autoReplyResult)}`)
-          } catch (e: any) {
-            console.log(`[AI Analyze] Auto-reply call failed: ${e.message}`)
-          }
-        }
-      }
+      // ОТКЛЮЧЕНО: Автоответы в Telegram-каналы клиентов
+      // Информирование работает только внутри системы для сотрудников
+      const autoReplyResult = null
+      // if (analysis.autoReplyAllowed && channelId && telegramChatId && isFromClient) { ... }
 
       // Auto-create ticket for problems (urgent: >= 2, or isProblem with needsResponse)
       let ticketResult = null
