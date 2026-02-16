@@ -5,12 +5,13 @@ import {
   AlertTriangle, 
   Users, 
   FileText,
-  TrendingUp,
   Calendar,
-  BarChart3,
   RefreshCw,
-  Download,
-  Target
+  Target,
+  MessageSquare,
+  Timer,
+  XCircle,
+  ArrowRight
 } from 'lucide-react'
 
 interface SLAReport {
@@ -18,17 +19,30 @@ interface SLAReport {
     from: string
     to: string
     slaMinutes: number
+    timezone: string
   }
-  summary: {
-    totalMessages: number
+  responseTimeSummary: {
+    totalClientMessages: number
     responded: number
     withinSLA: number
     violatedSLA: number
     noResponse: number
-    slaCompliance: number
+    slaCompliancePercent: number
     avgResponseMinutes: number
+    medianResponseMinutes: number
+    minResponseMinutes: number
+    maxResponseMinutes: number
   }
-  distribution: {
+  caseResolutionSummary: {
+    totalCases: number
+    resolved: number
+    open: number
+    resolutionRatePercent: number
+    avgResolutionMinutes: number
+    avgResolutionHours: number
+  }
+  responseDistribution: {
+    within1min: number
     within5min: number
     within10min: number
     within30min: number
@@ -36,40 +50,54 @@ interface SLAReport {
     over60min: number
     noResponse: number
   }
-  cases: {
-    total: number
-    resolved: number
-    open: number
-    resolutionRate: number
-  }
-  agentBreakdown: Array<{
+  agentPerformance: Array<{
     name: string
     totalResponses: number
     withinSLA: number
+    violatedSLA: number
     slaCompliance: number
-    avgResponseMinutes: number
+    avgMinutes: number
+    minMinutes: number
+    maxMinutes: number
+    medianMinutes: number
   }>
-  topViolations: Array<{
-    channelId: string
-    channelName: string
-    violations: number
-    total: number
-    violationRate: number
-  }>
-  hourlyDistribution: Array<{
-    hour: number
-    total: number
-    violations: number
-    violationRate: number
-  }>
-  recentViolations: Array<{
-    channelId: string
+  slaViolations: Array<{
     channelName: string
     clientName: string
+    messagePreview: string
     messageAt: string
     responseAt: string
     responseMinutes: number
     responder: string
+    exceededBy: number
+  }>
+  unansweredMessages: Array<{
+    channelName: string
+    clientName: string
+    messagePreview: string
+    messageAt: string
+    waitingMinutes: number
+  }>
+  pendingCases: Array<{
+    ticketNumber: string
+    title: string
+    status: string
+    priority: string
+    channelName: string
+    agentName: string
+    createdAt: string
+    waitingHours: number
+  }>
+  resolvedCasesDetails: Array<{
+    ticketNumber: string
+    title: string
+    priority: string
+    channelName: string
+    agentName: string
+    createdAt: string
+    resolvedAt: string
+    resolutionMinutes: number
+    resolutionHours: number
   }>
 }
 
@@ -77,11 +105,12 @@ export function SLAReportPage() {
   const [report, setReport] = useState<SLAReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'response' | 'cases' | 'agents'>('response')
   
-  // Date range (default: current month)
+  // Date range (default: last 7 days)
   const today = new Date()
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-  const [fromDate, setFromDate] = useState(firstOfMonth.toISOString().split('T')[0])
+  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const [fromDate, setFromDate] = useState(weekAgo.toISOString().split('T')[0])
   const [toDate, setToDate] = useState(today.toISOString().split('T')[0])
   const [slaMinutes, setSlaMinutes] = useState(10)
   
@@ -99,6 +128,7 @@ export function SLAReportPage() {
       if (!res.ok) throw new Error('Failed to load report')
       
       const data = await res.json()
+      if (data.error) throw new Error(data.error)
       setReport(data)
     } catch (e: any) {
       setError(e.message)
@@ -111,14 +141,22 @@ export function SLAReportPage() {
     loadReport()
   }, [])
   
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
+  const formatDateTime = (dateStr: string) => {
+    if (!dateStr) return '-'
+    return new Date(dateStr).toLocaleString('ru-RU', {
       day: 'numeric',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'Asia/Tashkent'
     })
+  }
+  
+  const formatMinutes = (mins: number) => {
+    if (mins < 60) return `${Math.round(mins)} мин`
+    const hours = Math.floor(mins / 60)
+    const minutes = Math.round(mins % 60)
+    return `${hours}ч ${minutes}м`
   }
   
   const getComplianceColor = (rate: number) => {
@@ -128,9 +166,19 @@ export function SLAReportPage() {
   }
   
   const getComplianceBg = (rate: number) => {
-    if (rate >= 95) return 'bg-green-100'
-    if (rate >= 80) return 'bg-yellow-100'
-    return 'bg-red-100'
+    if (rate >= 95) return 'bg-green-50 border-green-200'
+    if (rate >= 80) return 'bg-yellow-50 border-yellow-200'
+    return 'bg-red-50 border-red-200'
+  }
+  
+  const getPriorityBadge = (priority: string) => {
+    const colors: Record<string, string> = {
+      urgent: 'bg-red-100 text-red-700',
+      high: 'bg-orange-100 text-orange-700',
+      medium: 'bg-blue-100 text-blue-700',
+      low: 'bg-slate-100 text-slate-700',
+    }
+    return colors[priority] || 'bg-slate-100 text-slate-700'
   }
 
   return (
@@ -140,10 +188,10 @@ export function SLAReportPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
             <Target className="w-7 h-7 text-blue-500" />
-            SLA Отчёт
+            Отчёт по SLA
           </h1>
           <p className="text-slate-500 mt-1">
-            Анализ времени ответа и выполнения SLA
+            Время ответа и решения тикетов • {report?.period.timezone}
           </p>
         </div>
       </div>
@@ -177,7 +225,7 @@ export function SLAReportPage() {
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">
               <Clock className="w-4 h-4 inline mr-1" />
-              SLA (минут)
+              SLA норма
             </label>
             <select
               value={slaMinutes}
@@ -197,7 +245,7 @@ export function SLAReportPage() {
             className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Обновить
+            Сформировать
           </button>
         </div>
       </div>
@@ -216,22 +264,22 @@ export function SLAReportPage() {
       
       {report && (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-4 gap-4 mb-6">
+          {/* Main Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             {/* SLA Compliance */}
-            <div className={`rounded-xl border p-4 ${getComplianceBg(report.summary.slaCompliance)}`}>
+            <div className={`rounded-xl border p-4 ${getComplianceBg(report.responseTimeSummary.slaCompliancePercent)}`}>
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                  report.summary.slaCompliance >= 95 ? 'bg-green-200' : 
-                  report.summary.slaCompliance >= 80 ? 'bg-yellow-200' : 'bg-red-200'
+                  report.responseTimeSummary.slaCompliancePercent >= 95 ? 'bg-green-200' : 
+                  report.responseTimeSummary.slaCompliancePercent >= 80 ? 'bg-yellow-200' : 'bg-red-200'
                 }`}>
-                  <Target className={`w-6 h-6 ${getComplianceColor(report.summary.slaCompliance)}`} />
+                  <Target className={`w-6 h-6 ${getComplianceColor(report.responseTimeSummary.slaCompliancePercent)}`} />
                 </div>
                 <div>
-                  <p className={`text-3xl font-bold ${getComplianceColor(report.summary.slaCompliance)}`}>
-                    {report.summary.slaCompliance}%
+                  <p className={`text-3xl font-bold ${getComplianceColor(report.responseTimeSummary.slaCompliancePercent)}`}>
+                    {report.responseTimeSummary.slaCompliancePercent}%
                   </p>
-                  <p className="text-sm text-slate-600">SLA Compliance</p>
+                  <p className="text-sm text-slate-600">SLA выполнение</p>
                 </div>
               </div>
             </div>
@@ -244,251 +292,382 @@ export function SLAReportPage() {
                 </div>
                 <div>
                   <p className="text-3xl font-bold text-slate-900">
-                    {report.summary.avgResponseMinutes} <span className="text-lg font-normal">мин</span>
+                    {report.responseTimeSummary.avgResponseMinutes}
                   </p>
-                  <p className="text-sm text-slate-500">Среднее время ответа</p>
+                  <p className="text-sm text-slate-500">Среднее время (мин)</p>
                 </div>
               </div>
             </div>
             
-            {/* Within SLA */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            {/* Case Resolution Rate */}
+            <div className={`rounded-xl border p-4 ${getComplianceBg(report.caseResolutionSummary.resolutionRatePercent)}`}>
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
-                  <CheckCircle className="w-6 h-6 text-green-600" />
+                <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                  report.caseResolutionSummary.resolutionRatePercent >= 95 ? 'bg-green-200' : 
+                  report.caseResolutionSummary.resolutionRatePercent >= 80 ? 'bg-yellow-200' : 'bg-red-200'
+                }`}>
+                  <CheckCircle className={`w-6 h-6 ${getComplianceColor(report.caseResolutionSummary.resolutionRatePercent)}`} />
                 </div>
                 <div>
-                  <p className="text-3xl font-bold text-green-600">{report.summary.withinSLA}</p>
-                  <p className="text-sm text-slate-500">В срок (&lt; {slaMinutes} мин)</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Violations */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-red-600">
-                    {report.summary.violatedSLA + report.summary.noResponse}
+                  <p className={`text-3xl font-bold ${getComplianceColor(report.caseResolutionSummary.resolutionRatePercent)}`}>
+                    {report.caseResolutionSummary.resolutionRatePercent}%
                   </p>
-                  <p className="text-sm text-slate-500">Нарушений SLA</p>
+                  <p className="text-sm text-slate-600">Кейсы решены</p>
                 </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Cases Resolution */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-slate-900">{report.cases.total}</p>
-                  <p className="text-sm text-slate-500">Кейсов создано</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-green-600">{report.cases.resolved}</p>
-                  <p className="text-sm text-slate-500">Закрыто ({report.cases.resolutionRate}%)</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-orange-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-orange-600">{report.cases.open}</p>
-                  <p className="text-sm text-slate-500">Открыто</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            {/* Response Time Distribution */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-blue-500" />
-                Распределение времени ответа
-              </h3>
-              <div className="space-y-3">
-                {[
-                  { label: '≤ 5 мин', value: report.distribution.within5min, color: 'bg-green-500' },
-                  { label: '5-10 мин', value: report.distribution.within10min, color: 'bg-lime-500' },
-                  { label: '10-30 мин', value: report.distribution.within30min, color: 'bg-yellow-500' },
-                  { label: '30-60 мин', value: report.distribution.within60min, color: 'bg-orange-500' },
-                  { label: '> 60 мин', value: report.distribution.over60min, color: 'bg-red-500' },
-                  { label: 'Без ответа', value: report.distribution.noResponse, color: 'bg-slate-400' },
-                ].map((item) => {
-                  const total = report.summary.totalMessages
-                  const pct = total > 0 ? (item.value / total) * 100 : 0
-                  return (
-                    <div key={item.label} className="flex items-center gap-3">
-                      <span className="text-sm text-slate-600 w-24">{item.label}</span>
-                      <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full ${item.color} rounded-full transition-all`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium text-slate-900 w-16 text-right">
-                        {item.value} ({Math.round(pct)}%)
-                      </span>
-                    </div>
-                  )
-                })}
               </div>
             </div>
             
-            {/* Agent Breakdown */}
+            {/* Avg Resolution Time */}
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-500" />
-                По сотрудникам
-              </h3>
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {report.agentBreakdown.length === 0 ? (
-                  <p className="text-slate-500 text-sm">Нет данных</p>
-                ) : (
-                  report.agentBreakdown.map((agent) => (
-                    <div key={agent.name} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700">
-                          {agent.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900 text-sm">{agent.name}</p>
-                          <p className="text-xs text-slate-500">
-                            {agent.totalResponses} ответов, avg {agent.avgResponseMinutes} мин
-                          </p>
-                        </div>
-                      </div>
-                      <div className={`px-2 py-1 rounded text-sm font-medium ${
-                        agent.slaCompliance >= 95 ? 'bg-green-100 text-green-700' :
-                        agent.slaCompliance >= 80 ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-red-100 text-red-700'
-                      }`}>
-                        {agent.slaCompliance}%
-                      </div>
-                    </div>
-                  ))
-                )}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <Timer className="w-6 h-6 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-slate-900">
+                    {report.caseResolutionSummary.avgResolutionHours}ч
+                  </p>
+                  <p className="text-sm text-slate-500">Время решения</p>
+                </div>
               </div>
             </div>
           </div>
           
-          {/* Hourly Distribution */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
-            <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-500" />
-              Нарушения по часам (время Ташкента)
-            </h3>
-            <div className="flex items-end gap-1 h-32">
-              {report.hourlyDistribution.map((hour) => {
-                const maxViolations = Math.max(...report.hourlyDistribution.map(h => h.violations))
-                const height = maxViolations > 0 ? (hour.violations / maxViolations) * 100 : 0
-                return (
-                  <div key={hour.hour} className="flex-1 flex flex-col items-center gap-1">
-                    <div 
-                      className={`w-full rounded-t ${hour.violations > 0 ? 'bg-red-400' : 'bg-slate-200'}`}
-                      style={{ height: `${Math.max(height, 4)}%` }}
-                      title={`${hour.hour}:00 - ${hour.violations} нарушений из ${hour.total}`}
-                    />
-                    <span className="text-xs text-slate-500">{hour.hour}</span>
+          {/* Detailed Numbers */}
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-2xl font-bold text-slate-900">{report.responseTimeSummary.totalClientMessages}</p>
+              <p className="text-xs text-slate-500">Сообщений от клиентов</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-2xl font-bold text-green-600">{report.responseTimeSummary.withinSLA}</p>
+              <p className="text-xs text-slate-500">Ответ в срок</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-2xl font-bold text-red-600">{report.responseTimeSummary.violatedSLA}</p>
+              <p className="text-xs text-slate-500">Нарушения SLA</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-2xl font-bold text-orange-600">{report.responseTimeSummary.noResponse}</p>
+              <p className="text-xs text-slate-500">Без ответа</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-2xl font-bold text-slate-900">{report.caseResolutionSummary.totalCases}</p>
+              <p className="text-xs text-slate-500">Кейсов создано</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className="text-2xl font-bold text-orange-600">{report.caseResolutionSummary.open}</p>
+              <p className="text-xs text-slate-500">Кейсов открыто</p>
+            </div>
+          </div>
+          
+          {/* Tabs */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setActiveTab('response')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'response' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 inline mr-2" />
+              Время ответа
+            </button>
+            <button
+              onClick={() => setActiveTab('cases')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'cases' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="w-4 h-4 inline mr-2" />
+              Решение кейсов
+            </button>
+            <button
+              onClick={() => setActiveTab('agents')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'agents' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Users className="w-4 h-4 inline mr-2" />
+              Сотрудники
+            </button>
+          </div>
+          
+          {/* Tab Content: Response Time */}
+          {activeTab === 'response' && (
+            <div className="space-y-6">
+              {/* Response Time Distribution */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <h3 className="font-semibold text-slate-900 mb-4">Распределение времени ответа</h3>
+                <div className="grid grid-cols-7 gap-2 text-center">
+                  {[
+                    { label: '≤1 мин', value: report.responseDistribution.within1min, color: 'bg-green-500' },
+                    { label: '1-5 мин', value: report.responseDistribution.within5min, color: 'bg-green-400' },
+                    { label: '5-10 мин', value: report.responseDistribution.within10min, color: 'bg-lime-500' },
+                    { label: '10-30 мин', value: report.responseDistribution.within30min, color: 'bg-yellow-500' },
+                    { label: '30-60 мин', value: report.responseDistribution.within60min, color: 'bg-orange-500' },
+                    { label: '>60 мин', value: report.responseDistribution.over60min, color: 'bg-red-500' },
+                    { label: 'Нет ответа', value: report.responseDistribution.noResponse, color: 'bg-slate-400' },
+                  ].map((item) => (
+                    <div key={item.label} className="flex flex-col items-center">
+                      <div className={`w-full h-24 rounded-lg ${item.color} flex items-end justify-center relative`}>
+                        <span className="absolute top-2 text-white font-bold text-lg">{item.value}</span>
+                      </div>
+                      <span className="text-xs text-slate-600 mt-2">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* SLA Violations */}
+              {report.slaViolations.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    Нарушения SLA ({report.slaViolations.length})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Клиент</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Сообщение</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Время</th>
+                          <th className="text-center py-2 px-3 font-medium text-slate-600">Ответ через</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Ответил</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.slaViolations.map((v, i) => (
+                          <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="py-2 px-3 font-medium">{v.channelName}</td>
+                            <td className="py-2 px-3">{v.clientName}</td>
+                            <td className="py-2 px-3 text-slate-500 max-w-48 truncate">{v.messagePreview}</td>
+                            <td className="py-2 px-3 text-slate-500 text-xs">{formatDateTime(v.messageAt)}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
+                                {formatMinutes(v.responseMinutes)}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3">{v.responder}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                )
-              })}
-            </div>
-          </div>
-          
-          {/* Top Violations */}
-          {report.topViolations.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
-              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
-                Каналы с нарушениями SLA
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
-                      <th className="text-center py-2 px-3 font-medium text-slate-600">Нарушений</th>
-                      <th className="text-center py-2 px-3 font-medium text-slate-600">Всего</th>
-                      <th className="text-center py-2 px-3 font-medium text-slate-600">% нарушений</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.topViolations.map((channel) => (
-                      <tr key={channel.channelId} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-2 px-3">{channel.channelName}</td>
-                        <td className="py-2 px-3 text-center text-red-600 font-medium">{channel.violations}</td>
-                        <td className="py-2 px-3 text-center">{channel.total}</td>
-                        <td className="py-2 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            channel.violationRate > 50 ? 'bg-red-100 text-red-700' :
-                            channel.violationRate > 20 ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-green-100 text-green-700'
-                          }`}>
-                            {channel.violationRate}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                </div>
+              )}
+              
+              {/* Unanswered Messages */}
+              {report.unansweredMessages.length > 0 && (
+                <div className="bg-white rounded-xl border border-red-200 p-4">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <XCircle className="w-5 h-5 text-red-500" />
+                    Сообщения без ответа ({report.unansweredMessages.length})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-red-50">
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Клиент</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Сообщение</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Время</th>
+                          <th className="text-center py-2 px-3 font-medium text-slate-600">Ожидает</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.unansweredMessages.map((m, i) => (
+                          <tr key={i} className="border-b border-slate-100 hover:bg-red-50">
+                            <td className="py-2 px-3 font-medium">{m.channelName}</td>
+                            <td className="py-2 px-3">{m.clientName}</td>
+                            <td className="py-2 px-3 text-slate-500 max-w-48 truncate">{m.messagePreview || '[медиа]'}</td>
+                            <td className="py-2 px-3 text-slate-500 text-xs">{formatDateTime(m.messageAt)}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className="px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-700">
+                                {formatMinutes(m.waitingMinutes)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           
-          {/* Recent Violations */}
-          {report.recentViolations.length > 0 && (
+          {/* Tab Content: Cases */}
+          {activeTab === 'cases' && (
+            <div className="space-y-6">
+              {/* Pending Cases */}
+              {report.pendingCases.length > 0 && (
+                <div className="bg-white rounded-xl border border-orange-200 p-4">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-orange-500" />
+                    Открытые кейсы ({report.pendingCases.length})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-orange-50">
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Номер</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Тема</th>
+                          <th className="text-center py-2 px-3 font-medium text-slate-600">Приоритет</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Назначен</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Создан</th>
+                          <th className="text-center py-2 px-3 font-medium text-slate-600">Ожидает</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.pendingCases.map((c, i) => (
+                          <tr key={i} className="border-b border-slate-100 hover:bg-orange-50">
+                            <td className="py-2 px-3 font-mono text-blue-600">{c.ticketNumber}</td>
+                            <td className="py-2 px-3 max-w-48 truncate">{c.title}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${getPriorityBadge(c.priority)}`}>
+                                {c.priority}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3">{c.channelName}</td>
+                            <td className="py-2 px-3">{c.agentName || '-'}</td>
+                            <td className="py-2 px-3 text-slate-500 text-xs">{formatDateTime(c.createdAt)}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                c.waitingHours > 24 ? 'bg-red-100 text-red-700' :
+                                c.waitingHours > 8 ? 'bg-orange-100 text-orange-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {c.waitingHours}ч
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              
+              {/* Resolved Cases */}
+              {report.resolvedCasesDetails.length > 0 && (
+                <div className="bg-white rounded-xl border border-green-200 p-4">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-500" />
+                    Решённые кейсы ({report.resolvedCasesDetails.length})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-green-50">
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Номер</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Тема</th>
+                          <th className="text-center py-2 px-3 font-medium text-slate-600">Приоритет</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Решил</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-600">Создан → Решён</th>
+                          <th className="text-center py-2 px-3 font-medium text-slate-600">Время решения</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.resolvedCasesDetails.map((c, i) => (
+                          <tr key={i} className="border-b border-slate-100 hover:bg-green-50">
+                            <td className="py-2 px-3 font-mono text-blue-600">{c.ticketNumber}</td>
+                            <td className="py-2 px-3 max-w-40 truncate">{c.title}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${getPriorityBadge(c.priority)}`}>
+                                {c.priority}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3">{c.channelName}</td>
+                            <td className="py-2 px-3">{c.agentName || '-'}</td>
+                            <td className="py-2 px-3 text-slate-500 text-xs">
+                              {formatDateTime(c.createdAt)}
+                              <ArrowRight className="w-3 h-3 inline mx-1" />
+                              {formatDateTime(c.resolvedAt)}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">
+                                {c.resolutionHours ? `${c.resolutionHours}ч` : formatMinutes(c.resolutionMinutes || 0)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Tab Content: Agents */}
+          {activeTab === 'agents' && (
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-orange-500" />
-                Последние нарушения SLA
+                <Users className="w-5 h-5 text-blue-500" />
+                Производительность сотрудников
               </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
-                      <th className="text-left py-2 px-3 font-medium text-slate-600">Клиент</th>
-                      <th className="text-left py-2 px-3 font-medium text-slate-600">Время сообщения</th>
-                      <th className="text-center py-2 px-3 font-medium text-slate-600">Ответ через</th>
-                      <th className="text-left py-2 px-3 font-medium text-slate-600">Ответил</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.recentViolations.map((v, i) => (
-                      <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-2 px-3">{v.channelName}</td>
-                        <td className="py-2 px-3">{v.clientName}</td>
-                        <td className="py-2 px-3 text-slate-500">{formatDate(v.messageAt)}</td>
-                        <td className="py-2 px-3 text-center">
-                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
-                            {v.responseMinutes} мин
-                          </span>
-                        </td>
-                        <td className="py-2 px-3">{v.responder}</td>
+              
+              {report.agentPerformance.length === 0 ? (
+                <p className="text-slate-500 text-center py-8">Нет данных за выбранный период</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50">
+                        <th className="text-left py-3 px-3 font-medium text-slate-600">Сотрудник</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">Ответов</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">В срок</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">Нарушений</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">SLA %</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">Среднее</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">Медиана</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">Мин</th>
+                        <th className="text-center py-3 px-3 font-medium text-slate-600">Макс</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {report.agentPerformance.map((agent) => (
+                        <tr key={agent.name} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700">
+                                {agent.name.charAt(0)}
+                              </div>
+                              <span className="font-medium">{agent.name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold">{agent.totalResponses}</td>
+                          <td className="py-3 px-3 text-center text-green-600 font-medium">{agent.withinSLA}</td>
+                          <td className="py-3 px-3 text-center text-red-600 font-medium">{agent.violatedSLA}</td>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`px-2 py-1 rounded text-sm font-bold ${
+                              agent.slaCompliance >= 95 ? 'bg-green-100 text-green-700' :
+                              agent.slaCompliance >= 80 ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {agent.slaCompliance}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">{agent.avgMinutes} мин</td>
+                          <td className="py-3 px-3 text-center">{agent.medianMinutes} мин</td>
+                          <td className="py-3 px-3 text-center text-green-600">{agent.minMinutes} мин</td>
+                          <td className="py-3 px-3 text-center text-red-600">{agent.maxMinutes} мин</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </>
