@@ -154,7 +154,7 @@ export default async function handler(req: Request): Promise<Response> {
         END as resolution_hours
       FROM support_cases c
       LEFT JOIN support_channels ch ON ch.id = c.channel_id
-      LEFT JOIN support_agents a ON a.id = c.assigned_to
+      LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
       WHERE c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
       ORDER BY c.created_at DESC
@@ -176,7 +176,7 @@ export default async function handler(req: Request): Promise<Response> {
           ELSE NULL END
         ) as avg_response_minutes
       FROM support_messages m
-      LEFT JOIN support_agents a ON a.telegram_id = m.sender_id OR a.id = m.sender_id
+      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
