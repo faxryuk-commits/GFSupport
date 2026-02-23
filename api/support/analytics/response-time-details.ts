@@ -165,6 +165,7 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
               AND sm.created_at > cm.client_msg_at
+              AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
               AND sm.sender_role IN ('support', 'team', 'agent')
               AND sm.is_from_client = false
             ORDER BY sm.created_at ASC
@@ -175,6 +176,7 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
               AND sm.created_at > cm.client_msg_at
+              AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
               AND sm.sender_role IN ('support', 'team', 'agent')
               AND sm.is_from_client = false
           ) as response_at
@@ -230,10 +232,12 @@ export default async function handler(req: Request): Promise<Response> {
           cm.id, cm.channel_id, cm.sender_name,
           (SELECT MIN(created_at) FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
           (SELECT sender_name FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
            ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
@@ -281,11 +285,13 @@ export default async function handler(req: Request): Promise<Response> {
           cm.id, cm.channel_id,
           (SELECT sender_name FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
            ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
           (SELECT MIN(created_at) FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
           cm.client_msg_at

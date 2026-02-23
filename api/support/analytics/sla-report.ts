@@ -98,6 +98,7 @@ export default async function handler(req: Request): Promise<Response> {
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
               AND m2.created_at > cm.message_at
+              AND m2.created_at <= cm.message_at + INTERVAL '24 hours'
             ORDER BY m2.created_at ASC
             LIMIT 1
           ) as response_at,
@@ -108,6 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
               AND m2.created_at > cm.message_at
+              AND m2.created_at <= cm.message_at + INTERVAL '24 hours'
             ORDER BY m2.created_at ASC
             LIMIT 1
           ) as responder_name

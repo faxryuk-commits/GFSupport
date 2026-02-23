@@ -322,7 +322,8 @@ export default async function handler(req: Request): Promise<Response> {
             channel_id,
             sender_id,
             created_at as client_msg_at,
-            LAG(created_at) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_msg_at,
+            sender_role,
+            is_from_client,
             LAG(sender_role) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_sender_role,
             LAG(is_from_client) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_is_from_client
           FROM support_messages
@@ -350,6 +351,7 @@ export default async function handler(req: Request): Promise<Response> {
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
                 AND sm.created_at > cm.client_msg_at
+                AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
                 AND sm.sender_role IN ('support', 'team', 'agent')
                 AND sm.is_from_client = false
             ) as response_at
@@ -359,7 +361,6 @@ export default async function handler(req: Request): Promise<Response> {
           EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
         FROM response_times
         WHERE response_at IS NOT NULL
-          AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) >= 0
       `
       
       if (responseTimesResult.length > 0) {
@@ -602,6 +603,7 @@ export default async function handler(req: Request): Promise<Response> {
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
                 AND sm.created_at > cm.client_msg_at
+                AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
                 AND sm.sender_role IN ('support', 'team', 'agent')
                 AND sm.is_from_client = false
             ) as response_at
@@ -615,7 +617,6 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) as total_messages
         FROM response_times
         WHERE response_at IS NOT NULL
-          AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) >= 0
         GROUP BY sla_category
       `
       
