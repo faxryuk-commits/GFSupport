@@ -103,7 +103,20 @@ export default async function handler(req: Request): Promise<Response> {
         break
     }
 
+    // Если есть фильтр по SLA категории, получаем ID каналов
+    let channelFilter: string[] = []
+    if (slaCategory) {
+      const catChannels = await sql`
+        SELECT id FROM support_channels WHERE sla_category = ${slaCategory}
+      `
+      channelFilter = catChannels.map((c: any) => c.id)
+      if (channelFilter.length === 0) {
+        return json({ bucket, period, slaCategory, stats: {}, topResponders: [], details: [], messages: [] })
+      }
+    }
+
     // Получаем детальные данные о времени первого ответа
+    const useChannelFilter = channelFilter.length > 0
     const details = await sql`
       WITH client_messages AS (
         SELECT 
@@ -114,14 +127,13 @@ export default async function handler(req: Request): Promise<Response> {
           m.sender_name as client_name,
           m.sender_id as client_sender_id
         FROM support_messages m
-        ${slaCategory ? sql`JOIN support_channels ch2 ON ch2.id = m.channel_id AND ch2.sla_category = ${slaCategory}` : sql``}
         WHERE m.created_at >= ${startDate.toISOString()}
           AND m.created_at <= ${endDate.toISOString()}
           AND m.sender_role = 'client'
           AND m.is_from_client = true
+          AND (${!useChannelFilter} OR m.channel_id = ANY(${channelFilter.length > 0 ? channelFilter : ['__none__']}))
       ),
       response_times AS (
-        -- Находим первый ответ от команды на каждое сообщение клиента
         SELECT 
           cm.client_message_id,
           cm.channel_id,
@@ -133,7 +145,8 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
               AND sm.created_at > cm.client_msg_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+              AND sm.sender_role IN ('support', 'team', 'agent')
+              AND sm.is_from_client = false
             ORDER BY sm.created_at ASC
             LIMIT 1
           ) as response_message_id,
@@ -142,7 +155,8 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
               AND sm.created_at > cm.client_msg_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+              AND sm.sender_role IN ('support', 'team', 'agent')
+              AND sm.is_from_client = false
           ) as response_at
         FROM client_messages cm
       )
