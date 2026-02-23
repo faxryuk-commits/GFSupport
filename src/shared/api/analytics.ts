@@ -423,22 +423,31 @@ export interface DashboardMetrics {
   activeAgents: number
 }
 
-export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
+export async function fetchDashboardMetrics(period?: string): Promise<DashboardMetrics> {
   try {
     const [analytics, channelsData] = await Promise.all([
-      fetchAnalytics().catch(() => null),
+      fetchAnalytics(period).catch(() => null),
       apiGet<{ channels: any[] }>('/channels').catch(() => ({ channels: [] }))
     ])
 
     const channels = channelsData?.channels || []
     const awaitingChannels = channels.filter((c: any) => c?.awaitingReply).length
 
+    const rtd = analytics?.team?.responseTimeDistribution || []
+    const slaPercent = rtd.length > 0
+      ? Math.round(
+          ((rtd.find((d) => d.bucket === '5min')?.count || 0) +
+           (rtd.find((d) => d.bucket === '10min')?.count || 0)) /
+          Math.max(rtd.reduce((sum, d) => sum + d.count, 0), 1) * 100
+        )
+      : (analytics?.channels?.avgFirstResponse != null ? 95 : 100)
+
     return {
       waiting: awaitingChannels,
       avgResponseTime: analytics?.channels?.avgFirstResponse 
         ? `${Math.round(analytics.channels.avgFirstResponse)}м` 
         : '—',
-      slaPercent: 95,
+      slaPercent,
       urgentCases: analytics?.cases?.urgent || 0,
       resolvedToday: analytics?.cases?.resolved || 0,
       totalChannels: analytics?.channels?.total || 0,

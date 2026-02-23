@@ -433,7 +433,8 @@ export default async function handler(req: Request): Promise<Response> {
       const { messageId, text, channelId, telegramChatId, senderName, telegramId, senderRole } = await req.json()
       
       // senderRole: 'client' | 'support' | 'team' - used to decide on auto-reply
-      const isFromClient = senderRole === 'client' || !senderRole // default to client if not specified
+      // Сотрудники НЕ должны создавать тикеты: только явно client
+      const isFromClient = senderRole === 'client'
 
       if (!text || text.length < 3) {
         return json({ error: 'Text too short for analysis' }, 400)

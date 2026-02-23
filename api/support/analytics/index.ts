@@ -320,10 +320,13 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT 
             id,
             channel_id,
+            sender_id,
             created_at as client_msg_at
           FROM support_messages
-          WHERE (sender_role = 'client' OR is_from_client = true)
+          WHERE sender_role = 'client'
+            AND is_from_client = true
             AND created_at >= ${startDate.toISOString()}
+            AND created_at <= ${endDate.toISOString()}
         ),
         response_times AS (
           SELECT 
@@ -335,7 +338,9 @@ export default async function handler(req: Request): Promise<Response> {
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
                 AND sm.created_at > cm.client_msg_at
-                AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+                AND sm.sender_role IN ('support', 'team', 'agent')
+                AND sm.is_from_client = false
+                AND sm.sender_id != cm.sender_id
             ) as response_at
           FROM client_messages cm
         )

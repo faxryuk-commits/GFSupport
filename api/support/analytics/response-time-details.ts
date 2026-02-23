@@ -42,13 +42,35 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const url = new URL(req.url)
-  const bucket = url.searchParams.get('bucket') || 'all' // 5min, 10min, 30min, 60min, 60plus, all
+  const bucket = url.searchParams.get('bucket') || 'all'
   const period = url.searchParams.get('period') || '30d'
   const limit = parseInt(url.searchParams.get('limit') || '50')
+  const slaCategory = url.searchParams.get('sla_category') || null
+  const customFrom = url.searchParams.get('from')
+  const customTo = url.searchParams.get('to')
   
-  const periodDays = period === '7d' ? 7 : period === '90d' ? 90 : 30
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - periodDays)
+  let startDate: Date
+  let endDate: Date = new Date()
+  
+  if (customFrom && customTo) {
+    startDate = new Date(customFrom)
+    endDate = new Date(customTo)
+    endDate.setHours(23, 59, 59, 999)
+  } else {
+    let periodDays: number
+    switch (period) {
+      case 'today': periodDays = 1; break
+      case 'yesterday': periodDays = 2; break
+      case 'week':
+      case '7d': periodDays = 7; break
+      case 'month':
+      case '30d': periodDays = 30; break
+      case '90d': periodDays = 90; break
+      default: periodDays = 30
+    }
+    startDate = new Date()
+    startDate.setDate(startDate.getDate() - periodDays)
+  }
 
   try {
     // Определяем границы интервала в минутах
@@ -84,7 +106,6 @@ export default async function handler(req: Request): Promise<Response> {
     // Получаем детальные данные о времени первого ответа
     const details = await sql`
       WITH client_messages AS (
-        -- Все сообщения от клиентов за период
         SELECT 
           m.id as client_message_id,
           m.channel_id,
@@ -93,8 +114,11 @@ export default async function handler(req: Request): Promise<Response> {
           m.sender_name as client_name,
           m.sender_id as client_sender_id
         FROM support_messages m
+        ${slaCategory ? sql`JOIN support_channels ch2 ON ch2.id = m.channel_id AND ch2.sla_category = ${slaCategory}` : sql``}
         WHERE m.created_at >= ${startDate.toISOString()}
-          AND (m.sender_role = 'client' OR m.is_from_client = true)
+          AND m.created_at <= ${endDate.toISOString()}
+          AND m.sender_role = 'client'
+          AND m.is_from_client = true
       ),
       response_times AS (
         -- Находим первый ответ от команды на каждое сообщение клиента
@@ -261,10 +285,32 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT 10
     `
 
+    const mappedDetails = details.map((d: any) => ({
+      id: d.client_message_id,
+      channelId: d.channel_id,
+      channelName: d.channel_name || 'Неизвестный канал',
+      companyName: d.channel_name || 'Неизвестная компания',
+      channelPhoto: d.channel_photo,
+      clientName: d.client_name || 'Клиент',
+      clientMessage: d.client_message || '',
+      clientMessageTime: d.client_msg_at,
+      responderName: d.responder_name || 'Оператор',
+      responseMessage: d.response_message || '',
+      responseTime: d.response_at,
+      responseMinutes: Math.round(parseFloat(d.response_minutes || '0')),
+      wasEscalated: d.was_escalated || false,
+      // Alias fields for SLA category modal
+      senderName: d.client_name || 'Клиент',
+      textPreview: (d.client_message || '').slice(0, 80),
+      messageAt: d.client_msg_at,
+      respondedAt: d.response_at,
+      responderNameShort: d.responder_name || '-',
+    }))
+
     return json({
       bucket,
       period,
-      periodDays,
+      slaCategory,
       stats: {
         totalCount: parseInt(stats.total_count || '0'),
         avgMinutes: Math.round(parseFloat(stats.avg_minutes || '0')),
@@ -278,21 +324,8 @@ export default async function handler(req: Request): Promise<Response> {
         count: parseInt(r.response_count),
         avgMinutes: Math.round(parseFloat(r.avg_minutes || '0')),
       })),
-      details: details.map((d: any) => ({
-        id: d.client_message_id,
-        channelId: d.channel_id,
-        channelName: d.channel_name || 'Неизвестный канал',
-        companyName: d.channel_name || 'Неизвестная компания',
-        channelPhoto: d.channel_photo,
-        clientName: d.client_name || 'Клиент',
-        clientMessage: d.client_message || '',
-        clientMessageTime: d.client_msg_at,
-        responderName: d.responder_name || 'Оператор',
-        responseMessage: d.response_message || '',
-        responseTime: d.response_at,
-        responseMinutes: Math.round(parseFloat(d.response_minutes || '0')),
-        wasEscalated: d.was_escalated || false,
-      })),
+      details: mappedDetails,
+      messages: mappedDetails,
     })
   } catch (error: any) {
     console.error('Response time details error:', error)

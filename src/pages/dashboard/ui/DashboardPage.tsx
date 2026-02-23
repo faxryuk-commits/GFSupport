@@ -4,7 +4,7 @@ import {
   Clock, AlertTriangle, MessageSquare, ChevronRight, TrendingUp, TrendingDown,
   Users, Briefcase, Zap, RefreshCw, Bell, CheckCircle, ArrowUpRight,
   Activity, Target, BarChart3, Mic, Video, AlertCircle, ChevronDown, ChevronUp,
-  Lightbulb, Shield, ThumbsUp, ThumbsDown, TrendingDown as TrendDown
+  Lightbulb, Shield, ThumbsUp, ThumbsDown, TrendingDown as TrendDown, XCircle
 } from 'lucide-react'
 import { Avatar, Badge, EmptyState, LoadingState } from '@/shared/ui'
 import { fetchDashboardMetrics, fetchAnalytics, type DashboardMetrics, type AnalyticsData, type SlaCategory, SLA_CATEGORY_CONFIG } from '@/shared/api'
@@ -220,13 +220,16 @@ export function DashboardPage() {
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
   const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true)
   const [problemDetailsModal, setProblemDetailsModal] = useState<{ category: string; label: string } | null>(null)
+  const [slaCategoryModal, setSlaCategoryModal] = useState<{ category: string; label: string } | null>(null)
+  const [slaCategoryMessages, setSlaCategoryMessages] = useState<any[]>([])
+  const [slaCategoryLoading, setSlaCategoryLoading] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
       setError(null)
       
       const [metricsData, analyticsData, channelsData, agentsData] = await Promise.all([
-        fetchDashboardMetrics(),
+        fetchDashboardMetrics(dateRange),
         fetchAnalytics(dateRange),
         fetchChannels(),
         fetchAgents()
@@ -291,6 +294,29 @@ export function DashboardPage() {
   const handleRefresh = () => {
     setIsRefreshing(true)
     loadData()
+  }
+
+  const loadSlaCategoryDetails = async (category: string, label: string) => {
+    setSlaCategoryModal({ category, label })
+    setSlaCategoryLoading(true)
+    try {
+      const token = localStorage.getItem('support_agent_token')
+      const periodParam = dateRange.startsWith('custom:') 
+        ? `from=${dateRange.split(':')[1]}&to=${dateRange.split(':')[2]}`
+        : `period=${dateRange}`
+      const res = await fetch(
+        `/api/support/analytics/response-time-details?bucket=all&${periodParam}&sla_category=${encodeURIComponent(category)}&limit=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setSlaCategoryMessages(data.messages || [])
+      }
+    } catch (e) {
+      console.error('Failed to load SLA category details:', e)
+    } finally {
+      setSlaCategoryLoading(false)
+    }
   }
 
   // Generate AI recommendations - MUST be before any early returns
@@ -621,7 +647,10 @@ export function DashboardPage() {
                       <p className="text-xs text-slate-500">Ожидают ответа</p>
                     </div>
                     
-                    <div className="bg-white rounded-lg p-3 text-center">
+                    <button 
+                      onClick={() => loadSlaCategoryDetails(category, data.label)}
+                      className="bg-white rounded-lg p-3 text-center hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all cursor-pointer"
+                    >
                       <div className="flex items-center justify-center mb-1">
                         <Zap className="w-4 h-4 text-green-500" />
                       </div>
@@ -629,7 +658,7 @@ export function DashboardPage() {
                         {data.response.avgMinutes > 0 ? `${data.response.avgMinutes}м` : '—'}
                       </p>
                       <p className="text-xs text-slate-500">Среднее время</p>
-                    </div>
+                    </button>
                     
                     <div className="bg-white rounded-lg p-3 text-center">
                       <div className="flex items-center justify-center mb-1">
@@ -1604,6 +1633,69 @@ export function DashboardPage() {
           category={problemDetailsModal.category}
           categoryLabel={problemDetailsModal.label}
         />
+      )}
+
+      {/* SLA Category Details Modal */}
+      {slaCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSlaCategoryModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div>
+                <h3 className="font-semibold text-lg text-slate-900">
+                  {slaCategoryModal.label} — Время ответа
+                </h3>
+                <p className="text-sm text-slate-500">Сообщения клиентов и время ответа сотрудников</p>
+              </div>
+              <button onClick={() => setSlaCategoryModal(null)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[65vh]">
+              {slaCategoryLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <RefreshCw className="w-6 h-6 animate-spin text-blue-500" />
+                </div>
+              ) : slaCategoryMessages.length === 0 ? (
+                <div className="text-center py-16 text-slate-500">Нет данных за выбранный период</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50">
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-2 px-4 font-medium text-slate-600">Канал</th>
+                      <th className="text-left py-2 px-4 font-medium text-slate-600">Клиент</th>
+                      <th className="text-left py-2 px-4 font-medium text-slate-600">Сообщение</th>
+                      <th className="text-left py-2 px-4 font-medium text-slate-600">Время</th>
+                      <th className="text-center py-2 px-4 font-medium text-slate-600">Ответ</th>
+                      <th className="text-left py-2 px-4 font-medium text-slate-600">Ответил</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slaCategoryMessages.map((m: any, i: number) => (
+                      <tr key={i} className={`border-b border-slate-100 hover:bg-slate-50 ${!m.respondedAt ? 'bg-red-50' : m.responseMinutes > 10 ? 'bg-yellow-50' : ''}`}>
+                        <td className="py-2 px-4 font-medium">{m.channelName}</td>
+                        <td className="py-2 px-4">{m.senderName}</td>
+                        <td className="py-2 px-4 text-slate-500 max-w-48 truncate">{m.textPreview || '[медиа]'}</td>
+                        <td className="py-2 px-4 text-xs text-slate-500">
+                          {new Date(m.messageAt).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="py-2 px-4 text-center">
+                          {m.respondedAt ? (
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${m.responseMinutes <= 10 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {Math.round(m.responseMinutes)} мин
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">Нет ответа</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-4">{m.responderName || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </div>
