@@ -116,22 +116,42 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // Получаем детальные данные о времени первого ответа
+    // Считаем только ПЕРВОЕ сообщение клиента в серии (до ответа сотрудника)
     const useChannelFilter = channelFilter.length > 0
     const details = await sql`
-      WITH client_messages AS (
+      WITH all_channel_messages AS (
         SELECT 
-          m.id as client_message_id,
+          m.id,
           m.channel_id,
-          m.text_content as client_message,
-          m.created_at as client_msg_at,
-          m.sender_name as client_name,
-          m.sender_id as client_sender_id
+          m.text_content,
+          m.created_at,
+          m.sender_name,
+          m.sender_id,
+          m.sender_role,
+          m.is_from_client,
+          LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
+          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
         WHERE m.created_at >= ${startDate.toISOString()}
           AND m.created_at <= ${endDate.toISOString()}
-          AND m.sender_role = 'client'
-          AND m.is_from_client = true
           AND (${!useChannelFilter} OR m.channel_id = ANY(${channelFilter.length > 0 ? channelFilter : ['__none__']}))
+      ),
+      client_messages AS (
+        SELECT 
+          id as client_message_id,
+          channel_id,
+          text_content as client_message,
+          created_at as client_msg_at,
+          sender_name as client_name,
+          sender_id as client_sender_id
+        FROM all_channel_messages
+        WHERE sender_role = 'client'
+          AND is_from_client = true
+          AND (
+            prev_sender_role IS NULL
+            OR prev_sender_role IN ('support', 'team', 'agent')
+            OR prev_is_from_client = false
+          )
       ),
       response_times AS (
         SELECT 
@@ -188,46 +208,40 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT ${limit}
     `
 
-    // Статистика по интервалу
+    // Статистика по интервалу (только первое сообщение клиента в серии)
     const statsResult = await sql`
-      WITH client_messages AS (
+      WITH all_msgs AS (
         SELECT 
-          m.id,
-          m.channel_id,
-          m.created_at as client_msg_at,
-          m.sender_name
+          m.id, m.channel_id, m.created_at, m.sender_name, m.sender_role, m.is_from_client,
+          LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
+          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
         WHERE m.created_at >= ${startDate.toISOString()}
-          AND (m.sender_role = 'client' OR m.is_from_client = true)
+          AND m.created_at <= ${endDate.toISOString()}
+      ),
+      first_client AS (
+        SELECT id, channel_id, created_at as client_msg_at, sender_name
+        FROM all_msgs
+        WHERE sender_role = 'client' AND is_from_client = true
+          AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
       ),
       response_times AS (
         SELECT 
-          cm.id,
-          cm.channel_id,
-          cm.sender_name,
-          (
-            SELECT MIN(created_at)
-            FROM support_messages sm
-            WHERE sm.channel_id = cm.channel_id
-              AND sm.created_at > cm.client_msg_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+          cm.id, cm.channel_id, cm.sender_name,
+          (SELECT MIN(created_at) FROM support_messages sm
+           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
-          (
-            SELECT sender_name
-            FROM support_messages sm
-            WHERE sm.channel_id = cm.channel_id
-              AND sm.created_at > cm.client_msg_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
-            ORDER BY sm.created_at ASC
-            LIMIT 1
+          (SELECT sender_name FROM support_messages sm
+           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
+           ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
           cm.client_msg_at
-        FROM client_messages cm
+        FROM first_client cm
       ),
       filtered_responses AS (
-        SELECT 
-          *,
-          EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
+        SELECT *, EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
         FROM response_times
         WHERE response_at IS NOT NULL
           AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 >= ${minMinutes}
@@ -245,47 +259,43 @@ export default async function handler(req: Request): Promise<Response> {
 
     const stats = statsResult[0] || {}
 
-    // Топ операторов в этом интервале
+    // Топ операторов в этом интервале (только первое сообщение клиента в серии)
     const topResponders = await sql`
-      WITH client_messages AS (
+      WITH all_msgs AS (
         SELECT 
-          m.id,
-          m.channel_id,
-          m.created_at as client_msg_at
+          m.id, m.channel_id, m.created_at, m.sender_role, m.is_from_client,
+          LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
+          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
         WHERE m.created_at >= ${startDate.toISOString()}
-          AND (m.sender_role = 'client' OR m.is_from_client = true)
+          AND m.created_at <= ${endDate.toISOString()}
+      ),
+      first_client AS (
+        SELECT id, channel_id, created_at as client_msg_at
+        FROM all_msgs
+        WHERE sender_role = 'client' AND is_from_client = true
+          AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
       ),
       response_times AS (
         SELECT 
-          cm.id,
-          cm.channel_id,
-          (
-            SELECT sender_name
-            FROM support_messages sm
-            WHERE sm.channel_id = cm.channel_id
-              AND sm.created_at > cm.client_msg_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
-            ORDER BY sm.created_at ASC
-            LIMIT 1
+          cm.id, cm.channel_id,
+          (SELECT sender_name FROM support_messages sm
+           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
+           ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
-          (
-            SELECT MIN(created_at)
-            FROM support_messages sm
-            WHERE sm.channel_id = cm.channel_id
-              AND sm.created_at > cm.client_msg_at
-              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+          (SELECT MIN(created_at) FROM support_messages sm
+           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+             AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
           cm.client_msg_at
-        FROM client_messages cm
+        FROM first_client cm
       ),
       filtered_responses AS (
-        SELECT 
-          responder_name,
+        SELECT responder_name,
           EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
         FROM response_times
-        WHERE response_at IS NOT NULL
-          AND responder_name IS NOT NULL
+        WHERE response_at IS NOT NULL AND responder_name IS NOT NULL
           AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 >= ${minMinutes}
           AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 < ${maxMinutes}
       )

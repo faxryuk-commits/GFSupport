@@ -321,12 +321,24 @@ export default async function handler(req: Request): Promise<Response> {
             id,
             channel_id,
             sender_id,
-            created_at as client_msg_at
+            created_at as client_msg_at,
+            LAG(created_at) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_msg_at,
+            LAG(sender_role) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_sender_role,
+            LAG(is_from_client) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_is_from_client
           FROM support_messages
+          WHERE created_at >= ${startDate.toISOString()}
+            AND created_at <= ${endDate.toISOString()}
+        ),
+        first_client_messages AS (
+          SELECT id, channel_id, sender_id, client_msg_at
+          FROM client_messages
           WHERE sender_role = 'client'
             AND is_from_client = true
-            AND created_at >= ${startDate.toISOString()}
-            AND created_at <= ${endDate.toISOString()}
+            AND (
+              prev_sender_role IS NULL
+              OR prev_sender_role IN ('support', 'team', 'agent')
+              OR prev_is_from_client = false
+            )
         ),
         response_times AS (
           SELECT 
@@ -340,9 +352,8 @@ export default async function handler(req: Request): Promise<Response> {
                 AND sm.created_at > cm.client_msg_at
                 AND sm.sender_role IN ('support', 'team', 'agent')
                 AND sm.is_from_client = false
-                AND sm.sender_id != cm.sender_id
             ) as response_at
-          FROM client_messages cm
+          FROM first_client_messages cm
         )
         SELECT 
           EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
@@ -554,28 +565,53 @@ export default async function handler(req: Request): Promise<Response> {
       `
       
       // Время ответа по SLA категориям
+      // Считаем только ПЕРВОЕ сообщение клиента в серии (до ответа сотрудника)
       const slaResponseMetrics = await sql`
-        WITH response_times AS (
+        WITH all_messages AS (
           SELECT 
+            m.id,
+            m.channel_id,
+            m.sender_role,
+            m.is_from_client,
+            m.created_at,
             ch.sla_category,
-            cm.id as client_msg_id,
-            cm.created_at as client_msg_at,
+            LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
+            LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
+          FROM support_messages m
+          JOIN support_channels ch ON m.channel_id = ch.id
+          WHERE m.created_at >= ${startDate.toISOString()}
+            AND m.created_at <= ${endDate.toISOString()}
+        ),
+        first_client_messages AS (
+          SELECT id, channel_id, created_at as client_msg_at, sla_category
+          FROM all_messages
+          WHERE sender_role = 'client'
+            AND is_from_client = true
+            AND (
+              prev_sender_role IS NULL
+              OR prev_sender_role IN ('support', 'team', 'agent')
+              OR prev_is_from_client = false
+            )
+        ),
+        response_times AS (
+          SELECT 
+            cm.sla_category,
+            cm.client_msg_at,
             (
               SELECT MIN(sm.created_at)
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
-                AND sm.created_at > cm.created_at
-                AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false)
+                AND sm.created_at > cm.client_msg_at
+                AND sm.sender_role IN ('support', 'team', 'agent')
+                AND sm.is_from_client = false
             ) as response_at
-          FROM support_messages cm
-          JOIN support_channels ch ON cm.channel_id = ch.id
-          WHERE (cm.sender_role = 'client' OR cm.is_from_client = true)
-            AND cm.created_at >= ${startDate.toISOString()}
+          FROM first_client_messages cm
         )
         SELECT 
           COALESCE(sla_category, 'client') as sla_category,
           AVG(EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60) as avg_response_minutes,
           COUNT(*) FILTER (WHERE response_at IS NOT NULL) as responded_count,
+          COUNT(*) FILTER (WHERE response_at IS NOT NULL AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 <= 10) as within_sla,
           COUNT(*) as total_messages
         FROM response_times
         WHERE response_at IS NOT NULL
@@ -616,7 +652,9 @@ export default async function handler(req: Request): Promise<Response> {
             respondedCount: parseInt(responseData.responded_count || 0),
             totalMessages: parseInt(responseData.total_messages || 0),
           },
-          slaPercent: totalCases > 0 ? Math.round(resolvedCases / totalCases * 100) : 100,
+          slaPercent: parseInt(responseData.responded_count || 0) > 0 
+            ? Math.round(parseInt(responseData.within_sla || 0) / parseInt(responseData.responded_count || 1) * 100)
+            : 100,
         }
       }
     } catch (e) {

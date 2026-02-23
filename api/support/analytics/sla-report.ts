@@ -56,20 +56,32 @@ export default async function handler(req: Request): Promise<Response> {
     // 1. ВРЕМЯ ПЕРВОГО ОТВЕТА - детальный список
     // =============================================
     const firstResponseData = await sql`
-      WITH client_messages AS (
+      WITH all_msgs AS (
         SELECT 
           m.id,
           m.channel_id,
-          m.sender_name as client_name,
+          m.sender_name,
           m.text_content,
-          m.created_at as message_at,
-          c.name as channel_name
+          m.created_at,
+          m.sender_role,
+          m.is_from_client,
+          c.name as channel_name,
+          LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
+          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
         JOIN support_channels c ON c.id = m.channel_id
-        WHERE m.is_from_client = true
-          AND m.created_at >= ${fromDateTime}::timestamptz
+        WHERE m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
-        ORDER BY m.created_at DESC
+      ),
+      client_messages AS (
+        SELECT id, channel_id, sender_name as client_name, text_content, created_at as message_at, channel_name
+        FROM all_msgs
+        WHERE sender_role = 'client' AND is_from_client = true
+          AND (
+            prev_sender_role IS NULL
+            OR prev_sender_role IN ('support', 'team', 'agent')
+            OR prev_is_from_client = false
+          )
       ),
       first_responses AS (
         SELECT 
