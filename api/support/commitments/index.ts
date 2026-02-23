@@ -88,72 +88,15 @@ export default async function handler(req: Request): Promise<Response> {
       const channelId = url.searchParams.get('channelId')
       const dueSoon = url.searchParams.get('dueSoon') === 'true'
 
-      let commitments: any[]
-
-      if (dueSoon) {
-        // Обещания со сроком в ближайшие 24 часа
-        commitments = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
-          FROM support_commitments c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
-          WHERE c.status IN ('pending', 'overdue')
-            AND c.due_date IS NOT NULL
-            AND c.due_date < NOW() + INTERVAL '24 hours'
-          ORDER BY c.due_date ASC
-          LIMIT 50
-        `
-      } else if (channelId) {
-        commitments = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
-          FROM support_commitments c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
-          WHERE c.channel_id = ${channelId}
-          ORDER BY c.created_at DESC
-          LIMIT 100
-        `
-      } else if (agentId) {
-        commitments = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
-          FROM support_commitments c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
-          WHERE c.agent_id = ${agentId}
-            AND c.status = ${status}
-          ORDER BY c.due_date ASC NULLS LAST, c.created_at DESC
-          LIMIT 100
-        `
-      } else {
-        commitments = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
-          FROM support_commitments c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
-          WHERE c.status = ${status}
-          ORDER BY c.due_date ASC NULLS LAST, c.created_at DESC
-          LIMIT 100
-        `
-      }
-
-      // Подсчёт по статусам
-      const stats = await sql`
-        SELECT 
-          status,
-          COUNT(*) as count
-        FROM support_commitments
-        GROUP BY status
-      `
-
-      const statsMap = Object.fromEntries(
-        stats.map((s: any) => [s.status, parseInt(s.count)])
-      )
-
-      // Check for overdue commitments and update their status
+      // Сначала обновляем статусы просроченных обязательств
       await sql`
         UPDATE support_commitments 
-        SET status = 'overdue'
+        SET status = 'overdue', updated_at = NOW()
         WHERE status = 'pending' 
           AND due_date < NOW()
       `.catch(() => {})
 
-      // Recount stats after update
+      // Подсчёт по статусам (после обновления)
       const updatedStats = await sql`
         SELECT 
           status,
@@ -165,6 +108,59 @@ export default async function handler(req: Request): Promise<Response> {
         updatedStats.map((s: any) => [s.status, parseInt(s.count)])
       )
 
+      const page = parseInt(url.searchParams.get('page') || '1')
+      const limit = parseInt(url.searchParams.get('limit') || '50')
+      const offset = (page - 1) * limit
+
+      let commitments: any[]
+
+      if (dueSoon) {
+        commitments = await sql`
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
+          FROM support_commitments c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.status IN ('pending', 'overdue')
+            AND c.due_date IS NOT NULL
+            AND c.due_date < NOW() + INTERVAL '24 hours'
+          ORDER BY c.due_date ASC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+      } else if (channelId) {
+        commitments = await sql`
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
+          FROM support_commitments c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.channel_id = ${channelId}
+          ORDER BY c.created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+      } else if (agentId) {
+        // pending = pending + overdue
+        const statusCondition = status === 'pending' ? ['pending', 'overdue'] : [status]
+        commitments = await sql`
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
+          FROM support_commitments c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.agent_id = ${agentId}
+            AND c.status = ANY(${statusCondition})
+          ORDER BY c.due_date ASC NULLS LAST, c.created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+      } else {
+        // pending = pending + overdue
+        const statusCondition = status === 'pending' ? ['pending', 'overdue'] : [status]
+        commitments = await sql`
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
+          FROM support_commitments c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.status = ANY(${statusCondition})
+          ORDER BY c.due_date ASC NULLS LAST, c.created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `
+      }
+
+      const totalPendingAndOverdue = (updatedStatsMap.pending || 0) + (updatedStatsMap.overdue || 0)
+
       return json({
         commitments: commitments.map((c: any) => ({
           id: c.id,
@@ -175,8 +171,8 @@ export default async function handler(req: Request): Promise<Response> {
           messageId: c.message_id,
           agentId: c.agent_id,
           agentName: c.agent_name,
-          assignedTo: c.agent_id, // alias for frontend compatibility
-          assigneeName: c.agent_name, // alias for frontend compatibility
+          assignedTo: c.agent_id,
+          assigneeName: c.agent_name,
           senderRole: c.sender_role,
           text: c.commitment_text,
           type: c.commitment_type,
@@ -192,13 +188,15 @@ export default async function handler(req: Request): Promise<Response> {
           updatedAt: c.updated_at || c.created_at,
         })),
         total: commitments.length,
+        page,
+        limit,
+        hasMore: commitments.length === limit,
         stats: {
           pending: updatedStatsMap.pending || 0,
           completed: updatedStatsMap.completed || 0,
           overdue: updatedStatsMap.overdue || 0,
           cancelled: updatedStatsMap.cancelled || 0,
         },
-        // Response fields for frontend compatibility
         overdue: updatedStatsMap.overdue || 0,
         pending: updatedStatsMap.pending || 0,
         completed: updatedStatsMap.completed || 0,

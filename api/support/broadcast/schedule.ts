@@ -173,9 +173,9 @@ export default async function handler(req: Request) {
         return json({ error: 'Message text is required' }, 400)
       }
       
-      // Если sendNow=true, отправляем немедленно
+      // Если sendNow=true, создаём с status='pending' и scheduled_at=NOW()
+      // чтобы execute.ts мог сразу подхватить и отправить
       if (sendNow) {
-        // Подсчитываем количество получателей
         let recipientsCount = 0
         if (filterType === 'selected' && selectedChannels.length > 0) {
           recipientsCount = selectedChannels.length
@@ -198,18 +198,46 @@ export default async function handler(req: Request) {
             media_url, media_type, created_by, recipients_count
           ) VALUES (
             ${id}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
-            NOW(), ${timezone}, 'sending', ${senderType}, ${senderId || null}, ${senderName || null},
+            NOW(), ${timezone}, 'pending', ${senderType}, ${senderId || null}, ${senderName || null},
             ${mediaUrl || null}, ${mediaType || null}, ${createdBy}, ${recipientsCount}
           )
         `
         
-        return json({
-          success: true,
-          id,
-          sendNow: true,
-          recipientsCount,
-          message: 'Broadcast queued for immediate sending'
-        })
+        // Сразу вызываем execute для немедленной отправки
+        try {
+          const requestUrl = new URL(req.url)
+          const baseUrl = process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}`
+            : `${requestUrl.protocol}//${requestUrl.host}`
+          
+          const execRes = await fetch(`${baseUrl}/api/support/broadcast/execute`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer broadcast-auto-execute'
+            },
+          })
+          const execResult = await execRes.json()
+          console.log(`[Broadcast] Auto-execute result:`, execResult)
+          
+          return json({
+            success: true,
+            id,
+            sendNow: true,
+            recipientsCount,
+            executeResult: execResult,
+            message: 'Broadcast sent immediately'
+          })
+        } catch (execErr: any) {
+          console.log(`[Broadcast] Auto-execute failed, will be picked up by cron:`, execErr.message)
+          return json({
+            success: true,
+            id,
+            sendNow: true,
+            recipientsCount,
+            message: 'Broadcast queued for sending (will execute shortly)'
+          })
+        }
       }
       
       if (!scheduledAt) {

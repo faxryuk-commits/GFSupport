@@ -58,18 +58,23 @@ export default async function handler(req: Request) {
   const cronSecret = url.searchParams.get('secret')
   const expectedSecret = process.env.CRON_SECRET
 
-  // Если CRON_SECRET настроен, проверяем его
-  if (expectedSecret && cronSecret !== expectedSecret) {
-    // Также проверяем Authorization header для ручного вызова
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return json({ error: 'Unauthorized' }, 401)
-    }
+  // Авторизация: CRON_SECRET или Bearer токен
+  const authHeader = req.headers.get('Authorization')
+  if (expectedSecret && cronSecret !== expectedSecret && !authHeader?.startsWith('Bearer ')) {
+    return json({ error: 'Unauthorized' }, 401)
   }
 
   const sql = getSQL()
 
   try {
+    // Восстанавливаем зависшие рассылки (status = 'sending' более 5 минут)
+    await sql`
+      UPDATE support_broadcast_scheduled 
+      SET status = 'pending' 
+      WHERE status = 'sending' 
+        AND created_at < NOW() - INTERVAL '5 minutes'
+    `.catch(() => {})
+
     // Находим все pending рассылки, время которых наступило
     const pendingBroadcasts = await sql`
       SELECT * FROM support_broadcast_scheduled 

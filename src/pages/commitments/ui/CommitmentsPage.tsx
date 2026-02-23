@@ -45,31 +45,52 @@ export function CommitmentsPage() {
   const [commitments, setCommitments] = useState<Commitment[]>([])
   const [stats, setStats] = useState<Stats>({ pending: 0, completed: 0, overdue: 0, cancelled: 0 })
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'pending' | 'completed'>('pending')
   const [refreshing, setRefreshing] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
 
-  const loadCommitments = useCallback(async (showRefresh = false) => {
-    if (showRefresh) setRefreshing(true)
-    else setLoading(true)
+  const loadCommitments = useCallback(async (showRefresh = false, loadPage = 1) => {
+    if (loadPage === 1) {
+      if (showRefresh) setRefreshing(true)
+      else setLoading(true)
+    } else {
+      setLoadingMore(true)
+    }
     
     try {
       const token = localStorage.getItem('support_agent_token')
-      const res = await fetch(`/api/support/commitments?status=${statusFilter}`, {
+      const res = await fetch(`/api/support/commitments?status=${statusFilter}&page=${loadPage}&limit=50`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.ok) {
         const data = await res.json()
-        setCommitments(data.commitments || [])
+        const newItems = data.commitments || []
+        if (loadPage === 1) {
+          setCommitments(newItems)
+        } else {
+          setCommitments(prev => [...prev, ...newItems])
+        }
         setStats(data.stats || { pending: 0, completed: 0, overdue: 0, cancelled: 0 })
+        setHasMore(data.hasMore || false)
+        setPage(loadPage)
       }
     } catch (e) {
       console.error('Failed to load commitments:', e)
     } finally {
       setLoading(false)
       setRefreshing(false)
+      setLoadingMore(false)
     }
   }, [statusFilter])
+  
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      loadCommitments(false, page + 1)
+    }
+  }, [loadCommitments, loadingMore, hasMore, page])
 
   useEffect(() => {
     loadCommitments()
@@ -361,7 +382,7 @@ export function CommitmentsPage() {
         ) : (
           <div className="divide-y divide-slate-100">
             {commitments.map((commitment) => {
-              const overdue = commitment.status === 'pending' && isOverdue(commitment.dueDate)
+              const overdue = (commitment.status === 'pending' || commitment.status === 'overdue') && isOverdue(commitment.dueDate)
               
               return (
                 <div
@@ -372,7 +393,7 @@ export function CommitmentsPage() {
                 >
                   <div className="flex items-start gap-4">
                     {/* Checkbox */}
-                    {commitment.status === 'pending' && (
+                    {(commitment.status === 'pending' || commitment.status === 'overdue') && (
                       <button
                         onClick={() => handleComplete(commitment.id)}
                         className="mt-0.5 flex-shrink-0 w-6 h-6 rounded-full border-2 border-slate-300 hover:border-green-500 hover:bg-green-50 transition-colors flex items-center justify-center group"
@@ -454,7 +475,7 @@ export function CommitmentsPage() {
                         )}
 
                         {/* Send Reminder Button */}
-                        {commitment.status === 'pending' && !commitment.reminderSent && commitment.telegramChatId && (
+                        {(commitment.status === 'pending' || commitment.status === 'overdue') && !commitment.reminderSent && commitment.telegramChatId && (
                           <button
                             onClick={() => handleSendReminder(commitment.id)}
                             className="flex items-center gap-1 text-orange-500 hover:text-orange-600"
@@ -474,6 +495,30 @@ export function CommitmentsPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+        {/* Load More */}
+        {hasMore && !loading && commitments.length > 0 && (
+          <div className="p-4 text-center border-t border-slate-100">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="px-6 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+            >
+              {loadingMore ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Загрузка...
+                </span>
+              ) : (
+                `Загрузить ещё`
+              )}
+            </button>
+          </div>
+        )}
+        {commitments.length > 0 && (
+          <div className="px-4 py-2 text-xs text-slate-400 text-center border-t border-slate-100">
+            Показано {commitments.length} из {statusFilter === 'pending' ? stats.pending + stats.overdue : stats.completed}
           </div>
         )}
       </div>
@@ -618,7 +663,7 @@ function CalendarView({
                                 {commitment.agentName}
                               </div>
                             )}
-                            {commitment.status === 'pending' && !commitment.reminderSent && commitment.telegramChatId && (
+                            {(commitment.status === 'pending' || commitment.status === 'overdue') && !commitment.reminderSent && commitment.telegramChatId && (
                               <button
                                 onClick={() => onSendReminder(commitment.id)}
                                 className="mt-1 text-orange-500 hover:text-orange-600 flex items-center gap-0.5"
