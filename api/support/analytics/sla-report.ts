@@ -70,17 +70,22 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
         JOIN support_channels c ON c.id = m.channel_id
-        WHERE m.created_at >= ${fromDateTime}::timestamptz
+        WHERE m.created_at >= ${fromDateTime}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${toDateTime}::timestamptz
       ),
       client_messages AS (
         SELECT id, channel_id, sender_name as client_name, text_content, created_at as message_at, channel_name
         FROM all_msgs
         WHERE sender_role = 'client' AND is_from_client = true
+          AND created_at >= ${fromDateTime}::timestamptz
           AND (
             prev_sender_role IS NULL
             OR prev_sender_role IN ('support', 'team', 'agent')
             OR prev_is_from_client = false
+          )
+          AND NOT (
+            COALESCE(LENGTH(text_content), 0) <= 50
+            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
           )
       ),
       first_responses AS (
@@ -98,7 +103,7 @@ export default async function handler(req: Request): Promise<Response> {
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
               AND m2.created_at > cm.message_at
-              AND m2.created_at <= cm.message_at + INTERVAL '24 hours'
+              AND m2.created_at <= cm.message_at + INTERVAL '4 hours'
             ORDER BY m2.created_at ASC
             LIMIT 1
           ) as response_at,
@@ -109,7 +114,7 @@ export default async function handler(req: Request): Promise<Response> {
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
               AND m2.created_at > cm.message_at
-              AND m2.created_at <= cm.message_at + INTERVAL '24 hours'
+              AND m2.created_at <= cm.message_at + INTERVAL '4 hours'
             ORDER BY m2.created_at ASC
             LIMIT 1
           ) as responder_name

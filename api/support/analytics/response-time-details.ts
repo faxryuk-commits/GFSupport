@@ -117,6 +117,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Получаем детальные данные о времени первого ответа
     // Считаем только ПЕРВОЕ сообщение клиента в серии (до ответа сотрудника)
+    // Исключаем благодарности/подтверждения, расширяем LAG на 24ч до периода
     const useChannelFilter = channelFilter.length > 0
     const details = await sql`
       WITH all_channel_messages AS (
@@ -132,7 +133,7 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}
+        WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
           AND (${!useChannelFilter} OR m.channel_id = ANY(${channelFilter.length > 0 ? channelFilter : ['__none__']}))
       ),
@@ -147,10 +148,15 @@ export default async function handler(req: Request): Promise<Response> {
         FROM all_channel_messages
         WHERE sender_role = 'client'
           AND is_from_client = true
+          AND created_at >= ${startDate.toISOString()}
           AND (
             prev_sender_role IS NULL
             OR prev_sender_role IN ('support', 'team', 'agent')
             OR prev_is_from_client = false
+          )
+          AND NOT (
+            COALESCE(LENGTH(text_content), 0) <= 50
+            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
           )
       ),
       response_times AS (
@@ -165,7 +171,7 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
               AND sm.created_at > cm.client_msg_at
-              AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+              AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
               AND sm.sender_role IN ('support', 'team', 'agent')
               AND sm.is_from_client = false
             ORDER BY sm.created_at ASC
@@ -176,7 +182,7 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
               AND sm.created_at > cm.client_msg_at
-              AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+              AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
               AND sm.sender_role IN ('support', 'team', 'agent')
               AND sm.is_from_client = false
           ) as response_at
@@ -210,34 +216,39 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT ${limit}
     `
 
-    // Статистика по интервалу (только первое сообщение клиента в серии)
+    // Статистика по интервалу (единая логика с details)
     const statsResult = await sql`
       WITH all_msgs AS (
         SELECT 
-          m.id, m.channel_id, m.created_at, m.sender_name, m.sender_role, m.is_from_client,
+          m.id, m.channel_id, m.created_at, m.sender_name, m.text_content, m.sender_role, m.is_from_client,
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}
+        WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
       ),
       first_client AS (
         SELECT id, channel_id, created_at as client_msg_at, sender_name
         FROM all_msgs
         WHERE sender_role = 'client' AND is_from_client = true
+          AND created_at >= ${startDate.toISOString()}
           AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
+          AND NOT (
+            COALESCE(LENGTH(text_content), 0) <= 50
+            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+          )
       ),
       response_times AS (
         SELECT 
           cm.id, cm.channel_id, cm.sender_name,
           (SELECT MIN(created_at) FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
-             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
           (SELECT sender_name FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
-             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
            ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
@@ -263,35 +274,40 @@ export default async function handler(req: Request): Promise<Response> {
 
     const stats = statsResult[0] || {}
 
-    // Топ операторов в этом интервале (только первое сообщение клиента в серии)
+    // Топ операторов (единая логика)
     const topResponders = await sql`
       WITH all_msgs AS (
         SELECT 
-          m.id, m.channel_id, m.created_at, m.sender_role, m.is_from_client,
+          m.id, m.channel_id, m.created_at, m.text_content, m.sender_role, m.is_from_client,
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}
+        WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
       ),
       first_client AS (
         SELECT id, channel_id, created_at as client_msg_at
         FROM all_msgs
         WHERE sender_role = 'client' AND is_from_client = true
+          AND created_at >= ${startDate.toISOString()}
           AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
+          AND NOT (
+            COALESCE(LENGTH(text_content), 0) <= 50
+            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+          )
       ),
       response_times AS (
         SELECT 
           cm.id, cm.channel_id,
           (SELECT sender_name FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
-             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
            ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
           (SELECT MIN(created_at) FROM support_messages sm
            WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
-             AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+             AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
           cm.client_msg_at

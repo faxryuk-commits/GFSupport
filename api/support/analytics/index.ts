@@ -316,29 +316,35 @@ export default async function handler(req: Request): Promise<Response> {
       // Вычисляем время ответа для КАЖДОГО сообщения клиента ЗА ПЕРИОД
       // Находим следующий ответ поддержки после каждого сообщения клиента
       const responseTimesResult = await sql`
-        WITH client_messages AS (
+        WITH all_messages AS (
           SELECT 
             id,
             channel_id,
             sender_id,
-            created_at as client_msg_at,
+            text_content,
+            created_at,
             sender_role,
             is_from_client,
             LAG(sender_role) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_sender_role,
             LAG(is_from_client) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_is_from_client
           FROM support_messages
-          WHERE created_at >= ${startDate.toISOString()}
+          WHERE created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND created_at <= ${endDate.toISOString()}
         ),
         first_client_messages AS (
-          SELECT id, channel_id, sender_id, client_msg_at
-          FROM client_messages
+          SELECT id, channel_id, sender_id, created_at as client_msg_at
+          FROM all_messages
           WHERE sender_role = 'client'
             AND is_from_client = true
+            AND created_at >= ${startDate.toISOString()}
             AND (
               prev_sender_role IS NULL
               OR prev_sender_role IN ('support', 'team', 'agent')
               OR prev_is_from_client = false
+            )
+            AND NOT (
+              COALESCE(LENGTH(text_content), 0) <= 50
+              AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
             )
         ),
         response_times AS (
@@ -351,7 +357,7 @@ export default async function handler(req: Request): Promise<Response> {
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
                 AND sm.created_at > cm.client_msg_at
-                AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+                AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
                 AND sm.sender_role IN ('support', 'team', 'agent')
                 AND sm.is_from_client = false
             ) as response_at
@@ -572,6 +578,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT 
             m.id,
             m.channel_id,
+            m.text_content,
             m.sender_role,
             m.is_from_client,
             m.created_at,
@@ -580,7 +587,7 @@ export default async function handler(req: Request): Promise<Response> {
             LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
           FROM support_messages m
           JOIN support_channels ch ON m.channel_id = ch.id
-          WHERE m.created_at >= ${startDate.toISOString()}
+          WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND m.created_at <= ${endDate.toISOString()}
         ),
         first_client_messages AS (
@@ -588,10 +595,15 @@ export default async function handler(req: Request): Promise<Response> {
           FROM all_messages
           WHERE sender_role = 'client'
             AND is_from_client = true
+            AND created_at >= ${startDate.toISOString()}
             AND (
               prev_sender_role IS NULL
               OR prev_sender_role IN ('support', 'team', 'agent')
               OR prev_is_from_client = false
+            )
+            AND NOT (
+              COALESCE(LENGTH(text_content), 0) <= 50
+              AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
             )
         ),
         response_times AS (
@@ -603,7 +615,7 @@ export default async function handler(req: Request): Promise<Response> {
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
                 AND sm.created_at > cm.client_msg_at
-                AND sm.created_at <= cm.client_msg_at + INTERVAL '24 hours'
+                AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
                 AND sm.sender_role IN ('support', 'team', 'agent')
                 AND sm.is_from_client = false
             ) as response_at
