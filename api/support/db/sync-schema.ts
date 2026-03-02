@@ -180,6 +180,7 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT`; synced.push('messages.file_name') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size BIGINT`; synced.push('messages.file_size') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`; synced.push('messages.mime_type') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sender_username VARCHAR(255)`; synced.push('messages.sender_username') } catch (e) { /* exists */ }
 
     // ============ CHANNELS TABLE ============
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS last_client_message_at TIMESTAMP`; synced.push('channels.last_client_message_at') } catch (e) { /* exists */ }
@@ -205,11 +206,15 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`; synced.push('cases.created_by') } catch (e) { /* exists */ }
 
     // ============ AGENTS TABLE ============
+    try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS username VARCHAR(255)`; synced.push('agents.username') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS email VARCHAR(255)`; synced.push('agents.email') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`; synced.push('agents.phone') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS position VARCHAR(255)`; synced.push('agents.position') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS department VARCHAR(255)`; synced.push('agents.department') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`; synced.push('agents.password_hash') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'offline'`; synced.push('agents.status') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS avatar_url TEXT`; synced.push('agents.avatar_url') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb`; synced.push('agents.permissions') } catch (e) { /* exists */ }
 
     // ============ COMMITMENTS TABLE ============
     try { await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`; synced.push('commitments.sender_role') } catch (e) { /* exists */ }
