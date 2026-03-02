@@ -277,7 +277,7 @@ export default async function handler(req: Request): Promise<Response> {
         MAX(m.created_at) as last_message_at
       FROM support_messages m
       LEFT JOIN support_agents a ON (
-        a.telegram_id = m.sender_id::text 
+        a.telegram_id::text = m.sender_id::text 
         OR LOWER(a.username) = LOWER(m.sender_username)
         OR LOWER(a.name) = LOWER(m.sender_name)
       )

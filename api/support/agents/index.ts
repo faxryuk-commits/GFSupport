@@ -152,7 +152,7 @@ export default async function handler(req: Request): Promise<Response> {
         if (match.length > 0 && match[0].sender_id) {
           await sql`
             UPDATE support_agents 
-            SET telegram_id = ${match[0].sender_id}::text
+            SET telegram_id = ${match[0].sender_id}::bigint
             WHERE id = ${agent.id}
           `
           synced++
