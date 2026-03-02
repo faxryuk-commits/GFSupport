@@ -17,6 +17,10 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Database scripts
+restore-db.sql
+*.sql
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
