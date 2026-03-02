@@ -37,6 +37,130 @@ export default async function handler(req: Request): Promise<Response> {
   const errors: string[] = []
 
   try {
+    // ============ PREREQUISITE TABLES ============
+    // These are referenced by FK constraints in support_channels/cases
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS crm_companies (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: crm_companies (stub)')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS crm_managers (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: crm_managers (stub)')
+    } catch (e) { /* exists */ }
+
+    // ============ CORE TABLES ============
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_agents (
+        id VARCHAR(50) PRIMARY KEY,
+        telegram_id BIGINT UNIQUE,
+        name VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'agent',
+        is_active BOOLEAN DEFAULT true,
+        is_online BOOLEAN DEFAULT false,
+        photo_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_active_at TIMESTAMP
+      )`
+      synced.push('TABLE: support_agents')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_channels (
+        id VARCHAR(50) PRIMARY KEY,
+        telegram_chat_id BIGINT UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(20) DEFAULT 'client',
+        company_id VARCHAR(50),
+        lead_id VARCHAR(50),
+        is_active BOOLEAN DEFAULT true,
+        members_count INTEGER DEFAULT 0,
+        settings JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_message_at TIMESTAMP
+      )`
+      synced.push('TABLE: support_channels')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_messages (
+        id VARCHAR(100) PRIMARY KEY,
+        channel_id VARCHAR(50),
+        telegram_message_id BIGINT,
+        sender_id VARCHAR(100),
+        sender_name VARCHAR(255),
+        text_content TEXT,
+        media_type VARCHAR(20),
+        media_url TEXT,
+        is_from_client BOOLEAN DEFAULT true,
+        ai_category VARCHAR(100),
+        ai_sentiment VARCHAR(20),
+        ai_intent VARCHAR(100),
+        ai_urgency INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_messages')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_cases (
+        id VARCHAR(50) PRIMARY KEY,
+        channel_id VARCHAR(50),
+        company_id VARCHAR(50),
+        lead_id VARCHAR(50),
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        status VARCHAR(30) DEFAULT 'detected',
+        category VARCHAR(100),
+        priority VARCHAR(20) DEFAULT 'medium',
+        assigned_to VARCHAR(50),
+        first_response_at TIMESTAMP,
+        resolved_at TIMESTAMP,
+        resolution_time_minutes INTEGER,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_cases')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_automations (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        trigger_type VARCHAR(50) NOT NULL,
+        trigger_config JSONB DEFAULT '{}',
+        action_type VARCHAR(50) NOT NULL,
+        action_config JSONB DEFAULT '{}',
+        is_active BOOLEAN DEFAULT true,
+        execution_count INTEGER DEFAULT 0,
+        last_executed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_automations')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_commitments (
+        id VARCHAR(50) PRIMARY KEY,
+        channel_id VARCHAR(50),
+        message_id VARCHAR(100),
+        promised_by VARCHAR(255),
+        commitment_text TEXT,
+        due_date TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_commitments')
+    } catch (e) { /* exists */ }
+
     // ============ MESSAGES TABLE ============
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sender_role VARCHAR(20) DEFAULT 'client'`; synced.push('messages.sender_role') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false`; synced.push('messages.is_read') } catch (e) { /* exists */ }
