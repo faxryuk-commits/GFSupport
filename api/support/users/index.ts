@@ -243,25 +243,33 @@ export default async function handler(req: Request): Promise<Response> {
       const body = await req.json()
       const { id, telegramId, role, department, position, notes, isActive } = body
       
-      const identifier = id || telegramId
-      if (!identifier) {
+      if (!id && !telegramId) {
         return json({ error: 'id or telegramId is required' }, 400)
       }
       
-      const whereClause = id 
-        ? sql`id = ${id}`
-        : sql`telegram_id = ${telegramId}`
-      
-      await sql`
-        UPDATE support_users SET
-          role = COALESCE(${role}, role),
-          department = COALESCE(${department}, department),
-          position = COALESCE(${position}, position),
-          notes = COALESCE(${notes}, notes),
-          is_active = COALESCE(${isActive}, is_active),
-          updated_at = NOW()
-        WHERE ${whereClause}
-      `
+      if (id) {
+        await sql`
+          UPDATE support_users SET
+            role = COALESCE(${role ?? null}, role),
+            department = COALESCE(${department ?? null}, department),
+            position = COALESCE(${position ?? null}, position),
+            notes = COALESCE(${notes ?? null}, notes),
+            is_active = COALESCE(${isActive ?? null}, is_active),
+            updated_at = NOW()
+          WHERE id = ${id}
+        `
+      } else {
+        await sql`
+          UPDATE support_users SET
+            role = COALESCE(${role ?? null}, role),
+            department = COALESCE(${department ?? null}, department),
+            position = COALESCE(${position ?? null}, position),
+            notes = COALESCE(${notes ?? null}, notes),
+            is_active = COALESCE(${isActive ?? null}, is_active),
+            updated_at = NOW()
+          WHERE telegram_id = ${telegramId}
+        `
+      }
       
       return json({ success: true })
       
