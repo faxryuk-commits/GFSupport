@@ -61,7 +61,7 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       await sql`CREATE TABLE IF NOT EXISTS support_agents (
         id VARCHAR(50) PRIMARY KEY,
-        telegram_id BIGINT UNIQUE,
+        telegram_id TEXT UNIQUE,
         name VARCHAR(255) NOT NULL,
         role VARCHAR(20) DEFAULT 'agent',
         is_active BOOLEAN DEFAULT true,
