@@ -14,6 +14,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Brain,
   FileText,
   Sparkles,
@@ -21,6 +22,7 @@ import {
   Target,
   Rocket,
   CheckSquare,
+  Wrench,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -110,15 +112,25 @@ interface SidebarProps {
   onLogout?: () => void
 }
 
-const mainNavItems = [
-  { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
+const overviewItems = [
+  { path: '/overview', label: 'Поддержка', icon: MessageSquare },
+  { path: '/onboarding/analytics', label: 'Подключения', icon: Rocket },
+]
+
+const supportItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
   { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
   { path: '/sla-report', label: 'SLA Отчёт', icon: Target },
+]
+
+const onboardingItems = [
   { path: '/onboarding', label: 'Подключения', icon: Rocket },
   { path: '/my-tasks', label: 'Мои задачи', icon: CheckSquare },
+]
+
+const toolsItems = [
   { path: '/knowledge', label: 'База знаний', icon: Brain },
   { path: '/learning/problems', label: 'AI Обучение', icon: Sparkles },
   { path: '/docs', label: 'Документы', icon: FileText },
@@ -130,11 +142,21 @@ const bottomItems = [
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
+const OVERVIEW_OPEN_KEY = 'sidebar_overview_open'
+const TOOLS_OPEN_KEY = 'sidebar_tools_open'
 
 export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
+    return saved === 'true'
+  })
+  const [isOverviewOpen, setIsOverviewOpen] = useState(() => {
+    const saved = localStorage.getItem(OVERVIEW_OPEN_KEY)
+    return saved !== 'false'
+  })
+  const [isToolsOpen, setIsToolsOpen] = useState(() => {
+    const saved = localStorage.getItem(TOOLS_OPEN_KEY)
     return saved === 'true'
   })
   
@@ -214,6 +236,14 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed))
   }, [isCollapsed])
+
+  useEffect(() => {
+    localStorage.setItem(OVERVIEW_OPEN_KEY, String(isOverviewOpen))
+  }, [isOverviewOpen])
+
+  useEffect(() => {
+    localStorage.setItem(TOOLS_OPEN_KEY, String(isToolsOpen))
+  }, [isToolsOpen])
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/')
 
@@ -299,10 +329,78 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
 
       {/* Main Navigation */}
       <nav className="flex-1 px-3 overflow-y-auto">
-        <div className="space-y-1">
-          {mainNavItems.map(item => (
+        {/* Overview - expandable */}
+        <div className="mb-1">
+          <button
+            onClick={() => setIsOverviewOpen(!isOverviewOpen)}
+            title={isCollapsed ? 'Обзор' : undefined}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-slate-300 hover:bg-white/10 ${
+              isCollapsed ? 'justify-center px-3' : ''
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && (
+              <>
+                <span className="flex-1 font-medium text-left">Обзор</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${isOverviewOpen ? '' : '-rotate-90'}`} />
+              </>
+            )}
+          </button>
+          {isOverviewOpen && !isCollapsed && (
+            <div className="ml-4 pl-3 border-l border-white/10 space-y-0.5 mt-0.5">
+              {overviewItems.map(item => (
+                <NavItem key={item.path} {...item} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Support section */}
+        {!isCollapsed && (
+          <div className="px-4 pt-3 pb-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Поддержка</span>
+          </div>
+        )}
+        {isCollapsed && <div className="border-t border-white/10 mx-3 my-2" />}
+        <div className="space-y-0.5">
+          {supportItems.map(item => (
             <NavItem key={item.path} {...item} />
           ))}
+        </div>
+
+        {/* Onboarding section */}
+        {!isCollapsed && (
+          <div className="px-4 pt-4 pb-1">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Подключения</span>
+          </div>
+        )}
+        {isCollapsed && <div className="border-t border-white/10 mx-3 my-2" />}
+        <div className="space-y-0.5">
+          {onboardingItems.map(item => (
+            <NavItem key={item.path} {...item} />
+          ))}
+        </div>
+
+        {/* Tools - collapsible, collapsed by default */}
+        <div className="mt-3">
+          {!isCollapsed && (
+            <button
+              onClick={() => setIsToolsOpen(!isToolsOpen)}
+              className="w-full flex items-center gap-3 px-4 py-2 rounded-xl transition-all text-slate-400 hover:bg-white/10 hover:text-slate-300"
+            >
+              <Wrench className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1 font-medium text-left text-xs uppercase tracking-wider">Инструменты</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isToolsOpen ? '' : '-rotate-90'}`} />
+            </button>
+          )}
+          {isCollapsed && <div className="border-t border-white/10 mx-3 my-2" />}
+          {(isToolsOpen || isCollapsed) && (
+            <div className={`space-y-0.5 ${!isCollapsed ? 'mt-0.5' : ''}`}>
+              {toolsItems.map(item => (
+                <NavItem key={item.path} {...item} />
+              ))}
+            </div>
+          )}
         </div>
       </nav>
 
