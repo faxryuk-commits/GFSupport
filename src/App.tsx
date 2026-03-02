@@ -15,6 +15,15 @@ import {
 } from '@/pages'
 import { CommitmentsPage } from '@/pages/commitments'
 import { SLAReportPage } from '@/pages/sla-report'
+import {
+  OnboardingListPage,
+  OnboardingDetailPage,
+  OnboardingCreatePage,
+  MyTasksPage,
+  TemplatesPage,
+  OnboardingAnalyticsPage,
+  OnboardingSettingsPage,
+} from '@/pages/onboarding'
 import './index.css'
 
 export default function App() {
@@ -35,6 +44,15 @@ export default function App() {
         <Route path="/cases" element={<CasesPage />} />
         <Route path="/commitments" element={<CommitmentsPage />} />
         <Route path="/sla-report" element={<SLAReportPage />} />
+        
+        {/* Onboarding */}
+        <Route path="/onboarding" element={<OnboardingListPage />} />
+        <Route path="/onboarding/new" element={<OnboardingCreatePage />} />
+        <Route path="/onboarding/templates" element={<TemplatesPage />} />
+        <Route path="/onboarding/analytics" element={<OnboardingAnalyticsPage />} />
+        <Route path="/onboarding/settings" element={<OnboardingSettingsPage />} />
+        <Route path="/onboarding/:id" element={<OnboardingDetailPage />} />
+        <Route path="/my-tasks" element={<MyTasksPage />} />
         
         {/* Knowledge & Docs */}
         <Route path="/knowledge" element={<KnowledgePage />} />
