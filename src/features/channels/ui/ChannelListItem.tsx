@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Pin } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
 
@@ -35,7 +36,7 @@ const priorityColors = {
   urgent: 'bg-red-100 text-red-600',
 }
 
-export function ChannelListItem({ channel, isSelected, onClick }: ChannelListItemProps) {
+export const ChannelListItem = memo(function ChannelListItem({ channel, isSelected, onClick }: ChannelListItemProps) {
   return (
     <div
       onClick={onClick}
@@ -84,4 +85,4 @@ export function ChannelListItem({ channel, isSelected, onClick }: ChannelListIte
       )}
     </div>
   )
-}
+})

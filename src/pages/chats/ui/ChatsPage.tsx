@@ -268,26 +268,26 @@ export function ChatsPage() {
     }
   }, [])
 
-  // Real-time polling: обновление каналов каждые 3 секунды
+  // Real-time polling: обновление каналов каждые 5 секунд (только когда вкладка видима)
   useEffect(() => {
+    const channelsRef = { current: channels }
+    channelsRef.current = channels
+
     const pollChannels = async () => {
+      if (document.visibilityState === 'hidden') return
       try {
         const channelsData = await fetchChannels()
         const mappedChannels = channelsData.map(mapChannelToUI)
         
-        // Проверяем появились ли новые непрочитанные (для уведомления)
-        const oldTotalUnread = channels.reduce((sum, ch) => sum + (ch.unread || 0), 0)
+        const oldTotalUnread = channelsRef.current.reduce((sum, ch) => sum + (ch.unread || 0), 0)
         const newTotalUnread = mappedChannels.reduce((sum, ch) => sum + (ch.unread || 0), 0)
         
-        if (newTotalUnread > oldTotalUnread && document.visibilityState === 'hidden') {
-          // Browser notification когда вкладка скрыта
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Новые сообщения', {
-              body: `У вас ${newTotalUnread - oldTotalUnread} новых сообщений`,
-              icon: '/favicon.ico',
-              tag: 'unread-channels',
-            })
-          }
+        if (newTotalUnread > oldTotalUnread && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification('Новые сообщения', {
+            body: `У вас ${newTotalUnread - oldTotalUnread} новых сообщений`,
+            icon: '/favicon.ico',
+            tag: 'unread-channels',
+          })
         }
         
         setChannels(mappedChannels)
@@ -296,7 +296,6 @@ export function ChatsPage() {
       }
     }
 
-    // При возврате на вкладку - мгновенное обновление
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         pollChannels()
@@ -304,13 +303,13 @@ export function ChatsPage() {
     }
     
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    const pollInterval = setInterval(pollChannels, 3000)
+    const pollInterval = setInterval(pollChannels, 5000)
 
     return () => {
       clearInterval(pollInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [channels])
+  }, []) // убрана зависимость от channels — использует ref для доступа к актуальным данным
 
   // Глобальный обработчик Escape - выход из режима ответа/цитирования
   useEffect(() => {
@@ -332,60 +331,68 @@ export function ChatsPage() {
     return () => document.removeEventListener('keydown', handleGlobalEscape)
   }, [replyingTo, showQuickReplies, showChannelActions])
 
-  // Real-time polling: обновление сообщений каждые 2 секунды при открытом чате
+  // Ref для доступа к актуальным сообщениям в polling без пересоздания интервала
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const selectedChannelRef = useRef(selectedChannel)
+  selectedChannelRef.current = selectedChannel
+  const showNotificationRef = useRef(showNotification)
+  showNotificationRef.current = showNotification
+
+  // Real-time polling: обновление сообщений каждые 3 секунды при открытом чате
   useEffect(() => {
     if (!selectedChannel) return
-    if (messages.length === 0) return // Ждем первичной загрузки
+
+    let isActive = true
 
     const pollMessages = async () => {
-      try {
-        // Получаем timestamp последнего сообщения для запроса только новых
-        const lastMessage = messages[messages.length - 1]
-        const since = lastMessage?.date // ISO timestamp
+      if (document.visibilityState === 'hidden') return
+      const currentMessages = messagesRef.current
+      const currentChannel = selectedChannelRef.current
+      if (!currentChannel || currentMessages.length === 0 || !isActive) return
 
-        // Запрашиваем только новые сообщения после последнего
+      try {
+        const lastMessage = currentMessages[currentMessages.length - 1]
+        const since = lastMessage?.date
+
         const { messages: newData } = await fetchMessages(
-          selectedChannel.id, 
-          50, // меньший лимит для polling
+          currentChannel.id, 
+          50,
           { since }
         )
         
+        if (!isActive) return
+        
         if (newData.length > 0) {
           const newMappedMessages = newData.map(mapMessageToUI)
-          
-          // Фильтруем только реально новые сообщения (которых нет в текущем списке)
-          const existingIds = new Set(messages.map(m => m.id))
+          const existingIds = new Set(currentMessages.map(m => m.id))
           const trulyNewMessages = newMappedMessages.filter(m => !existingIds.has(m.id))
           
           if (trulyNewMessages.length > 0) {
-            // Показываем уведомления о новых сообщениях от клиентов
             const clientMessages = trulyNewMessages.filter(m => m.isClient)
             
             if (clientMessages.length > 0) {
-              // Play notification sound
               playMessageSoundIfEnabled()
               
-              // In-app уведомление
               clientMessages.forEach(msg => {
-                showNotification({
+                showNotificationRef.current({
                   type: 'message',
                   title: 'Новое сообщение',
                   message: msg.text || '[Медиа]',
                   senderName: msg.senderName,
                   senderAvatar: msg.senderAvatarUrl || undefined,
-                  channelName: selectedChannel.name,
-                  channelId: selectedChannel.id,
+                  channelName: currentChannel.name,
+                  channelId: currentChannel.id,
                   onClick: () => {
                     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
                   }
                 })
               })
               
-              // Browser notification когда вкладка скрыта
-              if (document.visibilityState === 'hidden' && 
-                  'Notification' in window && Notification.permission === 'granted') {
+              const isHidden = document.visibilityState !== 'visible'
+              if (isHidden && 'Notification' in window && Notification.permission === 'granted') {
                 clientMessages.forEach(msg => {
-                  new Notification(`${selectedChannel.name}: ${msg.senderName}`, {
+                  new Notification(`${currentChannel.name}: ${msg.senderName}`, {
                     body: msg.text || '[Медиа]',
                     icon: '/favicon.ico',
                     tag: `msg-${msg.id}`,
@@ -394,15 +401,11 @@ export function ChatsPage() {
               }
             }
 
-            // Добавляем новые сообщения в конец
             setMessages(prev => [...prev, ...trulyNewMessages])
             
-            // Прокрутка к новому сообщению если вкладка активна
-            if (document.visibilityState === 'visible') {
-              setTimeout(() => {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-              }, 100)
-            }
+            requestAnimationFrame(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+            })
           }
         }
       } catch (error) {
@@ -410,7 +413,6 @@ export function ChatsPage() {
       }
     }
 
-    // При возврате на вкладку - мгновенное обновление
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         pollMessages()
@@ -418,15 +420,14 @@ export function ChatsPage() {
     }
     
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    
-    // Быстрый polling каждые 2 секунды для актуальности данных
-    const pollInterval = setInterval(pollMessages, 2000)
+    const pollInterval = setInterval(pollMessages, 3000)
 
     return () => {
+      isActive = false
       clearInterval(pollInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [selectedChannel, messages, showNotification])
+  }, [selectedChannel?.id]) // зависимость только от ID канала, не от messages
 
   // Загрузка AI контекста для канала
   const loadAIContext = useCallback(async (channelId: string) => {
@@ -529,25 +530,37 @@ export function ChatsPage() {
     }
   }, [channelIdFromUrl, channels, selectedChannel, loadMessages])
 
-  // Прокрутка к последнему сообщению
+  // Прокрутка к последнему сообщению только при первичной загрузке или отправке
+  const prevMessagesLenRef = useRef(0)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const prevLen = prevMessagesLenRef.current
+    const curLen = messages.length
+    prevMessagesLenRef.current = curLen
+    // Прокрутка только когда добавились новые сообщения в конец (не при загрузке старых)
+    if (curLen > prevLen && prevLen > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    } else if (prevLen === 0 && curLen > 0) {
+      // Первичная загрузка — прокрутка без анимации
+      messagesEndRef.current?.scrollIntoView()
+    }
+  }, [messages.length])
 
-  const filteredChannels = channels.filter(ch => {
-    if (ch.isArchived && filter !== 'all') return false
-    const matchesSearch = ch.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesFilter = filter === 'all' || 
-      (filter === 'unread' && ch.unread > 0) ||
-      (filter === 'open' && ch.status === 'open') ||
-      (filter === 'pending' && ch.status === 'pending') ||
-      (filter === 'resolved' && ch.status === 'resolved')
-    return matchesSearch && matchesFilter
-  }).sort((a, b) => {
-    if (a.isPinned && !b.isPinned) return -1
-    if (!a.isPinned && b.isPinned) return 1
-    return 0
-  })
+  const filteredChannels = useMemo(() => {
+    return channels.filter(ch => {
+      if (ch.isArchived && filter !== 'all') return false
+      const matchesSearch = ch.name.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesFilter = filter === 'all' || 
+        (filter === 'unread' && ch.unread > 0) ||
+        (filter === 'open' && ch.status === 'open') ||
+        (filter === 'pending' && ch.status === 'pending') ||
+        (filter === 'resolved' && ch.status === 'resolved')
+      return matchesSearch && matchesFilter
+    }).sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1
+      if (!a.isPinned && b.isPinned) return 1
+      return 0
+    })
+  }, [channels, filter, searchQuery])
 
   const handleSendMessage = async (files?: AttachedFile[]) => {
     // Проверяем что есть текст или файлы

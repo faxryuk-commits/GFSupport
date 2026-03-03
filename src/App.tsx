@@ -1,80 +1,89 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/app/layouts'
-import { 
-  DashboardPage, 
-  ChatsPage,
-  ChannelsListPage,
-  CasesPage, 
-  BroadcastPage,
-  SettingsPage,
-  LoginPage,
-  RegisterPage,
-  KnowledgePage,
-  DocsPage,
-  ProblemAnalysisPage,
-} from '@/pages'
-import { CommitmentsPage } from '@/pages/commitments'
-import { SLAReportPage } from '@/pages/sla-report'
-import {
-  OnboardingListPage,
-  OnboardingDetailPage,
-  OnboardingCreatePage,
-  MyTasksPage,
-  TemplatesPage,
-  OnboardingAnalyticsPage,
-  OnboardingSettingsPage,
-} from '@/pages/onboarding'
+import { LoadingSpinner } from '@/shared/ui'
 import './index.css'
+
+const DashboardPage = lazy(() => import('@/pages/dashboard/ui/DashboardPage').then(m => ({ default: m.DashboardPage })))
+const ChatsPage = lazy(() => import('@/pages/chats/ui/ChatsPage').then(m => ({ default: m.ChatsPage })))
+const ChannelsListPage = lazy(() => import('@/pages/channels/ui/ChannelsListPage').then(m => ({ default: m.ChannelsListPage })))
+const CasesPage = lazy(() => import('@/pages/cases/ui/CasesPage').then(m => ({ default: m.CasesPage })))
+const BroadcastPage = lazy(() => import('@/pages/broadcast/ui/BroadcastPage').then(m => ({ default: m.BroadcastPage })))
+const SettingsPage = lazy(() => import('@/pages/settings/ui/SettingsPage').then(m => ({ default: m.SettingsPage })))
+const LoginPage = lazy(() => import('@/pages/login/ui/LoginPage').then(m => ({ default: m.LoginPage })))
+const RegisterPage = lazy(() => import('@/pages/register/ui/RegisterPage').then(m => ({ default: m.RegisterPage })))
+const KnowledgePage = lazy(() => import('@/pages/knowledge/ui/KnowledgePage').then(m => ({ default: m.KnowledgePage })))
+const DocsPage = lazy(() => import('@/pages/docs/ui/DocsPage').then(m => ({ default: m.DocsPage })))
+const ProblemAnalysisPage = lazy(() => import('@/pages/learning/ui/ProblemAnalysisPage'))
+const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
+const SLAReportPage = lazy(() => import('@/pages/sla-report/ui/SLAReportPage').then(m => ({ default: m.SLAReportPage })))
+const OnboardingListPage = lazy(() => import('@/pages/onboarding/OnboardingListPage').then(m => ({ default: m.OnboardingListPage })))
+const OnboardingDetailPage = lazy(() => import('@/pages/onboarding/OnboardingDetailPage').then(m => ({ default: m.OnboardingDetailPage })))
+const OnboardingCreatePage = lazy(() => import('@/pages/onboarding/OnboardingCreatePage').then(m => ({ default: m.OnboardingCreatePage })))
+const MyTasksPage = lazy(() => import('@/pages/onboarding/MyTasksPage').then(m => ({ default: m.MyTasksPage })))
+const TemplatesPage = lazy(() => import('@/pages/onboarding/TemplatesPage').then(m => ({ default: m.TemplatesPage })))
+const OnboardingAnalyticsPage = lazy(() => import('@/pages/onboarding/OnboardingAnalyticsPage').then(m => ({ default: m.OnboardingAnalyticsPage })))
+const OnboardingSettingsPage = lazy(() => import('@/pages/onboarding/OnboardingSettingsPage').then(m => ({ default: m.OnboardingSettingsPage })))
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-[400px]">
+      <LoadingSpinner size="lg" />
+    </div>
+  )
+}
 
 export default function App() {
   return (
-    <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/support/register/:token" element={<RegisterPage />} />
-      <Route path="/register/:token" element={<RegisterPage />} />
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/support/register/:token" element={<RegisterPage />} />
+        <Route path="/register/:token" element={<RegisterPage />} />
 
-      {/* Protected routes with layout */}
-      <Route element={<MainLayout />}>
-        {/* Main */}
-        <Route path="/overview" element={<DashboardPage />} />
-        <Route path="/chats" element={<ChatsPage />} />
-        <Route path="/chats/:id" element={<ChatsPage />} />
-        <Route path="/channels" element={<ChannelsListPage />} />
-        <Route path="/cases" element={<CasesPage />} />
-        <Route path="/commitments" element={<CommitmentsPage />} />
-        <Route path="/sla-report" element={<SLAReportPage />} />
-        
-        {/* Onboarding */}
-        <Route path="/onboarding" element={<OnboardingListPage />} />
-        <Route path="/onboarding/new" element={<OnboardingCreatePage />} />
-        <Route path="/onboarding/templates" element={<TemplatesPage />} />
-        <Route path="/onboarding/analytics" element={<OnboardingAnalyticsPage />} />
-        <Route path="/onboarding/settings" element={<OnboardingSettingsPage />} />
-        <Route path="/onboarding/:id" element={<OnboardingDetailPage />} />
-        <Route path="/my-tasks" element={<MyTasksPage />} />
-        
-        {/* Knowledge & Docs */}
-        <Route path="/knowledge" element={<KnowledgePage />} />
-        <Route path="/docs" element={<DocsPage />} />
-        
-        {/* Learning & AI */}
-        <Route path="/learning/problems" element={<ProblemAnalysisPage />} />
-        
-        {/* Manage */}
-        <Route path="/broadcast" element={<BroadcastPage />} />
-        
-        {/* Settings */}
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
+        {/* Protected routes with layout */}
+        <Route element={<MainLayout />}>
+          {/* Main */}
+          <Route path="/overview" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+          <Route path="/chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
+          <Route path="/chats/:id" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
+          <Route path="/channels" element={<Suspense fallback={<PageLoader />}><ChannelsListPage /></Suspense>} />
+          <Route path="/cases" element={<Suspense fallback={<PageLoader />}><CasesPage /></Suspense>} />
+          <Route path="/commitments" element={<Suspense fallback={<PageLoader />}><CommitmentsPage /></Suspense>} />
+          <Route path="/sla-report" element={<Suspense fallback={<PageLoader />}><SLAReportPage /></Suspense>} />
+          
+          {/* Onboarding */}
+          <Route path="/onboarding" element={<Suspense fallback={<PageLoader />}><OnboardingListPage /></Suspense>} />
+          <Route path="/onboarding/new" element={<Suspense fallback={<PageLoader />}><OnboardingCreatePage /></Suspense>} />
+          <Route path="/onboarding/templates" element={<Suspense fallback={<PageLoader />}><TemplatesPage /></Suspense>} />
+          <Route path="/onboarding/analytics" element={<Suspense fallback={<PageLoader />}><OnboardingAnalyticsPage /></Suspense>} />
+          <Route path="/onboarding/settings" element={<Suspense fallback={<PageLoader />}><OnboardingSettingsPage /></Suspense>} />
+          <Route path="/onboarding/:id" element={<Suspense fallback={<PageLoader />}><OnboardingDetailPage /></Suspense>} />
+          <Route path="/my-tasks" element={<Suspense fallback={<PageLoader />}><MyTasksPage /></Suspense>} />
+          
+          {/* Knowledge & Docs */}
+          <Route path="/knowledge" element={<Suspense fallback={<PageLoader />}><KnowledgePage /></Suspense>} />
+          <Route path="/docs" element={<Suspense fallback={<PageLoader />}><DocsPage /></Suspense>} />
+          
+          {/* Learning & AI */}
+          <Route path="/learning/problems" element={<Suspense fallback={<PageLoader />}><ProblemAnalysisPage /></Suspense>} />
+          
+          {/* Manage */}
+          <Route path="/broadcast" element={<Suspense fallback={<PageLoader />}><BroadcastPage /></Suspense>} />
+          
+          {/* Settings */}
+          <Route path="/settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+        </Route>
 
-      {/* Redirects - old routes to settings */}
-      <Route path="/reports" element={<Navigate to="/overview" replace />} />
-      <Route path="/team" element={<Navigate to="/settings" replace />} />
-      <Route path="/users" element={<Navigate to="/settings" replace />} />
-      <Route path="/automations" element={<Navigate to="/settings" replace />} />
-      <Route path="/" element={<Navigate to="/overview" replace />} />
-      <Route path="*" element={<Navigate to="/overview" replace />} />
-    </Routes>
+        {/* Redirects - old routes to settings */}
+        <Route path="/reports" element={<Navigate to="/overview" replace />} />
+        <Route path="/team" element={<Navigate to="/settings" replace />} />
+        <Route path="/users" element={<Navigate to="/settings" replace />} />
+        <Route path="/automations" element={<Navigate to="/settings" replace />} />
+        <Route path="/" element={<Navigate to="/overview" replace />} />
+        <Route path="*" element={<Navigate to="/overview" replace />} />
+      </Routes>
+    </Suspense>
   )
 }

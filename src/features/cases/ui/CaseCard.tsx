@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '@/shared/ui'
@@ -42,7 +43,7 @@ function formatRelativeTime(dateStr: string): string {
   return 'только что'
 }
 
-export function CaseCard({ caseItem, onView, onDragStart, isDragging }: CaseCardProps) {
+export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, isDragging }: CaseCardProps) {
   const priority = CASE_PRIORITY_CONFIG[caseItem.priority]
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -166,4 +167,4 @@ export function CaseCard({ caseItem, onView, onDragStart, isDragging }: CaseCard
       </div>
     </div>
   )
-}
+})

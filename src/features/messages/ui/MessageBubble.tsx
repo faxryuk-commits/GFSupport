@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo } from 'react'
 import { 
   Check, CheckCheck, Reply, Copy, Forward, 
   Image as ImageIcon, File, Play, Pause, Download,
@@ -295,7 +295,7 @@ function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; 
   }
 }
 
-export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage }: MessageBubbleProps) {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
   const [showReactionPicker, setShowReactionPicker] = useState(false)
@@ -635,4 +635,4 @@ export function MessageBubble({ message, onReply, onCopy, onForward, onDelete, o
       )}
     </>
   )
-}
+})

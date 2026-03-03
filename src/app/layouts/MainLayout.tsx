@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary } from '@/shared/ui'
@@ -23,8 +23,51 @@ export function MainLayout() {
   // Background notifications via Web Worker (works when tab is hidden)
   useBackgroundNotifications()
 
+  const fetchCounts = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('support_agent_token')
+      if (!token) return
+      if (document.visibilityState === 'hidden') return
+
+      const headers = { Authorization: `Bearer ${token}` }
+
+      const [channelsRes, casesRes, commitmentsRes, agentsRes] = await Promise.all([
+        fetch('/api/support/channels?active=true', { headers }),
+        fetch('/api/support/cases?status=detected,in_progress,waiting,blocked&limit=500', { headers }),
+        fetch('/api/support/commitments?status=pending', { headers }),
+        fetch('/api/support/agents', { headers }),
+      ])
+
+      if (channelsRes.ok) {
+        const data = await channelsRes.json()
+        const unread = data.channels?.reduce((sum: number, ch: { unreadCount?: number }) => 
+          sum + (ch.unreadCount || 0), 0) || 0
+        setUnreadChats(unread)
+      }
+
+      if (casesRes.ok) {
+        const data = await casesRes.json()
+        setOpenCases(data.cases?.length || 0)
+      }
+      
+      if (commitmentsRes.ok) {
+        const data = await commitmentsRes.json()
+        setPendingCommitments(data.stats?.pending || data.commitments?.length || 0)
+      }
+      
+      if (agentsRes.ok) {
+        const data = await agentsRes.json()
+        const online = data.agents?.filter((a: { status?: string }) => a.status === 'online').length || 0
+        setOnlineAgentsCount(online)
+      }
+      
+      setLastUpdated(Date.now())
+    } catch {
+      // Игнорируем ошибки - покажем нули
+    }
+  }, [])
+
   useEffect(() => {
-    // Загружаем данные агента из localStorage
     const agentData = localStorage.getItem('support_agent')
     if (agentData) {
       try {
@@ -37,7 +80,6 @@ export function MainLayout() {
           avatarUrl: agent.avatarUrl || agent.avatar_url
         })
       } catch {
-        // Fallback на старый формат
         const auth = localStorage.getItem('auth')
         if (auth) {
           const parsed = JSON.parse(auth)
@@ -46,13 +88,10 @@ export function MainLayout() {
       }
     }
 
-    // Загружаем счётчики при старте
     fetchCounts()
     
-    // Периодическое обновление счётчиков каждые 30 секунд
     const countsInterval = setInterval(fetchCounts, 30000)
     
-    // Также обновляем при возврате на вкладку
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchCounts()
@@ -64,59 +103,7 @@ export function MainLayout() {
       clearInterval(countsInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [])
-
-  const fetchCounts = async () => {
-    try {
-      const token = localStorage.getItem('support_agent_token')
-      if (!token) return
-
-      // Каналы с непрочитанными
-      const channelsRes = await fetch('/api/support/channels?active=true', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (channelsRes.ok) {
-        const data = await channelsRes.json()
-        const unread = data.channels?.reduce((sum: number, ch: { unreadCount?: number }) => 
-          sum + (ch.unreadCount || 0), 0) || 0
-        setUnreadChats(unread)
-      }
-
-      // Открытые кейсы (только активные статусы)
-      const casesRes = await fetch('/api/support/cases?status=detected,in_progress,waiting,blocked&limit=500', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (casesRes.ok) {
-        const data = await casesRes.json()
-        // Используем длину массива отфильтрованных кейсов, не total
-        setOpenCases(data.cases?.length || 0)
-      }
-      
-      // Активные обязательства (pending)
-      const commitmentsRes = await fetch('/api/support/commitments?status=pending', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (commitmentsRes.ok) {
-        const data = await commitmentsRes.json()
-        setPendingCommitments(data.stats?.pending || data.commitments?.length || 0)
-      }
-      
-      // Онлайн сотрудники
-      const agentsRes = await fetch('/api/support/agents', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (agentsRes.ok) {
-        const data = await agentsRes.json()
-        const online = data.agents?.filter((a: { status?: string }) => a.status === 'online').length || 0
-        setOnlineAgentsCount(online)
-      }
-      
-      // Обновляем timestamp последнего обновления - для анимации в сайдбаре
-      setLastUpdated(Date.now())
-    } catch {
-      // Игнорируем ошибки - покажем нули
-    }
-  }
+  }, [fetchCounts])
 
   // Sound notifications for new cases and messages
   useEffect(() => {
