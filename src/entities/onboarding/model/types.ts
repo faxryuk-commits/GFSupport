@@ -72,6 +72,7 @@ export interface TeamAssignment {
 
 export interface OnboardingConnection {
   id: string
+  channelId: string | null
   clientName: string
   clientContact: string | null
   clientPhone: string | null
@@ -186,6 +187,7 @@ export interface MyTask {
 }
 
 export interface CreateConnectionData {
+  channelId: string
   clientName: string
   clientContact?: string
   clientPhone?: string

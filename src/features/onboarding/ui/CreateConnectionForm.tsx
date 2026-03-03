@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
+import type { Channel } from '@/entities/channel'
 import type { OnboardingTemplate, CreateConnectionData, TeamAssignment } from '@/entities/onboarding'
 
 interface CreateConnectionFormProps {
   templates: OnboardingTemplate[]
   agents: Array<{ id: string; name: string }>
+  channels: Channel[]
   onSubmit: (data: CreateConnectionData) => void
   onCancel: () => void
 }
@@ -15,16 +17,22 @@ const labelClass = 'mb-1 block text-sm font-medium text-gray-700'
 export function CreateConnectionForm({
   templates,
   agents,
+  channels,
   onSubmit,
   onCancel,
 }: CreateConnectionFormProps) {
-  const [clientName, setClientName] = useState('')
+  const [channelId, setChannelId] = useState('')
   const [clientContact, setClientContact] = useState('')
   const [clientPhone, setClientPhone] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [team, setTeam] = useState<TeamAssignment>({})
   const [deadline, setDeadline] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const selectedChannel = useMemo(
+    () => channels.find((c) => c.id === channelId),
+    [channels, channelId],
+  )
 
   const selectedTemplate = useMemo(
     () => templates.find((t) => t.id === templateId),
@@ -50,7 +58,7 @@ export function CreateConnectionForm({
 
   const validate = (): boolean => {
     const next: Record<string, string> = {}
-    if (!clientName.trim()) next.clientName = 'Обязательное поле'
+    if (!channelId) next.channelId = 'Выберите канал'
     if (!templateId) next.templateId = 'Выберите шаблон'
     setErrors(next)
     return Object.keys(next).length === 0
@@ -59,8 +67,10 @@ export function CreateConnectionForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
+    const clientName = selectedChannel?.companyName || selectedChannel?.name || ''
     onSubmit({
-      clientName: clientName.trim(),
+      channelId,
+      clientName,
       clientContact: clientContact.trim() || undefined,
       clientPhone: clientPhone.trim() || undefined,
       templateId,
@@ -73,16 +83,27 @@ export function CreateConnectionForm({
     <form onSubmit={handleSubmit} className="mx-auto max-w-xl space-y-5">
       <div>
         <label className={labelClass}>
-          Клиент <span className="text-red-500">*</span>
+          Канал <span className="text-red-500">*</span>
         </label>
-        <input
+        <select
           className={inputClass}
-          value={clientName}
-          onChange={(e) => setClientName(e.target.value)}
-          placeholder="Название компании"
-        />
-        {errors.clientName && (
-          <p className="mt-1 text-xs text-red-500">{errors.clientName}</p>
+          value={channelId}
+          onChange={(e) => setChannelId(e.target.value)}
+        >
+          <option value="">Выберите канал</option>
+          {channels.map((ch) => (
+            <option key={ch.id} value={ch.id}>
+              {ch.name}{ch.companyName && ch.companyName !== ch.name ? ` — ${ch.companyName}` : ''}
+            </option>
+          ))}
+        </select>
+        {errors.channelId && (
+          <p className="mt-1 text-xs text-red-500">{errors.channelId}</p>
+        )}
+        {selectedChannel && (
+          <p className="mt-1 text-xs text-slate-500">
+            Клиент: {selectedChannel.companyName || selectedChannel.name}
+          </p>
         )}
       </div>
 

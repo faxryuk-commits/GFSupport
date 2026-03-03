@@ -128,6 +128,7 @@ const supportItems = [
 const onboardingItems = [
   { path: '/onboarding', label: 'Подключения', icon: Rocket },
   { path: '/my-tasks', label: 'Мои задачи', icon: CheckSquare },
+  { path: '/onboarding/templates', label: 'Шаблоны', icon: FileText },
 ]
 
 const toolsItems = [

@@ -125,6 +125,7 @@ export default async function handler(req: Request): Promise<Response> {
 
         return {
           id: c.id,
+          channelId: c.channel_id || null,
           clientName: c.client_name,
           clientContact: c.client_contact,
           clientPhone: c.client_phone,
@@ -183,7 +184,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     try {
       const body = await req.json()
-      const { client_name, template_id, client_contact, client_phone, manager_id, team, planned_deadline } = body
+      const { channel_id, client_name, template_id, client_contact, client_phone, manager_id, team, planned_deadline } = body
 
       if (!client_name || !template_id) {
         return json({ error: 'client_name and template_id are required' }, 400)
@@ -201,10 +202,10 @@ export default async function handler(req: Request): Promise<Response> {
 
       await sql`
         INSERT INTO onboarding_connections (
-          id, client_name, client_contact, client_phone, template_id,
+          id, channel_id, client_name, client_contact, client_phone, template_id,
           manager_id, team, planned_deadline, created_by
         ) VALUES (
-          ${connId}, ${client_name}, ${client_contact || null}, ${client_phone || null},
+          ${connId}, ${channel_id || null}, ${client_name}, ${client_contact || null}, ${client_phone || null},
           ${template_id}, ${manager_id || null}, ${JSON.stringify(teamJson)}, ${deadline}, ${manager_id || null}
         )
       `

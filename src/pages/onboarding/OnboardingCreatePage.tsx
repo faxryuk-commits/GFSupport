@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useToast, LoadingSpinner } from '@/shared/ui'
+import type { Channel } from '@/entities/channel'
 import type { OnboardingTemplate, CreateConnectionData } from '@/entities/onboarding'
 import { CreateConnectionForm } from '@/features/onboarding/ui/CreateConnectionForm'
 import { fetchTemplates, createConnection } from '@/shared/api/onboarding'
 import { fetchAgents } from '@/shared/api/agents'
+import { fetchChannels } from '@/shared/api/channels'
 
 export function OnboardingCreatePage() {
   const navigate = useNavigate()
@@ -13,16 +15,19 @@ export function OnboardingCreatePage() {
 
   const [templates, setTemplates] = useState<OnboardingTemplate[]>([])
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
+  const [channels, setChannels] = useState<Channel[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([
       fetchTemplates(),
       fetchAgents().catch(() => []),
+      fetchChannels().catch(() => []),
     ])
-      .then(([tpls, agentsList]) => {
+      .then(([tpls, agentsList, channelsList]) => {
         setTemplates(tpls)
         setAgents(agentsList.map(a => ({ id: a.id, name: a.name })))
+        setChannels(channelsList.filter(c => c.type === 'client'))
       })
       .catch(() => {
         toast.error('Ошибка', 'Не удалось загрузить данные')
@@ -67,6 +72,7 @@ export function OnboardingCreatePage() {
       <CreateConnectionForm
         templates={templates}
         agents={agents}
+        channels={channels}
         onSubmit={handleSubmit}
         onCancel={handleCancel}
       />

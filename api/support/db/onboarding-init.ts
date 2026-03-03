@@ -107,6 +107,7 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       CREATE TABLE IF NOT EXISTS onboarding_connections (
         id VARCHAR(64) PRIMARY KEY,
+        channel_id VARCHAR(64),
         client_name VARCHAR(255) NOT NULL,
         client_contact VARCHAR(255),
         client_phone VARCHAR(50),
@@ -125,6 +126,11 @@ export default async function handler(req: Request): Promise<Response> {
       )
     `
     created.push('onboarding_connections')
+
+    // Migration: add channel_id to existing table
+    try {
+      await sql`ALTER TABLE onboarding_connections ADD COLUMN IF NOT EXISTS channel_id VARCHAR(64)`
+    } catch { /* column may already exist */ }
 
     await sql`CREATE INDEX IF NOT EXISTS idx_connections_status ON onboarding_connections(status)`
     await sql`CREATE INDEX IF NOT EXISTS idx_connections_manager ON onboarding_connections(manager_id)`

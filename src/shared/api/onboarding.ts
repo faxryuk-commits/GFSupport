@@ -44,7 +44,17 @@ export async function fetchConnection(id: string): Promise<OnboardingConnection>
 export async function createConnection(
   data: CreateConnectionData
 ): Promise<OnboardingConnection> {
-  return apiPost<{ connection?: OnboardingConnection }>('/onboarding', data).then(
+  const payload = {
+    channel_id: data.channelId,
+    client_name: data.clientName,
+    client_contact: data.clientContact,
+    client_phone: data.clientPhone,
+    template_id: data.templateId,
+    manager_id: data.managerId,
+    team: data.team,
+    planned_deadline: data.plannedDeadline,
+  }
+  return apiPost<{ connection?: OnboardingConnection }>('/onboarding', payload).then(
     (r) => r.connection as OnboardingConnection
   )
 }
