@@ -145,7 +145,23 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     try {
       const body = await req.json()
-      const { agentId, managerId, telegramId, telegramUsername } = body
+
+      // Support both new and legacy payload shapes:
+      // - new: { agentId|managerId, telegramId?, telegramUsername? }
+      // - legacy (from some clients): { id, username, first_name }
+      let { agentId, managerId, telegramId, telegramUsername } = body as any
+
+      if (!telegramId && body?.id) telegramId = body.id
+      if (!telegramUsername && body?.username) telegramUsername = body.username
+
+      // If agentId/managerId not provided, try to infer agentId from auth token
+      // Token format from login: agent_${agent.id}_${timestampBase36}
+      if (!agentId && !managerId) {
+        const auth = req.headers.get('Authorization') || ''
+        const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+        const m = token.match(/^agent_([^_]+)_/)
+        if (m?.[1]) agentId = m[1]
+      }
 
       if (!telegramId && !telegramUsername) {
         return json({ error: 'telegramId or telegramUsername is required' }, 400)

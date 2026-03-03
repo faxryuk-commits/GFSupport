@@ -195,39 +195,85 @@ async function upsertUser(sql: any, user: any, channelId: string, role: string) 
   const telegramId = String(user.id)
   
   try {
+    // Ensure support_users exists (webhook can be first touchpoint)
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_users (
+          id VARCHAR(100) PRIMARY KEY,
+          telegram_id BIGINT UNIQUE,
+          telegram_username VARCHAR(255),
+          name VARCHAR(255) NOT NULL,
+          photo_url TEXT,
+          role VARCHAR(50) DEFAULT 'client',
+          department VARCHAR(100),
+          position VARCHAR(255),
+          is_active BOOLEAN DEFAULT true,
+          notes TEXT,
+          channels JSONB DEFAULT '[]',
+          metrics JSONB DEFAULT '{}',
+          first_seen_at TIMESTAMP DEFAULT NOW(),
+          last_seen_at TIMESTAMP DEFAULT NOW(),
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_users_telegram ON support_users(telegram_id)`.catch(() => {})
+      await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON support_users(role)`.catch(() => {})
+    } catch {
+      // ignore
+    }
+
     // Check if user exists
     const existing = await sql`
-      SELECT id, channels FROM support_users WHERE telegram_id = ${telegramId} LIMIT 1
+      SELECT id, channels FROM support_users WHERE telegram_id::text = ${telegramId} LIMIT 1
     `
     
     if (existing[0]) {
       // Update existing user
-      const channels = existing[0].channels || []
-      if (!channels.includes(channelId)) {
-        channels.push(channelId)
+      const rawChannels = existing[0].channels || []
+      const channels: Array<{ id: string; name?: string | null; addedAt?: string | null } | string> =
+        Array.isArray(rawChannels) ? rawChannels : []
+
+      // Normalize to array of objects {id,...}
+      const normalized = channels
+        .map((c: any) => {
+          if (!c) return null
+          if (typeof c === 'string') return { id: c, name: null, addedAt: null }
+          if (typeof c === 'object' && typeof c.id === 'string') return c
+          return null
+        })
+        .filter(Boolean) as Array<{ id: string; name?: string | null; addedAt?: string | null }>
+
+      const hasChannel = normalized.some((c) => c.id === channelId)
+      if (!hasChannel) {
+        normalized.push({ id: channelId, name: null, addedAt: new Date().toISOString() })
       }
       
       await sql`
         UPDATE support_users SET
           telegram_username = COALESCE(${user.username}, telegram_username),
           name = COALESCE(${user.fullName}, name),
-          channels = ${JSON.stringify(channels)},
+          channels = ${JSON.stringify(normalized)}::jsonb,
           last_seen_at = NOW(),
           updated_at = NOW()
-        WHERE telegram_id = ${telegramId}
+        WHERE telegram_id::text = ${telegramId}
       `
     } else {
       // Create new user
       const userId = generateId('user')
       const userRole = role === 'client' ? 'client' : role === 'support' ? 'employee' : 'partner'
+      const channels = [{ id: channelId, name: null, addedAt: new Date().toISOString() }]
       
       await sql`
         INSERT INTO support_users (id, telegram_id, telegram_username, name, role, channels, first_seen_at, last_seen_at)
-        VALUES (${userId}, ${telegramId}, ${user.username}, ${user.fullName}, ${userRole}, ${JSON.stringify([channelId])}, NOW(), NOW())
+        VALUES (${userId}, ${telegramId}, ${user.username}, ${user.fullName}, ${userRole}, ${JSON.stringify(channels)}::jsonb, NOW(), NOW())
         ON CONFLICT (telegram_id) DO UPDATE SET
           telegram_username = COALESCE(EXCLUDED.telegram_username, support_users.telegram_username),
           name = COALESCE(EXCLUDED.name, support_users.name),
-          last_seen_at = NOW()
+          role = COALESCE(support_users.role, EXCLUDED.role),
+          channels = COALESCE(support_users.channels, EXCLUDED.channels),
+          last_seen_at = NOW(),
+          updated_at = NOW()
       `
     }
   } catch (e) {
@@ -1152,9 +1198,13 @@ export default async function handler(req: Request): Promise<Response> {
     
     console.log(`[Webhook] Identified sender: ${user.fullName} (${user.id}) as ${identification.role} via ${identification.source}`)
 
-    // Auto-bind telegram_id to agent if identified by username but telegram_id not set
-    // This allows employees using Telegram to be synced with system profiles
-    if (identification.agentId && identification.source === 'username' && user.id) {
+    // Auto-bind telegram_id to agent when we can confidently map sender to a profile.
+    // This helps sync Telegram accounts with system profiles and improves analytics (FRT, SLA).
+    if (
+      identification.agentId &&
+      (identification.source === 'username' || identification.source === 'name_pattern') &&
+      user.id
+    ) {
       const bound = await autoBindTelegramId(sql, identification.agentId, user.id)
       if (bound) {
         console.log(`[Webhook] Auto-bound telegram_id ${user.id} to agent ${identification.agentId}`)

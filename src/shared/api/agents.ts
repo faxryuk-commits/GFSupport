@@ -53,5 +53,13 @@ export async function bindTelegramAccount(telegramData: {
   username?: string
   first_name?: string
 }): Promise<void> {
-  await apiPost('/agents/bind', telegramData)
+  const token = localStorage.getItem('support_agent_token') || ''
+  const m = token.match(/^agent_([^_]+)_/)
+  const agentId = m?.[1]
+
+  await apiPost('/agents/bind', {
+    agentId,
+    telegramId: telegramData.id,
+    telegramUsername: telegramData.username,
+  })
 }

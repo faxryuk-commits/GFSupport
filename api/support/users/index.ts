@@ -84,7 +84,18 @@ export default async function handler(req: Request): Promise<Response> {
       } else if (channelId) {
         users = await sql`
           SELECT * FROM support_users 
-          WHERE channels ? ${channelId} AND is_active = true
+          WHERE is_active = true AND (
+            channels @> ${JSON.stringify([channelId])}::jsonb
+            OR EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(COALESCE(channels, '[]'::jsonb)) elem
+              WHERE (
+                (jsonb_typeof(elem) = 'object' AND elem->>'id' = ${channelId})
+                OR
+                (jsonb_typeof(elem) = 'string' AND elem::text = to_jsonb(${channelId})::text)
+              )
+            )
+          )
           ORDER BY last_seen_at DESC
         `
       } else if (search) {
@@ -112,17 +123,20 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Calculate metrics for employees if requested
       if (withMetrics) {
-        const employeeIds = users.filter((u: any) => u.role === 'employee').map((u: any) => u.telegram_id)
+        const employeeIds = users
+          .filter((u: any) => u.role === 'employee')
+          .map((u: any) => (u.telegram_id != null ? String(u.telegram_id) : null))
+          .filter(Boolean) as string[]
         
         if (employeeIds.length > 0) {
           // Get response metrics (simplified query without window functions in aggregate)
           const metrics = await sql`
             SELECT 
-              sender_id,
+              sender_id::text as sender_id,
               COUNT(*) as total_messages,
               COUNT(CASE WHEN sender_role != 'client' THEN 1 END) as responses
             FROM support_messages
-            WHERE sender_id = ANY(${employeeIds})
+            WHERE sender_id::text = ANY(${employeeIds})
               AND created_at > NOW() - INTERVAL '30 days'
             GROUP BY sender_id
           `
@@ -211,7 +225,7 @@ export default async function handler(req: Request): Promise<Response> {
             telegram_username = COALESCE(${telegramUsername}, telegram_username),
             name = COALESCE(${name}, name),
             photo_url = COALESCE(${photoUrl}, photo_url),
-            channels = ${JSON.stringify(channels)},
+            channels = ${JSON.stringify(channels)}::jsonb,
             last_seen_at = NOW(),
             updated_at = NOW()
           WHERE telegram_id = ${telegramId}
@@ -225,7 +239,7 @@ export default async function handler(req: Request): Promise<Response> {
         
         await sql`
           INSERT INTO support_users (id, telegram_id, telegram_username, name, photo_url, channels)
-          VALUES (${userId}, ${telegramId}, ${telegramUsername}, ${name}, ${photoUrl}, ${JSON.stringify(channels)})
+          VALUES (${userId}, ${telegramId}, ${telegramUsername}, ${name}, ${photoUrl}, ${JSON.stringify(channels)}::jsonb)
         `
         
         return json({ success: true, action: 'created', userId })
