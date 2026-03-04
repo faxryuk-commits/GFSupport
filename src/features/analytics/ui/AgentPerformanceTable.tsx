@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { Users, Trophy, Zap, Target, ArrowUpDown, Crown, Shield, Heart } from 'lucide-react'
+import { Users, Trophy, Zap, Target, ArrowUpDown, Crown, Shield, Heart, ChevronDown, Lightbulb } from 'lucide-react'
+import { getRecommendations, type TeamAvg } from './AgentRecommendations'
 
 export interface AgentPerformanceData {
   name: string
@@ -130,9 +131,22 @@ export function AgentPerformanceTable({ agents }: Props) {
     })
   }, [agents, sortField, sortAsc])
 
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null)
+
   const active = agents.filter(a => !a.isInactive)
   const maxResponses = Math.max(...active.map(a => a.totalResponses), 1)
   const maxChars = Math.max(...active.map(a => a.totalChars), 1)
+
+  const teamAvg = useMemo(() => {
+    if (active.length === 0) return { sla: 0, avgTime: 0, responses: 0, engagement: 0 }
+    const withSla = active.filter(a => a.slaCompliance !== null && a.totalResponses > 0)
+    return {
+      sla: withSla.length > 0 ? Math.round(withSla.reduce((s, a) => s + (a.slaCompliance ?? 0), 0) / withSla.length) : 0,
+      avgTime: Math.round(active.filter(a => a.totalResponses > 0).reduce((s, a) => s + a.avgMinutes, 0) / Math.max(active.filter(a => a.totalResponses > 0).length, 1) * 10) / 10,
+      responses: Math.round(active.reduce((s, a) => s + a.totalResponses, 0) / active.length),
+      engagement: Math.round(active.reduce((s, a) => s + a.engagementScore, 0) / active.length),
+    }
+  }, [active])
 
   const bestSLA = active.filter(a => a.slaCompliance !== null && a.totalResponses > 0).length > 0
     ? active.filter(a => a.slaCompliance !== null && a.totalResponses > 0)
@@ -215,7 +229,15 @@ export function AgentPerformanceTable({ agents }: Props) {
           </thead>
           <tbody>
             {sorted.map((agent) => (
-              <AgentRow key={agent.name} agent={agent} maxResponses={maxResponses} maxChars={maxChars} />
+              <AgentRowWithRecs
+                key={agent.name}
+                agent={agent}
+                maxResponses={maxResponses}
+                maxChars={maxChars}
+                teamAvg={teamAvg}
+                isExpanded={expandedAgent === agent.name}
+                onToggle={() => setExpandedAgent(expandedAgent === agent.name ? null : agent.name)}
+              />
             ))}
           </tbody>
         </table>
@@ -224,10 +246,60 @@ export function AgentPerformanceTable({ agents }: Props) {
   )
 }
 
-function AgentRow({ agent, maxResponses, maxChars }: {
+function AgentRowWithRecs({ agent, maxResponses, maxChars, teamAvg, isExpanded, onToggle }: {
   agent: AgentPerformanceData
   maxResponses: number
   maxChars: number
+  teamAvg: TeamAvg
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const recs = useMemo(() => getRecommendations(agent, teamAvg), [agent, teamAvg])
+  const typeColors = {
+    warning: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: 'text-red-500' },
+    improvement: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', icon: 'text-amber-500' },
+    strength: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', icon: 'text-green-500' },
+  }
+  const hasIssues = recs.some(r => r.type === 'warning' || r.type === 'improvement')
+
+  return (
+    <>
+      <AgentRow agent={agent} maxResponses={maxResponses} maxChars={maxChars} onToggle={onToggle} isExpanded={isExpanded} hasIssues={hasIssues} />
+      {isExpanded && (
+        <tr>
+          <td colSpan={10} className="p-0">
+            <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200">
+              <div className="flex items-center gap-2 mb-2">
+                <Lightbulb className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-semibold text-slate-700">Рекомендации для {agent.name}</span>
+              </div>
+              <div className="space-y-1.5">
+                {recs.map((rec, i) => {
+                  const colors = typeColors[rec.type]
+                  const Icon = rec.icon
+                  return (
+                    <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg border ${colors.bg} ${colors.border}`}>
+                      <Icon className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${colors.icon}`} />
+                      <span className={`text-xs ${colors.text}`}>{rec.text}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function AgentRow({ agent, maxResponses, maxChars, onToggle, isExpanded, hasIssues }: {
+  agent: AgentPerformanceData
+  maxResponses: number
+  maxChars: number
+  onToggle: () => void
+  isExpanded: boolean
+  hasIssues: boolean
 }) {
   const role = ROLE_CONFIG[agent.role] || ROLE_CONFIG.agent
   const RoleIcon = role.icon
@@ -240,14 +312,17 @@ function AgentRow({ agent, maxResponses, maxChars }: {
       : agent.violatedSLA === 0 && agent.totalResponses > 0 ? 'bg-green-50/30' : ''
 
   return (
-    <tr className={`border-b border-slate-100 hover:bg-slate-50 ${rowBg}`}>
+    <tr className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${rowBg}`} onClick={onToggle}>
       {/* Name + Role + Inactive */}
       <td className="py-3 px-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700 flex-shrink-0">
+          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700 flex-shrink-0 relative">
             {agent.name.charAt(0)}
+            {hasIssues && !agent.isInactive && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-white" />
+            )}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <span className="font-medium block truncate">{agent.name}</span>
             <div className="flex items-center gap-1">
               <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${role.bg} ${role.color}`}>
@@ -261,6 +336,7 @@ function AgentRow({ agent, maxResponses, maxChars }: {
               )}
             </div>
           </div>
+          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
         </div>
       </td>
 
