@@ -534,61 +534,51 @@ export default async function handler(req: Request): Promise<Response> {
 
     // =============================================
     // 8.6. АВТОСИНХРОНИЗАЦИЯ СОТРУДНИКОВ
-    // Создаём записи в support_agents для сотрудников из crm_managers,
-    // а также для отправителей с sender_role='support'/'team' без записи в agents
+    // Создаём записи в support_agents из support_users (role='employee')
     // =============================================
     try {
-      // 1. Синхронизация из crm_managers → support_agents
       await sql`
         INSERT INTO support_agents (id, name, username, telegram_id, role)
         SELECT
-          'agent_' || COALESCE(cm.telegram_id, cm.id::text),
-          cm.name,
-          REPLACE(COALESCE(cm.telegram_username, ''), '@', ''),
-          cm.telegram_id,
+          'agent_' || u.telegram_id::text,
+          u.name,
+          REPLACE(COALESCE(u.telegram_username, ''), '@', ''),
+          u.telegram_id::text,
           'agent'
-        FROM crm_managers cm
-        WHERE cm.name IS NOT NULL
-          AND cm.telegram_id IS NOT NULL
+        FROM support_users u
+        WHERE u.role = 'employee'
+          AND u.is_active = true
+          AND u.telegram_id IS NOT NULL
+          AND u.name IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM support_agents sa
-            WHERE sa.telegram_id = cm.telegram_id
-               OR LOWER(sa.name) = LOWER(cm.name)
+            WHERE sa.telegram_id = u.telegram_id::text
           )
         ON CONFLICT (id) DO NOTHING
       `
-    } catch (e) { /* crm sync failed */ }
+    } catch (e) { /* user sync failed */ }
 
     try {
-      // 2. Синхронизация из сообщений: отправители с role='support'/'team' без записи
+      // Также обновим username/name для существующих агентов из support_users
       await sql`
-        INSERT INTO support_agents (id, name, username, telegram_id, role)
-        SELECT DISTINCT ON (m.sender_id)
-          'agent_' || m.sender_id,
-          m.sender_name,
-          m.sender_username,
-          m.sender_id,
-          'agent'
-        FROM support_messages m
-        WHERE m.sender_role IN ('support', 'team')
-          AND m.is_from_client = false
-          AND m.sender_id IS NOT NULL
-          AND m.sender_name IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM support_agents sa
-            WHERE sa.telegram_id = m.sender_id
-               OR LOWER(sa.name) = LOWER(m.sender_name)
-          )
-        ON CONFLICT (id) DO NOTHING
+        UPDATE support_agents sa
+        SET
+          username = COALESCE(NULLIF(REPLACE(u.telegram_username, '@', ''), ''), sa.username),
+          telegram_id = COALESCE(u.telegram_id::text, sa.telegram_id)
+        FROM support_users u
+        WHERE u.role = 'employee'
+          AND u.is_active = true
+          AND u.telegram_id IS NOT NULL
+          AND LOWER(sa.name) = LOWER(u.name)
+          AND (sa.telegram_id IS NULL OR sa.telegram_id = '')
       `
-    } catch (e) { /* msg sync failed */ }
+    } catch (e) { /* update failed */ }
 
     // =============================================
     // 8.7. ПЕРЕКЛАССИФИКАЦИЯ СООБЩЕНИЙ СОТРУДНИКОВ
     // Сообщения от известных агентов, помеченные как 'client', обновляем на 'support'
     // =============================================
     try {
-      // По telegram_id
       await sql`
         UPDATE support_messages m
         SET sender_role = 'support', is_from_client = false
@@ -600,7 +590,6 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
       `
-      // По username
       await sql`
         UPDATE support_messages m
         SET sender_role = 'support', is_from_client = false
@@ -608,11 +597,42 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE m.sender_role = 'client'
           AND m.sender_username IS NOT NULL
           AND a.username IS NOT NULL
+          AND a.username != ''
           AND LOWER(a.username) = LOWER(m.sender_username)
           AND m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
       `
+      await sql`
+        UPDATE support_messages m
+        SET sender_role = 'support', is_from_client = false
+        FROM support_agents a
+        WHERE m.sender_role = 'client'
+          AND m.sender_name IS NOT NULL
+          AND a.name IS NOT NULL
+          AND LOWER(a.name) = LOWER(m.sender_name)
+          AND m.created_at >= ${fromDateTime}::timestamptz
+          AND m.created_at <= ${toDateTime}::timestamptz
+      `
     } catch (e) { /* reclassify failed */ }
+
+    // Прямая переклассификация из support_users (employee) без промежуточного support_agents
+    try {
+      await sql`
+        UPDATE support_messages m
+        SET sender_role = 'support', is_from_client = false
+        FROM support_users u
+        WHERE u.role = 'employee'
+          AND u.is_active = true
+          AND m.sender_role = 'client'
+          AND m.created_at >= ${fromDateTime}::timestamptz
+          AND m.created_at <= ${toDateTime}::timestamptz
+          AND (
+            (m.sender_id IS NOT NULL AND u.telegram_id IS NOT NULL AND m.sender_id = u.telegram_id::text)
+            OR (m.sender_username IS NOT NULL AND u.telegram_username IS NOT NULL AND LOWER(REPLACE(u.telegram_username, '@', '')) = LOWER(m.sender_username))
+            OR (m.sender_name IS NOT NULL AND u.name IS NOT NULL AND LOWER(u.name) = LOWER(m.sender_name))
+          )
+      `
+    } catch (e) { /* direct user reclassify failed */ }
 
     // =============================================
     // 8.8. БЭКФИЛ: заполнить sender_id/sender_username для сообщений из UI
@@ -620,11 +640,12 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       await sql`
         UPDATE support_messages m
-        SET sender_id = a.id, sender_username = a.username
+        SET sender_id = a.telegram_id, sender_username = a.username
         FROM support_agents a
         WHERE m.sender_id IS NULL
           AND m.sender_role = 'support'
           AND m.sender_name IS NOT NULL
+          AND a.telegram_id IS NOT NULL
           AND LOWER(m.sender_name) = LOWER(a.name)
       `
     } catch (e) { /* backfill failed, non-critical */ }
