@@ -108,8 +108,13 @@ export default async function handler(req: Request): Promise<Response> {
             LIMIT 1
           ) as response_at,
           (
-            SELECT m2.sender_name 
+            SELECT COALESCE(ra.name, m2.sender_name) 
             FROM support_messages m2 
+            LEFT JOIN support_agents ra ON (
+              ra.telegram_id::text = m2.sender_id::text
+              OR ra.id::text = m2.sender_id::text
+              OR LOWER(ra.username) = LOWER(m2.sender_username)
+            )
             WHERE m2.channel_id = cm.channel_id
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
@@ -193,7 +198,11 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(DISTINCT m.channel_id) as channels_served,
         COUNT(DISTINCT DATE(m.created_at)) as active_days
       FROM support_messages m
-      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      LEFT JOIN support_agents a ON (
+        a.telegram_id::text = m.sender_id::text
+        OR a.id::text = m.sender_id::text
+        OR LOWER(a.username) = LOWER(m.sender_username)
+      )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
@@ -553,7 +562,11 @@ export default async function handler(req: Request): Promise<Response> {
         END as category,
         COUNT(*) as msg_count
       FROM support_messages m
-      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      LEFT JOIN support_agents a ON (
+        a.telegram_id::text = m.sender_id::text
+        OR a.id::text = m.sender_id::text
+        OR LOWER(a.username) = LOWER(m.sender_username)
+      )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
@@ -634,7 +647,11 @@ export default async function handler(req: Request): Promise<Response> {
         EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent') as dow,
         COUNT(*) as msg_count
       FROM support_messages m
-      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      LEFT JOIN support_agents a ON (
+        a.telegram_id::text = m.sender_id::text
+        OR a.id::text = m.sender_id::text
+        OR LOWER(a.username) = LOWER(m.sender_username)
+      )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
@@ -677,7 +694,11 @@ export default async function handler(req: Request): Promise<Response> {
         ARRAY_AGG(DISTINCT COALESCE(a.name, m.sender_name)) as agents
       FROM support_messages m
       JOIN support_channels c ON c.id = m.channel_id
-      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      LEFT JOIN support_agents a ON (
+        a.telegram_id::text = m.sender_id::text
+        OR a.id::text = m.sender_id::text
+        OR LOWER(a.username) = LOWER(m.sender_username)
+      )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz

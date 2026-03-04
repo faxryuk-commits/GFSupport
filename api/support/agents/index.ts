@@ -196,7 +196,11 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(DISTINCT m.channel_id) FILTER (WHERE c.awaiting_reply = true AND m.created_at > NOW() - INTERVAL '7 days') as active_count
         FROM support_messages m
         JOIN support_channels c ON c.id = m.channel_id
-        LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+        LEFT JOIN support_agents a ON (
+          a.telegram_id::text = m.sender_id::text
+          OR a.id::text = m.sender_id::text
+          OR LOWER(a.username) = LOWER(m.sender_username)
+        )
         WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
           AND m.created_at > NOW() - INTERVAL '30 days'
         GROUP BY COALESCE(a.id, m.sender_id::text)
