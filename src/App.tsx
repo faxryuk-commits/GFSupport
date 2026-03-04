@@ -17,13 +17,7 @@ const DocsPage = lazy(() => import('@/pages/docs/ui/DocsPage').then(m => ({ defa
 const ProblemAnalysisPage = lazy(() => import('@/pages/learning/ui/ProblemAnalysisPage'))
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
 const SLAReportPage = lazy(() => import('@/pages/sla-report/ui/SLAReportPage').then(m => ({ default: m.SLAReportPage })))
-const OnboardingListPage = lazy(() => import('@/pages/onboarding/OnboardingListPage').then(m => ({ default: m.OnboardingListPage })))
-const OnboardingDetailPage = lazy(() => import('@/pages/onboarding/OnboardingDetailPage').then(m => ({ default: m.OnboardingDetailPage })))
-const OnboardingCreatePage = lazy(() => import('@/pages/onboarding/OnboardingCreatePage').then(m => ({ default: m.OnboardingCreatePage })))
-const MyTasksPage = lazy(() => import('@/pages/onboarding/MyTasksPage').then(m => ({ default: m.MyTasksPage })))
-const TemplatesPage = lazy(() => import('@/pages/onboarding/TemplatesPage').then(m => ({ default: m.TemplatesPage })))
-const OnboardingAnalyticsPage = lazy(() => import('@/pages/onboarding/OnboardingAnalyticsPage').then(m => ({ default: m.OnboardingAnalyticsPage })))
-const OnboardingSettingsPage = lazy(() => import('@/pages/onboarding/OnboardingSettingsPage').then(m => ({ default: m.OnboardingSettingsPage })))
+
 
 function PageLoader() {
   return (
@@ -52,15 +46,6 @@ export default function App() {
           <Route path="/cases" element={<Suspense fallback={<PageLoader />}><CasesPage /></Suspense>} />
           <Route path="/commitments" element={<Suspense fallback={<PageLoader />}><CommitmentsPage /></Suspense>} />
           <Route path="/sla-report" element={<Suspense fallback={<PageLoader />}><SLAReportPage /></Suspense>} />
-          
-          {/* Onboarding */}
-          <Route path="/onboarding" element={<Suspense fallback={<PageLoader />}><OnboardingListPage /></Suspense>} />
-          <Route path="/onboarding/new" element={<Suspense fallback={<PageLoader />}><OnboardingCreatePage /></Suspense>} />
-          <Route path="/onboarding/templates" element={<Suspense fallback={<PageLoader />}><TemplatesPage /></Suspense>} />
-          <Route path="/onboarding/analytics" element={<Suspense fallback={<PageLoader />}><OnboardingAnalyticsPage /></Suspense>} />
-          <Route path="/onboarding/settings" element={<Suspense fallback={<PageLoader />}><OnboardingSettingsPage /></Suspense>} />
-          <Route path="/onboarding/:id" element={<Suspense fallback={<PageLoader />}><OnboardingDetailPage /></Suspense>} />
-          <Route path="/my-tasks" element={<Suspense fallback={<PageLoader />}><MyTasksPage /></Suspense>} />
           
           {/* Knowledge & Docs */}
           <Route path="/knowledge" element={<Suspense fallback={<PageLoader />}><KnowledgePage /></Suspense>} />

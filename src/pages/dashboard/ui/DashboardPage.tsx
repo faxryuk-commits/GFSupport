@@ -19,7 +19,6 @@ import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
 import { DetailedAnalyticsSection } from './DetailedAnalyticsSection'
 import { SLACategoryModal } from './SLACategoryModal'
-import { OnboardingOverviewPanel } from './OnboardingOverviewPanel'
 
 export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
@@ -175,9 +174,6 @@ export function DashboardPage() {
             <p className="text-sm text-slate-500 text-center py-4">Нет активных напоминаний</p>
           </div>
         </div>
-
-        {/* Onboarding Analytics */}
-        <OnboardingOverviewPanel />
 
         <StatsSection
           analytics={analytics}
