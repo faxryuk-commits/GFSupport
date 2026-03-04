@@ -277,10 +277,17 @@ export default async function handler(req: Request): Promise<Response> {
       (new Date(toDateTime).getTime() - new Date(fromDateTime).getTime()) / (1000 * 60 * 60 * 24)
     ))
 
-    // Собираем все уникальные имена агентов
+    // Все сотрудники из БД (включая тех, кто не писал в выбранный период)
+    const allDbAgents = await sql`
+      SELECT name, role FROM support_agents WHERE name IS NOT NULL ORDER BY name
+    `
+    const agentRoleMap: Record<string, string> = {}
+    for (const a of allDbAgents) agentRoleMap[a.name] = a.role || 'agent'
+
     const allAgentNames = new Set([
       ...Object.keys(agentResponseTimes),
       ...agentStatsData.map((s: any) => s.agent_name),
+      ...allDbAgents.map((a: any) => a.name),
     ])
     
     const agentDetails = Array.from(allAgentNames).map(name => {
@@ -302,7 +309,7 @@ export default async function handler(req: Request): Promise<Response> {
       const totalCommitments = parseInt(commitments?.total_commitments || '0')
       const fulfilledCommitments = parseInt(commitments?.fulfilled || '0')
       const onlineHours = parseFloat(sessions?.online_hours || '0')
-      const role: string = stats?.agent_role || 'agent'
+      const role: string = stats?.agent_role || agentRoleMap[name] || 'agent'
 
       const isInactive = totalMessages === 0 && times.length === 0
 
@@ -466,15 +473,18 @@ export default async function handler(req: Request): Promise<Response> {
     // 8.5. АВТОКЛАССИФИКАЦИЯ: доклассифицировать сообщения без категории
     // =============================================
     const categoryRules: [string, string][] = [
-      ['billing', '%оплат%'], ['billing', '%тариф%'], ['billing', '%баланс%'],
-      ['technical', '%ошибк%'], ['technical', '%не работа%'], ['technical', '%сломал%'], ['technical', '%xato%'], ['technical', '%ishlamay%'],
-      ['integration', '%iiko%'], ['integration', '%интеграц%'], ['integration', '%webhook%'],
-      ['order', '%заказ%'], ['order', '%buyurtma%'], ['order', '%чек%'],
-      ['delivery', '%доставк%'], ['delivery', '%курьер%'],
-      ['menu', '%меню%'], ['menu', '%товар%'],
-      ['question', '%подскажите%'], ['question', '%как сделать%'], ['question', '%помогите%'],
-      ['feedback', '%спасибо%'], ['feedback', '%rahmat%'],
-      ['complaint', '%жалоб%'], ['complaint', '%недовол%'],
+      ['billing', '%оплат%'], ['billing', '%тариф%'], ['billing', '%баланс%'], ['billing', '%tolov%'], ['billing', '%счёт%'], ['billing', '%счет%'], ['billing', '%подписк%'],
+      ['technical', '%ошибк%'], ['technical', '%не работа%'], ['technical', '%сломал%'], ['technical', '%xato%'], ['technical', '%ishlamay%'], ['technical', '%баг%'], ['technical', '%глюч%'], ['technical', '%завис%'], ['technical', '%не загруж%'], ['technical', '%не открыва%'],
+      ['integration', '%iiko%'], ['integration', '%интеграц%'], ['integration', '%webhook%'], ['integration', '%api%'], ['integration', '%подключ%'],
+      ['order', '%заказ%'], ['order', '%buyurtma%'], ['order', '%чек%'], ['order', '%корзин%'], ['order', '%оформлен%'],
+      ['delivery', '%доставк%'], ['delivery', '%курьер%'], ['delivery', '%yetkazib%'], ['delivery', '%адрес%'],
+      ['menu', '%меню%'], ['menu', '%товар%'], ['menu', '%mahsulot%'], ['menu', '%продукт%'], ['menu', '%блюд%'], ['menu', '%позици%'], ['menu', '%каталог%'],
+      ['app', '%приложен%'], ['app', '%android%'], ['app', '%ios%'], ['app', '%мобильн%'], ['app', '%ilova%'],
+      ['question', '%подскажите%'], ['question', '%как сделать%'], ['question', '%помогите%'], ['question', '%вопрос%'], ['question', '%объясни%'], ['question', '%savol%'],
+      ['feedback', '%спасибо%'], ['feedback', '%rahmat%'], ['feedback', '%отлично%'], ['feedback', '%класс%'], ['feedback', '%молодц%'],
+      ['complaint', '%жалоб%'], ['complaint', '%недовол%'], ['complaint', '%плохо%'], ['complaint', '%ужасн%'], ['complaint', '%возврат%'],
+      ['onboarding', '%регистрац%'], ['onboarding', '%подключен%'], ['onboarding', '%настрой%'], ['onboarding', '%начать%'],
+      ['feature_request', '%предложен%'], ['feature_request', '%хотел бы%'], ['feature_request', '%добавьте%'], ['feature_request', '%было бы%'],
     ]
     try {
       for (const [cat, pattern] of categoryRules) {
@@ -490,7 +500,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE support_messages SET ai_category = 'general'
         WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
-          AND text_content IS NOT NULL AND LENGTH(text_content) > 5
+          AND text_content IS NOT NULL AND LENGTH(text_content) > 10
           AND created_at >= ${fromDateTime}::timestamptz
           AND created_at <= ${toDateTime}::timestamptz
       `
@@ -502,7 +512,22 @@ export default async function handler(req: Request): Promise<Response> {
     const agentCategoriesData = await sql`
       SELECT
         COALESCE(a.name, m.sender_name) as agent_name,
-        COALESCE(NULLIF(m.ai_category, ''), 'Без категории') as category,
+        CASE COALESCE(NULLIF(m.ai_category, ''), 'other')
+          WHEN 'technical' THEN 'Техническая'
+          WHEN 'billing' THEN 'Оплата'
+          WHEN 'order' THEN 'Заказы'
+          WHEN 'delivery' THEN 'Доставка'
+          WHEN 'integration' THEN 'Интеграции'
+          WHEN 'menu' THEN 'Меню/Товары'
+          WHEN 'app' THEN 'Приложение'
+          WHEN 'question' THEN 'Вопросы'
+          WHEN 'complaint' THEN 'Жалобы'
+          WHEN 'feedback' THEN 'Благодарности'
+          WHEN 'onboarding' THEN 'Подключения'
+          WHEN 'feature_request' THEN 'Предложения'
+          WHEN 'general' THEN 'Общие'
+          ELSE 'Прочее'
+        END as category,
         COUNT(*) as msg_count
       FROM support_messages m
       LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
@@ -510,21 +535,36 @@ export default async function handler(req: Request): Promise<Response> {
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
-      GROUP BY COALESCE(a.name, m.sender_name), COALESCE(NULLIF(m.ai_category, ''), 'Без категории')
+      GROUP BY COALESCE(a.name, m.sender_name), category
       ORDER BY msg_count DESC
     `
 
     const agentCaseCategoriesData = await sql`
       SELECT
         a.name as agent_name,
-        COALESCE(NULLIF(c.category, ''), 'Без категории') as category,
+        CASE COALESCE(NULLIF(c.category, ''), 'other')
+          WHEN 'technical' THEN 'Техническая'
+          WHEN 'billing' THEN 'Оплата'
+          WHEN 'order' THEN 'Заказы'
+          WHEN 'delivery' THEN 'Доставка'
+          WHEN 'integration' THEN 'Интеграции'
+          WHEN 'menu' THEN 'Меню/Товары'
+          WHEN 'app' THEN 'Приложение'
+          WHEN 'question' THEN 'Вопросы'
+          WHEN 'complaint' THEN 'Жалобы'
+          WHEN 'feedback' THEN 'Благодарности'
+          WHEN 'onboarding' THEN 'Подключения'
+          WHEN 'feature_request' THEN 'Предложения'
+          WHEN 'general' THEN 'Общие'
+          ELSE 'Прочее'
+        END as category,
         COUNT(*) as case_count,
         COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_count
       FROM support_cases c
       JOIN support_agents a ON a.id::text = c.assigned_to::text
       WHERE c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
-      GROUP BY a.name, COALESCE(NULLIF(c.category, ''), 'Без категории')
+      GROUP BY a.name, category
       ORDER BY case_count DESC
     `
 
@@ -540,6 +580,10 @@ export default async function handler(req: Request): Promise<Response> {
       if (!expertiseMap[r.agent_name][r.category]) expertiseMap[r.agent_name][r.category] = { messages: 0, cases: 0, resolved: 0 }
       expertiseMap[r.agent_name][r.category].cases = parseInt(r.case_count)
       expertiseMap[r.agent_name][r.category].resolved = parseInt(r.resolved_count)
+    }
+
+    for (const a of allDbAgents) {
+      if (!expertiseMap[a.name]) expertiseMap[a.name] = {}
     }
 
     const agentExpertise = Object.entries(expertiseMap).map(([name, cats]) => ({
@@ -572,6 +616,10 @@ export default async function handler(req: Request): Promise<Response> {
     for (const r of weeklyData) {
       if (!weeklyMap[r.agent_name]) weeklyMap[r.agent_name] = [0, 0, 0, 0, 0, 0, 0]
       weeklyMap[r.agent_name][parseInt(r.dow)] = parseInt(r.msg_count)
+    }
+
+    for (const a of allDbAgents) {
+      if (!weeklyMap[a.name]) weeklyMap[a.name] = [0, 0, 0, 0, 0, 0, 0]
     }
 
     const weeklyWorkload = Object.entries(weeklyMap).map(([name, days]) => ({
