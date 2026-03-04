@@ -533,7 +533,89 @@ export default async function handler(req: Request): Promise<Response> {
     } catch (e) { /* classification failed, continue */ }
 
     // =============================================
-    // 8.6. БЭКФИЛ: заполнить sender_id/sender_username для сообщений из UI
+    // 8.6. АВТОСИНХРОНИЗАЦИЯ СОТРУДНИКОВ
+    // Создаём записи в support_agents для сотрудников из crm_managers,
+    // а также для отправителей с sender_role='support'/'team' без записи в agents
+    // =============================================
+    try {
+      // 1. Синхронизация из crm_managers → support_agents
+      await sql`
+        INSERT INTO support_agents (id, name, username, telegram_id, role)
+        SELECT
+          'agent_' || COALESCE(cm.telegram_id, cm.id::text),
+          cm.name,
+          REPLACE(COALESCE(cm.telegram_username, ''), '@', ''),
+          cm.telegram_id,
+          'agent'
+        FROM crm_managers cm
+        WHERE cm.name IS NOT NULL
+          AND cm.telegram_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM support_agents sa
+            WHERE sa.telegram_id = cm.telegram_id
+               OR LOWER(sa.name) = LOWER(cm.name)
+          )
+        ON CONFLICT (id) DO NOTHING
+      `
+    } catch (e) { /* crm sync failed */ }
+
+    try {
+      // 2. Синхронизация из сообщений: отправители с role='support'/'team' без записи
+      await sql`
+        INSERT INTO support_agents (id, name, username, telegram_id, role)
+        SELECT DISTINCT ON (m.sender_id)
+          'agent_' || m.sender_id,
+          m.sender_name,
+          m.sender_username,
+          m.sender_id,
+          'agent'
+        FROM support_messages m
+        WHERE m.sender_role IN ('support', 'team')
+          AND m.is_from_client = false
+          AND m.sender_id IS NOT NULL
+          AND m.sender_name IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM support_agents sa
+            WHERE sa.telegram_id = m.sender_id
+               OR LOWER(sa.name) = LOWER(m.sender_name)
+          )
+        ON CONFLICT (id) DO NOTHING
+      `
+    } catch (e) { /* msg sync failed */ }
+
+    // =============================================
+    // 8.7. ПЕРЕКЛАССИФИКАЦИЯ СООБЩЕНИЙ СОТРУДНИКОВ
+    // Сообщения от известных агентов, помеченные как 'client', обновляем на 'support'
+    // =============================================
+    try {
+      // По telegram_id
+      await sql`
+        UPDATE support_messages m
+        SET sender_role = 'support', is_from_client = false
+        FROM support_agents a
+        WHERE m.sender_role = 'client'
+          AND m.sender_id IS NOT NULL
+          AND a.telegram_id IS NOT NULL
+          AND a.telegram_id = m.sender_id
+          AND m.created_at >= ${fromDateTime}::timestamptz
+          AND m.created_at <= ${toDateTime}::timestamptz
+      `
+      // По username
+      await sql`
+        UPDATE support_messages m
+        SET sender_role = 'support', is_from_client = false
+        FROM support_agents a
+        WHERE m.sender_role = 'client'
+          AND m.sender_username IS NOT NULL
+          AND a.username IS NOT NULL
+          AND LOWER(a.username) = LOWER(m.sender_username)
+          AND m.created_at >= ${fromDateTime}::timestamptz
+          AND m.created_at <= ${toDateTime}::timestamptz
+      `
+    } catch (e) { /* reclassify failed */ }
+
+    // =============================================
+    // 8.8. БЭКФИЛ: заполнить sender_id/sender_username для сообщений из UI
     // =============================================
     try {
       await sql`

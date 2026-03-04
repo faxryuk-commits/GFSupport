@@ -167,6 +167,28 @@ export default async function handler(req: Request): Promise<Response> {
   }
   
   try {
+    // Авто-синхронизация из crm_managers
+    try {
+      await sql`
+        INSERT INTO support_agents (id, name, username, telegram_id, role)
+        SELECT
+          'agent_' || COALESCE(cm.telegram_id, cm.id::text),
+          cm.name,
+          REPLACE(COALESCE(cm.telegram_username, ''), '@', ''),
+          cm.telegram_id,
+          'agent'
+        FROM crm_managers cm
+        WHERE cm.name IS NOT NULL
+          AND cm.telegram_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM support_agents sa
+            WHERE sa.telegram_id = cm.telegram_id
+               OR LOWER(sa.name) = LOWER(cm.name)
+          )
+        ON CONFLICT (id) DO NOTHING
+      `
+    } catch (e) { /* crm sync skipped */ }
+
     const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at, phone, position, department, permissions FROM support_agents ORDER BY name ASC`
 
     // Batch queries instead of N+1 per agent
