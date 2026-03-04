@@ -463,6 +463,34 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // =============================================
+    // 8.5. АВТОКЛАССИФИКАЦИЯ: доклассифицировать сообщения без категории
+    // =============================================
+    try {
+      await sql`
+        UPDATE support_messages SET ai_category = CASE
+          WHEN text_content ~* 'подключ|регистрац|зарегистр|новый клиент|хотим работать|ulanish|yangi restoran|hamkorlik' THEN 'onboarding'
+          WHEN text_content ~* 'оплат|счёт|счет|деньг|pul|tolov|тариф|подписк|баланс|переплат|narx|summa' THEN 'billing'
+          WHEN text_content ~* 'жалоб|недовол|плохо|ужас|shikoyat|хамств|безобраз|кошмар|обман' THEN 'complaint'
+          WHEN text_content ~* 'ошибк|error|не работа|не поступа|не прихо|не загруж|не открыва|сломал|баг|bug|глючит|crash|xato|ishlamay|buzilgan|chiqmay|bosmay|актуалмас|не отобража|не могу' THEN 'technical'
+          WHEN text_content ~* 'интеграц|api|webhook|iiko|r-keeper|poster|payme|click|uzkassa|jowi' THEN 'integration'
+          WHEN text_content ~* 'заказ|order|buyurtma|zakaz|чек|chek|корзин|savat' THEN 'order'
+          WHEN text_content ~* 'доставк|курьер|yetkazib|dostavka' THEN 'delivery'
+          WHEN text_content ~* 'меню|блюд|товар|позици|mahsulot|menyu|tovar|ассортимент' THEN 'menu'
+          WHEN text_content ~* 'приложен|мобильн|android|ios|ilova' THEN 'app'
+          WHEN text_content ~* 'подскажите|как сделать|как настроить|как мне|где найти|qanday|помогите' THEN 'question'
+          WHEN text_content ~* 'спасибо|благодар|отлично|rahmat|молодц' THEN 'feedback'
+          WHEN text_content ~* 'филиал|filial|регион|адрес|manzil' THEN 'technical'
+          WHEN LENGTH(text_content) > 20 AND text_content ~ '\\?' THEN 'question'
+          ELSE 'general'
+        END
+        WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
+          AND text_content IS NOT NULL AND LENGTH(text_content) > 2
+          AND created_at >= ${fromDateTime}::timestamptz
+          AND created_at <= ${toDateTime}::timestamptz
+      `
+    } catch (e) { /* classification failed, continue with existing categories */ }
+
+    // =============================================
     // 9. ЭКСПЕРТИЗА ПО КАТЕГОРИЯМ: на какие темы каждый агент отвечает
     // =============================================
     const agentCategoriesData = await sql`
