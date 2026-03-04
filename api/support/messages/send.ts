@@ -311,7 +311,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const body = await req.json()
-    const { channelId, text, threadId, replyToMessageId, senderName } = body
+    const { channelId, text, threadId, replyToMessageId, senderName, senderId, senderUsername } = body
 
     if (!channelId || !text) {
       return json({ error: 'channelId and text are required' }, 400)
@@ -379,14 +379,16 @@ export default async function handler(req: Request): Promise<Response> {
 
     await sql`
       INSERT INTO support_messages (
-        id, channel_id, telegram_message_id, sender_name, sender_role,
+        id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
         is_from_client, content_type, text_content, is_processed, is_read,
         reply_to_message_id, thread_id, thread_name
       ) VALUES (
         ${messageId},
         ${channelId},
         ${sentMessage.message_id},
+        ${senderId || null},
         ${senderName || 'Support'},
+        ${senderUsername || null},
         'support',
         false,
         'text',

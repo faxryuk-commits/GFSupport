@@ -41,6 +41,8 @@ export default async function handler(req: Request): Promise<Response> {
     const channelId = formData.get('channelId') as string
     const caption = formData.get('caption') as string || ''
     const senderName = formData.get('senderName') as string || 'Support'
+    const senderId = formData.get('senderId') as string || null
+    const senderUsername = formData.get('senderUsername') as string || null
 
     if (!file || !channelId) {
       return json({ error: 'file and channelId required' }, 400)
@@ -126,14 +128,16 @@ export default async function handler(req: Request): Promise<Response> {
 
     await sql`
       INSERT INTO support_messages (
-        id, channel_id, telegram_message_id, sender_name, sender_role,
+        id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
         is_from_client, content_type, text_content, media_url, media_file_id,
         is_read, created_at
       ) VALUES (
         ${messageId},
         ${channelId},
         ${tgMessage.message_id},
+        ${senderId},
         ${senderName},
+        ${senderUsername},
         'support',
         false,
         ${contentType},

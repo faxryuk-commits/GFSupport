@@ -114,6 +114,7 @@ export default async function handler(req: Request): Promise<Response> {
               ra.telegram_id::text = m2.sender_id::text
               OR ra.id::text = m2.sender_id::text
               OR LOWER(ra.username) = LOWER(m2.sender_username)
+              OR LOWER(ra.name) = LOWER(m2.sender_name)
             )
             WHERE m2.channel_id = cm.channel_id
               AND m2.is_from_client = false
@@ -202,6 +203,7 @@ export default async function handler(req: Request): Promise<Response> {
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
         OR LOWER(a.username) = LOWER(m.sender_username)
+        OR LOWER(a.name) = LOWER(m.sender_name)
       )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
@@ -531,6 +533,21 @@ export default async function handler(req: Request): Promise<Response> {
     } catch (e) { /* classification failed, continue */ }
 
     // =============================================
+    // 8.6. БЭКФИЛ: заполнить sender_id/sender_username для сообщений из UI
+    // =============================================
+    try {
+      await sql`
+        UPDATE support_messages m
+        SET sender_id = a.id, sender_username = a.username
+        FROM support_agents a
+        WHERE m.sender_id IS NULL
+          AND m.sender_role = 'support'
+          AND m.sender_name IS NOT NULL
+          AND LOWER(m.sender_name) = LOWER(a.name)
+      `
+    } catch (e) { /* backfill failed, non-critical */ }
+
+    // =============================================
     // 9. ЭКСПЕРТИЗА ПО КАТЕГОРИЯМ: на какие темы каждый агент отвечает
     // =============================================
     const agentCategoriesData = await sql`
@@ -566,6 +583,7 @@ export default async function handler(req: Request): Promise<Response> {
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
         OR LOWER(a.username) = LOWER(m.sender_username)
+        OR LOWER(a.name) = LOWER(m.sender_name)
       )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
@@ -651,6 +669,7 @@ export default async function handler(req: Request): Promise<Response> {
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
         OR LOWER(a.username) = LOWER(m.sender_username)
+        OR LOWER(a.name) = LOWER(m.sender_name)
       )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
@@ -698,6 +717,7 @@ export default async function handler(req: Request): Promise<Response> {
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
         OR LOWER(a.username) = LOWER(m.sender_username)
+        OR LOWER(a.name) = LOWER(m.sender_name)
       )
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')

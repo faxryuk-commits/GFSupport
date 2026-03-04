@@ -200,6 +200,7 @@ export default async function handler(req: Request): Promise<Response> {
           a.telegram_id::text = m.sender_id::text
           OR a.id::text = m.sender_id::text
           OR LOWER(a.username) = LOWER(m.sender_username)
+          OR LOWER(a.name) = LOWER(m.sender_name)
         )
         WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
           AND m.created_at > NOW() - INTERVAL '30 days'

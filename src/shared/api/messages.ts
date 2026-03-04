@@ -59,7 +59,9 @@ export async function sendMessage(
     channelId,
     text,
     replyToMessageId,
-    senderName: name
+    senderName: name,
+    senderId: agent?.id || null,
+    senderUsername: agent?.username || null,
   })
   
   // Преобразуем ответ API в формат Message
@@ -99,6 +101,8 @@ export async function sendMediaMessage(
   formData.append('channelId', channelId)
   formData.append('caption', caption || '')
   formData.append('senderName', name)
+  if (agent?.id) formData.append('senderId', agent.id)
+  if (agent?.username) formData.append('senderUsername', agent.username)
   
   const res = await fetch('/api/support/messages/send-media', {
     method: 'POST',
