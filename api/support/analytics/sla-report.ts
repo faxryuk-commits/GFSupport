@@ -459,6 +459,138 @@ export default async function handler(req: Request): Promise<Response> {
       noResponse: noResponse.length,
     }
 
+    // =============================================
+    // 9. ЭКСПЕРТИЗА ПО КАТЕГОРИЯМ: на какие темы каждый агент отвечает
+    // =============================================
+    const agentCategoriesData = await sql`
+      SELECT
+        COALESCE(a.name, m.sender_name) as agent_name,
+        COALESCE(NULLIF(m.ai_category, ''), 'Без категории') as category,
+        COUNT(*) as msg_count
+      FROM support_messages m
+      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      WHERE m.is_from_client = false
+        AND m.sender_role IN ('support', 'team', 'agent')
+        AND m.created_at >= ${fromDateTime}::timestamptz
+        AND m.created_at <= ${toDateTime}::timestamptz
+      GROUP BY COALESCE(a.name, m.sender_name), COALESCE(NULLIF(m.ai_category, ''), 'Без категории')
+      ORDER BY msg_count DESC
+    `
+
+    const agentCaseCategoriesData = await sql`
+      SELECT
+        a.name as agent_name,
+        COALESCE(NULLIF(c.category, ''), 'Без категории') as category,
+        COUNT(*) as case_count,
+        COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_count
+      FROM support_cases c
+      JOIN support_agents a ON a.id::text = c.assigned_to::text
+      WHERE c.created_at >= ${fromDateTime}::timestamptz
+        AND c.created_at <= ${toDateTime}::timestamptz
+      GROUP BY a.name, COALESCE(NULLIF(c.category, ''), 'Без категории')
+      ORDER BY case_count DESC
+    `
+
+    // Объединяем экспертизу
+    const expertiseMap: Record<string, Record<string, { messages: number; cases: number; resolved: number }>> = {}
+    for (const r of agentCategoriesData) {
+      if (!expertiseMap[r.agent_name]) expertiseMap[r.agent_name] = {}
+      if (!expertiseMap[r.agent_name][r.category]) expertiseMap[r.agent_name][r.category] = { messages: 0, cases: 0, resolved: 0 }
+      expertiseMap[r.agent_name][r.category].messages = parseInt(r.msg_count)
+    }
+    for (const r of agentCaseCategoriesData) {
+      if (!expertiseMap[r.agent_name]) expertiseMap[r.agent_name] = {}
+      if (!expertiseMap[r.agent_name][r.category]) expertiseMap[r.agent_name][r.category] = { messages: 0, cases: 0, resolved: 0 }
+      expertiseMap[r.agent_name][r.category].cases = parseInt(r.case_count)
+      expertiseMap[r.agent_name][r.category].resolved = parseInt(r.resolved_count)
+    }
+
+    const agentExpertise = Object.entries(expertiseMap).map(([name, cats]) => ({
+      name,
+      categories: Object.entries(cats)
+        .map(([category, data]) => ({ category, ...data }))
+        .sort((a, b) => b.messages - a.messages)
+        .slice(0, 10),
+    }))
+
+    // =============================================
+    // 10. КОГОРТА ПО ДНЯМ НЕДЕЛИ
+    // =============================================
+    const weeklyData = await sql`
+      SELECT
+        COALESCE(a.name, m.sender_name) as agent_name,
+        EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent') as dow,
+        COUNT(*) as msg_count
+      FROM support_messages m
+      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      WHERE m.is_from_client = false
+        AND m.sender_role IN ('support', 'team', 'agent')
+        AND m.created_at >= ${fromDateTime}::timestamptz
+        AND m.created_at <= ${toDateTime}::timestamptz
+      GROUP BY COALESCE(a.name, m.sender_name), EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent')
+      ORDER BY agent_name, dow
+    `
+
+    const weeklyMap: Record<string, number[]> = {}
+    for (const r of weeklyData) {
+      if (!weeklyMap[r.agent_name]) weeklyMap[r.agent_name] = [0, 0, 0, 0, 0, 0, 0]
+      weeklyMap[r.agent_name][parseInt(r.dow)] = parseInt(r.msg_count)
+    }
+
+    const weeklyWorkload = Object.entries(weeklyMap).map(([name, days]) => ({
+      name,
+      days,
+      total: days.reduce((a, b) => a + b, 0),
+      peakDay: days.indexOf(Math.max(...days)),
+    })).sort((a, b) => b.total - a.total)
+
+    // Суммарная нагрузка команды по дням
+    const teamWeekly = [0, 0, 0, 0, 0, 0, 0]
+    for (const w of weeklyWorkload) {
+      for (let i = 0; i < 7; i++) teamWeekly[i] += w.days[i]
+    }
+
+    // =============================================
+    // 11. КОЛЛАБОРАЦИЯ: сколько агентов участвует в решении
+    // =============================================
+    const collaborationData = await sql`
+      SELECT
+        m.channel_id,
+        c.name as channel_name,
+        COUNT(DISTINCT COALESCE(a.name, m.sender_name)) as agent_count,
+        ARRAY_AGG(DISTINCT COALESCE(a.name, m.sender_name)) as agents
+      FROM support_messages m
+      JOIN support_channels c ON c.id = m.channel_id
+      LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+      WHERE m.is_from_client = false
+        AND m.sender_role IN ('support', 'team', 'agent')
+        AND m.created_at >= ${fromDateTime}::timestamptz
+        AND m.created_at <= ${toDateTime}::timestamptz
+      GROUP BY m.channel_id, c.name
+      HAVING COUNT(DISTINCT COALESCE(a.name, m.sender_name)) >= 1
+      ORDER BY agent_count DESC
+    `
+
+    const totalCollabChannels = collaborationData.length
+    const multiAgentChannels = collaborationData.filter((c: any) => parseInt(c.agent_count) > 1)
+    const avgAgentsPerChannel = totalCollabChannels > 0
+      ? Math.round((collaborationData.reduce((sum: number, c: any) => sum + parseInt(c.agent_count), 0) / totalCollabChannels) * 10) / 10
+      : 0
+
+    const collaboration = {
+      totalChannels: totalCollabChannels,
+      multiAgentChannels: multiAgentChannels.length,
+      soloChannels: totalCollabChannels - multiAgentChannels.length,
+      avgAgentsPerChannel,
+      multiAgentPercent: totalCollabChannels > 0
+        ? Math.round((multiAgentChannels.length / totalCollabChannels) * 100) : 0,
+      details: multiAgentChannels.slice(0, 20).map((c: any) => ({
+        channelName: c.channel_name,
+        agentCount: parseInt(c.agent_count),
+        agents: c.agents,
+      })),
+    }
+
     return json({
       period: {
         from: fromDate,
@@ -525,6 +657,16 @@ export default async function handler(req: Request): Promise<Response> {
         resolutionMinutes: c.resolution_minutes,
         resolutionHours: c.resolution_hours,
       })),
+
+      // Экспертиза по категориям
+      agentExpertise,
+
+      // Когорта по дням недели
+      weeklyWorkload,
+      teamWeekly,
+
+      // Коллаборация
+      collaboration,
     })
     
   } catch (e: any) {

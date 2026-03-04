@@ -1,2 +1,8 @@
 export { AgentPerformanceTable } from './ui/AgentPerformanceTable'
 export type { AgentPerformanceData } from './ui/AgentPerformanceTable'
+export { AgentExpertise } from './ui/AgentExpertise'
+export type { AgentExpertiseEntry } from './ui/AgentExpertise'
+export { WeeklyHeatmap } from './ui/WeeklyHeatmap'
+export type { WeeklyEntry } from './ui/WeeklyHeatmap'
+export { CollaborationMetrics } from './ui/CollaborationMetrics'
+export type { CollaborationData } from './ui/CollaborationMetrics'
