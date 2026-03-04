@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Users, Trophy, Zap, Target, ArrowUpDown, Crown, Shield } from 'lucide-react'
+import { Users, Trophy, Zap, Target, ArrowUpDown, Crown, Shield, Heart } from 'lucide-react'
 
 export interface AgentPerformanceData {
   name: string
@@ -7,7 +7,7 @@ export interface AgentPerformanceData {
   totalResponses: number
   withinSLA: number
   violatedSLA: number
-  slaCompliance: number
+  slaCompliance: number | null
   avgMinutes: number
   minMinutes: number
   maxMinutes: number
@@ -20,9 +20,19 @@ export interface AgentPerformanceData {
   resolvedCases: number
   totalAssignedCases: number
   efficiencyRatio: number
+  onlineHours: number
+  engagementScore: number
+  engagementLevel: 'high' | 'medium' | 'low'
+  engagementBreakdown: {
+    activity: number
+    speed: number
+    quality: number
+    responsibility: number
+  }
+  isInactive: boolean
 }
 
-type SortField = 'slaCompliance' | 'totalResponses' | 'avgMinutes' | 'resolvedCases' | 'totalChars' | 'efficiencyRatio'
+type SortField = 'slaCompliance' | 'totalResponses' | 'avgMinutes' | 'resolvedCases' | 'totalChars' | 'efficiencyRatio' | 'engagementScore'
 
 const ROLE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: typeof Crown }> = {
   admin: { label: 'Админ', color: 'text-purple-700', bg: 'bg-purple-100', icon: Crown },
@@ -34,6 +44,63 @@ function formatChars(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`
   return String(n)
+}
+
+function EngagementRing({ score, level, breakdown }: {
+  score: number
+  level: string
+  breakdown: AgentPerformanceData['engagementBreakdown']
+}) {
+  const size = 44
+  const stroke = 4
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (score / 100) * circumference
+  const ringColor = level === 'high' ? 'stroke-green-500' : level === 'medium' ? 'stroke-yellow-500' : 'stroke-red-500'
+  const [showBreakdown, setShowBreakdown] = useState(false)
+
+  return (
+    <div className="relative flex flex-col items-center">
+      <div
+        className="cursor-pointer"
+        onMouseEnter={() => setShowBreakdown(true)}
+        onMouseLeave={() => setShowBreakdown(false)}
+      >
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className="stroke-slate-100" strokeWidth={stroke} />
+          <circle
+            cx={size / 2} cy={size / 2} r={radius} fill="none"
+            className={ringColor}
+            strokeWidth={stroke}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{score}</span>
+      </div>
+      {showBreakdown && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-white border border-slate-200 shadow-lg rounded-lg p-3 w-44 text-xs">
+          {[
+            { label: 'Активность', val: breakdown.activity, max: 25, color: 'bg-blue-400' },
+            { label: 'Скорость', val: breakdown.speed, max: 25, color: 'bg-green-400' },
+            { label: 'Качество', val: breakdown.quality, max: 25, color: 'bg-violet-400' },
+            { label: 'Ответств.', val: breakdown.responsibility, max: 25, color: 'bg-amber-400' },
+          ].map(b => (
+            <div key={b.label} className="mb-1.5 last:mb-0">
+              <div className="flex justify-between mb-0.5">
+                <span className="text-slate-600">{b.label}</span>
+                <span className="font-bold">{b.val}/{b.max}</span>
+              </div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${b.color}`} style={{ width: `${(b.val / b.max) * 100}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface Props {
@@ -55,37 +122,45 @@ export function AgentPerformanceTable({ agents }: Props) {
 
   const sorted = useMemo(() => {
     return [...agents].sort((a, b) => {
+      if (a.isInactive !== b.isInactive) return a.isInactive ? 1 : -1
       const mul = sortAsc ? 1 : -1
-      return ((a[sortField] as number) - (b[sortField] as number)) * mul
+      const aVal = (a[sortField] as number) ?? -1
+      const bVal = (b[sortField] as number) ?? -1
+      return (aVal - bVal) * mul
     })
   }, [agents, sortField, sortAsc])
 
-  const maxResponses = Math.max(...agents.map(a => a.totalResponses), 1)
-  const maxChars = Math.max(...agents.map(a => a.totalChars), 1)
+  const active = agents.filter(a => !a.isInactive)
+  const maxResponses = Math.max(...active.map(a => a.totalResponses), 1)
+  const maxChars = Math.max(...active.map(a => a.totalChars), 1)
 
-  const bestSLA = agents.length > 0 ? agents.reduce((best, a) => a.slaCompliance > best.slaCompliance ? a : best) : null
-  const mostProductive = agents.length > 0 ? agents.reduce((best, a) => a.resolvedCases > best.resolvedCases ? a : best) : null
-  const mostEfficient = agents.filter(a => a.resolvedCases > 0).length > 0
-    ? agents.filter(a => a.resolvedCases > 0).reduce((best, a) => a.efficiencyRatio < best.efficiencyRatio ? a : best)
+  const bestSLA = active.filter(a => a.slaCompliance !== null && a.totalResponses > 0).length > 0
+    ? active.filter(a => a.slaCompliance !== null && a.totalResponses > 0)
+        .reduce((best, a) => (a.slaCompliance! > (best.slaCompliance ?? 0) ? a : best))
     : null
+  const mostProductive = active.length > 0
+    ? active.reduce((best, a) => a.resolvedCases > best.resolvedCases ? a : best) : null
+  const mostEfficient = active.filter(a => a.resolvedCases > 0).length > 0
+    ? active.filter(a => a.resolvedCases > 0).reduce((best, a) => a.efficiencyRatio < best.efficiencyRatio ? a : best)
+    : null
+  const mostEngaged = active.length > 0
+    ? active.reduce((best, a) => a.engagementScore > best.engagementScore ? a : best) : null
 
   if (agents.length === 0) {
     return <p className="text-slate-500 text-center py-8">Нет данных за выбранный период</p>
   }
 
-  const isLeader = (role: string) => role === 'admin' || role === 'manager'
-
   return (
     <div className="space-y-4">
       {/* Leader cards */}
-      <div className="grid grid-cols-3 gap-3">
-        {bestSLA && (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {bestSLA && bestSLA.slaCompliance !== null && (
           <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-2">
               <Trophy className="w-4 h-4 text-green-600" />
               <span className="text-xs font-semibold text-green-700">Лучший по SLA</span>
             </div>
-            <p className="font-bold text-slate-900">{bestSLA.name}</p>
+            <p className="font-bold text-slate-900 truncate">{bestSLA.name}</p>
             <p className="text-2xl font-bold text-green-600">{bestSLA.slaCompliance}%</p>
           </div>
         )}
@@ -95,7 +170,7 @@ export function AgentPerformanceTable({ agents }: Props) {
               <Zap className="w-4 h-4 text-blue-600" />
               <span className="text-xs font-semibold text-blue-700">Самый продуктивный</span>
             </div>
-            <p className="font-bold text-slate-900">{mostProductive.name}</p>
+            <p className="font-bold text-slate-900 truncate">{mostProductive.name}</p>
             <p className="text-2xl font-bold text-blue-600">{mostProductive.resolvedCases} тикетов</p>
           </div>
         )}
@@ -105,8 +180,18 @@ export function AgentPerformanceTable({ agents }: Props) {
               <Target className="w-4 h-4 text-violet-600" />
               <span className="text-xs font-semibold text-violet-700">Самый эффективный</span>
             </div>
-            <p className="font-bold text-slate-900">{mostEfficient.name}</p>
+            <p className="font-bold text-slate-900 truncate">{mostEfficient.name}</p>
             <p className="text-2xl font-bold text-violet-600">{formatChars(mostEfficient.efficiencyRatio)} сим/тикет</p>
+          </div>
+        )}
+        {mostEngaged && mostEngaged.engagementScore > 0 && (
+          <div className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Heart className="w-4 h-4 text-rose-600" />
+              <span className="text-xs font-semibold text-rose-700">Самый вовлечённый</span>
+            </div>
+            <p className="font-bold text-slate-900 truncate">{mostEngaged.name}</p>
+            <p className="text-2xl font-bold text-rose-600">{mostEngaged.engagementScore}/100</p>
           </div>
         )}
       </div>
@@ -117,6 +202,7 @@ export function AgentPerformanceTable({ agents }: Props) {
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50">
               <th className="text-left py-3 px-3 font-medium text-slate-600">Сотрудник</th>
+              <SortableHeader label="Вовлеч." field="engagementScore" current={sortField} asc={sortAsc} onClick={handleSort} />
               <SortableHeader label="Ответов" field="totalResponses" current={sortField} asc={sortAsc} onClick={handleSort} />
               <th className="text-center py-3 px-2 font-medium text-slate-600">В срок / Наруш.</th>
               <SortableHeader label="SLA %" field="slaCompliance" current={sortField} asc={sortAsc} onClick={handleSort} />
@@ -128,131 +214,172 @@ export function AgentPerformanceTable({ agents }: Props) {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((agent) => {
-              const role = ROLE_CONFIG[agent.role] || ROLE_CONFIG.agent
-              const RoleIcon = role.icon
-              const rowBg = agent.slaCompliance < 80 && !isLeader(agent.role) ? 'bg-red-50/50' :
-                agent.violatedSLA === 0 && agent.totalResponses > 0 ? 'bg-green-50/30' : ''
-
-              return (
-                <tr key={agent.name} className={`border-b border-slate-100 hover:bg-slate-50 ${rowBg}`}>
-                  {/* Name + Role */}
-                  <td className="py-3 px-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700 flex-shrink-0">
-                        {agent.name.charAt(0)}
-                      </div>
-                      <div className="min-w-0">
-                        <span className="font-medium block truncate">{agent.name}</span>
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${role.bg} ${role.color}`}>
-                          <RoleIcon className="w-2.5 h-2.5" />
-                          {role.label}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Responses with bar */}
-                  <td className="py-3 px-2 text-center">
-                    <div className="w-20 mx-auto">
-                      <span className="font-bold text-slate-900">{agent.totalResponses}</span>
-                      <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(agent.totalResponses / maxResponses) * 100}%` }} />
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Stacked bar: within SLA / violations */}
-                  <td className="py-3 px-2">
-                    {agent.totalResponses > 0 ? (
-                      <div className="w-24 mx-auto">
-                        <div className="flex items-center justify-between text-[10px] mb-0.5">
-                          <span className="text-green-600 font-medium">{agent.withinSLA}</span>
-                          {agent.violatedSLA > 0 && <span className="text-red-600 font-medium">{agent.violatedSLA}</span>}
-                        </div>
-                        <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
-                          <div className="bg-green-500 h-full" style={{ width: `${(agent.withinSLA / agent.totalResponses) * 100}%` }} />
-                          {agent.violatedSLA > 0 && (
-                            <div className="bg-red-500 h-full" style={{ width: `${(agent.violatedSLA / agent.totalResponses) * 100}%` }} />
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 text-xs">-</span>
-                    )}
-                  </td>
-
-                  {/* SLA progress bar */}
-                  <td className="py-3 px-2">
-                    <div className="w-20 mx-auto">
-                      <span className={`text-sm font-bold ${
-                        agent.slaCompliance >= 95 ? 'text-green-700' :
-                        agent.slaCompliance >= 80 ? 'text-yellow-700' : 'text-red-700'
-                      }`}>{agent.slaCompliance}%</span>
-                      <div className="h-2 bg-slate-100 rounded-full mt-0.5 overflow-hidden">
-                        <div className={`h-full rounded-full ${
-                          agent.slaCompliance >= 95 ? 'bg-green-500' :
-                          agent.slaCompliance >= 80 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`} style={{ width: `${agent.slaCompliance}%` }} />
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Avg time */}
-                  <td className="py-3 px-2 text-center">
-                    <span className="text-sm">{agent.avgMinutes} мин</span>
-                  </td>
-
-                  {/* Tickets: resolved / total */}
-                  <td className="py-3 px-2 text-center">
-                    {agent.totalAssignedCases > 0 ? (
-                      <span className="text-sm">
-                        <span className="font-bold text-green-600">{agent.resolvedCases}</span>
-                        <span className="text-slate-400">/{agent.totalAssignedCases}</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 text-xs">-</span>
-                    )}
-                  </td>
-
-                  {/* Characters with bar */}
-                  <td className="py-3 px-2 text-center">
-                    <div className="w-20 mx-auto">
-                      <span className="text-sm font-medium">{formatChars(agent.totalChars)}</span>
-                      <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-violet-400 rounded-full" style={{ width: `${(agent.totalChars / maxChars) * 100}%` }} />
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Efficiency ratio */}
-                  <td className="py-3 px-2 text-center">
-                    {agent.efficiencyRatio > 0 ? (
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        agent.efficiencyRatio < 500 ? 'bg-green-100 text-green-700' :
-                        agent.efficiencyRatio < 1500 ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-orange-100 text-orange-700'
-                      }`}>
-                        {formatChars(agent.efficiencyRatio)}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 text-xs">-</span>
-                    )}
-                  </td>
-
-                  {/* Range min-max */}
-                  <td className="py-3 px-2 text-center text-xs text-slate-500">
-                    {agent.totalResponses > 0 ? (
-                      <span>{agent.minMinutes} - {agent.maxMinutes} мин</span>
-                    ) : '-'}
-                  </td>
-                </tr>
-              )
-            })}
+            {sorted.map((agent) => (
+              <AgentRow key={agent.name} agent={agent} maxResponses={maxResponses} maxChars={maxChars} />
+            ))}
           </tbody>
         </table>
       </div>
     </div>
+  )
+}
+
+function AgentRow({ agent, maxResponses, maxChars }: {
+  agent: AgentPerformanceData
+  maxResponses: number
+  maxChars: number
+}) {
+  const role = ROLE_CONFIG[agent.role] || ROLE_CONFIG.agent
+  const RoleIcon = role.icon
+  const isLeader = agent.role === 'admin' || agent.role === 'manager'
+
+  const rowBg = agent.isInactive
+    ? 'bg-slate-50/80 opacity-60'
+    : agent.slaCompliance !== null && agent.slaCompliance < 80 && !isLeader
+      ? 'bg-red-50/50'
+      : agent.violatedSLA === 0 && agent.totalResponses > 0 ? 'bg-green-50/30' : ''
+
+  return (
+    <tr className={`border-b border-slate-100 hover:bg-slate-50 ${rowBg}`}>
+      {/* Name + Role + Inactive */}
+      <td className="py-3 px-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700 flex-shrink-0">
+            {agent.name.charAt(0)}
+          </div>
+          <div className="min-w-0">
+            <span className="font-medium block truncate">{agent.name}</span>
+            <div className="flex items-center gap-1">
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${role.bg} ${role.color}`}>
+                <RoleIcon className="w-2.5 h-2.5" />
+                {role.label}
+              </span>
+              {agent.isInactive && (
+                <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-200 text-slate-500">
+                  Неактивен
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </td>
+
+      {/* Engagement ring */}
+      <td className="py-3 px-2 text-center">
+        {agent.isInactive ? (
+          <span className="text-slate-400 text-xs">-</span>
+        ) : (
+          <EngagementRing score={agent.engagementScore} level={agent.engagementLevel} breakdown={agent.engagementBreakdown} />
+        )}
+      </td>
+
+      {/* Responses with bar */}
+      <td className="py-3 px-2 text-center">
+        <div className="w-20 mx-auto">
+          <span className="font-bold text-slate-900">{agent.totalResponses}</span>
+          <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+            <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(agent.totalResponses / maxResponses) * 100}%` }} />
+          </div>
+        </div>
+      </td>
+
+      {/* Stacked bar */}
+      <td className="py-3 px-2">
+        {agent.totalResponses > 0 ? (
+          <div className="w-24 mx-auto">
+            <div className="flex items-center justify-between text-[10px] mb-0.5">
+              <span className="text-green-600 font-medium">{agent.withinSLA}</span>
+              {agent.violatedSLA > 0 && <span className="text-red-600 font-medium">{agent.violatedSLA}</span>}
+            </div>
+            <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
+              <div className="bg-green-500 h-full" style={{ width: `${(agent.withinSLA / agent.totalResponses) * 100}%` }} />
+              {agent.violatedSLA > 0 && (
+                <div className="bg-red-500 h-full" style={{ width: `${(agent.violatedSLA / agent.totalResponses) * 100}%` }} />
+              )}
+            </div>
+          </div>
+        ) : (
+          <span className="text-slate-400 text-xs block text-center">-</span>
+        )}
+      </td>
+
+      {/* SLA % */}
+      <td className="py-3 px-2">
+        {agent.slaCompliance !== null ? (
+          <div className="w-20 mx-auto">
+            <span className={`text-sm font-bold ${
+              agent.slaCompliance >= 95 ? 'text-green-700' :
+              agent.slaCompliance >= 80 ? 'text-yellow-700' : 'text-red-700'
+            }`}>{agent.slaCompliance}%</span>
+            <div className="h-2 bg-slate-100 rounded-full mt-0.5 overflow-hidden">
+              <div className={`h-full rounded-full ${
+                agent.slaCompliance >= 95 ? 'bg-green-500' :
+                agent.slaCompliance >= 80 ? 'bg-yellow-500' : 'bg-red-500'
+              }`} style={{ width: `${agent.slaCompliance}%` }} />
+            </div>
+          </div>
+        ) : (
+          <span className="text-slate-400 text-xs block text-center">Н/Д</span>
+        )}
+      </td>
+
+      {/* Avg time */}
+      <td className="py-3 px-2 text-center">
+        {agent.totalResponses > 0 ? (
+          <span className="text-sm">{agent.avgMinutes} мин</span>
+        ) : (
+          <span className="text-slate-400 text-xs">-</span>
+        )}
+      </td>
+
+      {/* Tickets */}
+      <td className="py-3 px-2 text-center">
+        {agent.totalAssignedCases > 0 ? (
+          <span className="text-sm">
+            <span className="font-bold text-green-600">{agent.resolvedCases}</span>
+            <span className="text-slate-400">/{agent.totalAssignedCases}</span>
+          </span>
+        ) : (
+          <span className="text-slate-400 text-xs">-</span>
+        )}
+      </td>
+
+      {/* Characters */}
+      <td className="py-3 px-2 text-center">
+        {agent.totalChars > 0 ? (
+          <div className="w-20 mx-auto">
+            <span className="text-sm font-medium">{formatChars(agent.totalChars)}</span>
+            <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+              <div className="h-full bg-violet-400 rounded-full" style={{ width: `${(agent.totalChars / maxChars) * 100}%` }} />
+            </div>
+          </div>
+        ) : (
+          <span className="text-slate-400 text-xs">-</span>
+        )}
+      </td>
+
+      {/* Efficiency */}
+      <td className="py-3 px-2 text-center">
+        {agent.efficiencyRatio > 0 ? (
+          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+            agent.efficiencyRatio < 500 ? 'bg-green-100 text-green-700' :
+            agent.efficiencyRatio < 1500 ? 'bg-yellow-100 text-yellow-700' :
+            'bg-orange-100 text-orange-700'
+          }`}>
+            {formatChars(agent.efficiencyRatio)}
+          </span>
+        ) : (
+          <span className="text-slate-400 text-xs">-</span>
+        )}
+      </td>
+
+      {/* Range */}
+      <td className="py-3 px-2 text-center text-xs text-slate-500">
+        {agent.totalResponses > 0 ? (
+          <span>{agent.minMinutes} - {agent.maxMinutes} мин</span>
+        ) : '-'}
+      </td>
+    </tr>
   )
 }
 

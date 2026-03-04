@@ -215,6 +215,30 @@ export default async function handler(req: Request): Promise<Response> {
       GROUP BY a.name
     `
 
+    // 3c. Обязательства per agent
+    const commitmentsData = await sql`
+      SELECT 
+        promised_by,
+        COUNT(*) as total_commitments,
+        COUNT(*) FILTER (WHERE status = 'fulfilled') as fulfilled
+      FROM support_commitments
+      WHERE created_at >= ${fromDateTime}::timestamptz
+        AND created_at <= ${toDateTime}::timestamptz
+      GROUP BY promised_by
+    `
+
+    // 3d. Сессии per agent (часы онлайн)
+    const sessionsData = await sql`
+      SELECT 
+        a.name as agent_name,
+        SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at))) / 3600.0 as online_hours
+      FROM support_agent_sessions s
+      JOIN support_agents a ON a.id::text = s.agent_id::text
+      WHERE s.started_at >= ${fromDateTime}::timestamptz
+        AND s.started_at <= ${toDateTime}::timestamptz
+      GROUP BY a.name
+    `
+
     // Индексы для быстрого объединения
     const statsMap: Record<string, any> = {}
     for (const s of agentStatsData) {
@@ -223,6 +247,14 @@ export default async function handler(req: Request): Promise<Response> {
     const casesMap: Record<string, any> = {}
     for (const c of agentCasesData) {
       casesMap[c.agent_name] = c
+    }
+    const commitmentsMap: Record<string, any> = {}
+    for (const c of commitmentsData) {
+      commitmentsMap[c.promised_by] = c
+    }
+    const sessionsMap: Record<string, any> = {}
+    for (const s of sessionsData) {
+      sessionsMap[s.agent_name] = s
     }
     
     // Детальная статистика по каждому сотруднику - время ответов
@@ -237,6 +269,11 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    // Кол-во дней в выбранном периоде
+    const periodDays = Math.max(1, Math.ceil(
+      (new Date(toDateTime).getTime() - new Date(fromDateTime).getTime()) / (1000 * 60 * 60 * 24)
+    ))
+
     // Собираем все уникальные имена агентов
     const allAgentNames = new Set([
       ...Object.keys(agentResponseTimes),
@@ -246,34 +283,95 @@ export default async function handler(req: Request): Promise<Response> {
     const agentDetails = Array.from(allAgentNames).map(name => {
       const times = agentResponseTimes[name] || []
       const sorted = [...times].sort((a, b) => a - b)
-      const withinSLA = times.filter(t => t <= slaMinutes).length
+      const withinSLACount = times.filter(t => t <= slaMinutes).length
       const stats = statsMap[name]
       const cases = casesMap[name]
+      const commitments = commitmentsMap[name]
+      const sessions = sessionsMap[name]
 
       const totalChars = parseInt(stats?.total_chars || '0')
+      const totalMessages = parseInt(stats?.total_messages || '0')
       const resolvedCasesCount = parseInt(cases?.resolved_cases || '0')
+      const totalAssigned = parseInt(cases?.total_assigned || '0')
+      const channelsServed = parseInt(stats?.channels_served || '0')
+      const activeDays = parseInt(stats?.active_days || '0')
+      const avgCharsMsg = parseInt(stats?.avg_chars_per_message || '0')
+      const totalCommitments = parseInt(commitments?.total_commitments || '0')
+      const fulfilledCommitments = parseInt(commitments?.fulfilled || '0')
+      const onlineHours = parseFloat(sessions?.online_hours || '0')
+      const role: string = stats?.agent_role || 'agent'
+
+      const isInactive = totalMessages === 0 && times.length === 0
+
+      // --- Engagement Score (4 категории, каждая 0-25) ---
+      // 1. Активность (0-25): присутствие + объём
+      const presenceRatio = Math.min(activeDays / periodDays, 1)
+      const messagesPerDay = activeDays > 0 ? totalMessages / activeDays : 0
+      const activityScore = Math.round(presenceRatio * 12 + Math.min(messagesPerDay / 15, 1) * 13)
+
+      // 2. Скорость (0-25): SLA compliance + средняя скорость
+      const slaRate = times.length > 0 ? withinSLACount / times.length : 0
+      const avgMin = times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0
+      const speedFromAvg = avgMin > 0 ? Math.min(slaMinutes / avgMin, 1) : 0
+      const speedScore = Math.round(slaRate * 15 + speedFromAvg * 10)
+
+      // 3. Качество (0-25): resolution rate + детальность ответов
+      const resolutionRate = totalAssigned > 0 ? resolvedCasesCount / totalAssigned : 0
+      const charsQuality = Math.min(avgCharsMsg / 200, 1)
+      const qualityScore = Math.round(resolutionRate * 15 + charsQuality * 10)
+
+      // 4. Ответственность (0-25): обязательства + покрытие каналов + часы онлайн
+      const commitRate = totalCommitments > 0 ? fulfilledCommitments / totalCommitments : 0
+      const coverageRatio = Math.min(channelsServed / 5, 1)
+      const hoursRatio = Math.min(onlineHours / (periodDays * 8), 1)
+      const responsibilityScore = Math.round(commitRate * 10 + coverageRatio * 8 + hoursRatio * 7)
+
+      // Ролевые веса: менеджер/админ — больше качество, меньше скорость
+      const isLeader = role === 'admin' || role === 'manager'
+      const wActivity = 1.0
+      const wSpeed = isLeader ? 0.7 : 1.0
+      const wQuality = isLeader ? 1.5 : 1.0
+      const wResponsibility = isLeader ? 1.3 : 1.0
+      const totalWeight = wActivity + wSpeed + wQuality + wResponsibility
+
+      const rawScore = (activityScore * wActivity + speedScore * wSpeed + qualityScore * wQuality + responsibilityScore * wResponsibility) / totalWeight
+      const engagementScore = isInactive ? 0 : Math.round(Math.min(rawScore, 100))
+      const engagementLevel = engagementScore >= 70 ? 'high' : engagementScore >= 40 ? 'medium' : 'low'
 
       return {
         name,
-        role: stats?.agent_role || 'agent',
+        role,
         totalResponses: times.length,
-        withinSLA,
-        violatedSLA: times.length - withinSLA,
-        slaCompliance: times.length > 0 ? Math.round((withinSLA / times.length) * 100) : 100,
+        withinSLA: withinSLACount,
+        violatedSLA: times.length - withinSLACount,
+        slaCompliance: times.length > 0 ? Math.round((withinSLACount / times.length) * 100) : null,
         avgMinutes: times.length > 0 ? Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 10) / 10 : 0,
         minMinutes: sorted[0] || 0,
         maxMinutes: sorted[sorted.length - 1] || 0,
         medianMinutes: sorted[Math.floor(sorted.length / 2)] || 0,
-        totalMessages: parseInt(stats?.total_messages || '0'),
+        totalMessages,
         totalChars,
-        avgCharsPerMessage: parseInt(stats?.avg_chars_per_message || '0'),
-        channelsServed: parseInt(stats?.channels_served || '0'),
-        activeDays: parseInt(stats?.active_days || '0'),
+        avgCharsPerMessage: avgCharsMsg,
+        channelsServed,
+        activeDays,
         resolvedCases: resolvedCasesCount,
-        totalAssignedCases: parseInt(cases?.total_assigned || '0'),
+        totalAssignedCases: totalAssigned,
         efficiencyRatio: resolvedCasesCount > 0 ? Math.round(totalChars / resolvedCasesCount) : 0,
+        onlineHours: Math.round(onlineHours * 10) / 10,
+        engagementScore,
+        engagementLevel,
+        engagementBreakdown: {
+          activity: activityScore,
+          speed: speedScore,
+          quality: qualityScore,
+          responsibility: responsibilityScore,
+        },
+        isInactive,
       }
-    }).sort((a, b) => b.totalResponses - a.totalResponses)
+    }).sort((a, b) => {
+      if (a.isInactive !== b.isInactive) return a.isInactive ? 1 : -1
+      return b.totalResponses - a.totalResponses
+    })
     
     // =============================================
     // 4. РАСЧЁТ МЕТРИК
@@ -376,8 +474,11 @@ export default async function handler(req: Request): Promise<Response> {
         withinSLA: withinSLA.length,
         violatedSLA: violatedSLA.length,
         noResponse: noResponse.length,
-        slaCompliancePercent: totalClientMessages > 0 
-          ? Math.round((withinSLA.length / totalClientMessages) * 1000) / 10
+        slaCompliancePercent: respondedMessages.length > 0
+          ? Math.round((withinSLA.length / respondedMessages.length) * 1000) / 10
+          : 100,
+        responseRatePercent: totalClientMessages > 0
+          ? Math.round((respondedMessages.length / totalClientMessages) * 1000) / 10
           : 100,
         avgResponseMinutes,
         medianResponseMinutes: Math.round(medianResponseMinutes * 10) / 10,

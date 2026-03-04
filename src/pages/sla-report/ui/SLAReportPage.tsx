@@ -29,6 +29,7 @@ interface SLAReport {
     violatedSLA: number
     noResponse: number
     slaCompliancePercent: number
+    responseRatePercent: number
     avgResponseMinutes: number
     medianResponseMinutes: number
     minResponseMinutes: number
@@ -57,7 +58,7 @@ interface SLAReport {
     totalResponses: number
     withinSLA: number
     violatedSLA: number
-    slaCompliance: number
+    slaCompliance: number | null
     avgMinutes: number
     minMinutes: number
     maxMinutes: number
@@ -70,6 +71,16 @@ interface SLAReport {
     resolvedCases: number
     totalAssignedCases: number
     efficiencyRatio: number
+    onlineHours: number
+    engagementScore: number
+    engagementLevel: 'high' | 'medium' | 'low'
+    engagementBreakdown: {
+      activity: number
+      speed: number
+      quality: number
+      responsibility: number
+    }
+    isInactive: boolean
   }>
   slaViolations: Array<{
     channelName: string
@@ -289,7 +300,7 @@ export function SLAReportPage() {
                   <p className={`text-3xl font-bold ${getComplianceColor(report.responseTimeSummary.slaCompliancePercent)}`}>
                     {report.responseTimeSummary.slaCompliancePercent}%
                   </p>
-                  <p className="text-sm text-slate-600">SLA выполнение</p>
+                  <p className="text-sm text-slate-600">SLA (из отвеченных)</p>
                 </div>
               </div>
             </div>
@@ -344,10 +355,16 @@ export function SLAReportPage() {
           </div>
           
           {/* Detailed Numbers */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-7 gap-3 mb-6">
             <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
               <p className="text-2xl font-bold text-slate-900">{report.responseTimeSummary.totalClientMessages}</p>
               <p className="text-xs text-slate-500">Сообщений от клиентов</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
+              <p className={`text-2xl font-bold ${report.responseTimeSummary.responseRatePercent >= 80 ? 'text-green-600' : 'text-orange-600'}`}>
+                {report.responseTimeSummary.responseRatePercent}%
+              </p>
+              <p className="text-xs text-slate-500">Охват ответов</p>
             </div>
             <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
               <p className="text-2xl font-bold text-green-600">{report.responseTimeSummary.withinSLA}</p>
