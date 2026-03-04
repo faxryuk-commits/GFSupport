@@ -217,6 +217,7 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb`; synced.push('agents.permissions') } catch (e) { /* exists */ }
 
     // ============ COMMITMENTS TABLE ============
+    try { await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS promised_by VARCHAR(255)`; synced.push('commitments.promised_by') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`; synced.push('commitments.sender_role') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS is_vague BOOLEAN DEFAULT false`; synced.push('commitments.is_vague') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`; synced.push('commitments.reminder_at') } catch (e) { /* exists */ }
