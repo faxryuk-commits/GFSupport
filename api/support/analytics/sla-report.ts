@@ -475,18 +475,33 @@ export default async function handler(req: Request): Promise<Response> {
     const categoryRules: [string, string][] = [
       ['billing', '%оплат%'], ['billing', '%тариф%'], ['billing', '%баланс%'], ['billing', '%tolov%'], ['billing', '%счёт%'], ['billing', '%счет%'], ['billing', '%подписк%'],
       ['technical', '%ошибк%'], ['technical', '%не работа%'], ['technical', '%сломал%'], ['technical', '%xato%'], ['technical', '%ishlamay%'], ['technical', '%баг%'], ['technical', '%глюч%'], ['technical', '%завис%'], ['technical', '%не загруж%'], ['technical', '%не открыва%'],
-      ['integration', '%iiko%'], ['integration', '%интеграц%'], ['integration', '%webhook%'], ['integration', '%api%'], ['integration', '%подключ%'],
+      ['integration', '%iiko%'], ['integration', '%интеграц%'], ['integration', '%webhook%'], ['integration', '%api%'],
       ['order', '%заказ%'], ['order', '%buyurtma%'], ['order', '%чек%'], ['order', '%корзин%'], ['order', '%оформлен%'],
       ['delivery', '%доставк%'], ['delivery', '%курьер%'], ['delivery', '%yetkazib%'], ['delivery', '%адрес%'],
       ['menu', '%меню%'], ['menu', '%товар%'], ['menu', '%mahsulot%'], ['menu', '%продукт%'], ['menu', '%блюд%'], ['menu', '%позици%'], ['menu', '%каталог%'],
       ['app', '%приложен%'], ['app', '%android%'], ['app', '%ios%'], ['app', '%мобильн%'], ['app', '%ilova%'],
+      ['account', '%пароль%'], ['account', '%логин%'], ['account', '%аккаунт%'], ['account', '%авториз%'], ['account', '%войти%'], ['account', '%вход%'], ['account', '%parol%'], ['account', '%kirish%'],
+      ['reports', '%отчёт%'], ['reports', '%отчет%'], ['reports', '%статистик%'], ['reports', '%аналитик%'], ['reports', '%hisobot%'], ['reports', '%выгрузк%'],
+      ['promo', '%акци%'], ['promo', '%скидк%'], ['promo', '%промокод%'], ['promo', '%купон%'], ['promo', '%бонус%'], ['promo', '%chegirma%'],
+      ['clients', '%клиент%'], ['clients', '%ресторан%'], ['clients', '%заведен%'], ['clients', '%филиал%'], ['clients', '%точк%'],
+      ['schedule', '%график%'], ['schedule', '%расписан%'], ['schedule', '%смен%'], ['schedule', '%рабоч%врем%'],
+      ['hardware', '%принтер%'], ['hardware', '%печат%'], ['hardware', '%терминал%'], ['hardware', '%сканер%'], ['hardware', '%оборудован%'],
+      ['notification', '%уведомлен%'], ['notification', '%оповещен%'], ['notification', '%sms%'], ['notification', '%push%'], ['notification', '%рассылк%'],
+      ['training', '%обучен%'], ['training', '%инструкц%'], ['training', '%документац%'], ['training', '%как пользова%'],
+      ['onboarding', '%регистрац%'], ['onboarding', '%подключен%'], ['onboarding', '%настрой%'], ['onboarding', '%начать%'],
       ['question', '%подскажите%'], ['question', '%как сделать%'], ['question', '%помогите%'], ['question', '%вопрос%'], ['question', '%объясни%'], ['question', '%savol%'],
       ['feedback', '%спасибо%'], ['feedback', '%rahmat%'], ['feedback', '%отлично%'], ['feedback', '%класс%'], ['feedback', '%молодц%'],
       ['complaint', '%жалоб%'], ['complaint', '%недовол%'], ['complaint', '%плохо%'], ['complaint', '%ужасн%'], ['complaint', '%возврат%'],
-      ['onboarding', '%регистрац%'], ['onboarding', '%подключен%'], ['onboarding', '%настрой%'], ['onboarding', '%начать%'],
       ['feature_request', '%предложен%'], ['feature_request', '%хотел бы%'], ['feature_request', '%добавьте%'], ['feature_request', '%было бы%'],
     ]
     try {
+      // Сначала сбросим "general" обратно для переклассификации
+      await sql`
+        UPDATE support_messages SET ai_category = NULL
+        WHERE ai_category = 'general'
+          AND created_at >= ${fromDateTime}::timestamptz
+          AND created_at <= ${toDateTime}::timestamptz
+      `
       for (const [cat, pattern] of categoryRules) {
         await sql`
           UPDATE support_messages SET ai_category = ${cat}
@@ -520,6 +535,14 @@ export default async function handler(req: Request): Promise<Response> {
           WHEN 'integration' THEN 'Интеграции'
           WHEN 'menu' THEN 'Меню/Товары'
           WHEN 'app' THEN 'Приложение'
+          WHEN 'account' THEN 'Аккаунт/Вход'
+          WHEN 'reports' THEN 'Отчёты'
+          WHEN 'promo' THEN 'Акции/Скидки'
+          WHEN 'clients' THEN 'Клиенты/Заведения'
+          WHEN 'schedule' THEN 'График работы'
+          WHEN 'hardware' THEN 'Оборудование'
+          WHEN 'notification' THEN 'Уведомления'
+          WHEN 'training' THEN 'Обучение'
           WHEN 'question' THEN 'Вопросы'
           WHEN 'complaint' THEN 'Жалобы'
           WHEN 'feedback' THEN 'Благодарности'
@@ -550,6 +573,14 @@ export default async function handler(req: Request): Promise<Response> {
           WHEN 'integration' THEN 'Интеграции'
           WHEN 'menu' THEN 'Меню/Товары'
           WHEN 'app' THEN 'Приложение'
+          WHEN 'account' THEN 'Аккаунт/Вход'
+          WHEN 'reports' THEN 'Отчёты'
+          WHEN 'promo' THEN 'Акции/Скидки'
+          WHEN 'clients' THEN 'Клиенты/Заведения'
+          WHEN 'schedule' THEN 'График работы'
+          WHEN 'hardware' THEN 'Оборудование'
+          WHEN 'notification' THEN 'Уведомления'
+          WHEN 'training' THEN 'Обучение'
           WHEN 'question' THEN 'Вопросы'
           WHEN 'complaint' THEN 'Жалобы'
           WHEN 'feedback' THEN 'Благодарности'
