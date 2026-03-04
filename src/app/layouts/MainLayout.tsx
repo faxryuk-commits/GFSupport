@@ -177,24 +177,11 @@ export function MainLayout() {
       } catch { /* ignore */ }
     }
 
-    // Первый heartbeat сразу
     sendHeartbeat()
-    
-    // Затем каждую минуту
-    const interval = setInterval(sendHeartbeat, 60000)
-    
-    // При закрытии вкладки - logout
-    const handleUnload = () => {
-      navigator.sendBeacon('/api/support/agents/activity', JSON.stringify({
-        action: 'logout',
-        agentId
-      }))
-    }
-    window.addEventListener('beforeunload', handleUnload)
+    const interval = setInterval(sendHeartbeat, 45000)
 
     return () => {
       clearInterval(interval)
-      window.removeEventListener('beforeunload', handleUnload)
     }
   }, [])
 

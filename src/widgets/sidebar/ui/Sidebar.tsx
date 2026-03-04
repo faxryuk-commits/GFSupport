@@ -318,19 +318,20 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
               >
                 <div className={`avatar-flip w-full h-full ${showOnlineCount ? 'flipped' : ''}`}>
                   {/* Front - User Avatar */}
-                  <div className="avatar-front w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium overflow-hidden">
-                    {currentUser.avatar || currentUser.avatarUrl ? (
+                  <div className="avatar-front w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-medium overflow-hidden relative">
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      {currentUser.name.charAt(0).toUpperCase()}
+                    </span>
+                    {(currentUser.avatar || currentUser.avatarUrl) && (
                       <img 
                         src={currentUser.avatar || currentUser.avatarUrl} 
                         alt="" 
-                        className="w-full h-full object-cover" 
+                        className="w-full h-full object-cover relative z-10" 
                         onError={(e) => {
                           const target = e.target as HTMLImageElement
                           target.style.display = 'none'
                         }}
                       />
-                    ) : (
-                      currentUser.name.charAt(0).toUpperCase()
                     )}
                   </div>
                   {/* Back - Online Count */}

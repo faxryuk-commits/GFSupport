@@ -169,132 +169,60 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at, phone, position, department, permissions FROM support_agents ORDER BY name ASC`
 
-    // Calculate metrics for each agent
-    const agentsWithMetrics = await Promise.all(rows.map(async (r: any) => {
-      // Count messages sent by this agent
-      // Match by: telegram_id, username, or name (partial match)
-      let messagesCount = 0
-      let resolvedCount = 0
-      let activeChatsCount = 0
-      let isOnline = false
-      
-      try {
-        // Build matching conditions for this agent
-        // Match by: telegram_id, username, or exact/similar name
-        const agentName = r.name || ''
-        const agentUsername = r.username || ''
-        const agentTelegramId = r.telegram_id || ''
-        
-        const msgResult = await sql`
-          SELECT COUNT(*) as count 
-          FROM support_messages 
-          WHERE (sender_role IN ('support', 'team', 'agent') OR is_from_client = false)
-            AND created_at > NOW() - INTERVAL '30 days'
-            AND (
-              -- Match by telegram_id
-              (${agentTelegramId} != '' AND sender_id::text = ${agentTelegramId})
-              -- Match by username (case insensitive)
-              OR (${agentUsername} != '' AND LOWER(sender_username) = LOWER(${agentUsername}))
-              -- Match by exact name
-              OR (${agentName} != '' AND sender_name = ${agentName})
-              -- Match by similar name (contains)
-              OR (${agentName} != '' AND LENGTH(${agentName}) >= 3 AND sender_name ILIKE ${`%${agentName}%`})
-            )
-        `
-        messagesCount = parseInt(msgResult[0]?.count || 0)
-        
-        // Conversations resolved - count unique channels where this agent responded
-        const resolvedResult = await sql`
-          SELECT COUNT(DISTINCT m.channel_id) as count
-          FROM support_messages m
-          JOIN support_channels c ON c.id = m.channel_id
-          WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
-            AND m.created_at > NOW() - INTERVAL '30 days'
-            AND c.awaiting_reply = false
-            AND (
-              (${agentTelegramId} != '' AND m.sender_id::text = ${agentTelegramId})
-              OR (${agentUsername} != '' AND LOWER(m.sender_username) = LOWER(${agentUsername}))
-              OR (${agentName} != '' AND m.sender_name = ${agentName})
-              OR (${agentName} != '' AND LENGTH(${agentName}) >= 3 AND m.sender_name ILIKE ${`%${agentName}%`})
-            )
-        `
-        resolvedCount = parseInt(resolvedResult[0]?.count || 0)
-        
-        // Active chats - channels awaiting reply where this agent participated
-        const activeChatsResult = await sql`
-          SELECT COUNT(DISTINCT m.channel_id) as count
-          FROM support_messages m
-          JOIN support_channels c ON c.id = m.channel_id
-          WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
-            AND m.created_at > NOW() - INTERVAL '7 days'
-            AND c.awaiting_reply = true
-            AND (
-              (${agentTelegramId} != '' AND m.sender_id::text = ${agentTelegramId})
-              OR (${agentUsername} != '' AND LOWER(m.sender_username) = LOWER(${agentUsername}))
-              OR (${agentName} != '' AND m.sender_name = ${agentName})
-              OR (${agentName} != '' AND LENGTH(${agentName}) >= 3 AND m.sender_name ILIKE ${`%${agentName}%`})
-            )
-        `
-        activeChatsCount = parseInt(activeChatsResult[0]?.count || 0)
-        
-        // Check if agent is online based on recent activity (last 3 minutes for more accuracy)
-        const activityResult = await sql`
-          SELECT COUNT(*) as count 
-          FROM support_agent_activity 
-          WHERE agent_id = ${r.id} 
-            AND activity_at > NOW() - INTERVAL '3 minutes'
-        `
-        const hasRecentActivity = parseInt(activityResult[0]?.count || 0) > 0
-        
-        // Also check active sessions with recent activity (within 5 minutes)
-        const sessionResult = await sql`
-          SELECT COUNT(*) as count 
-          FROM support_agent_sessions s
-          WHERE s.agent_id = ${r.id} 
-            AND s.is_active = true
-            AND EXISTS (
-              SELECT 1 FROM support_agent_activity a 
-              WHERE a.session_id = s.id 
-                AND a.activity_at > NOW() - INTERVAL '5 minutes'
-            )
-        `
-        const hasActiveSession = parseInt(sessionResult[0]?.count || 0) > 0
-        
-        isOnline = hasRecentActivity || hasActiveSession
-      } catch (e) {
-        // Tables might not exist yet
+    // Batch queries instead of N+1 per agent
+    let activityMap: Record<string, { lastSeen: string }> = {}
+    let metricsMap: Record<string, { messages: number; resolved: number; active: number }> = {}
+
+    try {
+      // One query for all agent activity (online check + last seen)
+      const activityRows = await sql`
+        SELECT agent_id, MAX(activity_at) as last_seen
+        FROM support_agent_activity
+        WHERE activity_at > NOW() - INTERVAL '24 hours'
+        GROUP BY agent_id
+      `
+      for (const a of activityRows) {
+        activityMap[a.agent_id] = { lastSeen: a.last_seen }
       }
-      
-      // Get last seen time (last activity or last session end)
-      let lastSeenAt = null
-      try {
-        const lastActivityResult = await sql`
-          SELECT activity_at FROM support_agent_activity 
-          WHERE agent_id = ${r.id} 
-          ORDER BY activity_at DESC LIMIT 1
-        `
-        if (lastActivityResult[0]?.activity_at) {
-          lastSeenAt = lastActivityResult[0].activity_at
-        } else {
-          // Try sessions table
-          const lastSessionResult = await sql`
-            SELECT COALESCE(ended_at, started_at) as last_time 
-            FROM support_agent_sessions 
-            WHERE agent_id = ${r.id} 
-            ORDER BY started_at DESC LIMIT 1
-          `
-          if (lastSessionResult[0]?.last_time) {
-            lastSeenAt = lastSessionResult[0].last_time
-          }
+    } catch (e) { /* table might not exist */ }
+
+    try {
+      // One query for message counts per agent
+      const msgRows = await sql`
+        SELECT 
+          COALESCE(a.id, m.sender_id::text) as agent_id,
+          COUNT(*) as msg_count,
+          COUNT(DISTINCT m.channel_id) FILTER (WHERE c.awaiting_reply = false) as resolved_count,
+          COUNT(DISTINCT m.channel_id) FILTER (WHERE c.awaiting_reply = true AND m.created_at > NOW() - INTERVAL '7 days') as active_count
+        FROM support_messages m
+        JOIN support_channels c ON c.id = m.channel_id
+        LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
+        WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+          AND m.created_at > NOW() - INTERVAL '30 days'
+        GROUP BY COALESCE(a.id, m.sender_id::text)
+      `
+      for (const m of msgRows) {
+        metricsMap[m.agent_id] = {
+          messages: parseInt(m.msg_count),
+          resolved: parseInt(m.resolved_count),
+          active: parseInt(m.active_count),
         }
-      } catch (e) {
-        // Tables might not exist
       }
+    } catch (e) { /* table might not exist */ }
+
+    const now = Date.now()
+    const THREE_MINUTES_MS = 3 * 60 * 1000
+
+    const agentsWithMetrics = rows.map((r: any) => {
+      const activity = activityMap[r.id]
+      const metrics = metricsMap[r.id] || { messages: 0, resolved: 0, active: 0 }
+
+      const lastSeenAt = activity?.lastSeen || null
+      const isOnline = lastSeenAt 
+        ? (now - new Date(lastSeenAt).getTime()) < THREE_MINUTES_MS
+        : false
+      const finalStatus = isOnline ? 'online' : 'offline'
       
-      // Use status from DB if it's 'online', otherwise use computed isOnline
-      const finalStatus = r.status === 'online' ? 'online' : (isOnline ? 'online' : 'offline')
-      
-      // Parse permissions
       let permissions: string[] = []
       try {
         if (r.permissions) {
@@ -317,19 +245,19 @@ export default async function handler(req: Request): Promise<Response> {
         position: r.position,
         department: r.department,
         permissions: permissions,
-        assignedChannels: resolvedCount,
-        activeChats: activeChatsCount,
+        assignedChannels: metrics.resolved,
+        activeChats: metrics.active,
         metrics: {
-          totalConversations: messagesCount,
-          resolvedConversations: resolvedCount,
+          totalConversations: metrics.messages,
+          resolvedConversations: metrics.resolved,
           avgFirstResponseMin: 0,
           avgResolutionMin: 0,
           satisfactionScore: '0',
-          messagesHandled: messagesCount,
+          messagesHandled: metrics.messages,
           escalations: 0
         }
       }
-    }))
+    })
 
     return json({ agents: agentsWithMetrics })
   } catch (e: any) {
