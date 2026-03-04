@@ -2,20 +2,6 @@ import { neon } from '@neondatabase/serverless'
 
 export const runtime = 'edge'
 
-const CATEGORY_KEYWORDS: [string, string[]][] = [
-  ['onboarding', ['%подключ%', '%регистрац%', '%новый клиент%', '%ulanish%', '%yangi restoran%', '%hamkorlik%']],
-  ['billing', ['%оплат%', '%счёт%', '%счет%', '%деньг%', '%тариф%', '%подписк%', '%баланс%', '%tolov%', '%narx%', '%summa%']],
-  ['complaint', ['%жалоб%', '%недовол%', '%ужас%', '%shikoyat%', '%хамств%', '%кошмар%', '%обман%']],
-  ['technical', ['%ошибк%', '%не работа%', '%не поступа%', '%не прихо%', '%не загруж%', '%сломал%', '%crash%', '%xato%', '%ishlamay%', '%buzilgan%', '%chiqmay%', '%не могу%', '%error%']],
-  ['integration', ['%интеграц%', '%iiko%', '%r-keeper%', '%poster%', '%payme%', '%click%', '%webhook%', '%uzkassa%', '%jowi%']],
-  ['order', ['%заказ%', '%buyurtma%', '%zakaz%', '%корзин%']],
-  ['delivery', ['%доставк%', '%курьер%', '%yetkazib%', '%dostavka%']],
-  ['menu', ['%меню%', '%товар%', '%mahsulot%', '%menyu%', '%ассортимент%']],
-  ['app', ['%приложен%', '%android%', '%ios%', '%ilova%']],
-  ['question', ['%подскажите%', '%как сделать%', '%как настроить%', '%как мне%', '%где найти%', '%qanday%', '%помогите%']],
-  ['feedback', ['%спасибо%', '%благодар%', '%отлично%', '%rahmat%', '%молодц%']],
-]
-
 export default async function handler(req: Request) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
@@ -24,47 +10,48 @@ export default async function handler(req: Request) {
   const sql = neon(process.env.DATABASE_URL!)
 
   try {
-    const before = await sql`
+    // Simple single-pass UPDATE with CASE WHEN + ILIKE, LIMIT 300
+    await sql`
+      UPDATE support_messages SET ai_category = CASE
+        WHEN LOWER(text_content) LIKE '%оплат%' OR LOWER(text_content) LIKE '%тариф%' OR LOWER(text_content) LIKE '%баланс%' OR LOWER(text_content) LIKE '%tolov%' THEN 'billing'
+        WHEN LOWER(text_content) LIKE '%ошибк%' OR LOWER(text_content) LIKE '%не работа%' OR LOWER(text_content) LIKE '%сломал%' OR LOWER(text_content) LIKE '%xato%' OR LOWER(text_content) LIKE '%ishlamay%' OR LOWER(text_content) LIKE '%error%' THEN 'technical'
+        WHEN LOWER(text_content) LIKE '%заказ%' OR LOWER(text_content) LIKE '%buyurtma%' OR LOWER(text_content) LIKE '%чек %' THEN 'order'
+        WHEN LOWER(text_content) LIKE '%доставк%' OR LOWER(text_content) LIKE '%курьер%' THEN 'delivery'
+        WHEN LOWER(text_content) LIKE '%интеграц%' OR LOWER(text_content) LIKE '%iiko%' OR LOWER(text_content) LIKE '%webhook%' THEN 'integration'
+        WHEN LOWER(text_content) LIKE '%меню%' OR LOWER(text_content) LIKE '%товар%' OR LOWER(text_content) LIKE '%mahsulot%' THEN 'menu'
+        WHEN LOWER(text_content) LIKE '%приложен%' OR LOWER(text_content) LIKE '%android%' OR LOWER(text_content) LIKE '%ilova%' THEN 'app'
+        WHEN LOWER(text_content) LIKE '%подскажите%' OR LOWER(text_content) LIKE '%как сделать%' OR LOWER(text_content) LIKE '%помогите%' THEN 'question'
+        WHEN LOWER(text_content) LIKE '%жалоб%' OR LOWER(text_content) LIKE '%недовол%' THEN 'complaint'
+        WHEN LOWER(text_content) LIKE '%спасибо%' OR LOWER(text_content) LIKE '%rahmat%' THEN 'feedback'
+        ELSE 'general'
+      END
+      WHERE id IN (
+        SELECT id FROM support_messages
+        WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
+          AND text_content IS NOT NULL AND LENGTH(text_content) > 2
+        LIMIT 300
+      )
+    `
+
+    const stats = await sql`
+      SELECT ai_category, COUNT(*) as cnt FROM support_messages
+      WHERE ai_category IS NOT NULL AND ai_category != ''
+      GROUP BY ai_category ORDER BY cnt DESC
+    `
+
+    const remaining = await sql`
       SELECT COUNT(*) as cnt FROM support_messages
       WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
         AND text_content IS NOT NULL AND LENGTH(text_content) > 2
     `
 
-    let totalClassified = 0
-    const stats: Record<string, number> = {}
-
-    for (const [category, keywords] of CATEGORY_KEYWORDS) {
-      const conditions = keywords.map(k => `LOWER(text_content) LIKE '${k}'`).join(' OR ')
-      const result = await sql(`
-        UPDATE support_messages SET ai_category = '${category}'
-        WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
-          AND text_content IS NOT NULL AND LENGTH(text_content) > 2
-          AND (${conditions})
-        RETURNING id
-      `)
-      if (result.length > 0) {
-        totalClassified += result.length
-        stats[category] = result.length
-      }
-    }
-
-    // Remaining uncategorized > 5 chars → 'general'
-    const generalResult = await sql`
-      UPDATE support_messages SET ai_category = 'general'
-      WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
-        AND text_content IS NOT NULL AND LENGTH(text_content) > 5
-      RETURNING id
-    `
-    if (generalResult.length > 0) {
-      totalClassified += generalResult.length
-      stats['general'] = generalResult.length
-    }
+    const result: Record<string, number> = {}
+    for (const row of stats) result[row.ai_category] = parseInt(row.cnt)
 
     return new Response(JSON.stringify({
       success: true,
-      uncategorizedBefore: parseInt(before[0]?.cnt || '0'),
-      classified: totalClassified,
-      stats,
+      remaining: parseInt(remaining[0]?.cnt || '0'),
+      categories: result,
     }))
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e.message }), { status: 500 })
