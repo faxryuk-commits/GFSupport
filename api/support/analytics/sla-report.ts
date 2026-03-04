@@ -481,52 +481,35 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // =============================================
-    // 8.5. АВТОКЛАССИФИКАЦИЯ: доклассифицировать сообщения без категории
+    // 8.5. АВТОКЛАССИФИКАЦИЯ: один запрос CASE WHEN вместо 80+ отдельных
     // =============================================
-    const categoryRules: [string, string][] = [
-      ['billing', '%оплат%'], ['billing', '%тариф%'], ['billing', '%баланс%'], ['billing', '%tolov%'], ['billing', '%счёт%'], ['billing', '%счет%'], ['billing', '%подписк%'],
-      ['technical', '%ошибк%'], ['technical', '%не работа%'], ['technical', '%сломал%'], ['technical', '%xato%'], ['technical', '%ishlamay%'], ['technical', '%баг%'], ['technical', '%глюч%'], ['technical', '%завис%'], ['technical', '%не загруж%'], ['technical', '%не открыва%'],
-      ['integration', '%iiko%'], ['integration', '%интеграц%'], ['integration', '%webhook%'], ['integration', '%api%'],
-      ['order', '%заказ%'], ['order', '%buyurtma%'], ['order', '%чек%'], ['order', '%корзин%'], ['order', '%оформлен%'],
-      ['delivery', '%доставк%'], ['delivery', '%курьер%'], ['delivery', '%yetkazib%'], ['delivery', '%адрес%'],
-      ['menu', '%меню%'], ['menu', '%товар%'], ['menu', '%mahsulot%'], ['menu', '%продукт%'], ['menu', '%блюд%'], ['menu', '%позици%'], ['menu', '%каталог%'],
-      ['app', '%приложен%'], ['app', '%android%'], ['app', '%ios%'], ['app', '%мобильн%'], ['app', '%ilova%'],
-      ['account', '%пароль%'], ['account', '%логин%'], ['account', '%аккаунт%'], ['account', '%авториз%'], ['account', '%войти%'], ['account', '%вход%'], ['account', '%parol%'], ['account', '%kirish%'],
-      ['reports', '%отчёт%'], ['reports', '%отчет%'], ['reports', '%статистик%'], ['reports', '%аналитик%'], ['reports', '%hisobot%'], ['reports', '%выгрузк%'],
-      ['promo', '%акци%'], ['promo', '%скидк%'], ['promo', '%промокод%'], ['promo', '%купон%'], ['promo', '%бонус%'], ['promo', '%chegirma%'],
-      ['clients', '%клиент%'], ['clients', '%ресторан%'], ['clients', '%заведен%'], ['clients', '%филиал%'], ['clients', '%точк%'],
-      ['schedule', '%график%'], ['schedule', '%расписан%'], ['schedule', '%смен%'], ['schedule', '%рабоч%врем%'],
-      ['hardware', '%принтер%'], ['hardware', '%печат%'], ['hardware', '%терминал%'], ['hardware', '%сканер%'], ['hardware', '%оборудован%'],
-      ['notification', '%уведомлен%'], ['notification', '%оповещен%'], ['notification', '%sms%'], ['notification', '%push%'], ['notification', '%рассылк%'],
-      ['training', '%обучен%'], ['training', '%инструкц%'], ['training', '%документац%'], ['training', '%как пользова%'],
-      ['onboarding', '%регистрац%'], ['onboarding', '%подключен%'], ['onboarding', '%настрой%'], ['onboarding', '%начать%'],
-      ['question', '%подскажите%'], ['question', '%как сделать%'], ['question', '%помогите%'], ['question', '%вопрос%'], ['question', '%объясни%'], ['question', '%savol%'],
-      ['feedback', '%спасибо%'], ['feedback', '%rahmat%'], ['feedback', '%отлично%'], ['feedback', '%класс%'], ['feedback', '%молодц%'],
-      ['complaint', '%жалоб%'], ['complaint', '%недовол%'], ['complaint', '%плохо%'], ['complaint', '%ужасн%'], ['complaint', '%возврат%'],
-      ['feature_request', '%предложен%'], ['feature_request', '%хотел бы%'], ['feature_request', '%добавьте%'], ['feature_request', '%было бы%'],
-    ]
     try {
-      // Сначала сбросим "general" обратно для переклассификации
       await sql`
-        UPDATE support_messages SET ai_category = NULL
-        WHERE ai_category = 'general'
-          AND created_at >= ${fromDateTime}::timestamptz
-          AND created_at <= ${toDateTime}::timestamptz
-      `
-      for (const [cat, pattern] of categoryRules) {
-        await sql`
-          UPDATE support_messages SET ai_category = ${cat}
-          WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
-            AND text_content IS NOT NULL AND LENGTH(text_content) > 2
-            AND LOWER(text_content) LIKE ${pattern}
-            AND created_at >= ${fromDateTime}::timestamptz
-            AND created_at <= ${toDateTime}::timestamptz
-        `
-      }
-      await sql`
-        UPDATE support_messages SET ai_category = 'general'
-        WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
-          AND text_content IS NOT NULL AND LENGTH(text_content) > 10
+        UPDATE support_messages SET ai_category = CASE
+          WHEN LOWER(text_content) LIKE '%оплат%' OR LOWER(text_content) LIKE '%тариф%' OR LOWER(text_content) LIKE '%баланс%' OR LOWER(text_content) LIKE '%tolov%' OR LOWER(text_content) LIKE '%счёт%' OR LOWER(text_content) LIKE '%счет%' OR LOWER(text_content) LIKE '%подписк%' THEN 'billing'
+          WHEN LOWER(text_content) LIKE '%ошибк%' OR LOWER(text_content) LIKE '%не работа%' OR LOWER(text_content) LIKE '%сломал%' OR LOWER(text_content) LIKE '%xato%' OR LOWER(text_content) LIKE '%ishlamay%' OR LOWER(text_content) LIKE '%баг%' OR LOWER(text_content) LIKE '%глюч%' OR LOWER(text_content) LIKE '%завис%' OR LOWER(text_content) LIKE '%не загруж%' OR LOWER(text_content) LIKE '%не открыва%' THEN 'technical'
+          WHEN LOWER(text_content) LIKE '%iiko%' OR LOWER(text_content) LIKE '%интеграц%' OR LOWER(text_content) LIKE '%webhook%' OR LOWER(text_content) LIKE '%api%' THEN 'integration'
+          WHEN LOWER(text_content) LIKE '%заказ%' OR LOWER(text_content) LIKE '%buyurtma%' OR LOWER(text_content) LIKE '%чек%' OR LOWER(text_content) LIKE '%корзин%' OR LOWER(text_content) LIKE '%оформлен%' THEN 'order'
+          WHEN LOWER(text_content) LIKE '%доставк%' OR LOWER(text_content) LIKE '%курьер%' OR LOWER(text_content) LIKE '%yetkazib%' OR LOWER(text_content) LIKE '%адрес%' THEN 'delivery'
+          WHEN LOWER(text_content) LIKE '%меню%' OR LOWER(text_content) LIKE '%товар%' OR LOWER(text_content) LIKE '%mahsulot%' OR LOWER(text_content) LIKE '%продукт%' OR LOWER(text_content) LIKE '%блюд%' OR LOWER(text_content) LIKE '%позици%' OR LOWER(text_content) LIKE '%каталог%' THEN 'menu'
+          WHEN LOWER(text_content) LIKE '%приложен%' OR LOWER(text_content) LIKE '%android%' OR LOWER(text_content) LIKE '%ios%' OR LOWER(text_content) LIKE '%мобильн%' OR LOWER(text_content) LIKE '%ilova%' THEN 'app'
+          WHEN LOWER(text_content) LIKE '%пароль%' OR LOWER(text_content) LIKE '%логин%' OR LOWER(text_content) LIKE '%аккаунт%' OR LOWER(text_content) LIKE '%авториз%' OR LOWER(text_content) LIKE '%войти%' OR LOWER(text_content) LIKE '%вход%' OR LOWER(text_content) LIKE '%parol%' OR LOWER(text_content) LIKE '%kirish%' THEN 'account'
+          WHEN LOWER(text_content) LIKE '%отчёт%' OR LOWER(text_content) LIKE '%отчет%' OR LOWER(text_content) LIKE '%статистик%' OR LOWER(text_content) LIKE '%аналитик%' OR LOWER(text_content) LIKE '%hisobot%' OR LOWER(text_content) LIKE '%выгрузк%' THEN 'reports'
+          WHEN LOWER(text_content) LIKE '%акци%' OR LOWER(text_content) LIKE '%скидк%' OR LOWER(text_content) LIKE '%промокод%' OR LOWER(text_content) LIKE '%купон%' OR LOWER(text_content) LIKE '%бонус%' OR LOWER(text_content) LIKE '%chegirma%' THEN 'promo'
+          WHEN LOWER(text_content) LIKE '%клиент%' OR LOWER(text_content) LIKE '%ресторан%' OR LOWER(text_content) LIKE '%заведен%' OR LOWER(text_content) LIKE '%филиал%' OR LOWER(text_content) LIKE '%точк%' THEN 'clients'
+          WHEN LOWER(text_content) LIKE '%график%' OR LOWER(text_content) LIKE '%расписан%' OR LOWER(text_content) LIKE '%смен%' THEN 'schedule'
+          WHEN LOWER(text_content) LIKE '%принтер%' OR LOWER(text_content) LIKE '%печат%' OR LOWER(text_content) LIKE '%терминал%' OR LOWER(text_content) LIKE '%сканер%' OR LOWER(text_content) LIKE '%оборудован%' THEN 'hardware'
+          WHEN LOWER(text_content) LIKE '%уведомлен%' OR LOWER(text_content) LIKE '%оповещен%' OR LOWER(text_content) LIKE '%sms%' OR LOWER(text_content) LIKE '%push%' OR LOWER(text_content) LIKE '%рассылк%' THEN 'notification'
+          WHEN LOWER(text_content) LIKE '%обучен%' OR LOWER(text_content) LIKE '%инструкц%' OR LOWER(text_content) LIKE '%документац%' OR LOWER(text_content) LIKE '%как пользова%' THEN 'training'
+          WHEN LOWER(text_content) LIKE '%регистрац%' OR LOWER(text_content) LIKE '%подключен%' OR LOWER(text_content) LIKE '%настрой%' OR LOWER(text_content) LIKE '%начать%' THEN 'onboarding'
+          WHEN LOWER(text_content) LIKE '%подскажите%' OR LOWER(text_content) LIKE '%как сделать%' OR LOWER(text_content) LIKE '%помогите%' OR LOWER(text_content) LIKE '%вопрос%' OR LOWER(text_content) LIKE '%объясни%' OR LOWER(text_content) LIKE '%savol%' THEN 'question'
+          WHEN LOWER(text_content) LIKE '%спасибо%' OR LOWER(text_content) LIKE '%rahmat%' OR LOWER(text_content) LIKE '%отлично%' OR LOWER(text_content) LIKE '%класс%' OR LOWER(text_content) LIKE '%молодц%' THEN 'feedback'
+          WHEN LOWER(text_content) LIKE '%жалоб%' OR LOWER(text_content) LIKE '%недовол%' OR LOWER(text_content) LIKE '%плохо%' OR LOWER(text_content) LIKE '%ужасн%' OR LOWER(text_content) LIKE '%возврат%' THEN 'complaint'
+          WHEN LOWER(text_content) LIKE '%предложен%' OR LOWER(text_content) LIKE '%хотел бы%' OR LOWER(text_content) LIKE '%добавьте%' OR LOWER(text_content) LIKE '%было бы%' THEN 'feature_request'
+          ELSE 'general'
+        END
+        WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown' OR ai_category = 'general')
+          AND text_content IS NOT NULL AND LENGTH(text_content) > 2
           AND created_at >= ${fromDateTime}::timestamptz
           AND created_at <= ${toDateTime}::timestamptz
       `
@@ -558,22 +541,6 @@ export default async function handler(req: Request): Promise<Response> {
       `
     } catch (e) { /* user sync failed */ }
 
-    try {
-      // Также обновим username/name для существующих агентов из support_users
-      await sql`
-        UPDATE support_agents sa
-        SET
-          username = COALESCE(NULLIF(REPLACE(u.telegram_username, '@', ''), ''), sa.username),
-          telegram_id = COALESCE(u.telegram_id::text, sa.telegram_id)
-        FROM support_users u
-        WHERE u.role = 'employee'
-          AND u.is_active = true
-          AND u.telegram_id IS NOT NULL
-          AND LOWER(sa.name) = LOWER(u.name)
-          AND (sa.telegram_id IS NULL OR sa.telegram_id = '')
-      `
-    } catch (e) { /* update failed */ }
-
     // =============================================
     // 8.7. ПЕРЕКЛАССИФИКАЦИЯ СООБЩЕНИЙ СОТРУДНИКОВ
     // Сообщения от известных агентов, помеченные как 'client', обновляем на 'support'
@@ -584,45 +551,22 @@ export default async function handler(req: Request): Promise<Response> {
         SET sender_role = 'support', is_from_client = false
         FROM support_agents a
         WHERE m.sender_role = 'client'
-          AND m.sender_id IS NOT NULL
-          AND a.telegram_id IS NOT NULL
-          AND a.telegram_id = m.sender_id
           AND m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
-      `
-      await sql`
-        UPDATE support_messages m
-        SET sender_role = 'support', is_from_client = false
-        FROM support_agents a
-        WHERE m.sender_role = 'client'
-          AND m.sender_username IS NOT NULL
-          AND a.username IS NOT NULL
-          AND a.username != ''
-          AND LOWER(a.username) = LOWER(m.sender_username)
-          AND m.created_at >= ${fromDateTime}::timestamptz
-          AND m.created_at <= ${toDateTime}::timestamptz
-      `
-      await sql`
-        UPDATE support_messages m
-        SET sender_role = 'support', is_from_client = false
-        FROM support_agents a
-        WHERE m.sender_role = 'client'
-          AND m.sender_name IS NOT NULL
-          AND a.name IS NOT NULL
-          AND LOWER(a.name) = LOWER(m.sender_name)
-          AND m.created_at >= ${fromDateTime}::timestamptz
-          AND m.created_at <= ${toDateTime}::timestamptz
+          AND (
+            (m.sender_id IS NOT NULL AND a.telegram_id IS NOT NULL AND a.telegram_id = m.sender_id)
+            OR (m.sender_username IS NOT NULL AND a.username IS NOT NULL AND a.username != '' AND LOWER(a.username) = LOWER(m.sender_username))
+            OR (m.sender_name IS NOT NULL AND a.name IS NOT NULL AND LOWER(a.name) = LOWER(m.sender_name))
+          )
       `
     } catch (e) { /* reclassify failed */ }
 
-    // Прямая переклассификация из support_users (employee) без промежуточного support_agents
     try {
       await sql`
         UPDATE support_messages m
         SET sender_role = 'support', is_from_client = false
         FROM support_users u
-        WHERE u.role = 'employee'
-          AND u.is_active = true
+        WHERE u.role = 'employee' AND u.is_active = true
           AND m.sender_role = 'client'
           AND m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
