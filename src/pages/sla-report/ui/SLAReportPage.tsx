@@ -13,6 +13,7 @@ import {
   XCircle,
   ArrowRight
 } from 'lucide-react'
+import { AgentPerformanceTable } from '@/features/analytics'
 
 interface SLAReport {
   period: {
@@ -52,6 +53,7 @@ interface SLAReport {
   }
   agentPerformance: Array<{
     name: string
+    role: 'admin' | 'manager' | 'agent'
     totalResponses: number
     withinSLA: number
     violatedSLA: number
@@ -60,6 +62,14 @@ interface SLAReport {
     minMinutes: number
     maxMinutes: number
     medianMinutes: number
+    totalMessages: number
+    totalChars: number
+    avgCharsPerMessage: number
+    channelsServed: number
+    activeDays: number
+    resolvedCases: number
+    totalAssignedCases: number
+    efficiencyRatio: number
   }>
   slaViolations: Array<{
     channelName: string
@@ -616,58 +626,7 @@ export function SLAReportPage() {
                 <Users className="w-5 h-5 text-blue-500" />
                 Производительность сотрудников
               </h3>
-              
-              {report.agentPerformance.length === 0 ? (
-                <p className="text-slate-500 text-center py-8">Нет данных за выбранный период</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50">
-                        <th className="text-left py-3 px-3 font-medium text-slate-600">Сотрудник</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">Ответов</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">В срок</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">Нарушений</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">SLA %</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">Среднее</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">Медиана</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">Мин</th>
-                        <th className="text-center py-3 px-3 font-medium text-slate-600">Макс</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {report.agentPerformance.map((agent) => (
-                        <tr key={agent.name} className="border-b border-slate-100 hover:bg-slate-50">
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700">
-                                {agent.name.charAt(0)}
-                              </div>
-                              <span className="font-medium">{agent.name}</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 text-center font-bold">{agent.totalResponses}</td>
-                          <td className="py-3 px-3 text-center text-green-600 font-medium">{agent.withinSLA}</td>
-                          <td className="py-3 px-3 text-center text-red-600 font-medium">{agent.violatedSLA}</td>
-                          <td className="py-3 px-3 text-center">
-                            <span className={`px-2 py-1 rounded text-sm font-bold ${
-                              agent.slaCompliance >= 95 ? 'bg-green-100 text-green-700' :
-                              agent.slaCompliance >= 80 ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-red-100 text-red-700'
-                            }`}>
-                              {agent.slaCompliance}%
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-center">{agent.avgMinutes} мин</td>
-                          <td className="py-3 px-3 text-center">{agent.medianMinutes} мин</td>
-                          <td className="py-3 px-3 text-center text-green-600">{agent.minMinutes} мин</td>
-                          <td className="py-3 px-3 text-center text-red-600">{agent.maxMinutes} мин</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <AgentPerformanceTable agents={report.agentPerformance} />
             </div>
           )}
         </>

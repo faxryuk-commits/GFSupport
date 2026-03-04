@@ -181,28 +181,49 @@ export default async function handler(req: Request): Promise<Response> {
     `
     
     // =============================================
-    // 3. СТАТИСТИКА ПО СОТРУДНИКАМ
+    // 3. СТАТИСТИКА ПО СОТРУДНИКАМ (сообщения + символы + роль)
     // =============================================
     const agentStatsData = await sql`
       SELECT 
         COALESCE(a.name, m.sender_name) as agent_name,
-        COUNT(*) as total_responses,
+        COALESCE(a.role, 'agent') as agent_role,
+        COUNT(*) as total_messages,
+        SUM(COALESCE(LENGTH(m.text_content), 0)) as total_chars,
+        ROUND(AVG(COALESCE(LENGTH(m.text_content), 0))) as avg_chars_per_message,
         COUNT(DISTINCT m.channel_id) as channels_served,
-        COUNT(DISTINCT DATE(m.created_at)) as active_days,
-        AVG(
-          CASE WHEN m.response_time_ms IS NOT NULL 
-          THEN m.response_time_ms / 60000.0 
-          ELSE NULL END
-        ) as avg_response_minutes
+        COUNT(DISTINCT DATE(m.created_at)) as active_days
       FROM support_messages m
       LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text OR a.id::text = m.sender_id::text
       WHERE m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
-      GROUP BY COALESCE(a.name, m.sender_name)
-      ORDER BY total_responses DESC
+      GROUP BY COALESCE(a.name, m.sender_name), COALESCE(a.role, 'agent')
+      ORDER BY total_messages DESC
     `
+
+    // 3b. Кейсы per agent
+    const agentCasesData = await sql`
+      SELECT 
+        a.name as agent_name,
+        COUNT(*) as total_assigned,
+        COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases
+      FROM support_cases c
+      JOIN support_agents a ON a.id::text = c.assigned_to::text
+      WHERE c.created_at >= ${fromDateTime}::timestamptz
+        AND c.created_at <= ${toDateTime}::timestamptz
+      GROUP BY a.name
+    `
+
+    // Индексы для быстрого объединения
+    const statsMap: Record<string, any> = {}
+    for (const s of agentStatsData) {
+      statsMap[s.agent_name] = s
+    }
+    const casesMap: Record<string, any> = {}
+    for (const c of agentCasesData) {
+      casesMap[c.agent_name] = c
+    }
     
     // Детальная статистика по каждому сотруднику - время ответов
     const agentResponseTimes: Record<string, number[]> = {}
@@ -215,12 +236,26 @@ export default async function handler(req: Request): Promise<Response> {
         agentResponseTimes[r.responder_name].push(parseFloat(r.response_minutes))
       }
     }
+
+    // Собираем все уникальные имена агентов
+    const allAgentNames = new Set([
+      ...Object.keys(agentResponseTimes),
+      ...agentStatsData.map((s: any) => s.agent_name),
+    ])
     
-    const agentDetails = Object.entries(agentResponseTimes).map(([name, times]) => {
-      const sorted = times.sort((a, b) => a - b)
+    const agentDetails = Array.from(allAgentNames).map(name => {
+      const times = agentResponseTimes[name] || []
+      const sorted = [...times].sort((a, b) => a - b)
       const withinSLA = times.filter(t => t <= slaMinutes).length
+      const stats = statsMap[name]
+      const cases = casesMap[name]
+
+      const totalChars = parseInt(stats?.total_chars || '0')
+      const resolvedCasesCount = parseInt(cases?.resolved_cases || '0')
+
       return {
         name,
+        role: stats?.agent_role || 'agent',
         totalResponses: times.length,
         withinSLA,
         violatedSLA: times.length - withinSLA,
@@ -229,6 +264,14 @@ export default async function handler(req: Request): Promise<Response> {
         minMinutes: sorted[0] || 0,
         maxMinutes: sorted[sorted.length - 1] || 0,
         medianMinutes: sorted[Math.floor(sorted.length / 2)] || 0,
+        totalMessages: parseInt(stats?.total_messages || '0'),
+        totalChars,
+        avgCharsPerMessage: parseInt(stats?.avg_chars_per_message || '0'),
+        channelsServed: parseInt(stats?.channels_served || '0'),
+        activeDays: parseInt(stats?.active_days || '0'),
+        resolvedCases: resolvedCasesCount,
+        totalAssignedCases: parseInt(cases?.total_assigned || '0'),
+        efficiencyRatio: resolvedCasesCount > 0 ? Math.round(totalChars / resolvedCasesCount) : 0,
       }
     }).sort((a, b) => b.totalResponses - a.totalResponses)
     
