@@ -216,16 +216,19 @@ export default async function handler(req: Request): Promise<Response> {
     `
 
     // 3c. Обязательства per agent
-    const commitmentsData = await sql`
-      SELECT 
-        promised_by,
-        COUNT(*) as total_commitments,
-        COUNT(*) FILTER (WHERE status = 'fulfilled') as fulfilled
-      FROM support_commitments
-      WHERE created_at >= ${fromDateTime}::timestamptz
-        AND created_at <= ${toDateTime}::timestamptz
-      GROUP BY promised_by
-    `
+    let commitmentsData: any[] = []
+    try {
+      commitmentsData = await sql`
+        SELECT 
+          promised_by,
+          COUNT(*) as total_commitments,
+          COUNT(*) FILTER (WHERE status = 'fulfilled') as fulfilled
+        FROM support_commitments
+        WHERE created_at >= ${fromDateTime}::timestamptz
+          AND created_at <= ${toDateTime}::timestamptz
+        GROUP BY promised_by
+      `
+    } catch (e) { /* promised_by column may not exist yet */ }
 
     // 3d. Сессии per agent (часы онлайн)
     const sessionsData = await sql`
