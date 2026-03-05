@@ -1,9 +1,11 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender } from '../lib/identification.js'
 import { shouldAutoCreateCase, generateCaseId, getNextTicketNumber } from '../lib/case-detector.js'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
+  maxDuration: 30,
 }
 
 function getSQL() {
@@ -21,6 +23,60 @@ function json(data: any, status = 200) {
 
 function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+async function transcribeAudio(url: string): Promise<string | null> {
+  const apiKey = await getOpenAIKey()
+  if (!apiKey || !url) return null
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const form = new FormData()
+    form.append('file', blob, 'audio.ogg')
+    form.append('model', 'whisper-1')
+    form.append('language', 'ru')
+    const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    })
+    if (!r.ok) return null
+    const data = await r.json()
+    return data.text?.trim() || null
+  } catch (e: any) {
+    console.error('[WA] Transcription error:', e.message)
+    return null
+  }
+}
+
+async function analyzePhoto(url: string): Promise<string | null> {
+  const apiKey = await getOpenAIKey()
+  if (!apiKey || !url) return null
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Опиши содержание этого изображения в 1-2 предложениях на русском. Если это скриншот ошибки — опиши что видно. Если текст — перепиши его.' },
+            { type: 'image_url', image_url: { url, detail: 'low' } },
+          ],
+        }],
+        max_tokens: 200,
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!r.ok) return null
+    const data = await r.json() as any
+    return data.choices?.[0]?.message?.content || null
+  } catch (e: any) {
+    console.error('[WA] Photo analysis error:', e.message)
+    return null
+  }
 }
 
 async function upsertWhatsAppUser(sql: any, phone: string, name: string, channelId: string, role: string) {
@@ -264,6 +320,35 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (!fromMe && senderPhone) {
       upsertWhatsAppUser(sql, senderPhone, senderName || '', channelId, senderRole).catch(() => {})
+    }
+
+    // Транскрипция и анализ медиа
+    if (mediaUrl && !text) {
+      try {
+        let transcript: string | null = null
+        let summary: string | null = null
+
+        if (['voice', 'audio'].includes(msgContentType)) {
+          transcript = await transcribeAudio(mediaUrl)
+        } else if (['video', 'video_note'].includes(msgContentType)) {
+          transcript = await transcribeAudio(mediaUrl)
+        } else if (msgContentType === 'photo' || msgContentType === 'image') {
+          summary = await analyzePhoto(mediaUrl)
+        }
+
+        if (transcript || summary) {
+          await sql`
+            UPDATE support_messages SET
+              transcript = COALESCE(${transcript}, transcript),
+              ai_summary = COALESCE(${summary}, ai_summary),
+              text_content = COALESCE(text_content, ${transcript || summary})
+            WHERE id = ${msgId}
+          `.catch(() => {})
+          console.log(`[WA] Media analyzed: ${msgContentType}, transcript=${!!transcript}, summary=${!!summary}`)
+        }
+      } catch (e: any) {
+        console.error('[WA Media]', e.message)
+      }
     }
 
     if (text) {

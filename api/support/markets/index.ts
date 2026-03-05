@@ -52,7 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
       const marketId = url.searchParams.get('marketId')
       if (!marketId) return json({ error: 'marketId required' }, 400)
       const agents = await sql`
-        SELECT am.agent_id, am.role, a.name, a.username, a.position, a.status
+        SELECT a.id, am.role, a.name, a.username, a.position, a.status
         FROM support_agent_markets am
         JOIN support_agents a ON a.id = am.agent_id
         WHERE am.market_id = ${marketId}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase } from 'lucide-react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CASE_STATUS_CONFIG, KANBAN_STATUSES, ACTIVE_STATUSES, ARCHIVE_STATUSES, type CaseStatus, type Case } from '@/entities/case'
@@ -382,6 +382,26 @@ export function CasesPage() {
   return (
     <>
       <div className="h-full flex flex-col p-6 overflow-hidden">
+        {/* Stats Summary */}
+        <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
+          {[
+            { label: 'Всего активных', value: activeCases.length, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+            { label: 'Срочные', value: activeCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length, icon: Zap, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
+            { label: 'Без назначения', value: activeCases.filter(c => !c.assignedTo).length, icon: User, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
+            { label: 'Решено за 7д', value: archivedCases.filter(c => { const ts = c.resolvedAt || c.updatedAt || c.createdAt; return ts ? new Date(ts).getTime() > Date.now() - 7 * 86400000 : false }).length, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
+          ].map((s, i) => (
+            <div key={i} className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 flex items-center gap-3`}>
+              <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center`}>
+                <s.icon className={`w-5 h-5 ${s.color}`} />
+              </div>
+              <div>
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-xs text-slate-500">{s.label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div className="flex items-center gap-4">
@@ -576,23 +596,29 @@ export function CasesPage() {
                 onDragOver={viewMode === 'active' ? handleDragOver : undefined}
                 onDrop={viewMode === 'active' ? () => handleDrop(status) : undefined}
               >
-                <div className={`px-3 py-2 rounded-t-xl ${config.bgColor}`}>
+                <div className={`px-3 py-2.5 rounded-t-xl ${config.bgColor}`}>
                   <div className="flex items-center justify-between">
-                    <span className={`font-medium ${isArchiveStatus ? config.color : 'text-white'}`}>
-                      {config.label}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      isArchiveStatus ? 'bg-white/50 text-slate-600' : 'bg-white/20 text-white'
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${isArchiveStatus ? 'bg-slate-400' : 'bg-white/70'}`} />
+                      <span className={`font-semibold text-sm ${isArchiveStatus ? config.color : 'text-white'}`}>
+                        {config.label}
+                      </span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                      isArchiveStatus ? 'bg-white/50 text-slate-600' : 'bg-white/25 text-white'
                     }`}>
                       {statusCases.length}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex-1 bg-slate-100 rounded-b-xl p-2 space-y-2 min-h-[400px] overflow-y-auto">
+                <div className="flex-1 bg-slate-50 border border-slate-200 border-t-0 rounded-b-xl p-2 space-y-2 min-h-[400px] overflow-y-auto">
                   {statusCases.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                      Перетащите сюда
+                    <div className="h-full flex flex-col items-center justify-center text-slate-300 text-sm py-8">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-2">
+                        <Plus className="w-5 h-5" />
+                      </div>
+                      {viewMode === 'active' ? 'Перетащите сюда' : 'Пусто'}
                     </div>
                   ) : (
                     statusCases.map(caseItem => (
