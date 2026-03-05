@@ -8,12 +8,13 @@ import makeWASocket, {
 import pino from 'pino'
 import * as QRCode from 'qrcode'
 
-const logger = pino({ level: 'warn' })
+const logger = pino({ level: 'info' })
 
 let sock: WASocket | null = null
 let isConnected = false
 let phoneNumber = ''
 let currentQR: string | null = null
+let lastError: string | null = null
 let onMessageCallback: ((msg: proto.IWebMessageInfo) => void) | null = null
 
 export function onMessage(cb: (msg: proto.IWebMessageInfo) => void) {
@@ -21,7 +22,7 @@ export function onMessage(cb: (msg: proto.IWebMessageInfo) => void) {
 }
 
 export function getStatus() {
-  return { connected: isConnected, phone: phoneNumber, qr: currentQR }
+  return { connected: isConnected, phone: phoneNumber, qr: currentQR, lastError }
 }
 
 export function getCurrentQR(): string | null {
@@ -33,58 +34,74 @@ export function getSocket(): WASocket | null {
 }
 
 export async function startBaileys(authDir: string) {
-  const { state, saveCreds } = await useMultiFileAuthState(authDir)
+  console.log(`[Baileys] Initializing... authDir=${authDir}`)
+  lastError = null
 
-  sock = makeWASocket({
-    auth: state,
-    logger,
-    printQRInTerminal: false,
-    browser: ['GFSupport Bridge', 'Chrome', '22.0'],
-  })
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(authDir)
+    console.log('[Baileys] Auth state loaded')
 
-  sock.ev.on('creds.update', saveCreds)
+    sock = makeWASocket({
+      auth: state,
+      logger,
+      printQRInTerminal: false,
+      browser: ['GFSupport Bridge', 'Chrome', '22.0'],
+    })
+    console.log('[Baileys] Socket created, waiting for connection events...')
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      try {
-        currentQR = await QRCode.toDataURL(qr, { width: 300, margin: 2 })
-        console.log('[Baileys] QR code ready — scan via GFSupport UI or /qr endpoint')
-      } catch {
+    sock.ev.on('creds.update', saveCreds)
+
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+      console.log(`[Baileys] connection.update: connection=${connection}, hasQR=${!!qr}`)
+
+      if (qr) {
+        try {
+          currentQR = await QRCode.toDataURL(qr, { width: 300, margin: 2 })
+          console.log(`[Baileys] QR ready (${currentQR?.length} chars)`)
+        } catch (e: any) {
+          currentQR = null
+          lastError = `QR generation failed: ${e.message}`
+          console.error('[Baileys] QR generation error:', e.message)
+        }
+      }
+
+      if (connection === 'open') {
+        isConnected = true
         currentQR = null
-        console.log('[Baileys] Failed to generate QR image')
+        lastError = null
+        phoneNumber = sock?.user?.id?.split(':')[0] || ''
+        console.log(`[Baileys] Connected as ${phoneNumber}`)
       }
-    }
 
-    if (connection === 'open') {
-      isConnected = true
-      currentQR = null
-      phoneNumber = sock?.user?.id?.split(':')[0] || ''
-      console.log(`[Baileys] Connected as ${phoneNumber}`)
-    }
+      if (connection === 'close') {
+        isConnected = false
+        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+        const errMsg = (lastDisconnect?.error as any)?.message || 'unknown'
+        lastError = `Disconnected: ${errMsg} (status ${statusCode})`
 
-    if (connection === 'close') {
-      isConnected = false
-      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+        console.log(`[Baileys] Disconnected. Status: ${statusCode}. Error: ${errMsg}. Reconnect: ${shouldReconnect}`)
 
-      console.log(`[Baileys] Disconnected. Status: ${statusCode}. Reconnect: ${shouldReconnect}`)
-
-      if (shouldReconnect) {
-        setTimeout(() => startBaileys(authDir), 3000)
-      } else {
-        console.log('[Baileys] Logged out. Delete auth_info/ and restart to re-scan QR.')
+        if (shouldReconnect) {
+          setTimeout(() => startBaileys(authDir), 3000)
+        } else {
+          console.log('[Baileys] Logged out. Delete auth_info/ and restart to re-scan QR.')
+        }
       }
-    }
-  })
+    })
 
-  sock.ev.on('messages.upsert', ({ messages, type }) => {
-    if (type !== 'notify') return
+    sock.ev.on('messages.upsert', ({ messages, type }) => {
+      if (type !== 'notify') return
 
-    for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue
-      onMessageCallback?.(msg)
-    }
-  })
+      for (const msg of messages) {
+        if (!msg.message || msg.key.fromMe) continue
+        onMessageCallback?.(msg)
+      }
+    })
+  } catch (e: any) {
+    lastError = `Init failed: ${e.message}`
+    console.error('[Baileys] FATAL init error:', e)
+  }
 }
 
 export async function sendText(chatId: string, text: string): Promise<proto.WebMessageInfo | undefined> {

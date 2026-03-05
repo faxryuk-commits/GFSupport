@@ -24,9 +24,8 @@ export function createRouter(bridgeSecret: string): Router {
   })
 
   router.get('/qr', (_req: Request, res: Response) => {
-    const qr = getCurrentQR()
-    const { connected, phone } = getStatus()
-    res.json({ connected, phone, qr })
+    const status = getStatus()
+    res.json({ connected: status.connected, phone: status.phone, qr: status.qr, lastError: status.lastError })
   })
 
   router.post('/send', async (req: Request, res: Response) => {

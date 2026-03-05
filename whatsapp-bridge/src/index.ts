@@ -101,5 +101,8 @@ onMessage(async (msg) => {
 app.listen(PORT, () => {
   console.log(`[Bridge] Running on port ${PORT}`)
   console.log(`[Bridge] Webhook → ${WEBHOOK_URL}`)
-  startBaileys(AUTH_DIR)
+  console.log(`[Bridge] Auth dir → ${AUTH_DIR}`)
+  startBaileys(AUTH_DIR).catch((e) => {
+    console.error('[Bridge] startBaileys crashed:', e)
+  })
 })

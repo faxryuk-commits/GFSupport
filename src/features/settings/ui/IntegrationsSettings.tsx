@@ -18,6 +18,7 @@ interface WhatsAppStatus {
   qr: string | null
   configured: boolean
   error?: string
+  lastError?: string | null
 }
 
 interface IntegrationsSettingsProps {
@@ -135,10 +136,18 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
               </>
             ) : (
               <>
-                <p className="text-sm font-medium text-slate-700">Мост недоступен</p>
-                <p className="text-xs text-slate-400 mt-1 text-center">
-                  {waStatus?.error || 'Проверьте что сервис запущен на Railway'}
+                <p className="text-sm font-medium text-slate-700">
+                  {waStatus?.lastError ? 'Ожидание QR-кода...' : 'Мост недоступен'}
                 </p>
+                <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">
+                  {waStatus?.lastError || waStatus?.error || 'Проверьте что сервис запущен на Railway'}
+                </p>
+                {waStatus?.lastError && (
+                  <div className="flex items-center gap-2 mt-3 text-xs text-amber-500">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    QR генерируется, подождите...
+                  </div>
+                )}
               </>
             )}
           </div>
