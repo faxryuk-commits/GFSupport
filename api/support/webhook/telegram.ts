@@ -110,6 +110,50 @@ async function transcribeAudio(audioUrl: string): Promise<string | null> {
   }
 }
 
+async function analyzePhoto(photoUrl: string): Promise<string | null> {
+  const apiKey = await getOpenAIKey()
+  if (!apiKey || !photoUrl) return null
+
+  try {
+    console.log('[Webhook] Analyzing photo via Vision...')
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Опиши содержание этого изображения в 1-2 предложениях на русском. Если это скриншот ошибки или интерфейса — опиши что видно. Если текст — перепиши его.' },
+            { type: 'image_url', image_url: { url: photoUrl, detail: 'low' } },
+          ],
+        }],
+        max_tokens: 200,
+      }),
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!res.ok) {
+      console.error('[Webhook] Vision API error:', res.status)
+      return null
+    }
+
+    const data = await res.json() as any
+    const description = data.choices?.[0]?.message?.content
+    if (description) {
+      console.log('[Webhook] Photo analysis:', description.slice(0, 100))
+      return description
+    }
+    return null
+  } catch (e: any) {
+    console.error('[Webhook] Photo analysis error:', e.message)
+    return null
+  }
+}
+
 // Get chat photo URL from Telegram
 async function getChatPhotoUrl(chatId: string): Promise<string | null> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
@@ -1493,7 +1537,6 @@ export default async function handler(req: Request): Promise<Response> {
     // Trigger AI analysis for ALL messages (clients AND team can report problems)
     // But auto-reply only for clients
     
-    // For voice/audio messages, transcribe first
     let analysisText = text
     let transcribedText: string | null = null
     
@@ -1501,27 +1544,43 @@ export default async function handler(req: Request): Promise<Response> {
       transcribedText = await transcribeAudio(mediaUrl)
       if (transcribedText) {
         analysisText = transcribedText
-        // Update message with transcription
         await sql`
           UPDATE support_messages 
-          SET text_content = ${transcribedText}, transcription = ${transcribedText}
+          SET text_content = ${transcribedText}, transcript = ${transcribedText}
           WHERE id = ${messageId}
-        `.catch(() => {
-          // transcription column may not exist, try adding it
-          sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS transcription TEXT`.catch(() => {})
-        })
-        console.log(`[Webhook] Transcribed voice message: ${transcribedText.slice(0, 100)}`)
+        `.catch(() => {})
+        console.log(`[Webhook] Transcribed voice: ${transcribedText.slice(0, 100)}`)
       }
     }
-    
-    // For media without text, create context description for AI
+
+    if (contentType === 'photo' && mediaUrl && !analysisText) {
+      const photoDesc = await analyzePhoto(mediaUrl)
+      if (photoDesc) {
+        analysisText = `[Фото] ${photoDesc}`
+        await sql`
+          UPDATE support_messages SET ai_summary = ${photoDesc} WHERE id = ${messageId}
+        `.catch(() => {})
+      }
+    }
+
+    if ((contentType === 'video' || contentType === 'video_note') && mediaUrl && !analysisText) {
+      transcribedText = await transcribeAudio(mediaUrl)
+      if (transcribedText) {
+        analysisText = transcribedText
+        await sql`
+          UPDATE support_messages SET transcript = ${transcribedText} WHERE id = ${messageId}
+        `.catch(() => {})
+        console.log(`[Webhook] Transcribed video audio: ${transcribedText.slice(0, 100)}`)
+      }
+    }
+
     if (!analysisText && contentType !== 'text') {
       const mediaDescriptions: Record<string, string> = {
-        photo: 'Клиент отправил фото/скриншот (возможно демонстрация проблемы)',
-        video: 'Клиент отправил видео (возможно демонстрация проблемы)',
-        document: fileName ? `Клиент отправил документ: ${fileName}` : 'Клиент отправил документ',
-        voice: 'Клиент отправил голосовое сообщение (не удалось транскрибировать)',
-        video_note: 'Клиент отправил видеосообщение',
+        photo: 'Клиент отправил фото/скриншот',
+        video: 'Клиент отправил видео',
+        document: fileName ? `Документ: ${fileName}` : 'Клиент отправил документ',
+        voice: 'Голосовое сообщение (не удалось транскрибировать)',
+        video_note: 'Видеосообщение',
         sticker: 'Стикер',
         animation: 'GIF/Анимация',
       }

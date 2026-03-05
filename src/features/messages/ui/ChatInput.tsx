@@ -240,7 +240,6 @@ export function ChatInput({
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionStartIndex, setMentionStartIndex] = useState(-1)
   
-  // Filter mention users
   const filteredMentionUsers = mentionUsers.filter(user => {
     if (!mentionQuery) return true
     const query = mentionQuery.toLowerCase()
@@ -248,7 +247,7 @@ export function ChatInput({
       user.name.toLowerCase().includes(query) ||
       user.username?.toLowerCase().includes(query)
     )
-  }).slice(0, 6)
+  }).slice(0, 20)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Handle Escape key - close mentions or cancel reply
@@ -495,7 +494,7 @@ export function ChatInput({
             <div className="flex-1 relative">
               {/* Mentions dropdown */}
               {showMentions && filteredMentionUsers.length > 0 && (
-                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                <div className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20 max-h-72 overflow-y-auto">
                   <div className="px-3 py-1 text-xs text-slate-500 border-b border-slate-100 flex items-center gap-1">
                     <AtSign className="w-3 h-3" />
                     Упомянуть участника
