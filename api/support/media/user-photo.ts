@@ -78,8 +78,13 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
-    
-    // Check if we have a cached photo URL in database
+
+    // Skip non-numeric IDs (WhatsApp phone numbers that aren't valid Telegram IDs)
+    const isValidTelegramId = /^\d{5,15}$/.test(userId)
+    if (!isValidTelegramId) {
+      return new Response(null, { status: 404, headers: corsHeaders })
+    }
+
     const cached = await sql`
       SELECT sender_photo_url FROM support_messages 
       WHERE sender_id = ${userId} AND sender_photo_url IS NOT NULL
@@ -88,29 +93,17 @@ export default async function handler(req: Request): Promise<Response> {
     
     let photoUrl = cached[0]?.sender_photo_url
     
-    // Check if the URL is still valid
     if (photoUrl) {
       try {
         const checkRes = await fetch(photoUrl, { method: 'HEAD' })
-        if (!checkRes.ok) {
-          photoUrl = null
-        }
-      } catch {
-        photoUrl = null
-      }
+        if (!checkRes.ok) photoUrl = null
+      } catch { photoUrl = null }
     }
     
-    // Get fresh URL if needed
     if (!photoUrl) {
       photoUrl = await getFreshUserPhotoUrl(botToken, userId)
-      
-      // Update all messages from this user with the new photo URL
       if (photoUrl) {
-        await sql`
-          UPDATE support_messages 
-          SET sender_photo_url = ${photoUrl}
-          WHERE sender_id = ${userId}
-        `
+        await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`.catch(() => {})
       }
     }
     
@@ -118,27 +111,15 @@ export default async function handler(req: Request): Promise<Response> {
       return new Response(null, { status: 404, headers: corsHeaders })
     }
     
-    // Proxy the image instead of redirect (Telegram URLs expire)
     try {
-      const imageRes = await fetch(photoUrl)
+      let imageRes = await fetch(photoUrl)
       if (!imageRes.ok) {
-        // URL expired, try fresh
         photoUrl = await getFreshUserPhotoUrl(botToken, userId)
         if (photoUrl) {
-          await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`
-          const freshRes = await fetch(photoUrl)
-          if (freshRes.ok) {
-            const imageData = await freshRes.arrayBuffer()
-            return new Response(imageData, {
-              headers: {
-                ...corsHeaders,
-                'Content-Type': freshRes.headers.get('Content-Type') || 'image/jpeg',
-                'Cache-Control': 'public, max-age=3600',
-              }
-            })
-          }
+          await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`.catch(() => {})
+          imageRes = await fetch(photoUrl)
         }
-        return new Response(null, { status: 404, headers: corsHeaders })
+        if (!imageRes.ok) return new Response(null, { status: 404, headers: corsHeaders })
       }
       
       const imageData = await imageRes.arrayBuffer()
@@ -155,6 +136,6 @@ export default async function handler(req: Request): Promise<Response> {
     
   } catch (e: any) {
     console.error('User photo proxy error:', e)
-    return new Response(null, { status: 500, headers: corsHeaders })
+    return new Response(null, { status: 404, headers: corsHeaders })
   }
 }

@@ -87,11 +87,10 @@ export default async function handler(req: Request): Promise<Response> {
     
     const channel = channels[0]
 
-    // Get recent messages for context (last 50)
     const messages = await sql`
       SELECT 
         id, sender_name, sender_role, text_content, transcript,
-        ai_sentiment, ai_intent, ai_urgency, ai_suggestion, ai_summary,
+        ai_sentiment, ai_intent, ai_urgency, ai_summary,
         created_at
       FROM support_messages
       WHERE channel_id = ${channelId}
@@ -102,21 +101,12 @@ export default async function handler(req: Request): Promise<Response> {
     let reminders: any[] = []
     try {
       reminders = await sql`
-        SELECT commitment_text, deadline, status
-        FROM support_reminders
-        WHERE channel_id = ${channelId} AND status = 'active'
-        ORDER BY COALESCE(deadline, created_at) ASC
+        SELECT commitment_text, due_date as deadline, status
+        FROM support_commitments
+        WHERE channel_id = ${channelId} AND status = 'pending'
+        ORDER BY COALESCE(due_date, created_at) ASC
       `
-    } catch {
-      try {
-        reminders = await sql`
-          SELECT commitment_text, deadline, status
-          FROM support_commitments
-          WHERE channel_id = ${channelId} AND status = 'pending'
-          ORDER BY COALESCE(deadline, created_at) ASC
-        `
-      } catch { /* table may not exist */ }
-    }
+    } catch { /* table may not exist */ }
 
     // Calculate client waiting time
     let clientWaitingTime: number | null = null
