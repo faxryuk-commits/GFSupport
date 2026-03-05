@@ -91,15 +91,11 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
 }
 
 // Преобразование сообщения из API в формат UI компонента  
-function mapMessageToUI(
-  message: Message,
-  currentAgent?: { id: string; username?: string; name: string } | null
-): MessageData {
+function mapMessageToUI(message: Message): MessageData {
   const formatTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   }
 
-  // Маппинг типа медиа
   const getMediaType = (mediaType?: string): 'image' | 'video' | 'video_note' | 'audio' | 'voice' | 'document' | 'sticker' => {
     switch (mediaType) {
       case 'photo': return 'image'
@@ -113,7 +109,6 @@ function mapMessageToUI(
     }
   }
 
-  // Преобразование реакций из { emoji: [users] } в MessageReaction[]
   const mapReactions = (reactions?: Record<string, string[]>): MessageReaction[] | undefined => {
     if (!reactions || typeof reactions !== 'object') return undefined
     const result: MessageReaction[] = []
@@ -130,23 +125,6 @@ function mapMessageToUI(
     return result.length > 0 ? result : undefined
   }
 
-  // Справа только сообщения текущего пользователя, остальные — слева
-  let isOwnMessage = false
-  if (currentAgent) {
-    const su = (message.senderUsername || '').replace('@', '').toLowerCase()
-    const au = (currentAgent.username || '').replace('@', '').toLowerCase()
-    if (su && au && su === au) {
-      isOwnMessage = true
-    } else if (
-      message.senderName && currentAgent.name &&
-      message.senderName.toLowerCase() === currentAgent.name.toLowerCase()
-    ) {
-      isOwnMessage = true
-    }
-  } else {
-    isOwnMessage = message.senderRole !== 'client'
-  }
-
   return {
     id: message.id,
     telegramMessageId: message.telegramMessageId,
@@ -155,7 +133,7 @@ function mapMessageToUI(
     text: message.text || '',
     time: formatTime(message.createdAt),
     date: message.createdAt,
-    isClient: !isOwnMessage,
+    isClient: message.senderRole === 'client',
     status: message.isRead ? 'read' : 'delivered',
     // Reply/цитирование
     replyTo: message.replyToMessageId && message.replyToText ? {
@@ -391,7 +369,7 @@ export function ChatsPage() {
         if (!isActive) return
         
         if (newData.length > 0) {
-          const newMappedMessages = newData.map(m => mapMessageToUI(m, agent))
+          const newMappedMessages = newData.map(mapMessageToUI)
           const existingIds = new Set(currentMessages.map(m => m.id))
           const trulyNewMessages = newMappedMessages.filter(m => !existingIds.has(m.id))
           
@@ -488,7 +466,7 @@ export function ChatsPage() {
       setHasMoreMessages(true)
       
       const { messages: data, hasMore } = await fetchMessages(channelId, MESSAGES_LIMIT)
-      const mappedMessages = data.map(m => mapMessageToUI(m, agent))
+      const mappedMessages = data.map(mapMessageToUI)
       setMessages(mappedMessages)
       setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
       
@@ -520,7 +498,7 @@ export function ChatsPage() {
       )
       
       if (data.length > 0) {
-        const mappedMessages = data.map(m => mapMessageToUI(m, agent))
+        const mappedMessages = data.map(mapMessageToUI)
         // Добавляем старые сообщения в начало
         setMessages(prev => [...mappedMessages, ...prev])
       }
@@ -654,7 +632,7 @@ export function ChatsPage() {
           
           // Заменяем временное сообщение на реальное
           setMessages(prev => prev.map(m =>
-            m.id === tempFileId ? mapMessageToUI(sentMessage, agent) : m
+            m.id === tempFileId ? mapMessageToUI(sentMessage) : m
           ))
         }
       } else if (textToSend) {
@@ -680,7 +658,7 @@ export function ChatsPage() {
         )
         
         setMessages(prev => prev.map(m =>
-          m.id === tempId ? mapMessageToUI(sentMessage, agent) : m
+          m.id === tempId ? mapMessageToUI(sentMessage) : m
         ))
       }
     } catch (error) {

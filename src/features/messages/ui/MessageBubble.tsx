@@ -669,7 +669,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
           )}
           <div className="border-t border-slate-100 my-1" />
           <button
-            onClick={() => setShowContextMenu(false)}
+            onClick={() => handleMenuAction(onReply)}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 text-left"
           >
             <MessageSquare className="w-4 h-4 text-slate-400" />
