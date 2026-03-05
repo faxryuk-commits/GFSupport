@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../lib/identification.js'
+import { getOpenAIKey } from '../lib/db.js'
 import OpenAI from 'openai'
 
 export const config = {
@@ -59,7 +60,7 @@ async function getFileUrl(fileId: string): Promise<string | null> {
 
 // Transcribe audio/voice message using OpenAI Whisper
 async function transcribeAudio(audioUrl: string): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = await getOpenAIKey()
   if (!apiKey || !audioUrl) return null
   
   try {

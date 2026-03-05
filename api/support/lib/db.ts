@@ -154,6 +154,15 @@ export async function ensureMigrated() {
   console.log('[DB] Migrations complete')
 }
 
+export async function getOpenAIKey(): Promise<string | null> {
+  try {
+    const sql = getSQL()
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key' LIMIT 1`
+    if (rows[0]?.value) return rows[0].value
+  } catch {}
+  return process.env.OPENAI_API_KEY || null
+}
+
 export function json(data: any, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,

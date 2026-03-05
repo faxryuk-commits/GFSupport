@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import OpenAI from 'openai'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -361,7 +362,7 @@ async function analyzeWithAI(text: string): Promise<AnalysisResult> {
     return analyzeWithoutAI(text) // Use fallback which already uses simple intent
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = await getOpenAIKey()
   if (!apiKey) {
     console.log('[AI Analyze] No OpenAI key, using fallback')
     return analyzeWithoutAI(text)

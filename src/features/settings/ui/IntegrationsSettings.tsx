@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { Modal } from '@/shared/ui'
 import { apiGet, apiPost } from '@/shared/services/api.service'
+import { OpenAISettingsModal } from './OpenAISettingsModal'
 
 export interface Integration {
   id: string
@@ -20,7 +21,7 @@ type ServiceStatus = 'active' | 'inactive' | 'error'
 
 export interface HealthData {
   telegram: { status: ServiceStatus; botUsername?: string; botName?: string; channelsCount: number }
-  openai: { status: ServiceStatus; model: string }
+  openai: { status: ServiceStatus; model: string; source?: 'db' | 'env' | 'none' }
   whisper: { status: ServiceStatus; language: string }
   notify: { status: ServiceStatus; chatId: string | null }
   whatsapp: { status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number }
@@ -50,19 +51,13 @@ interface IntegrationsSettingsProps {
 }
 
 function StatusDot({ status }: { status: ServiceStatus }) {
-  if (status === 'active') {
+  const cls = status === 'active' ? 'bg-green-400' : status === 'error' ? 'bg-red-400' : ''
+  if (status === 'active' || status === 'error') {
+    const dot = status === 'active' ? 'bg-green-500' : 'bg-red-500'
     return (
       <span className="relative flex h-2.5 w-2.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-      </span>
-    )
-  }
-  if (status === 'error') {
-    return (
-      <span className="relative flex h-2.5 w-2.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${cls} opacity-75`} />
+        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${dot}`} />
       </span>
     )
   }
@@ -305,6 +300,7 @@ export function IntegrationsSettings({
   onDisconnect,
 }: IntegrationsSettingsProps) {
   const [waModalOpen, setWaModalOpen] = useState(false)
+  const [aiModalOpen, setAiModalOpen] = useState(false)
 
   const tg = health?.telegram
   const ai = health?.openai
@@ -374,7 +370,10 @@ export function IntegrationsSettings({
             status={ai?.status || 'inactive'}
             details={
               ai?.status === 'active' ? (
-                <p>Модель: <span className="font-medium text-slate-700">{ai.model}</span></p>
+                <>
+                  <p>Модель: <span className="font-medium text-slate-700">{ai.model}</span></p>
+                  <p className="text-xs text-slate-400">Источник: {ai.source === 'db' ? 'настройки системы' : 'переменная окружения'}</p>
+                </>
               ) : ai?.status === 'error' ? (
                 <p className="text-red-500 flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5" /> API ключ недействителен
@@ -383,7 +382,18 @@ export function IntegrationsSettings({
                 <p>API ключ не настроен</p>
               )
             }
-            actions={null}
+            actions={
+              <button
+                onClick={() => setAiModalOpen(true)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  ai?.status === 'active'
+                    ? 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                }`}
+              >
+                {ai?.status === 'active' ? 'Настройки' : 'Настроить'}
+              </button>
+            }
           />
 
           {/* Whisper */}
@@ -452,6 +462,7 @@ export function IntegrationsSettings({
       </div>
 
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
+      <OpenAISettingsModal isOpen={aiModalOpen} onClose={() => setAiModalOpen(false)} onSaved={onRefreshHealth} />
 
       <Modal isOpen={isModalOpen} onClose={onCloseModal} title={`Подключить ${selectedIntegration?.name}`} size="md">
         {selectedIntegration && (
@@ -467,14 +478,9 @@ export function IntegrationsSettings({
             {selectedIntegration.name === 'Telegram Bot' && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Bot Token</label>
-                <input
-                  type="text"
-                  placeholder="123456789:ABCdefGHI..."
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
+                <input type="text" placeholder="123456789:ABCdefGHI..." className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
               </div>
             )}
-
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
               <button onClick={onCloseModal} className="px-6 py-2.5 text-slate-700 font-medium rounded-lg hover:bg-slate-100">
                 Отмена

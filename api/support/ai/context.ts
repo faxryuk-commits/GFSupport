@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -121,7 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
       : `${messages.length} сообщений в диалоге`
 
     // Analyze context with AI
-    const apiKey = process.env.OPENAI_API_KEY
+    const apiKey = await getOpenAIKey()
     let aiContext: ChannelContext | null = null
 
     if (apiKey && messages.length > 0) {

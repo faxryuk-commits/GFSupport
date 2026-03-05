@@ -179,7 +179,6 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (action === 'test_bot') {
-        // Тест подключения бота
         const tokenRow = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token'`
         const token = tokenRow[0]?.value || process.env.TELEGRAM_BOT_TOKEN
         
@@ -205,6 +204,28 @@ export default async function handler(req: Request): Promise<Response> {
           }
         } catch (e: any) {
           return json({ error: 'Failed to connect to Telegram', details: e.message }, 500)
+        }
+      }
+
+      if (action === 'test_openai') {
+        const keyRow = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key'`
+        const key = keyRow[0]?.value || process.env.OPENAI_API_KEY
+        if (!key) return json({ error: 'Нет API ключа OpenAI' }, 400)
+
+        try {
+          const res = await fetch('https://api.openai.com/v1/models', {
+            headers: { 'Authorization': `Bearer ${key}` },
+            signal: AbortSignal.timeout(5000),
+          })
+          if (res.ok) {
+            const modelRow = await sql`SELECT value FROM support_settings WHERE key = 'ai_model'`
+            const model = modelRow[0]?.value || 'gpt-4o-mini'
+            return json({ success: true, model })
+          }
+          const err = await res.json().catch(() => ({})) as any
+          return json({ error: 'Ключ недействителен', details: err.error?.message || `HTTP ${res.status}` }, 400)
+        } catch (e: any) {
+          return json({ error: 'Не удалось подключиться к OpenAI', details: e.message }, 500)
         }
       }
 

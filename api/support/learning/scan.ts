@@ -1,8 +1,9 @@
 import { neon } from '@neondatabase/serverless'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = { 
   runtime: 'edge',
-  maxDuration: 60 // Allow longer execution for scanning
+  maxDuration: 60
 }
 
 function getSQL() {
@@ -23,7 +24,7 @@ function json(data: any, status = 200) {
 
 // Generate embedding for text using OpenAI
 async function generateEmbedding(text: string): Promise<number[] | null> {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = await getOpenAIKey()
   if (!apiKey || !text) return null
 
   try {

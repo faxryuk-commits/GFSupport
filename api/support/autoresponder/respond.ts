@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import OpenAI from 'openai'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -151,9 +152,8 @@ async function generateAutoResponse(
   reason: 'night' | 'weekend' | 'offline' | 'timeout',
   docHint?: { title: string; url: string } | null
 ): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = await getOpenAIKey()
   
-  // Fallback response if no API key
   const fallbackResponse = generateFallbackResponse(messageText, senderName, reason, docHint)
   
   if (!apiKey) {

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -22,7 +23,7 @@ function json(data: any, status = 200) {
 
 // Generate embedding using OpenAI
 async function generateEmbedding(text: string): Promise<number[] | null> {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = await getOpenAIKey()
   if (!apiKey || !text) return null
   
   try {
@@ -215,14 +216,14 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Generate AI summary of top results
       let aiSummary = null
-      const apiKey = process.env.OPENAI_API_KEY
-      if (apiKey && allResults.length > 0) {
+      const apiKey2 = await getOpenAIKey()
+      if (apiKey2 && allResults.length > 0) {
         try {
           const topResults = allResults.slice(0, 3)
           const res = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${apiKey}`,
+              'Authorization': `Bearer ${apiKey2}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({

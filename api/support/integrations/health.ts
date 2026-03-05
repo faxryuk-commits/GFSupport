@@ -48,25 +48,30 @@ async function checkTelegram(sql: any): Promise<{
   }
 }
 
-async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string }> {
-  const key = process.env.OPENAI_API_KEY
+async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string; source: 'db' | 'env' | 'none' }> {
   const sql = getSQL()
   let model = 'gpt-4o-mini'
+  let dbKey = ''
   try {
-    const rows = await sql`SELECT value FROM support_settings WHERE key = 'ai_model' LIMIT 1`
-    if (rows[0]?.value) model = rows[0].value
+    const rows = await sql`SELECT key, value FROM support_settings WHERE key IN ('ai_model', 'openai_api_key')`
+    for (const r of rows) {
+      if (r.key === 'ai_model' && r.value) model = r.value
+      if (r.key === 'openai_api_key' && r.value) dbKey = r.value
+    }
   } catch {}
 
-  if (!key) return { status: 'inactive', model }
+  const key = dbKey || process.env.OPENAI_API_KEY
+  const source = dbKey ? 'db' : process.env.OPENAI_API_KEY ? 'env' : 'none'
+  if (!key) return { status: 'inactive', model, source: 'none' }
 
   try {
     const res = await fetch('https://api.openai.com/v1/models', {
       headers: { 'Authorization': `Bearer ${key}` },
       signal: AbortSignal.timeout(4000),
     })
-    return { status: res.ok ? 'active' : 'error', model }
+    return { status: res.ok ? 'active' : 'error', model, source }
   } catch {
-    return { status: 'error', model }
+    return { status: 'error', model, source }
   }
 }
 
@@ -80,7 +85,11 @@ async function checkWhisper(sql: any): Promise<{ status: ServiceStatus; language
 
     const enabled = map.auto_transcribe_voice !== 'false'
     const language = map.whisper_language || 'ru'
-    const hasKey = !!process.env.OPENAI_API_KEY
+    let hasKey = false
+    try {
+      const keyRow = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key' LIMIT 1`
+      hasKey = !!(keyRow[0]?.value) || !!process.env.OPENAI_API_KEY
+    } catch { hasKey = !!process.env.OPENAI_API_KEY }
 
     return { status: enabled && hasKey ? 'active' : 'inactive', language }
   } catch {

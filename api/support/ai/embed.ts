@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getOpenAIKey } from '../lib/db.js'
 
 export const config = { runtime: 'edge' }
 
@@ -64,7 +65,7 @@ export function detectLanguage(text: string): string {
 
 // Create embedding using OpenAI
 export async function createEmbedding(text: string): Promise<number[] | null> {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = await getOpenAIKey()
   if (!apiKey) {
     console.error('OPENAI_API_KEY not configured')
     return null
