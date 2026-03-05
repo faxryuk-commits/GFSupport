@@ -196,6 +196,13 @@ export function SettingsPage() {
           status: settings.notify_on_problem && settings.notify_chat_id ? 'connected' : 'disconnected',
           lastSync: settings.notify_on_problem ? 'Активно' : undefined
         },
+        {
+          id: 'whatsapp',
+          name: 'WhatsApp',
+          description: 'Подключение WhatsApp через QR-код',
+          icon: '💬',
+          status: 'disconnected',
+        },
       ])
       
     } catch (err) {

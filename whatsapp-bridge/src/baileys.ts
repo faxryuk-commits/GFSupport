@@ -6,13 +6,14 @@ import makeWASocket, {
   downloadMediaMessage,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
-import qrcode from 'qrcode-terminal'
+import QRCode from 'qrcode'
 
 const logger = pino({ level: 'warn' })
 
 let sock: WASocket | null = null
 let isConnected = false
 let phoneNumber = ''
+let currentQR: string | null = null
 let onMessageCallback: ((msg: proto.IWebMessageInfo) => void) | null = null
 
 export function onMessage(cb: (msg: proto.IWebMessageInfo) => void) {
@@ -20,7 +21,11 @@ export function onMessage(cb: (msg: proto.IWebMessageInfo) => void) {
 }
 
 export function getStatus() {
-  return { connected: isConnected, phone: phoneNumber }
+  return { connected: isConnected, phone: phoneNumber, qr: currentQR }
+}
+
+export function getCurrentQR(): string | null {
+  return currentQR
 }
 
 export function getSocket(): WASocket | null {
@@ -39,15 +44,20 @@ export async function startBaileys(authDir: string) {
 
   sock.ev.on('creds.update', saveCreds)
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      console.log('\n===== SCAN QR CODE IN WHATSAPP =====')
-      qrcode.generate(qr, { small: true })
-      console.log('====================================\n')
+      try {
+        currentQR = await QRCode.toDataURL(qr, { width: 300, margin: 2 })
+        console.log('[Baileys] QR code ready — scan via GFSupport UI or /qr endpoint')
+      } catch {
+        currentQR = null
+        console.log('[Baileys] Failed to generate QR image')
+      }
     }
 
     if (connection === 'open') {
       isConnected = true
+      currentQR = null
       phoneNumber = sock?.user?.id?.split(':')[0] || ''
       console.log(`[Baileys] Connected as ${phoneNumber}`)
     }

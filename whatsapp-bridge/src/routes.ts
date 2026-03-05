@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
-import { getStatus, sendText, sendMedia } from './baileys.js'
+import { getStatus, getCurrentQR, sendText, sendMedia } from './baileys.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
 
@@ -9,6 +9,7 @@ export function createRouter(bridgeSecret: string): Router {
 
   router.use((req: Request, res: Response, next) => {
     if (req.path === '/status' && req.method === 'GET') return next()
+    if (req.path === '/qr' && req.method === 'GET') return next()
 
     const auth = req.headers.authorization
     if (auth !== `Bearer ${bridgeSecret}`) {
@@ -18,7 +19,14 @@ export function createRouter(bridgeSecret: string): Router {
   })
 
   router.get('/status', (_req: Request, res: Response) => {
-    res.json(getStatus())
+    const status = getStatus()
+    res.json(status)
+  })
+
+  router.get('/qr', (_req: Request, res: Response) => {
+    const qr = getCurrentQR()
+    const { connected, phone } = getStatus()
+    res.json({ connected, phone, qr })
   })
 
   router.post('/send', async (req: Request, res: Response) => {
