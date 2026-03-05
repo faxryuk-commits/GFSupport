@@ -70,6 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
+  try { await sql`ALTER TABLE support_channels ALTER COLUMN telegram_chat_id DROP NOT NULL` } catch {}
 
   try {
     const body = await req.json()
