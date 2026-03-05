@@ -41,6 +41,9 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const url = new URL(req.url)
 
+  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
+  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
+
   // GET - список каналов
   if (req.method === 'GET') {
     try {
@@ -125,13 +128,17 @@ export default async function handler(req: Request): Promise<Response> {
         `
       }
 
-      const [countResult, statsResult, sourceStats] = await Promise.all([
+      const [countResult, statsResult] = await Promise.all([
         sql`SELECT COUNT(*) as total FROM support_channels`,
         sql`SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
             FROM support_channels GROUP BY type`,
-        sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
-            FROM support_channels GROUP BY COALESCE(source, 'telegram')`,
       ])
+
+      let sourceStats: any[] = []
+      try {
+        sourceStats = await sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
+            FROM support_channels GROUP BY COALESCE(source, 'telegram')`
+      } catch { /* source column might not exist yet */ }
 
       const total = parseInt(countResult[0]?.total || '0')
 

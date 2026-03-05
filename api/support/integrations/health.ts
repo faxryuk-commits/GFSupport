@@ -27,12 +27,11 @@ async function checkTelegram(sql: any): Promise<{
   if (!token) return { status: 'inactive', channelsCount: 0 }
 
   try {
-    const [botRes, countRes] = await Promise.all([
+    let channelsCount = 0
+    const [botRes] = await Promise.all([
       fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(4000) }),
-      sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE source = 'telegram' OR source IS NULL`,
+      sql`SELECT COUNT(*)::int as cnt FROM support_channels`.then(r => { channelsCount = r[0]?.cnt || 0 }).catch(() => {}),
     ])
-
-    const channelsCount = countRes[0]?.cnt || 0
 
     if (!botRes.ok) return { status: 'error', channelsCount }
     const data = await botRes.json() as any
@@ -114,7 +113,7 @@ async function checkWhatsApp(sql: any): Promise<{
 
   let channelsCount = 0
   try {
-    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE source = 'whatsapp'`
+    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE source = 'whatsapp'`.catch(() => [{ cnt: 0 }])
     channelsCount = cnt[0]?.cnt || 0
   } catch {}
 
