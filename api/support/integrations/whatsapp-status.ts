@@ -25,19 +25,22 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ connected: false, phone: null, qr: null, configured: false })
   }
 
+  const target = `${bridgeUrl}/qr`
+
   try {
-    const res = await fetch(`${bridgeUrl}/qr`, {
+    const res = await fetch(target, {
       headers: { 'Cache-Control': 'no-cache' },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),
     })
 
     if (!res.ok) {
-      return json({ connected: false, phone: null, qr: null, error: 'Bridge unavailable' })
+      const body = await res.text().catch(() => '')
+      return json({ connected: false, phone: null, qr: null, configured: true, error: `Bridge HTTP ${res.status}`, debug: { target, body: body.slice(0, 200) } })
     }
 
     const data = await res.json()
     return json({ ...data, configured: true })
   } catch (e: any) {
-    return json({ connected: false, phone: null, qr: null, configured: true, error: 'Bridge offline' })
+    return json({ connected: false, phone: null, qr: null, configured: true, error: `Bridge offline: ${e.message}`, debug: { target } })
   }
 }
