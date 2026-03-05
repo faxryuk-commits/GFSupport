@@ -1,5 +1,5 @@
 import express from 'express'
-import { startBaileys, onMessage, downloadMediaMessage, getSocket } from './baileys.js'
+import { startBaileys, onMessage, downloadMediaMessage } from './baileys.js'
 import { createRouter } from './routes.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -78,7 +78,7 @@ onMessage(async (msg) => {
       contentType,
       timestamp: msg.messageTimestamp,
       isGroup,
-      groupName: isGroup ? (getSocket()?.store?.chats?.get(jid) as any)?.name : undefined,
+      groupName: isGroup ? msg.pushName || undefined : undefined,
     }
 
     const res = await fetch(WEBHOOK_URL, {

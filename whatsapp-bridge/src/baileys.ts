@@ -6,7 +6,7 @@ import makeWASocket, {
   downloadMediaMessage,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
-import QRCode from 'qrcode'
+import * as QRCode from 'qrcode'
 
 const logger = pino({ level: 'warn' })
 
