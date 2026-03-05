@@ -4,6 +4,7 @@ import makeWASocket, {
   WASocket,
   proto,
   downloadMediaMessage,
+  Browsers,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import * as QRCode from 'qrcode'
@@ -45,7 +46,7 @@ export async function startBaileys(authDir: string) {
       auth: state,
       logger,
       printQRInTerminal: false,
-      browser: ['GFSupport Bridge', 'Chrome', '22.0'],
+      browser: Browsers.ubuntu('Chrome'),
     })
     console.log('[Baileys] Socket created, waiting for connection events...')
 
@@ -82,7 +83,12 @@ export async function startBaileys(authDir: string) {
 
         console.log(`[Baileys] Disconnected. Status: ${statusCode}. Error: ${errMsg}. Reconnect: ${shouldReconnect}`)
 
-        if (shouldReconnect) {
+        if (statusCode === 405 || statusCode === 500) {
+          console.log('[Baileys] Bad session, clearing auth and retrying...')
+          const fs = await import('fs')
+          try { fs.rmSync(authDir, { recursive: true, force: true }) } catch {}
+          setTimeout(() => startBaileys(authDir), 2000)
+        } else if (shouldReconnect) {
           setTimeout(() => startBaileys(authDir), 3000)
         } else {
           console.log('[Baileys] Logged out. Delete auth_info/ and restart to re-scan QR.')
