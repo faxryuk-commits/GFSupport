@@ -432,6 +432,7 @@ export default async function handler(req: Request): Promise<Response> {
     // 5. ПОСЛЕДНИЕ СООБЩЕНИЯ БЕЗ ОТВЕТА
     // =============================================
     const unansweredMessages = noResponse.slice(0, 30).map((r: any) => ({
+      channelId: r.channel_id,
       channelName: r.channel_name,
       clientName: r.client_name,
       messagePreview: (r.text_content || '').slice(0, 100),
@@ -443,6 +444,7 @@ export default async function handler(req: Request): Promise<Response> {
     // 6. НАРУШЕНИЯ SLA - детальный список
     // =============================================
     const slaViolations = violatedSLA.slice(0, 50).map((r: any) => ({
+      channelId: r.channel_id,
       channelName: r.channel_name,
       clientName: r.client_name,
       messagePreview: (r.text_content || '').slice(0, 80),
@@ -457,6 +459,7 @@ export default async function handler(req: Request): Promise<Response> {
     // 7. ОТКРЫТЫЕ КЕЙСЫ - ожидающие решения
     // =============================================
     const pendingCases = openCases.slice(0, 30).map((c: any) => ({
+      caseId: c.id,
       ticketNumber: c.ticket_number ? `CASE-${c.ticket_number}` : c.id,
       title: c.title,
       status: c.status,
@@ -851,6 +854,7 @@ export default async function handler(req: Request): Promise<Response> {
       
       // Решённые кейсы с временем
       resolvedCasesDetails: resolvedCases.slice(0, 30).map((c: any) => ({
+        caseId: c.id,
         ticketNumber: c.ticket_number ? `CASE-${c.ticket_number}` : c.id,
         title: c.title,
         priority: c.priority,

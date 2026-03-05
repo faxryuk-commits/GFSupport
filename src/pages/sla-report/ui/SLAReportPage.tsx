@@ -13,8 +13,8 @@ import {
 } from 'lucide-react'
 import { AgentPerformanceTable, AgentExpertise, WeeklyHeatmap, CollaborationMetrics } from '@/features/analytics'
 import type { AgentExpertiseEntry, WeeklyEntry, CollaborationData } from '@/features/analytics'
-import { ResponseTimeTab } from '@/features/sla-report'
-import { CasesTab } from '@/features/sla-report'
+import { ResponseTimeTab, CasesTab, MetricDrilldownModal } from '@/features/sla-report'
+import type { DrilldownMetric } from '@/features/sla-report'
 
 interface SLAReport {
   period: {
@@ -84,6 +84,7 @@ interface SLAReport {
     isInactive: boolean
   }>
   slaViolations: Array<{
+    channelId?: string
     channelName: string
     clientName: string
     messagePreview: string
@@ -94,6 +95,7 @@ interface SLAReport {
     exceededBy: number
   }>
   unansweredMessages: Array<{
+    channelId?: string
     channelName: string
     clientName: string
     messagePreview: string
@@ -101,6 +103,7 @@ interface SLAReport {
     waitingMinutes: number
   }>
   pendingCases: Array<{
+    caseId?: string
     ticketNumber: string
     title: string
     status: string
@@ -111,6 +114,7 @@ interface SLAReport {
     waitingHours: number
   }>
   resolvedCasesDetails: Array<{
+    caseId?: string
     ticketNumber: string
     title: string
     priority: string
@@ -132,6 +136,7 @@ export function SLAReportPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'response' | 'cases' | 'agents' | 'insights'>('response')
+  const [drilldownMetric, setDrilldownMetric] = useState<DrilldownMetric | null>(null)
   
   // Date range (default: last 7 days)
   const today = new Date()
@@ -264,8 +269,7 @@ export function SLAReportPage() {
         <>
           {/* Main Summary Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {/* SLA Compliance */}
-            <div className={`rounded-xl border p-4 ${getComplianceBg(report.responseTimeSummary.slaCompliancePercent)}`}>
+            <button onClick={() => setDrilldownMetric('sla')} className={`rounded-xl border p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all ${getComplianceBg(report.responseTimeSummary.slaCompliancePercent)}`}>
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
                   report.responseTimeSummary.slaCompliancePercent >= 95 ? 'bg-green-200' : 
@@ -274,31 +278,25 @@ export function SLAReportPage() {
                   <Target className={`w-6 h-6 ${getComplianceColor(report.responseTimeSummary.slaCompliancePercent)}`} />
                 </div>
                 <div>
-                  <p className={`text-3xl font-bold ${getComplianceColor(report.responseTimeSummary.slaCompliancePercent)}`}>
-                    {report.responseTimeSummary.slaCompliancePercent}%
-                  </p>
+                  <p className={`text-3xl font-bold ${getComplianceColor(report.responseTimeSummary.slaCompliancePercent)}`}>{report.responseTimeSummary.slaCompliancePercent}%</p>
                   <p className="text-sm text-slate-600">SLA (из отвеченных)</p>
                 </div>
               </div>
-            </div>
+            </button>
             
-            {/* Average Response */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <button onClick={() => setDrilldownMetric('avgTime')} className="bg-white rounded-xl border border-slate-200 p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
                   <Clock className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-3xl font-bold text-slate-900">
-                    {report.responseTimeSummary.avgResponseMinutes}
-                  </p>
+                  <p className="text-3xl font-bold text-slate-900">{report.responseTimeSummary.avgResponseMinutes}</p>
                   <p className="text-sm text-slate-500">Среднее время (мин)</p>
                 </div>
               </div>
-            </div>
+            </button>
             
-            {/* Case Resolution Rate */}
-            <div className={`rounded-xl border p-4 ${getComplianceBg(report.caseResolutionSummary.resolutionRatePercent)}`}>
+            <button onClick={() => setDrilldownMetric('caseResolution')} className={`rounded-xl border p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all ${getComplianceBg(report.caseResolutionSummary.resolutionRatePercent)}`}>
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
                   report.caseResolutionSummary.resolutionRatePercent >= 95 ? 'bg-green-200' : 
@@ -307,62 +305,41 @@ export function SLAReportPage() {
                   <CheckCircle className={`w-6 h-6 ${getComplianceColor(report.caseResolutionSummary.resolutionRatePercent)}`} />
                 </div>
                 <div>
-                  <p className={`text-3xl font-bold ${getComplianceColor(report.caseResolutionSummary.resolutionRatePercent)}`}>
-                    {report.caseResolutionSummary.resolutionRatePercent}%
-                  </p>
+                  <p className={`text-3xl font-bold ${getComplianceColor(report.caseResolutionSummary.resolutionRatePercent)}`}>{report.caseResolutionSummary.resolutionRatePercent}%</p>
                   <p className="text-sm text-slate-600">Кейсы решены</p>
                 </div>
               </div>
-            </div>
+            </button>
             
-            {/* Avg Resolution Time */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <button onClick={() => setDrilldownMetric('avgResolution')} className="bg-white rounded-xl border border-slate-200 p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center">
                   <Timer className="w-6 h-6 text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-3xl font-bold text-slate-900">
-                    {report.caseResolutionSummary.avgResolutionHours}ч
-                  </p>
+                  <p className="text-3xl font-bold text-slate-900">{report.caseResolutionSummary.avgResolutionHours}ч</p>
                   <p className="text-sm text-slate-500">Время решения</p>
                 </div>
               </div>
-            </div>
+            </button>
           </div>
           
           {/* Detailed Numbers */}
           <div className="grid grid-cols-2 lg:grid-cols-7 gap-3 mb-6">
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-2xl font-bold text-slate-900">{report.responseTimeSummary.totalClientMessages}</p>
-              <p className="text-xs text-slate-500">Сообщений от клиентов</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className={`text-2xl font-bold ${report.responseTimeSummary.responseRatePercent >= 80 ? 'text-green-600' : 'text-orange-600'}`}>
-                {report.responseTimeSummary.responseRatePercent}%
-              </p>
-              <p className="text-xs text-slate-500">Охват ответов</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-2xl font-bold text-green-600">{report.responseTimeSummary.withinSLA}</p>
-              <p className="text-xs text-slate-500">Ответ в срок</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-2xl font-bold text-red-600">{report.responseTimeSummary.violatedSLA}</p>
-              <p className="text-xs text-slate-500">Нарушения SLA</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-2xl font-bold text-orange-600">{report.responseTimeSummary.noResponse}</p>
-              <p className="text-xs text-slate-500">Без ответа</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-2xl font-bold text-slate-900">{report.caseResolutionSummary.totalCases}</p>
-              <p className="text-xs text-slate-500">Кейсов создано</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-center">
-              <p className="text-2xl font-bold text-orange-600">{report.caseResolutionSummary.open}</p>
-              <p className="text-xs text-slate-500">Кейсов открыто</p>
-            </div>
+            {([
+              { metric: 'totalMessages' as const, value: report.responseTimeSummary.totalClientMessages, label: 'Сообщений от клиентов', color: 'text-slate-900' },
+              { metric: 'responseRate' as const, value: `${report.responseTimeSummary.responseRatePercent}%`, label: 'Охват ответов', color: report.responseTimeSummary.responseRatePercent >= 80 ? 'text-green-600' : 'text-orange-600' },
+              { metric: 'withinSLA' as const, value: report.responseTimeSummary.withinSLA, label: 'Ответ в срок', color: 'text-green-600' },
+              { metric: 'violations' as const, value: report.responseTimeSummary.violatedSLA, label: 'Нарушения SLA', color: 'text-red-600' },
+              { metric: 'noResponse' as const, value: report.responseTimeSummary.noResponse, label: 'Без ответа', color: 'text-orange-600' },
+              { metric: 'totalCases' as const, value: report.caseResolutionSummary.totalCases, label: 'Кейсов создано', color: 'text-slate-900' },
+              { metric: 'openCases' as const, value: report.caseResolutionSummary.open, label: 'Кейсов открыто', color: 'text-orange-600' },
+            ]).map(card => (
+              <button key={card.metric} onClick={() => setDrilldownMetric(card.metric)} className="bg-white rounded-lg border border-slate-200 p-3 text-center cursor-pointer hover:ring-2 hover:ring-blue-300 hover:shadow-sm transition-all">
+                <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
+                <p className="text-xs text-slate-500">{card.label}</p>
+              </button>
+            ))}
           </div>
           
           {/* Tabs */}
@@ -447,6 +424,29 @@ export function SLAReportPage() {
             </div>
           )}
         </>
+      )}
+
+      {report && drilldownMetric && (
+        <MetricDrilldownModal
+          metric={drilldownMetric}
+          onClose={() => setDrilldownMetric(null)}
+          violations={report.slaViolations}
+          unanswered={report.unansweredMessages}
+          pending={report.pendingCases}
+          resolved={report.resolvedCasesDetails}
+          responseSummary={{
+            slaCompliancePercent: report.responseTimeSummary.slaCompliancePercent,
+            avgResponseMinutes: report.responseTimeSummary.avgResponseMinutes,
+            responseRatePercent: report.responseTimeSummary.responseRatePercent,
+            totalClientMessages: report.responseTimeSummary.totalClientMessages,
+            withinSLA: report.responseTimeSummary.withinSLA,
+            violatedSLA: report.responseTimeSummary.violatedSLA,
+            noResponse: report.responseTimeSummary.noResponse,
+            slaMinutes,
+          }}
+          caseSummary={report.caseResolutionSummary}
+          agents={report.agentPerformance}
+        />
       )}
     </div>
   )
