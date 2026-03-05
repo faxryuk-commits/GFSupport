@@ -1,8 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender } from '../lib/identification.js'
-
-const problemRe = /ishlamay|ишламай|не\s*работает|not\s*working|kelmay|келмай|не\s*приходит|xato|хато|ошибк|error|muammo|муаммо|проблем|buzil|бузил|сломал|broken|qotib|завис|stuck/i
-const urgentRe = /срочно|urgent|tez|тез|shoshilinch|asap|критич|critical|авария/i
+import { shouldAutoCreateCase, generateCaseId, getNextTicketNumber } from '../lib/case-detector.js'
 
 export const config = {
   runtime: 'edge',
@@ -61,21 +59,45 @@ async function upsertWhatsAppUser(sql: any, phone: string, name: string, channel
   }
 }
 
-async function getOrCreateWhatsAppChannel(sql: any, chatId: string, senderName: string): Promise<string> {
+const phoneCountryMap: Record<string, string> = {
+  '998': 'uz', '996': 'kg', '7': 'kz', '995': 'ge', '994': 'az',
+  '992': 'tj', '993': 'tm', '374': 'am', '90': 'tr', '971': 'ae',
+}
+
+async function detectMarketByPhone(sql: any, phone: string): Promise<string | null> {
+  if (!phone) return null
+  for (const [prefix, code] of Object.entries(phoneCountryMap)) {
+    if (phone.startsWith(prefix)) {
+      try {
+        const rows = await sql`SELECT id FROM support_markets WHERE code = ${code} AND is_active = true LIMIT 1`
+        return rows[0]?.id || null
+      } catch { return null }
+    }
+  }
+  return null
+}
+
+async function getOrCreateWhatsAppChannel(sql: any, chatId: string, channelName: string, senderPhone?: string): Promise<string> {
   const existing = await sql`
-    SELECT id FROM support_channels WHERE external_chat_id = ${chatId} AND source = 'whatsapp' LIMIT 1
+    SELECT id, name FROM support_channels WHERE external_chat_id = ${chatId} AND source = 'whatsapp' LIMIT 1
   `
 
-  if (existing[0]) return existing[0].id
+  if (existing[0]) {
+    if (channelName && existing[0].name !== channelName) {
+      await sql`UPDATE support_channels SET name = ${channelName} WHERE id = ${existing[0].id}`.catch(() => {})
+    }
+    return existing[0].id
+  }
 
   const channelId = generateId('ch')
-  const channelName = senderName || `WhatsApp ${chatId.replace('@s.whatsapp.net', '')}`
+  const name = channelName || `WhatsApp ${chatId.replace('@s.whatsapp.net', '').replace('@g.us', '')}`
+  const marketId = await detectMarketByPhone(sql, senderPhone || chatId.replace('@s.whatsapp.net', '').replace('@g.us', ''))
 
   await sql`
     INSERT INTO support_channels (
-      id, name, type, source, external_chat_id, is_active, created_at
+      id, name, type, source, external_chat_id, is_active, market_id, created_at
     ) VALUES (
-      ${channelId}, ${channelName}, 'client', 'whatsapp', ${chatId}, true, NOW()
+      ${channelId}, ${name}, 'client', 'whatsapp', ${chatId}, true, ${marketId}, NOW()
     )
   `
 
@@ -167,7 +189,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (!chatId) return json({ error: 'chatId is required' }, 400)
 
     const channelName = isGroup ? (groupName || senderName) : senderName
-    const channelId = await getOrCreateWhatsAppChannel(sql, chatId, channelName || '')
+    const channelId = await getOrCreateWhatsAppChannel(sql, chatId, channelName || '', senderPhone || '')
 
     let isFromClient: boolean
     let senderRole: string
@@ -244,22 +266,18 @@ export default async function handler(req: Request): Promise<Response> {
       upsertWhatsAppUser(sql, senderPhone, senderName || '', channelId, senderRole).catch(() => {})
     }
 
-    if (isFromClient && text && problemRe.test(text)) {
+    if (text) {
       try {
-        const existing = await sql`
-          SELECT id FROM support_cases
-          WHERE channel_id = ${channelId} AND status NOT IN ('resolved','closed')
-            AND created_at >= NOW() - INTERVAL '24 hours' LIMIT 1
-        `
-        if (!existing[0]) {
-          const caseId = generateId('case')
-          const priority = urgentRe.test(text) ? 'high' : 'medium'
-          const maxRow = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as n FROM support_cases`
-          const ticketNum = parseInt(maxRow[0]?.n || '1000') + 1
+        const detection = await shouldAutoCreateCase(sql, {
+          text, isFromClient, channelId, senderRole,
+        })
+        if (detection.shouldCreate) {
+          const caseId = generateCaseId()
+          const ticketNum = await getNextTicketNumber(sql)
           await sql`
-            INSERT INTO support_cases (id, ticket_number, channel_id, title, description, priority, status, source_message_id)
-            VALUES (${caseId}, ${ticketNum}, ${channelId}, ${(text).slice(0, 100)}, ${text.slice(0, 500)}, ${priority}, 'detected', ${msgId})
-          `
+            INSERT INTO support_cases (id, ticket_number, channel_id, title, description, priority, status, source_message_id, is_shadow)
+            VALUES (${caseId}, ${ticketNum}, ${channelId}, ${text.slice(0, 100)}, ${text.slice(0, 500)}, ${detection.priority}, ${detection.isShadow ? 'resolved' : 'detected'}, ${msgId}, ${detection.isShadow})
+          `.catch(() => {})
         }
       } catch (e: any) { console.error('[WA Case]', e.message) }
     }

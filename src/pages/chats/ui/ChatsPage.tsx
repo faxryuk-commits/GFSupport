@@ -6,6 +6,7 @@ import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { AIContextPanel } from '@/features/ai-assistant/ui'
 import { CommitmentsPanel } from '@/features/commitments/ui'
+import { QuickCaseModal } from '@/features/cases/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
 import { playMessageSoundIfEnabled } from '@/shared/lib'
@@ -214,6 +215,7 @@ export function ChatsPage() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
+  const [createCaseMessage, setCreateCaseMessage] = useState<MessageData | null>(null)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -1020,13 +1022,11 @@ export function ChatsPage() {
                         }
                       }}
                       onScrollToMessage={(targetId) => {
-                        // Найти элемент сообщения и прокрутить к нему
                         const targetMsg = messages.find(m => m.id === targetId)
                         if (targetMsg) {
                           const element = document.getElementById(`message-${targetId}`)
                           if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                            // Подсветка сообщения
                             element.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')
                             setTimeout(() => {
                               element.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2')
@@ -1034,6 +1034,7 @@ export function ChatsPage() {
                           }
                         }
                       }}
+                      onCreateCase={() => setCreateCaseMessage(msg)}
                         />
                       </div>
                     )
@@ -1128,6 +1129,18 @@ export function ChatsPage() {
         confirmText="Архивировать"
         variant="warning"
       />
+
+      {createCaseMessage && (
+        <QuickCaseModal
+          isOpen={!!createCaseMessage}
+          onClose={() => setCreateCaseMessage(null)}
+          messageId={createCaseMessage.id}
+          messageText={createCaseMessage.text}
+          senderName={createCaseMessage.senderName}
+          channelName={selectedChannel?.name || ''}
+          onCaseCreated={() => setCreateCaseMessage(null)}
+        />
+      )}
     </>
   )
 }

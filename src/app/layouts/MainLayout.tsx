@@ -3,7 +3,9 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
+import { useMarket } from '@/shared/hooks/useMarket'
 import { playCaseSoundIfEnabled, playMessageSoundIfEnabled } from '@/shared/lib'
+import { clearCache } from '@/shared/services/api.service'
 
 
 export function MainLayout() {
@@ -20,8 +22,14 @@ export function MainLayout() {
   const prevUnreadRef = useRef<number>(0)
   const isFirstLoadRef = useRef<boolean>(true)
   
-  // Background notifications via Web Worker (works when tab is hidden)
   useBackgroundNotifications()
+  const { markets, selectedMarket, setSelectedMarket } = useMarket()
+
+  const handleMarketChange = useCallback((marketId: string | null) => {
+    setSelectedMarket(marketId)
+    clearCache()
+    fetchCounts()
+  }, [setSelectedMarket])
 
   const fetchCounts = useCallback(async () => {
     try {
@@ -204,6 +212,9 @@ export function MainLayout() {
         currentUser={currentUser || undefined}
         onLogout={handleLogout}
         lastUpdated={lastUpdated}
+        markets={markets}
+        selectedMarket={selectedMarket}
+        onMarketChange={handleMarketChange}
       />
       <main className="flex-1 h-full overflow-auto">
         <ErrorBoundary>

@@ -1,5 +1,5 @@
 import express from 'express'
-import { startBaileys, onMessage, downloadMediaMessage } from './baileys.js'
+import { startBaileys, onMessage, downloadMediaMessage, getGroupName } from './baileys.js'
 import { createRouter } from './routes.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -189,7 +189,7 @@ onMessage(async (msg) => {
       timestamp: msg.messageTimestamp,
       isGroup,
       fromMe,
-      groupName: isGroup ? msg.pushName || undefined : undefined,
+      groupName: isGroup ? (await getGroupName(jid) || msg.pushName || undefined) : undefined,
     }
     if (reply) {
       payload.replyToMessageId = reply.replyToMessageId

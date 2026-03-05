@@ -221,15 +221,24 @@ async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<strin
     console.log('[Webhook] Could not get photo for new channel')
   }
   
+  let marketId: string | null = null
+  try {
+    const markets = await sql`SELECT id, code FROM support_markets WHERE is_active = true`
+    const nameLC = chatTitle.toLowerCase()
+    for (const m of markets) {
+      if (nameLC.includes(m.code)) { marketId = m.id; break }
+    }
+  } catch { /* skip */ }
+
   await sql`
     INSERT INTO support_channels (
-      id, telegram_chat_id, name, type, photo_url, is_active, created_at
+      id, telegram_chat_id, name, type, photo_url, is_active, market_id, created_at
     ) VALUES (
-      ${channelId}, ${chatId}, ${chatTitle}, ${channelType}, ${photoUrl}, true, NOW()
+      ${channelId}, ${chatId}, ${chatTitle}, ${channelType}, ${photoUrl}, true, ${marketId}, NOW()
     )
   `
   
-  console.log(`[Webhook] Created new channel: ${channelId} for chat ${chatId}${photoUrl ? ' (with photo)' : ''}`)
+  console.log(`[Webhook] Created new channel: ${channelId} for chat ${chatId}${photoUrl ? ' (with photo)' : ''}${marketId ? ' market=' + marketId : ''}`)
   return channelId
 }
 

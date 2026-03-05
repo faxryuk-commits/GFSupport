@@ -47,6 +47,7 @@ export default async function handler(req: Request): Promise<Response> {
       const channelId = url.searchParams.get('channelId')
       const assignedTo = url.searchParams.get('assignedTo')
       const search = url.searchParams.get('search')
+      const market = url.searchParams.get('market') || null
       const limitParam = parseInt(url.searchParams.get('limit') || '50')
       const offsetParam = parseInt(url.searchParams.get('offset') || '0')
 
@@ -61,52 +62,33 @@ export default async function handler(req: Request): Promise<Response> {
       // Base query with JOINs for assignee name and company
       if (statuses && statuses.length > 0) {
         cases = await sql`
-          SELECT 
-            c.*,
-            ch.name as channel_name,
-            ch.telegram_chat_id,
-            ch.company_id as ch_company_id,
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.status = ANY(${statuses})
-          ORDER BY 
-            CASE c.priority 
-              WHEN 'urgent' THEN 1 
-              WHEN 'high' THEN 2 
-              WHEN 'medium' THEN 3 
-              ELSE 4 
-            END,
-            c.created_at DESC
+          WHERE c.status = ANY(${statuses}) AND (${market}::text IS NULL OR c.market_id = ${market})
+          ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       } else if (priority) {
         cases = await sql`
-          SELECT 
-            c.*,
-            ch.name as channel_name,
-            ch.telegram_chat_id,
-            ch.company_id as ch_company_id,
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.priority = ${priority}
+          WHERE c.priority = ${priority} AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       } else if (channelId) {
         cases = await sql`
-          SELECT 
-            c.*,
-            ch.name as channel_name,
-            ch.telegram_chat_id,
-            ch.company_id as ch_company_id,
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
@@ -119,65 +101,47 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else if (assignedTo) {
         cases = await sql`
-          SELECT 
-            c.*,
-            ch.name as channel_name,
-            ch.telegram_chat_id,
-            ch.company_id as ch_company_id,
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.assigned_to = ${assignedTo}
+          WHERE c.assigned_to = ${assignedTo} AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       } else if (search) {
         cases = await sql`
-          SELECT 
-            c.*,
-            ch.name as channel_name,
-            ch.telegram_chat_id,
-            ch.company_id as ch_company_id,
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'}
+          WHERE (c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'})
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       } else {
         cases = await sql`
-          SELECT 
-            c.*,
-            ch.name as channel_name,
-            ch.telegram_chat_id,
-            ch.company_id as ch_company_id,
+          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
             (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          ORDER BY 
-            CASE c.priority 
-              WHEN 'urgent' THEN 1 
-              WHEN 'high' THEN 2 
-              WHEN 'medium' THEN 3 
-              ELSE 4 
-            END,
-            c.created_at DESC
+          WHERE (${market}::text IS NULL OR c.market_id = ${market})
+          ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       }
 
-      // Общее количество
-      const countResult = await sql`SELECT COUNT(*) as total FROM support_cases`
+      const countResult = await sql`SELECT COUNT(*) as total FROM support_cases WHERE (${market}::text IS NULL OR market_id = ${market})`
       const total = parseInt(countResult[0]?.total || '0')
 
       // Статистика по статусам
@@ -351,10 +315,84 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { id, status, priority, assignedTo, title, description } = body
+      const { id, status, priority, assignedTo, title, description, action } = body
 
       if (!id) {
         return json({ error: 'Case ID required' }, 400)
+      }
+
+      // Добавление комментария
+      if (action === 'add_comment') {
+        const { text, isInternal, authorName, authorId } = body
+        if (!text) return json({ error: 'Comment text required' }, 400)
+
+        try {
+          await sql`CREATE TABLE IF NOT EXISTS support_case_comments (
+            id VARCHAR(50) PRIMARY KEY,
+            case_id VARCHAR(50) NOT NULL,
+            author_id VARCHAR(50),
+            author_name VARCHAR(255),
+            text TEXT NOT NULL,
+            is_internal BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+          )`
+        } catch { /* exists */ }
+
+        const commentId = `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        await sql`
+          INSERT INTO support_case_comments (id, case_id, author_id, author_name, text, is_internal)
+          VALUES (${commentId}, ${id}, ${authorId || null}, ${authorName || 'Система'}, ${text}, ${isInternal || false})
+        `
+        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${id}`
+
+        const comments = await sql`
+          SELECT id, author_id, author_name, text, is_internal, created_at
+          FROM support_case_comments WHERE case_id = ${id} ORDER BY created_at ASC
+        `
+
+        return json({
+          success: true,
+          commentId,
+          comments: comments.map((c: any) => ({
+            id: c.id,
+            author: c.author_name || 'Система',
+            authorId: c.author_id,
+            text: c.text,
+            isInternal: c.is_internal,
+            time: c.created_at,
+          })),
+        })
+      }
+
+      // Получение комментариев
+      if (action === 'get_comments') {
+        try {
+          await sql`CREATE TABLE IF NOT EXISTS support_case_comments (
+            id VARCHAR(50) PRIMARY KEY,
+            case_id VARCHAR(50) NOT NULL,
+            author_id VARCHAR(50),
+            author_name VARCHAR(255),
+            text TEXT NOT NULL,
+            is_internal BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+          )`
+        } catch { /* exists */ }
+
+        const comments = await sql`
+          SELECT id, author_id, author_name, text, is_internal, created_at
+          FROM support_case_comments WHERE case_id = ${id} ORDER BY created_at ASC
+        `
+
+        return json({
+          comments: comments.map((c: any) => ({
+            id: c.id,
+            author: c.author_name || 'Система',
+            authorId: c.author_id,
+            text: c.text,
+            isInternal: c.is_internal,
+            time: c.created_at,
+          })),
+        })
       }
 
       await sql`
@@ -372,6 +410,23 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       return json({ error: 'Failed to update case', details: e.message }, 500)
+    }
+  }
+
+  // DELETE - удалить кейс
+  if (req.method === 'DELETE') {
+    try {
+      const caseId = url.searchParams.get('id')
+      if (!caseId) return json({ error: 'Case ID required' }, 400)
+
+      await sql`DELETE FROM support_case_comments WHERE case_id = ${caseId}`.catch(() => {})
+      await sql`UPDATE support_messages SET case_id = NULL WHERE case_id = ${caseId}`.catch(() => {})
+      await sql`DELETE FROM support_case_activities WHERE case_id = ${caseId}`.catch(() => {})
+      await sql`DELETE FROM support_cases WHERE id = ${caseId}`
+
+      return json({ success: true, deleted: caseId })
+    } catch (e: any) {
+      return json({ error: 'Failed to delete case', details: e.message }, 500)
     }
   }
 

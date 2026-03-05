@@ -208,6 +208,43 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS reporter_name VARCHAR(255)`; synced.push('cases.reporter_name') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255)`; synced.push('cases.updated_by') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`; synced.push('cases.created_by') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN DEFAULT false`; synced.push('cases.is_shadow') } catch (e) { /* exists */ }
+
+    // ============ CONVERSATION SESSIONS TABLE ============
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_conversation_sessions (
+        id VARCHAR(50) PRIMARY KEY,
+        channel_id VARCHAR(50) NOT NULL,
+        started_at TIMESTAMP NOT NULL,
+        ended_at TIMESTAMP,
+        purpose VARCHAR(50),
+        value_score INTEGER DEFAULT 0,
+        participants TEXT[],
+        message_count INTEGER DEFAULT 0,
+        agent_message_count INTEGER DEFAULT 0,
+        client_message_count INTEGER DEFAULT 0,
+        has_case BOOLEAN DEFAULT false,
+        case_id VARCHAR(50),
+        summary TEXT,
+        market_id VARCHAR(50),
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_conversation_sessions')
+    } catch (e) { /* exists */ }
+
+    // ============ CASE COMMENTS TABLE ============
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_case_comments (
+        id VARCHAR(50) PRIMARY KEY,
+        case_id VARCHAR(50) NOT NULL,
+        author_id VARCHAR(50),
+        author_name VARCHAR(255),
+        text TEXT NOT NULL,
+        is_internal BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_case_comments')
+    } catch (e) { /* exists */ }
 
     // ============ AGENTS TABLE ============
     try { await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS username VARCHAR(255)`; synced.push('agents.username') } catch (e) { /* exists */ }
@@ -330,6 +367,36 @@ export default async function handler(req: Request): Promise<Response> {
       synced.push('TABLE: support_agent_sessions')
     } catch (e) { /* exists */ }
 
+    // ============ MARKETS TABLES ============
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_markets (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        code VARCHAR(10) UNIQUE NOT NULL,
+        country VARCHAR(100),
+        timezone VARCHAR(50) DEFAULT 'Asia/Tashkent',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW()
+      )`
+      synced.push('TABLE: support_markets')
+    } catch (e) { /* exists */ }
+
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_agent_markets (
+        agent_id VARCHAR(50) NOT NULL,
+        market_id VARCHAR(50) NOT NULL,
+        role VARCHAR(50) DEFAULT 'member',
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (agent_id, market_id)
+      )`
+      synced.push('TABLE: support_agent_markets')
+    } catch (e) { /* exists */ }
+
+    // ============ MARKET_ID COLUMNS ============
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`; synced.push('channels.market_id') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`; synced.push('cases.market_id') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`; synced.push('users.market_id') } catch (e) { /* exists */ }
+
     // ============ CREATE INDEXES ============
     try { await sql`CREATE INDEX IF NOT EXISTS idx_messages_sender_role ON support_messages(sender_role)`; synced.push('INDEX: idx_messages_sender_role') } catch (e) { /* exists */ }
     try { await sql`CREATE INDEX IF NOT EXISTS idx_messages_channel_date ON support_messages(channel_id, created_at DESC)`; synced.push('INDEX: idx_messages_channel_date') } catch (e) { /* exists */ }
@@ -339,6 +406,14 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`CREATE INDEX IF NOT EXISTS idx_commitments_due_date ON support_commitments(due_date)`; synced.push('INDEX: idx_commitments_due_date') } catch (e) { /* exists */ }
     try { await sql`CREATE INDEX IF NOT EXISTS idx_messages_response_time ON support_messages(response_time_ms) WHERE response_time_ms IS NOT NULL`; synced.push('INDEX: idx_messages_response_time') } catch (e) { /* exists */ }
     try { await sql`CREATE INDEX IF NOT EXISTS idx_conversations_channel ON support_conversations(channel_id)`; synced.push('INDEX: idx_conversations_channel') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_channels_market ON support_channels(market_id)`; synced.push('INDEX: idx_channels_market') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_cases_market ON support_cases(market_id)`; synced.push('INDEX: idx_cases_market') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_agent_markets_agent ON support_agent_markets(agent_id)`; synced.push('INDEX: idx_agent_markets_agent') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_agent_markets_market ON support_agent_markets(market_id)`; synced.push('INDEX: idx_agent_markets_market') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_case_comments_case ON support_case_comments(case_id)`; synced.push('INDEX: idx_case_comments_case') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_conv_sessions_channel ON support_conversation_sessions(channel_id)`; synced.push('INDEX: idx_conv_sessions_channel') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_conv_sessions_purpose ON support_conversation_sessions(purpose)`; synced.push('INDEX: idx_conv_sessions_purpose') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_cases_is_shadow ON support_cases(is_shadow) WHERE is_shadow = true`; synced.push('INDEX: idx_cases_is_shadow') } catch (e) { /* exists */ }
 
     // ============ CREATE SEQUENCES ============
     try { await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`; synced.push('SEQUENCE: support_case_ticket_seq') } catch (e) { /* exists */ }

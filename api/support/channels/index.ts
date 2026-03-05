@@ -52,6 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
       const isActive = url.searchParams.get('active')
       const search = url.searchParams.get('search')
       const source = url.searchParams.get('source')
+      const market = url.searchParams.get('market') || null
       const limitParam = parseInt(url.searchParams.get('limit') || '100')
       const offsetParam = parseInt(url.searchParams.get('offset') || '0')
 
@@ -64,6 +65,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.name ILIKE ${'%' + search + '%'} AND COALESCE(c.source, 'telegram') = ${source}
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -74,6 +76,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.name ILIKE ${'%' + search + '%'}
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -84,6 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE COALESCE(c.source, 'telegram') = ${source}
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -94,6 +98,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.type = ${type}
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -104,6 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.is_active = true
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -114,6 +120,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.is_active = false
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -123,15 +130,16 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
+          WHERE (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       }
 
       const [countResult, statsResult] = await Promise.all([
-        sql`SELECT COUNT(*) as total FROM support_channels`,
+        sql`SELECT COUNT(*) as total FROM support_channels WHERE (${market}::text IS NULL OR market_id = ${market})`,
         sql`SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
-            FROM support_channels GROUP BY type`,
+            FROM support_channels WHERE (${market}::text IS NULL OR market_id = ${market}) GROUP BY type`,
       ])
 
       let sourceStats: any[] = []
@@ -167,6 +175,7 @@ export default async function handler(req: Request): Promise<Response> {
           lastTeamMessageAt: c.last_team_message_at,
           isForum: c.is_forum || false,
           // Используем proxy URL для фото, который автоматически обновляет истёкшие URL
+          marketId: c.market_id || null,
           photoUrl: c.photo_url ? `/api/support/media/photo?channelId=${c.id}` : null,
           createdAt: c.created_at,
           lastMessageAt: c.last_message_at,

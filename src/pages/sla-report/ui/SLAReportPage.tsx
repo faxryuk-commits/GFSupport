@@ -11,7 +11,7 @@ import {
   Timer,
   BarChart3
 } from 'lucide-react'
-import { AgentPerformanceTable, AgentExpertise, WeeklyHeatmap, CollaborationMetrics } from '@/features/analytics'
+import { AgentPerformanceTable, AgentExpertise, WeeklyHeatmap, CollaborationMetrics, CommunicationMap } from '@/features/analytics'
 import type { AgentExpertiseEntry, WeeklyEntry, CollaborationData } from '@/features/analytics'
 import { ResponseTimeTab, CasesTab, MetricDrilldownModal } from '@/features/sla-report'
 import type { DrilldownMetric } from '@/features/sla-report'
@@ -135,7 +135,7 @@ export function SLAReportPage() {
   const [report, setReport] = useState<SLAReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'response' | 'cases' | 'agents' | 'insights'>('response')
+  const [activeTab, setActiveTab] = useState<'response' | 'cases' | 'agents' | 'insights' | 'communications'>('response')
   const [drilldownMetric, setDrilldownMetric] = useState<DrilldownMetric | null>(null)
   
   // Date range (default: last 7 days)
@@ -388,6 +388,17 @@ export function SLAReportPage() {
               <BarChart3 className="w-4 h-4 inline mr-2" />
               Аналитика
             </button>
+            <button
+              onClick={() => setActiveTab('communications')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'communications'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 inline mr-2" />
+              Коммуникации
+            </button>
           </div>
           
           {/* Tab Content: Response Time */}
@@ -422,6 +433,11 @@ export function SLAReportPage() {
               <WeeklyHeatmap agents={report.weeklyWorkload} teamWeekly={report.teamWeekly} />
               <CollaborationMetrics data={report.collaboration} />
             </div>
+          )}
+
+          {/* Tab Content: Communications */}
+          {activeTab === 'communications' && (
+            <CommunicationMap />
           )}
         </>
       )}

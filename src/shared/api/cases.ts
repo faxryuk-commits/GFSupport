@@ -1,9 +1,18 @@
-import { apiGet, apiPost, apiPut } from '../services/api.service'
+import { apiGet, apiPost, apiPut, apiDelete } from '../services/api.service'
 import type { Case, CaseStatus } from '@/entities/case'
 
 interface CasesResponse {
   cases: Case[]
   total: number
+}
+
+export interface CaseComment {
+  id: string
+  author: string
+  authorId?: string
+  text: string
+  isInternal: boolean
+  time: string
 }
 
 export async function fetchCases(filters?: {
@@ -18,7 +27,6 @@ export async function fetchCases(filters?: {
   if (filters?.assignedTo) params.set('assignedTo', filters.assignedTo)
   if (filters?.channelId) params.set('channelId', filters.channelId)
   if (filters?.category) params.set('category', filters.category)
-  // Увеличиваем лимит по умолчанию для канбана
   params.set('limit', String(filters?.limit || 500))
   
   const query = params.toString() ? `?${params}` : ''
@@ -58,7 +66,39 @@ export async function assignCase(
   return updateCase(id, { assignedTo: agentId })
 }
 
-export async function createCaseFromMessage(messageId: string): Promise<Case> {
-  return apiPost<{ case: Case }>('/cases/from-message', { messageId })
+export async function deleteCase(id: string): Promise<void> {
+  await apiDelete(`/cases?id=${id}`)
+}
+
+export async function addCaseComment(
+  caseId: string,
+  text: string,
+  isInternal: boolean,
+  authorName?: string,
+  authorId?: string
+): Promise<{ comments: CaseComment[] }> {
+  return apiPut<{ comments: CaseComment[] }>(`/cases/${caseId}`, {
+    id: caseId,
+    action: 'add_comment',
+    text,
+    isInternal,
+    authorName,
+    authorId,
+  })
+}
+
+export async function fetchCaseComments(caseId: string): Promise<CaseComment[]> {
+  const res = await apiPut<{ comments: CaseComment[] }>(`/cases/${caseId}`, {
+    id: caseId,
+    action: 'get_comments',
+  })
+  return res.comments
+}
+
+export async function createCaseFromMessage(
+  messageId: string,
+  options?: { title?: string; description?: string; priority?: string }
+): Promise<Case> {
+  return apiPost<{ case: Case }>('/cases/from-message', { messageId, ...options })
     .then(r => r.case)
 }

@@ -3,7 +3,7 @@ import {
   Check, CheckCheck, Reply, Copy, Forward, 
   Image as ImageIcon, File, Play, Pause, Download,
   Volume2, X, Maximize2, FileText, Film, Music,
-  Trash2, Pin, MessageSquare, MoreHorizontal
+  Trash2, Pin, MessageSquare, MoreHorizontal, ClipboardList
 } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
 
@@ -49,6 +49,7 @@ interface MessageBubbleProps {
   onPin?: () => void
   onReaction?: (emoji: string) => void
   onScrollToMessage?: (messageId: string) => void
+  onCreateCase?: () => void
 }
 
 // Быстрые реакции
@@ -328,7 +329,7 @@ function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; 
   }
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage, onCreateCase }: MessageBubbleProps) {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
   const [showReactionPicker, setShowReactionPicker] = useState(false)
@@ -655,6 +656,15 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
             >
               <Pin className="w-4 h-4 text-slate-400" />
               <span>Закрепить</span>
+            </button>
+          )}
+          {onCreateCase && (
+            <button
+              onClick={() => handleMenuAction(onCreateCase)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-blue-50 text-left text-blue-600"
+            >
+              <ClipboardList className="w-4 h-4" />
+              <span>Создать кейс</span>
             </button>
           )}
           <div className="border-t border-slate-100 my-1" />

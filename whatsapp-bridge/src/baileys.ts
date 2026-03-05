@@ -35,6 +35,26 @@ export function getSocket(): WASocket | null {
   return sock
 }
 
+const groupNameCache = new Map<string, { name: string; ts: number }>()
+const GROUP_CACHE_TTL = 30 * 60 * 1000
+
+export async function getGroupName(jid: string): Promise<string | null> {
+  if (!sock || !isConnected || !jid.endsWith('@g.us')) return null
+
+  const cached = groupNameCache.get(jid)
+  if (cached && Date.now() - cached.ts < GROUP_CACHE_TTL) return cached.name
+
+  try {
+    const meta = await sock.groupMetadata(jid)
+    const name = meta?.subject || null
+    if (name) groupNameCache.set(jid, { name, ts: Date.now() })
+    return name
+  } catch (e: any) {
+    console.warn(`[Baileys] groupMetadata(${jid.slice(0, 20)}) failed:`, e.message)
+    return null
+  }
+}
+
 export async function startBaileys(authDir: string) {
   console.log(`[Baileys] Initializing... authDir=${authDir}`)
   lastError = null

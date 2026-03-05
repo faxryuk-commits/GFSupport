@@ -90,6 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
   const period = url.searchParams.get('period') || '30d'
   const customFrom = url.searchParams.get('from')
   const customTo = url.searchParams.get('to')
+  const market = url.searchParams.get('market') || null
   
   // Вычисляем дату начала периода
   // Поддерживаем: today, yesterday, week, month, 7d, 30d, 90d, или custom from/to
@@ -131,35 +132,36 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as resolved_cases,
         COUNT(*) FILTER (WHERE created_at >= ${startDate.toISOString()}) as new_cases_period,
         AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution_minutes,
-        -- Всего срочных кейсов (для истории)
         COUNT(*) FILTER (WHERE priority = 'urgent') as urgent_cases,
-        -- ОТКРЫТЫХ срочных кейсов (для AI рекомендаций)
         COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('resolved', 'closed')) as urgent_open_cases,
         COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases,
-        -- Cases by priority for the period
         COUNT(*) FILTER (WHERE priority = 'low' AND created_at >= ${startDate.toISOString()}) as low_priority_cases,
         COUNT(*) FILTER (WHERE priority = 'medium' AND created_at >= ${startDate.toISOString()}) as medium_priority_cases,
         COUNT(*) FILTER (WHERE priority = 'high' AND created_at >= ${startDate.toISOString()}) as high_priority_cases,
         COUNT(*) FILTER (WHERE priority = 'urgent' AND created_at >= ${startDate.toISOString()}) as urgent_priority_cases
       FROM support_cases
+      WHERE (${market}::text IS NULL OR market_id = ${market})
     `
     const overview = overviewResult[0] || {}
 
     const messagesResult = await sql`
       SELECT
         COUNT(*) as total_messages,
-        COUNT(*) FILTER (WHERE is_problem = true) as problem_messages,
-        COUNT(*) FILTER (WHERE content_type = 'voice') as voice_messages,
-        COUNT(*) FILTER (WHERE content_type IN ('video', 'video_note')) as video_messages,
-        COUNT(*) FILTER (WHERE transcript IS NOT NULL) as transcribed_messages
-      FROM support_messages
-      WHERE created_at >= ${startDate.toISOString()}
+        COUNT(*) FILTER (WHERE m.is_problem = true) as problem_messages,
+        COUNT(*) FILTER (WHERE m.content_type = 'voice') as voice_messages,
+        COUNT(*) FILTER (WHERE m.content_type IN ('video', 'video_note')) as video_messages,
+        COUNT(*) FILTER (WHERE m.transcript IS NOT NULL) as transcribed_messages
+      FROM support_messages m
+      JOIN support_channels ch ON ch.id = m.channel_id
+      WHERE m.created_at >= ${startDate.toISOString()}
+        AND (${market}::text IS NULL OR ch.market_id = ${market})
     `
     const messages = messagesResult[0] || {}
 
     const channelsResult = await sql`
       SELECT COUNT(*) as total_channels, COUNT(*) FILTER (WHERE is_active = true) as active_channels
       FROM support_channels
+      WHERE (${market}::text IS NULL OR market_id = ${market})
     `
     const channels = channelsResult[0] || {}
 

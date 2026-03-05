@@ -72,6 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
       const channelId = url.searchParams.get('channelId')
       const search = url.searchParams.get('search')
       const withMetrics = url.searchParams.get('metrics') === 'true'
+      const market = url.searchParams.get('market') || null
       
       let users
       
@@ -79,6 +80,7 @@ export default async function handler(req: Request): Promise<Response> {
         users = await sql`
           SELECT * FROM support_users 
           WHERE role = ${role} AND is_active = true
+            AND (${market}::text IS NULL OR market_id = ${market})
           ORDER BY last_seen_at DESC
         `
       } else if (channelId) {
@@ -103,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT * FROM support_users 
           WHERE (name ILIKE ${'%' + search + '%'} OR telegram_username ILIKE ${'%' + search + '%'})
             AND is_active = true
+            AND (${market}::text IS NULL OR market_id = ${market})
           ORDER BY last_seen_at DESC
           LIMIT 50
         `
@@ -110,6 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
         users = await sql`
           SELECT * FROM support_users 
           WHERE is_active = true
+            AND (${market}::text IS NULL OR market_id = ${market})
           ORDER BY 
             CASE role 
               WHEN 'employee' THEN 1 

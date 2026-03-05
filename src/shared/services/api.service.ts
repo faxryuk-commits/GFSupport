@@ -1,4 +1,5 @@
 const API_BASE = '/api/support'
+const MARKET_KEY = 'selected_market'
 
 interface CacheItem {
   data: unknown
@@ -6,7 +7,7 @@ interface CacheItem {
 }
 
 const cache = new Map<string, CacheItem>()
-const CACHE_TTL = 5000 // 5 seconds
+const CACHE_TTL = 5000
 
 function getToken(): string {
   return localStorage.getItem('support_agent_token') || ''
@@ -20,8 +21,16 @@ function getHeaders(): HeadersInit {
   }
 }
 
+function appendMarketParam(endpoint: string): string {
+  const market = localStorage.getItem(MARKET_KEY)
+  if (!market) return endpoint
+  const sep = endpoint.includes('?') ? '&' : '?'
+  return `${endpoint}${sep}market=${encodeURIComponent(market)}`
+}
+
 export async function apiGet<T>(endpoint: string, useCache = true): Promise<T> {
-  const cacheKey = endpoint
+  const fullEndpoint = appendMarketParam(endpoint)
+  const cacheKey = fullEndpoint
   
   if (useCache) {
     const cached = cache.get(cacheKey)
@@ -30,7 +39,7 @@ export async function apiGet<T>(endpoint: string, useCache = true): Promise<T> {
     }
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const res = await fetch(`${API_BASE}${fullEndpoint}`, {
     headers: getHeaders()
   })
   

@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag } from 'lucide-react'
+import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '@/shared/ui'
 import { CASE_PRIORITY_CONFIG, type CasePriority } from '@/entities/case'
@@ -18,8 +18,9 @@ export interface CaseCardData {
   createdAt: string
   updatedAt?: string
   assignee?: { id: string; name: string }
-  reporterName?: string // Кто инициировал тикет
+  reporterName?: string
   commentsCount: number
+  isShadow?: boolean
 }
 
 interface CaseCardProps {
@@ -43,8 +44,17 @@ function formatRelativeTime(dateStr: string): string {
   return 'только что'
 }
 
+function getAgingInfo(createdAt: string): { label: string; color: string; level: 'ok' | 'warn' | 'danger' } {
+  const hours = (Date.now() - new Date(createdAt).getTime()) / 3600000
+  if (hours < 4) return { label: '', color: '', level: 'ok' }
+  if (hours < 24) return { label: `${Math.floor(hours)}ч`, color: 'text-amber-600 bg-amber-50', level: 'warn' }
+  const days = Math.floor(hours / 24)
+  return { label: `${days}д`, color: 'text-red-600 bg-red-50', level: 'danger' }
+}
+
 export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, isDragging }: CaseCardProps) {
   const priority = CASE_PRIORITY_CONFIG[caseItem.priority]
+  const aging = getAgingInfo(caseItem.createdAt)
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -61,16 +71,29 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
       draggable={true}
       onDragStart={handleDragStart}
       onClick={onView}
-      className={`bg-white rounded-xl p-3 shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-grab active:cursor-grabbing select-none ${
+      className={`bg-white rounded-xl p-3 shadow-sm border transition-all cursor-grab active:cursor-grabbing select-none ${
         isDragging ? 'opacity-50 rotate-2 scale-105' : ''
-      }`}
+      } ${aging.level === 'danger' ? 'border-red-200' : aging.level === 'warn' ? 'border-amber-200' : 'border-slate-200'} hover:shadow-md`}
     >
-      {/* Header: номер тикета + приоритет */}
+      {/* Header: номер тикета + приоритет + aging */}
       <div className="flex items-start justify-between mb-2">
-        <span className="text-xs font-mono text-blue-600 font-semibold">{caseItem.number}</span>
-        <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${priority.bgColor} ${priority.color}`}>
-          {priority.label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-mono text-blue-600 font-semibold">{caseItem.number}</span>
+          {caseItem.isShadow && (
+            <span className="px-1 py-0.5 text-[9px] bg-slate-100 text-slate-500 rounded">чат</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {aging.label && (
+            <span className={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded ${aging.color}`}>
+              <Timer className="w-2.5 h-2.5" />
+              {aging.label}
+            </span>
+          )}
+          <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${priority.bgColor} ${priority.color}`}>
+            {priority.label}
+          </span>
+        </div>
       </div>
 
       {/* Откуда (источник/канал) - увеличенный */}

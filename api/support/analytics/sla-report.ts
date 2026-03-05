@@ -43,10 +43,10 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const url = new URL(req.url)
   
-  // Parse parameters
   const fromDate = url.searchParams.get('from') || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const toDate = url.searchParams.get('to') || new Date().toISOString().split('T')[0]
   const slaMinutes = parseInt(url.searchParams.get('sla_minutes') || '10')
+  const market = url.searchParams.get('market') || null
   
   const fromDateTime = `${fromDate}T00:00:00+05:00` // Tashkent timezone
   const toDateTime = `${toDate}T23:59:59+05:00`
@@ -72,6 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
         JOIN support_channels c ON c.id = m.channel_id
         WHERE m.created_at >= ${fromDateTime}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${toDateTime}::timestamptz
+          AND (${market}::text IS NULL OR c.market_id = ${market})
       ),
       client_messages AS (
         SELECT id, channel_id, sender_name as client_name, text_content, created_at as message_at, channel_name

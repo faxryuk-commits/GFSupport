@@ -3,7 +3,8 @@ import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, User
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CASE_STATUS_CONFIG, KANBAN_STATUSES, ACTIVE_STATUSES, ARCHIVE_STATUSES, type CaseStatus, type Case } from '@/entities/case'
-import { fetchCases, createCase, updateCaseStatus, assignCase, fetchChannels, fetchAgents } from '@/shared/api'
+import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCaseComment, fetchCaseComments, fetchChannels, fetchAgents, type CaseComment } from '@/shared/api'
+import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 
@@ -75,6 +76,7 @@ const CATEGORIES = [
 
 export function CasesPage() {
   const { showNotification } = useNotification()
+  const { agent: currentUser } = useAuth()
   const [cases, setCases] = useState<Case[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
@@ -175,9 +177,8 @@ export function CasesPage() {
         c.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.ticketNumber?.toString() || '').includes(searchQuery)
       
-      // Быстрые фильтры
       const matchesQuickFilter = quickFilter === 'all' || 
-        (quickFilter === 'my' && c.assignedTo === '1') ||
+        (quickFilter === 'my' && currentUser?.id && c.assignedTo === currentUser.id) ||
         (quickFilter === 'urgent' && (c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent'))
       
       // Фильтр по дате
@@ -191,7 +192,7 @@ export function CasesPage() {
       
       return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel
     })
-  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter])
+  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter, currentUser?.id])
 
   // Количество активных фильтров
   const activeFiltersCount = useMemo(() => {
@@ -295,16 +296,28 @@ export function CasesPage() {
     }
   }
 
-  const handleAddComment = (_caseId: string, _text: string, _isInternal: boolean) => {
-    // TODO: Implement comment API
+  const handleAddComment = async (caseId: string, text: string, isInternal: boolean) => {
+    try {
+      await addCaseComment(caseId, text, isInternal, currentUser?.name, currentUser?.id)
+      showNotification({ type: 'ticket', title: 'Комментарий добавлен', message: text.slice(0, 50) })
+    } catch (err) {
+      console.error('Ошибка добавления комментария:', err)
+    }
   }
 
-  const handleDeleteCase = () => {
-    if (selectedCase) {
-      setCases(prev => prev.filter(c => c.id !== selectedCase.id))
-      setIsDeleteDialogOpen(false)
-      setIsDetailModalOpen(false)
-      setSelectedCase(null)
+  const handleDeleteCase = async () => {
+    if (!selectedCase) return
+    const caseId = selectedCase.id
+    setCases(prev => prev.filter(c => c.id !== caseId))
+    setIsDeleteDialogOpen(false)
+    setIsDetailModalOpen(false)
+    setSelectedCase(null)
+    try {
+      await deleteCase(caseId)
+      showNotification({ type: 'alert', title: 'Кейс удалён', message: `Кейс ${selectedCase.ticketNumber ? '#' + selectedCase.ticketNumber : caseId.slice(0, 8)} удалён` })
+    } catch (err) {
+      console.error('Ошибка удаления кейса:', err)
+      loadData()
     }
   }
 
@@ -441,7 +454,7 @@ export function CasesPage() {
         <div className="flex items-center gap-2 mb-4 flex-shrink-0">
           {[
             { key: 'all', label: 'Все', icon: Filter, count: filteredCases.length },
-            { key: 'my', label: 'Мои', icon: User, count: filteredCases.filter(c => c.assignedTo === '1').length },
+            { key: 'my', label: 'Мои', icon: User, count: filteredCases.filter(c => currentUser?.id && c.assignedTo === currentUser.id).length },
             { key: 'urgent', label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
           ].map(f => (
             <button

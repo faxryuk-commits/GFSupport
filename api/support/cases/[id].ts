@@ -243,14 +243,67 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  // PUT/PATCH - обновить кейс
+  // PUT/PATCH - обновить кейс или работа с комментариями
   if (req.method === 'PUT' || req.method === 'PATCH') {
     try {
       const body = await req.json()
+      const { action } = body
+
+      // Добавление комментария
+      if (action === 'add_comment') {
+        const { text, isInternal, authorName, authorId } = body
+        if (!text) return json({ error: 'Comment text required' }, 400)
+
+        const commentId = `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+        await sql`
+          INSERT INTO support_case_comments (id, case_id, author_id, author_name, text, is_internal)
+          VALUES (${commentId}, ${caseId}, ${authorId || null}, ${authorName || 'Система'}, ${text}, ${isInternal || false})
+        `.catch(async () => {
+          await sql`CREATE TABLE IF NOT EXISTS support_case_comments (
+            id VARCHAR(50) PRIMARY KEY, case_id VARCHAR(50) NOT NULL, author_id VARCHAR(50),
+            author_name VARCHAR(255), text TEXT NOT NULL, is_internal BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+          )`
+          await sql`
+            INSERT INTO support_case_comments (id, case_id, author_id, author_name, text, is_internal)
+            VALUES (${commentId}, ${caseId}, ${authorId || null}, ${authorName || 'Система'}, ${text}, ${isInternal || false})
+          `
+        })
+        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${caseId}`
+
+        const comments = await sql`
+          SELECT id, author_id, author_name, text, is_internal, created_at
+          FROM support_case_comments WHERE case_id = ${caseId} ORDER BY created_at ASC
+        `
+        return json({
+          success: true,
+          commentId,
+          comments: comments.map((c: any) => ({
+            id: c.id, author: c.author_name || 'Система', authorId: c.author_id,
+            text: c.text, isInternal: c.is_internal, time: c.created_at,
+          })),
+        })
+      }
+
+      // Получение комментариев
+      if (action === 'get_comments') {
+        const comments = await sql`
+          SELECT id, author_id, author_name, text, is_internal, created_at
+          FROM support_case_comments WHERE case_id = ${caseId} ORDER BY created_at ASC
+        `.catch(() => [])
+
+        return json({
+          comments: comments.map((c: any) => ({
+            id: c.id, author: c.author_name || 'Система', authorId: c.author_id,
+            text: c.text, isInternal: c.is_internal, time: c.created_at,
+          })),
+        })
+      }
+
       const { 
         status, priority, severity, category, subcategory, rootCause,
         assignedTo, description, resolutionNotes, tags, impactMrr, churnRiskScore,
-        updatedBy // ID менеджера который делает изменение
+        updatedBy
       } = body
 
       // Получаем текущий статус для истории
@@ -418,7 +471,7 @@ export default async function handler(req: Request): Promise<Response> {
   // DELETE - удалить кейс
   if (req.method === 'DELETE') {
     try {
-      // Сначала удаляем связанные записи
+      await sql`DELETE FROM support_case_comments WHERE case_id = ${caseId}`.catch(() => {})
       await sql`DELETE FROM support_case_activities WHERE case_id = ${caseId}`
       await sql`UPDATE support_messages SET case_id = NULL WHERE case_id = ${caseId}`
       

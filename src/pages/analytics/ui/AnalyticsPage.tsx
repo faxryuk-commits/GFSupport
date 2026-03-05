@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { fetchAnalytics, type AnalyticsData } from '@/shared/api'
 import { Badge } from '@/shared/ui'
-import { ResponseTimeDetailsModal } from './ResponseTimeDetailsModal'
+import { ResponseTimeDetailsModal } from '@/features/analytics'
 import { FeedbackStats } from '@/features/feedback/ui'
 
 // Перевод категорий на русский

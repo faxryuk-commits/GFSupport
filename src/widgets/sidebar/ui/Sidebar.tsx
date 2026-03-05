@@ -15,6 +15,8 @@ import {
   Sparkles,
   Clock,
   Target,
+  Globe,
+  ChevronDown,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -89,12 +91,18 @@ const badgeAnimationStyles = `
 }
 `
 
+interface MarketOption {
+  id: string
+  name: string
+  code: string
+}
+
 interface SidebarProps {
   unreadChats?: number
   openCases?: number
   pendingCommitments?: number
   onlineAgentsCount?: number
-  lastUpdated?: number // Timestamp последнего обновления - для анимации
+  lastUpdated?: number
   currentUser?: {
     name: string
     avatar?: string
@@ -102,6 +110,9 @@ interface SidebarProps {
     role?: string
   }
   onLogout?: () => void
+  markets?: MarketOption[]
+  selectedMarket?: string | null
+  onMarketChange?: (marketId: string | null) => void
 }
 
 const mainNavItems = [
@@ -123,7 +134,7 @@ const bottomItems = [
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout }: SidebarProps) {
+export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout, markets = [], selectedMarket, onMarketChange }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
@@ -288,6 +299,41 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
           {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>
+
+      {/* Market Selector */}
+      {markets.length > 0 && (
+        <div className={`px-3 pb-2 ${isCollapsed ? 'flex justify-center' : ''}`}>
+          {isCollapsed ? (
+            <button
+              onClick={() => {
+                const idx = markets.findIndex(m => m.id === selectedMarket)
+                const next = idx < markets.length - 1 ? markets[idx + 1]?.id : null
+                onMarketChange?.(next || null)
+              }}
+              className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              title={selectedMarket ? markets.find(m => m.id === selectedMarket)?.name : 'Все рынки'}
+            >
+              <Globe className="w-5 h-5" />
+            </button>
+          ) : (
+            <div className="relative">
+              <select
+                value={selectedMarket || ''}
+                onChange={(e) => onMarketChange?.(e.target.value || null)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white appearance-none cursor-pointer hover:bg-white/10 transition-colors focus:outline-none focus:border-blue-400"
+              >
+                <option value="" className="bg-[#1a2b4b]">Все рынки</option>
+                {markets.map(m => (
+                  <option key={m.id} value={m.id} className="bg-[#1a2b4b]">
+                    {m.code.toUpperCase()} — {m.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Navigation */}
       <nav className="flex-1 px-3 overflow-y-auto">

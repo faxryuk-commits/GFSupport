@@ -231,7 +231,6 @@ export function ResponseTimeDetailsModal({
                   key={detail.id}
                   className="px-6 py-4 hover:bg-slate-50 transition-colors"
                 >
-                  {/* Top row: Channel & Company */}
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <Avatar name={detail.channelName} size="sm" />
@@ -248,9 +247,7 @@ export function ResponseTimeDetailsModal({
                     </div>
                   </div>
 
-                  {/* Timeline */}
                   <div className="ml-1 pl-4 border-l-2 border-slate-200 space-y-3">
-                    {/* Client message */}
                     <div className="relative">
                       <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-white" />
                       <div className="bg-blue-50 rounded-lg p-3">
@@ -263,7 +260,6 @@ export function ResponseTimeDetailsModal({
                       </div>
                     </div>
 
-                    {/* Response */}
                     <div className="relative">
                       <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
                       <div className="bg-green-50 rounded-lg p-3">
@@ -280,7 +276,6 @@ export function ResponseTimeDetailsModal({
                     </div>
                   </div>
 
-                  {/* Footer info */}
                   {detail.wasEscalated && (
                     <div className="mt-3 ml-5 flex items-center gap-2 text-xs text-orange-600">
                       <AlertTriangle className="w-3.5 h-3.5" />
@@ -293,10 +288,8 @@ export function ResponseTimeDetailsModal({
           )}
         </div>
 
-        {/* Footer with insights */}
         {!loading && (details.length > 0 || stats) && (
           <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
-            {/* Stats */}
             <div className="grid grid-cols-4 gap-4 text-center mb-4">
               <div>
                 <p className="text-2xl font-bold text-slate-800">
@@ -324,7 +317,6 @@ export function ResponseTimeDetailsModal({
               </div>
             </div>
 
-            {/* Top Responders */}
             {topResponders.length > 0 && (
               <div>
                 <button 

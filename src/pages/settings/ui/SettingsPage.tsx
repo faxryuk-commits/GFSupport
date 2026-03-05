@@ -12,6 +12,7 @@ import {
   ApiKeysSettings,
   AppearanceSettings,
   AutoReplySettings,
+  MarketsSettings,
   type GeneralSettingsData,
   type ResponseSettingsData,
   type NotificationSetting,
@@ -34,7 +35,7 @@ import { TeamPage } from '@/pages/team/ui/TeamPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 
-type SettingsTab = 'general' | 'team' | 'users' | 'automations' | 'autoreply' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
+type SettingsTab = 'general' | 'team' | 'users' | 'markets' | 'automations' | 'autoreply' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
 interface TabConfig {
   id: SettingsTab
@@ -49,6 +50,7 @@ const tabs: TabConfig[] = [
   { id: 'general', label: 'Основные', description: 'Общие настройки системы', icon: Settings, color: 'text-blue-600', bgColor: 'bg-blue-100' },
   { id: 'team', label: 'Команда', description: 'Управление сотрудниками', icon: UsersRound, color: 'text-violet-600', bgColor: 'bg-violet-100' },
   { id: 'users', label: 'Клиенты', description: 'База клиентов и партнёров', icon: Users, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
+  { id: 'markets', label: 'Рынки', description: 'Страны, доступы, привязки', icon: Globe, color: 'text-teal-600', bgColor: 'bg-teal-100' },
   { id: 'automations', label: 'Автоматизации', description: 'Правила и триггеры', icon: Zap, color: 'text-amber-600', bgColor: 'bg-amber-100' },
   { id: 'autoreply', label: 'AI Автоответы', description: 'Приветствия, FAQ, шаблоны', icon: Bot, color: 'text-purple-600', bgColor: 'bg-purple-100' },
   { id: 'notifications', label: 'Уведомления', description: 'Настройка оповещений', icon: Bell, color: 'text-rose-600', bgColor: 'bg-rose-100' },
@@ -506,6 +508,10 @@ export function SettingsPage() {
                 <div className="-mt-6">
                   <UsersPage embedded />
                 </div>
+              )}
+
+              {activeTab === 'markets' && (
+                <MarketsSettings />
               )}
 
               {activeTab === 'automations' && (
