@@ -96,7 +96,8 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
 
   try {
-    // Get channel info
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
+
     const channelResult = await sql`
       SELECT 
         id, name, type, is_forum, awaiting_reply, unread_count,

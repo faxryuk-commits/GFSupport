@@ -172,6 +172,7 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB DEFAULT '{}'`; synced.push('messages.reactions') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT`; synced.push('messages.reply_to_text') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender VARCHAR(255)`; synced.push('messages.reply_to_sender') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT`; synced.push('messages.forwarded_from') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sentiment_score DECIMAL(3,2)`; synced.push('messages.sentiment_score') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sentiment_change VARCHAR(20)`; synced.push('messages.sentiment_change') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS auto_reply_candidate BOOLEAN DEFAULT false`; synced.push('messages.auto_reply_candidate') } catch (e) { /* exists */ }

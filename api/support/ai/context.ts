@@ -99,13 +99,24 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT 50
     `
 
-    // Get active commitments/reminders
-    const reminders = await sql`
-      SELECT commitment_text, deadline, status
-      FROM support_reminders
-      WHERE channel_id = ${channelId} AND status = 'active'
-      ORDER BY COALESCE(deadline, created_at) ASC
-    `
+    let reminders: any[] = []
+    try {
+      reminders = await sql`
+        SELECT commitment_text, deadline, status
+        FROM support_reminders
+        WHERE channel_id = ${channelId} AND status = 'active'
+        ORDER BY COALESCE(deadline, created_at) ASC
+      `
+    } catch {
+      try {
+        reminders = await sql`
+          SELECT commitment_text, deadline, status
+          FROM support_commitments
+          WHERE channel_id = ${channelId} AND status = 'pending'
+          ORDER BY COALESCE(deadline, created_at) ASC
+        `
+      } catch { /* table may not exist */ }
+    }
 
     // Calculate client waiting time
     let clientWaitingTime: number | null = null

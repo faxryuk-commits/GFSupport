@@ -1,6 +1,9 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender } from '../lib/identification.js'
 
+const problemRe = /ishlamay|ишламай|не\s*работает|not\s*working|kelmay|келмай|не\s*приходит|xato|хато|ошибк|error|muammo|муаммо|проблем|buzil|бузил|сломал|broken|qotib|завис|stuck/i
+const urgentRe = /срочно|urgent|tez|тез|shoshilinch|asap|критич|critical|авария/i
+
 export const config = {
   runtime: 'edge',
 }
@@ -239,6 +242,26 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (!fromMe && senderPhone) {
       upsertWhatsAppUser(sql, senderPhone, senderName || '', channelId, senderRole).catch(() => {})
+    }
+
+    if (isFromClient && text && problemRe.test(text)) {
+      try {
+        const existing = await sql`
+          SELECT id FROM support_cases
+          WHERE channel_id = ${channelId} AND status NOT IN ('resolved','closed')
+            AND created_at >= NOW() - INTERVAL '24 hours' LIMIT 1
+        `
+        if (!existing[0]) {
+          const caseId = generateId('case')
+          const priority = urgentRe.test(text) ? 'high' : 'medium'
+          const maxRow = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as n FROM support_cases`
+          const ticketNum = parseInt(maxRow[0]?.n || '1000') + 1
+          await sql`
+            INSERT INTO support_cases (id, ticket_number, channel_id, title, description, priority, status, source_message_id)
+            VALUES (${caseId}, ${ticketNum}, ${channelId}, ${(text).slice(0, 100)}, ${text.slice(0, 500)}, ${priority}, 'detected', ${msgId})
+          `
+        }
+      } catch (e: any) { console.error('[WA Case]', e.message) }
     }
 
     return json({ ok: true, messageId: msgId, channelId })
