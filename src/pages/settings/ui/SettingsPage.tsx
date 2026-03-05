@@ -16,6 +16,7 @@ import {
   type ResponseSettingsData,
   type NotificationSetting,
   type Integration,
+  type HealthData,
   type SecuritySettingsData,
   type ApiKey,
   type AppearanceSettingsData,
@@ -28,6 +29,7 @@ import {
   type BackendSettings,
   type EnvStatus,
 } from '@/shared/api'
+import { apiGet } from '@/shared/services/api.service'
 import { TeamPage } from '@/pages/team/ui/TeamPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
@@ -112,6 +114,8 @@ export function SettingsPage() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null)
   const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState(false)
+  const [healthData, setHealthData] = useState<HealthData | null>(null)
+  const [healthLoading, setHealthLoading] = useState(false)
 
   const [securitySettings, setSecuritySettings] = useState<SecuritySettingsData>({
     twoFactorEnabled: true,
@@ -213,9 +217,22 @@ export function SettingsPage() {
     }
   }, [])
 
+  const loadHealth = useCallback(async () => {
+    setHealthLoading(true)
+    try {
+      const data = await apiGet<HealthData>('/integrations/health')
+      setHealthData(data)
+    } catch { /* non-critical */ }
+    setHealthLoading(false)
+  }, [])
+
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
+
+  useEffect(() => {
+    if (activeTab === 'integrations') loadHealth()
+  }, [activeTab, loadHealth])
 
   // Sync sound settings with localStorage for notification hooks
   useEffect(() => {
@@ -514,6 +531,9 @@ export function SettingsPage() {
               {activeTab === 'integrations' && (
                 <IntegrationsSettings
                   integrations={integrations}
+                  health={healthData}
+                  healthLoading={healthLoading}
+                  onRefreshHealth={loadHealth}
                   selectedIntegration={selectedIntegration}
                   isModalOpen={isIntegrationModalOpen}
                   onOpenModal={(i) => { setSelectedIntegration(i); setIsIntegrationModalOpen(true) }}

@@ -48,16 +48,25 @@ export default async function handler(req: Request): Promise<Response> {
       const companyId = url.searchParams.get('companyId')
       const isActive = url.searchParams.get('active')
       const search = url.searchParams.get('search')
+      const source = url.searchParams.get('source')
       const limitParam = parseInt(url.searchParams.get('limit') || '100')
       const offsetParam = parseInt(url.searchParams.get('offset') || '0')
 
-      // Простой запрос без динамических условий
       let channels
-      
-      if (search) {
+
+      if (search && source) {
         channels = await sql`
-          SELECT 
-            c.*,
+          SELECT c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          WHERE c.name ILIKE ${'%' + search + '%'} AND COALESCE(c.source, 'telegram') = ${source}
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
+      } else if (search) {
+        channels = await sql`
+          SELECT c.*,
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
@@ -65,10 +74,19 @@ export default async function handler(req: Request): Promise<Response> {
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
+      } else if (source) {
+        channels = await sql`
+          SELECT c.*,
+            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
+            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+          FROM support_channels c
+          WHERE COALESCE(c.source, 'telegram') = ${source}
+          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+          LIMIT ${limitParam} OFFSET ${offsetParam}
+        `
       } else if (type && type !== 'all') {
         channels = await sql`
-          SELECT 
-            c.*,
+          SELECT c.*,
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
@@ -78,8 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else if (isActive === 'true') {
         channels = await sql`
-          SELECT 
-            c.*,
+          SELECT c.*,
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
@@ -89,8 +106,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else if (isActive === 'false') {
         channels = await sql`
-          SELECT 
-            c.*,
+          SELECT c.*,
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
@@ -100,8 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
       } else {
         channels = await sql`
-          SELECT 
-            c.*,
+          SELECT c.*,
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
@@ -110,16 +125,15 @@ export default async function handler(req: Request): Promise<Response> {
         `
       }
 
-      // Общее количество
-      const countResult = await sql`SELECT COUNT(*) as total FROM support_channels`
-      const total = parseInt(countResult[0]?.total || '0')
+      const [countResult, statsResult, sourceStats] = await Promise.all([
+        sql`SELECT COUNT(*) as total FROM support_channels`,
+        sql`SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
+            FROM support_channels GROUP BY type`,
+        sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
+            FROM support_channels GROUP BY COALESCE(source, 'telegram')`,
+      ])
 
-      // Статистика по типам
-      const statsResult = await sql`
-        SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
-        FROM support_channels 
-        GROUP BY type
-      `
+      const total = parseInt(countResult[0]?.total || '0')
 
       return json({
         channels: channels.map((c: any) => ({
@@ -158,7 +172,8 @@ export default async function handler(req: Request): Promise<Response> {
         stats: Object.fromEntries(statsResult.map((s: any) => [
           s.type, 
           { total: parseInt(s.count), active: parseInt(s.active_count) }
-        ]))
+        ])),
+        sourceCounts: Object.fromEntries(sourceStats.map((s: any) => [s.source, s.count])),
       }, 200, 5)
 
     } catch (e: any) {

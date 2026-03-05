@@ -200,6 +200,7 @@ export function ChatsPage() {
   
   // UI состояния
   const [filter, setFilter] = useState<'all' | 'unread' | 'open' | 'pending' | 'resolved'>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [messageText, setMessageText] = useState('')
   const [replyingTo, setReplyingTo] = useState<{ id: string; telegramMessageId?: number; text: string; sender: string } | null>(null)
@@ -555,13 +556,24 @@ export function ChatsPage() {
         (filter === 'open' && ch.status === 'open') ||
         (filter === 'pending' && ch.status === 'pending') ||
         (filter === 'resolved' && ch.status === 'resolved')
-      return matchesSearch && matchesFilter
+      const matchesSource = sourceFilter === 'all' || (ch.source || 'telegram') === sourceFilter
+      return matchesSearch && matchesFilter && matchesSource
     }).sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1
       if (!a.isPinned && b.isPinned) return 1
       return 0
     })
-  }, [channels, filter, searchQuery])
+  }, [channels, filter, sourceFilter, searchQuery])
+
+  const sourceCounts = useMemo(() => {
+    const counts = { all: channels.length, telegram: 0, whatsapp: 0 }
+    for (const ch of channels) {
+      const s = ch.source || 'telegram'
+      if (s === 'telegram') counts.telegram++
+      else if (s === 'whatsapp') counts.whatsapp++
+    }
+    return counts
+  }, [channels])
 
   const handleSendMessage = async (files?: AttachedFile[]) => {
     // Проверяем что есть текст или файлы
@@ -751,7 +763,29 @@ export function ChatsPage() {
             </div>
           </div>
 
-          <div className="flex gap-1 px-4 py-2 border-b border-slate-100 overflow-x-auto">
+          <div className="flex gap-1 px-4 pt-2 pb-1 border-b border-slate-100">
+            {([
+              { key: 'all' as const, label: 'Все', count: sourceCounts.all },
+              { key: 'telegram' as const, label: 'Telegram', count: sourceCounts.telegram },
+              { key: 'whatsapp' as const, label: 'WhatsApp', count: sourceCounts.whatsapp },
+            ]).map(s => (
+              <button
+                key={s.key}
+                onClick={() => setSourceFilter(s.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  sourceFilter === s.key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {s.key === 'whatsapp' && <span className="text-green-500 text-[10px]">W</span>}
+                {s.label}
+                <span className={`text-[10px] ${sourceFilter === s.key ? 'text-slate-300' : 'text-slate-400'}`}>
+                  {s.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-1 px-4 py-1.5 border-b border-slate-100 overflow-x-auto">
             {(['all', 'unread', 'open', 'pending', 'resolved'] as const).map(f => (
               <button
                 key={f}

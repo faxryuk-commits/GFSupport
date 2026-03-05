@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
-import { RefreshCw, CheckCircle, Loader2, Wifi, WifiOff, MessageSquare, Users2 } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import {
+  RefreshCw, CheckCircle, Loader2, Wifi, WifiOff,
+  MessageSquare, Users2, Activity, AlertTriangle, Settings2,
+} from 'lucide-react'
 import { Modal } from '@/shared/ui'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 
@@ -13,6 +16,15 @@ export interface Integration {
 }
 
 type FilterMode = 'all' | 'groups_only'
+type ServiceStatus = 'active' | 'inactive' | 'error'
+
+export interface HealthData {
+  telegram: { status: ServiceStatus; botUsername?: string; botName?: string; channelsCount: number }
+  openai: { status: ServiceStatus; model: string }
+  whisper: { status: ServiceStatus; language: string }
+  notify: { status: ServiceStatus; chatId: string | null }
+  whatsapp: { status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number }
+}
 
 interface WhatsAppStatus {
   connected: boolean
@@ -26,6 +38,9 @@ interface WhatsAppStatus {
 
 interface IntegrationsSettingsProps {
   integrations: Integration[]
+  health: HealthData | null
+  healthLoading: boolean
+  onRefreshHealth: () => void
   selectedIntegration: Integration | null
   isModalOpen: boolean
   onOpenModal: (integration: Integration) => void
@@ -34,16 +49,67 @@ interface IntegrationsSettingsProps {
   onDisconnect: (id: string) => void
 }
 
-const statusColors = {
-  connected: 'bg-green-100 text-green-700',
-  disconnected: 'bg-slate-100 text-slate-600',
-  error: 'bg-red-100 text-red-700',
+function StatusDot({ status }: { status: ServiceStatus }) {
+  if (status === 'active') {
+    return (
+      <span className="relative flex h-2.5 w-2.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+      </span>
+    )
+  }
+  if (status === 'error') {
+    return (
+      <span className="relative flex h-2.5 w-2.5">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+      </span>
+    )
+  }
+  return <span className="inline-flex rounded-full h-2.5 w-2.5 bg-slate-300" />
 }
 
-const statusLabels = {
-  connected: 'Подключено',
-  disconnected: 'Отключено',
+const statusLabel: Record<ServiceStatus, string> = {
+  active: 'Активен',
+  inactive: 'Отключён',
   error: 'Ошибка',
+}
+
+const statusColor: Record<ServiceStatus, string> = {
+  active: 'bg-green-50 text-green-700',
+  inactive: 'bg-slate-100 text-slate-600',
+  error: 'bg-red-50 text-red-700',
+}
+
+function IntegrationCard({
+  icon,
+  name,
+  status,
+  details,
+  actions,
+}: {
+  icon: string
+  name: string
+  status: ServiceStatus
+  details: React.ReactNode
+  actions: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100/80 transition-colors">
+      <span className="text-3xl mt-0.5">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2.5 mb-1">
+          <h3 className="font-medium text-slate-800">{name}</h3>
+          <StatusDot status={status} />
+          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${statusColor[status]}`}>
+            {statusLabel[status]}
+          </span>
+        </div>
+        <div className="text-sm text-slate-500 space-y-0.5">{details}</div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>
+    </div>
+  )
 }
 
 function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -82,10 +148,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
     poll()
     intervalRef.current = setInterval(poll, 3000)
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [isOpen])
 
   return (
@@ -157,11 +220,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
         {!loading && !waStatus?.connected && waStatus?.qr && (
           <div className="flex flex-col items-center">
-            <img
-              src={waStatus.qr}
-              alt="WhatsApp QR Code"
-              className="w-64 h-64 rounded-lg border border-slate-200"
-            />
+            <img src={waStatus.qr} alt="WhatsApp QR Code" className="w-64 h-64 rounded-lg border border-slate-200" />
             <p className="text-sm text-slate-500 mt-3 text-center">
               Откройте WhatsApp → Настройки → Связанные устройства → Привязать устройство
             </p>
@@ -212,7 +271,9 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
 }
 
 export function IntegrationsSettings({
-  integrations,
+  health,
+  healthLoading,
+  onRefreshHealth,
   selectedIntegration,
   isModalOpen,
   onOpenModal,
@@ -222,63 +283,148 @@ export function IntegrationsSettings({
 }: IntegrationsSettingsProps) {
   const [waModalOpen, setWaModalOpen] = useState(false)
 
+  const tg = health?.telegram
+  const ai = health?.openai
+  const wh = health?.whisper
+  const nt = health?.notify
+  const wa = health?.whatsapp
+
   return (
     <>
       <div className="bg-white rounded-xl p-6 border border-slate-200">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Интеграции</h2>
-        
-        <div className="grid gap-4">
-          {integrations.map(integration => (
-            <div
-              key={integration.id}
-              className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <span className="text-3xl">{integration.icon}</span>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-slate-800">{integration.name}</h3>
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${statusColors[integration.status]}`}>
-                      {statusLabels[integration.status]}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-500">{integration.description}</p>
-                  {integration.lastSync && (
-                    <p className="text-xs text-slate-400 mt-1">Синхронизация: {integration.lastSync}</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {integration.id === 'whatsapp' ? (
-                  <button
-                    onClick={() => setWaModalOpen(true)}
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600"
-                  >
-                    {integration.status === 'connected' ? 'Настройки' : 'Подключить'}
-                  </button>
-                ) : integration.status === 'connected' ? (
-                  <>
-                    <button className="p-2 hover:bg-white rounded-lg" title="Синхронизировать">
-                      <RefreshCw className="w-4 h-4 text-slate-500" />
-                    </button>
-                    <button
-                      onClick={() => onDisconnect(integration.id)}
-                      className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium"
-                    >
-                      Отключить
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => onOpenModal(integration)}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600"
-                  >
-                    Подключить
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold text-slate-800">Интеграции</h2>
+          <button
+            onClick={onRefreshHealth}
+            disabled={healthLoading}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${healthLoading ? 'animate-spin' : ''}`} />
+            Проверить все
+          </button>
+        </div>
+
+        {healthLoading && !health && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+            <span className="ml-3 text-sm text-slate-500">Проверка сервисов...</span>
+          </div>
+        )}
+
+        <div className="grid gap-3">
+          {/* Telegram Bot */}
+          <IntegrationCard
+            icon="📱"
+            name="Telegram Bot"
+            status={tg?.status || 'inactive'}
+            details={
+              tg?.status === 'active' ? (
+                <>
+                  <p>@{tg.botUsername} {tg.botName && `— ${tg.botName}`}</p>
+                  <p className="text-xs text-slate-400">{tg.channelsCount} каналов</p>
+                </>
+              ) : tg?.status === 'error' ? (
+                <p className="text-red-500 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Нет соединения с Telegram API
+                </p>
+              ) : (
+                <p>Токен бота не настроен</p>
+              )
+            }
+            actions={
+              <button
+                onClick={() => {
+                  const fakeIntegration: Integration = { id: '1', name: 'Telegram Bot', description: '', icon: '📱', status: 'disconnected' }
+                  onOpenModal(fakeIntegration)
+                }}
+                className="px-3 py-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                <Settings2 className="w-4 h-4" />
+              </button>
+            }
+          />
+
+          {/* OpenAI API */}
+          <IntegrationCard
+            icon="🤖"
+            name="OpenAI API"
+            status={ai?.status || 'inactive'}
+            details={
+              ai?.status === 'active' ? (
+                <p>Модель: <span className="font-medium text-slate-700">{ai.model}</span></p>
+              ) : ai?.status === 'error' ? (
+                <p className="text-red-500 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> API ключ недействителен
+                </p>
+              ) : (
+                <p>API ключ не настроен</p>
+              )
+            }
+            actions={null}
+          />
+
+          {/* Whisper */}
+          <IntegrationCard
+            icon="🎤"
+            name="Whisper (Транскрибация)"
+            status={wh?.status || 'inactive'}
+            details={
+              wh?.status === 'active' ? (
+                <p>Язык: {wh.language === 'ru' ? 'Русский' : wh.language}</p>
+              ) : (
+                <p>Транскрибация выключена</p>
+              )
+            }
+            actions={null}
+          />
+
+          {/* Уведомления Telegram */}
+          <IntegrationCard
+            icon="🔔"
+            name="Уведомления в Telegram"
+            status={nt?.status || 'inactive'}
+            details={
+              nt?.status === 'active' ? (
+                <p>Chat ID: <span className="font-mono text-xs">{nt.chatId}</span></p>
+              ) : (
+                <p>Не настроено</p>
+              )
+            }
+            actions={null}
+          />
+
+          {/* WhatsApp */}
+          <IntegrationCard
+            icon="💬"
+            name="WhatsApp"
+            status={wa?.status || 'inactive'}
+            details={
+              wa?.status === 'active' ? (
+                <>
+                  <p>Номер: +{wa.phone} — {wa.filterMode === 'groups_only' ? 'только группы' : 'все чаты'}</p>
+                  <p className="text-xs text-slate-400">{wa.channelsCount} каналов</p>
+                </>
+              ) : wa?.status === 'error' ? (
+                <p className="text-red-500 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Мост недоступен
+                </p>
+              ) : (
+                <p>Не подключено</p>
+              )
+            }
+            actions={
+              <button
+                onClick={() => setWaModalOpen(true)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  wa?.status === 'active'
+                    ? 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
+                    : 'bg-green-500 text-white hover:bg-green-600'
+                }`}
+              >
+                {wa?.status === 'active' ? 'Настройки' : 'Подключить'}
+              </button>
+            }
+          />
         </div>
       </div>
 
@@ -303,48 +449,6 @@ export function IntegrationsSettings({
                   placeholder="123456789:ABCdefGHI..."
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
-              </div>
-            )}
-
-            {selectedIntegration.name === 'Slack' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Webhook URL</label>
-                <input
-                  type="text"
-                  placeholder="https://hooks.slack.com/services/..."
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-            )}
-
-            {selectedIntegration.name === 'Email (SMTP)' && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">SMTP Server</label>
-                  <input
-                    type="text"
-                    placeholder="smtp.example.com"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Порт</label>
-                    <input
-                      type="number"
-                      placeholder="587"
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Шифрование</label>
-                    <select className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                      <option value="tls">TLS</option>
-                      <option value="ssl">SSL</option>
-                      <option value="none">None</option>
-                    </select>
-                  </div>
-                </div>
               </div>
             )}
 
