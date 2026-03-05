@@ -68,9 +68,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
 
+  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
+  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
+
   try {
     const body = await req.json()
     const { chatId, messageId, senderName, senderPhone, text, mediaUrl, contentType, timestamp, isGroup, groupName } = body
+
+    console.log(`[WA Webhook] Received: chatId=${chatId}, sender=${senderName}, text=${(text || '').slice(0, 50)}, isGroup=${isGroup}`)
 
     if (!chatId) return json({ error: 'chatId is required' }, 400)
 
@@ -138,10 +143,11 @@ export default async function handler(req: Request): Promise<Response> {
       `
     }
 
+    console.log(`[WA Webhook] Saved: msgId=${msgId}, channelId=${channelId}, role=${senderRole}`)
     return json({ ok: true, messageId: msgId, channelId })
 
   } catch (e: any) {
-    console.error('[WhatsApp Webhook] Error:', e.message)
+    console.error('[WhatsApp Webhook] Error:', e.message, e.stack?.slice(0, 300))
     return json({ error: e.message }, 500)
   }
 }

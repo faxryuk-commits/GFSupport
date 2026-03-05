@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import { getStatus, getCurrentQR, sendText, sendMedia } from './baileys.js'
-import { getFilterMode, setFilterMode, type FilterMode } from './index.js'
+import { getFilterMode, setFilterMode, getMessageStats, type FilterMode } from './index.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
 
@@ -12,6 +12,7 @@ export function createRouter(bridgeSecret: string): Router {
     if (req.path === '/status' && req.method === 'GET') return next()
     if (req.path === '/qr' && req.method === 'GET') return next()
     if (req.path === '/filter' && req.method === 'GET') return next()
+    if (req.path === '/health' && req.method === 'GET') return next()
 
     const auth = req.headers.authorization
     if (auth !== `Bearer ${bridgeSecret}`) {
@@ -32,6 +33,18 @@ export function createRouter(bridgeSecret: string): Router {
 
   router.get('/filter', (_req: Request, res: Response) => {
     res.json({ filterMode: getFilterMode() })
+  })
+
+  router.get('/health', (_req: Request, res: Response) => {
+    const status = getStatus()
+    const stats = getMessageStats()
+    res.json({
+      connected: status.connected,
+      phone: status.phone,
+      filterMode: getFilterMode(),
+      messages: stats,
+      uptime: process.uptime(),
+    })
   })
 
   router.post('/filter', (req: Request, res: Response) => {

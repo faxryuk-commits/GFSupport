@@ -12,6 +12,8 @@ RUN npx tsc
 
 RUN npm prune --production
 
+RUN mkdir -p /data/auth_info
+
 EXPOSE 3001
 
 CMD ["node", "dist/index.js"]

@@ -9,13 +9,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = parseInt(process.env.PORT || '3001')
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET || ''
 const WEBHOOK_URL = process.env.GFSUPPORT_WEBHOOK_URL || ''
-const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, '..', 'auth_info')
+const AUTH_DIR = process.env.AUTH_DIR || '/data/auth_info'
 
 export type FilterMode = 'all' | 'groups_only'
 let filterMode: FilterMode = (process.env.FILTER_MODE as FilterMode) || 'all'
 
 export function getFilterMode(): FilterMode { return filterMode }
 export function setFilterMode(mode: FilterMode) { filterMode = mode }
+
+let messageStats = { received: 0, forwarded: 0, errors: 0, lastAt: '', lastError: '' }
+export function getMessageStats() { return messageStats }
 
 if (!BRIDGE_SECRET) {
   console.error('BRIDGE_SECRET is required')
@@ -61,27 +64,23 @@ function getSenderInfo(msg: any) {
 onMessage(async (msg) => {
   try {
     const { jid, isGroup, phone, pushName } = getSenderInfo(msg)
+    messageStats.received++
+    messageStats.lastAt = new Date().toISOString()
+
+    console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, JID: ${jid.slice(0, 30)}`)
 
     if (jid.endsWith('@broadcast') || jid === 'status@broadcast') {
+      console.log('[MSG] Skipped: broadcast')
       return
     }
 
     if (filterMode === 'groups_only' && !isGroup) {
+      console.log('[MSG] Skipped: groups_only filter')
       return
     }
 
     const text = extractText(msg)
     const contentType = getContentType(msg)
-
-    let mediaUrl: string | undefined
-    if (contentType !== 'text' && contentType !== 'sticker') {
-      try {
-        const buffer = await downloadMediaMessage(msg, 'buffer', {}) as Buffer
-        mediaUrl = `data:application/octet-stream;base64,${buffer.toString('base64').slice(0, 100)}...`
-      } catch {
-        mediaUrl = undefined
-      }
-    }
 
     const payload = {
       chatId: jid,
@@ -89,13 +88,14 @@ onMessage(async (msg) => {
       senderName: pushName,
       senderPhone: phone,
       text,
-      mediaUrl: mediaUrl || null,
+      mediaUrl: null,
       contentType,
       timestamp: msg.messageTimestamp,
       isGroup,
       groupName: isGroup ? msg.pushName || undefined : undefined,
     }
 
+    console.log(`[MSG] Forwarding to webhook: ${WEBHOOK_URL.slice(0, 50)}...`)
     const res = await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: {
@@ -105,18 +105,37 @@ onMessage(async (msg) => {
       body: JSON.stringify(payload),
     })
 
-    if (!res.ok) {
-      console.error(`[Webhook] Failed: ${res.status} ${await res.text()}`)
+    if (res.ok) {
+      messageStats.forwarded++
+      const body = await res.json().catch(() => null)
+      console.log(`[MSG] Forwarded OK: ${JSON.stringify(body)}`)
+    } else {
+      messageStats.errors++
+      const errText = await res.text().catch(() => 'unknown')
+      messageStats.lastError = `${res.status}: ${errText.slice(0, 200)}`
+      console.error(`[Webhook] Failed: ${res.status} ${errText}`)
     }
   } catch (e: any) {
+    messageStats.errors++
+    messageStats.lastError = e.message
     console.error('[Message Handler]', e.message)
   }
 })
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`[Bridge] Running on port ${PORT}`)
   console.log(`[Bridge] Webhook → ${WEBHOOK_URL}`)
   console.log(`[Bridge] Auth dir → ${AUTH_DIR}`)
+
+  const fs = await import('fs')
+  try {
+    fs.mkdirSync(AUTH_DIR, { recursive: true })
+    const files = fs.readdirSync(AUTH_DIR)
+    console.log(`[Bridge] Auth dir has ${files.length} files: ${files.slice(0, 5).join(', ')}${files.length > 5 ? '...' : ''}`)
+  } catch (e: any) {
+    console.error(`[Bridge] Auth dir error: ${e.message}`)
+  }
+
   startBaileys(AUTH_DIR).catch((e) => {
     console.error('[Bridge] startBaileys crashed:', e)
   })
