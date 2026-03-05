@@ -5,6 +5,7 @@ import makeWASocket, {
   proto,
   downloadMediaMessage,
   Browsers,
+  fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import * as QRCode from 'qrcode'
@@ -42,11 +43,21 @@ export async function startBaileys(authDir: string) {
     const { state, saveCreds } = await useMultiFileAuthState(authDir)
     console.log('[Baileys] Auth state loaded')
 
+    let version: [number, number, number] | undefined
+    try {
+      const fetched = await fetchLatestBaileysVersion()
+      version = fetched.version
+      console.log(`[Baileys] Using WA version: ${version.join('.')}`)
+    } catch (e: any) {
+      console.warn('[Baileys] Could not fetch latest version, using default:', e.message)
+    }
+
     sock = makeWASocket({
       auth: state,
       logger,
       printQRInTerminal: false,
       browser: Browsers.ubuntu('Chrome'),
+      ...(version ? { version } : {}),
     })
     console.log('[Baileys] Socket created, waiting for connection events...')
 
