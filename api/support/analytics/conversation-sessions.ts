@@ -15,55 +15,12 @@ function json(data: any, status = 200) {
   })
 }
 
-type Purpose = 'problem_resolution' | 'customer_inquiry' | 'team_coordination' | 'status_update' | 'general_chat'
-
-function classifyPurpose(intents: string[], hasProblem: boolean, roles: string[]): Purpose {
-  const problemIntents = ['report_problem', 'complaint']
-  const questionIntents = ['ask_question', 'faq_pricing', 'faq_hours', 'faq_contacts', 'request_feature']
-  const socialIntents = ['greeting', 'closing', 'gratitude']
-
-  if (hasProblem || intents.some(i => problemIntents.includes(i))) return 'problem_resolution'
-  if (intents.some(i => questionIntents.includes(i))) return 'customer_inquiry'
-
-  const uniqueRoles = new Set(roles)
-  if (uniqueRoles.size === 1 && uniqueRoles.has('support')) return 'team_coordination'
-  if (uniqueRoles.size === 1 && uniqueRoles.has('client')) return 'general_chat'
-
-  const nonSocial = intents.filter(i => !socialIntents.includes(i))
-  if (nonSocial.length === 0 && intents.length > 0) return 'general_chat'
-  if (intents.includes('information') || intents.includes('response')) return 'status_update'
-
-  return 'general_chat'
-}
-
-function calculateValueScore(purpose: Purpose, hasCaseLinked: boolean, msgCount: number): number {
-  const base: Record<Purpose, number> = {
-    problem_resolution: 90,
-    customer_inquiry: 75,
-    team_coordination: 55,
-    status_update: 35,
-    general_chat: 10,
-  }
-  let score = base[purpose]
-  if (hasCaseLinked) score = Math.min(100, score + 10)
-  if (msgCount > 10) score = Math.min(100, score + 5)
-  return score
-}
-
-const PURPOSE_LABELS: Record<string, string> = {
-  problem_resolution: 'Решение проблем',
-  customer_inquiry: 'Вопросы клиентов',
-  team_coordination: 'Координация команды',
-  status_update: 'Обновления статусов',
-  general_chat: 'Общее общение',
-}
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     })
@@ -75,229 +32,223 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const url = new URL(req.url)
   const market = url.searchParams.get('market') || null
+  const days = parseInt(url.searchParams.get('days') || '14')
 
-  // Ensure table exists
+  const marketFilter = market
+    ? sql`AND c.market_id = ${market}`
+    : sql``
+
   try {
-    await sql`CREATE TABLE IF NOT EXISTS support_conversation_sessions (
-      id VARCHAR(50) PRIMARY KEY,
-      channel_id VARCHAR(50) NOT NULL,
-      started_at TIMESTAMP NOT NULL,
-      ended_at TIMESTAMP,
-      purpose VARCHAR(50),
-      value_score INTEGER DEFAULT 0,
-      participants TEXT[],
-      message_count INTEGER DEFAULT 0,
-      agent_message_count INTEGER DEFAULT 0,
-      client_message_count INTEGER DEFAULT 0,
-      has_case BOOLEAN DEFAULT false,
-      case_id VARCHAR(50),
-      summary TEXT,
-      market_id VARCHAR(50),
-      created_at TIMESTAMP DEFAULT NOW()
-    )`
-  } catch { /* exists */ }
-
-  // POST - rebuild sessions from messages
-  if (req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const days = Math.min(body.days || 14, 30)
-    const SESSION_GAP_MINUTES = 30
-
-    // Clear old sessions before rebuild
-    await sql`
-      DELETE FROM support_conversation_sessions
-      WHERE started_at > NOW() - INTERVAL '1 day' * ${days}
-        AND (${market}::text IS NULL OR market_id = ${market})
-    `.catch(() => {})
-
-    const messages = await sql`
-      SELECT m.id, m.channel_id, m.created_at, m.sender_role, m.ai_intent, m.is_problem, m.case_id,
-        m.sender_name, c.market_id
+    // 1. Общая статистика сообщений
+    const [msgStats] = await sql`
+      SELECT
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE m.is_from_client = true) as from_clients,
+        COUNT(*) FILTER (WHERE m.is_from_client = false) as from_agents,
+        COUNT(*) FILTER (WHERE m.response_time_ms IS NOT NULL) as with_response,
+        AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as avg_response_ms,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY m.response_time_ms)
+          FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as median_response_ms,
+        COUNT(DISTINCT m.channel_id) as active_channels
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
-        AND (${market}::text IS NULL OR c.market_id = ${market})
-      ORDER BY m.channel_id, m.created_at ASC
-      LIMIT 10000
+        ${marketFilter}
     `
 
-    if (messages.length === 0) return json({ success: true, sessions: 0, message: 'Нет сообщений для обработки' })
+    // 2. Каналы без ответа (ожидают > 30 мин)
+    const unanswered = await sql`
+      SELECT c.id, c.name, c.source, c.last_message_at,
+        EXTRACT(EPOCH FROM (NOW() - c.last_message_at)) / 60 as waiting_minutes,
+        (SELECT text_content FROM support_messages
+         WHERE channel_id = c.id ORDER BY created_at DESC LIMIT 1) as last_text
+      FROM support_channels c
+      WHERE c.awaiting_reply = true
+        AND c.last_message_at > NOW() - INTERVAL '7 day'
+        AND c.is_active = true
+        ${marketFilter}
+      ORDER BY c.last_message_at ASC
+      LIMIT 15
+    `
 
-    type Session = {
-      channelId: string; startedAt: string; endedAt: string; participants: Set<string>;
-      intents: string[]; roles: string[]; hasProblem: boolean; caseId: string | null;
-      msgCount: number; agentCount: number; clientCount: number; marketId: string | null;
-    }
-    const sessions: Session[] = []
-    let current: Session | null = null
-
-    for (const msg of messages) {
-      const ts = new Date(msg.created_at).getTime()
-      const lastEnd = current ? new Date(current.endedAt).getTime() : 0
-      const sameChannel = current && msg.channel_id === current.channelId
-      const gap = (ts - lastEnd) / 60000
-
-      if (!sameChannel || gap > SESSION_GAP_MINUTES) {
-        if (current) sessions.push(current)
-        current = {
-          channelId: msg.channel_id, startedAt: msg.created_at, endedAt: msg.created_at,
-          participants: new Set(), intents: [], roles: [], hasProblem: false, caseId: null,
-          msgCount: 0, agentCount: 0, clientCount: 0, marketId: msg.market_id || null,
-        }
-      }
-
-      current!.endedAt = msg.created_at
-      current!.msgCount++
-      if (msg.sender_name) current!.participants.add(msg.sender_name)
-      if (msg.ai_intent) current!.intents.push(msg.ai_intent)
-      if (msg.sender_role) current!.roles.push(msg.sender_role)
-      if (msg.is_problem) current!.hasProblem = true
-      if (msg.case_id && !current!.caseId) current!.caseId = msg.case_id
-      if (msg.sender_role === 'client') current!.clientCount++
-      else current!.agentCount++
-    }
-    if (current) sessions.push(current)
-
-    // Prepare all sessions for batch insert
-    const prepared = sessions.map((s, i) => ({
-      id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${i}`,
-      purpose: classifyPurpose(s.intents, s.hasProblem, s.roles),
-      valueScore: calculateValueScore(classifyPurpose(s.intents, s.hasProblem, s.roles), !!s.caseId, s.msgCount),
-      participants: Array.from(s.participants),
-      ...s,
-    }))
-
-    // Insert in parallel batches of 50
-    let inserted = 0
-    const BATCH = 50
-    for (let i = 0; i < prepared.length; i += BATCH) {
-      const batch = prepared.slice(i, i + BATCH)
-      const results = await Promise.allSettled(
-        batch.map(s => sql`
-          INSERT INTO support_conversation_sessions (
-            id, channel_id, started_at, ended_at, purpose, value_score,
-            participants, message_count, agent_message_count, client_message_count,
-            has_case, case_id, market_id
-          ) VALUES (
-            ${s.id}, ${s.channelId}, ${s.startedAt}, ${s.endedAt}, ${s.purpose}, ${s.valueScore},
-            ${s.participants}, ${s.msgCount}, ${s.agentCount}, ${s.clientCount},
-            ${!!s.caseId}, ${s.caseId}, ${s.marketId}
-          )
-        `)
+    // 3. Скорость и нагрузка по сотрудникам
+    const agentStats = await sql`
+      SELECT
+        a.name as agent_name,
+        a.position,
+        COUNT(*) as messages_sent,
+        COUNT(DISTINCT m.channel_id) as channels_active,
+        AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as avg_response_ms,
+        MIN(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms > 0) as min_response_ms,
+        MAX(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as max_response_ms,
+        AVG(LENGTH(m.text_content)) FILTER (WHERE m.text_content IS NOT NULL AND LENGTH(m.text_content) > 0) as avg_message_length
+      FROM support_messages m
+      JOIN support_channels c ON m.channel_id = c.id
+      JOIN support_agents a ON (
+        LOWER(a.username) = LOWER(REPLACE(m.sender_username, '@', ''))
+        OR LOWER(a.name) = LOWER(m.sender_name)
       )
-      inserted += results.filter(r => r.status === 'fulfilled').length
-    }
-
-    return json({ success: true, sessions: inserted, total: sessions.length, messages: messages.length })
-  }
-
-  // GET - read sessions analytics
-  if (req.method === 'GET') {
-    const period = url.searchParams.get('period') || '30'
-    const agentFilter = url.searchParams.get('agent') || null
-
-    // Purpose distribution
-    const purposeStats = await sql`
-      SELECT s.purpose, COUNT(*) as count, AVG(s.value_score) as avg_value,
-        SUM(s.message_count) as total_messages
-      FROM support_conversation_sessions s
-      LEFT JOIN support_channels c ON s.channel_id = c.id
-      WHERE s.started_at > NOW() - INTERVAL '1 day' * ${parseInt(period)}
-        AND (${market}::text IS NULL OR s.market_id = ${market})
-      GROUP BY s.purpose
-      ORDER BY count DESC
+      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+        AND m.is_from_client = false
+        ${marketFilter}
+      GROUP BY a.name, a.position
+      ORDER BY messages_sent DESC
     `
 
-    // Per-agent breakdown (who participates in what)
-    const agentPurposeRaw = await sql`
-      SELECT unnest(s.participants) as agent_name, s.purpose, COUNT(*) as count
-      FROM support_conversation_sessions s
-      WHERE s.started_at > NOW() - INTERVAL '1 day' * ${parseInt(period)}
-        AND (${market}::text IS NULL OR s.market_id = ${market})
-        AND s.agent_message_count > 0
-      GROUP BY agent_name, s.purpose
-      ORDER BY agent_name, count DESC
+    // 4. Нагрузка по часам (для определения пиков)
+    const hourlyLoad = await sql`
+      SELECT
+        EXTRACT(HOUR FROM m.created_at AT TIME ZONE 'Asia/Tashkent') as hour,
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE m.is_from_client = true) as client_msgs,
+        COUNT(*) FILTER (WHERE m.is_from_client = false) as agent_msgs
+      FROM support_messages m
+      JOIN support_channels c ON m.channel_id = c.id
+      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+        ${marketFilter}
+      GROUP BY hour
+      ORDER BY hour
     `
 
-    // Group by agent
-    const agentMap = new Map<string, Record<string, number>>()
-    for (const row of agentPurposeRaw) {
-      if (!agentMap.has(row.agent_name)) agentMap.set(row.agent_name, {})
-      agentMap.get(row.agent_name)![row.purpose] = parseInt(row.count)
-    }
+    // 5. Нагрузка по дням недели
+    const weekdayLoad = await sql`
+      SELECT
+        EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent') as dow,
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE m.is_from_client = true) as client_msgs,
+        COUNT(*) FILTER (WHERE m.is_from_client = false) as agent_msgs,
+        AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as avg_response_ms
+      FROM support_messages m
+      JOIN support_channels c ON m.channel_id = c.id
+      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+        ${marketFilter}
+      GROUP BY dow
+      ORDER BY dow
+    `
 
-    const agentBreakdown = Array.from(agentMap.entries()).map(([name, purposes]) => {
-      const total = Object.values(purposes).reduce((s, c) => s + c, 0)
-      const productiveCount = (purposes.problem_resolution || 0) + (purposes.customer_inquiry || 0) + (purposes.team_coordination || 0)
-      return {
-        name,
-        purposes,
-        total,
-        productivityPercent: total > 0 ? Math.round((productiveCount / total) * 100) : 0,
-      }
-    }).sort((a, b) => b.total - a.total)
+    // 6. Топ каналов по активности
+    const topChannels = await sql`
+      SELECT
+        c.id, c.name, c.source,
+        COUNT(*) as total_messages,
+        COUNT(*) FILTER (WHERE m.is_from_client = true) as client_messages,
+        COUNT(*) FILTER (WHERE m.is_from_client = false) as agent_messages,
+        AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as avg_response_ms,
+        MAX(m.created_at) as last_activity
+      FROM support_messages m
+      JOIN support_channels c ON m.channel_id = c.id
+      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+        ${marketFilter}
+      GROUP BY c.id, c.name, c.source
+      ORDER BY total_messages DESC
+      LIMIT 10
+    `
 
-    // Daily trend
+    // 7. Тренд по дням (сообщения + время ответа)
     const dailyTrend = await sql`
-      SELECT DATE(s.started_at) as day, s.purpose, COUNT(*) as count
-      FROM support_conversation_sessions s
-      WHERE s.started_at > NOW() - INTERVAL '1 day' * ${parseInt(period)}
-        AND (${market}::text IS NULL OR s.market_id = ${market})
-      GROUP BY day, s.purpose
+      SELECT
+        DATE(m.created_at AT TIME ZONE 'Asia/Tashkent') as day,
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE m.is_from_client = true) as incoming,
+        COUNT(*) FILTER (WHERE m.is_from_client = false) as outgoing,
+        AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000) as avg_response_ms
+      FROM support_messages m
+      JOIN support_channels c ON m.channel_id = c.id
+      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+        ${marketFilter}
+      GROUP BY day
       ORDER BY day
     `
 
-    // Shadow cases (resolved in chat without formal ticket)
-    let shadowCases: any[] = []
-    try {
-      shadowCases = await sql`
-        SELECT c.id, c.title, c.channel_id, ch.name as channel_name, c.created_at, c.priority
-        FROM support_cases c
-        LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE c.is_shadow = true
-          AND c.created_at > NOW() - INTERVAL '1 day' * ${parseInt(period)}
-          AND (${market}::text IS NULL OR c.market_id = ${market})
-        ORDER BY c.created_at DESC
-        LIMIT 50
-      `
-    } catch { /* is_shadow column may not exist yet */ }
+    // 8. Распределение тональности
+    const sentimentStats = await sql`
+      SELECT
+        COALESCE(m.ai_sentiment, 'unknown') as sentiment,
+        COUNT(*) as count
+      FROM support_messages m
+      JOIN support_channels c ON m.channel_id = c.id
+      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+        AND m.is_from_client = true
+        AND m.ai_sentiment IS NOT NULL
+        ${marketFilter}
+      GROUP BY sentiment
+      ORDER BY count DESC
+    `
 
-    // Overall stats
-    const totalSessions = purposeStats.reduce((s: number, r: any) => s + parseInt(r.count), 0)
-    const productiveSessions = purposeStats
-      .filter((r: any) => ['problem_resolution', 'customer_inquiry', 'team_coordination'].includes(r.purpose))
-      .reduce((s: number, r: any) => s + parseInt(r.count), 0)
+    const avgResponseMin = msgStats.avg_response_ms
+      ? Math.round(parseFloat(msgStats.avg_response_ms) / 60000)
+      : null
+    const medianResponseMin = msgStats.median_response_ms
+      ? Math.round(parseFloat(msgStats.median_response_ms) / 60000)
+      : null
+
+    const DOW_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 
     return json({
       overview: {
-        totalSessions,
-        productiveSessions,
-        productivityPercent: totalSessions > 0 ? Math.round((productiveSessions / totalSessions) * 100) : 0,
-        shadowCasesCount: shadowCases.length,
+        totalMessages: parseInt(msgStats.total),
+        fromClients: parseInt(msgStats.from_clients),
+        fromAgents: parseInt(msgStats.from_agents),
+        activeChannels: parseInt(msgStats.active_channels),
+        avgResponseMin,
+        medianResponseMin,
+        unansweredCount: unanswered.length,
       },
-      purposeDistribution: purposeStats.map((r: any) => ({
-        purpose: r.purpose,
-        label: PURPOSE_LABELS[r.purpose] || r.purpose,
-        count: parseInt(r.count),
-        avgValue: Math.round(parseFloat(r.avg_value) || 0),
-        totalMessages: parseInt(r.total_messages),
+      unanswered: unanswered.map((ch: any) => ({
+        id: ch.id,
+        name: ch.name || 'Без названия',
+        source: ch.source || 'telegram',
+        waitingMinutes: Math.round(parseFloat(ch.waiting_minutes) || 0),
+        lastText: (ch.last_text || '').slice(0, 80),
       })),
-      agentBreakdown,
-      dailyTrend: dailyTrend.map((r: any) => ({
-        day: r.day,
-        purpose: r.purpose,
-        label: PURPOSE_LABELS[r.purpose] || r.purpose,
-        count: parseInt(r.count),
+      agentStats: agentStats.map((a: any) => ({
+        name: a.agent_name,
+        position: a.position || '',
+        messagesSent: parseInt(a.messages_sent),
+        channelsActive: parseInt(a.channels_active),
+        avgResponseMin: a.avg_response_ms ? Math.round(parseFloat(a.avg_response_ms) / 60000) : null,
+        minResponseMin: a.min_response_ms ? Math.round(parseFloat(a.min_response_ms) / 60000) : null,
+        maxResponseMin: a.max_response_ms ? Math.round(parseFloat(a.max_response_ms) / 60000) : null,
+        avgMessageLength: a.avg_message_length ? Math.round(parseFloat(a.avg_message_length)) : 0,
       })),
-      shadowCases: shadowCases.map((c: any) => ({
-        id: c.id,
-        title: c.title,
-        channelName: c.channel_name,
-        priority: c.priority,
-        createdAt: c.created_at,
+      hourlyLoad: hourlyLoad.map((h: any) => ({
+        hour: parseInt(h.hour),
+        total: parseInt(h.total),
+        clientMsgs: parseInt(h.client_msgs),
+        agentMsgs: parseInt(h.agent_msgs),
+      })),
+      weekdayLoad: weekdayLoad.map((w: any) => ({
+        dow: parseInt(w.dow),
+        label: DOW_NAMES[parseInt(w.dow)] || '?',
+        total: parseInt(w.total),
+        clientMsgs: parseInt(w.client_msgs),
+        agentMsgs: parseInt(w.agent_msgs),
+        avgResponseMin: w.avg_response_ms ? Math.round(parseFloat(w.avg_response_ms) / 60000) : null,
+      })),
+      topChannels: topChannels.map((ch: any) => ({
+        id: ch.id,
+        name: ch.name || 'Без названия',
+        source: ch.source || 'telegram',
+        totalMessages: parseInt(ch.total_messages),
+        clientMessages: parseInt(ch.client_messages),
+        agentMessages: parseInt(ch.agent_messages),
+        avgResponseMin: ch.avg_response_ms ? Math.round(parseFloat(ch.avg_response_ms) / 60000) : null,
+        lastActivity: ch.last_activity,
+      })),
+      dailyTrend: dailyTrend.map((d: any) => ({
+        day: d.day,
+        total: parseInt(d.total),
+        incoming: parseInt(d.incoming),
+        outgoing: parseInt(d.outgoing),
+        avgResponseMin: d.avg_response_ms ? Math.round(parseFloat(d.avg_response_ms) / 60000) : null,
+      })),
+      sentimentStats: sentimentStats.map((s: any) => ({
+        sentiment: s.sentiment,
+        count: parseInt(s.count),
       })),
     })
+  } catch (e: any) {
+    console.error('[CommAnalytics]', e.message)
+    return json({ error: e.message || 'Internal error' }, 500)
   }
-
-  return json({ error: 'Method not allowed' }, 405)
 }

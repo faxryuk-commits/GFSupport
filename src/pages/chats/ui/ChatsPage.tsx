@@ -91,7 +91,10 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
 }
 
 // Преобразование сообщения из API в формат UI компонента  
-function mapMessageToUI(message: Message): MessageData {
+function mapMessageToUI(
+  message: Message,
+  currentAgent?: { id: string; username?: string; name: string } | null
+): MessageData {
   const formatTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   }
@@ -127,6 +130,23 @@ function mapMessageToUI(message: Message): MessageData {
     return result.length > 0 ? result : undefined
   }
 
+  // Справа только сообщения текущего пользователя, остальные — слева
+  let isOwnMessage = false
+  if (currentAgent) {
+    const su = (message.senderUsername || '').replace('@', '').toLowerCase()
+    const au = (currentAgent.username || '').replace('@', '').toLowerCase()
+    if (su && au && su === au) {
+      isOwnMessage = true
+    } else if (
+      message.senderName && currentAgent.name &&
+      message.senderName.toLowerCase() === currentAgent.name.toLowerCase()
+    ) {
+      isOwnMessage = true
+    }
+  } else {
+    isOwnMessage = message.senderRole !== 'client'
+  }
+
   return {
     id: message.id,
     telegramMessageId: message.telegramMessageId,
@@ -134,8 +154,8 @@ function mapMessageToUI(message: Message): MessageData {
     senderAvatarUrl: message.senderPhotoUrl,
     text: message.text || '',
     time: formatTime(message.createdAt),
-    date: message.createdAt, // ISO date для группировки по дням
-    isClient: message.senderRole === 'client',
+    date: message.createdAt,
+    isClient: !isOwnMessage,
     status: message.isRead ? 'read' : 'delivered',
     // Reply/цитирование
     replyTo: message.replyToMessageId && message.replyToText ? {
@@ -371,7 +391,7 @@ export function ChatsPage() {
         if (!isActive) return
         
         if (newData.length > 0) {
-          const newMappedMessages = newData.map(mapMessageToUI)
+          const newMappedMessages = newData.map(m => mapMessageToUI(m, agent))
           const existingIds = new Set(currentMessages.map(m => m.id))
           const trulyNewMessages = newMappedMessages.filter(m => !existingIds.has(m.id))
           
@@ -468,7 +488,7 @@ export function ChatsPage() {
       setHasMoreMessages(true)
       
       const { messages: data, hasMore } = await fetchMessages(channelId, MESSAGES_LIMIT)
-      const mappedMessages = data.map(mapMessageToUI)
+      const mappedMessages = data.map(m => mapMessageToUI(m, agent))
       setMessages(mappedMessages)
       setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
       
@@ -500,7 +520,7 @@ export function ChatsPage() {
       )
       
       if (data.length > 0) {
-        const mappedMessages = data.map(mapMessageToUI)
+        const mappedMessages = data.map(m => mapMessageToUI(m, agent))
         // Добавляем старые сообщения в начало
         setMessages(prev => [...mappedMessages, ...prev])
       }
@@ -633,8 +653,8 @@ export function ChatsPage() {
           )
           
           // Заменяем временное сообщение на реальное
-          setMessages(prev => prev.map(m => 
-            m.id === tempFileId ? mapMessageToUI(sentMessage) : m
+          setMessages(prev => prev.map(m =>
+            m.id === tempFileId ? mapMessageToUI(sentMessage, agent) : m
           ))
         }
       } else if (textToSend) {
@@ -659,8 +679,8 @@ export function ChatsPage() {
           currentAgentName
         )
         
-        setMessages(prev => prev.map(m => 
-          m.id === tempId ? mapMessageToUI(sentMessage) : m
+        setMessages(prev => prev.map(m =>
+          m.id === tempId ? mapMessageToUI(sentMessage, agent) : m
         ))
       }
     } catch (error) {
