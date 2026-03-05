@@ -342,23 +342,27 @@ async function saveMessage(
     fileSize?: number
     mimeType?: string
     replyToId?: number
+    replyToText?: string
+    replyToSender?: string
     threadId?: number
     responseTimeMs?: number
+    forwardedFrom?: string
   }
 ): Promise<string> {
   const messageId = generateId('msg')
   const isFromClient = role === 'client'
   
-  // Save/update user info
   await upsertUser(sql, user, channelId, role)
   
-  // Ensure columns exist (will be ignored if they already exist)
   try {
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT`
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size BIGINT`
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`
-  } catch (e) { /* columns exist */ }
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT`
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT`
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT`
+  } catch { /* columns exist */ }
   
   await sql`
     INSERT INTO support_messages (
@@ -366,14 +370,16 @@ async function saveMessage(
       sender_id, sender_name, sender_username, sender_role,
       is_from_client, content_type, text_content, media_url,
       thumbnail_url, file_name, file_size, mime_type,
-      reply_to_message_id, thread_id,
+      reply_to_message_id, reply_to_text, reply_to_sender,
+      thread_id, forwarded_from,
       is_read, response_time_ms, created_at
     ) VALUES (
       ${messageId}, ${channelId}, ${telegramMessageId},
       ${String(user.id)}, ${user.fullName}, ${user.username}, ${role},
       ${isFromClient}, ${content.contentType}, ${content.text || null}, ${content.mediaUrl || null},
       ${content.thumbnailUrl || null}, ${content.fileName || null}, ${content.fileSize || null}, ${content.mimeType || null},
-      ${content.replyToId ? String(content.replyToId) : null}, ${content.threadId ? String(content.threadId) : null},
+      ${content.replyToId ? String(content.replyToId) : null}, ${content.replyToText || null}, ${content.replyToSender || null},
+      ${content.threadId ? String(content.threadId) : null}, ${content.forwardedFrom || null},
       ${!isFromClient}, ${content.responseTimeMs || null}, NOW()
     )
   `
@@ -1397,22 +1403,65 @@ export default async function handler(req: Request): Promise<Response> {
     
     console.log(`[Webhook] Media: type=${contentType}, file=${fileName}, thumb=${thumbnailUrl ? 'yes' : 'no'}`)
 
-    // Calculate response time for client messages
+    // Extract forwarded_from
+    let forwardedFrom: string | undefined
+    if (message.forward_origin) {
+      const origin = message.forward_origin
+      if (origin.type === 'user' && origin.sender_user) {
+        forwardedFrom = [origin.sender_user.first_name, origin.sender_user.last_name].filter(Boolean).join(' ')
+      } else if (origin.type === 'channel' && origin.chat?.title) {
+        forwardedFrom = origin.chat.title
+      } else if (origin.type === 'hidden_user') {
+        forwardedFrom = origin.sender_user_name || 'Скрытый пользователь'
+      }
+    } else if (message.forward_from) {
+      forwardedFrom = [message.forward_from.first_name, message.forward_from.last_name].filter(Boolean).join(' ')
+    } else if (message.forward_from_chat?.title) {
+      forwardedFrom = message.forward_from_chat.title
+    }
+
+    // Extract reply context text/sender
+    let replyToText: string | undefined
+    let replyToSender: string | undefined
+    if (message.reply_to_message) {
+      const rtm = message.reply_to_message
+      replyToText = (rtm.text || rtm.caption || '').slice(0, 200) || undefined
+      if (rtm.from) {
+        replyToSender = [rtm.from.first_name, rtm.from.last_name].filter(Boolean).join(' ') || undefined
+      }
+    }
+
+    // Handle edited_message as UPDATE instead of INSERT
+    if (update.edited_message) {
+      try {
+        const updated = await sql`
+          UPDATE support_messages
+          SET text_content = ${text || null}, content_type = ${contentType},
+              media_url = COALESCE(${mediaUrl || null}, media_url),
+              thumbnail_url = COALESCE(${thumbnailUrl || null}, thumbnail_url),
+              updated_at = NOW()
+          WHERE channel_id = ${channelId} AND telegram_message_id = ${message.message_id}
+          RETURNING id
+        `
+        if (updated[0]) {
+          console.log(`[Webhook] Updated edited message ${updated[0].id}`)
+          return json({ ok: true, messageId: updated[0].id, action: 'updated' })
+        }
+      } catch { /* fall through to insert if update fails */ }
+    }
+
     let responseTimeMs: number | undefined = undefined
     
     if (identification.role === 'client') {
-      // Get last_agent_message_at to calculate client response time
       const channelData = await sql`
         SELECT last_agent_message_at FROM support_channels WHERE id = ${channelId}
       `
       if (channelData[0]?.last_agent_message_at) {
         const lastAgentTime = new Date(channelData[0].last_agent_message_at).getTime()
         responseTimeMs = Date.now() - lastAgentTime
-        console.log(`[Webhook] Client response time: ${Math.round(responseTimeMs / 1000)}s`)
       }
     }
 
-    // Save message
     const messageId = await saveMessage(sql, channelId, message.message_id, user, identification.role, {
       text,
       contentType,
@@ -1422,8 +1471,11 @@ export default async function handler(req: Request): Promise<Response> {
       fileSize,
       mimeType,
       replyToId: message.reply_to_message?.message_id,
+      replyToText,
+      replyToSender,
       threadId: message.message_thread_id,
       responseTimeMs,
+      forwardedFrom,
     })
 
     console.log(`[Webhook] Saved message ${messageId} from ${identification.role}`)

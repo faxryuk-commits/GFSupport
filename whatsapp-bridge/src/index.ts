@@ -33,6 +33,8 @@ const app = express()
 app.use(express.json())
 app.use('/', createRouter(BRIDGE_SECRET, AUTH_DIR))
 
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || ''
+
 function extractText(msg: any): string | null {
   return msg.message?.conversation
     || msg.message?.extendedTextMessage?.text
@@ -43,6 +45,7 @@ function extractText(msg: any): string | null {
 }
 
 function getContentType(msg: any): string {
+  if (msg.message?.reactionMessage) return 'reaction'
   if (msg.message?.imageMessage) return 'photo'
   if (msg.message?.videoMessage) return 'video'
   if (msg.message?.audioMessage) return 'voice'
@@ -58,8 +61,62 @@ function getSenderInfo(msg: any) {
   const senderJid = fromMe ? '' : (isGroup ? (msg.key.participant || '') : jid)
   const phone = senderJid.split('@')[0] || ''
   const pushName = msg.pushName || phone
-
   return { jid, isGroup, senderJid, phone, pushName, fromMe }
+}
+
+function getReplyContext(msg: any): { replyToMessageId?: string; replyToText?: string } | null {
+  const ctx = msg.message?.extendedTextMessage?.contextInfo
+    || msg.message?.imageMessage?.contextInfo
+    || msg.message?.videoMessage?.contextInfo
+    || msg.message?.documentMessage?.contextInfo
+    || msg.message?.audioMessage?.contextInfo
+  if (!ctx?.quotedMessage) return null
+  const quoted = ctx.quotedMessage
+  const replyText = quoted.conversation || quoted.extendedTextMessage?.text
+    || quoted.imageMessage?.caption || quoted.videoMessage?.caption || ''
+  return { replyToMessageId: ctx.stanzaId || undefined, replyToText: replyText.slice(0, 200) || undefined }
+}
+
+function getMimeType(msg: any): string | null {
+  return msg.message?.imageMessage?.mimetype
+    || msg.message?.videoMessage?.mimetype
+    || msg.message?.audioMessage?.mimetype
+    || msg.message?.documentMessage?.mimetype
+    || msg.message?.stickerMessage?.mimetype
+    || null
+}
+
+function getFileName(msg: any): string | null {
+  return msg.message?.documentMessage?.fileName || null
+}
+
+async function uploadToBlob(buffer: Buffer, filename: string): Promise<string | null> {
+  if (!BLOB_TOKEN) {
+    console.log('[Media] No BLOB_READ_WRITE_TOKEN, skipping upload')
+    return null
+  }
+  try {
+    const url = `https://blob.vercel-storage.com/${filename}`
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${BLOB_TOKEN}`,
+        'x-api-version': '7',
+        'x-content-type': 'application/octet-stream',
+      },
+      body: new Uint8Array(buffer),
+    })
+    if (!res.ok) {
+      console.error(`[Media] Blob upload failed: ${res.status}`)
+      return null
+    }
+    const data = await res.json() as any
+    console.log(`[Media] Uploaded: ${data.url?.slice(0, 80)}`)
+    return data.url || null
+  } catch (e: any) {
+    console.error('[Media] Upload error:', e.message)
+    return null
+  }
 }
 
 onMessage(async (msg) => {
@@ -70,34 +127,85 @@ onMessage(async (msg) => {
 
     console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, FromMe: ${fromMe}, JID: ${jid.slice(0, 30)}`)
 
-    if (jid.endsWith('@broadcast') || jid === 'status@broadcast') {
-      console.log('[MSG] Skipped: broadcast')
-      return
-    }
+    if (jid.endsWith('@broadcast') || jid === 'status@broadcast') return
 
-    if (filterMode === 'groups_only' && !isGroup) {
-      console.log('[MSG] Skipped: groups_only filter')
-      return
-    }
+    if (filterMode === 'groups_only' && !isGroup) return
 
     const text = extractText(msg)
     const contentType = getContentType(msg)
 
-    const payload = {
+    if (contentType === 'reaction') {
+      const reaction = msg.message?.reactionMessage
+      const payload = {
+        type: 'reaction',
+        chatId: jid,
+        emoji: reaction?.text || '',
+        targetMessageId: reaction?.key?.id || '',
+        senderName: fromMe ? 'Support' : pushName,
+        senderPhone: phone,
+        fromMe,
+        isGroup,
+      }
+      await forwardToWebhook(payload)
+      return
+    }
+
+    let mediaUrl: string | null = null
+    let thumbnailUrl: string | null = null
+    if (contentType !== 'text' && msg.message) {
+      try {
+        const buffer = await downloadMediaMessage(msg, 'buffer', {})
+        if (buffer && buffer.length > 0) {
+          const ext = (getMimeType(msg) || '').split('/')[1] || 'bin'
+          const fname = `wa/${Date.now()}_${msg.key.id}.${ext}`
+          mediaUrl = await uploadToBlob(buffer as Buffer, fname)
+        }
+      } catch (e: any) {
+        console.error('[Media] Download failed:', e.message)
+      }
+      const thumb = msg.message?.imageMessage?.jpegThumbnail
+        || msg.message?.videoMessage?.jpegThumbnail
+        || msg.message?.stickerMessage?.pngThumbnail
+      if (thumb) {
+        try {
+          const thumbBuf = Buffer.isBuffer(thumb) ? thumb : Buffer.from(thumb)
+          thumbnailUrl = await uploadToBlob(thumbBuf, `wa/thumb_${Date.now()}_${msg.key.id}.jpg`)
+        } catch {}
+      }
+    }
+
+    const reply = getReplyContext(msg)
+    const payload: Record<string, any> = {
       chatId: jid,
       messageId: msg.key.id,
       senderName: fromMe ? 'Support' : pushName,
       senderPhone: phone,
       text,
-      mediaUrl: null,
+      mediaUrl,
+      thumbnailUrl,
       contentType,
+      mimeType: getMimeType(msg),
+      fileName: getFileName(msg),
       timestamp: msg.messageTimestamp,
       isGroup,
       fromMe,
       groupName: isGroup ? msg.pushName || undefined : undefined,
     }
+    if (reply) {
+      payload.replyToMessageId = reply.replyToMessageId
+      payload.replyToText = reply.replyToText
+    }
 
-    console.log(`[MSG] Forwarding to webhook: ${WEBHOOK_URL.slice(0, 50)}...`)
+    await forwardToWebhook(payload)
+  } catch (e: any) {
+    messageStats.errors++
+    messageStats.lastError = e.message
+    console.error('[Message Handler]', e.message)
+  }
+})
+
+async function forwardToWebhook(payload: Record<string, any>) {
+  try {
     const res = await fetch(WEBHOOK_URL, {
       method: 'POST',
       headers: {
@@ -106,11 +214,8 @@ onMessage(async (msg) => {
       },
       body: JSON.stringify(payload),
     })
-
     if (res.ok) {
       messageStats.forwarded++
-      const body = await res.json().catch(() => null)
-      console.log(`[MSG] Forwarded OK: ${JSON.stringify(body)}`)
     } else {
       messageStats.errors++
       const errText = await res.text().catch(() => 'unknown')
@@ -120,9 +225,9 @@ onMessage(async (msg) => {
   } catch (e: any) {
     messageStats.errors++
     messageStats.lastError = e.message
-    console.error('[Message Handler]', e.message)
+    console.error('[Webhook] Error:', e.message)
   }
-})
+}
 
 app.listen(PORT, async () => {
   console.log(`[Bridge] Running on port ${PORT}`)

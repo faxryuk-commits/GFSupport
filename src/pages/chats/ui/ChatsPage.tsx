@@ -96,11 +96,11 @@ function mapMessageToUI(message: Message): MessageData {
   }
 
   // Маппинг типа медиа
-  const getMediaType = (mediaType?: string): 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker' => {
+  const getMediaType = (mediaType?: string): 'image' | 'video' | 'video_note' | 'audio' | 'voice' | 'document' | 'sticker' => {
     switch (mediaType) {
       case 'photo': return 'image'
       case 'video': return 'video'
-      case 'video_note': return 'video'
+      case 'video_note': return 'video_note'
       case 'voice': return 'voice'
       case 'audio': return 'audio'
       case 'sticker': return 'sticker'
@@ -146,9 +146,12 @@ function mapMessageToUI(message: Message): MessageData {
     attachments: message.mediaUrl ? [{
       type: getMediaType(message.mediaType),
       url: message.mediaUrl,
-      name: message.mediaType === 'document' ? 'Документ' : undefined,
+      name: message.fileName || (message.mediaType === 'document' ? 'Документ' : undefined),
+      thumbnail: message.thumbnailUrl || undefined,
+      mimeType: message.mimeType || undefined,
     }] : undefined,
     reactions: mapReactions(message.reactions as Record<string, string[]>),
+    forwardedFrom: message.forwardedFrom || undefined,
   }
 }
 

@@ -38,6 +38,7 @@ export interface Message {
   topicId?: number
   topicName?: string
   reactions?: Record<string, string[]>
+  forwardedFrom?: string
   createdAt: string
 }
 

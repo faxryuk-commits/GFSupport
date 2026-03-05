@@ -79,6 +79,39 @@ async function getOrCreateWhatsAppChannel(sql: any, chatId: string, senderName: 
   return channelId
 }
 
+async function handleReaction(sql: any, body: any): Promise<Response> {
+  const { chatId, emoji, targetMessageId, senderName } = body
+  if (!chatId || !targetMessageId) return json({ ok: true, skipped: 'no target' })
+
+  try {
+    const channelRows = await sql`
+      SELECT id FROM support_channels WHERE external_chat_id = ${chatId} AND source = 'whatsapp' LIMIT 1
+    `
+    if (!channelRows[0]) return json({ ok: true, skipped: 'channel not found' })
+    const channelId = channelRows[0].id
+
+    const msgRows = await sql`
+      SELECT id, reactions FROM support_messages
+      WHERE channel_id = ${channelId}
+      ORDER BY created_at DESC LIMIT 50
+    `
+    const target = msgRows.find((m: any) => m.id?.includes(targetMessageId))
+    if (!target) return json({ ok: true, skipped: 'message not found' })
+
+    const reactions: Record<string, string[]> = target.reactions || {}
+    if (emoji) {
+      if (!reactions[emoji]) reactions[emoji] = []
+      if (!reactions[emoji].includes(senderName)) reactions[emoji].push(senderName)
+    }
+
+    await sql`UPDATE support_messages SET reactions = ${JSON.stringify(reactions)}::jsonb WHERE id = ${target.id}`
+    return json({ ok: true, reaction: emoji })
+  } catch (e: any) {
+    console.error('[WA Reaction]', e.message)
+    return json({ ok: true, error: e.message })
+  }
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -107,12 +140,26 @@ export default async function handler(req: Request): Promise<Response> {
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
   try { await sql`ALTER TABLE support_channels ALTER COLUMN telegram_chat_id DROP NOT NULL` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB` } catch {}
 
   try {
     const body = await req.json()
-    const { chatId, messageId, senderName, senderPhone, text, mediaUrl, contentType, timestamp, isGroup, fromMe, groupName } = body
 
-    console.log(`[WA Webhook] Received: chatId=${chatId}, sender=${senderName}, fromMe=${fromMe}, text=${(text || '').slice(0, 50)}, isGroup=${isGroup}`)
+    if (body.type === 'reaction') {
+      return await handleReaction(sql, body)
+    }
+
+    const { chatId, messageId, senderName, senderPhone, text, mediaUrl, thumbnailUrl,
+            contentType, mimeType, fileName, timestamp, isGroup, fromMe, groupName,
+            replyToMessageId, replyToText } = body
+
+    console.log(`[WA Webhook] Received: chatId=${chatId}, type=${contentType}, sender=${senderName}, fromMe=${fromMe}, media=${!!mediaUrl}`)
 
     if (!chatId) return json({ error: 'chatId is required' }, 400)
 
@@ -148,18 +195,23 @@ export default async function handler(req: Request): Promise<Response> {
         if (lastClient[0]) {
           responseTimeMs = Date.now() - new Date(lastClient[0].created_at).getTime()
         }
-      } catch (e) { /* non-critical */ }
+      } catch { /* non-critical */ }
     }
 
     await sql`
       INSERT INTO support_messages (
         id, channel_id, sender_id, sender_name, sender_role,
         is_from_client, content_type, text_content, media_url,
+        thumbnail_url, file_name, mime_type,
+        reply_to_message_id, reply_to_text,
         is_read, response_time_ms, created_at
       ) VALUES (
         ${msgId}, ${channelId}, ${senderPhone || null}, ${senderName || 'Unknown'},
         ${senderRole}, ${isFromClient}, ${msgContentType}, ${text || null},
-        ${mediaUrl || null}, ${!isFromClient}, ${responseTimeMs}, NOW()
+        ${mediaUrl || null},
+        ${thumbnailUrl || null}, ${fileName || null}, ${mimeType || null},
+        ${replyToMessageId || null}, ${replyToText || null},
+        ${!isFromClient}, ${responseTimeMs}, NOW()
       )
     `
 
@@ -167,8 +219,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (isFromClient) {
       await sql`
         UPDATE support_channels SET
-          last_message_at = NOW(),
-          last_client_message_at = NOW(),
+          last_message_at = NOW(), last_client_message_at = NOW(),
           last_sender_name = ${senderName || 'Unknown'},
           last_message_preview = ${preview},
           awaiting_reply = true,
@@ -178,8 +229,7 @@ export default async function handler(req: Request): Promise<Response> {
     } else {
       await sql`
         UPDATE support_channels SET
-          last_message_at = NOW(),
-          last_team_message_at = NOW(),
+          last_message_at = NOW(), last_team_message_at = NOW(),
           last_sender_name = ${senderName || 'Support'},
           last_message_preview = ${preview},
           awaiting_reply = false
@@ -191,7 +241,6 @@ export default async function handler(req: Request): Promise<Response> {
       upsertWhatsAppUser(sql, senderPhone, senderName || '', channelId, senderRole).catch(() => {})
     }
 
-    console.log(`[WA Webhook] Saved: msgId=${msgId}, channelId=${channelId}, role=${senderRole}`)
     return json({ ok: true, messageId: msgId, channelId })
 
   } catch (e: any) {

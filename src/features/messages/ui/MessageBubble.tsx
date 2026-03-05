@@ -8,12 +8,12 @@ import {
 import { Avatar } from '@/shared/ui'
 
 export interface MediaAttachment {
-  type: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker'
+  type: 'image' | 'video' | 'video_note' | 'audio' | 'voice' | 'document' | 'sticker'
   url: string
   name?: string
   size?: string
-  duration?: number // для аудио/видео в секундах
-  thumbnail?: string // превью для видео
+  duration?: number
+  thumbnail?: string
   mimeType?: string
 }
 
@@ -31,12 +31,13 @@ export interface MessageData {
   senderAvatarUrl?: string | null
   text: string
   time: string
-  date: string // ISO date string для группировки по дням
+  date: string
   isClient: boolean
   status?: 'sent' | 'delivered' | 'read'
   replyTo?: { id: string; telegramMessageId?: number; text: string; sender: string }
   attachments?: MediaAttachment[]
   reactions?: MessageReaction[]
+  forwardedFrom?: string
 }
 
 interface MessageBubbleProps {
@@ -278,10 +279,42 @@ function StickerAttachment({ attachment }: { attachment: MediaAttachment }) {
 }
 
 // Рендер медиа вложения
+const EMOJI_ONLY_RE = /^(\p{Emoji_Presentation}|\p{Extended_Pictographic}|\uFE0F|\u200D){1,6}$/u
+
+function isEmojiOnly(text: string): boolean {
+  if (!text || text.length > 20) return false
+  return EMOJI_ONLY_RE.test(text.trim())
+}
+
+function renderTextWithMentions(text: string, isClient: boolean) {
+  const parts = text.split(/(@\w+)/g)
+  if (parts.length <= 1) return text
+  return parts.map((part, i) =>
+    part.startsWith('@') ? (
+      <span key={i} className={`font-medium ${isClient ? 'text-blue-600' : 'text-blue-200'}`}>{part}</span>
+    ) : part
+  )
+}
+
+function VideoNoteAttachment({ attachment }: { attachment: MediaAttachment }) {
+  return (
+    <div className="w-48 h-48 rounded-full overflow-hidden flex-shrink-0">
+      <video
+        src={attachment.url}
+        poster={attachment.thumbnail}
+        controls
+        className="w-full h-full object-cover"
+      />
+    </div>
+  )
+}
+
 function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; isClient: boolean }) {
   switch (attachment.type) {
     case 'image':
       return <ImageAttachment attachment={attachment} isClient={isClient} />
+    case 'video_note':
+      return <VideoNoteAttachment attachment={attachment} />
     case 'video':
       return <VideoAttachment attachment={attachment} isClient={isClient} />
     case 'audio':
@@ -303,6 +336,8 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
   const reactionRef = useRef<HTMLDivElement>(null)
   
   const isSticker = message.attachments?.length === 1 && message.attachments[0].type === 'sticker'
+  const isVideoNote = message.attachments?.length === 1 && message.attachments[0].type === 'video_note'
+  const emojiOnly = !message.attachments?.length && isEmojiOnly(message.text)
 
   // Клик на цитату - прокрутка к оригинальному сообщению
   const handleReplyClick = () => {
@@ -424,17 +459,29 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
             </div>
           )}
 
+          {/* Forwarded banner */}
+          {message.forwardedFrom && (
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 mb-1 text-xs rounded-lg ${
+              message.isClient ? 'bg-slate-50 text-slate-500' : 'bg-white/10 text-white/70'
+            }`}>
+              <Forward className="w-3 h-3" />
+              Переслано от {message.forwardedFrom}
+            </div>
+          )}
+
           <div className="relative">
-            {/* Стикеры показываем без bubble */}
             {isSticker ? (
               <MediaRenderer attachment={message.attachments![0]} isClient={message.isClient} />
+            ) : isVideoNote ? (
+              <VideoNoteAttachment attachment={message.attachments![0]} />
+            ) : emojiOnly ? (
+              <span className="text-5xl leading-tight select-text">{message.text}</span>
             ) : (
               <div className={`rounded-2xl overflow-hidden cursor-pointer select-none ${
                 message.isClient 
                   ? 'bg-slate-100 text-slate-800 rounded-tl-md' 
                   : 'bg-blue-500 text-white rounded-tr-md'
               }`}>
-                {/* Медиа вложения */}
                 {message.attachments && message.attachments.length > 0 && (
                   <div className={`${message.text ? 'p-1 pb-0' : 'p-1'}`}>
                     {message.attachments.length === 1 ? (
@@ -449,10 +496,9 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
                   </div>
                 )}
                 
-                {/* Текст сообщения */}
                 {message.text && (
                   <div className="px-4 py-3">
-                    <p className="text-sm whitespace-pre-wrap select-text">{message.text}</p>
+                    <p className="text-sm whitespace-pre-wrap select-text">{renderTextWithMentions(message.text, message.isClient)}</p>
                   </div>
                 )}
               </div>

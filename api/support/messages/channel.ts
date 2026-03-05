@@ -119,13 +119,13 @@ export default async function handler(req: Request): Promise<Response> {
       mode = 'polling'
       console.log(`[Channel Messages] POLLING mode, since=${since}`)
       messages = await sql`
-        SELECT 
-          id, telegram_message_id, sender_id, sender_name, sender_username, 
+        SELECT
+          id, telegram_message_id, sender_id, sender_name, sender_username,
           sender_photo_url, sender_role, text_content, content_type, media_url,
           thumbnail_url, file_name, file_size, mime_type,
           transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
           is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
-          thread_id, thread_name, case_id, created_at
+          thread_id, thread_name, case_id, forwarded_from, created_at
         FROM support_messages
         WHERE channel_id = ${channelId}
           AND created_at > ${since}::timestamptz
@@ -138,13 +138,13 @@ export default async function handler(req: Request): Promise<Response> {
       mode = 'history'
       console.log(`[Channel Messages] HISTORY mode, before=${before}`)
       const olderMessages = await sql`
-        SELECT 
-          id, telegram_message_id, sender_id, sender_name, sender_username, 
+        SELECT
+          id, telegram_message_id, sender_id, sender_name, sender_username,
           sender_photo_url, sender_role, text_content, content_type, media_url,
           thumbnail_url, file_name, file_size, mime_type,
           transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
           is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
-          thread_id, thread_name, case_id, created_at
+          thread_id, thread_name, case_id, forwarded_from, created_at
         FROM support_messages
         WHERE channel_id = ${channelId}
           AND created_at < ${before}::timestamptz
@@ -160,13 +160,13 @@ export default async function handler(req: Request): Promise<Response> {
       mode = 'latest'
       console.log(`[Channel Messages] LATEST mode, limit=${limit}`)
       const latestMessages = await sql`
-        SELECT 
-          id, telegram_message_id, sender_id, sender_name, sender_username, 
+        SELECT
+          id, telegram_message_id, sender_id, sender_name, sender_username,
           sender_photo_url, sender_role, text_content, content_type, media_url,
           thumbnail_url, file_name, file_size, mime_type,
           transcript, ai_category, ai_urgency, ai_summary, ai_sentiment, ai_intent,
           is_read, is_problem, reactions, reply_to_message_id, reply_to_text, reply_to_sender,
-          thread_id, thread_name, case_id, created_at
+          thread_id, thread_name, case_id, forwarded_from, created_at
         FROM support_messages
         WHERE channel_id = ${channelId}
           AND created_at > NOW() - INTERVAL '90 days'
@@ -263,6 +263,7 @@ export default async function handler(req: Request): Promise<Response> {
         threadId: m.thread_id,
         threadName: m.thread_name,
         caseId: m.case_id,
+        forwardedFrom: m.forwarded_from || null,
         createdAt: m.created_at,
       }
     })
