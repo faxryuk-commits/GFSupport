@@ -74,23 +74,30 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const body = await req.json()
-    const { chatId, messageId, senderName, senderPhone, text, mediaUrl, contentType, timestamp, isGroup, groupName } = body
+    const { chatId, messageId, senderName, senderPhone, text, mediaUrl, contentType, timestamp, isGroup, fromMe, groupName } = body
 
-    console.log(`[WA Webhook] Received: chatId=${chatId}, sender=${senderName}, text=${(text || '').slice(0, 50)}, isGroup=${isGroup}`)
+    console.log(`[WA Webhook] Received: chatId=${chatId}, sender=${senderName}, fromMe=${fromMe}, text=${(text || '').slice(0, 50)}, isGroup=${isGroup}`)
 
     if (!chatId) return json({ error: 'chatId is required' }, 400)
 
     const channelName = isGroup ? (groupName || senderName) : senderName
     const channelId = await getOrCreateWhatsAppChannel(sql, chatId, channelName || '')
 
-    const identification = await identifySender(sql, {
-      username: null,
-      telegramId: senderPhone || null,
-      senderName: senderName || null,
-    })
+    let isFromClient: boolean
+    let senderRole: string
 
-    const isFromClient = identification.role === 'client'
-    const senderRole = identification.role === 'client' ? 'client' : 'support'
+    if (fromMe) {
+      isFromClient = false
+      senderRole = 'support'
+    } else {
+      const identification = await identifySender(sql, {
+        username: null,
+        telegramId: senderPhone || null,
+        senderName: senderName || null,
+      })
+      isFromClient = identification.role === 'client'
+      senderRole = identification.role === 'client' ? 'client' : 'support'
+    }
     const msgId = generateId('msg')
     const msgContentType = contentType || 'text'
 

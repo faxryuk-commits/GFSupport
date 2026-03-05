@@ -111,7 +111,7 @@ export async function startBaileys(authDir: string) {
       if (type !== 'notify') return
 
       for (const msg of messages) {
-        if (!msg.message || msg.key.fromMe) continue
+        if (!msg.message) continue
         onMessageCallback?.(msg)
       }
     })

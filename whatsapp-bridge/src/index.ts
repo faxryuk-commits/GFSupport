@@ -54,20 +54,21 @@ function getContentType(msg: any): string {
 function getSenderInfo(msg: any) {
   const jid = msg.key.remoteJid || ''
   const isGroup = jid.endsWith('@g.us')
-  const senderJid = isGroup ? (msg.key.participant || '') : jid
+  const fromMe = !!msg.key.fromMe
+  const senderJid = fromMe ? '' : (isGroup ? (msg.key.participant || '') : jid)
   const phone = senderJid.split('@')[0] || ''
   const pushName = msg.pushName || phone
 
-  return { jid, isGroup, senderJid, phone, pushName }
+  return { jid, isGroup, senderJid, phone, pushName, fromMe }
 }
 
 onMessage(async (msg) => {
   try {
-    const { jid, isGroup, phone, pushName } = getSenderInfo(msg)
+    const { jid, isGroup, phone, pushName, fromMe } = getSenderInfo(msg)
     messageStats.received++
     messageStats.lastAt = new Date().toISOString()
 
-    console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, JID: ${jid.slice(0, 30)}`)
+    console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, FromMe: ${fromMe}, JID: ${jid.slice(0, 30)}`)
 
     if (jid.endsWith('@broadcast') || jid === 'status@broadcast') {
       console.log('[MSG] Skipped: broadcast')
@@ -85,13 +86,14 @@ onMessage(async (msg) => {
     const payload = {
       chatId: jid,
       messageId: msg.key.id,
-      senderName: pushName,
+      senderName: fromMe ? 'Support' : pushName,
       senderPhone: phone,
       text,
       mediaUrl: null,
       contentType,
       timestamp: msg.messageTimestamp,
       isGroup,
+      fromMe,
       groupName: isGroup ? msg.pushName || undefined : undefined,
     }
 
