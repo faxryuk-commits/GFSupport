@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { RefreshCw, CheckCircle, Loader2, Wifi, WifiOff } from 'lucide-react'
+import { RefreshCw, CheckCircle, Loader2, Wifi, WifiOff, MessageSquare, Users2 } from 'lucide-react'
 import { Modal } from '@/shared/ui'
-import { apiGet } from '@/shared/services/api.service'
+import { apiGet, apiPost } from '@/shared/services/api.service'
 
 export interface Integration {
   id: string
@@ -12,6 +12,8 @@ export interface Integration {
   lastSync?: string
 }
 
+type FilterMode = 'all' | 'groups_only'
+
 interface WhatsAppStatus {
   connected: boolean
   phone: string | null
@@ -19,6 +21,7 @@ interface WhatsAppStatus {
   configured: boolean
   error?: string
   lastError?: string | null
+  filterMode?: FilterMode
 }
 
 interface IntegrationsSettingsProps {
@@ -46,7 +49,17 @@ const statusLabels = {
 function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [waStatus, setWaStatus] = useState<WhatsAppStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [filterSaving, setFilterSaving] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const handleFilterChange = async (mode: FilterMode) => {
+    setFilterSaving(true)
+    try {
+      await apiPost('/integrations/whatsapp-status', { mode })
+      setWaStatus(prev => prev ? { ...prev, filterMode: mode } : prev)
+    } catch { /* ignore */ }
+    setFilterSaving(false)
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -94,15 +107,50 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
         )}
 
         {!loading && waStatus?.connected && (
-          <div className="flex flex-col items-center py-8">
-            <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+          <div className="flex flex-col items-center py-6">
+            <CheckCircle className="w-14 h-14 text-green-500 mb-3" />
             <p className="text-lg font-semibold text-green-700">Подключено</p>
             {waStatus.phone && (
               <p className="text-sm text-slate-500 mt-1">Номер: +{waStatus.phone}</p>
             )}
-            <div className="flex items-center gap-2 mt-3 px-3 py-1.5 bg-green-50 rounded-full">
+            <div className="flex items-center gap-2 mt-2 px-3 py-1.5 bg-green-50 rounded-full">
               <Wifi className="w-4 h-4 text-green-600" />
               <span className="text-sm text-green-700">WhatsApp активен</span>
+            </div>
+
+            <div className="w-full mt-6 p-4 bg-slate-50 rounded-xl">
+              <p className="text-sm font-medium text-slate-700 mb-3">Какие чаты слушать?</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleFilterChange('all')}
+                  disabled={filterSaving}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    waStatus.filterMode !== 'groups_only'
+                      ? 'bg-blue-500 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Все сообщения
+                </button>
+                <button
+                  onClick={() => handleFilterChange('groups_only')}
+                  disabled={filterSaving}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    waStatus.filterMode === 'groups_only'
+                      ? 'bg-blue-500 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <Users2 className="w-4 h-4" />
+                  Только группы
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                {waStatus.filterMode === 'groups_only'
+                  ? 'Личные сообщения игнорируются, только групповые чаты'
+                  : 'Все личные и групповые сообщения попадают в систему'}
+              </p>
             </div>
           </div>
         )}

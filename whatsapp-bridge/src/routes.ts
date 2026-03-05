@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import { getStatus, getCurrentQR, sendText, sendMedia } from './baileys.js'
+import { getFilterMode, setFilterMode, type FilterMode } from './index.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
 
@@ -10,6 +11,7 @@ export function createRouter(bridgeSecret: string): Router {
   router.use((req: Request, res: Response, next) => {
     if (req.path === '/status' && req.method === 'GET') return next()
     if (req.path === '/qr' && req.method === 'GET') return next()
+    if (req.path === '/filter' && req.method === 'GET') return next()
 
     const auth = req.headers.authorization
     if (auth !== `Bearer ${bridgeSecret}`) {
@@ -25,7 +27,21 @@ export function createRouter(bridgeSecret: string): Router {
 
   router.get('/qr', (_req: Request, res: Response) => {
     const status = getStatus()
-    res.json({ connected: status.connected, phone: status.phone, qr: status.qr, lastError: status.lastError })
+    res.json({ connected: status.connected, phone: status.phone, qr: status.qr, lastError: status.lastError, filterMode: getFilterMode() })
+  })
+
+  router.get('/filter', (_req: Request, res: Response) => {
+    res.json({ filterMode: getFilterMode() })
+  })
+
+  router.post('/filter', (req: Request, res: Response) => {
+    const { mode } = req.body
+    if (mode !== 'all' && mode !== 'groups_only') {
+      return res.status(400).json({ error: 'mode must be "all" or "groups_only"' })
+    }
+    setFilterMode(mode as FilterMode)
+    console.log(`[Filter] Mode changed to: ${mode}`)
+    res.json({ success: true, filterMode: mode })
   })
 
   router.post('/send', async (req: Request, res: Response) => {

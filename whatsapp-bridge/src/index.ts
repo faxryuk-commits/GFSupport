@@ -11,6 +11,12 @@ const BRIDGE_SECRET = process.env.BRIDGE_SECRET || ''
 const WEBHOOK_URL = process.env.GFSUPPORT_WEBHOOK_URL || ''
 const AUTH_DIR = process.env.AUTH_DIR || path.join(__dirname, '..', 'auth_info')
 
+export type FilterMode = 'all' | 'groups_only'
+let filterMode: FilterMode = (process.env.FILTER_MODE as FilterMode) || 'all'
+
+export function getFilterMode(): FilterMode { return filterMode }
+export function setFilterMode(mode: FilterMode) { filterMode = mode }
+
 if (!BRIDGE_SECRET) {
   console.error('BRIDGE_SECRET is required')
   process.exit(1)
@@ -55,6 +61,15 @@ function getSenderInfo(msg: any) {
 onMessage(async (msg) => {
   try {
     const { jid, isGroup, phone, pushName } = getSenderInfo(msg)
+
+    if (jid.endsWith('@broadcast') || jid === 'status@broadcast') {
+      return
+    }
+
+    if (filterMode === 'groups_only' && !isGroup) {
+      return
+    }
+
     const text = extractText(msg)
     const contentType = getContentType(msg)
 
