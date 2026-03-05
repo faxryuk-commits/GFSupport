@@ -94,13 +94,29 @@ export function CommunicationMap() {
     )
   }
 
-  if (error || !data) {
+  const isEmpty = !data || (data.overview?.totalSessions === 0 && data.purposeDistribution?.length === 0)
+
+  if (error || isEmpty) {
     return (
-      <div className="text-center py-12">
-        <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
-        <p className="text-slate-600 mb-4">{error || 'Нет данных'}</p>
-        <button onClick={handleRebuild} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">
-          Построить сессии
+      <div className="text-center py-16">
+        <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <MessageSquare className="w-8 h-8 text-blue-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">Анализ коммуникаций</h3>
+        <p className="text-slate-500 mb-1 max-w-md mx-auto">
+          Система группирует сообщения в сессии и определяет цель каждой коммуникации:
+          решение проблем, вопросы клиентов, координация команды и т.д.
+        </p>
+        <p className="text-sm text-slate-400 mb-6">
+          {error ? `Ошибка: ${error}` : 'Для начала нужно построить сессии из существующих сообщений.'}
+        </p>
+        <button
+          onClick={handleRebuild}
+          disabled={rebuilding}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
+        >
+          {rebuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {rebuilding ? 'Построение...' : 'Построить сессии'}
         </button>
       </div>
     )

@@ -100,10 +100,16 @@ export default async function handler(req: Request): Promise<Response> {
   // POST - rebuild sessions from messages
   if (req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
-    const days = body.days || 30
+    const days = Math.min(body.days || 14, 30)
     const SESSION_GAP_MINUTES = 30
 
-    // Fetch messages grouped by channel with gap detection
+    // Clear old sessions before rebuild
+    await sql`
+      DELETE FROM support_conversation_sessions
+      WHERE started_at > NOW() - INTERVAL '1 day' * ${days}
+        AND (${market}::text IS NULL OR market_id = ${market})
+    `.catch(() => {})
+
     const messages = await sql`
       SELECT m.id, m.channel_id, m.created_at, m.sender_role, m.ai_intent, m.is_problem, m.case_id,
         m.sender_name, c.market_id
@@ -112,18 +118,18 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
       ORDER BY m.channel_id, m.created_at ASC
+      LIMIT 10000
     `
 
-    if (messages.length === 0) return json({ sessions: 0, message: 'No messages to process' })
+    if (messages.length === 0) return json({ success: true, sessions: 0, message: 'Нет сообщений для обработки' })
 
-    // Group into sessions
-    const sessions: Array<{
+    type Session = {
       channelId: string; startedAt: string; endedAt: string; participants: Set<string>;
       intents: string[]; roles: string[]; hasProblem: boolean; caseId: string | null;
       msgCount: number; agentCount: number; clientCount: number; marketId: string | null;
-    }> = []
-
-    let current: typeof sessions[0] | null = null
+    }
+    const sessions: Session[] = []
+    let current: Session | null = null
 
     for (const msg of messages) {
       const ts = new Date(msg.created_at).getTime()
@@ -134,18 +140,9 @@ export default async function handler(req: Request): Promise<Response> {
       if (!sameChannel || gap > SESSION_GAP_MINUTES) {
         if (current) sessions.push(current)
         current = {
-          channelId: msg.channel_id,
-          startedAt: msg.created_at,
-          endedAt: msg.created_at,
-          participants: new Set(),
-          intents: [],
-          roles: [],
-          hasProblem: false,
-          caseId: null,
-          msgCount: 0,
-          agentCount: 0,
-          clientCount: 0,
-          marketId: msg.market_id || null,
+          channelId: msg.channel_id, startedAt: msg.created_at, endedAt: msg.created_at,
+          participants: new Set(), intents: [], roles: [], hasProblem: false, caseId: null,
+          msgCount: 0, agentCount: 0, clientCount: 0, marketId: msg.market_id || null,
         }
       }
 
@@ -161,31 +158,37 @@ export default async function handler(req: Request): Promise<Response> {
     }
     if (current) sessions.push(current)
 
-    // Insert sessions (batch)
-    let inserted = 0
-    for (const s of sessions) {
-      const purpose = classifyPurpose(s.intents, s.hasProblem, s.roles)
-      const valueScore = calculateValueScore(purpose, !!s.caseId, s.msgCount)
-      const id = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${inserted}`
-      const participants = Array.from(s.participants)
+    // Prepare all sessions for batch insert
+    const prepared = sessions.map((s, i) => ({
+      id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${i}`,
+      purpose: classifyPurpose(s.intents, s.hasProblem, s.roles),
+      valueScore: calculateValueScore(classifyPurpose(s.intents, s.hasProblem, s.roles), !!s.caseId, s.msgCount),
+      participants: Array.from(s.participants),
+      ...s,
+    }))
 
-      try {
-        await sql`
+    // Insert in parallel batches of 50
+    let inserted = 0
+    const BATCH = 50
+    for (let i = 0; i < prepared.length; i += BATCH) {
+      const batch = prepared.slice(i, i + BATCH)
+      const results = await Promise.allSettled(
+        batch.map(s => sql`
           INSERT INTO support_conversation_sessions (
             id, channel_id, started_at, ended_at, purpose, value_score,
             participants, message_count, agent_message_count, client_message_count,
             has_case, case_id, market_id
           ) VALUES (
-            ${id}, ${s.channelId}, ${s.startedAt}, ${s.endedAt}, ${purpose}, ${valueScore},
-            ${participants}, ${s.msgCount}, ${s.agentCount}, ${s.clientCount},
+            ${s.id}, ${s.channelId}, ${s.startedAt}, ${s.endedAt}, ${s.purpose}, ${s.valueScore},
+            ${s.participants}, ${s.msgCount}, ${s.agentCount}, ${s.clientCount},
             ${!!s.caseId}, ${s.caseId}, ${s.marketId}
           )
-        `
-        inserted++
-      } catch { /* skip duplicates */ }
+        `)
+      )
+      inserted += results.filter(r => r.status === 'fulfilled').length
     }
 
-    return json({ success: true, sessions: inserted, total: sessions.length })
+    return json({ success: true, sessions: inserted, total: sessions.length, messages: messages.length })
   }
 
   // GET - read sessions analytics
