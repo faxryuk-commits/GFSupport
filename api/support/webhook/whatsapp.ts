@@ -22,6 +22,42 @@ function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+async function upsertWhatsAppUser(sql: any, phone: string, name: string, channelId: string, role: string) {
+  if (!phone || phone.length < 5) return
+  try {
+    try { await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS phone VARCHAR(50)` } catch {}
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_users_phone ON support_users(phone)` } catch {}
+
+    const existing = await sql`
+      SELECT id, channels FROM support_users WHERE phone = ${phone} LIMIT 1
+    `
+    if (existing[0]) {
+      const raw = existing[0].channels || []
+      const channels: any[] = Array.isArray(raw) ? raw : []
+      const has = channels.some((c: any) => (typeof c === 'string' ? c : c?.id) === channelId)
+      if (!has) channels.push({ id: channelId, addedAt: new Date().toISOString() })
+      await sql`
+        UPDATE support_users SET
+          name = COALESCE(${name || null}, name),
+          channels = ${JSON.stringify(channels)}::jsonb,
+          last_seen_at = NOW(), updated_at = NOW()
+        WHERE phone = ${phone}
+      `
+    } else {
+      const userId = generateId('user')
+      const userRole = role === 'client' ? 'client' : 'employee'
+      const channels = [{ id: channelId, addedAt: new Date().toISOString() }]
+      await sql`
+        INSERT INTO support_users (id, phone, name, role, channels, first_seen_at, last_seen_at, created_at, updated_at)
+        VALUES (${userId}, ${phone}, ${name || phone}, ${userRole}, ${JSON.stringify(channels)}::jsonb, NOW(), NOW(), NOW(), NOW())
+        ON CONFLICT DO NOTHING
+      `
+    }
+  } catch (e: any) {
+    console.error('[WA Webhook] upsertUser error:', e.message)
+  }
+}
+
 async function getOrCreateWhatsAppChannel(sql: any, chatId: string, senderName: string): Promise<string> {
   const existing = await sql`
     SELECT id FROM support_channels WHERE external_chat_id = ${chatId} AND source = 'whatsapp' LIMIT 1
@@ -149,6 +185,10 @@ export default async function handler(req: Request): Promise<Response> {
           awaiting_reply = false
         WHERE id = ${channelId}
       `
+    }
+
+    if (!fromMe && senderPhone) {
+      upsertWhatsAppUser(sql, senderPhone, senderName || '', channelId, senderRole).catch(() => {})
     }
 
     console.log(`[WA Webhook] Saved: msgId=${msgId}, channelId=${channelId}, role=${senderRole}`)
