@@ -3,6 +3,7 @@ export interface Channel {
   telegramChatId: number
   name: string
   type: 'client' | 'partner' | 'internal'
+  source?: 'telegram' | 'whatsapp'
   companyId?: string
   companyName: string
   leadId?: string

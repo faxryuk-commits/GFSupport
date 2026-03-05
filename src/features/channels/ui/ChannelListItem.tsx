@@ -15,6 +15,7 @@ export interface ChannelItemData {
   tags?: string[]
   isPinned?: boolean
   isArchived?: boolean
+  source?: 'telegram' | 'whatsapp'
 }
 
 interface ChannelListItemProps {
@@ -50,6 +51,9 @@ export const ChannelListItem = memo(function ChannelListItem({ channel, isSelect
         <Avatar name={channel.name} src={channel.avatar} size="md" status={channel.status === 'open' ? 'online' : 'offline'} />
         {channel.isPinned && (
           <Pin className="absolute -top-1 -right-1 w-3.5 h-3.5 text-blue-500 fill-blue-500" />
+        )}
+        {channel.source === 'whatsapp' && (
+          <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shadow-sm">W</span>
         )}
       </div>
       <div className="flex-1 min-w-0">

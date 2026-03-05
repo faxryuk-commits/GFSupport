@@ -327,83 +327,95 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const channel = channelResult[0]
-    const chatId = channel.telegram_chat_id
-
-    // Prepare Telegram message payload
-    const telegramPayload: any = {
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'Markdown',
-    }
-
-    // Add thread_id for forum topics
-    if (threadId && channel.is_forum) {
-      telegramPayload.message_thread_id = threadId
-    }
-
-    // Add reply_to_message_id if provided
-    if (replyToMessageId) {
-      telegramPayload.reply_to_message_id = replyToMessageId
-    }
-
-    // Send message via Telegram Bot API
-    const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(telegramPayload),
-    })
-
-    const telegramData = await telegramRes.json()
-
-    if (!telegramData.ok) {
-      return json({ 
-        error: 'Failed to send Telegram message', 
-        details: telegramData.description 
-      }, 500)
-    }
-
-    const sentMessage = telegramData.result
-
-    // Save message to database
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     const messagePreview = text.slice(0, 100)
+    let externalMessageId: number | null = null
 
-    // Get topic name if applicable
-    let threadName = null
-    if (threadId) {
-      const topicResult = await sql`
-        SELECT name FROM support_topics WHERE channel_id = ${channelId} AND thread_id = ${threadId}
+    if (channel.source === 'whatsapp') {
+      const bridgeUrl = process.env.WHATSAPP_BRIDGE_URL
+      const bridgeSecret = process.env.WHATSAPP_BRIDGE_SECRET
+      if (!bridgeUrl || !bridgeSecret) {
+        return json({ error: 'WhatsApp bridge not configured' }, 500)
+      }
+
+      const bridgeRes = await fetch(`${bridgeUrl}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bridgeSecret}` },
+        body: JSON.stringify({ chatId: channel.external_chat_id, text }),
+      })
+      const bridgeData = await bridgeRes.json() as any
+      if (!bridgeData.success) {
+        return json({ error: 'WhatsApp send failed', details: bridgeData.error }, 500)
+      }
+
+      await sql`
+        INSERT INTO support_messages (
+          id, channel_id, sender_id, sender_name, sender_username, sender_role,
+          is_from_client, content_type, text_content, is_read, created_at
+        ) VALUES (
+          ${messageId}, ${channelId}, ${senderId || null}, ${senderName || 'Support'},
+          ${senderUsername || null}, 'support', false, 'text', ${text}, true, NOW()
+        )
       `
-      threadName = topicResult[0]?.name
+    } else {
+      const chatId = channel.telegram_chat_id
+      const telegramPayload: any = { chat_id: chatId, text, parse_mode: 'Markdown' }
+
+      if (threadId && channel.is_forum) {
+        telegramPayload.message_thread_id = threadId
+      }
+      if (replyToMessageId) {
+        telegramPayload.reply_to_message_id = replyToMessageId
+      }
+
+      const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(telegramPayload),
+      })
+
+      const telegramData = await telegramRes.json()
+      if (!telegramData.ok) {
+        return json({ error: 'Failed to send Telegram message', details: telegramData.description }, 500)
+      }
+
+      const sentMessage = telegramData.result
+      externalMessageId = sentMessage.message_id
+
+      let threadName = null
+      if (threadId) {
+        const topicResult = await sql`
+          SELECT name FROM support_topics WHERE channel_id = ${channelId} AND thread_id = ${threadId}
+        `
+        threadName = topicResult[0]?.name
+      }
+
+      await sql`
+        INSERT INTO support_messages (
+          id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
+          is_from_client, content_type, text_content, is_processed, is_read,
+          reply_to_message_id, thread_id, thread_name
+        ) VALUES (
+          ${messageId}, ${channelId}, ${sentMessage.message_id},
+          ${senderId || null}, ${senderName || 'Support'}, ${senderUsername || null},
+          'support', false, 'text', ${text}, true, true,
+          ${replyToMessageId || null}, ${threadId || null}, ${threadName}
+        )
+      `
+
+      if (threadId) {
+        await sql`
+          UPDATE support_topics SET
+            messages_count = messages_count + 1,
+            last_message_at = NOW(),
+            last_sender_name = ${senderName || 'Support'}
+          WHERE channel_id = ${channelId} AND thread_id = ${threadId}
+        `
+      }
     }
 
     await sql`
-      INSERT INTO support_messages (
-        id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
-        is_from_client, content_type, text_content, is_processed, is_read,
-        reply_to_message_id, thread_id, thread_name
-      ) VALUES (
-        ${messageId},
-        ${channelId},
-        ${sentMessage.message_id},
-        ${senderId || null},
-        ${senderName || 'Support'},
-        ${senderUsername || null},
-        'support',
-        false,
-        'text',
-        ${text},
-        true,
-        true,
-        ${replyToMessageId || null},
-        ${threadId || null},
-        ${threadName}
-      )
-    `
-
-    // Update channel stats
-    await sql`
-      UPDATE support_channels SET 
+      UPDATE support_channels SET
         last_message_at = NOW(),
         last_team_message_at = NOW(),
         last_sender_name = ${senderName || 'Support'},
@@ -412,40 +424,18 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE id = ${channelId}
     `
 
-    // Update topic if applicable
-    if (threadId) {
-      await sql`
-        UPDATE support_topics SET 
-          messages_count = messages_count + 1,
-          last_message_at = NOW(),
-          last_sender_name = ${senderName || 'Support'}
-        WHERE channel_id = ${channelId} AND thread_id = ${threadId}
-      `
-    }
-
-    // Detect commitments in outgoing messages
     const commitment = detectCommitment(text)
     let reminderId = null
     if (commitment.hasCommitment) {
-      reminderId = await createReminder(
-        sql,
-        commitment,
-        channelId,
-        messageId,
-        senderName || 'Support'
-      )
-      console.log(`Created reminder from send.ts: ${reminderId} - ${commitment.commitmentType} - "${commitment.commitmentText}"`)
+      reminderId = await createReminder(sql, commitment, channelId, messageId, senderName || 'Support')
     }
 
-    // Save dialog for AI learning (async, don't wait)
-    saveDialogForLearning(sql, channelId, text, senderName || 'Support').catch(e => {
-      console.log('Dialog save skipped:', e.message)
-    })
+    saveDialogForLearning(sql, channelId, text, senderName || 'Support').catch(() => {})
 
     return json({
       success: true,
       messageId,
-      telegramMessageId: sentMessage.message_id,
+      telegramMessageId: externalMessageId,
       sentAt: new Date().toISOString(),
       commitment: commitment.hasCommitment ? {
         type: commitment.commitmentType,

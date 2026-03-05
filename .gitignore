@@ -21,6 +21,11 @@ dist-ssr
 restore-db.sql
 *.sql
 
+# WhatsApp bridge auth session
+whatsapp-bridge/auth_info/
+whatsapp-bridge/node_modules/
+whatsapp-bridge/dist/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

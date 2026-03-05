@@ -85,6 +85,7 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
     priority: (channel.unreadCount || 0) > 3 ? 'high' : undefined,
     isPinned: false,
     isArchived: !channel.isActive,
+    source: channel.source || 'telegram',
   }
 }
 

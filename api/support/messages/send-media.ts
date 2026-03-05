@@ -55,101 +55,98 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'Bot token not configured' }, 500)
     }
 
-    // Get channel info
     const channelResult = await sql`
-      SELECT telegram_chat_id FROM support_channels WHERE id = ${channelId}
+      SELECT * FROM support_channels WHERE id = ${channelId}
     `
 
     if (channelResult.length === 0) {
       return json({ error: 'Channel not found' }, 404)
     }
 
-    const chatId = channelResult[0].telegram_chat_id
-
-    // Determine file type and endpoint
-    const fileType = file.type
-    let endpoint = 'sendDocument'
-    let fieldName = 'document'
-
-    if (fileType.startsWith('image/')) {
-      endpoint = 'sendPhoto'
-      fieldName = 'photo'
-    } else if (fileType.startsWith('video/')) {
-      endpoint = 'sendVideo'
-      fieldName = 'video'
-    } else if (fileType.startsWith('audio/') || fileType === 'audio/ogg') {
-      endpoint = 'sendVoice'
-      fieldName = 'voice'
-    }
-
-    // Send to Telegram
-    const telegramForm = new FormData()
-    telegramForm.append('chat_id', chatId.toString())
-    telegramForm.append(fieldName, file, file.name)
-    if (caption) {
-      telegramForm.append('caption', caption)
-    }
-
-    const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
-      method: 'POST',
-      body: telegramForm
-    })
-
-    const telegramData = await telegramRes.json()
-
-    if (!telegramData.ok) {
-      console.error('Telegram error:', telegramData)
-      return json({ error: 'Failed to send to Telegram', details: telegramData.description }, 500)
-    }
-
-    const tgMessage = telegramData.result
-
-    // Save to our database
+    const channel = channelResult[0]
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    const contentType = fileType.startsWith('image/') ? 'photo' 
+    const fileType = file.type
+    const contentType = fileType.startsWith('image/') ? 'photo'
       : fileType.startsWith('video/') ? 'video'
       : fileType.startsWith('audio/') ? 'voice'
       : 'document'
 
-    // Get file URL from Telegram
-    let mediaUrl = null
-    const fileId = tgMessage.photo?.[tgMessage.photo.length - 1]?.file_id 
-      || tgMessage.video?.file_id 
-      || tgMessage.voice?.file_id 
-      || tgMessage.document?.file_id
+    let mediaUrl: string | null = null
+    let externalMessageId: number | null = null
 
-    if (fileId) {
-      const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
-      const fileData = await fileRes.json()
-      if (fileData.ok) {
-        mediaUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`
+    if (channel.source === 'whatsapp') {
+      const bridgeUrl = process.env.WHATSAPP_BRIDGE_URL
+      const bridgeSecret = process.env.WHATSAPP_BRIDGE_SECRET
+      if (!bridgeUrl || !bridgeSecret) {
+        return json({ error: 'WhatsApp bridge not configured' }, 500)
+      }
+
+      const bridgeForm = new FormData()
+      bridgeForm.append('file', file, file.name)
+      bridgeForm.append('chatId', channel.external_chat_id)
+      if (caption) bridgeForm.append('caption', caption)
+
+      const bridgeRes = await fetch(`${bridgeUrl}/send-media`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${bridgeSecret}` },
+        body: bridgeForm,
+      })
+      const bridgeData = await bridgeRes.json() as any
+      if (!bridgeData.success) {
+        return json({ error: 'WhatsApp media send failed', details: bridgeData.error }, 500)
+      }
+      mediaUrl = bridgeData.mediaUrl || null
+    } else {
+      const chatId = channel.telegram_chat_id
+      let endpoint = 'sendDocument'
+      let fieldName = 'document'
+
+      if (fileType.startsWith('image/')) { endpoint = 'sendPhoto'; fieldName = 'photo' }
+      else if (fileType.startsWith('video/')) { endpoint = 'sendVideo'; fieldName = 'video' }
+      else if (fileType.startsWith('audio/') || fileType === 'audio/ogg') { endpoint = 'sendVoice'; fieldName = 'voice' }
+
+      const telegramForm = new FormData()
+      telegramForm.append('chat_id', chatId.toString())
+      telegramForm.append(fieldName, file, file.name)
+      if (caption) telegramForm.append('caption', caption)
+
+      const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+        method: 'POST',
+        body: telegramForm,
+      })
+      const telegramData = await telegramRes.json()
+
+      if (!telegramData.ok) {
+        return json({ error: 'Failed to send to Telegram', details: telegramData.description }, 500)
+      }
+
+      const tgMessage = telegramData.result
+      externalMessageId = tgMessage.message_id
+
+      const fileId = tgMessage.photo?.[tgMessage.photo.length - 1]?.file_id
+        || tgMessage.video?.file_id || tgMessage.voice?.file_id || tgMessage.document?.file_id
+
+      if (fileId) {
+        const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
+        const fileData = await fileRes.json()
+        if (fileData.ok) {
+          mediaUrl = `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`
+        }
       }
     }
 
     await sql`
       INSERT INTO support_messages (
         id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
-        is_from_client, content_type, text_content, media_url, media_file_id,
+        is_from_client, content_type, text_content, media_url,
         is_read, created_at
       ) VALUES (
-        ${messageId},
-        ${channelId},
-        ${tgMessage.message_id},
-        ${senderId},
-        ${senderName},
-        ${senderUsername},
-        'support',
-        false,
-        ${contentType},
-        ${caption || null},
-        ${mediaUrl},
-        ${fileId},
-        true,
-        NOW()
+        ${messageId}, ${channelId}, ${externalMessageId}, ${senderId}, ${senderName},
+        ${senderUsername}, 'support', false, ${contentType}, ${caption || null},
+        ${mediaUrl}, true, NOW()
       )
     `
 
-    // Update channel
     await sql`
       UPDATE support_channels SET
         last_message_at = NOW(),
@@ -163,7 +160,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({
       success: true,
       messageId,
-      telegramMessageId: tgMessage.message_id,
+      telegramMessageId: externalMessageId,
       mediaUrl
     })
 

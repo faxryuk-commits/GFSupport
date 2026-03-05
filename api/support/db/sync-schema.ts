@@ -197,6 +197,9 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS client_response_count INTEGER DEFAULT 0`; synced.push('channels.client_response_count') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS last_agent_message_at TIMESTAMP`; synced.push('channels.last_agent_message_at') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS response_comparison JSONB DEFAULT '{}'`; synced.push('channels.response_comparison') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'`; synced.push('channels.source') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)`; synced.push('channels.external_chat_id') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_channels ALTER COLUMN telegram_chat_id DROP NOT NULL`; synced.push('channels.telegram_chat_id nullable') } catch (e) { /* already nullable */ }
 
     // ============ CASES TABLE ============
     try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS ticket_number INTEGER`; synced.push('cases.ticket_number') } catch (e) { /* exists */ }

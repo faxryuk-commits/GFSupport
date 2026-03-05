@@ -125,8 +125,9 @@ export default async function handler(req: Request): Promise<Response> {
         channels: channels.map((c: any) => ({
           id: c.id,
           telegramChatId: c.telegram_chat_id,
-          name: c.name || `Канал ${c.telegram_chat_id}`,
+          name: c.name || `Канал ${c.telegram_chat_id || c.external_chat_id || c.id}`,
           type: c.type || 'client',
+          source: c.source || 'telegram',
           slaCategory: c.sla_category || 'client',
           companyId: c.company_id,
           companyName: c.name || 'Компания',
