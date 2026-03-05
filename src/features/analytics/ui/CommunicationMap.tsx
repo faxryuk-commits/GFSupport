@@ -11,7 +11,6 @@ interface Overview {
   fromAgents: number
   activeChannels: number
   avgResponseMin: number | null
-  medianResponseMin: number | null
   unansweredCount: number
 }
 
@@ -20,7 +19,6 @@ interface UnansweredChannel {
   name: string
   source: string
   waitingMinutes: number
-  lastText: string
 }
 
 interface AgentStat {
@@ -159,7 +157,7 @@ export function CommunicationMap() {
           icon={<Clock className="w-5 h-5" />}
           label="Среднее время ответа"
           value={overview.avgResponseMin !== null ? `${overview.avgResponseMin} мин` : '—'}
-          sub={overview.medianResponseMin !== null ? `Медиана: ${overview.medianResponseMin} мин` : ''}
+          sub="среднее за период"
           iconColor="text-violet-500" bgColor="bg-violet-50"
         />
         <KpiCard
@@ -192,7 +190,7 @@ export function CommunicationMap() {
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <SourceBadge source={ch.source} />
                   <span className="text-sm font-medium text-slate-800 truncate">{ch.name}</span>
-                  <span className="text-xs text-slate-400 truncate hidden sm:inline">{ch.lastText}</span>
+                  
                 </div>
                 <span className={`text-xs font-bold flex-shrink-0 ml-2 ${
                   ch.waitingMinutes > 60 ? 'text-red-600' : 'text-amber-600'
