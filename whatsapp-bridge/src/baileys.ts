@@ -146,4 +146,18 @@ export async function sendMedia(
   }
 }
 
+export async function logoutWhatsApp(authDir: string) {
+  console.log('[Baileys] Logging out...')
+  try { await sock?.logout() } catch (e: any) { console.warn('[Baileys] logout():', e.message) }
+  isConnected = false
+  phoneNumber = ''
+  currentQR = null
+  lastError = null
+  sock = null
+  const fs = await import('fs')
+  try { fs.rmSync(authDir, { recursive: true, force: true }) } catch {}
+  console.log('[Baileys] Session cleared, restarting for new QR...')
+  setTimeout(() => startBaileys(authDir), 1500)
+}
+
 export { downloadMediaMessage }

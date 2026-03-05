@@ -116,6 +116,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
   const [waStatus, setWaStatus] = useState<WhatsAppStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [filterSaving, setFilterSaving] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const handleFilterChange = async (mode: FilterMode) => {
@@ -125,6 +126,16 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
       setWaStatus(prev => prev ? { ...prev, filterMode: mode } : prev)
     } catch { /* ignore */ }
     setFilterSaving(false)
+  }
+
+  const handleLogout = async () => {
+    if (!confirm('Отключить WhatsApp аккаунт? Потребуется повторное сканирование QR-кода.')) return
+    setLoggingOut(true)
+    try {
+      await apiPost('/integrations/whatsapp-status', { action: 'logout' })
+      setWaStatus(prev => prev ? { ...prev, connected: false, phone: null, qr: null } : prev)
+    } catch { /* ignore */ }
+    setLoggingOut(false)
   }
 
   useEffect(() => {
@@ -215,6 +226,18 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                   : 'Все личные и групповые сообщения попадают в систему'}
               </p>
             </div>
+
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors disabled:opacity-50"
+            >
+              {loggingOut ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Отключение...</>
+              ) : (
+                <><WifiOff className="w-4 h-4" /> Отключить аккаунт</>
+              )}
+            </button>
           </div>
         )}
 

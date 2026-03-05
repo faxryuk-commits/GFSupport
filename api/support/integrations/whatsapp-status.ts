@@ -29,6 +29,21 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     try {
       const body = await req.json()
+      const action = body.action as string | undefined
+
+      if (action === 'logout') {
+        const res = await fetch(`${bridgeUrl}/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${bridgeSecret}`,
+          },
+          signal: AbortSignal.timeout(10000),
+        })
+        const data = await res.json()
+        return json(data, res.status)
+      }
+
       const res = await fetch(`${bridgeUrl}/filter`, {
         method: 'POST',
         headers: {

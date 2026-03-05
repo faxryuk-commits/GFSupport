@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
-import { getStatus, getCurrentQR, sendText, sendMedia } from './baileys.js'
+import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp } from './baileys.js'
 import { getFilterMode, setFilterMode, getMessageStats, type FilterMode } from './index.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
 
-export function createRouter(bridgeSecret: string): Router {
+export function createRouter(bridgeSecret: string, authDir: string): Router {
   const router = Router()
 
   router.use((req: Request, res: Response, next) => {
@@ -55,6 +55,16 @@ export function createRouter(bridgeSecret: string): Router {
     setFilterMode(mode as FilterMode)
     console.log(`[Filter] Mode changed to: ${mode}`)
     res.json({ success: true, filterMode: mode })
+  })
+
+  router.post('/logout', async (_req: Request, res: Response) => {
+    try {
+      await logoutWhatsApp(authDir)
+      res.json({ success: true, message: 'Logged out, waiting for new QR' })
+    } catch (e: any) {
+      console.error('[Route /logout]', e.message)
+      res.status(500).json({ success: false, error: e.message })
+    }
   })
 
   router.post('/send', async (req: Request, res: Response) => {

@@ -31,7 +31,7 @@ if (!WEBHOOK_URL) {
 
 const app = express()
 app.use(express.json())
-app.use('/', createRouter(BRIDGE_SECRET))
+app.use('/', createRouter(BRIDGE_SECRET, AUTH_DIR))
 
 function extractText(msg: any): string | null {
   return msg.message?.conversation
