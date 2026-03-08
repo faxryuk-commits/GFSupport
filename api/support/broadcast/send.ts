@@ -21,9 +21,16 @@ function getSQL() {
   return neon(connectionString)
 }
 
-// Telegram Bot API
-async function sendTelegramMessage(chatId: string | number, text: string, parseMode = 'HTML') {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+async function getActiveBotToken(): Promise<string | null> {
+  try {
+    const sql = getSQL()
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    if (rows[0]?.value) return rows[0].value
+  } catch {}
+  return process.env.TELEGRAM_BOT_TOKEN || null
+}
+
+async function sendTelegramMessage(chatId: string | number, text: string, botToken: string, parseMode = 'HTML') {
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
   
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -159,12 +166,14 @@ export default async function handler(req: Request) {
     const trackedMessage = addTracking(message)
     const formattedMessage = `${emoji} <b>${type === 'announcement' ? 'Объявление' : type === 'update' ? 'Обновление' : 'Предупреждение'}</b>\n\n${trackedMessage}\n\n<i>— ${senderName}</i>`
     
-    // Send to all channels
+    const botToken = await getActiveBotToken()
+    if (!botToken) return json({ success: false, error: 'Telegram bot token не настроен. Проверьте Настройки → Интеграции.' }, 400)
+
     const results: { channelId: string; channelName: string; success: boolean; error?: string }[] = []
     
     for (const channel of filteredChannels) {
       try {
-        const result = await sendTelegramMessage(channel.telegram_chat_id, formattedMessage)
+        const result = await sendTelegramMessage(channel.telegram_chat_id, formattedMessage, botToken)
         
         if (result.ok) {
           // Save message to database with broadcast_id for tracking
@@ -177,9 +186,8 @@ export default async function handler(req: Request) {
               ${msgId}, ${channel.id}, ${result.result?.message_id}, ${senderName}, 'broadcast', false,
               'text', ${message}, ${broadcastId}, NOW()
             )
-          `.catch(() => {
-            // broadcast_id column might not exist, try without it
-            sql`
+          `.catch(async () => {
+            await sql`
               INSERT INTO support_messages (
                 id, channel_id, telegram_message_id, sender_name, sender_role, is_from_client,
                 content_type, text_content, created_at

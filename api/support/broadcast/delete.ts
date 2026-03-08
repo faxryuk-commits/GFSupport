@@ -21,9 +21,16 @@ function getSQL() {
   return neon(connectionString)
 }
 
-// Telegram Bot API - удаление сообщения
-async function deleteTelegramMessage(chatId: string | number, messageId: number) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+async function getActiveBotToken(): Promise<string | null> {
+  try {
+    const sql = getSQL()
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    if (rows[0]?.value) return rows[0].value
+  } catch {}
+  return process.env.TELEGRAM_BOT_TOKEN || null
+}
+
+async function deleteTelegramMessage(chatId: string | number, messageId: number, botToken: string) {
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
   
   const response = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
@@ -82,14 +89,16 @@ export default async function handler(req: Request) {
       }, 404)
     }
     
-    // Удаляем каждое сообщение
+    const botToken = await getActiveBotToken()
+    if (!botToken) return json({ success: false, error: 'Telegram bot token не настроен' }, 400)
+
     const results: { channelName: string; success: boolean; error?: string }[] = []
     let deletedCount = 0
     let failedCount = 0
     
     for (const msg of messages) {
       try {
-        const result = await deleteTelegramMessage(msg.telegram_chat_id, msg.telegram_message_id)
+        const result = await deleteTelegramMessage(msg.telegram_chat_id, msg.telegram_message_id, botToken)
         
         if (result.ok) {
           deletedCount++

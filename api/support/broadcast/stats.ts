@@ -47,12 +47,11 @@ export default async function handler(req: Request) {
         return json({ success: false, error: 'Broadcast not found' }, 404)
       }
       
-      // Получаем детальную статистику кликов
       const clickStats = await sql`
         SELECT 
           COUNT(*) as total_clicks,
-          COUNT(DISTINCT user_id) as unique_clicks,
-          COUNT(DISTINCT link_url) as unique_links
+          COUNT(DISTINCT ip_hash) as unique_clicks,
+          COUNT(DISTINCT target_url) as unique_links
         FROM support_broadcast_clicks
         WHERE broadcast_id = ${broadcastId}
       `.catch(() => [{ total_clicks: 0, unique_clicks: 0, unique_links: 0 }])
@@ -105,7 +104,7 @@ export default async function handler(req: Request) {
         SELECT 
           b.*,
           (SELECT COUNT(*) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as clicks,
-          (SELECT COUNT(DISTINCT user_id) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as unique_clicks
+          (SELECT COUNT(DISTINCT ip_hash) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as unique_clicks
         FROM support_broadcasts b
         ORDER BY b.created_at DESC
         LIMIT 10

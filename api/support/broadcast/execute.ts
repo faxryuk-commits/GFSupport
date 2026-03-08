@@ -21,9 +21,16 @@ function getSQL() {
   return neon(connectionString)
 }
 
-// Telegram Bot API
-async function sendTelegramMessage(chatId: string | number, text: string, parseMode = 'HTML') {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+async function getActiveBotToken(): Promise<string | null> {
+  try {
+    const sql = getSQL()
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    if (rows[0]?.value) return rows[0].value
+  } catch {}
+  return process.env.TELEGRAM_BOT_TOKEN || null
+}
+
+async function sendTelegramMessage(chatId: string | number, text: string, botToken: string, parseMode = 'HTML') {
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
   
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -67,11 +74,10 @@ export default async function handler(req: Request) {
   const sql = getSQL()
 
   try {
-    // Восстанавливаем зависшие рассылки (status = 'sending' более 5 минут)
     await sql`
       UPDATE support_broadcast_scheduled 
       SET status = 'pending' 
-      WHERE status = 'sending' 
+      WHERE status IN ('sending', 'processing')
         AND created_at < NOW() - INTERVAL '5 minutes'
     `.catch(() => {})
 
@@ -92,6 +98,11 @@ export default async function handler(req: Request) {
       })
     }
 
+    const botToken = await getActiveBotToken()
+    if (!botToken) {
+      return json({ success: false, error: 'Telegram bot token не настроен' }, 400)
+    }
+
     const results: any[] = []
 
     for (const scheduled of pendingBroadcasts) {
@@ -103,7 +114,6 @@ export default async function handler(req: Request) {
           WHERE id = ${scheduled.id} AND status = 'pending'
         `
 
-        // Получаем каналы для рассылки
         let channels
         if (scheduled.filter_type === 'selected' && scheduled.selected_channels?.length > 0) {
           channels = await sql`
@@ -119,8 +129,21 @@ export default async function handler(req: Request) {
             WHERE telegram_chat_id IS NOT NULL
               AND last_message_at > NOW() - INTERVAL '30 days'
           `
+        } else if (scheduled.filter_type === 'clients') {
+          channels = await sql`
+            SELECT id, telegram_chat_id, name
+            FROM support_channels
+            WHERE telegram_chat_id IS NOT NULL
+              AND (type = 'client' OR sla_category = 'client')
+          `
+        } else if (scheduled.filter_type === 'partners') {
+          channels = await sql`
+            SELECT id, telegram_chat_id, name
+            FROM support_channels
+            WHERE telegram_chat_id IS NOT NULL
+              AND (type = 'partner' OR sla_category = 'partner')
+          `
         } else {
-          // all
           channels = await sql`
             SELECT id, telegram_chat_id, name
             FROM support_channels
@@ -164,7 +187,7 @@ export default async function handler(req: Request) {
 
         for (const channel of channels) {
           try {
-            const result = await sendTelegramMessage(channel.telegram_chat_id, formattedMessage)
+            const result = await sendTelegramMessage(channel.telegram_chat_id, formattedMessage, botToken)
             
             if (result.ok) {
               successful++
