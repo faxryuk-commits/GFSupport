@@ -21,7 +21,7 @@ type ServiceStatus = 'active' | 'inactive' | 'error'
 
 export interface HealthData {
   telegram: { status: ServiceStatus; botUsername?: string; botName?: string; channelsCount: number }
-  openai: { status: ServiceStatus; model: string; source?: 'db' | 'env' | 'none' }
+  openai: { status: ServiceStatus; model: string; source?: 'db' | 'env' | 'none'; detail?: string; httpStatus?: number }
   whisper: { status: ServiceStatus; language: string }
   notify: { status: ServiceStatus; chatId: string | null }
   whatsapp: { status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number }
@@ -374,10 +374,13 @@ export function IntegrationsSettings({
                   <p>Модель: <span className="font-medium text-slate-700">{ai.model}</span></p>
                   <p className="text-xs text-slate-400">Источник: {ai.source === 'db' ? 'настройки системы' : 'переменная окружения'}</p>
                 </>
-              ) : ai?.status === 'error' ? (
-                <p className="text-red-500 flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" /> API ключ недействителен
-                </p>
+              ) :               ai?.status === 'error' ? (
+                <div className="text-red-500 space-y-0.5">
+                  <p className="flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5" /> API ключ недействителен
+                  </p>
+                  {ai.detail && <p className="text-xs text-red-400 truncate max-w-xs">{ai.detail.slice(0, 100)}</p>}
+                </div>
               ) : (
                 <p>API ключ не настроен</p>
               )

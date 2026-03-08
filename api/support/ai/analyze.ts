@@ -4,6 +4,7 @@ import { getOpenAIKey } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
+  regions: ['iad1'],
 }
 
 function getSQL() {

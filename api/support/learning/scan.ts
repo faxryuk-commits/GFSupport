@@ -1,8 +1,9 @@
 import { neon } from '@neondatabase/serverless'
 import { getOpenAIKey } from '../lib/db.js'
 
-export const config = { 
+export const config = {
   runtime: 'edge',
+  regions: ['iad1'],
   maxDuration: 60
 }
 

@@ -114,8 +114,8 @@ export async function startBaileys(authDir: string) {
 
         console.log(`[Baileys] Disconnected. Status: ${statusCode}. Error: ${errMsg}. Reconnect: ${shouldReconnect}`)
 
-        if (statusCode === 405 || statusCode === 500) {
-          console.log('[Baileys] Bad session, clearing auth and retrying...')
+        if (statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500) {
+          console.log(`[Baileys] Bad session (${statusCode}), clearing auth and retrying...`)
           const fs = await import('fs')
           try { fs.rmSync(authDir, { recursive: true, force: true }) } catch {}
           setTimeout(() => startBaileys(authDir), 2000)

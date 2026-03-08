@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless'
 
 export const config = {
   runtime: 'edge',
+  regions: ['iad1'],
   maxDuration: 10,
 }
 
@@ -67,11 +68,13 @@ async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string; so
   try {
     const res = await fetch('https://api.openai.com/v1/models', {
       headers: { 'Authorization': `Bearer ${key}` },
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(5000),
     })
-    return { status: res.ok ? 'active' : 'error', model, source }
-  } catch {
-    return { status: 'error', model, source }
+    if (res.ok) return { status: 'active', model, source }
+    const errText = await res.text().catch(() => '')
+    return { status: 'error', model, source, httpStatus: res.status, detail: errText.slice(0, 200) }
+  } catch (e: any) {
+    return { status: 'error', model, source, detail: e.message }
   }
 }
 

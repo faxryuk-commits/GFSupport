@@ -5,6 +5,7 @@ import OpenAI from 'openai'
 
 export const config = {
   runtime: 'edge',
+  regions: ['iad1'],
 }
 
 function getSQL() {
