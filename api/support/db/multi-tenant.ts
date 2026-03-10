@@ -392,26 +392,16 @@ async function stepD(sql: any): Promise<string[]> {
   log.push(await safe('docs → org_delever', () =>
     sql`UPDATE support_docs SET org_id = 'org_delever' WHERE org_id IS NULL`))
 
-  // Seed super admin from env vars
-  const saEmail = process.env.SA_EMAIL
-  const saPassword = process.env.SA_PASSWORD
-  if (saEmail && saPassword) {
-    let hash = 0
-    for (let i = 0; i < saPassword.length; i++) {
-      hash = ((hash << 5) - hash) + saPassword.charCodeAt(i)
-      hash = hash & hash
-    }
-    const passwordHash = `h${Math.abs(hash).toString(36)}${saPassword.length}`
-    log.push(await safe('seed super_admin', () => sql`
-      INSERT INTO support_super_admins (id, email, name, password_hash, role, is_active)
-      VALUES ('sa_root', ${saEmail}, 'Root Admin', ${passwordHash}, 'owner', true)
-      ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        password_hash = EXCLUDED.password_hash
-    `))
-  } else {
-    log.push('SKIP: super_admin seed — SA_EMAIL / SA_PASSWORD not set')
-  }
+  // Seed super admin
+  const saEmail = process.env.SA_EMAIL || 'admin@gfsupport.uz'
+  const saPasswordHash = process.env.SA_PASSWORD_HASH || 'hrvasz911'
+  log.push(await safe('seed super_admin', () => sql`
+    INSERT INTO support_super_admins (id, email, name, password_hash, role, is_active)
+    VALUES ('sa_root', ${saEmail}, 'Root Admin', ${saPasswordHash}, 'owner', true)
+    ON CONFLICT (id) DO UPDATE SET
+      email = EXCLUDED.email,
+      password_hash = EXCLUDED.password_hash
+  `))
 
   return log
 }
