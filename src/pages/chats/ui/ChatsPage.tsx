@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList } from 'lucide-react'
+import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList, Eye, CheckCheck, MessageSquareCheck } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
-import { ChannelListItem, type ChannelItemData } from '@/features/channels/ui'
+import { ChannelListItem, ChannelPreviewModal, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { AIContextPanel } from '@/features/ai-assistant/ui'
 import { CommitmentsPanel } from '@/features/commitments/ui'
@@ -214,6 +214,10 @@ export function ChatsPage() {
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
   const [createCaseMessage, setCreateCaseMessage] = useState<MessageData | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: ChannelItemData } | null>(null)
+  const [previewChannel, setPreviewChannel] = useState<ChannelItemData | null>(null)
+  const [previewMessages, setPreviewMessages] = useState<MessageData[]>([])
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -672,6 +676,62 @@ export function ChatsPage() {
     }
   }
 
+  // Контекстное меню канала
+  const handleChannelContextMenu = useCallback((e: React.MouseEvent, channel: ChannelItemData) => {
+    setContextMenu({ x: e.clientX, y: e.clientY, channel })
+  }, [])
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const handlePreview = useCallback(async (channel: ChannelItemData) => {
+    setContextMenu(null)
+    setPreviewChannel(channel)
+    setIsLoadingPreview(true)
+    try {
+      const { messages: data } = await fetchMessages(channel.id, 30)
+      setPreviewMessages(data.map(mapMessageToUI))
+    } catch {
+      setPreviewMessages([])
+    } finally {
+      setIsLoadingPreview(false)
+    }
+  }, [])
+
+  const handleMarkRead = useCallback(async (channel: ChannelItemData) => {
+    setContextMenu(null)
+    try {
+      await markChannelRead(channel.id)
+      setChannels(prev => prev.map(ch =>
+        ch.id === channel.id ? { ...ch, unread: 0 } : ch
+      ))
+    } catch (e) {
+      console.error('Ошибка отметки как прочитанное:', e)
+    }
+  }, [])
+
+  const handleMarkAnswered = useCallback(async (channel: ChannelItemData) => {
+    setContextMenu(null)
+    try {
+      const token = localStorage.getItem('support_agent_token')
+      await fetch(`/api/support/channels?id=${channel.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ awaiting_reply: false }),
+      })
+      setChannels(prev => prev.map(ch =>
+        ch.id === channel.id ? { ...ch, status: 'resolved' as const } : ch
+      ))
+    } catch (e) {
+      console.error('Ошибка отметки как отвеченное:', e)
+    }
+  }, [])
+
+  const openPreviewAsChat = useCallback((channel: ChannelItemData) => {
+    setPreviewChannel(null)
+    setPreviewMessages([])
+    handleSelectChannel(channel)
+  }, [])
+
   const handleSelectChannel = async (channel: ChannelItemData) => {
     setSelectedChannel(channel)
     setMessages([])
@@ -825,6 +885,7 @@ export function ChatsPage() {
                   channel={channel}
                   isSelected={selectedChannel?.id === channel.id}
                   onClick={() => handleSelectChannel(channel)}
+                  onContextMenu={handleChannelContextMenu}
                 />
               ))
             )}
@@ -1132,6 +1193,56 @@ export function ChatsPage() {
           senderName={createCaseMessage.senderName}
           channelName={selectedChannel?.name || ''}
           onCaseCreated={() => setCreateCaseMessage(null)}
+        />
+      )}
+
+      {/* Контекстное меню канала */}
+      {contextMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
+          <div
+            className="fixed z-50 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 w-56 animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              left: Math.min(contextMenu.x, window.innerWidth - 240),
+              top: Math.min(contextMenu.y, window.innerHeight - 200),
+            }}
+          >
+            <div className="px-3 py-1.5 border-b border-slate-100">
+              <p className="text-xs font-medium text-slate-500 truncate">{contextMenu.channel.name}</p>
+            </div>
+            <button
+              onClick={() => handlePreview(contextMenu.channel)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+            >
+              <Eye className="w-4 h-4 text-slate-400" />
+              Предпросмотр
+            </button>
+            <button
+              onClick={() => handleMarkRead(contextMenu.channel)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+            >
+              <CheckCheck className="w-4 h-4 text-slate-400" />
+              Пометить как прочитанное
+            </button>
+            <button
+              onClick={() => handleMarkAnswered(contextMenu.channel)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+            >
+              <MessageSquareCheck className="w-4 h-4 text-slate-400" />
+              Пометить как отвеченное
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Модальное окно предпросмотра */}
+      {previewChannel && (
+        <ChannelPreviewModal
+          channel={previewChannel}
+          messages={previewMessages}
+          isLoading={isLoadingPreview}
+          onClose={() => { setPreviewChannel(null); setPreviewMessages([]) }}
+          onOpenChat={openPreviewAsChat}
         />
       )}
     </>

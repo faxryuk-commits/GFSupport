@@ -22,6 +22,7 @@ interface ChannelListItemProps {
   channel: ChannelItemData
   isSelected: boolean
   onClick: () => void
+  onContextMenu?: (e: React.MouseEvent, channel: ChannelItemData) => void
 }
 
 const statusColors = {
@@ -37,10 +38,11 @@ const priorityColors = {
   urgent: 'bg-red-100 text-red-600',
 }
 
-export const ChannelListItem = memo(function ChannelListItem({ channel, isSelected, onClick }: ChannelListItemProps) {
+export const ChannelListItem = memo(function ChannelListItem({ channel, isSelected, onClick, onContextMenu }: ChannelListItemProps) {
   return (
     <div
       onClick={onClick}
+      onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, channel) } : undefined}
       className={`flex items-start gap-3 px-4 py-3 cursor-pointer border-b border-slate-50 transition-colors ${
         isSelected 
           ? 'bg-blue-50 border-l-2 border-l-blue-500' 
