@@ -58,7 +58,7 @@ export function checkIPRateLimit(ip: string): RateLimitResult {
  * 5 attempts per 5 minutes per IP.
  */
 export function checkAuthRateLimit(ip: string): RateLimitResult {
-  return checkRateLimit(`auth:${ip}`, 5, 300_000)
+  return checkRateLimit(`auth:${ip}`, 15, 300_000)
 }
 
 // Cleanup stale entries periodically
