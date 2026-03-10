@@ -18,17 +18,27 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return fallback
 
-  const token = authHeader.replace('Bearer ', '')
-  const parts = token.split('_')
-  if (parts.length < 3 || parts[0] !== 'agent') return fallback
-
-  const agentId = `${parts[0]}_${parts[1]}_${parts[2]}`
+  const token = authHeader.replace('Bearer ', '').trim()
+  if (!token.startsWith('agent')) return fallback
 
   try {
     const sql = getSQL()
-    const [agentRow] = await sql`
-      SELECT id, role, permissions, org_id FROM support_agents WHERE id = ${agentId} LIMIT 1
+
+    // New format: token IS the agentId (e.g. agent_1772526727220_akc3)
+    let [agentRow] = await sql`
+      SELECT id, role, permissions, org_id FROM support_agents WHERE id = ${token} LIMIT 1
     `
+
+    // Backward compat: old format agent_<agentId>_<timestamp>
+    if (!agentRow && token.startsWith('agent_agent_')) {
+      const inner = token.slice(6) // strip outer 'agent_' → agent_xxx_yyy_ts
+      ;[agentRow] = await sql`
+        SELECT id, role, permissions, org_id FROM support_agents
+        WHERE ${inner} LIKE id || '%' ORDER BY LENGTH(id) DESC LIMIT 1
+      `
+    }
+
+    const agentId = agentRow?.id || token
     if (!agentRow) return { ...fallback, agentId }
 
     const isSuperAdmin = Array.isArray(agentRow.permissions) && agentRow.permissions.includes('superadmin')

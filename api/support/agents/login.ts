@@ -115,8 +115,8 @@ export default async function handler(req: Request): Promise<Response> {
     // Update status to online
     await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agent.id}`
 
-    // Generate simple token
-    const token = `agent_${agent.id}_${Date.now().toString(36)}`
+    // Token = agentId (already has 'agent_' prefix)
+    const token = agent.id
     
     // Get avatar URL - from DB or fetch from Telegram
     let avatarUrl = agent.avatar_url
