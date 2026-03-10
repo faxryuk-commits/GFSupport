@@ -8,6 +8,7 @@ import {
 import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog } from '@/shared/ui'
 import { fetchChannels, updateChannel, disconnectChannel, type SlaCategory, SLA_CATEGORY_CONFIG } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
+import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 
 type FilterStatus = 'all' | 'active' | 'inactive' | 'awaiting'
 type SortBy = 'name' | 'messages' | 'lastActivity' | 'unread'
@@ -190,7 +191,20 @@ export function ChannelsListPage() {
       <div className="px-6 py-5 border-b border-slate-200 bg-white">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-xl font-semibold text-slate-800">Телеграм каналы</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold text-slate-800">Телеграм каналы</h1>
+              {channels.length > 0 && (
+                <PageHint
+                  title="Управление каналами"
+                  description="Здесь все подключённые Telegram-группы. Каждая группа = один канал."
+                  tips={[
+                    { title: 'SLA категория', text: 'Нажмите на канал, чтобы назначить категорию для отслеживания SLA.' },
+                    { title: 'Статусы', text: 'Активный — бот получает сообщения. Неактивный — бот удалён из группы.' },
+                    { title: 'Фильтры', text: 'Используйте фильтры сверху для поиска нужного канала.' },
+                  ]}
+                />
+              )}
+            </div>
             <p className="text-sm text-slate-500 mt-0.5">
               Управление подключёнными каналами и группами
             </p>
@@ -323,12 +337,29 @@ export function ChannelsListPage() {
       <div className="flex-1 overflow-auto">
         {filteredChannels.length === 0 ? (
           <div className="p-8">
-            <EmptyState
-              icon={<MessageSquare className="w-12 h-12 text-slate-300" />}
-              title="Каналы не найдены"
-              description={search ? 'Попробуйте изменить параметры поиска' : 'Добавьте первый канал'}
-              action={!search ? { label: 'Добавить канал', onClick: () => setShowAddModal(true) } : undefined}
-            />
+            {channels.length === 0 && !search ? (
+              <EducationalEmptyState
+                icon={<Hash className="w-16 h-16" />}
+                title="Нет подключённых каналов"
+                description="Каналы появляются автоматически, когда вы добавляете бота в Telegram-группу. Каждая группа = один канал в системе."
+                steps={[
+                  { icon: '🤖', text: 'Откройте Настройки → Интеграции и подключите Telegram бота' },
+                  { icon: '👥', text: 'Создайте группу в Telegram и добавьте бота + клиента' },
+                  { icon: '🔑', text: 'Назначьте бота администратором группы' },
+                  { icon: '✅', text: 'Канал появится здесь автоматически' },
+                ]}
+                action={{
+                  label: 'Перейти в настройки',
+                  onClick: () => window.location.href = '/settings',
+                }}
+              />
+            ) : (
+              <EmptyState
+                icon={<MessageSquare className="w-12 h-12 text-slate-300" />}
+                title="Каналы не найдены"
+                description="Попробуйте изменить параметры поиска"
+              />
+            )}
           </div>
         ) : (
           <table className="w-full">

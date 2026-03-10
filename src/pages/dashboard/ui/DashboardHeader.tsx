@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { PageHint } from '@/features/onboarding'
 
 interface Props {
   dateRange: string
@@ -33,7 +34,18 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
     <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Обзор</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-800">Обзор</h1>
+            <PageHint
+              title="Панель обзора"
+              description="Здесь отображаются ключевые метрики: активные кейсы, время ответа, нагрузка агентов и AI-рекомендации."
+              tips={[
+                { title: 'Метрики обновляются', text: 'Данные обновляются каждые 30 секунд автоматически.' },
+                { title: 'AI рекомендации', text: 'Система анализирует паттерны и предлагает действия для улучшения.' },
+                { title: 'Выбор периода', text: 'Используйте фильтр справа для просмотра за разные периоды.' },
+              ]}
+            />
+          </div>
           <p className="text-slate-500 mt-0.5">Добро пожаловать! Вот что происходит сегодня.</p>
         </div>
         <div className="flex items-center gap-3">

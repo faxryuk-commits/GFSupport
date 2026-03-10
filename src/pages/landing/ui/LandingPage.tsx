@@ -1,16 +1,89 @@
 import { Link } from 'react-router-dom'
 import {
-  MessageSquare, Shield, BarChart3, Zap, Bot, Users, Globe,
-  CheckCircle2, ArrowRight, Send, Phone, Brain, Clock, Target
+  MessageSquare, Shield, BarChart3, Zap, Users, Eye, Brain,
+  CheckCircle2, ArrowRight, Send, AlertTriangle, Clock, Target,
+  TrendingUp, Headphones, FileSearch, Lock, Layers, Lightbulb
 } from 'lucide-react'
 
+const painPoints = [
+  {
+    pain: 'Менеджер забыл ответить клиенту — вы узнали через неделю',
+    solution: 'AI фиксирует каждое сообщение и сигнализирует, если ответа нет',
+  },
+  {
+    pain: 'Клиент пишет в 3 чата — никто не берёт ответственность',
+    solution: 'Система сама создаёт кейс и назначает ответственного',
+  },
+  {
+    pain: '«Мы общались в чате» — а что решили, никто не знает',
+    solution: 'AI вытягивает суть из переписки: проблема, решение, обязательства',
+  },
+  {
+    pain: 'Голосовые на 5 минут — слушать некогда',
+    solution: 'Автоматическая транскрибация + AI-резюме за 3 секунды',
+  },
+]
+
 const features = [
-  { icon: MessageSquare, title: 'Мультиканальный чат', desc: 'Telegram и WhatsApp в одном окне. Все обращения клиентов в одной панели.' },
-  { icon: Bot, title: 'AI-автоответы', desc: 'Умные ответы на частые вопросы. GPT-4 анализирует контекст и помогает агентам.' },
-  { icon: BarChart3, title: 'SLA отчётность', desc: 'Время ответа, качество обслуживания, загрузка агентов — всё в реальном времени.' },
-  { icon: Shield, title: 'Изоляция данных', desc: 'Каждая компания — отдельное пространство. Полная безопасность и конфиденциальность.' },
-  { icon: Users, title: 'Командная работа', desc: 'Распределение обращений, эскалация, обязательства — прозрачный процесс для всей команды.' },
-  { icon: Zap, title: 'Автоматизация', desc: 'Авто-создание кейсов, транскрибация голосовых, умная маршрутизация.' },
+  {
+    icon: Eye,
+    title: 'Видеть всё, не читая каждый чат',
+    desc: 'AI читает переписки за вас и показывает: кто затягивает, где проблема, что обещали клиенту.',
+  },
+  {
+    icon: Target,
+    title: 'Контроль без микроменеджмента',
+    desc: 'Не надо заглядывать через плечо. Дашборд покажет кто работает, кто буксует, где горит.',
+  },
+  {
+    icon: Brain,
+    title: 'AI — ваши глаза и уши',
+    desc: 'GPT-4 анализирует контекст, определяет тональность, подсказывает ответы и выявляет паттерны.',
+  },
+  {
+    icon: Clock,
+    title: 'SLA без ручного контроля',
+    desc: 'Задайте правила один раз. Система сама следит за временем ответа и эскалирует просрочки.',
+  },
+  {
+    icon: Users,
+    title: 'Команда в одном окне',
+    desc: 'Telegram-группы с клиентами, внутренние чаты — всё в одной панели с историей и аналитикой.',
+  },
+  {
+    icon: Shield,
+    title: 'Данные остаются вашими',
+    desc: 'Изолированное пространство для каждой компании. Никто не видит чужих клиентов.',
+  },
+]
+
+const whoIsItFor = [
+  {
+    icon: Headphones,
+    title: 'Сервис и поддержка',
+    desc: 'Не теряйте обращения. Видьте время ответа. Держите SLA.',
+  },
+  {
+    icon: TrendingUp,
+    title: 'Продажи',
+    desc: 'Контролируйте как менеджеры ведут клиентов. Без чтения каждого сообщения.',
+  },
+  {
+    icon: Layers,
+    title: 'Операционка',
+    desc: 'Склад, логистика, закупки — любая коммуникация в группах под контролем.',
+  },
+  {
+    icon: FileSearch,
+    title: 'Руководство',
+    desc: 'Еженедельный отчёт за 30 секунд: кто работает, где просрочки, что решили.',
+  },
+]
+
+const steps = [
+  { num: '1', title: 'Получите код', desc: 'Напишите /start нашему боту в Telegram — он выдаст код' },
+  { num: '2', title: 'Создайте пространство', desc: 'Введите код, назовите компанию. Система покажет демо-данные' },
+  { num: '3', title: 'Подключите группы', desc: 'Добавьте бота в Telegram-группы с клиентами — он начнёт слушать' },
 ]
 
 const plans = [
@@ -20,12 +93,12 @@ const plans = [
     priceNote: 'навсегда',
     highlight: false,
     features: [
-      '2 агента',
-      '3 канала',
+      '2 сотрудника',
+      '3 группы/канала',
       '1 000 сообщений/мес',
       'Telegram интеграция',
-      'Управление кейсами',
-      'Базовая аналитика',
+      'AI-резюме переписок',
+      'Базовый дашборд',
     ],
     cta: 'Начать бесплатно',
   },
@@ -35,15 +108,15 @@ const plans = [
     priceNote: '/мес',
     highlight: true,
     features: [
-      '10 агентов',
-      '20 каналов',
+      '10 сотрудников',
+      '20 групп/каналов',
       '20 000 сообщений/мес',
       'Telegram + WhatsApp',
-      'SLA отчёты',
-      'База знаний',
-      'AI автоответы',
-      'Рассылки',
-      'Обязательства',
+      'SLA-контроль',
+      'AI-анализ тональности',
+      'Обязательства и дедлайны',
+      'Рассылки клиентам',
+      'Аналитика по команде',
     ],
     cta: 'Попробовать',
   },
@@ -53,23 +126,17 @@ const plans = [
     priceNote: '/мес',
     highlight: false,
     features: [
-      'Безлимит агентов',
-      'Безлимит каналов',
+      'Безлимит сотрудников',
+      'Безлимит групп',
       'Безлимит сообщений',
       'Всё из Business',
-      'AI обучение',
+      'AI-обучение на ваших данных',
+      'Выгрузка отчётов',
       'Приоритетная поддержка',
-      'Кастомные интеграции',
       'Выделенный менеджер',
     ],
     cta: 'Связаться',
   },
-]
-
-const steps = [
-  { icon: Send, title: 'Регистрация', desc: 'Напишите /start нашему боту и создайте аккаунт за 2 минуты' },
-  { icon: Globe, title: 'Подключите каналы', desc: 'Добавьте Telegram бота и WhatsApp в настройках' },
-  { icon: Target, title: 'Работайте', desc: 'Принимайте обращения, отслеживайте SLA и растите' },
 ]
 
 export default function LandingPage() {
@@ -84,80 +151,125 @@ export default function LandingPage() {
             </div>
             <span className="font-bold text-lg text-gray-900">GFSupport</span>
           </div>
+          <nav className="hidden md:flex items-center gap-8 text-sm text-gray-500">
+            <a href="#problems" className="hover:text-gray-900 transition-colors">Проблемы</a>
+            <a href="#features" className="hover:text-gray-900 transition-colors">Возможности</a>
+            <a href="#for-whom" className="hover:text-gray-900 transition-colors">Для кого</a>
+            <a href="#pricing" className="hover:text-gray-900 transition-colors">Тарифы</a>
+          </nav>
           <div className="flex items-center gap-3">
             <Link to="/login" className="text-sm text-gray-600 hover:text-gray-900 font-medium px-4 py-2">
               Войти
             </Link>
             <Link to="/signup" className="text-sm bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 font-medium transition-colors">
-              Начать бесплатно
+              Попробовать
             </Link>
           </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="pt-32 pb-20 px-6">
+      <section className="pt-32 pb-24 px-6">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
-            <Zap className="w-4 h-4" />
-            Платформа поддержки нового поколения
+          <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 text-sm font-medium px-4 py-1.5 rounded-full mb-6">
+            <Lightbulb className="w-4 h-4" />
+            Не CRM. Не тикет-система. Контроль коммуникаций.
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900 leading-tight mb-6">
-            Поддержка клиентов<br />
-            <span className="text-blue-600">без хаоса</span>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 leading-tight mb-6">
+            Знайте, что происходит<br />
+            <span className="text-blue-600">в каждом чате вашей команды</span>
           </h1>
-          <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-10">
-            Объедините Telegram и WhatsApp в единую панель. AI помогает отвечать быстрее, SLA-отчёты держат команду в тонусе.
+          <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
+            AI читает переписки с клиентами за вас. Вы видите: кто тянет с ответом, где назревает проблема, что пообещали клиенту — и всё это без чтения сотен сообщений.
           </p>
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               to="/signup"
               className="inline-flex items-center gap-2 bg-blue-600 text-white px-8 py-3.5 rounded-xl hover:bg-blue-700 font-semibold text-lg transition-colors shadow-lg shadow-blue-600/25"
             >
-              Начать бесплатно <ArrowRight className="w-5 h-5" />
+              Попробовать бесплатно <ArrowRight className="w-5 h-5" />
             </Link>
+            <a
+              href="#problems"
+              className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 px-6 py-3.5 font-medium transition-colors"
+            >
+              Узнать подробнее
+            </a>
           </div>
-          <p className="text-sm text-gray-400 mt-4">Без карты. Бесплатный план навсегда.</p>
+          <p className="text-sm text-gray-400 mt-4">Бесплатный план навсегда. Настройка за 5 минут.</p>
         </div>
       </section>
 
-      {/* Integrations strip */}
-      <section className="py-12 border-y border-gray-100 bg-gray-50/50">
-        <div className="max-w-4xl mx-auto px-6 flex items-center justify-center gap-12 flex-wrap">
-          <div className="flex items-center gap-3 text-gray-400">
-            <Send className="w-7 h-7" />
-            <span className="font-semibold text-lg">Telegram</span>
+      {/* Social proof strip */}
+      <section className="py-8 border-y border-gray-100 bg-gray-50/50">
+        <div className="max-w-4xl mx-auto px-6 flex items-center justify-center gap-10 flex-wrap text-sm text-gray-400">
+          <span className="flex items-center gap-2"><Send className="w-5 h-5" /> Telegram</span>
+          <span className="flex items-center gap-2"><MessageSquare className="w-5 h-5" /> WhatsApp</span>
+          <span className="flex items-center gap-2"><Brain className="w-5 h-5" /> GPT-4 анализ</span>
+          <span className="flex items-center gap-2"><Headphones className="w-5 h-5" /> Whisper транскрибация</span>
+        </div>
+      </section>
+
+      {/* Pain points */}
+      <section id="problems" className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Знакомо?</h2>
+            <p className="text-lg text-gray-500 max-w-xl mx-auto">Типичные проблемы бизнеса, где коммуникация с клиентами идёт через мессенджеры</p>
           </div>
-          <div className="flex items-center gap-3 text-gray-400">
-            <Phone className="w-7 h-7" />
-            <span className="font-semibold text-lg">WhatsApp</span>
-          </div>
-          <div className="flex items-center gap-3 text-gray-400">
-            <Brain className="w-7 h-7" />
-            <span className="font-semibold text-lg">OpenAI GPT-4</span>
-          </div>
-          <div className="flex items-center gap-3 text-gray-400">
-            <Clock className="w-7 h-7" />
-            <span className="font-semibold text-lg">Whisper AI</span>
+          <div className="grid md:grid-cols-2 gap-6">
+            {painPoints.map((p, i) => (
+              <div key={i} className="rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow">
+                <div className="bg-red-50 px-6 py-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-red-800 font-medium text-sm leading-relaxed">{p.pain}</p>
+                </div>
+                <div className="bg-green-50 px-6 py-4 flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-green-800 text-sm leading-relaxed">{p.solution}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Features */}
-      <section id="features" className="py-24 px-6">
+      <section id="features" className="py-24 px-6 bg-gray-50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Всё для эффективной поддержки</h2>
-            <p className="text-lg text-gray-500 max-w-xl mx-auto">Инструменты, которые помогают вашей команде работать быстрее и качественнее</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Как это работает</h2>
+            <p className="text-lg text-gray-500 max-w-2xl mx-auto">Бот сидит в ваших Telegram-группах с клиентами. AI анализирует всё. Вы видите картину целиком.</p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((f, i) => (
-              <div key={i} className="p-6 rounded-2xl border border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-50 transition-all group">
+              <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-50 transition-all group">
                 <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-100 transition-colors">
                   <f.icon className="w-6 h-6 text-blue-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{f.title}</h3>
-                <p className="text-gray-500 leading-relaxed">{f.desc}</p>
+                <p className="text-gray-500 leading-relaxed text-sm">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* For whom */}
+      <section id="for-whom" className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Для кого это</h2>
+            <p className="text-lg text-gray-500 max-w-xl mx-auto">Любой бизнес, где команда общается с клиентами в мессенджерах</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {whoIsItFor.map((w, i) => (
+              <div key={i} className="text-center p-6 rounded-2xl border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-all">
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <w.icon className="w-7 h-7 text-blue-600" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-2">{w.title}</h3>
+                <p className="text-sm text-gray-500 leading-relaxed">{w.desc}</p>
               </div>
             ))}
           </div>
@@ -165,31 +277,91 @@ export default function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section className="py-24 px-6 bg-gray-50">
+      <section className="py-24 px-6 bg-gradient-to-r from-slate-50 to-blue-50">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Начните за 3 шага</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Запуск за 5 минут</h2>
+            <p className="text-lg text-gray-500">Никакой настройки серверов. Никаких интеграторов.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {steps.map((s, i) => (
               <div key={i} className="text-center">
-                <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold">
-                  {i + 1}
+                <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold shadow-lg shadow-blue-600/20">
+                  {s.num}
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{s.title}</h3>
-                <p className="text-gray-500">{s.desc}</p>
+                <p className="text-gray-500 text-sm">{s.desc}</p>
               </div>
             ))}
+          </div>
+          <div className="text-center mt-12">
+            <Link
+              to="/signup"
+              className="inline-flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 font-semibold transition-colors shadow-lg shadow-blue-600/20"
+            >
+              Начать сейчас <ArrowRight className="w-5 h-5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Comparison */}
+      <section className="py-24 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Без нас vs С нами</h2>
+          </div>
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-red-50/50 border border-red-100 rounded-2xl p-8">
+              <h3 className="text-lg font-bold text-red-800 mb-6 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" /> Сейчас у вас
+              </h3>
+              <ul className="space-y-4">
+                {[
+                  'Переписки разбросаны по чатам',
+                  'Непонятно, ответили клиенту или нет',
+                  'Голосовые никто не слушает',
+                  'Обещания забываются',
+                  'Аналитика = «мне кажется, всё ок»',
+                  'Контроль = читать каждый чат',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm text-red-700">
+                    <span className="w-5 h-5 bg-red-200 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-red-600">✕</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-green-50/50 border border-green-100 rounded-2xl p-8">
+              <h3 className="text-lg font-bold text-green-800 mb-6 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5" /> С GFSupport
+              </h3>
+              <ul className="space-y-4">
+                {[
+                  'Все коммуникации в одной панели',
+                  'SLA-таймер на каждое обращение',
+                  'Голосовые → текст + резюме за 3 сек',
+                  'Обязательства фиксируются и отслеживаются',
+                  'Дашборд с цифрами в реальном времени',
+                  'AI контролирует — вы принимаете решения',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm text-green-700">
+                    <span className="w-5 h-5 bg-green-200 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-green-600">✓</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-24 px-6">
+      <section id="pricing" className="py-24 px-6 bg-gray-50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Тарифы</h2>
-            <p className="text-lg text-gray-500">Начните бесплатно, масштабируйтесь по мере роста</p>
+            <p className="text-lg text-gray-500">Начните бесплатно. Масштабируйтесь когда будете готовы.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {plans.map((plan, i) => (
@@ -241,21 +413,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-24 px-6 bg-gradient-to-br from-blue-600 to-blue-800">
+      {/* Final CTA */}
+      <section className="py-24 px-6 bg-gradient-to-br from-[#1a2b4b] to-[#0f172a]">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Готовы улучшить поддержку?
+            Перестаньте гадать.<br />Начните видеть.
           </h2>
-          <p className="text-xl text-blue-200 mb-8">
-            Присоединяйтесь к компаниям, которые уже используют GFSupport
+          <p className="text-xl text-slate-300 mb-8 leading-relaxed">
+            Подключите GFSupport и за 5 минут узнайте, что на самом деле происходит в переписках вашей команды.
           </p>
           <Link
             to="/signup"
-            className="inline-flex items-center gap-2 bg-white text-blue-600 px-8 py-3.5 rounded-xl font-semibold text-lg hover:bg-blue-50 transition-colors"
+            className="inline-flex items-center gap-2 bg-blue-600 text-white px-8 py-3.5 rounded-xl font-semibold text-lg hover:bg-blue-500 transition-colors shadow-lg shadow-blue-600/30"
           >
-            Создать аккаунт <ArrowRight className="w-5 h-5" />
+            Попробовать бесплатно <ArrowRight className="w-5 h-5" />
           </Link>
+          <p className="text-sm text-slate-500 mt-4">Бесплатный план. Без карты. Настройка за 5 минут.</p>
         </div>
       </section>
 

@@ -31,6 +31,7 @@ import {
   type EnvStatus,
 } from '@/shared/api'
 import { apiGet } from '@/shared/services/api.service'
+import { PageHint, TabGuide } from '@/features/onboarding'
 import { TeamPage } from '@/pages/team/ui/TeamPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
@@ -353,7 +354,19 @@ export function SettingsPage() {
                 <Settings className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-slate-800">Настройки</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold text-slate-800">Настройки</h1>
+                  <PageHint
+                    title="Настройки системы"
+                    description="Здесь вы управляете интеграциями, командой, автоматизацией и внешним видом системы."
+                    tips={[
+                      { title: 'Интеграции', text: 'Подключите Telegram бота, OpenAI и другие сервисы.' },
+                      { title: 'Команда', text: 'Добавьте агентов и назначьте роли: Администратор, Менеджер, Агент.' },
+                      { title: 'Автоответы', text: 'Настройте автоматические ответы для быстрой реакции.' },
+                      { title: 'Уведомления', text: 'Включите звуки и push-уведомления о новых сообщениях.' },
+                    ]}
+                  />
+                </div>
                 <p className="text-slate-500 text-sm">Управление параметрами системы</p>
               </div>
             </div>
@@ -490,51 +503,136 @@ export function SettingsPage() {
             {/* Content Body */}
             <div className="space-y-6">
               {activeTab === 'general' && (
+                <>
+                <TabGuide
+                  id="settings-general"
+                  text="Здесь задаются базовые параметры: название компании, токен бота, SLA-настройки. Начните с ввода токена Telegram-бота — без него система не сможет получать сообщения."
+                  tips={[
+                    'Токен бота получите у @BotFather в Telegram (команда /newbot)',
+                    'Время ответа и SLA определяют допустимую скорость реакции на обращения',
+                    'Рабочие часы влияют на расчёт SLA — нерабочее время не учитывается',
+                  ]}
+                />
                 <GeneralSettings
                   general={generalSettings}
                   response={responseSettings}
                   onGeneralChange={setGeneralSettings}
                   onResponseChange={setResponseSettings}
                 />
+                </>
               )}
 
               {activeTab === 'team' && (
+                <>
+                <TabGuide
+                  id="settings-team"
+                  text="Добавьте сотрудников в систему. Каждый агент получит доступ для работы с чатами и кейсами."
+                  tips={[
+                    'Роль «Администратор» — полный доступ ко всем настройкам',
+                    'Роль «Менеджер» — управление кейсами и командой',
+                    'Роль «Агент» — работа с чатами и кейсами',
+                  ]}
+                />
                 <div className="-mt-6">
                   <TeamPage embedded />
                 </div>
+                </>
               )}
 
               {activeTab === 'users' && (
+                <>
+                <TabGuide
+                  id="settings-users"
+                  text="База клиентов и контактов. Здесь хранятся данные о людях, с которыми вы общаетесь в группах."
+                  tips={[
+                    'Клиенты добавляются автоматически при первом сообщении в группе',
+                    'Можно вручную добавить контакт с пометками',
+                  ]}
+                />
                 <div className="-mt-6">
                   <UsersPage embedded />
                 </div>
+                </>
               )}
 
               {activeTab === 'markets' && (
+                <>
+                <TabGuide
+                  id="settings-markets"
+                  text="Рынки помогают разделить данные по странам или регионам. Полезно если ваша компания работает в нескольких странах."
+                  tips={[
+                    'Каждый рынок может иметь свои каналы и агентов',
+                    'Фильтр по рынку доступен в сайдбаре слева',
+                  ]}
+                />
                 <MarketsSettings />
+                </>
               )}
 
               {activeTab === 'automations' && (
+                <>
+                <TabGuide
+                  id="settings-automations"
+                  text="Автоматизации выполняют действия без вашего участия. Создайте правила, чтобы система сама назначала кейсы, отправляла уведомления и менялa статусы."
+                  tips={[
+                    'Триггер — событие, которое запускает правило (новое сообщение, кейс, и т.д.)',
+                    'Действие — что нужно сделать (назначить агента, сменить статус, отправить сообщение)',
+                  ]}
+                />
                 <div className="-mt-6">
                   <AutomationsPage embedded />
                 </div>
+                </>
               )}
 
               {activeTab === 'autoreply' && (
+                <>
+                <TabGuide
+                  id="settings-autoreply"
+                  text="AI-автоответы позволяют боту отвечать клиентам без участия оператора. Настройте приветствие, FAQ и шаблоны ответов."
+                  tips={[
+                    'Приветствие — автоматический ответ на первое сообщение клиента',
+                    'FAQ — бот ищет ответ в базе знаний и отвечает сам',
+                    'Шаблоны — готовые ответы, которые агент может отправить в один клик',
+                  ]}
+                />
                 <AutoReplySettings
                   settings={autoReplySettings}
                   onSettingsChange={setAutoReplySettings}
                 />
+                </>
               )}
 
               {activeTab === 'notifications' && (
+                <>
+                <TabGuide
+                  id="settings-notifications"
+                  text="Настройте, о каких событиях система должна вас оповещать. Можно включить/выключить каждый тип уведомления отдельно."
+                  tips={[
+                    'Push — уведомления в браузере (нужно разрешить в настройках браузера)',
+                    'Email — письма на почту (требуется подключение SMTP)',
+                    'В приложении — уведомления внутри системы',
+                  ]}
+                />
                 <NotificationsSettings
                   notifications={notifications}
                   onToggle={handleToggleNotification}
                 />
+                </>
               )}
 
               {activeTab === 'integrations' && (
+                <>
+                <TabGuide
+                  id="settings-integrations"
+                  text="Интеграции — это внешние сервисы, подключённые к системе. Telegram-бот получает сообщения, OpenAI анализирует их, Whisper распознаёт голос."
+                  tips={[
+                    'Telegram — основной канал получения сообщений из групп',
+                    'OpenAI — AI-анализ сообщений, создание кейсов, рекомендации',
+                    'Whisper — преобразование голосовых сообщений в текст',
+                    'Зелёная точка = подключено и работает',
+                  ]}
+                />
                 <IntegrationsSettings
                   integrations={integrations}
                   health={healthData}
@@ -547,28 +645,55 @@ export function SettingsPage() {
                   onConnect={handleConnectIntegration}
                   onDisconnect={handleDisconnectIntegration}
                 />
+                </>
               )}
 
               {activeTab === 'security' && (
+                <>
+                <TabGuide
+                  id="settings-security"
+                  text="Настройки безопасности: двухфакторная аутентификация, время сессии, белый список IP-адресов."
+                  tips={[
+                    'Время сессии — через сколько минут неактивности система разлогинит пользователя',
+                    'IP-список — только указанные адреса смогут входить в систему',
+                  ]}
+                />
                 <SecuritySettings
                   settings={securitySettings}
                   onChange={setSecuritySettings}
                 />
+                </>
               )}
 
               {activeTab === 'api' && (
+                <>
+                <TabGuide
+                  id="settings-api"
+                  text="API-ключи нужны для подключения внешних систем к GFSupport. Например, CRM или ERP может отправлять данные через API."
+                  tips={[
+                    'Создайте ключ и используйте его в заголовке Authorization при API-запросах',
+                    'Каждый ключ можно отозвать в любой момент',
+                  ]}
+                />
                 <ApiKeysSettings
                   apiKeys={apiKeys}
                   onDelete={handleDeleteApiKey}
                   onAdd={handleAddApiKey}
                 />
+                </>
               )}
 
               {activeTab === 'appearance' && (
+                <>
+                <TabGuide
+                  id="settings-appearance"
+                  text="Персонализация интерфейса: тема (светлая/тёмная), акцентный цвет, формат дат и язык."
+                />
                 <AppearanceSettings
                   settings={appearanceSettings}
                   onChange={setAppearanceSettings}
                 />
+                </>
               )}
             </div>
           </div>

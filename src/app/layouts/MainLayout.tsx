@@ -7,6 +7,7 @@ import { useMarket } from '@/shared/hooks/useMarket'
 import { useOrg, OrgContext } from '@/shared/hooks/useOrg'
 import { playCaseSoundIfEnabled, playMessageSoundIfEnabled } from '@/shared/lib'
 import { clearCache } from '@/shared/services/api.service'
+import { OnboardingWizard, DemoBanner } from '@/features/onboarding'
 
 
 export function MainLayout() {
@@ -225,11 +226,13 @@ export function MainLayout() {
           orgPlan={orgState.org?.plan}
         />
         <main className="flex-1 h-full overflow-auto">
+          <DemoBanner />
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>
         </main>
       </div>
+      <OnboardingWizard />
     </OrgContext.Provider>
   )
 }

@@ -7,6 +7,7 @@ import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCa
 import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
+import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 
 // Маппинг Case в CaseCardData для отображения
 function mapCaseToCardData(c: Case): CaseCardData {
@@ -406,7 +407,19 @@ export function CasesPage() {
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div className="flex items-center gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">Кейсы</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-slate-800">Кейсы</h1>
+                <PageHint
+                  title="Управление кейсами"
+                  description="Кейсы — это обращения клиентов, которые AI создаёт автоматически из сообщений в группах."
+                  tips={[
+                    { title: 'Автоматическое создание', text: 'AI анализирует сообщения и создаёт кейсы при обнаружении проблемы.' },
+                    { title: 'Канбан-доска', text: 'Перетаскивайте кейсы между статусами: Обнаружен → В работе → Решён.' },
+                    { title: 'Назначение агента', text: 'Каждый кейс можно назначить на ответственного агента.' },
+                    { title: 'Архив', text: 'Решённые кейсы автоматически попадают в архив.' },
+                  ]}
+                />
+              </div>
               <p className="text-slate-500 mt-0.5">Управление обращениями</p>
             </div>
             
@@ -583,6 +596,22 @@ export function CasesPage() {
         )}
 
         {/* Kanban Board / Archive View */}
+        {cases.length === 0 && !loading ? (
+          <EducationalEmptyState
+            icon={<Briefcase className="w-16 h-16" />}
+            title="Кейсов пока нет"
+            description="Кейсы создаются автоматически, когда AI обнаруживает проблему клиента в чате. Вы также можете создать кейс вручную."
+            steps={[
+              { icon: '🤖', text: 'Подключите бота в группу с клиентом' },
+              { icon: '💬', text: 'Клиент напишет о проблеме в группу' },
+              { icon: '📋', text: 'AI создаст кейс автоматически' },
+            ]}
+            action={{
+              label: 'Создать кейс вручную',
+              onClick: () => setIsCreateModalOpen(true),
+            }}
+          />
+        ) : (
         <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
           {(viewMode === 'active' ? KANBAN_STATUSES : ARCHIVE_STATUSES).map(status => {
             const config = CASE_STATUS_CONFIG[status]
@@ -636,6 +665,7 @@ export function CasesPage() {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* Create Case Modal */}

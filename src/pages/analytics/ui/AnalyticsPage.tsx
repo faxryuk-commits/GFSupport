@@ -8,6 +8,7 @@ import { fetchAnalytics, type AnalyticsData } from '@/shared/api'
 import { Badge } from '@/shared/ui'
 import { ResponseTimeDetailsModal } from '@/features/analytics'
 import { FeedbackStats } from '@/features/feedback/ui'
+import { PageHint } from '@/features/onboarding'
 
 // Перевод категорий на русский
 const categoryLabels: Record<string, string> = {
@@ -115,7 +116,19 @@ export function AnalyticsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Сводная аналитика</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-800">Сводная аналитика</h1>
+            <PageHint
+              title="Аналитика и отчёты"
+              description="Здесь собрана детальная статистика по всем каналам: сообщения, кейсы, время ответа, нагрузка агентов."
+              tips={[
+                { title: 'Период', text: 'Выберите период для анализа — сегодня, неделя, месяц или произвольный диапазон.' },
+                { title: 'Время ответа', text: 'Среднее время первого ответа — ключевая метрика SLA.' },
+                { title: 'Категории', text: 'AI автоматически категоризирует проблемы клиентов.' },
+                { title: 'Нагрузка команды', text: 'Отслеживайте, кто из агентов перегружен или свободен.' },
+              ]}
+            />
+          </div>
           <p className="text-slate-500 mt-0.5">Детальная статистика и отчёты</p>
         </div>
         <div className="flex items-center gap-3">

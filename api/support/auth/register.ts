@@ -64,43 +64,45 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Слишком много запросов. Попробуйте позже.' }, 429)
       }
 
-      const { telegramUsername, companyName } = body
-      if (!telegramUsername || !companyName) {
-        return json({ error: 'Укажите Telegram username и название компании' }, 400)
+      const { regCode, companyName, ownerName } = body
+      if (!regCode || !companyName) {
+        return json({ error: 'Укажите код из бота и название компании' }, 400)
       }
 
-      const cleanUsername = telegramUsername.replace(/^@/, '').toLowerCase().trim()
-
-      const [existingAgent] = await sql`
-        SELECT id FROM support_agents WHERE LOWER(username) = ${cleanUsername} LIMIT 1
-      `
-      if (existingAgent) {
-        return json({ error: 'Пользователь с таким username уже существует' }, 409)
-      }
+      const cleanCode = regCode.trim()
 
       const [platformUser] = await sql`
-        SELECT telegram_id, username FROM support_platform_users
-        WHERE LOWER(username) = ${cleanUsername} LIMIT 1
+        SELECT telegram_id, username, first_name FROM support_platform_users
+        WHERE reg_code = ${cleanCode} LIMIT 1
       `
       if (!platformUser) {
         const botUsername = await getPlatformBotUsername()
         return json({
-          error: `Сначала напишите /start боту @${botUsername} в Telegram`,
-          code: 'BOT_NOT_STARTED',
+          error: `Код не найден. Отправьте /start боту @${botUsername} и используйте полученный код.`,
+          code: 'INVALID_CODE',
           botUsername,
         }, 400)
       }
 
       const telegramId = platformUser.telegram_id
+      const displayName = platformUser.username || platformUser.first_name || telegramId
+
+      const [existingAgent] = await sql`
+        SELECT id FROM support_agents WHERE telegram_id = ${telegramId} LIMIT 1
+      `
+      if (existingAgent) {
+        return json({ error: 'Этот Telegram аккаунт уже зарегистрирован' }, 409)
+      }
+
       const otp = generateOTP()
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
       await sql`
         INSERT INTO support_otp (email, code, expires_at, company_name, telegram_username)
-        VALUES (${cleanUsername}, ${otp}, ${expiresAt}, ${companyName}, ${cleanUsername})
+        VALUES (${telegramId}, ${otp}, ${expiresAt}, ${companyName}, ${displayName})
         ON CONFLICT (email) DO UPDATE SET
           code = ${otp}, expires_at = ${expiresAt},
-          company_name = ${companyName}, telegram_username = ${cleanUsername},
+          company_name = ${companyName}, telegram_username = ${displayName},
           attempts = 0
       `
 
@@ -115,35 +117,41 @@ export default async function handler(req: Request): Promise<Response> {
             parse_mode: 'HTML',
           }),
         })
-      } else {
-        console.log(`[Register] OTP for @${cleanUsername}: ${otp} (no platform bot token set)`)
       }
 
-      return json({ success: true, message: 'OTP отправлен в Telegram', telegramUsername: cleanUsername })
+      return json({ success: true, message: 'OTP отправлен в Telegram', telegramId, displayName })
     }
 
     if (step === 'verify-and-create') {
-      const { telegramUsername, code, companyName, password, ownerName } = body
-      if (!telegramUsername || !code || !password) {
-        return json({ error: 'Укажите telegramUsername, code и password' }, 400)
+      const { regCode, code, companyName, password, ownerName } = body
+      if (!regCode || !code || !password) {
+        return json({ error: 'Укажите код из бота, OTP-код и пароль' }, 400)
       }
 
-      const cleanUsername = telegramUsername.replace(/^@/, '').toLowerCase().trim()
+      const cleanCode = regCode.trim()
+
+      const [platformUser] = await sql`
+        SELECT telegram_id, username, first_name FROM support_platform_users
+        WHERE reg_code = ${cleanCode} LIMIT 1
+      `
+      if (!platformUser) return json({ error: 'Код из бота не найден' }, 400)
+
+      const telegramId = platformUser.telegram_id
 
       const [otpRow] = await sql`
-        SELECT * FROM support_otp WHERE email = ${cleanUsername} LIMIT 1
+        SELECT * FROM support_otp WHERE email = ${telegramId} LIMIT 1
       `
 
       if (!otpRow) return json({ error: 'OTP не найден. Запросите новый код.' }, 400)
       if (otpRow.attempts >= 5) return json({ error: 'Слишком много попыток. Запросите новый код.' }, 429)
       if (new Date(otpRow.expires_at) < new Date()) return json({ error: 'Код истёк. Запросите новый.' }, 400)
 
-      await sql`UPDATE support_otp SET attempts = attempts + 1 WHERE email = ${cleanUsername}`
+      await sql`UPDATE support_otp SET attempts = attempts + 1 WHERE email = ${telegramId}`
 
       if (otpRow.code !== code) return json({ error: 'Неверный код' }, 400)
 
-      const name = companyName || otpRow.company_name || cleanUsername
-      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
+      const name = companyName || otpRow.company_name || 'Моя компания'
+      const slug = name.toLowerCase().replace(/[^a-z0-9а-яё]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
 
       const existingSlug = await sql`SELECT id FROM support_organizations WHERE slug = ${slug}`
       const finalSlug = existingSlug.length > 0 ? `${slug}-${Date.now().toString(36).slice(-4)}` : slug
@@ -155,30 +163,26 @@ export default async function handler(req: Request): Promise<Response> {
       `
 
       const agentId = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      const agentName = ownerName || cleanUsername
+      const agentName = ownerName || platformUser.first_name || platformUser.username || 'Администратор'
+      const agentUsername = platformUser.username || `user_${telegramId.slice(-6)}`
       const passwordHash = hashPassword(password)
 
-      const [platformUser] = await sql`
-        SELECT telegram_id FROM support_platform_users
-        WHERE LOWER(username) = ${cleanUsername} LIMIT 1
-      `
-      const telegramId = platformUser?.telegram_id || null
-
       await sql`
-        INSERT INTO support_agents (id, name, username, role, password_hash, org_id, status, created_at)
-        VALUES (${agentId}, ${agentName}, ${cleanUsername}, 'admin', ${passwordHash}, ${orgId}, 'offline', NOW())
+        INSERT INTO support_agents (id, name, username, role, password_hash, org_id, status, telegram_id, created_at)
+        VALUES (${agentId}, ${agentName}, ${agentUsername}, 'admin', ${passwordHash}, ${orgId}, 'offline', ${telegramId}, NOW())
       `
 
       await sql`UPDATE support_organizations SET owner_agent_id = ${agentId} WHERE id = ${orgId}`
 
-      await sql`DELETE FROM support_otp WHERE email = ${cleanUsername}`
+      await sql`DELETE FROM support_otp WHERE email = ${telegramId}`
+      await sql`UPDATE support_platform_users SET reg_code = NULL WHERE telegram_id = ${telegramId}`
 
       const token = agentId
 
       writeAuditLog({
         orgId, agentId, action: 'register.complete',
         ip: getClientIP(req),
-        details: { telegramUsername: cleanUsername, telegramId, companyName: name },
+        details: { telegramId, companyName: name },
       })
 
       return json({
@@ -187,7 +191,7 @@ export default async function handler(req: Request): Promise<Response> {
         agent: {
           id: agentId,
           name: agentName,
-          username: cleanUsername,
+          username: agentUsername,
           role: 'admin',
           status: 'online',
           orgId,

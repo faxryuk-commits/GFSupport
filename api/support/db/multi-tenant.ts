@@ -111,9 +111,13 @@ async function stepA(sql: any): Promise<string[]> {
       telegram_id VARCHAR(50) UNIQUE NOT NULL,
       username VARCHAR(255),
       first_name VARCHAR(255),
+      reg_code VARCHAR(10),
       created_at TIMESTAMP DEFAULT NOW()
     )
   `))
+
+  log.push(await safe('platform_users.reg_code', () =>
+    sql`ALTER TABLE support_platform_users ADD COLUMN IF NOT EXISTS reg_code VARCHAR(10)`))
 
   log.push(await safe('TABLE support_super_admins', () => sql`
     CREATE TABLE IF NOT EXISTS support_super_admins (

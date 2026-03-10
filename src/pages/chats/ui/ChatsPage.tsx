@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList, Eye, CheckCheck, MessageSquare } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
+import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 import { ChannelListItem, ChannelPreviewModal, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { AIContextPanel } from '@/features/ai-assistant/ui'
@@ -809,7 +810,19 @@ export function ChatsPage() {
         <div className="w-[360px] bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-slate-100">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-slate-800">Чаты</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-800">Чаты</h2>
+                <PageHint
+                  title="Чаты"
+                  description="Все сообщения из подключённых Telegram-групп отображаются здесь в реальном времени."
+                  tips={[
+                    { title: 'Быстрый ответ', text: 'Выберите чат слева и отвечайте прямо из панели.' },
+                    { title: 'AI-контекст', text: 'Нажмите на иконку AI справа для просмотра контекста и рекомендаций.' },
+                    { title: 'Фильтры', text: 'Используйте фильтры для поиска непрочитанных или ожидающих чатов.' },
+                    { title: 'Закрепление', text: 'Правой кнопкой мыши можно закрепить важный чат наверху.' },
+                  ]}
+                />
+              </div>
               <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                 {channels.filter(c => c.unread > 0).length} непрочитанных
               </span>
@@ -874,6 +887,38 @@ export function ChatsPage() {
                   className="mt-3 px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg"
                 >
                   Попробовать снова
+                </button>
+              </div>
+            ) : channels.length === 0 ? (
+              <div className="flex flex-col items-center px-5 py-10 text-center">
+                <MessageSquare className="w-10 h-10 text-gray-300 mb-3" />
+                <h3 className="text-sm font-semibold text-gray-800 mb-1">Чатов пока нет</h3>
+                <p className="text-xs text-gray-500 mb-5 max-w-[240px]">
+                  Чтобы чаты появились, нужно подключить бота и добавить его в группу
+                </p>
+                <div className="w-full text-left space-y-2.5 mb-5">
+                  {[
+                    { num: '1', text: 'Откройте Настройки → Интеграции', sub: 'Вставьте токен Telegram бота' },
+                    { num: '2', text: 'Создайте группу в Telegram', sub: 'Добавьте туда бота и клиента' },
+                    { num: '3', text: 'Сделайте бота администратором', sub: 'Без этого бот не видит сообщения' },
+                    { num: '4', text: 'Напишите что-нибудь в группу', sub: 'Чат появится здесь автоматически' },
+                  ].map(s => (
+                    <div key={s.num} className="flex items-start gap-2.5">
+                      <div className="w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                        {s.num}
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-gray-800">{s.text}</p>
+                        <p className="text-[11px] text-gray-400">{s.sub}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => window.location.href = '/settings'}
+                  className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Перейти в настройки
                 </button>
               </div>
             ) : filteredChannels.length === 0 ? (

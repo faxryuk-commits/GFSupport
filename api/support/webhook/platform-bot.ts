@@ -26,6 +26,10 @@ async function sendTgMessage(botToken: string, chatId: string | number, text: st
   })
 }
 
+function generateRegCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ ok: true })
@@ -47,12 +51,15 @@ export default async function handler(req: Request): Promise<Response> {
 
     const sql = getSQL()
 
+    const regCode = generateRegCode()
+
     await sql`
-      INSERT INTO support_platform_users (telegram_id, username, first_name, created_at)
-      VALUES (${telegramId}, ${username}, ${firstName}, NOW())
+      INSERT INTO support_platform_users (telegram_id, username, first_name, reg_code, created_at)
+      VALUES (${telegramId}, ${username}, ${firstName}, ${regCode}, NOW())
       ON CONFLICT (telegram_id) DO UPDATE SET
         username = COALESCE(${username}, support_platform_users.username),
-        first_name = COALESCE(${firstName}, support_platform_users.first_name)
+        first_name = COALESCE(${firstName}, support_platform_users.first_name),
+        reg_code = ${regCode}
     `
 
     if (text === '/start') {
@@ -62,7 +69,11 @@ export default async function handler(req: Request): Promise<Response> {
         await sendTgMessage(
           botToken,
           chatId,
-          `${greeting} 👋\n\nЯ бот платформы <b>GFSupport</b>.\n\nТеперь вы можете зарегистрировать компанию на <b>gfsupport.uz/signup</b> — используйте ваш Telegram username <b>@${username || 'ваш_username'}</b> при регистрации.\n\nКод подтверждения придёт сюда.`
+          `${greeting} 👋\n\nЯ бот платформы <b>GFSupport</b>.\n\n` +
+          `Ваш код для регистрации:\n\n` +
+          `🔑 <code>${regCode}</code>\n\n` +
+          `Перейдите на <b>gfsupport.uz/signup</b> и введите этот код.\n` +
+          `Код подтверждения придёт сюда.`
         )
       }
     }
