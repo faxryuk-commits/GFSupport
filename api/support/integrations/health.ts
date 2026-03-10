@@ -49,7 +49,7 @@ async function checkTelegram(sql: any): Promise<{
   }
 }
 
-async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string; source: 'db' | 'env' | 'none' }> {
+async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string; source: 'db' | 'env' | 'none'; httpStatus?: number; detail?: string }> {
   const sql = getSQL()
   let model = 'gpt-4o-mini'
   let dbKey = ''
