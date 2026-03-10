@@ -66,11 +66,11 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT 1
     `
 
-    if (!sa) return json({ error: 'Invalid credentials' }, 401)
+    if (!sa) return json({ error: 'Invalid credentials', debug: 'no user found', email }, 401)
 
     const passwordHash = hashPassword(password)
     if (sa.password_hash !== passwordHash) {
-      return json({ error: 'Invalid credentials' }, 401)
+      return json({ error: 'Invalid credentials', debug: { computed: passwordHash, stored: sa.password_hash, passLen: password.length } }, 401)
     }
 
     await sql`UPDATE support_super_admins SET last_login_at = NOW() WHERE id = ${sa.id}`
