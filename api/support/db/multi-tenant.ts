@@ -97,6 +97,24 @@ async function stepA(sql: any): Promise<string[]> {
     CREATE INDEX IF NOT EXISTS idx_audit_created ON support_audit_log(created_at DESC)
   `))
 
+  log.push(await safe('TABLE support_platform_settings', () => sql`
+    CREATE TABLE IF NOT EXISTS support_platform_settings (
+      key VARCHAR(100) PRIMARY KEY,
+      value TEXT,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `))
+
+  log.push(await safe('TABLE support_platform_users', () => sql`
+    CREATE TABLE IF NOT EXISTS support_platform_users (
+      id SERIAL PRIMARY KEY,
+      telegram_id VARCHAR(50) UNIQUE NOT NULL,
+      username VARCHAR(255),
+      first_name VARCHAR(255),
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `))
+
   log.push(await safe('TABLE support_super_admins', () => sql`
     CREATE TABLE IF NOT EXISTS support_super_admins (
       id VARCHAR(50) PRIMARY KEY,
@@ -179,6 +197,12 @@ async function stepB(sql: any): Promise<string[]> {
     sql`ALTER TABLE support_embeddings ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
   log.push(await safe('support_docs.org_id', () =>
     sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+
+  // support_otp extensions for Telegram registration
+  log.push(await safe('support_otp.telegram_username', () =>
+    sql`ALTER TABLE support_otp ADD COLUMN IF NOT EXISTS telegram_username VARCHAR(255)`))
+  log.push(await safe('support_otp.company_name', () =>
+    sql`ALTER TABLE support_otp ADD COLUMN IF NOT EXISTS company_name VARCHAR(255)`))
 
   return log
 }

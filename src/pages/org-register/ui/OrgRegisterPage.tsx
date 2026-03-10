@@ -1,14 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { MessageSquare, Building2, Mail, Lock, User, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { MessageSquare, Building2, Lock, User, ArrowRight, ArrowLeft, CheckCircle2, Send, ExternalLink } from 'lucide-react'
 
-type Step = 'info' | 'otp' | 'password' | 'done'
+type Step = 'info' | 'otp' | 'done'
 
 export function OrgRegisterPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState<Step>('info')
   const [companyName, setCompanyName] = useState('')
-  const [email, setEmail] = useState('')
+  const [telegramUsername, setTelegramUsername] = useState('')
   const [ownerName, setOwnerName] = useState('')
   const [otp, setOtp] = useState('')
   const [password, setPassword] = useState('')
@@ -16,10 +16,22 @@ export function OrgRegisterPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [orgSlug, setOrgSlug] = useState('')
+  const [botUsername, setBotUsername] = useState('')
+
+  useEffect(() => {
+    fetch('/api/support/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'get-bot-username' }),
+    })
+      .then(r => r.json())
+      .then(d => { if (d.botUsername) setBotUsername(d.botUsername) })
+      .catch(() => {})
+  }, [])
 
   const requestOtp = async () => {
-    if (!companyName.trim() || !email.trim()) {
-      setError('Заполните все поля')
+    if (!companyName.trim() || !telegramUsername.trim()) {
+      setError('Заполните все обязательные поля')
       return
     }
     setLoading(true)
@@ -28,10 +40,16 @@ export function OrgRegisterPage() {
       const res = await fetch('/api/support/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: 'request-otp', email, companyName }),
+        body: JSON.stringify({ step: 'request-otp', telegramUsername, companyName }),
       })
       const data = await res.json()
-      if (!res.ok) { setError(data.error); return }
+      if (!res.ok) {
+        if (data.code === 'BOT_NOT_STARTED' && data.botUsername) {
+          setBotUsername(data.botUsername)
+        }
+        setError(data.error)
+        return
+      }
       setStep('otp')
     } catch (e: any) {
       setError(e.message)
@@ -50,7 +68,7 @@ export function OrgRegisterPage() {
       const res = await fetch('/api/support/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: 'verify-and-create', email, code: otp, companyName, password, ownerName }),
+        body: JSON.stringify({ step: 'verify-and-create', telegramUsername, code: otp, companyName, password, ownerName }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error); return }
@@ -73,7 +91,6 @@ export function OrgRegisterPage() {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1a2b4b] to-[#0f172a] p-12 flex-col justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
@@ -97,25 +114,53 @@ export function OrgRegisterPage() {
           </div>
         </div>
 
-        <p className="text-slate-500 text-sm">© 2026 GFSupport. Все права защищены.</p>
+        <p className="text-slate-500 text-sm">&copy; 2026 GFSupport. Все права защищены.</p>
       </div>
 
-      {/* Right form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           {step === 'info' && (
             <div className="space-y-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">Создайте аккаунт</h2>
-                <p className="text-slate-500 mt-1">Зарегистрируйте вашу компанию за 2 минуты</p>
+                <p className="text-slate-500 mt-1">Зарегистрируйте компанию за 2 минуты</p>
               </div>
 
               {error && <ErrorMsg text={error} />}
 
+              {botUsername && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                  <p className="text-sm text-blue-800 font-medium flex items-center gap-2">
+                    <Send className="w-4 h-4" />
+                    Перед регистрацией напишите /start боту
+                  </p>
+                  <a
+                    href={`https://t.me/${botUsername}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
+                  >
+                    @{botUsername} <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+
               <div className="space-y-4">
-                <InputField icon={Building2} label="Название компании" value={companyName} onChange={setCompanyName} placeholder="ООО Пример" />
+                <InputField icon={Building2} label="Название компании *" value={companyName} onChange={setCompanyName} placeholder="ООО Пример" />
                 <InputField icon={User} label="Ваше имя" value={ownerName} onChange={setOwnerName} placeholder="Иван Иванов" />
-                <InputField icon={Mail} label="Email" value={email} onChange={setEmail} placeholder="admin@company.com" type="email" />
+                <div>
+                  <label className="text-sm font-medium text-slate-700 block mb-1">Telegram username *</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">@</span>
+                    <input
+                      type="text"
+                      className="w-full pl-8 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      value={telegramUsername}
+                      onChange={e => setTelegramUsername(e.target.value.replace(/^@/, ''))}
+                      placeholder="your_username"
+                    />
+                  </div>
+                </div>
               </div>
 
               <button
@@ -123,7 +168,7 @@ export function OrgRegisterPage() {
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors"
               >
-                {loading ? 'Отправка...' : <><span>Получить код</span><ArrowRight className="w-4 h-4" /></>}
+                {loading ? 'Отправка...' : <><span>Получить код в Telegram</span><ArrowRight className="w-4 h-4" /></>}
               </button>
 
               <p className="text-center text-sm text-slate-500">
@@ -138,8 +183,10 @@ export function OrgRegisterPage() {
                 <ArrowLeft className="w-4 h-4" /> Назад
               </button>
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Подтвердите email</h2>
-                <p className="text-slate-500 mt-1">Код отправлен на <span className="font-medium text-slate-700">{email}</span></p>
+                <h2 className="text-2xl font-bold text-slate-900">Введите код</h2>
+                <p className="text-slate-500 mt-1">
+                  Код отправлен в Telegram на <span className="font-medium text-slate-700">@{telegramUsername}</span>
+                </p>
               </div>
 
               {error && <ErrorMsg text={error} />}

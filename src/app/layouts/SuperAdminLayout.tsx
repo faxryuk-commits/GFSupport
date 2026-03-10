@@ -19,6 +19,7 @@ const navItems = [
   { path: '/dashboard', label: 'Дашборд', icon: LayoutDashboard },
   { path: '/organizations', label: 'Организации', icon: Building2 },
   { path: '/audit', label: 'Аудит логи', icon: ScrollText },
+  { path: '/settings', label: 'Настройки', icon: Settings },
 ]
 
 export function SuperAdminLayout() {

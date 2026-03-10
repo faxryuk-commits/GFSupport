@@ -33,6 +33,7 @@ const SALoginPage = lazy(() => import('@/pages/sa-login/ui/SALoginPage'))
 const SADashboardPage = lazy(() => import('@/pages/sa-dashboard/ui/SADashboardPage'))
 const SAOrganizationsPage = lazy(() => import('@/pages/sa-organizations/ui/SAOrganizationsPage'))
 const SAAuditPage = lazy(() => import('@/pages/sa-audit/ui/SAAuditPage'))
+const SASettingsPage = lazy(() => import('@/pages/sa-settings/ui/SASettingsPage'))
 const SuperAdminLayout = lazy(() => import('@/app/layouts/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })))
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/dashboard" element={<SADashboardPage />} />
             <Route path="/organizations" element={<SAOrganizationsPage />} />
             <Route path="/audit" element={<SAAuditPage />} />
+            <Route path="/settings" element={<SASettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
