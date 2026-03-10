@@ -1333,80 +1333,71 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (message.photo) {
       contentType = 'photo'
-      // Get largest photo
       const photo = message.photo[message.photo.length - 1]
-      mediaUrl = await getFileUrl(photo.file_id) || `tg://photo/${photo.file_id}`
+      mediaUrl = `tg://photo/${photo.file_id}`
       fileSize = photo.file_size
-      // For photos, the media itself is the preview
       thumbnailUrl = mediaUrl
     } else if (message.animation) {
-      // GIF/Animation - handle before document!
       contentType = 'animation'
       const anim = message.animation
-      mediaUrl = await getFileUrl(anim.file_id) || `tg://animation/${anim.file_id}`
+      mediaUrl = `tg://animation/${anim.file_id}`
       fileName = anim.file_name
       fileSize = anim.file_size
       mimeType = anim.mime_type
-      // Get thumbnail
       if (anim.thumbnail?.file_id) {
-        thumbnailUrl = await getFileUrl(anim.thumbnail.file_id) || undefined
+        thumbnailUrl = `tg://thumbnail/${anim.thumbnail.file_id}`
       }
     } else if (message.video) {
       contentType = 'video'
       const video = message.video
-      mediaUrl = await getFileUrl(video.file_id) || `tg://video/${video.file_id}`
+      mediaUrl = `tg://video/${video.file_id}`
       fileName = video.file_name
       fileSize = video.file_size
       mimeType = video.mime_type
-      // Get thumbnail
       if (video.thumbnail?.file_id) {
-        thumbnailUrl = await getFileUrl(video.thumbnail.file_id) || undefined
+        thumbnailUrl = `tg://thumbnail/${video.thumbnail.file_id}`
       }
     } else if (message.video_note) {
       contentType = 'video_note'
       const vn = message.video_note
-      mediaUrl = await getFileUrl(vn.file_id) || `tg://video_note/${vn.file_id}`
+      mediaUrl = `tg://video_note/${vn.file_id}`
       fileSize = vn.file_size
-      // Get thumbnail
       if (vn.thumbnail?.file_id) {
-        thumbnailUrl = await getFileUrl(vn.thumbnail.file_id) || undefined
+        thumbnailUrl = `tg://thumbnail/${vn.thumbnail.file_id}`
       }
     } else if (message.voice) {
       contentType = 'voice'
       const voice = message.voice
-      mediaUrl = await getFileUrl(voice.file_id) || `tg://voice/${voice.file_id}`
+      mediaUrl = `tg://voice/${voice.file_id}`
       fileSize = voice.file_size
       mimeType = voice.mime_type
     } else if (message.audio) {
       contentType = 'audio'
       const audio = message.audio
-      mediaUrl = await getFileUrl(audio.file_id) || `tg://audio/${audio.file_id}`
+      mediaUrl = `tg://audio/${audio.file_id}`
       fileName = audio.file_name || audio.title
       fileSize = audio.file_size
       mimeType = audio.mime_type
-      // Audio can have album art thumbnail
       if (audio.thumbnail?.file_id) {
-        thumbnailUrl = await getFileUrl(audio.thumbnail.file_id) || undefined
+        thumbnailUrl = `tg://thumbnail/${audio.thumbnail.file_id}`
       }
     } else if (message.document) {
       contentType = 'document'
       const doc = message.document
-      mediaUrl = await getFileUrl(doc.file_id) || `tg://document/${doc.file_id}`
+      mediaUrl = `tg://document/${doc.file_id}`
       fileName = doc.file_name
       fileSize = doc.file_size
       mimeType = doc.mime_type
-      // Documents can have thumbnails (PDFs, images, etc)
       if (doc.thumbnail?.file_id) {
-        thumbnailUrl = await getFileUrl(doc.thumbnail.file_id) || undefined
+        thumbnailUrl = `tg://thumbnail/${doc.thumbnail.file_id}`
       }
     } else if (message.sticker) {
       contentType = 'sticker'
       const sticker = message.sticker
-      mediaUrl = await getFileUrl(sticker.file_id) || `tg://sticker/${sticker.file_id}`
+      mediaUrl = `tg://sticker/${sticker.file_id}`
       fileSize = sticker.file_size
-      // Sticker thumbnail
       if (sticker.thumbnail?.file_id) {
-        thumbnailUrl = await getFileUrl(sticker.thumbnail.file_id) || mediaUrl
+        thumbnailUrl = `tg://thumbnail/${sticker.thumbnail.file_id}`
       }
       text = sticker.emoji || '🎭'
     }

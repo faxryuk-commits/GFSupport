@@ -8,7 +8,6 @@ function getSQL() {
   return neon(connectionString)
 }
 
-// Get fresh photo URL from Telegram
 async function getFreshPhotoUrl(botToken: string, telegramChatId: string): Promise<string | null> {
   try {
     const chatInfoRes = await fetch(
@@ -33,7 +32,6 @@ async function getFreshPhotoUrl(botToken: string, telegramChatId: string): Promi
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -62,18 +60,22 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
-  if (!botToken) {
-    return new Response(JSON.stringify({ error: 'Bot not configured' }), { 
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    })
-  }
-
   try {
     const sql = getSQL()
-    
-    // Get channel info
+
+    let botToken: string | null = null
+    try {
+      const tokenRows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+      if (tokenRows[0]?.value) botToken = tokenRows[0].value
+    } catch {}
+    if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN || null
+    if (!botToken) {
+      return new Response(JSON.stringify({ error: 'Bot not configured' }), { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      })
+    }
+
     let channel
     if (channelId) {
       const result = await sql`
@@ -96,24 +98,17 @@ export default async function handler(req: Request): Promise<Response> {
     
     let photoUrl = channel.photo_url
     
-    // If we have a URL, check if it's still valid
     if (photoUrl) {
       try {
         const checkRes = await fetch(photoUrl, { method: 'HEAD' })
-        if (!checkRes.ok) {
-          // URL expired, get fresh one
-          photoUrl = null
-        }
+        if (!checkRes.ok) photoUrl = null
       } catch {
         photoUrl = null
       }
     }
     
-    // Get fresh URL if needed
     if (!photoUrl) {
       photoUrl = await getFreshPhotoUrl(botToken, channel.telegram_chat_id)
-      
-      // Update in database
       if (photoUrl) {
         await sql`
           UPDATE support_channels 
@@ -124,34 +119,18 @@ export default async function handler(req: Request): Promise<Response> {
     }
     
     if (!photoUrl) {
-      // Return a placeholder gradient image (1x1 transparent pixel)
-      return new Response(null, { 
-        status: 404, 
-        headers: { ...corsHeaders } 
-      })
+      return new Response(null, { status: 404, headers: corsHeaders })
     }
     
-    // Proxy the image instead of redirect (Telegram URLs expire)
     try {
-      const imageRes = await fetch(photoUrl)
+      let imageRes = await fetch(photoUrl)
       if (!imageRes.ok) {
-        // URL expired, try to get fresh one
         photoUrl = await getFreshPhotoUrl(botToken, channel.telegram_chat_id)
         if (photoUrl) {
           await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${channel.id}`
-          const freshRes = await fetch(photoUrl)
-          if (freshRes.ok) {
-            const imageData = await freshRes.arrayBuffer()
-            return new Response(imageData, {
-              headers: {
-                ...corsHeaders,
-                'Content-Type': freshRes.headers.get('Content-Type') || 'image/jpeg',
-                'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-              }
-            })
-          }
+          imageRes = await fetch(photoUrl)
         }
-        return new Response(null, { status: 404, headers: corsHeaders })
+        if (!imageRes.ok) return new Response(null, { status: 404, headers: corsHeaders })
       }
       
       const imageData = await imageRes.arrayBuffer()

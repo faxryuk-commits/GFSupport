@@ -34,8 +34,23 @@ async function resolveFileUrl(botToken: string, fileId: string): Promise<string 
   return null
 }
 
+function extractFilePath(telegramUrl: string): string | null {
+  const m = telegramUrl.match(/\/file\/bot[^/]+\/(.+)$/)
+  return m ? m[1] : null
+}
+
+function respondWithMedia(body: ArrayBuffer, contentType: string | null): Response {
+  return new Response(body, {
+    headers: {
+      ...corsHeaders,
+      'Content-Type': contentType || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=86400',
+    },
+  })
+}
+
 /**
- * GET /api/support/media/proxy?url=...  — проксирует любой HTTPS media URL
+ * GET /api/support/media/proxy?url=...    — проксирует HTTPS media URL
  * GET /api/support/media/proxy?fileId=... — резолвит Telegram file_id и проксирует
  * GET /api/support/media/proxy?tg=tg://photo/FILE_ID — резолвит tg:// URL и проксирует
  */
@@ -49,70 +64,59 @@ export default async function handler(req: Request): Promise<Response> {
   const fileId = params.get('fileId')
   const tgUrl = params.get('tg')
 
-  let targetUrl: string | null = null
-
-  if (rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) {
-    targetUrl = rawUrl
-  } else if (fileId || tgUrl) {
+  // --- Route 1: tg:// or fileId — always resolvable ---
+  if (fileId || tgUrl) {
     const botToken = await getBotToken()
-    if (!botToken) {
-      return new Response(null, { status: 502, headers: corsHeaders })
-    }
+    if (!botToken) return new Response(null, { status: 502, headers: corsHeaders })
 
-    let resolvedFileId = fileId
-    if (!resolvedFileId && tgUrl) {
+    let fid = fileId
+    if (!fid && tgUrl) {
       const parts = tgUrl.replace('tg://', '').split('/')
-      resolvedFileId = parts.length >= 2 ? parts.slice(1).join('/') : parts[0]
+      fid = parts.length >= 2 ? parts.slice(1).join('/') : parts[0]
     }
+    if (!fid) return new Response(null, { status: 400, headers: corsHeaders })
 
-    if (resolvedFileId) {
-      targetUrl = await resolveFileUrl(botToken, resolvedFileId)
-    }
+    const freshUrl = await resolveFileUrl(botToken, fid)
+    if (!freshUrl) return new Response(null, { status: 404, headers: corsHeaders })
+
+    try {
+      const res = await fetch(freshUrl)
+      if (res.ok) {
+        return respondWithMedia(await res.arrayBuffer(), res.headers.get('Content-Type'))
+      }
+    } catch {}
+    return new Response(null, { status: 404, headers: corsHeaders })
   }
 
-  if (!targetUrl) {
+  // --- Route 2: direct URL ---
+  if (!rawUrl || !(rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) {
     return new Response(null, { status: 400, headers: corsHeaders })
   }
 
   try {
-    const res = await fetch(targetUrl)
-    if (!res.ok) {
-      // URL expired — try to re-resolve if we have a fileId
-      if (fileId || tgUrl) {
-        const botToken = await getBotToken()
-        let fid = fileId
-        if (!fid && tgUrl) {
-          const parts = tgUrl.replace('tg://', '').split('/')
-          fid = parts.length >= 2 ? parts.slice(1).join('/') : parts[0]
-        }
-        if (botToken && fid) {
-          const freshUrl = await resolveFileUrl(botToken, fid)
-          if (freshUrl) {
-            const freshRes = await fetch(freshUrl)
-            if (freshRes.ok) {
-              const body = await freshRes.arrayBuffer()
-              return new Response(body, {
-                headers: {
-                  ...corsHeaders,
-                  'Content-Type': freshRes.headers.get('Content-Type') || 'application/octet-stream',
-                  'Cache-Control': 'public, max-age=86400',
-                },
-              })
-            }
-          }
-        }
-      }
-      return new Response(null, { status: 404, headers: corsHeaders })
+    const res = await fetch(rawUrl)
+    if (res.ok) {
+      return respondWithMedia(await res.arrayBuffer(), res.headers.get('Content-Type'))
     }
 
-    const body = await res.arrayBuffer()
-    return new Response(body, {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': res.headers.get('Content-Type') || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=86400',
-      },
-    })
+    // Telegram URL expired — retry with current bot token
+    if (rawUrl.includes('api.telegram.org/file/bot')) {
+      const filePath = extractFilePath(rawUrl)
+      if (filePath) {
+        const botToken = await getBotToken()
+        if (botToken) {
+          const retryUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`
+          try {
+            const retryRes = await fetch(retryUrl)
+            if (retryRes.ok) {
+              return respondWithMedia(await retryRes.arrayBuffer(), retryRes.headers.get('Content-Type'))
+            }
+          } catch {}
+        }
+      }
+    }
+
+    return new Response(null, { status: 404, headers: corsHeaders })
   } catch {
     return new Response(null, { status: 502, headers: corsHeaders })
   }
