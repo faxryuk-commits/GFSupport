@@ -393,8 +393,8 @@ async function stepD(sql: any): Promise<string[]> {
     sql`UPDATE support_docs SET org_id = 'org_delever' WHERE org_id IS NULL`))
 
   // Seed super admin
-  const saEmail = process.env.SA_EMAIL || 'admin@gfsupport.uz'
-  const saPasswordHash = process.env.SA_PASSWORD_HASH || 'hrvasz911'
+  const saEmail = (process.env.SA_EMAIL || 'admin@gfsupport.uz').trim()
+  const saPasswordHash = (process.env.SA_PASSWORD_HASH || 'hrvasz911').trim()
   log.push(await safe('seed super_admin', () => sql`
     INSERT INTO support_super_admins (id, email, name, password_hash, role, is_active)
     VALUES ('sa_root', ${saEmail}, 'Root Admin', ${saPasswordHash}, 'owner', true)
