@@ -506,6 +506,10 @@ export default async function handler(req: Request): Promise<Response> {
     if (step === 'C' || step === 'all') result.stepC = await stepC(sql)
     if (step === 'D' || step === 'all') result.stepD = await stepD(sql)
     if (step === 'F' || step === 'all') result.stepF = await stepF_auditIndexes(sql)
+    if (step === 'debug-sa') {
+      const rows = await sql`SELECT id, email, name, role, is_active, password_hash FROM support_super_admins LIMIT 10`
+      result.superAdmins = rows
+    }
 
     result.verification = await stepE(sql)
     return json(result)
