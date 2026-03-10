@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList, Eye, CheckCheck, MessageSquareCheck } from 'lucide-react'
+import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList, Eye, CheckCheck, MessageSquare } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
 import { ChannelListItem, ChannelPreviewModal, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
@@ -1228,7 +1228,7 @@ export function ChatsPage() {
               onClick={() => handleMarkAnswered(contextMenu.channel)}
               className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
             >
-              <MessageSquareCheck className="w-4 h-4 text-slate-400" />
+              <MessageSquare className="w-4 h-4 text-slate-400" />
               Пометить как отвеченное
             </button>
           </div>

@@ -57,6 +57,7 @@ export function ChannelPreviewModal({ channel, messages, isLoading, onClose, onO
                 key={msg.id}
                 message={msg}
                 onReply={() => {}}
+                onCopy={() => {}}
                 onReaction={() => {}}
               />
             ))
