@@ -16,10 +16,9 @@ interface SAData {
 }
 
 const navItems = [
-  { path: '/sa/dashboard', label: 'Дашборд', icon: LayoutDashboard },
-  { path: '/sa/organizations', label: 'Организации', icon: Building2 },
-  { path: '/sa/audit', label: 'Аудит логи', icon: ScrollText },
-  { path: '/sa/settings', label: 'Настройки', icon: Settings },
+  { path: '/dashboard', label: 'Дашборд', icon: LayoutDashboard },
+  { path: '/organizations', label: 'Организации', icon: Building2 },
+  { path: '/audit', label: 'Аудит логи', icon: ScrollText },
 ]
 
 export function SuperAdminLayout() {
@@ -31,21 +30,21 @@ export function SuperAdminLayout() {
   useEffect(() => {
     const token = localStorage.getItem(SA_TOKEN_KEY)
     if (!token) {
-      navigate('/sa/login')
+      navigate('/login')
       return
     }
     try {
       const data = JSON.parse(localStorage.getItem(SA_DATA_KEY) || '{}')
       setAdmin(data)
     } catch {
-      navigate('/sa/login')
+      navigate('/login')
     }
   }, [navigate])
 
   const handleLogout = () => {
     localStorage.removeItem(SA_TOKEN_KEY)
     localStorage.removeItem(SA_DATA_KEY)
-    navigate('/sa/login')
+    navigate('/login')
   }
 
   return (

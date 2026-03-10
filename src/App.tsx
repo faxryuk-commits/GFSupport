@@ -1,9 +1,18 @@
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/app/layouts'
-import { SuperAdminLayout } from '@/app/layouts/SuperAdminLayout'
 import { LoadingSpinner } from '@/shared/ui'
 import './index.css'
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-[400px]">
+      <LoadingSpinner size="lg" />
+    </div>
+  )
+}
+
+const isAdmin = window.location.hostname.startsWith('admin.')
 
 const DashboardPage = lazy(() => import('@/pages/dashboard/ui/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const ChatsPage = lazy(() => import('@/pages/chats/ui/ChatsPage').then(m => ({ default: m.ChatsPage })))
@@ -24,76 +33,55 @@ const SALoginPage = lazy(() => import('@/pages/sa-login/ui/SALoginPage'))
 const SADashboardPage = lazy(() => import('@/pages/sa-dashboard/ui/SADashboardPage'))
 const SAOrganizationsPage = lazy(() => import('@/pages/sa-organizations/ui/SAOrganizationsPage'))
 const SAAuditPage = lazy(() => import('@/pages/sa-audit/ui/SAAuditPage'))
-
-function PageLoader() {
-  return (
-    <div className="flex items-center justify-center h-full min-h-[400px]">
-      <LoadingSpinner size="lg" />
-    </div>
-  )
-}
-
-function isAdminSubdomain(): boolean {
-  const host = window.location.hostname
-  return host.startsWith('admin.') || host === 'admin'
-}
-
-function SuperAdminRoutes() {
-  return (
-    <Routes>
-      <Route path="/sa/login" element={<Suspense fallback={<PageLoader />}><SALoginPage /></Suspense>} />
-      <Route element={<SuperAdminLayout />}>
-        <Route path="/sa/dashboard" element={<Suspense fallback={<PageLoader />}><SADashboardPage /></Suspense>} />
-        <Route path="/sa/organizations" element={<Suspense fallback={<PageLoader />}><SAOrganizationsPage /></Suspense>} />
-        <Route path="/sa/audit" element={<Suspense fallback={<PageLoader />}><SAAuditPage /></Suspense>} />
-      </Route>
-      <Route path="/" element={<Navigate to="/sa/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/sa/dashboard" replace />} />
-    </Routes>
-  )
-}
-
-function ClientRoutes() {
-  return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<Suspense fallback={<PageLoader />}><OrgRegisterPage /></Suspense>} />
-      <Route path="/support/register/:token" element={<RegisterPage />} />
-      <Route path="/register/:token" element={<RegisterPage />} />
-
-      <Route element={<MainLayout />}>
-        <Route path="/overview" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
-        <Route path="/chats" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
-        <Route path="/chats/:id" element={<Suspense fallback={<PageLoader />}><ChatsPage /></Suspense>} />
-        <Route path="/channels" element={<Suspense fallback={<PageLoader />}><ChannelsListPage /></Suspense>} />
-        <Route path="/cases" element={<Suspense fallback={<PageLoader />}><CasesPage /></Suspense>} />
-        <Route path="/commitments" element={<Suspense fallback={<PageLoader />}><CommitmentsPage /></Suspense>} />
-        <Route path="/sla-report" element={<Suspense fallback={<PageLoader />}><SLAReportPage /></Suspense>} />
-        <Route path="/knowledge" element={<Suspense fallback={<PageLoader />}><KnowledgePage /></Suspense>} />
-        <Route path="/docs" element={<Suspense fallback={<PageLoader />}><DocsPage /></Suspense>} />
-        <Route path="/learning/problems" element={<Suspense fallback={<PageLoader />}><ProblemAnalysisPage /></Suspense>} />
-        <Route path="/broadcast" element={<Suspense fallback={<PageLoader />}><BroadcastPage /></Suspense>} />
-        <Route path="/settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
-      </Route>
-
-      <Route path="/sa/*" element={<SuperAdminRoutes />} />
-
-      <Route path="/reports" element={<Navigate to="/overview" replace />} />
-      <Route path="/team" element={<Navigate to="/settings" replace />} />
-      <Route path="/users" element={<Navigate to="/settings" replace />} />
-      <Route path="/automations" element={<Navigate to="/settings" replace />} />
-      <Route path="/" element={<Navigate to="/overview" replace />} />
-      <Route path="*" element={<Navigate to="/overview" replace />} />
-    </Routes>
-  )
-}
+const SuperAdminLayout = lazy(() => import('@/app/layouts/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })))
 
 export default function App() {
-  const isSA = useMemo(() => isAdminSubdomain(), [])
+  if (isAdmin) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={<SALoginPage />} />
+          <Route element={<SuperAdminLayout />}>
+            <Route path="/dashboard" element={<SADashboardPage />} />
+            <Route path="/organizations" element={<SAOrganizationsPage />} />
+            <Route path="/audit" element={<SAAuditPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
+    )
+  }
 
   return (
     <Suspense fallback={<PageLoader />}>
-      {isSA ? <SuperAdminRoutes /> : <ClientRoutes />}
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<OrgRegisterPage />} />
+        <Route path="/support/register/:token" element={<RegisterPage />} />
+        <Route path="/register/:token" element={<RegisterPage />} />
+
+        <Route element={<MainLayout />}>
+          <Route path="/overview" element={<DashboardPage />} />
+          <Route path="/chats" element={<ChatsPage />} />
+          <Route path="/chats/:id" element={<ChatsPage />} />
+          <Route path="/channels" element={<ChannelsListPage />} />
+          <Route path="/cases" element={<CasesPage />} />
+          <Route path="/commitments" element={<CommitmentsPage />} />
+          <Route path="/sla-report" element={<SLAReportPage />} />
+          <Route path="/knowledge" element={<KnowledgePage />} />
+          <Route path="/docs" element={<DocsPage />} />
+          <Route path="/learning/problems" element={<ProblemAnalysisPage />} />
+          <Route path="/broadcast" element={<BroadcastPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+
+        <Route path="/reports" element={<Navigate to="/overview" replace />} />
+        <Route path="/team" element={<Navigate to="/settings" replace />} />
+        <Route path="/users" element={<Navigate to="/settings" replace />} />
+        <Route path="/automations" element={<Navigate to="/settings" replace />} />
+        <Route path="/" element={<Navigate to="/overview" replace />} />
+        <Route path="*" element={<Navigate to="/overview" replace />} />
+      </Routes>
     </Suspense>
   )
 }

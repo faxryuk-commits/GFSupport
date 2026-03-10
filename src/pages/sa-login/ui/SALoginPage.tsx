@@ -34,7 +34,7 @@ export function SALoginPage() {
 
       localStorage.setItem(SA_TOKEN_KEY, data.token)
       localStorage.setItem(SA_DATA_KEY, JSON.stringify(data.admin))
-      navigate('/sa/dashboard')
+      navigate('/dashboard')
     } catch (e: any) {
       setError(e.message || 'Connection error')
     } finally {
