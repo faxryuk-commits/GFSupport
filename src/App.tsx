@@ -28,6 +28,7 @@ const ProblemAnalysisPage = lazy(() => import('@/pages/learning/ui/ProblemAnalys
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
 const SLAReportPage = lazy(() => import('@/pages/sla-report/ui/SLAReportPage').then(m => ({ default: m.SLAReportPage })))
 const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
+const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 
 const SALoginPage = lazy(() => import('@/pages/sa-login/ui/SALoginPage'))
 const SADashboardPage = lazy(() => import('@/pages/sa-dashboard/ui/SADashboardPage'))
@@ -35,6 +36,12 @@ const SAOrganizationsPage = lazy(() => import('@/pages/sa-organizations/ui/SAOrg
 const SAAuditPage = lazy(() => import('@/pages/sa-audit/ui/SAAuditPage'))
 const SASettingsPage = lazy(() => import('@/pages/sa-settings/ui/SASettingsPage'))
 const SuperAdminLayout = lazy(() => import('@/app/layouts/SuperAdminLayout').then(m => ({ default: m.SuperAdminLayout })))
+
+function HomeRedirect() {
+  const token = localStorage.getItem('support_agent_token')
+  if (token) return <Navigate to="/overview" replace />
+  return <LandingPage />
+}
 
 export default function App() {
   if (isAdmin) {
@@ -81,8 +88,8 @@ export default function App() {
         <Route path="/team" element={<Navigate to="/settings" replace />} />
         <Route path="/users" element={<Navigate to="/settings" replace />} />
         <Route path="/automations" element={<Navigate to="/settings" replace />} />
-        <Route path="/" element={<Navigate to="/overview" replace />} />
-        <Route path="*" element={<Navigate to="/overview" replace />} />
+        <Route path="/" element={<HomeRedirect />} />
+        <Route path="*" element={<HomeRedirect />} />
       </Routes>
     </Suspense>
   )

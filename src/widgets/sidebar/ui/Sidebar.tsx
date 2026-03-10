@@ -18,6 +18,7 @@ import {
   Globe,
   ChevronDown,
 } from 'lucide-react'
+import { getPlanConfig } from '@/shared/lib/plan-features'
 
 // CSS for coin flip and shine animations
 const badgeAnimationStyles = `
@@ -221,6 +222,9 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed))
   }, [isCollapsed])
 
+  const planConfig = getPlanConfig(orgPlan)
+  const filteredNavItems = mainNavItems.filter(item => planConfig.navPaths.includes(item.path))
+
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/')
 
   const toggleCollapse = () => setIsCollapsed(!isCollapsed)
@@ -350,7 +354,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       {/* Main Navigation */}
       <nav className="flex-1 px-3 overflow-y-auto">
         <div className="space-y-0.5">
-          {mainNavItems.map(item => (
+          {filteredNavItems.map(item => (
             <NavItem key={item.path} {...item} />
           ))}
         </div>

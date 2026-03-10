@@ -26,17 +26,58 @@ function json(data: any, status = 200) {
 
 type ServiceStatus = 'active' | 'inactive' | 'error'
 
-async function checkTelegram(sql: any, orgId: string): Promise<{
+async function getOrgSettings(sql: any, orgId: string): Promise<Record<string, string>> {
+  try {
+    const rows = await sql`SELECT key, value FROM support_settings WHERE org_id = ${orgId}`
+    const map: Record<string, string> = {}
+    for (const r of rows) map[r.key] = r.value || ''
+    return map
+  } catch {
+    return {}
+  }
+}
+
+async function getOrgIntegrationTokens(sql: any, orgId: string, isLegacy: boolean) {
+  const orgSettings = await getOrgSettings(sql, orgId)
+
+  const botToken = orgSettings.telegram_bot_token || (isLegacy ? process.env.TELEGRAM_BOT_TOKEN : '') || ''
+  const botUsername = orgSettings.telegram_bot_username || ''
+  const openaiKey = orgSettings.openai_api_key || (isLegacy ? process.env.OPENAI_API_KEY : '') || ''
+  const aiModel = orgSettings.ai_model || 'gpt-4o-mini'
+  const notifyChatId = orgSettings.notify_chat_id || (isLegacy ? process.env.TELEGRAM_CHAT_ID : '') || ''
+  const notifyEnabled = orgSettings.notify_on_problem !== 'false'
+  const transcribeEnabled = orgSettings.auto_transcribe_voice !== 'false'
+  const whisperLang = orgSettings.whisper_language || 'ru'
+
+  let bridgeUrl = ''
+  let bridgeSecret = ''
+  if (isLegacy) {
+    bridgeUrl = process.env.WHATSAPP_BRIDGE_URL || ''
+    bridgeSecret = process.env.WHATSAPP_BRIDGE_SECRET || ''
+  } else {
+    try {
+      const [orgRow] = await sql`
+        SELECT whatsapp_bridge_url, whatsapp_bridge_secret 
+        FROM support_organizations WHERE id = ${orgId} LIMIT 1
+      `
+      bridgeUrl = orgRow?.whatsapp_bridge_url || ''
+      bridgeSecret = orgRow?.whatsapp_bridge_secret || ''
+    } catch {}
+  }
+
+  return { botToken, botUsername, openaiKey, aiModel, notifyChatId, notifyEnabled, transcribeEnabled, whisperLang, bridgeUrl, bridgeSecret }
+}
+
+async function checkTelegram(sql: any, orgId: string, botToken: string): Promise<{
   status: ServiceStatus; botUsername?: string; botName?: string; channelsCount: number
 }> {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  if (!token) return { status: 'inactive', channelsCount: 0 }
+  if (!botToken) return { status: 'inactive', channelsCount: 0 }
 
   try {
     let channelsCount = 0
     const [botRes] = await Promise.all([
-      fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(4000) }),
-      sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId}`.then(r => { channelsCount = r[0]?.cnt || 0 }).catch(() => {}),
+      fetch(`https://api.telegram.org/bot${botToken}/getMe`, { signal: AbortSignal.timeout(4000) }),
+      sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId} AND (source = 'telegram' OR source IS NULL)`.then((r: any) => { channelsCount = r[0]?.cnt || 0 }).catch(() => {}),
     ])
 
     if (!botRes.ok) return { status: 'error', channelsCount }
@@ -54,104 +95,48 @@ async function checkTelegram(sql: any, orgId: string): Promise<{
   }
 }
 
-async function checkOpenAI(orgId: string): Promise<{ status: ServiceStatus; model: string; source: 'db' | 'env' | 'none'; httpStatus?: number; detail?: string }> {
-  const sql = getSQL()
-  let model = 'gpt-4o-mini'
-  let dbKey = ''
-  try {
-    const rows = await sql`SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key IN ('ai_model', 'openai_api_key')`
-    for (const r of rows) {
-      if (r.key === 'ai_model' && r.value) model = r.value
-      if (r.key === 'openai_api_key' && r.value) dbKey = r.value
-    }
-  } catch {}
-
-  const key = dbKey || process.env.OPENAI_API_KEY
-  const source = dbKey ? 'db' : process.env.OPENAI_API_KEY ? 'env' : 'none'
-  if (!key) return { status: 'inactive', model, source: 'none' }
+async function checkOpenAI(openaiKey: string, aiModel: string): Promise<{
+  status: ServiceStatus; model: string; source: string
+}> {
+  if (!openaiKey) return { status: 'inactive', model: aiModel, source: 'none' }
 
   try {
     const res = await fetch('https://api.openai.com/v1/models', {
-      headers: { 'Authorization': `Bearer ${key}` },
+      headers: { 'Authorization': `Bearer ${openaiKey}` },
       signal: AbortSignal.timeout(5000),
     })
-    if (res.ok) return { status: 'active', model, source }
-    const errText = await res.text().catch(() => '')
-    return { status: 'error', model, source, httpStatus: res.status, detail: errText.slice(0, 200) }
-  } catch (e: any) {
-    return { status: 'error', model, source, detail: e.message }
-  }
-}
-
-async function checkWhisper(sql: any, orgId: string): Promise<{ status: ServiceStatus; language: string }> {
-  try {
-    const rows = await sql`
-      SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key IN ('auto_transcribe_voice', 'whisper_language')
-    `
-    const map: Record<string, string> = {}
-    for (const r of rows) map[r.key] = r.value
-
-    const enabled = map.auto_transcribe_voice !== 'false'
-    const language = map.whisper_language || 'ru'
-    let hasKey = false
-    try {
-      const keyRow = await sql`SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'openai_api_key' LIMIT 1`
-      hasKey = !!(keyRow[0]?.value) || !!process.env.OPENAI_API_KEY
-    } catch { hasKey = !!process.env.OPENAI_API_KEY }
-
-    return { status: enabled && hasKey ? 'active' : 'inactive', language }
+    return { status: res.ok ? 'active' : 'error', model: aiModel, source: 'db' }
   } catch {
-    return { status: 'inactive', language: 'ru' }
+    return { status: 'error', model: aiModel, source: 'db' }
   }
 }
 
-async function checkNotify(sql: any, orgId: string): Promise<{ status: ServiceStatus; chatId: string | null }> {
-  try {
-    const rows = await sql`
-      SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key IN ('notify_on_problem', 'notify_chat_id')
-    `
-    const map: Record<string, string> = {}
-    for (const r of rows) map[r.key] = r.value
-
-    const enabled = map.notify_on_problem !== 'false'
-    const chatId = map.notify_chat_id || process.env.TELEGRAM_CHAT_ID || null
-
-    return { status: enabled && chatId ? 'active' : 'inactive', chatId }
-  } catch {
-    return { status: 'inactive', chatId: null }
-  }
-}
-
-async function checkWhatsApp(sql: any, orgId: string): Promise<{
-  status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number
+async function checkWhatsApp(sql: any, orgId: string, bridgeUrl: string): Promise<{
+  status: ServiceStatus; phone: string | null; channelsCount: number
 }> {
-  const bridgeUrl = process.env.WHATSAPP_BRIDGE_URL
-  const base = { phone: null, filterMode: null, channelsCount: 0 }
-
   let channelsCount = 0
   try {
-    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId} AND source = 'whatsapp'`.catch(() => [{ cnt: 0 }])
+    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId} AND source = 'whatsapp'`
     channelsCount = cnt[0]?.cnt || 0
   } catch {}
 
-  if (!bridgeUrl) return { status: 'inactive', ...base, channelsCount }
+  if (!bridgeUrl) return { status: 'inactive', phone: null, channelsCount }
 
   try {
     const res = await fetch(`${bridgeUrl}/qr`, {
       headers: { 'Cache-Control': 'no-cache' },
       signal: AbortSignal.timeout(4000),
     })
-    if (!res.ok) return { status: 'error', ...base, channelsCount }
+    if (!res.ok) return { status: 'error', phone: null, channelsCount }
 
     const data = await res.json() as any
     return {
       status: data.connected ? 'active' : 'inactive',
       phone: data.phone || null,
-      filterMode: data.filterMode || 'all',
       channelsCount,
     }
   } catch {
-    return { status: 'error', ...base, channelsCount }
+    return { status: 'error', phone: null, channelsCount }
   }
 }
 
@@ -161,7 +146,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -169,14 +154,24 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const sql = getSQL()
     const orgId = await getRequestOrgId(req)
+    const isLegacy = orgId === 'org_delever'
+    const tokens = await getOrgIntegrationTokens(sql, orgId, isLegacy)
 
-    const [telegram, openai, whisper, notify, whatsapp] = await Promise.all([
-      checkTelegram(sql, orgId),
-      checkOpenAI(orgId),
-      checkWhisper(sql, orgId),
-      checkNotify(sql, orgId),
-      checkWhatsApp(sql, orgId),
+    const [telegram, openai, whatsapp] = await Promise.all([
+      checkTelegram(sql, orgId, tokens.botToken),
+      checkOpenAI(tokens.openaiKey, tokens.aiModel),
+      checkWhatsApp(sql, orgId, tokens.bridgeUrl),
     ])
+
+    const whisper = {
+      status: (tokens.transcribeEnabled && tokens.openaiKey ? 'active' : 'inactive') as ServiceStatus,
+      language: tokens.whisperLang,
+    }
+
+    const notify = {
+      status: (tokens.notifyEnabled && tokens.notifyChatId ? 'active' : 'inactive') as ServiceStatus,
+      chatId: tokens.notifyChatId || null,
+    }
 
     return json({ telegram, openai, whisper, notify, whatsapp })
   } catch (e: any) {
