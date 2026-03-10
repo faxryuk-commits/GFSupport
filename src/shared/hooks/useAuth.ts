@@ -1,10 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { SupportAgent } from '../types'
 
+interface OrgInfo {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  logoUrl?: string
+}
+
 interface AuthState {
   isAuthenticated: boolean
   agent: SupportAgent | null
   token: string | null
+  orgId: string | null
+  org: OrgInfo | null
   permissions: {
     canAccessCases: boolean
     canAccessChannels: boolean
@@ -20,18 +30,22 @@ export function useAuth() {
   const [auth, setAuth] = useState<AuthState>(() => {
     const token = localStorage.getItem('support_agent_token')
     const agentData = localStorage.getItem('support_agent_data')
+    const orgData = localStorage.getItem('support_org_data')
+    const orgId = localStorage.getItem('support_org_id')
     const agent = agentData ? JSON.parse(agentData) : null
+    const org = orgData ? JSON.parse(orgData) : null
     
     return {
       isAuthenticated: !!token,
       agent,
       token,
-      permissions: getPermissions(agent?.role)
+      orgId: orgId || agent?.orgId || null,
+      org,
+      permissions: getPermissions(agent?.role),
     }
   })
 
   useEffect(() => {
-    // Listen for storage changes (logout in other tab)
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'support_agent_token') {
         const token = e.newValue
@@ -40,7 +54,9 @@ export function useAuth() {
             isAuthenticated: false,
             agent: null,
             token: null,
-            permissions: getPermissions(null)
+            orgId: null,
+            org: null,
+            permissions: getPermissions(null),
           })
         }
       }
@@ -50,16 +66,25 @@ export function useAuth() {
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
 
-  const login = useCallback((token: string, agent: SupportAgent) => {
+  const login = useCallback((token: string, agent: SupportAgent, org?: OrgInfo | null) => {
     localStorage.setItem('support_agent_token', token)
     localStorage.setItem('support_agent_data', JSON.stringify(agent))
     localStorage.setItem('support_agent_id', agent.id)
+    const agentOrgId = (agent as any).orgId || null
+    if (org) {
+      localStorage.setItem('support_org_id', org.id)
+      localStorage.setItem('support_org_data', JSON.stringify(org))
+    } else if (agentOrgId) {
+      localStorage.setItem('support_org_id', agentOrgId)
+    }
     
     setAuth({
       isAuthenticated: true,
       agent,
       token,
-      permissions: getPermissions(agent.role)
+      orgId: org?.id || agentOrgId,
+      org: org || null,
+      permissions: getPermissions(agent.role),
     })
   }, [])
 
@@ -67,12 +92,16 @@ export function useAuth() {
     localStorage.removeItem('support_agent_token')
     localStorage.removeItem('support_agent_data')
     localStorage.removeItem('support_agent_id')
+    localStorage.removeItem('support_org_id')
+    localStorage.removeItem('support_org_data')
     
     setAuth({
       isAuthenticated: false,
       agent: null,
       token: null,
-      permissions: getPermissions(null)
+      orgId: null,
+      org: null,
+      permissions: getPermissions(null),
     })
   }, [])
 
@@ -84,7 +113,7 @@ export function useAuth() {
     
     setAuth(prev => ({
       ...prev,
-      agent: updatedAgent
+      agent: updatedAgent,
     }))
   }, [auth.agent])
 
@@ -92,7 +121,7 @@ export function useAuth() {
     ...auth,
     login,
     logout,
-    updateAgent
+    updateAgent,
   }
 }
 

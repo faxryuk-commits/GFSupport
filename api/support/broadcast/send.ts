@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -11,6 +12,7 @@ function json(data: any, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
     },
   })
 }
@@ -54,7 +56,7 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -64,6 +66,7 @@ export default async function handler(req: Request) {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   try {
     const body = await req.json()
@@ -84,6 +87,7 @@ export default async function handler(req: Request) {
     await sql`
       CREATE TABLE IF NOT EXISTS support_broadcasts (
         id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50) NOT NULL DEFAULT 'org_delever',
         message_type VARCHAR(30),
         message_text TEXT,
         filter_type VARCHAR(30),
@@ -96,6 +100,7 @@ export default async function handler(req: Request) {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `.catch(() => {})
+    await sql`ALTER TABLE support_broadcasts ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
     
     // Get channels based on filter (без is_active - может быть не установлен)
     let channels
@@ -105,6 +110,7 @@ export default async function handler(req: Request) {
         SELECT id, telegram_chat_id, name
         FROM support_channels
         WHERE telegram_chat_id IS NOT NULL
+          AND org_id = ${orgId}
           AND last_message_at > NOW() - INTERVAL '30 days'
         ORDER BY last_message_at DESC
       `
@@ -113,6 +119,7 @@ export default async function handler(req: Request) {
         SELECT id, telegram_chat_id, name
         FROM support_channels
         WHERE telegram_chat_id IS NOT NULL
+          AND org_id = ${orgId}
           AND tags && ${tags}
         ORDER BY name
       `
@@ -122,6 +129,7 @@ export default async function handler(req: Request) {
         SELECT id, telegram_chat_id, name
         FROM support_channels
         WHERE telegram_chat_id IS NOT NULL
+          AND org_id = ${orgId}
         ORDER BY name
       `
     }
@@ -180,19 +188,19 @@ export default async function handler(req: Request) {
           const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
           await sql`
             INSERT INTO support_messages (
-              id, channel_id, telegram_message_id, sender_name, sender_role, is_from_client,
+              id, channel_id, org_id, telegram_message_id, sender_name, sender_role, is_from_client,
               content_type, text_content, broadcast_id, created_at
             ) VALUES (
-              ${msgId}, ${channel.id}, ${result.result?.message_id}, ${senderName}, 'broadcast', false,
+              ${msgId}, ${channel.id}, ${orgId}, ${result.result?.message_id}, ${senderName}, 'broadcast', false,
               'text', ${message}, ${broadcastId}, NOW()
             )
           `.catch(async () => {
             await sql`
               INSERT INTO support_messages (
-                id, channel_id, telegram_message_id, sender_name, sender_role, is_from_client,
+                id, channel_id, org_id, telegram_message_id, sender_name, sender_role, is_from_client,
                 content_type, text_content, created_at
               ) VALUES (
-                ${msgId}, ${channel.id}, ${result.result?.message_id}, ${senderName}, 'broadcast', false,
+                ${msgId}, ${channel.id}, ${orgId}, ${result.result?.message_id}, ${senderName}, 'broadcast', false,
                 'text', ${message}, NOW()
               )
             `.catch(() => {})
@@ -230,11 +238,12 @@ export default async function handler(req: Request) {
     
     await sql`
       INSERT INTO support_broadcasts (
-        id, message_type, message_text, filter_type, sender_name,
+        id, org_id, message_type, message_text, filter_type, sender_name,
         channels_count, successful_count, failed_count, views_count, clicks_count, created_at
       )
       VALUES (
         ${broadcastId},
+        ${orgId},
         ${type},
         ${message},
         ${filter},

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -31,7 +32,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   
   const fromDate = url.searchParams.get('from') || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -71,7 +73,8 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
         JOIN support_channels c ON c.id = m.channel_id
-        WHERE m.created_at >= ${fromDateTime}::timestamptz - INTERVAL '24 hours'
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${fromDateTime}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${toDateTime}::timestamptz
           AND (${market}::text IS NULL OR c.market_id = ${market})
           AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
@@ -103,6 +106,7 @@ export default async function handler(req: Request): Promise<Response> {
             SELECT m2.created_at 
             FROM support_messages m2 
             WHERE m2.channel_id = cm.channel_id
+              AND m2.org_id = ${orgId}
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
               AND m2.created_at > cm.message_at
@@ -120,6 +124,7 @@ export default async function handler(req: Request): Promise<Response> {
               OR LOWER(ra.name) = LOWER(m2.sender_name)
             )
             WHERE m2.channel_id = cm.channel_id
+              AND m2.org_id = ${orgId}
               AND m2.is_from_client = false
               AND m2.sender_role IN ('support', 'team', 'agent')
               AND m2.created_at > cm.message_at
@@ -183,7 +188,8 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_cases c
       LEFT JOIN support_channels ch ON ch.id = c.channel_id
       LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
-      WHERE c.created_at >= ${fromDateTime}::timestamptz
+      WHERE c.org_id = ${orgId}
+        AND c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
         AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ORDER BY c.created_at DESC
@@ -210,7 +216,8 @@ export default async function handler(req: Request): Promise<Response> {
         OR LOWER(a.username) = LOWER(m.sender_username)
         OR LOWER(a.name) = LOWER(m.sender_name)
       )
-      WHERE m.is_from_client = false
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
@@ -228,7 +235,8 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_cases c
       JOIN support_agents a ON a.id::text = c.assigned_to::text
       LEFT JOIN support_channels ch ON ch.id = c.channel_id
-      WHERE c.created_at >= ${fromDateTime}::timestamptz
+      WHERE c.org_id = ${orgId}
+        AND c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
         AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       GROUP BY a.name
@@ -243,7 +251,8 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) as total_commitments,
           COUNT(*) FILTER (WHERE status = 'fulfilled') as fulfilled
         FROM support_commitments
-        WHERE created_at >= ${fromDateTime}::timestamptz
+        WHERE org_id = ${orgId}
+          AND created_at >= ${fromDateTime}::timestamptz
           AND created_at <= ${toDateTime}::timestamptz
         GROUP BY promised_by
       `
@@ -255,7 +264,7 @@ export default async function handler(req: Request): Promise<Response> {
         a.name as agent_name,
         SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at))) / 3600.0 as online_hours
       FROM support_agent_sessions s
-      JOIN support_agents a ON a.id::text = s.agent_id::text
+      JOIN support_agents a ON a.id::text = s.agent_id::text AND a.org_id = ${orgId}
       WHERE s.started_at >= ${fromDateTime}::timestamptz
         AND s.started_at <= ${toDateTime}::timestamptz
       GROUP BY a.name
@@ -298,7 +307,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Все сотрудники из БД (включая тех, кто не писал в выбранный период)
     const allDbAgents = await sql`
-      SELECT name, role FROM support_agents WHERE name IS NOT NULL ORDER BY name
+      SELECT name, role FROM support_agents WHERE org_id = ${orgId} AND name IS NOT NULL ORDER BY name
     `
     const agentRoleMap: Record<string, string> = {}
     for (const a of allDbAgents) agentRoleMap[a.name] = a.role || 'agent'
@@ -519,7 +528,8 @@ export default async function handler(req: Request): Promise<Response> {
           WHEN LOWER(text_content) LIKE '%предложен%' OR LOWER(text_content) LIKE '%хотел бы%' OR LOWER(text_content) LIKE '%добавьте%' OR LOWER(text_content) LIKE '%было бы%' THEN 'feature_request'
           ELSE 'general'
         END
-        WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown' OR ai_category = 'general')
+        WHERE org_id = ${orgId}
+          AND (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown' OR ai_category = 'general')
           AND text_content IS NOT NULL AND LENGTH(text_content) > 2
           AND created_at >= ${fromDateTime}::timestamptz
           AND created_at <= ${toDateTime}::timestamptz
@@ -532,21 +542,23 @@ export default async function handler(req: Request): Promise<Response> {
     // =============================================
     try {
       await sql`
-        INSERT INTO support_agents (id, name, username, telegram_id, role)
+        INSERT INTO support_agents (id, name, username, telegram_id, role, org_id)
         SELECT
           'agent_' || u.telegram_id::text,
           u.name,
           REPLACE(COALESCE(u.telegram_username, ''), '@', ''),
           u.telegram_id::text,
-          'agent'
+          'agent',
+          u.org_id
         FROM support_users u
-        WHERE u.role = 'employee'
+        WHERE u.org_id = ${orgId}
+          AND u.role = 'employee'
           AND u.is_active = true
           AND u.telegram_id IS NOT NULL
           AND u.name IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM support_agents sa
-            WHERE sa.telegram_id = u.telegram_id::text
+            WHERE sa.telegram_id = u.telegram_id::text AND sa.org_id = ${orgId}
           )
         ON CONFLICT (id) DO NOTHING
       `
@@ -561,7 +573,8 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_messages m
         SET sender_role = 'support', is_from_client = false
         FROM support_agents a
-        WHERE m.sender_role = 'client'
+        WHERE m.org_id = ${orgId}
+          AND m.sender_role = 'client'
           AND m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
           AND (
@@ -577,7 +590,9 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_messages m
         SET sender_role = 'support', is_from_client = false
         FROM support_users u
-        WHERE u.role = 'employee' AND u.is_active = true
+        WHERE m.org_id = ${orgId}
+          AND u.org_id = ${orgId}
+          AND u.role = 'employee' AND u.is_active = true
           AND m.sender_role = 'client'
           AND m.created_at >= ${fromDateTime}::timestamptz
           AND m.created_at <= ${toDateTime}::timestamptz
@@ -597,9 +612,11 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_messages m
         SET sender_id = a.telegram_id, sender_username = a.username
         FROM support_agents a
-        WHERE m.sender_id IS NULL
+        WHERE m.org_id = ${orgId}
+          AND m.sender_id IS NULL
           AND m.sender_role = 'support'
           AND m.sender_name IS NOT NULL
+          AND a.org_id = ${orgId}
           AND a.telegram_id IS NOT NULL
           AND LOWER(m.sender_name) = LOWER(a.name)
       `
@@ -644,7 +661,8 @@ export default async function handler(req: Request): Promise<Response> {
         OR LOWER(a.username) = LOWER(m.sender_username)
         OR LOWER(a.name) = LOWER(m.sender_name)
       )
-      WHERE m.is_from_client = false
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
@@ -684,7 +702,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_count
       FROM support_cases c
       JOIN support_agents a ON a.id::text = c.assigned_to::text
-      WHERE c.created_at >= ${fromDateTime}::timestamptz
+      WHERE c.org_id = ${orgId}
+        AND c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
       GROUP BY a.name, category
       ORDER BY case_count DESC
@@ -732,7 +751,8 @@ export default async function handler(req: Request): Promise<Response> {
         OR LOWER(a.username) = LOWER(m.sender_username)
         OR LOWER(a.name) = LOWER(m.sender_name)
       )
-      WHERE m.is_from_client = false
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
@@ -781,7 +801,8 @@ export default async function handler(req: Request): Promise<Response> {
         OR LOWER(a.username) = LOWER(m.sender_username)
         OR LOWER(a.name) = LOWER(m.sender_name)
       )
-      WHERE m.is_from_client = false
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = false
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
@@ -829,7 +850,8 @@ export default async function handler(req: Request): Promise<Response> {
             COUNT(DISTINCT m.channel_id) as channels
           FROM support_messages m
           JOIN support_channels c ON c.id = m.channel_id
-          WHERE m.created_at >= ${fromDateTime}::timestamptz
+          WHERE m.org_id = ${orgId}
+            AND m.created_at >= ${fromDateTime}::timestamptz
             AND m.created_at <= ${toDateTime}::timestamptz
             AND (${market}::text IS NULL OR c.market_id = ${market})
           GROUP BY COALESCE(c.source, 'telegram')

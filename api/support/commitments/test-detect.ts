@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -284,13 +285,14 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
 
   // GET - test single text
   if (req.method === 'GET') {
@@ -300,6 +302,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Return recent commitments from DB for diagnosis
       const recent = await sql`
         SELECT * FROM support_commitments 
+        WHERE org_id = ${orgId}
         ORDER BY created_at DESC 
         LIMIT 20
       `.catch(() => [])
@@ -313,6 +316,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE m.text_content IS NOT NULL
           AND m.created_at > NOW() - INTERVAL '24 hours'
           AND (m.sender_role IN ('support', 'team') OR m.is_from_client = false)
+          AND m.org_id = ${orgId}
         ORDER BY m.created_at DESC
         LIMIT 30
       `.catch(() => [])
@@ -357,6 +361,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.created_at > ${sinceDate}::timestamptz
           AND (m.sender_role IN ('support', 'team') OR m.is_from_client = false)
           AND c.id IS NULL
+          AND m.org_id = ${orgId}
         ORDER BY m.created_at DESC
         LIMIT 1000
       `
@@ -387,12 +392,12 @@ export default async function handler(req: Request): Promise<Response> {
               INSERT INTO support_commitments (
                 id, channel_id, message_id, agent_name, sender_role,
                 commitment_text, commitment_type, is_vague, priority,
-                due_date, reminder_at, status, created_at, updated_at
+                due_date, reminder_at, status, created_at, updated_at, org_id
               ) VALUES (
                 ${commitmentId}, ${msg.channel_id}, ${msg.id}, ${msg.sender_name}, ${msg.sender_role || 'support'},
                 ${detection.commitmentText}, ${detection.commitmentType}, ${detection.isVague}, ${priority},
                 ${deadline.toISOString()}::timestamptz, ${reminderAt.toISOString()}::timestamptz, 
-                'pending', ${msg.created_at}::timestamptz, NOW()
+                'pending', ${msg.created_at}::timestamptz, NOW(), ${orgId}
               )
             `
             created.push({

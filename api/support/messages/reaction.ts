@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getOrgBotToken } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -32,7 +34,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -46,12 +48,12 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Unauthorized' }, 401)
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
+  const botToken = await getOrgBotToken(orgId)
   if (!botToken) {
     return json({ error: 'Bot not configured' }, 500)
   }
-
-  const sql = getSQL()
 
   try {
     const body = await req.json()
@@ -67,6 +69,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_messages m
       JOIN support_channels ch ON m.channel_id = ch.id
       WHERE m.id = ${messageId}
+        AND m.org_id = ${orgId}
     `
     
     if (msgResult.length === 0) {
@@ -107,7 +110,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Update reactions in database
     // Get current reactions
     const currentReactions = await sql`
-      SELECT reactions FROM support_messages WHERE id = ${messageId}
+      SELECT reactions FROM support_messages WHERE id = ${messageId} AND org_id = ${orgId}
     `
     
     let reactions = currentReactions[0]?.reactions || {}
@@ -128,7 +131,7 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       UPDATE support_messages 
       SET reactions = ${JSON.stringify(reactions)}::jsonb
-      WHERE id = ${messageId}
+      WHERE id = ${messageId} AND org_id = ${orgId}
     `
 
     return json({

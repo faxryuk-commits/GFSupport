@@ -1,16 +1,32 @@
 import { getSQL } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
+    }
   })
+
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
+    },
+  })
+}
 
 export async function GET(req: Request) {
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     const url = new URL(req.url)
     const category = url.searchParams.get('category') || ''
     const period = url.searchParams.get('period') || '30d'
@@ -28,7 +44,8 @@ export async function GET(req: Request) {
         ch.name as channel_name
       FROM support_cases c
       LEFT JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.category = ${category}
+      WHERE c.org_id = ${orgId}
+        AND c.category = ${category}
         AND c.created_at >= ${startDate.toISOString()}
       ORDER BY c.created_at DESC
       LIMIT 100
@@ -116,7 +133,8 @@ export async function GET(req: Request) {
         ch.name as channel_name
       FROM support_messages m
       JOIN support_channels ch ON m.channel_id = ch.id
-      WHERE m.ai_category = ${category}
+      WHERE m.org_id = ${orgId}
+        AND m.ai_category = ${category}
         AND m.created_at >= ${startDate.toISOString()}
         AND m.text_content IS NOT NULL
         AND LENGTH(m.text_content) > 20

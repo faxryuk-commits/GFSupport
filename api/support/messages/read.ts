@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -35,6 +36,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     const { messageId, messageIds, channelId } = await req.json()
 
     // Mark specific message(s) as read
@@ -42,7 +44,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE support_messages 
         SET is_read = true, read_at = NOW()
-        WHERE id = ${messageId} AND is_read = false
+        WHERE id = ${messageId} AND org_id = ${orgId} AND is_read = false
       `
     }
 
@@ -50,7 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE support_messages 
         SET is_read = true, read_at = NOW()
-        WHERE id = ANY(${messageIds}) AND is_read = false
+        WHERE id = ANY(${messageIds}) AND org_id = ${orgId} AND is_read = false
       `
     }
 
@@ -59,12 +61,12 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE support_messages 
         SET is_read = true, read_at = NOW()
-        WHERE channel_id = ${channelId} AND is_read = false AND is_from_client = true
+        WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_read = false AND is_from_client = true
       `
 
       // Update channel unread count
       await sql`
-        UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId}
+        UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId} AND org_id = ${orgId}
       `
     }
 

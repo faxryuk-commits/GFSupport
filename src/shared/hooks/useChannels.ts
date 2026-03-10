@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchChannels, markChannelRead } from '../api/channels'
 import { useCache, type CachedChannel } from '../store'
-import type { Channel } from '@/entities/channel'
+import type { Channel } from '../types'
 
 const STALE_TIME = 2 * 60 * 1000 // 2 minutes
 

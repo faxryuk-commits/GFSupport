@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getOpenAIKey } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -71,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -82,6 +83,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // GET - Semantic search across solutions and historical cases
@@ -103,7 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT id, category, subcategory, problem_keywords, solution_text, solution_steps, 
                success_score, used_count, is_verified
         FROM support_solutions
-        WHERE is_active = true
+        WHERE is_active = true AND org_id = ${orgId}
         ${category ? sql`AND category = ${category}` : sql``}
         ORDER BY success_score DESC, used_count DESC
         LIMIT 50
@@ -113,7 +115,7 @@ export default async function handler(req: Request): Promise<Response> {
       const resolvedCases = await sql`
         SELECT id, title, description, category, resolution_notes, root_cause
         FROM support_cases
-        WHERE status = 'resolved' AND resolution_notes IS NOT NULL
+        WHERE status = 'resolved' AND resolution_notes IS NOT NULL AND org_id = ${orgId}
         ${category ? sql`AND category = ${category}` : sql``}
         ORDER BY resolved_at DESC
         LIMIT 50
@@ -123,7 +125,7 @@ export default async function handler(req: Request): Promise<Response> {
       const embeddings = await sql`
         SELECT source_type, source_id, embedding
         FROM support_embeddings
-        WHERE source_type IN ('solution', 'case')
+        WHERE source_type IN ('solution', 'case') AND org_id = ${orgId}
       `
       
       const embeddingMap = new Map()
@@ -281,7 +283,7 @@ export default async function handler(req: Request): Promise<Response> {
         // Index all solutions
         const solutions = await sql`
           SELECT id, category, subcategory, problem_keywords, solution_text, solution_steps
-          FROM support_solutions WHERE is_active = true
+          FROM support_solutions WHERE is_active = true AND org_id = ${orgId}
         `
         
         let indexed = 0
@@ -292,8 +294,8 @@ export default async function handler(req: Request): Promise<Response> {
           if (embedding) {
             const embId = `emb_sol_${s.id}`
             await sql`
-              INSERT INTO support_embeddings (id, source_type, source_id, content_text, embedding)
-              VALUES (${embId}, 'solution', ${s.id}, ${text}, ${JSON.stringify(embedding)})
+              INSERT INTO support_embeddings (id, source_type, source_id, content_text, embedding, org_id)
+              VALUES (${embId}, 'solution', ${s.id}, ${text}, ${JSON.stringify(embedding)}, ${orgId})
               ON CONFLICT (source_type, source_id) DO UPDATE SET
                 content_text = ${text},
                 embedding = ${JSON.stringify(embedding)},
@@ -311,7 +313,7 @@ export default async function handler(req: Request): Promise<Response> {
         const cases = await sql`
           SELECT id, title, description, category, resolution_notes, root_cause
           FROM support_cases
-          WHERE status = 'resolved' AND resolution_notes IS NOT NULL
+          WHERE status = 'resolved' AND resolution_notes IS NOT NULL AND org_id = ${orgId}
           ORDER BY resolved_at DESC
           LIMIT 100
         `
@@ -324,8 +326,8 @@ export default async function handler(req: Request): Promise<Response> {
           if (embedding) {
             const embId = `emb_case_${c.id}`
             await sql`
-              INSERT INTO support_embeddings (id, source_type, source_id, content_text, embedding)
-              VALUES (${embId}, 'case', ${c.id}, ${text}, ${JSON.stringify(embedding)})
+              INSERT INTO support_embeddings (id, source_type, source_id, content_text, embedding, org_id)
+              VALUES (${embId}, 'case', ${c.id}, ${text}, ${JSON.stringify(embedding)}, ${orgId})
               ON CONFLICT (source_type, source_id) DO UPDATE SET
                 content_text = ${text},
                 embedding = ${JSON.stringify(embedding)},

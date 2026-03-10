@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -28,13 +29,14 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
   const searchQuery = url.searchParams.get('q') || url.searchParams.get('query') || ''
   const categoryFilter = url.searchParams.get('category')
   const maxResults = Math.min(parseInt(url.searchParams.get('limit') || '10'), 50)
@@ -70,6 +72,7 @@ export default async function handler(req: Request) {
             OR content ILIKE ${searchPattern}
             OR ${searchQuery} = ANY(keywords)
           )
+          AND org_id = ${orgId}
         ORDER BY relevance DESC, title
         LIMIT ${maxResults}
       `
@@ -89,9 +92,12 @@ export default async function handler(req: Request) {
           ) as relevance
         FROM support_docs
         WHERE 
-          title ILIKE ${searchPattern}
-          OR content ILIKE ${searchPattern}
-          OR ${searchQuery} = ANY(keywords)
+          org_id = ${orgId}
+          AND (
+            title ILIKE ${searchPattern}
+            OR content ILIKE ${searchPattern}
+            OR ${searchQuery} = ANY(keywords)
+          )
         ORDER BY relevance DESC, title
         LIMIT ${maxResults}
       `

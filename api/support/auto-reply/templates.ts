@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -31,7 +32,7 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -45,6 +46,7 @@ export default async function handler(req: Request) {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // GET - List templates
   if (req.method === 'GET') {
@@ -52,6 +54,7 @@ export default async function handler(req: Request) {
       const templates = await sql`
         SELECT id, intent, template_text, personalization_vars, tone, language, priority, usage_count, is_active, created_at
         FROM support_auto_templates
+        WHERE org_id = ${orgId}
         ORDER BY intent, priority DESC
       `
       return json({ templates })
@@ -77,8 +80,8 @@ export default async function handler(req: Request) {
       const personalization_vars = varsMatch.map((v: string) => v)
 
       await sql`
-        INSERT INTO support_auto_templates (id, intent, template_text, personalization_vars, tone, language, priority, is_active)
-        VALUES (${id}, ${intent}, ${template_text}, ${personalization_vars}, ${tone}, ${language}, ${priority}, ${is_active})
+        INSERT INTO support_auto_templates (id, intent, template_text, personalization_vars, tone, language, priority, is_active, org_id)
+        Values (${id}, ${intent}, ${template_text}, ${personalization_vars}, ${tone}, ${language}, ${priority}, ${is_active}, ${orgId})
       `
 
       return json({ success: true, id })
@@ -112,6 +115,7 @@ export default async function handler(req: Request) {
           priority = COALESCE(${priority}, priority),
           is_active = COALESCE(${is_active}, is_active)
         WHERE id = ${id}
+          AND org_id = ${orgId}
       `
 
       return json({ success: true })
@@ -130,7 +134,7 @@ export default async function handler(req: Request) {
     }
 
     try {
-      await sql`DELETE FROM support_auto_templates WHERE id = ${id}`
+      await sql`DELETE FROM support_auto_templates WHERE id = ${id} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (error: any) {
       return json({ error: error.message }, 500)

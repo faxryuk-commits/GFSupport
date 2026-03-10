@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender } from '../lib/identification.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -33,7 +34,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -58,6 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
 
     // If viewer info provided, check if they're support staff
     let isStaff = true // Default to true for web UI (authenticated)
@@ -88,6 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_messages 
         SET is_read = true, read_at = NOW()
         WHERE channel_id = ${channelId}
+          AND org_id = ${orgId}
           AND is_read = false
           AND is_from_client = true
         RETURNING id
@@ -98,7 +101,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE support_channels 
         SET unread_count = 0
-        WHERE id = ${channelId}
+        WHERE id = ${channelId} AND org_id = ${orgId}
       `
 
       // Check if any unread messages need response (for awaiting_reply status)
@@ -112,6 +115,7 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_messages 
         SET is_read = true, read_at = NOW()
         WHERE id = ANY(${messageIds})
+          AND org_id = ${orgId}
           AND is_read = false
         RETURNING id
       `
@@ -125,11 +129,11 @@ export default async function handler(req: Request): Promise<Response> {
         for (const row of channelResult) {
           const unreadCount = await sql`
             SELECT COUNT(*) as count FROM support_messages 
-            WHERE channel_id = ${row.channel_id} AND is_read = false AND is_from_client = true
+            WHERE channel_id = ${row.channel_id} AND org_id = ${orgId} AND is_read = false AND is_from_client = true
           `
           await sql`
             UPDATE support_channels SET unread_count = ${parseInt(unreadCount[0]?.count || 0)}
-            WHERE id = ${row.channel_id}
+            WHERE id = ${row.channel_id} AND org_id = ${orgId}
           `
         }
       }

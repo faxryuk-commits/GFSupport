@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getOrgBotToken } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +28,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -49,14 +51,15 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const sql = getSQL()
-    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    const orgId = await getRequestOrgId(req)
+    const botToken = await getOrgBotToken(orgId)
 
     if (!botToken) {
       return json({ error: 'Bot token not configured' }, 500)
     }
 
     const channelResult = await sql`
-      SELECT * FROM support_channels WHERE id = ${channelId}
+      SELECT * FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
     `
 
     if (channelResult.length === 0) {
@@ -137,11 +140,11 @@ export default async function handler(req: Request): Promise<Response> {
 
     await sql`
       INSERT INTO support_messages (
-        id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
+        id, channel_id, org_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
         is_from_client, content_type, text_content, media_url,
         is_read, created_at
       ) VALUES (
-        ${messageId}, ${channelId}, ${externalMessageId}, ${senderId}, ${senderName},
+        ${messageId}, ${channelId}, ${orgId}, ${externalMessageId}, ${senderId}, ${senderName},
         ${senderUsername}, 'support', false, ${contentType}, ${caption || null},
         ${mediaUrl}, true, NOW()
       )
@@ -154,7 +157,7 @@ export default async function handler(req: Request): Promise<Response> {
         last_sender_name = ${senderName},
         last_message_preview = ${caption || `[${contentType}]`},
         awaiting_reply = false
-      WHERE id = ${channelId}
+      WHERE id = ${channelId} AND org_id = ${orgId}
     `
 
     return json({

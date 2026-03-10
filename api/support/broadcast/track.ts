@@ -28,6 +28,7 @@ export default async function handler(req: Request) {
     await sql`
       CREATE TABLE IF NOT EXISTS support_broadcast_clicks (
         id SERIAL PRIMARY KEY,
+        org_id VARCHAR(50) DEFAULT 'org_delever',
         broadcast_id VARCHAR(50),
         link_id VARCHAR(50),
         target_url TEXT,
@@ -36,6 +37,14 @@ export default async function handler(req: Request) {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `.catch(() => {})
+    await sql`ALTER TABLE support_broadcast_clicks ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+
+    // Получаем org_id из рассылки (трекинг вызывается по ссылке без auth)
+    let orgId = 'org_delever'
+    if (broadcastId) {
+      const br = await sql`SELECT org_id FROM support_broadcasts WHERE id = ${broadcastId} LIMIT 1`.catch(() => [])
+      if (br[0]?.org_id) orgId = br[0].org_id
+    }
     
     // Записываем клик
     const userAgent = req.headers.get('user-agent') || ''
@@ -46,8 +55,8 @@ export default async function handler(req: Request) {
       .catch(() => 'unknown')
     
     await sql`
-      INSERT INTO support_broadcast_clicks (broadcast_id, link_id, target_url, user_agent, ip_hash)
-      VALUES (${broadcastId}, ${linkId}, ${targetUrl}, ${userAgent.slice(0, 500)}, ${ipHash})
+      INSERT INTO support_broadcast_clicks (org_id, broadcast_id, link_id, target_url, user_agent, ip_hash)
+      VALUES (${orgId}, ${broadcastId}, ${linkId}, ${targetUrl}, ${userAgent.slice(0, 500)}, ${ipHash})
     `
     
     // Обновляем счётчик кликов в рассылке
@@ -55,7 +64,7 @@ export default async function handler(req: Request) {
       await sql`
         UPDATE support_broadcasts 
         SET clicks_count = COALESCE(clicks_count, 0) + 1
-        WHERE id = ${broadcastId}
+        WHERE id = ${broadcastId} AND org_id = ${orgId}
       `.catch(() => {})
     }
     

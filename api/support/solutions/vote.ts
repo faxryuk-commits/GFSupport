@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   try {
     const body = await req.json()
@@ -56,7 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
           helpful_votes = helpful_votes + 1,
           used_count = used_count + 1,
           updated_at = NOW()
-        WHERE id = ${solutionId}
+        WHERE id = ${solutionId} AND org_id = ${orgId}
       `
     } else if (vote === 'not_helpful') {
       await sql`
@@ -64,15 +66,14 @@ export default async function handler(req: Request): Promise<Response> {
           not_helpful_votes = not_helpful_votes + 1,
           used_count = used_count + 1,
           updated_at = NOW()
-        WHERE id = ${solutionId}
+        WHERE id = ${solutionId} AND org_id = ${orgId}
       `
     } else if (vote === 'used') {
-      // Just mark as used without voting
       await sql`
         UPDATE support_solutions SET 
           used_count = used_count + 1,
           updated_at = NOW()
-        WHERE id = ${solutionId}
+        WHERE id = ${solutionId} AND org_id = ${orgId}
       `
     }
 
@@ -82,7 +83,7 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_cases SET 
           resolution_notes = COALESCE(resolution_notes, '') || ' [Solution: ' || ${solutionId} || ']',
           updated_at = NOW()
-        WHERE id = ${caseId}
+        WHERE id = ${caseId} AND org_id = ${orgId}
       `
     }
 

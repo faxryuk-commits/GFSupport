@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { checkAuthRateLimit } from '../lib/rate-limit.js'
+import { writeAuditLog, getClientIP } from '../lib/audit.js'
 
 export const config = {
   runtime: 'edge',
@@ -75,16 +77,21 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS email VARCHAR(255)`
     } catch (e) { /* column may already exist */ }
 
+    const ip = getClientIP(req)
+    const rateCheck = checkAuthRateLimit(ip)
+    if (!rateCheck.allowed) {
+      return json({ error: 'Too many attempts. Try again later.' }, 429)
+    }
+
     const { username, password } = await req.json()
 
     if (!username || !password) {
       return json({ error: 'Username and password are required' }, 400)
     }
 
-    // Find agent by username, name, or email - return all fields for frontend
     const agents = await sql`
       SELECT id, name, username, email, role, status, password_hash,
-             telegram_id, avatar_url, phone, position, department, created_at
+             telegram_id, avatar_url, phone, position, department, org_id, created_at
       FROM support_agents 
       WHERE username = ${username} 
          OR name = ${username}
@@ -121,6 +128,20 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    // Load org info
+    let org: { id: string; name: string; slug: string; plan: string; logoUrl?: string } | null = null
+    const orgId = agent.org_id || 'org_delever'
+    try {
+      const [orgRow] = await sql`
+        SELECT id, name, slug, plan, logo_url FROM support_organizations WHERE id = ${orgId} LIMIT 1
+      `
+      if (orgRow) {
+        org = { id: orgRow.id, name: orgRow.name, slug: orgRow.slug, plan: orgRow.plan, logoUrl: orgRow.logo_url }
+      }
+    } catch {}
+
+    writeAuditLog({ orgId: orgId || 'unknown', agentId: agent.id, action: 'login', ip, details: { username } })
+
     return json({
       success: true,
       token,
@@ -130,14 +151,16 @@ export default async function handler(req: Request): Promise<Response> {
         username: agent.username,
         email: agent.email,
         role: agent.role,
-        status: 'online', // Just set to online since we updated it
+        status: 'online',
         telegramId: agent.telegram_id,
         avatarUrl: avatarUrl,
         phone: agent.phone,
         position: agent.position,
         department: agent.department,
-        createdAt: agent.created_at
-      }
+        orgId,
+        createdAt: agent.created_at,
+      },
+      org,
     })
   } catch (e: any) {
     return json({ error: e.message }, 500)

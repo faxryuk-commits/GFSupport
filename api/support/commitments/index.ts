@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -38,13 +39,14 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
 
   // Ensure table exists with all required fields
   try {
@@ -94,6 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
         SET status = 'overdue', updated_at = NOW()
         WHERE status = 'pending' 
           AND due_date < NOW()
+          AND org_id = ${orgId}
       `.catch(() => {})
 
       // Подсчёт по статусам (после обновления)
@@ -102,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
           status,
           COUNT(*) as count
         FROM support_commitments
+        WHERE org_id = ${orgId}
         GROUP BY status
       `
       const updatedStatsMap = Object.fromEntries(
@@ -122,6 +126,7 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE c.status IN ('pending', 'overdue')
             AND c.due_date IS NOT NULL
             AND c.due_date < NOW() + INTERVAL '24 hours'
+            AND c.org_id = ${orgId}
           ORDER BY c.due_date ASC
           LIMIT ${limit} OFFSET ${offset}
         `
@@ -131,6 +136,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_commitments c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.channel_id = ${channelId}
+            AND c.org_id = ${orgId}
           ORDER BY c.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `
@@ -143,6 +149,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.agent_id = ${agentId}
             AND c.status = ANY(${statusCondition})
+            AND c.org_id = ${orgId}
           ORDER BY c.due_date ASC NULLS LAST, c.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `
@@ -154,6 +161,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_commitments c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.status = ANY(${statusCondition})
+            AND c.org_id = ${orgId}
           ORDER BY c.due_date ASC NULLS LAST, c.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `
@@ -244,13 +252,13 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         INSERT INTO support_commitments (
           id, channel_id, case_id, message_id, agent_id, agent_name,
-          commitment_text, commitment_type, priority, due_date, reminder_at, created_at, updated_at
+          commitment_text, commitment_type, priority, due_date, reminder_at, created_at, updated_at, org_id
         ) VALUES (
           ${id}, ${channelId}, ${caseId || null}, ${messageId || null}, 
           ${finalAgentId}, ${finalAgentName},
           ${text}, ${type}, ${priority}, 
           ${dueDate || null}::timestamptz, ${finalReminderAt || null}::timestamptz,
-          NOW(), NOW()
+          NOW(), NOW(), ${orgId}
         )
       `
 
@@ -296,13 +304,13 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET status = 'completed', completed_at = NOW(), updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       } else if (status) {
         await sql`
           UPDATE support_commitments 
           SET status = ${status}, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -310,7 +318,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET due_date = ${dueDate}::timestamptz, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -318,7 +326,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET reminder_at = ${reminderAt}::timestamptz, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -326,7 +334,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET priority = ${priority}, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -334,7 +342,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET notes = ${notes}, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -342,7 +350,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET agent_id = ${assignedTo}, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -350,7 +358,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET agent_name = ${assigneeName}, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -358,7 +366,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET commitment_text = ${text}, updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       }
 
@@ -367,7 +375,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT c.*, ch.name as channel_name
         FROM support_commitments c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE c.id = ${id}
+        WHERE c.id = ${id} AND c.org_id = ${orgId}
       `
 
       const c = updated[0]
@@ -406,7 +414,7 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'id is required' }, 400)
       }
 
-      await sql`DELETE FROM support_commitments WHERE id = ${id}`
+      await sql`DELETE FROM support_commitments WHERE id = ${id} AND org_id = ${orgId}`
       return json({ success: true })
 
     } catch (e: any) {

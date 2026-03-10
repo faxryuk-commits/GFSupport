@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getOrgBotToken } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +28,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +43,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   try {
     // Ensure columns exist FIRST
@@ -64,6 +67,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_messages m
       LEFT JOIN support_channels c ON m.channel_id = c.id
       WHERE m.id = ${messageId}
+        AND m.org_id = ${orgId}
     `
     
     if (!message || message.length === 0) {
@@ -80,27 +84,25 @@ export default async function handler(req: Request): Promise<Response> {
     
     // Delete from Telegram if we have the telegram message ID
     const telegramMsgId = telegramMessageId || msg.telegram_message_id
-    if (telegramMsgId && msg.telegram_chat_id) {
-      const botToken = process.env.TELEGRAM_BOT_TOKEN
-      if (botToken) {
-        try {
-          const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: msg.telegram_chat_id,
-              message_id: telegramMsgId
-            })
+    const botToken = await getOrgBotToken(orgId)
+    if (telegramMsgId && msg.telegram_chat_id && botToken) {
+      try {
+        const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: msg.telegram_chat_id,
+            message_id: telegramMsgId
           })
-          
-          const result = await telegramRes.json()
-          if (!result.ok) {
-            console.log('Telegram delete failed:', result.description)
-            // Continue anyway - message may be too old to delete
-          }
-        } catch (e) {
-          console.error('Telegram delete error:', e)
+        })
+
+        const result = await telegramRes.json()
+        if (!result.ok) {
+          console.log('Telegram delete failed:', result.description)
+          // Continue anyway - message may be too old to delete
         }
+      } catch (e) {
+        console.error('Telegram delete error:', e)
       }
     }
     
@@ -112,6 +114,7 @@ export default async function handler(req: Request): Promise<Response> {
         is_deleted = true,
         deleted_at = NOW()
       WHERE id = ${messageId}
+        AND org_id = ${orgId}
     `
     
     return json({ 

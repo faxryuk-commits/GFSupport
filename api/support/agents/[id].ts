@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -35,6 +36,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const agentId = params.id
 
   // GET - получить агента по ID
@@ -48,7 +50,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
           (SELECT COUNT(*) FROM support_messages WHERE sender_role = 'support' AND sender_name = support_agents.name AND created_at > NOW() - INTERVAL '30 days') as messages_last_30d,
           (SELECT COUNT(*) FROM support_cases WHERE assigned_to = support_agents.id AND status IN ('resolved', 'closed')) as cases_resolved
         FROM support_agents 
-        WHERE id = ${agentId}
+        WHERE id = ${agentId} AND org_id = ${orgId}
       `
 
       if (!agent) {
@@ -101,12 +103,12 @@ export default async function handler(req: Request, { params }: { params: { id: 
           role = COALESCE(${role}, role),
           status = COALESCE(${status}, status),
           avatar_url = COALESCE(${avatarUrl}, avatar_url)
-        WHERE id = ${agentId}
+        WHERE id = ${agentId} AND org_id = ${orgId}
       `
 
       // Возвращаем обновленного агента
       const [updated] = await sql`
-        SELECT * FROM support_agents WHERE id = ${agentId}
+        SELECT * FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId}
       `
 
       return json({
@@ -134,7 +136,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
   if (req.method === 'DELETE') {
     try {
       await sql`
-        UPDATE support_agents SET status = 'inactive' WHERE id = ${agentId}
+        UPDATE support_agents SET status = 'inactive' WHERE id = ${agentId} AND org_id = ${orgId}
       `
 
       return json({ success: true, message: 'Agent deactivated' })

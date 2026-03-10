@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -56,7 +57,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -77,6 +78,7 @@ export default async function handler(req: Request): Promise<Response> {
   const before = url.searchParams.get('before') // ISO timestamp для загрузки старых сообщений
   
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   try {
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
@@ -88,6 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
         photo_url
       FROM support_channels
       WHERE id = ${channelId}
+        AND org_id = ${orgId}
     `
     
     const channel = channelResult[0]
@@ -112,6 +115,7 @@ export default async function handler(req: Request): Promise<Response> {
           thread_id, thread_name, case_id, forwarded_from, created_at
         FROM support_messages
         WHERE channel_id = ${channelId}
+          AND org_id = ${orgId}
           AND created_at > ${since}::timestamptz
         ORDER BY created_at ASC
         LIMIT 100
@@ -131,6 +135,7 @@ export default async function handler(req: Request): Promise<Response> {
           thread_id, thread_name, case_id, forwarded_from, created_at
         FROM support_messages
         WHERE channel_id = ${channelId}
+          AND org_id = ${orgId}
           AND created_at < ${before}::timestamptz
           AND created_at > NOW() - INTERVAL '90 days'
         ORDER BY created_at DESC
@@ -153,6 +158,7 @@ export default async function handler(req: Request): Promise<Response> {
           thread_id, thread_name, case_id, forwarded_from, created_at
         FROM support_messages
         WHERE channel_id = ${channelId}
+          AND org_id = ${orgId}
           AND created_at > NOW() - INTERVAL '90 days'
         ORDER BY created_at DESC
         LIMIT ${limit}
@@ -174,6 +180,7 @@ export default async function handler(req: Request): Promise<Response> {
     const countResult = await sql`
       SELECT COUNT(*) as total FROM support_messages
       WHERE channel_id = ${channelId}
+        AND org_id = ${orgId}
         AND created_at > NOW() - INTERVAL '90 days'
     `
     const total = parseInt(countResult[0]?.total || '0')

@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import OpenAI from 'openai'
-import { getOpenAIKey } from '../lib/db.js'
+import { getOpenAIKey, getOrgBotToken } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -23,14 +24,14 @@ function getSQL() {
   return neon(connectionString)
 }
 
-// Telegram Bot API - simple message without buttons (feedback via context/reactions)
 async function sendTelegramMessage(
   chatId: string | number, 
   text: string, 
   parseMode = 'HTML',
-  askForFeedback = false // Only ask occasionally
+  askForFeedback = false,
+  orgBotToken?: string | null
 ) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const botToken = orgBotToken || process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
   
   // If asking for feedback, append a gentle question
@@ -53,7 +54,7 @@ async function sendTelegramMessage(
 }
 
 // Search similar dialogs from learning database (RAG)
-async function searchSimilarDialogs(sql: any, questionText: string): Promise<{
+async function searchSimilarDialogs(sql: any, questionText: string, orgId: string): Promise<{
   found: boolean
   dialog?: { id: string; answer: string; confidence: number }
 }> {
@@ -77,6 +78,7 @@ async function searchSimilarDialogs(sql: any, questionText: string): Promise<{
       FROM support_dialogs
       WHERE is_active = true
         AND (was_helpful IS NULL OR was_helpful = true)
+        AND org_id = ${orgId}
         AND confidence_score >= 0.6
         AND used_count >= 1
         AND (
@@ -106,13 +108,14 @@ async function searchSimilarDialogs(sql: any, questionText: string): Promise<{
 }
 
 // Поиск в базе знаний
-async function searchDocs(sql: any, query: string): Promise<{ title: string; url: string } | null> {
+async function searchDocs(sql: any, query: string, orgId: string): Promise<{ title: string; url: string } | null> {
   try {
     const results = await sql`
       SELECT title, url
       FROM support_docs
-      WHERE title ILIKE ${'%' + query + '%'}
-         OR content ILIKE ${'%' + query + '%'}
+      WHERE org_id = ${orgId}
+        AND (title ILIKE ${'%' + query + '%'}
+         OR content ILIKE ${'%' + query + '%'})
       ORDER BY 
         CASE WHEN title ILIKE ${'%' + query + '%'} THEN 0 ELSE 1 END
       LIMIT 1
@@ -261,7 +264,7 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
@@ -275,6 +278,8 @@ export default async function handler(req: Request) {
   return json({ success: false, skipped: true, reason: 'Autoresponder temporarily disabled' })
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
+  const botToken = await getOrgBotToken(orgId)
   
   try {
     const body = await req.json()
@@ -292,10 +297,11 @@ export default async function handler(req: Request) {
     
     // Проверяем не отправляли ли уже автоответ в этот канал за последние 30 мин
     const recentAutoResponse = await sql`
-      SELECT id FROM support_messages 
+      Select id FROM support_messages 
       WHERE channel_id = ${channelId}
         AND sender_role = 'autoresponder'
         AND created_at > NOW() - INTERVAL '30 minutes'
+        AND org_id = ${orgId}
       LIMIT 1
     `
     
@@ -308,7 +314,7 @@ export default async function handler(req: Request) {
     }
     
     // 1. First try RAG - search for similar solved dialogs
-    const ragResult = await searchSimilarDialogs(sql, messageText || '')
+    const ragResult = await searchSimilarDialogs(sql, messageText || '', orgId)
     let responseText: string
     let usedDialogId: string | null = null
     let responseSource: 'rag' | 'docs' | 'template' = 'template'
@@ -324,6 +330,7 @@ export default async function handler(req: Request) {
         UPDATE support_dialogs 
         SET used_count = used_count + 1, last_used_at = NOW()
         WHERE id = ${usedDialogId}
+          AND org_id = ${orgId}
       `.catch(() => {})
       
     } else {
@@ -331,7 +338,7 @@ export default async function handler(req: Request) {
       const keywords = (messageText || '').split(/\s+/).filter((w: string) => w.length > 3).slice(0, 3)
       let docHint = null
       for (const keyword of keywords) {
-        docHint = await searchDocs(sql, keyword)
+        docHint = await searchDocs(sql, keyword, orgId)
         if (docHint) break
       }
       
@@ -356,6 +363,7 @@ export default async function handler(req: Request) {
           SELECT COUNT(*) as cnt FROM support_messages 
           WHERE sender_role = 'autoresponder' 
           AND created_at > NOW() - INTERVAL '7 days'
+          AND org_id = ${orgId}
         `
         const count = parseInt(autoResponseCount[0]?.cnt || '0')
         // Ask for feedback every ~15 auto responses
@@ -368,7 +376,8 @@ export default async function handler(req: Request) {
       telegramChatId, 
       responseText,
       'HTML',
-      askForFeedback
+      askForFeedback,
+      botToken
     )
     
     if (!telegramResult.ok) {
@@ -384,10 +393,10 @@ export default async function handler(req: Request) {
     await sql`
       INSERT INTO support_messages (
         id, channel_id, telegram_message_id, sender_name, sender_role, 
-        is_from_client, content_type, text_content, created_at
+        is_from_client, content_type, text_content, created_at, org_id
       ) VALUES (
         ${msgId}, ${channelId}, ${telegramResult.result?.message_id}, 
-        'AI Помощник', 'autoresponder', false, 'text', ${responseText}, NOW()
+        'AI Помощник', 'autoresponder', false, 'text', ${responseText}, NOW(), ${orgId}
       )
     `
     
@@ -396,12 +405,12 @@ export default async function handler(req: Request) {
       const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       await sql`
         INSERT INTO support_cases (
-          id, channel_id, title, description, status, priority, category, created_at
+          id, channel_id, title, description, status, priority, category, created_at, org_id
         ) VALUES (
           ${caseId}, ${channelId}, 
           ${'Автоматический тикет: ' + (senderName || 'Клиент')},
           ${messageText?.slice(0, 500) || 'Сообщение в нерабочее время'},
-          'detected', 'medium', 'auto-created', NOW()
+          'detected', 'medium', 'auto-created', NOW(), ${orgId}
         )
         ON CONFLICT DO NOTHING
       `.catch(() => {}) // Игнорируем если таблица не существует

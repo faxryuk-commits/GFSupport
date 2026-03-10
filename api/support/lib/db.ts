@@ -154,13 +154,54 @@ export async function ensureMigrated() {
   console.log('[DB] Migrations complete')
 }
 
-export async function getOpenAIKey(): Promise<string | null> {
+export async function getOpenAIKey(orgId?: string | null): Promise<string | null> {
+  const sql = getSQL()
+  if (orgId) {
+    try {
+      const [org] = await sql`SELECT openai_api_key FROM support_organizations WHERE id = ${orgId} LIMIT 1`
+      if (org?.openai_api_key) return org.openai_api_key
+    } catch {}
+  }
   try {
-    const sql = getSQL()
     const rows = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key' LIMIT 1`
     if (rows[0]?.value) return rows[0].value
   } catch {}
   return process.env.OPENAI_API_KEY || null
+}
+
+export async function getOrgBotToken(orgId?: string | null): Promise<string | null> {
+  const sql = getSQL()
+  if (orgId) {
+    try {
+      const [org] = await sql`SELECT telegram_bot_token FROM support_organizations WHERE id = ${orgId} LIMIT 1`
+      if (org?.telegram_bot_token) return org.telegram_bot_token
+    } catch {}
+  }
+  try {
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    if (rows[0]?.value) return rows[0].value
+  } catch {}
+  return process.env.TELEGRAM_BOT_TOKEN || null
+}
+
+export async function getOrgWhatsAppBridge(orgId?: string | null): Promise<{ url: string | null; secret: string | null }> {
+  const sql = getSQL()
+  if (orgId) {
+    try {
+      const [org] = await sql`SELECT whatsapp_bridge_url, whatsapp_bridge_secret FROM support_organizations WHERE id = ${orgId} LIMIT 1`
+      if (org?.whatsapp_bridge_url) return { url: org.whatsapp_bridge_url, secret: org.whatsapp_bridge_secret }
+    } catch {}
+  }
+  try {
+    const rows = await sql`SELECT key, value FROM support_settings WHERE key IN ('whatsapp_bridge_url', 'whatsapp_bridge_secret')`
+    const map: Record<string, string> = {}
+    for (const r of rows) map[r.key] = r.value
+    if (map.whatsapp_bridge_url) return { url: map.whatsapp_bridge_url, secret: map.whatsapp_bridge_secret || null }
+  } catch {}
+  return {
+    url: process.env.WHATSAPP_BRIDGE_URL || null,
+    secret: process.env.WHATSAPP_BRIDGE_SECRET || null,
+  }
 }
 
 export function json(data: any, status = 200) {
@@ -177,6 +218,6 @@ export function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
   }
 }

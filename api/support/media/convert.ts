@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -11,17 +12,17 @@ function json(data: any, status = 200) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
     },
   })
 }
 
-async function getBotToken(): Promise<string | null> {
+async function getBotToken(orgId: string): Promise<string | null> {
   try {
     const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
     if (connectionString) {
       const sql = neon(connectionString)
-      const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+      const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
       if (rows[0]?.value) return rows[0].value
     }
   } catch {}
@@ -34,11 +35,12 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const tgUrl = url.searchParams.get('url') || url.searchParams.get('file_id')
   
@@ -46,7 +48,7 @@ export default async function handler(req: Request) {
     return json({ error: 'url or file_id parameter required' }, 400)
   }
 
-  const botToken = await getBotToken()
+  const botToken = await getBotToken(orgId)
   if (!botToken) {
     return json({ error: 'Bot token not configured' }, 500)
   }

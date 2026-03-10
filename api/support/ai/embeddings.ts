@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getOpenAIKey } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -71,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -82,6 +83,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // Ensure embeddings table exists
@@ -121,8 +123,8 @@ export default async function handler(req: Request): Promise<Response> {
       
       // Upsert embedding
       await sql`
-        INSERT INTO support_embeddings (id, source_type, source_id, content_text, embedding, metadata)
-        VALUES (${embeddingId}, ${sourceType}, ${sourceId}, ${text}, ${JSON.stringify(embedding)}, ${JSON.stringify(metadata || {})})
+        INSERT INTO support_embeddings (id, source_type, source_id, content_text, embedding, metadata, org_id)
+        VALUES (${embeddingId}, ${sourceType}, ${sourceId}, ${text}, ${JSON.stringify(embedding)}, ${JSON.stringify(metadata || {})}, ${orgId})
         ON CONFLICT (source_type, source_id) 
         DO UPDATE SET 
           content_text = ${text},
@@ -163,8 +165,8 @@ export default async function handler(req: Request): Promise<Response> {
       
       // Get all embeddings (filtered by sourceType if provided)
       const embeddings = sourceType 
-        ? await sql`SELECT * FROM support_embeddings WHERE source_type = ${sourceType}`
-        : await sql`SELECT * FROM support_embeddings`
+        ? await sql`SELECT * FROM support_embeddings WHERE source_type = ${sourceType} AND org_id = ${orgId}`
+        : await sql`SELECT * FROM support_embeddings WHERE org_id = ${orgId}`
       
       // Calculate similarities
       const results = embeddings

@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getOpenAIKey } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -148,7 +149,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -166,6 +167,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   // Get parameters
   const limit = parseInt(url.searchParams.get('limit') || '100')
@@ -209,6 +211,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEAD(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as next_is_client
         FROM support_messages m
         WHERE m.created_at > NOW() - INTERVAL '${daysBack} days'
+          AND m.org_id = ${orgId}
       )
       SELECT 
         r.id as answer_id,
@@ -250,6 +253,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT id, was_helpful, confidence_score FROM support_dialogs 
           WHERE channel_id = ${conv.channel_id}
             AND question_text = ${questionText}
+            AND org_id = ${orgId}
           LIMIT 1
         `
 
@@ -281,6 +285,7 @@ export default async function handler(req: Request): Promise<Response> {
                 confidence_score = ${confidenceScore},
                 updated_at = NOW()
               WHERE id = ${existingDialog[0].id}
+                AND org_id = ${orgId}
             `
             stats.dialogsUpdated++
           }
@@ -300,7 +305,7 @@ export default async function handler(req: Request): Promise<Response> {
               id, channel_id, question_text, question_category,
               answer_text, answer_by, answer_type,
               was_helpful, confidence_score,
-              question_embedding
+              question_embedding, org_id
             ) VALUES (
               ${dialogId},
               ${conv.channel_id},
@@ -311,7 +316,8 @@ export default async function handler(req: Request): Promise<Response> {
               'manual',
               ${wasHelpful},
               ${confidenceScore},
-              ${embedding ? `[${embedding.join(',')}]` : null}
+              ${embedding ? `[${embedding.join(',')}]` : null},
+              ${orgId}
             )
           `
           stats.dialogsCreated++
@@ -324,13 +330,14 @@ export default async function handler(req: Request): Promise<Response> {
     // Update daily learning stats
     const today = new Date().toISOString().split('T')[0]
     await sql`
-      INSERT INTO support_learning_stats (date, total_dialogs, new_dialogs)
+      INSERT INTO support_learning_stats (date, total_dialogs, new_dialogs, org_id)
       VALUES (${today}, 
-        (SELECT COUNT(*) FROM support_dialogs WHERE is_active = true),
-        ${stats.dialogsCreated}
+        (SELECT COUNT(*) FROM support_dialogs WHERE is_active = true AND org_id = ${orgId}),
+        ${stats.dialogsCreated},
+        ${orgId}
       )
       ON CONFLICT (date) DO UPDATE SET
-        total_dialogs = (SELECT COUNT(*) FROM support_dialogs WHERE is_active = true),
+        total_dialogs = (SELECT COUNT(*) FROM support_dialogs WHERE is_active = true AND org_id = ${orgId}),
         new_dialogs = support_learning_stats.new_dialogs + ${stats.dialogsCreated},
         updated_at = NOW()
     `.catch(() => {})

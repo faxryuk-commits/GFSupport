@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchCases, updateCaseStatus, createCase } from '../api/cases'
-import type { Case, CaseStatus } from '@/entities/case'
+import type { Case, CaseStatus } from '../types'
 
 export function useCases(filters?: { channelId?: string; assignedTo?: string }) {
   const [cases, setCases] = useState<Case[]>([])

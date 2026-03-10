@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -17,8 +18,9 @@ function json(data: any, status = 200) {
   })
 }
 
-export default async function handler(): Promise<Response> {
+export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   try {
     // Query conversations with channel info
@@ -30,6 +32,7 @@ export default async function handler(): Promise<Response> {
       FROM support_conversations c
       LEFT JOIN support_channels ch ON c.channel_id = ch.id
       LEFT JOIN support_agents a ON c.agent_id = a.id
+      WHERE c.org_id = ${orgId}
       ORDER BY c.started_at DESC 
       LIMIT 50
     `

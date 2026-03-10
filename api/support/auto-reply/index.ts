@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -53,12 +54,13 @@ async function sendTelegramMessage(chatId: string | number, text: string) {
 }
 
 // Get template for intent (with caching)
-async function getTemplate(sql: any, intent: string): Promise<{ text: string; vars: string[] } | null> {
-  return getCached(`template:${intent}`, 60 * 60 * 1000, async () => {
+async function getTemplate(sql: any, intent: string, orgId: string): Promise<{ text: string; vars: string[] } | null> {
+  return getCached(`template:${intent}:${orgId}`, 60 * 60 * 1000, async () => {
     const rows = await sql`
       SELECT template_text, personalization_vars
       FROM support_auto_templates
       WHERE intent = ${intent} AND is_active = true
+        AND org_id = ${orgId}
       ORDER BY priority DESC
       LIMIT 1
     `
@@ -71,11 +73,12 @@ async function getTemplate(sql: any, intent: string): Promise<{ text: string; va
 }
 
 // Get auto-reply settings (with caching)
-async function getSettings(sql: any): Promise<Record<string, string>> {
-  return getCached('auto_reply_settings', 5 * 60 * 1000, async () => {
+async function getSettings(sql: any, orgId: string): Promise<Record<string, string>> {
+  return getCached(`auto_reply_settings:${orgId}`, 5 * 60 * 1000, async () => {
     const rows = await sql`
       SELECT key, value FROM support_settings
       WHERE key LIKE 'auto_reply_%'
+        AND org_id = ${orgId}
     `
     const settings: Record<string, string> = {}
     for (const row of rows) {
@@ -86,16 +89,17 @@ async function getSettings(sql: any): Promise<Record<string, string>> {
 }
 
 // Get client profile (with caching)
-async function getClientProfile(sql: any, telegramId: string): Promise<{
+async function getClientProfile(sql: any, telegramId: string, orgId: string): Promise<{
   name: string
   totalConversations: number
   lastIssue: string | null
 } | null> {
-  return getCached(`profile:${telegramId}`, 5 * 60 * 1000, async () => {
+  return getCached(`profile:${telegramId}:${orgId}`, 5 * 60 * 1000, async () => {
     const rows = await sql`
       SELECT name, total_conversations, last_issue_summary
       FROM support_users
       WHERE telegram_id = ${telegramId}
+        AND org_id = ${orgId}
       LIMIT 1
     `
     if (rows.length === 0) return null
@@ -155,11 +159,12 @@ function detectLanguage(text: string): 'ru' | 'uz' | 'en' {
 }
 
 // Check if this is an ongoing conversation (has recent activity)
-async function isOngoingConversation(sql: any, channelId: string): Promise<boolean> {
+async function isOngoingConversation(sql: any, channelId: string, orgId: string): Promise<boolean> {
   const recentMessages = await sql`
     SELECT COUNT(*) as cnt FROM support_messages
     WHERE channel_id = ${channelId}
       AND created_at > NOW() - INTERVAL '24 hours'
+      AND org_id = ${orgId}
   `
   return parseInt(recentMessages[0]?.cnt || '0') > 1
 }
@@ -172,7 +177,8 @@ async function processAutoReply(
   intent: string,
   senderName: string,
   telegramId?: string,
-  originalText?: string
+  originalText?: string,
+  orgId?: string
 ): Promise<{ success: boolean; message?: string; skipped?: boolean; reason?: string }> {
   
   // ВРЕМЕННО ОТКЛЮЧЕНО - автоответы деактивированы
@@ -180,7 +186,7 @@ async function processAutoReply(
   return { success: false, skipped: true, reason: 'Auto-reply temporarily disabled' }
   
   // Get settings
-  const settings = await getSettings(sql)
+  const settings = await getSettings(sql, orgId!)
   
   // Check if auto-reply is enabled for this intent
   const intentSettingKey = `auto_reply_${intent.replace('faq_', '')}`
@@ -201,7 +207,7 @@ async function processAutoReply(
   
   // IMPORTANT: Don't send greeting in ongoing conversations!
   if (intent === 'greeting') {
-    const isOngoing = await isOngoingConversation(sql, channelId)
+    const isOngoing = await isOngoingConversation(sql, channelId, orgId!)
     if (isOngoing) {
       console.log(`[Auto-Reply] Skipping greeting - ongoing conversation in channel ${channelId}`)
       return { success: false, skipped: true, reason: 'Ongoing conversation - no greeting needed' }
@@ -214,6 +220,7 @@ async function processAutoReply(
     WHERE channel_id = ${channelId}
       AND sender_role IN ('autoresponder', 'auto_reply')
       AND created_at > NOW() - INTERVAL '2 minutes'
+      AND org_id = ${orgId}
     LIMIT 1
   `
   if (recentAutoReply.length > 0) {
@@ -225,7 +232,7 @@ async function processAutoReply(
   console.log(`[Auto-Reply] Detected language: ${lang}`)
   
   // Get template for this intent
-  let template = await getTemplate(sql, intent)
+  let template = await getTemplate(sql, intent, orgId!)
   
   // Fallback to default templates with language support
   if (!template) {
@@ -267,7 +274,7 @@ async function processAutoReply(
   // Get client profile for personalization
   let clientName = senderName || ''
   if (telegramId) {
-    const profile = await getClientProfile(sql, telegramId)
+    const profile = await getClientProfile(sql, telegramId, orgId!)
     if (profile?.name) {
       clientName = profile.name
     }
@@ -300,10 +307,10 @@ async function processAutoReply(
   await sql`
     INSERT INTO support_messages (
       id, channel_id, telegram_message_id, sender_name, sender_role,
-      is_from_client, content_type, text_content, ai_intent, created_at
+      is_from_client, content_type, text_content, ai_intent, created_at, org_id
     ) VALUES (
       ${msgId}, ${channelId}, ${telegramResult.result?.message_id},
-      'AI Помощник', 'auto_reply', false, 'text', ${responseText}, ${intent}, NOW()
+      'AI Помощник', 'auto_reply', false, 'text', ${responseText}, ${intent}, NOW(), ${orgId}
     )
   `
   
@@ -312,6 +319,7 @@ async function processAutoReply(
     UPDATE support_auto_templates
     SET usage_count = usage_count + 1
     WHERE intent = ${intent} AND is_active = true
+      AND org_id = ${orgId}
   `.catch(() => {})
   
   // Update channel status
@@ -319,6 +327,7 @@ async function processAutoReply(
     UPDATE support_channels
     SET awaiting_reply = false
     WHERE id = ${channelId}
+      AND org_id = ${orgId}
   `.catch(() => {})
   
   return { success: true, message: responseText }
@@ -331,12 +340,13 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // POST - Process auto-reply
   if (req.method === 'POST') {
@@ -350,7 +360,7 @@ export default async function handler(req: Request) {
 
       console.log(`[Auto-Reply] Processing intent="${intent}" for channel ${channelId}`)
 
-      const result = await processAutoReply(sql, channelId, telegramChatId, intent, senderName, telegramId, originalText)
+      const result = await processAutoReply(sql, channelId, telegramChatId, intent, senderName, telegramId, originalText, orgId)
 
       console.log(`[Auto-Reply] Result: success=${result.success}, skipped=${result.skipped}`)
 
@@ -371,13 +381,14 @@ export default async function handler(req: Request) {
       const templates = await sql`
         SELECT id, intent, template_text, tone, language, priority, usage_count, is_active
         FROM support_auto_templates
+        WHERE org_id = ${orgId}
         ORDER BY intent, priority DESC
       `
       return json({ templates })
     }
 
     if (action === 'settings') {
-      const settings = await getSettings(sql)
+      const settings = await getSettings(sql, orgId)
       return json({ settings })
     }
 

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const runtime = 'edge'
 
@@ -8,6 +9,7 @@ export default async function handler(req: Request) {
   }
 
   const sql = neon(process.env.DATABASE_URL!)
+  const orgId = await getRequestOrgId(req)
 
   try {
     const { days = 30 } = await req.json().catch(() => ({ days: 30 }))
@@ -31,6 +33,7 @@ export default async function handler(req: Request) {
       await sql`
         UPDATE support_messages SET ai_category = ${cat}
         WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
+          AND org_id = ${orgId}
           AND LOWER(text_content) LIKE ${p}
           AND created_at > NOW() - make_interval(days => ${days})
       `
@@ -39,6 +42,7 @@ export default async function handler(req: Request) {
     await sql`
       UPDATE support_messages SET ai_category = 'general'
       WHERE (ai_category IS NULL OR ai_category = '' OR ai_category = 'unknown')
+        AND org_id = ${orgId}
         AND text_content IS NOT NULL AND LENGTH(text_content) > 10
         AND created_at > NOW() - make_interval(days => ${days})
     `
@@ -46,6 +50,7 @@ export default async function handler(req: Request) {
     const stats = await sql`
       SELECT ai_category, COUNT(*) as cnt FROM support_messages
       WHERE ai_category IS NOT NULL AND ai_category != ''
+        AND org_id = ${orgId}
         AND created_at > NOW() - make_interval(days => ${days})
       GROUP BY ai_category ORDER BY cnt DESC
     `

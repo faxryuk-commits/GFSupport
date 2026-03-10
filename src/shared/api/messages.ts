@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from '../services/api.service'
-import type { Message } from '@/entities/message'
+import type { Message } from '../types'
 
 interface MessagesResponse {
   messages: Message[]

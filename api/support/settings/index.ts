@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -17,6 +18,7 @@ function json(data: any, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
     },
   })
 }
@@ -45,12 +47,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   // Auth required for write operations
   if (req.method !== 'GET') {
@@ -65,19 +68,27 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     await sql`
       CREATE TABLE IF NOT EXISTS support_settings (
-        key VARCHAR(100) PRIMARY KEY,
+        org_id VARCHAR(50) NOT NULL DEFAULT 'org_delever',
+        key VARCHAR(100) NOT NULL,
         value TEXT,
-        updated_at TIMESTAMP DEFAULT NOW()
+        updated_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (org_id, key)
       )
     `
   } catch (e) {
     // Таблица уже существует
   }
+  await sql`ALTER TABLE support_settings ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+  await sql`UPDATE support_settings SET org_id = 'org_delever' WHERE org_id IS NULL`.catch(() => {})
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS support_settings_org_key ON support_settings(org_id, key)`.catch(() => {})
+  // Migration: drop old PK(key) to allow multi-tenant (org_id, key)
+  await sql`ALTER TABLE support_settings DROP CONSTRAINT IF EXISTS support_settings_pkey`.catch(() => {})
+  await sql`ALTER TABLE support_settings ADD PRIMARY KEY (org_id, key)`.catch(() => {})
 
   // GET - получить настройки
   if (req.method === 'GET') {
     try {
-      const rows = await sql`SELECT key, value FROM support_settings`
+      const rows = await sql`SELECT key, value FROM support_settings WHERE org_id = ${orgId}`
       
       // Собираем настройки из БД
       const dbSettings: Record<string, any> = {}
@@ -146,9 +157,9 @@ export default async function handler(req: Request): Promise<Response> {
         const stringValue = typeof value === 'string' ? value : JSON.stringify(value)
         
         await sql`
-          INSERT INTO support_settings (key, value, updated_at)
-          VALUES (${key}, ${stringValue}, NOW())
-          ON CONFLICT (key) DO UPDATE SET
+          INSERT INTO support_settings (org_id, key, value, updated_at)
+          VALUES (${orgId}, ${key}, ${stringValue}, NOW())
+          ON CONFLICT (org_id, key) DO UPDATE SET
             value = EXCLUDED.value,
             updated_at = NOW()
         `
@@ -172,7 +183,7 @@ export default async function handler(req: Request): Promise<Response> {
       const { action } = await req.json()
       
       if (action === 'reset') {
-        await sql`DELETE FROM support_settings`
+        await sql`DELETE FROM support_settings WHERE org_id = ${orgId}`
         return json({
           success: true,
           message: 'Settings reset to defaults'
@@ -180,7 +191,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (action === 'test_bot') {
-        const tokenRow = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token'`
+        const tokenRow = await sql`SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'telegram_bot_token'`
         const token = tokenRow[0]?.value || process.env.TELEGRAM_BOT_TOKEN
         
         if (!token) {
@@ -209,7 +220,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (action === 'test_openai') {
-        const keyRow = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key'`
+        const keyRow = await sql`SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'openai_api_key'`
         const key = keyRow[0]?.value || process.env.OPENAI_API_KEY
         if (!key) return json({ error: 'Нет API ключа OpenAI' }, 400)
 
@@ -219,7 +230,7 @@ export default async function handler(req: Request): Promise<Response> {
             signal: AbortSignal.timeout(5000),
           })
           if (res.ok) {
-            const modelRow = await sql`SELECT value FROM support_settings WHERE key = 'ai_model'`
+            const modelRow = await sql`SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'ai_model'`
             const model = modelRow[0]?.value || 'gpt-4o-mini'
             return json({ success: true, model })
           }

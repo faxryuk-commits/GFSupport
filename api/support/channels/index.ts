@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
+import { checkChannelQuota } from '../lib/quota.js'
 
 // Channels API v2.1 - SLA Categories support
 export const config = {
@@ -28,7 +30,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -40,6 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
 
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
@@ -65,6 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.name ILIKE ${'%' + search + '%'} AND COALESCE(c.source, 'telegram') = ${source}
+            AND c.org_id = ${orgId}
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -76,6 +80,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.name ILIKE ${'%' + search + '%'}
+            AND c.org_id = ${orgId}
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -87,6 +92,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE COALESCE(c.source, 'telegram') = ${source}
+            AND c.org_id = ${orgId}
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -98,6 +104,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.type = ${type}
+            AND c.org_id = ${orgId}
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -109,6 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.is_active = true
+            AND c.org_id = ${orgId}
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -120,6 +128,7 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
           WHERE c.is_active = false
+            AND c.org_id = ${orgId}
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -130,22 +139,23 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
             (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
           FROM support_channels c
-          WHERE (${market}::text IS NULL OR c.market_id = ${market})
+          WHERE c.org_id = ${orgId}
+            AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       }
 
       const [countResult, statsResult] = await Promise.all([
-        sql`SELECT COUNT(*) as total FROM support_channels WHERE (${market}::text IS NULL OR market_id = ${market})`,
+        sql`SELECT COUNT(*) as total FROM support_channels WHERE org_id = ${orgId} AND (${market}::text IS NULL OR market_id = ${market})`,
         sql`SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
-            FROM support_channels WHERE (${market}::text IS NULL OR market_id = ${market}) GROUP BY type`,
+            FROM support_channels WHERE org_id = ${orgId} AND (${market}::text IS NULL OR market_id = ${market}) GROUP BY type`,
       ])
 
       let sourceStats: any[] = []
       try {
         sourceStats = await sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
-            FROM support_channels GROUP BY COALESCE(source, 'telegram')`
+            FROM support_channels WHERE org_id = ${orgId} GROUP BY COALESCE(source, 'telegram')`
       } catch { /* source column might not exist yet */ }
 
       const total = parseInt(countResult[0]?.total || '0')
@@ -211,7 +221,7 @@ export default async function handler(req: Request): Promise<Response> {
       const channelId = `ch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 
       const existing = await sql`
-        SELECT id FROM support_channels WHERE telegram_chat_id = ${telegramChatId}
+        SELECT id FROM support_channels WHERE telegram_chat_id = ${telegramChatId} AND org_id = ${orgId}
       `
 
       if (existing && existing.length > 0) {
@@ -224,7 +234,7 @@ export default async function handler(req: Request): Promise<Response> {
             settings = ${JSON.stringify(settings || {})},
             is_active = true,
             updated_at = NOW()
-          WHERE telegram_chat_id = ${telegramChatId}
+          WHERE telegram_chat_id = ${telegramChatId} AND org_id = ${orgId}
         `
         return json({
           success: true,
@@ -234,9 +244,12 @@ export default async function handler(req: Request): Promise<Response> {
         })
       }
 
+      const quota = await checkChannelQuota(orgId)
+      if (!quota.allowed) return json({ error: quota.message, quotaExceeded: true }, 403)
+
       await sql`
         INSERT INTO support_channels (
-          id, telegram_chat_id, name, type, company_id, lead_id, settings
+          id, telegram_chat_id, name, type, company_id, lead_id, settings, org_id
         ) VALUES (
           ${channelId},
           ${telegramChatId},
@@ -244,7 +257,8 @@ export default async function handler(req: Request): Promise<Response> {
           ${type || 'client'},
           ${companyId || null},
           ${leadId || null},
-          ${JSON.stringify(settings || {})}
+          ${JSON.stringify(settings || {})},
+          ${orgId}
         )
       `
 
@@ -277,7 +291,7 @@ export default async function handler(req: Request): Promise<Response> {
           sla_category = COALESCE(${slaCategory}, sla_category),
           is_active = COALESCE(${isActive}, is_active),
           updated_at = NOW()
-        WHERE id = ${id}
+        WHERE id = ${id} AND org_id = ${orgId}
       `
 
       return json({
@@ -301,7 +315,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       await sql`
-        UPDATE support_channels SET is_active = false WHERE id = ${channelId}
+        UPDATE support_channels SET is_active = false WHERE id = ${channelId} AND org_id = ${orgId}
       `
 
       return json({

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -54,7 +55,7 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -72,19 +73,24 @@ export default async function handler(req: Request) {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   try {
+    await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+    await sql`UPDATE support_broadcast_scheduled SET org_id = 'org_delever' WHERE org_id IS NULL`.catch(() => {})
     await sql`
       UPDATE support_broadcast_scheduled 
       SET status = 'pending' 
-      WHERE status IN ('sending', 'processing')
+      WHERE org_id = ${orgId}
+        AND status IN ('sending', 'processing')
         AND created_at < NOW() - INTERVAL '5 minutes'
     `.catch(() => {})
 
     // Находим все pending рассылки, время которых наступило
     const pendingBroadcasts = await sql`
       SELECT * FROM support_broadcast_scheduled 
-      WHERE status = 'pending' 
+      WHERE org_id = ${orgId}
+        AND status = 'pending' 
         AND scheduled_at <= NOW()
       ORDER BY scheduled_at ASC
       LIMIT 10
@@ -111,7 +117,7 @@ export default async function handler(req: Request) {
         await sql`
           UPDATE support_broadcast_scheduled 
           SET status = 'processing'
-          WHERE id = ${scheduled.id} AND status = 'pending'
+          WHERE id = ${scheduled.id} AND org_id = ${orgId} AND status = 'pending'
         `
 
         let channels
@@ -121,12 +127,14 @@ export default async function handler(req: Request) {
             FROM support_channels
             WHERE id = ANY(${scheduled.selected_channels})
               AND telegram_chat_id IS NOT NULL
+              AND org_id = ${orgId}
           `
         } else if (scheduled.filter_type === 'active') {
           channels = await sql`
             SELECT id, telegram_chat_id, name
             FROM support_channels
             WHERE telegram_chat_id IS NOT NULL
+              AND org_id = ${orgId}
               AND last_message_at > NOW() - INTERVAL '30 days'
           `
         } else if (scheduled.filter_type === 'clients') {
@@ -134,6 +142,7 @@ export default async function handler(req: Request) {
             SELECT id, telegram_chat_id, name
             FROM support_channels
             WHERE telegram_chat_id IS NOT NULL
+              AND org_id = ${orgId}
               AND (type = 'client' OR sla_category = 'client')
           `
         } else if (scheduled.filter_type === 'partners') {
@@ -141,6 +150,7 @@ export default async function handler(req: Request) {
             SELECT id, telegram_chat_id, name
             FROM support_channels
             WHERE telegram_chat_id IS NOT NULL
+              AND org_id = ${orgId}
               AND (type = 'partner' OR sla_category = 'partner')
           `
         } else {
@@ -148,6 +158,7 @@ export default async function handler(req: Request) {
             SELECT id, telegram_chat_id, name
             FROM support_channels
             WHERE telegram_chat_id IS NOT NULL
+              AND org_id = ${orgId}
           `
         }
 
@@ -155,7 +166,7 @@ export default async function handler(req: Request) {
           await sql`
             UPDATE support_broadcast_scheduled 
             SET status = 'failed', error_message = 'No channels found'
-            WHERE id = ${scheduled.id}
+            WHERE id = ${scheduled.id} AND org_id = ${orgId}
           `
           results.push({
             scheduledId: scheduled.id,
@@ -196,10 +207,10 @@ export default async function handler(req: Request) {
               const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
               await sql`
                 INSERT INTO support_messages (
-                  id, channel_id, telegram_message_id, sender_name, sender_role,
+                  id, channel_id, org_id, telegram_message_id, sender_name, sender_role,
                   content_type, text_content, created_at
                 ) VALUES (
-                  ${msgId}, ${channel.id}, ${result.result?.message_id}, 
+                  ${msgId}, ${channel.id}, ${orgId}, ${result.result?.message_id}, 
                   ${scheduled.created_by || 'Broadcast'}, 'broadcast',
                   'text', ${scheduled.message_text}, NOW()
                 )
@@ -218,10 +229,10 @@ export default async function handler(req: Request) {
         // Записываем в историю рассылок
         await sql`
           INSERT INTO support_broadcasts (
-            id, message_type, message_text, filter_type, sender_name,
+            id, org_id, message_type, message_text, filter_type, sender_name,
             channels_count, successful_count, failed_count, created_at
           ) VALUES (
-            ${broadcastId}, ${scheduled.message_type}, ${scheduled.message_text},
+            ${broadcastId}, ${orgId}, ${scheduled.message_type}, ${scheduled.message_text},
             ${scheduled.filter_type}, ${scheduled.created_by || 'Scheduled'},
             ${channels.length}, ${successful}, ${failed}, NOW()
           )
@@ -231,7 +242,7 @@ export default async function handler(req: Request) {
         await sql`
           UPDATE support_broadcast_scheduled 
           SET status = 'sent', sent_at = NOW(), broadcast_id = ${broadcastId}
-          WHERE id = ${scheduled.id}
+          WHERE id = ${scheduled.id} AND org_id = ${orgId}
         `
 
         results.push({
@@ -248,7 +259,7 @@ export default async function handler(req: Request) {
         await sql`
           UPDATE support_broadcast_scheduled 
           SET status = 'failed', error_message = ${e.message}
-          WHERE id = ${scheduled.id}
+          WHERE id = ${scheduled.id} AND org_id = ${orgId}
         `
         
         results.push({

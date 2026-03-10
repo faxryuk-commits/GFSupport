@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -37,6 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // GET - список автоматизаций
@@ -44,6 +46,7 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       const automations = await sql`
         SELECT * FROM support_automations
+        WHERE org_id = ${orgId}
         ORDER BY priority DESC, created_at ASC
       `
 
@@ -85,7 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       await sql`
         INSERT INTO support_automations (
-          id, name, description, trigger_type, trigger_config, action_type, action_config, priority
+          id, name, description, trigger_type, trigger_config, action_type, action_config, priority, org_id
         ) VALUES (
           ${autoId},
           ${name},
@@ -94,7 +97,8 @@ export default async function handler(req: Request): Promise<Response> {
           ${JSON.stringify(triggerConfig || {})},
           ${actionType},
           ${JSON.stringify(actionConfig || {})},
-          ${priority || 0}
+          ${priority || 0},
+          ${orgId}
         )
       `
 
@@ -128,7 +132,7 @@ export default async function handler(req: Request): Promise<Response> {
           is_active = COALESCE(${isActive}, is_active),
           priority = COALESCE(${priority}, priority),
           updated_at = NOW()
-        WHERE id = ${id}
+        WHERE id = ${id} AND org_id = ${orgId}
       `
 
       return json({
@@ -151,7 +155,7 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Automation ID required' }, 400)
       }
 
-      await sql`DELETE FROM support_automations WHERE id = ${autoId}`
+      await sql`DELETE FROM support_automations WHERE id = ${autoId} AND org_id = ${orgId}`
 
       return json({
         success: true,

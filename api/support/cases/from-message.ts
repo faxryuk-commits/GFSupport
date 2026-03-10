@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -35,6 +36,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     const { messageId, description, title, priority = 'medium' } = await req.json()
 
     if (!messageId) {
@@ -45,8 +47,8 @@ export default async function handler(req: Request): Promise<Response> {
     const msgResult = await sql`
       SELECT m.*, c.name as channel_name, c.company_id
       FROM support_messages m
-      JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.id = ${messageId}
+      JOIN support_channels c ON m.channel_id = c.id AND c.org_id = ${orgId}
+      WHERE m.id = ${messageId} AND m.org_id = ${orgId}
     `
 
     if (msgResult.length === 0) {
@@ -100,10 +102,11 @@ export default async function handler(req: Request): Promise<Response> {
 
     await sql`
       INSERT INTO support_cases (
-        id, channel_id, company_id, title, description,
+        id, org_id, channel_id, company_id, title, description,
         category, priority, severity, status, source_message_id
       ) VALUES (
         ${caseId},
+        ${orgId},
         ${msg.channel_id},
         ${msg.company_id},
         ${caseTitle},
@@ -118,7 +121,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Link message to case
     await sql`
-      UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId}
+      UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId} AND org_id = ${orgId}
     `
 
     // Create activity
@@ -140,8 +143,8 @@ export default async function handler(req: Request): Promise<Response> {
         ch.name as channel_name,
         ch.telegram_chat_id
       FROM support_cases c
-      LEFT JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.id = ${caseId}
+      LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+      WHERE c.id = ${caseId} AND c.org_id = ${orgId}
     `
 
     return json({

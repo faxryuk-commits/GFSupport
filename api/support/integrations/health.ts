@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -15,13 +16,17 @@ function getSQL() {
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    headers: { 
+      'Content-Type': 'application/json', 
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
+    },
   })
 }
 
 type ServiceStatus = 'active' | 'inactive' | 'error'
 
-async function checkTelegram(sql: any): Promise<{
+async function checkTelegram(sql: any, orgId: string): Promise<{
   status: ServiceStatus; botUsername?: string; botName?: string; channelsCount: number
 }> {
   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -31,7 +36,7 @@ async function checkTelegram(sql: any): Promise<{
     let channelsCount = 0
     const [botRes] = await Promise.all([
       fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(4000) }),
-      sql`SELECT COUNT(*)::int as cnt FROM support_channels`.then(r => { channelsCount = r[0]?.cnt || 0 }).catch(() => {}),
+      sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId}`.then(r => { channelsCount = r[0]?.cnt || 0 }).catch(() => {}),
     ])
 
     if (!botRes.ok) return { status: 'error', channelsCount }
@@ -49,12 +54,12 @@ async function checkTelegram(sql: any): Promise<{
   }
 }
 
-async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string; source: 'db' | 'env' | 'none'; httpStatus?: number; detail?: string }> {
+async function checkOpenAI(orgId: string): Promise<{ status: ServiceStatus; model: string; source: 'db' | 'env' | 'none'; httpStatus?: number; detail?: string }> {
   const sql = getSQL()
   let model = 'gpt-4o-mini'
   let dbKey = ''
   try {
-    const rows = await sql`SELECT key, value FROM support_settings WHERE key IN ('ai_model', 'openai_api_key')`
+    const rows = await sql`SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key IN ('ai_model', 'openai_api_key')`
     for (const r of rows) {
       if (r.key === 'ai_model' && r.value) model = r.value
       if (r.key === 'openai_api_key' && r.value) dbKey = r.value
@@ -78,10 +83,10 @@ async function checkOpenAI(): Promise<{ status: ServiceStatus; model: string; so
   }
 }
 
-async function checkWhisper(sql: any): Promise<{ status: ServiceStatus; language: string }> {
+async function checkWhisper(sql: any, orgId: string): Promise<{ status: ServiceStatus; language: string }> {
   try {
     const rows = await sql`
-      SELECT key, value FROM support_settings WHERE key IN ('auto_transcribe_voice', 'whisper_language')
+      SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key IN ('auto_transcribe_voice', 'whisper_language')
     `
     const map: Record<string, string> = {}
     for (const r of rows) map[r.key] = r.value
@@ -90,7 +95,7 @@ async function checkWhisper(sql: any): Promise<{ status: ServiceStatus; language
     const language = map.whisper_language || 'ru'
     let hasKey = false
     try {
-      const keyRow = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key' LIMIT 1`
+      const keyRow = await sql`SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'openai_api_key' LIMIT 1`
       hasKey = !!(keyRow[0]?.value) || !!process.env.OPENAI_API_KEY
     } catch { hasKey = !!process.env.OPENAI_API_KEY }
 
@@ -100,10 +105,10 @@ async function checkWhisper(sql: any): Promise<{ status: ServiceStatus; language
   }
 }
 
-async function checkNotify(sql: any): Promise<{ status: ServiceStatus; chatId: string | null }> {
+async function checkNotify(sql: any, orgId: string): Promise<{ status: ServiceStatus; chatId: string | null }> {
   try {
     const rows = await sql`
-      SELECT key, value FROM support_settings WHERE key IN ('notify_on_problem', 'notify_chat_id')
+      SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key IN ('notify_on_problem', 'notify_chat_id')
     `
     const map: Record<string, string> = {}
     for (const r of rows) map[r.key] = r.value
@@ -117,7 +122,7 @@ async function checkNotify(sql: any): Promise<{ status: ServiceStatus; chatId: s
   }
 }
 
-async function checkWhatsApp(sql: any): Promise<{
+async function checkWhatsApp(sql: any, orgId: string): Promise<{
   status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number
 }> {
   const bridgeUrl = process.env.WHATSAPP_BRIDGE_URL
@@ -125,7 +130,7 @@ async function checkWhatsApp(sql: any): Promise<{
 
   let channelsCount = 0
   try {
-    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE source = 'whatsapp'`.catch(() => [{ cnt: 0 }])
+    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId} AND source = 'whatsapp'`.catch(() => [{ cnt: 0 }])
     channelsCount = cnt[0]?.cnt || 0
   } catch {}
 
@@ -156,20 +161,21 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
 
     const [telegram, openai, whisper, notify, whatsapp] = await Promise.all([
-      checkTelegram(sql),
-      checkOpenAI(),
-      checkWhisper(sql),
-      checkNotify(sql),
-      checkWhatsApp(sql),
+      checkTelegram(sql, orgId),
+      checkOpenAI(orgId),
+      checkWhisper(sql, orgId),
+      checkNotify(sql, orgId),
+      checkWhatsApp(sql, orgId),
     ])
 
     return json({ telegram, openai, whisper, notify, whatsapp })

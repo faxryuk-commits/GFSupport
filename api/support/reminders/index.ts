@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -37,6 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // Ensure table and columns exist
@@ -82,7 +84,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Debug mode - show raw data
       if (debug) {
-        const rawData = await sql`SELECT * FROM support_reminders ORDER BY created_at DESC LIMIT 10`
+        const rawData = await sql`SELECT * FROM support_reminders WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 10`
         return json({ debug: true, rawData })
       }
 
@@ -96,7 +98,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_reminders r
         LEFT JOIN support_channels ch ON r.channel_id = ch.id
         LEFT JOIN support_messages m ON r.message_id = m.id
-        WHERE 1=1
+        WHERE r.org_id = ${orgId}
           ${status === 'all' ? sql`` : status ? sql`AND r.status = ${status}` : sql``}
           ${channelId ? sql`AND r.channel_id = ${channelId}` : sql``}
           ${assignedTo ? sql`AND r.assigned_to = ${assignedTo}` : sql``}
@@ -165,6 +167,7 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE status = 'completed') as completed,
           COUNT(*) FILTER (WHERE status = 'escalated') as escalated
         FROM support_reminders
+        WHERE org_id = ${orgId}
       `
 
       return json({
@@ -198,7 +201,7 @@ export default async function handler(req: Request): Promise<Response> {
           UPDATE support_reminders SET 
             status = 'completed',
             completed_at = NOW()
-          WHERE id = ${reminderId}
+          WHERE id = ${reminderId} AND org_id = ${orgId}
         `
       } else if (action === 'extend' && extendMinutes) {
         await sql`
@@ -207,11 +210,11 @@ export default async function handler(req: Request): Promise<Response> {
             auto_deadline = auto_deadline + INTERVAL '1 minute' * ${extendMinutes},
             reminder_at = reminder_at + INTERVAL '1 minute' * ${extendMinutes},
             escalation_level = GREATEST(0, escalation_level - 1)
-          WHERE id = ${reminderId}
+          WHERE id = ${reminderId} AND org_id = ${orgId}
         `
       } else if (action === 'dismiss') {
         await sql`
-          UPDATE support_reminders SET status = 'dismissed' WHERE id = ${reminderId}
+          UPDATE support_reminders SET status = 'dismissed' WHERE id = ${reminderId} AND org_id = ${orgId}
         `
       }
 

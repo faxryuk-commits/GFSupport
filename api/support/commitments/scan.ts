@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -137,13 +138,14 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
   
   try {
     if (req.method === 'GET') {
@@ -167,6 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.text_content != ''
           AND m.created_at >= ${startDate.toISOString()}
           AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+          AND m.org_id = ${orgId}
         ORDER BY m.created_at DESC
       `
       

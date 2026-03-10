@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -19,17 +20,18 @@ function json(data: any, status = 200) {
 }
 
 // Update learning stats for today
-async function updateDailyStats(sql: any, rating: string) {
+async function updateDailyStats(sql: any, rating: string, orgId: string) {
   const today = new Date().toISOString().split('T')[0]
   
   try {
     // Upsert today's stats
     await sql`
-      INSERT INTO support_learning_stats (date, feedback_positive, feedback_negative, feedback_partial)
+      INSERT INTO support_learning_stats (date, feedback_positive, feedback_negative, feedback_partial, org_id)
       VALUES (${today}, 
         ${rating === 'helpful' ? 1 : 0},
         ${rating === 'not_helpful' ? 1 : 0},
-        ${rating === 'partially' ? 1 : 0}
+        ${rating === 'partially' ? 1 : 0},
+        ${orgId}
       )
       ON CONFLICT (date) DO UPDATE SET
         feedback_positive = support_learning_stats.feedback_positive + ${rating === 'helpful' ? 1 : 0},
@@ -48,12 +50,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // GET - Get feedback stats or list
@@ -71,6 +74,7 @@ export default async function handler(req: Request): Promise<Response> {
             COUNT(*) FILTER (WHERE rating = 'not_helpful') as not_helpful,
             COUNT(*) FILTER (WHERE rating = 'partially') as partially
           FROM support_feedback
+          WHERE org_id = ${orgId}
         `
         
         // Get daily stats for last 30 days
@@ -78,6 +82,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT date, feedback_positive, feedback_negative, feedback_partial
           FROM support_learning_stats
           WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+            AND org_id = ${orgId}
           ORDER BY date DESC
         `
 
@@ -91,7 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
         // Get feedback for specific dialog
         const feedback = await sql`
           SELECT * FROM support_feedback
-          WHERE dialog_id = ${dialogId}
+          WHERE dialog_id = ${dialogId} AND org_id = ${orgId}
           ORDER BY created_at DESC
         `
         return json({ feedback })
@@ -102,6 +107,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT f.*, d.question_text, d.answer_text
         FROM support_feedback f
         LEFT JOIN support_dialogs d ON f.dialog_id = d.id
+        WHERE f.org_id = ${orgId}
         ORDER BY f.created_at DESC
         LIMIT 50
       `
@@ -126,8 +132,8 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Save feedback
       await sql`
-        INSERT INTO support_feedback (id, dialog_id, channel_id, message_id, rating, comment)
-        VALUES (${feedbackId}, ${dialogId || null}, ${channelId || null}, ${messageId || null}, ${rating}, ${comment || null})
+        INSERT INTO support_feedback (id, dialog_id, channel_id, message_id, rating, comment, org_id)
+        VALUES (${feedbackId}, ${dialogId || null}, ${channelId || null}, ${messageId || null}, ${rating}, ${comment || null}, ${orgId})
       `
 
       // Update dialog confidence based on feedback
@@ -141,7 +147,7 @@ export default async function handler(req: Request): Promise<Response> {
               used_count = used_count + 1,
               last_used_at = NOW(),
               updated_at = NOW()
-            WHERE id = ${dialogId}
+            WHERE id = ${dialogId} AND org_id = ${orgId}
           `
         } else if (rating === 'not_helpful') {
           await sql`
@@ -151,7 +157,7 @@ export default async function handler(req: Request): Promise<Response> {
               confidence_score = GREATEST(0, confidence_score - 0.15),
               requires_human_review = true,
               updated_at = NOW()
-            WHERE id = ${dialogId}
+            WHERE id = ${dialogId} AND org_id = ${orgId}
           `
         } else if (rating === 'partially') {
           await sql`
@@ -160,13 +166,13 @@ export default async function handler(req: Request): Promise<Response> {
               confidence_score = GREATEST(0, confidence_score - 0.05),
               requires_human_review = true,
               updated_at = NOW()
-            WHERE id = ${dialogId}
+            WHERE id = ${dialogId} AND org_id = ${orgId}
           `
         }
       }
 
       // Update daily stats
-      await updateDailyStats(sql, rating)
+      await updateDailyStats(sql, rating, orgId)
 
       return json({
         success: true,

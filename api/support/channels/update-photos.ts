@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -40,6 +41,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     const url = new URL(req.url)
     
     // Поддержка обновления конкретного канала
@@ -65,7 +67,7 @@ export default async function handler(req: Request): Promise<Response> {
       channels = await sql`
         SELECT id, telegram_chat_id, name, photo_url 
         FROM support_channels 
-        WHERE id = ${targetChannelId} AND telegram_chat_id IS NOT NULL
+        WHERE id = ${targetChannelId} AND telegram_chat_id IS NOT NULL AND org_id = ${orgId}
       `
       if (channels.length === 0) {
         return json({ error: 'Channel not found or has no telegram_chat_id' }, 404)
@@ -74,7 +76,7 @@ export default async function handler(req: Request): Promise<Response> {
       channels = await sql`
         SELECT id, telegram_chat_id, name, photo_url 
         FROM support_channels 
-        WHERE telegram_chat_id IS NOT NULL
+        WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
       `
     }
     
@@ -102,7 +104,7 @@ export default async function handler(req: Request): Promise<Response> {
             await sql`
               UPDATE support_channels 
               SET photo_url = ${photoUrl} 
-              WHERE id = ${channel.id}
+              WHERE id = ${channel.id} AND org_id = ${orgId}
             `
             
             results.push({ 

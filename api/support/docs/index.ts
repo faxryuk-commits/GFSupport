@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -28,13 +29,14 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
   const category = url.searchParams.get('category')
   const id = url.searchParams.get('id')
   
@@ -58,7 +60,7 @@ export default async function handler(req: Request) {
     // Get single document by ID
     if (id) {
       const doc = await sql`
-        SELECT * FROM support_docs WHERE id = ${id}
+        SELECT * FROM support_docs WHERE id = ${id} AND org_id = ${orgId}
       `
       
       if (doc.length === 0) {
@@ -74,13 +76,14 @@ export default async function handler(req: Request) {
       docs = await sql`
         SELECT id, title, url, path, category, keywords, synced_at
         FROM support_docs
-        WHERE category = ${category}
+        WHERE category = ${category} AND org_id = ${orgId}
         ORDER BY title
       `
     } else {
       docs = await sql`
         SELECT id, title, url, path, category, keywords, synced_at
         FROM support_docs
+        WHERE org_id = ${orgId}
         ORDER BY category, title
       `
     }
@@ -89,6 +92,7 @@ export default async function handler(req: Request) {
     const categories = await sql`
       SELECT category, COUNT(*) as count
       FROM support_docs
+      WHERE org_id = ${orgId}
       GROUP BY category
       ORDER BY category
     `
@@ -101,6 +105,7 @@ export default async function handler(req: Request) {
         MAX(synced_at) as last_sync,
         MIN(synced_at) as first_sync
       FROM support_docs
+      WHERE org_id = ${orgId}
     `
     
     return json({

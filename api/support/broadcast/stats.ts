@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -10,6 +11,7 @@ function json(data: any, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
     },
   })
 }
@@ -27,12 +29,13 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const broadcastId = url.searchParams.get('id')
   
@@ -40,7 +43,7 @@ export default async function handler(req: Request) {
     if (broadcastId) {
       // Статистика конкретной рассылки
       const broadcast = await sql`
-        SELECT * FROM support_broadcasts WHERE id = ${broadcastId}
+        SELECT * FROM support_broadcasts WHERE id = ${broadcastId} AND org_id = ${orgId}
       `
       
       if (broadcast.length === 0) {
@@ -61,7 +64,7 @@ export default async function handler(req: Request) {
         SELECT 
           COALESCE(SUM(forward_count), 0) as total_forwards
         FROM support_messages
-        WHERE broadcast_id = ${broadcastId}
+        WHERE broadcast_id = ${broadcastId} AND org_id = ${orgId}
       `.catch(() => [{ total_forwards: 0 }])
       
       const b = broadcast[0]
@@ -97,6 +100,7 @@ export default async function handler(req: Request) {
           0 as total_failed,
           COALESCE(SUM(COALESCE(click_count, 0)), 0) as total_clicks
         FROM support_broadcasts
+        WHERE org_id = ${orgId}
       `
       
       // Последние 10 рассылок с детальной статистикой
@@ -106,6 +110,7 @@ export default async function handler(req: Request) {
           (SELECT COUNT(*) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as clicks,
           (SELECT COUNT(DISTINCT ip_hash) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as unique_clicks
         FROM support_broadcasts b
+        WHERE b.org_id = ${orgId}
         ORDER BY b.created_at DESC
         LIMIT 10
       `

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -10,6 +11,7 @@ function json(data: any, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
     },
   })
 }
@@ -28,12 +30,13 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const filter = url.searchParams.get('filter') || 'all'
   const tagsParam = url.searchParams.get('tags')
@@ -47,6 +50,7 @@ export default async function handler(req: Request) {
         SELECT id, name, last_message_at, telegram_chat_id
         FROM support_channels
         WHERE telegram_chat_id IS NOT NULL
+          AND org_id = ${orgId}
           AND last_message_at > NOW() - INTERVAL '30 days'
         ORDER BY last_message_at DESC
       `
@@ -55,6 +59,7 @@ export default async function handler(req: Request) {
         SELECT id, name, tags, telegram_chat_id
         FROM support_channels
         WHERE telegram_chat_id IS NOT NULL
+          AND org_id = ${orgId}
           AND tags && ${tags}
         ORDER BY name
       `
@@ -64,6 +69,7 @@ export default async function handler(req: Request) {
         SELECT id, name, telegram_chat_id
         FROM support_channels
         WHERE telegram_chat_id IS NOT NULL
+          AND org_id = ${orgId}
         ORDER BY name
       `
     }
@@ -74,7 +80,7 @@ export default async function handler(req: Request) {
       allTags = await sql`
         SELECT DISTINCT unnest(tags) as tag
         FROM support_channels
-        WHERE tags IS NOT NULL AND array_length(tags, 1) > 0
+        WHERE org_id = ${orgId} AND tags IS NOT NULL AND array_length(tags, 1) > 0
         ORDER BY tag
       `
     } catch (e) { /* tags column may not exist */ }
@@ -90,6 +96,7 @@ export default async function handler(req: Request) {
           (SELECT COUNT(*) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as total_clicks,
           (SELECT COUNT(DISTINCT ip_hash) FROM support_broadcast_clicks c WHERE c.broadcast_id = b.id) as unique_clicks
         FROM support_broadcasts b
+        WHERE b.org_id = ${orgId}
         ORDER BY b.created_at DESC
         LIMIT 10
       `
@@ -101,6 +108,7 @@ export default async function handler(req: Request) {
                  channels_count, successful_count, failed_count,
                  clicks_count, sender_name, created_at
           FROM support_broadcasts
+          WHERE org_id = ${orgId}
           ORDER BY created_at DESC
           LIMIT 10
         `

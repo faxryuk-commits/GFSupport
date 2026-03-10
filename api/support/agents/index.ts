@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
+import { checkAgentQuota } from '../lib/quota.js'
 
 export const config = {
   runtime: 'edge',
@@ -32,7 +34,18 @@ function hashPassword(password: string): string {
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
+      },
+    })
+  }
+
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // Ensure columns exist
@@ -54,13 +67,16 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Name is required' }, 400)
       }
 
+      const quota = await checkAgentQuota(orgId)
+      if (!quota.allowed) return json({ error: quota.message, quotaExceeded: true }, 403)
+
       const id = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const passwordHash = password ? hashPassword(password) : null
       const permissionsJson = permissions ? JSON.stringify(permissions) : '[]'
 
       await sql`
-        INSERT INTO support_agents (id, name, username, email, telegram_id, role, status, password_hash, phone, position, department, permissions)
-        VALUES (${id}, ${name}, ${username || null}, ${email || null}, ${telegramId || null}, ${role || 'agent'}, 'offline', ${passwordHash}, ${phone || null}, ${position || null}, ${department || null}, ${permissionsJson}::jsonb)
+        INSERT INTO support_agents (id, name, username, email, telegram_id, role, status, password_hash, phone, position, department, permissions, org_id)
+        VALUES (${id}, ${name}, ${username || null}, ${email || null}, ${telegramId || null}, ${role || 'agent'}, 'offline', ${passwordHash}, ${phone || null}, ${position || null}, ${department || null}, ${permissionsJson}::jsonb, ${orgId})
       `
 
       return json({ success: true, agentId: id })
@@ -90,19 +106,19 @@ export default async function handler(req: Request): Promise<Response> {
           phone = COALESCE(${phone || null}, phone),
           position = COALESCE(${position || null}, position),
           department = COALESCE(${department || null}, department)
-        WHERE id = ${id}
+        WHERE id = ${id} AND org_id = ${orgId}
       `
 
       // Update password if provided
       if (password) {
         const passwordHash = hashPassword(password)
-        await sql`UPDATE support_agents SET password_hash = ${passwordHash} WHERE id = ${id}`
+        await sql`UPDATE support_agents SET password_hash = ${passwordHash} WHERE id = ${id} AND org_id = ${orgId}`
       }
 
       // Update permissions if provided
       if (permissions !== undefined) {
         const permissionsJson = JSON.stringify(permissions)
-        await sql`UPDATE support_agents SET permissions = ${permissionsJson}::jsonb WHERE id = ${id}`
+        await sql`UPDATE support_agents SET permissions = ${permissionsJson}::jsonb WHERE id = ${id} AND org_id = ${orgId}`
       }
 
       return json({ success: true })
@@ -119,7 +135,7 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Agent ID is required' }, 400)
       }
 
-      await sql`DELETE FROM support_agents WHERE id = ${agentId}`
+      await sql`DELETE FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
       return json({ error: e.message }, 500)
@@ -133,7 +149,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (action === 'sync') {
     // Auto-sync telegram_id from support_messages based on username match
     try {
-      const agents = await sql`SELECT id, name, username, telegram_id FROM support_agents WHERE telegram_id IS NULL`
+      const agents = await sql`SELECT id, name, username, telegram_id FROM support_agents WHERE telegram_id IS NULL AND org_id = ${orgId}`
       
       let synced = 0
       for (const agent of agents) {
@@ -153,7 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
           await sql`
             UPDATE support_agents 
             SET telegram_id = ${match[0].sender_id}::text
-            WHERE id = ${agent.id}
+            WHERE id = ${agent.id} AND org_id = ${orgId}
           `
           synced++
           console.log(`[Agents Sync] Updated ${agent.name}: telegram_id = ${match[0].sender_id}`)
@@ -170,13 +186,14 @@ export default async function handler(req: Request): Promise<Response> {
     // Авто-синхронизация из support_users (role='employee')
     try {
       await sql`
-        INSERT INTO support_agents (id, name, username, telegram_id, role)
+        INSERT INTO support_agents (id, name, username, telegram_id, role, org_id)
         SELECT
           'agent_' || u.telegram_id::text,
           u.name,
           REPLACE(COALESCE(u.telegram_username, ''), '@', ''),
           u.telegram_id::text,
-          'agent'
+          'agent',
+          ${orgId}
         FROM support_users u
         WHERE u.role = 'employee'
           AND u.is_active = true
@@ -184,13 +201,13 @@ export default async function handler(req: Request): Promise<Response> {
           AND u.name IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM support_agents sa
-            WHERE sa.telegram_id = u.telegram_id::text
+            WHERE sa.telegram_id = u.telegram_id::text AND sa.org_id = ${orgId}
           )
         ON CONFLICT (id) DO NOTHING
       `
     } catch (e) { /* user sync skipped */ }
 
-    const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at, phone, position, department, permissions FROM support_agents ORDER BY name ASC`
+    const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at, phone, position, department, permissions FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC`
 
     // Batch queries instead of N+1 per agent
     let activityMap: Record<string, { lastSeen: string }> = {}

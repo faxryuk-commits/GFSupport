@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge', maxDuration: 30 }
 
@@ -25,7 +26,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -34,6 +35,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (!authHeader) return json({ error: 'Unauthorized' }, 401)
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const market = url.searchParams.get('market') || null
   const days = parseInt(url.searchParams.get('days') || '14')
@@ -50,7 +52,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(DISTINCT m.channel_id)::int as active_channels
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
     `, [{}])
@@ -62,7 +65,8 @@ export default async function handler(req: Request): Promise<Response> {
         COALESCE(c.source, 'telegram') as source,
         ROUND(EXTRACT(EPOCH FROM (NOW() - c.last_message_at)) / 60)::int as waiting_minutes
       FROM support_channels c
-      WHERE COALESCE(c.awaiting_reply, false) = true
+      WHERE c.org_id = ${orgId}
+        AND COALESCE(c.awaiting_reply, false) = true
         AND c.last_message_at > NOW() - INTERVAL '7 day'
         AND COALESCE(c.is_active, true) = true
         AND (${market}::text IS NULL OR c.market_id = ${market})
@@ -84,8 +88,9 @@ export default async function handler(req: Request): Promise<Response> {
         ROUND(AVG(LENGTH(COALESCE(m.text_content, ''))) FILTER (WHERE m.text_content IS NOT NULL AND LENGTH(m.text_content) > 0))::int as avg_msg_len
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      JOIN support_agents a ON LOWER(a.name) = LOWER(m.sender_name)
-      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+      JOIN support_agents a ON LOWER(a.name) = LOWER(m.sender_name) AND a.org_id = ${orgId}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND m.is_from_client = false
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
@@ -103,7 +108,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE m.is_from_client = false)::int as agent_msgs
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY 1 ORDER BY 1
@@ -119,7 +125,8 @@ export default async function handler(req: Request): Promise<Response> {
         ROUND(AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000))::int as avg_response_ms
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY 1 ORDER BY 1
@@ -135,7 +142,8 @@ export default async function handler(req: Request): Promise<Response> {
         ROUND(AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000))::int as avg_response_ms
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY c.id, c.name, c.source
@@ -153,7 +161,8 @@ export default async function handler(req: Request): Promise<Response> {
         ROUND(AVG(m.response_time_ms) FILTER (WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms < 86400000))::int as avg_response_ms
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY 1 ORDER BY 1

@@ -1,5 +1,6 @@
 import { Eye, X } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
+// TODO FSD: feature→feature cross-import. Consider moving MessageBubble/MessageData to shared or entities
 import { MessageBubble, type MessageData } from '@/features/messages/ui'
 import type { ChannelItemData } from './ChannelListItem'
 

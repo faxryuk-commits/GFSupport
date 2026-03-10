@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     
     // Mark all unread messages as read
     const messagesResult = await sql`
@@ -48,6 +50,7 @@ export default async function handler(req: Request): Promise<Response> {
       SET is_read = true, read_at = NOW()
       WHERE channel_id = ${channelId}
         AND is_read = false
+        AND channel_id IN (SELECT id FROM support_channels WHERE org_id = ${orgId})
       RETURNING id
     `
     
@@ -55,7 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       UPDATE support_channels 
       SET unread_count = 0
-      WHERE id = ${channelId}
+      WHERE id = ${channelId} AND org_id = ${orgId}
     `
 
     console.log(`[Mark Read] Marked ${messagesResult.length} messages as read in channel ${channelId}`)

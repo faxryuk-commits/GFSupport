@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     
     // Mark last few messages as unread
     await sql`
@@ -49,6 +51,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE channel_id = ${channelId}
         AND is_read = true
         AND created_at > NOW() - INTERVAL '24 hours'
+        AND channel_id IN (SELECT id FROM support_channels WHERE org_id = ${orgId})
       ORDER BY created_at DESC
       LIMIT 5
     `
@@ -57,7 +60,7 @@ export default async function handler(req: Request): Promise<Response> {
     const result = await sql`
       UPDATE support_channels 
       SET unread_count = GREATEST(unread_count, 1)
-      WHERE id = ${channelId}
+      WHERE id = ${channelId} AND org_id = ${orgId}
       RETURNING unread_count
     `
 

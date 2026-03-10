@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -10,6 +11,7 @@ function json(data: any, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
     },
   })
 }
@@ -28,18 +30,20 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // Создаём таблицу если не существует
   await sql`
     CREATE TABLE IF NOT EXISTS support_broadcast_scheduled (
       id VARCHAR(50) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL DEFAULT 'org_delever',
       message_text TEXT NOT NULL,
       message_type VARCHAR(30) DEFAULT 'announcement',
       notification_type VARCHAR(30) DEFAULT 'announcement',
@@ -76,6 +80,8 @@ export default async function handler(req: Request) {
   await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS delivered_count INTEGER DEFAULT 0`.catch(() => {})
   await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS viewed_count INTEGER DEFAULT 0`.catch(() => {})
   await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS reaction_count INTEGER DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+  await sql`UPDATE support_broadcast_scheduled SET org_id = 'org_delever' WHERE org_id IS NULL`.catch(() => {})
 
   // GET - список запланированных рассылок
   if (req.method === 'GET') {
@@ -88,13 +94,13 @@ export default async function handler(req: Request) {
       if (status === 'pending') {
         scheduled = await sql`
           SELECT * FROM support_broadcast_scheduled 
-          WHERE status = 'pending' 
+          WHERE org_id = ${orgId} AND status = 'pending' 
           ORDER BY scheduled_at ASC
         `
       } else if (status === 'sent') {
         scheduled = await sql`
           SELECT * FROM support_broadcast_scheduled 
-          WHERE status = 'sent' 
+          WHERE org_id = ${orgId} AND status = 'sent' 
           ORDER BY sent_at DESC
           LIMIT 20
         `
@@ -102,7 +108,8 @@ export default async function handler(req: Request) {
         // Для календаря - все за период
         scheduled = await sql`
           SELECT * FROM support_broadcast_scheduled 
-          WHERE scheduled_at >= ${from}::timestamp 
+          WHERE org_id = ${orgId}
+            AND scheduled_at >= ${from}::timestamp 
             AND scheduled_at <= ${to}::timestamp
           ORDER BY scheduled_at ASC
         `
@@ -110,6 +117,7 @@ export default async function handler(req: Request) {
         // Все (последние 50)
         scheduled = await sql`
           SELECT * FROM support_broadcast_scheduled 
+          WHERE org_id = ${orgId}
           ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, scheduled_at DESC
           LIMIT 50
         `
@@ -182,7 +190,7 @@ export default async function handler(req: Request) {
         } else {
           const countResult = await sql`
             SELECT COUNT(*) as count FROM support_channels 
-            WHERE telegram_chat_id IS NOT NULL
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
             ${filterType === 'clients' ? sql`AND (type = 'client' OR sla_category = 'client')` : sql``}
             ${filterType === 'partners' ? sql`AND (type = 'partner' OR sla_category = 'partner')` : sql``}
           `
@@ -193,11 +201,11 @@ export default async function handler(req: Request) {
         
         await sql`
           INSERT INTO support_broadcast_scheduled (
-            id, message_text, message_type, notification_type, filter_type, selected_channels,
+            id, org_id, message_text, message_type, notification_type, filter_type, selected_channels,
             scheduled_at, timezone, status, sender_type, sender_id, sender_name,
             media_url, media_type, created_by, recipients_count
           ) VALUES (
-            ${id}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
+            ${id}, ${orgId}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
             NOW(), ${timezone}, 'pending', ${senderType}, ${senderId || null}, ${senderName || null},
             ${mediaUrl || null}, ${mediaType || null}, ${createdBy}, ${recipientsCount}
           )
@@ -214,7 +222,8 @@ export default async function handler(req: Request) {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer broadcast-auto-execute'
+              'Authorization': 'Bearer broadcast-auto-execute',
+              'X-Org-Id': orgId
             },
           })
           const execResult = await execRes.json()
@@ -271,7 +280,7 @@ export default async function handler(req: Request) {
       } else {
         const countResult = await sql`
           SELECT COUNT(*) as count FROM support_channels 
-          WHERE telegram_chat_id IS NOT NULL
+          WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
           ${filterType === 'clients' ? sql`AND (type = 'client' OR sla_category = 'client')` : sql``}
           ${filterType === 'partners' ? sql`AND (type = 'partner' OR sla_category = 'partner')` : sql``}
         `
@@ -282,11 +291,11 @@ export default async function handler(req: Request) {
       
       await sql`
         INSERT INTO support_broadcast_scheduled (
-          id, message_text, message_type, notification_type, filter_type, selected_channels,
+          id, org_id, message_text, message_type, notification_type, filter_type, selected_channels,
           scheduled_at, timezone, status, sender_type, sender_id, sender_name,
           media_url, media_type, created_by, recipients_count
         ) VALUES (
-          ${id}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
+          ${id}, ${orgId}, ${messageText}, ${messageType}, ${notificationType}, ${filterType}, ${selectedChannels},
           ${utcDate.toISOString()}::timestamptz, ${timezone}, 'pending', ${senderType}, ${senderId || null}, ${senderName || null},
           ${mediaUrl || null}, ${mediaType || null}, ${createdBy}, ${recipientsCount}
         )
@@ -315,7 +324,7 @@ export default async function handler(req: Request) {
       
       // Проверяем существование и статус
       const existing = await sql`
-        SELECT id, status FROM support_broadcast_scheduled WHERE id = ${id}
+        SELECT id, status FROM support_broadcast_scheduled WHERE id = ${id} AND org_id = ${orgId}
       `
       
       if (existing.length === 0) {
@@ -330,7 +339,7 @@ export default async function handler(req: Request) {
       await sql`
         UPDATE support_broadcast_scheduled 
         SET status = 'cancelled'
-        WHERE id = ${id}
+        WHERE id = ${id} AND org_id = ${orgId}
       `
       
       return json({

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -37,6 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // Ensure users table exists with all needed columns
@@ -80,13 +82,14 @@ export default async function handler(req: Request): Promise<Response> {
         users = await sql`
           SELECT * FROM support_users 
           WHERE role = ${role} AND is_active = true
+            AND org_id = ${orgId}
             AND (${market}::text IS NULL OR market_id = ${market})
           ORDER BY last_seen_at DESC
         `
       } else if (channelId) {
         users = await sql`
           SELECT * FROM support_users 
-          WHERE is_active = true AND (
+          WHERE is_active = true AND org_id = ${orgId} AND (
             channels @> ${JSON.stringify([channelId])}::jsonb
             OR EXISTS (
               SELECT 1
@@ -105,6 +108,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT * FROM support_users 
           WHERE (name ILIKE ${'%' + search + '%'} OR telegram_username ILIKE ${'%' + search + '%'})
             AND is_active = true
+            AND org_id = ${orgId}
             AND (${market}::text IS NULL OR market_id = ${market})
           ORDER BY last_seen_at DESC
           LIMIT 50
@@ -113,6 +117,7 @@ export default async function handler(req: Request): Promise<Response> {
         users = await sql`
           SELECT * FROM support_users 
           WHERE is_active = true
+            AND org_id = ${orgId}
             AND (${market}::text IS NULL OR market_id = ${market})
           ORDER BY 
             CASE role 
@@ -141,6 +146,7 @@ export default async function handler(req: Request): Promise<Response> {
               COUNT(CASE WHEN sender_role != 'client' THEN 1 END) as responses
             FROM support_messages
             WHERE sender_id::text = ANY(${employeeIds})
+              AND org_id = ${orgId}
               AND created_at > NOW() - INTERVAL '30 days'
             GROUP BY sender_id
           `
@@ -164,6 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) as count
         FROM support_users
         WHERE is_active = true
+          AND org_id = ${orgId}
         GROUP BY role
       `
 
@@ -211,7 +218,7 @@ export default async function handler(req: Request): Promise<Response> {
       
       // Check if user exists
       const existing = await sql`
-        SELECT * FROM support_users WHERE telegram_id = ${telegramId}
+        SELECT * FROM support_users WHERE telegram_id = ${telegramId} AND org_id = ${orgId}
       `
       
       if (existing.length > 0) {
@@ -232,7 +239,7 @@ export default async function handler(req: Request): Promise<Response> {
             channels = ${JSON.stringify(channels)}::jsonb,
             last_seen_at = NOW(),
             updated_at = NOW()
-          WHERE telegram_id = ${telegramId}
+          WHERE telegram_id = ${telegramId} AND org_id = ${orgId}
         `
         
         return json({ success: true, action: 'updated', userId: user.id })
@@ -242,8 +249,8 @@ export default async function handler(req: Request): Promise<Response> {
         const channels = channelId ? [{ id: channelId, name: channelName, addedAt: new Date().toISOString() }] : []
         
         await sql`
-          INSERT INTO support_users (id, telegram_id, telegram_username, name, photo_url, channels)
-          VALUES (${userId}, ${telegramId}, ${telegramUsername}, ${name}, ${photoUrl}, ${JSON.stringify(channels)}::jsonb)
+          INSERT INTO support_users (id, telegram_id, telegram_username, name, photo_url, channels, org_id)
+          VALUES (${userId}, ${telegramId}, ${telegramUsername}, ${name}, ${photoUrl}, ${JSON.stringify(channels)}::jsonb, ${orgId})
         `
         
         return json({ success: true, action: 'created', userId })
@@ -274,7 +281,7 @@ export default async function handler(req: Request): Promise<Response> {
             notes = COALESCE(${notes ?? null}, notes),
             is_active = COALESCE(${isActive ?? null}, is_active),
             updated_at = NOW()
-          WHERE id = ${id}
+          WHERE id = ${id} AND org_id = ${orgId}
         `
       } else {
         await sql`
@@ -285,7 +292,7 @@ export default async function handler(req: Request): Promise<Response> {
             notes = COALESCE(${notes ?? null}, notes),
             is_active = COALESCE(${isActive ?? null}, is_active),
             updated_at = NOW()
-          WHERE telegram_id = ${telegramId}
+          WHERE telegram_id = ${telegramId} AND org_id = ${orgId}
         `
       }
       
@@ -307,7 +314,7 @@ export default async function handler(req: Request): Promise<Response> {
       
       await sql`
         UPDATE support_users SET is_active = false, updated_at = NOW()
-        WHERE id = ${id}
+        WHERE id = ${id} AND org_id = ${orgId}
       `
       
       return json({ success: true })

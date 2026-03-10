@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -113,12 +114,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   try {
     // Get settings
@@ -134,6 +136,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at >= NOW() - INTERVAL '1 hour'
+        AND m.org_id = ${orgId}
         AND m.text_content IS NOT NULL
         AND m.text_content != ''
         AND (m.ai_urgency IS NULL OR m.ai_urgency = 0)
@@ -161,7 +164,7 @@ export default async function handler(req: Request): Promise<Response> {
           is_problem = ${problemAnalysis.isProblem},
           ai_urgency = ${problemAnalysis.urgency},
           ai_category = ${problemAnalysis.problemTypes.length > 0 ? problemAnalysis.problemTypes[0] : null}
-        WHERE id = ${msg.id}
+        WHERE id = ${msg.id} AND org_id = ${orgId}
       `
       
       // Create case for problem messages (if client message with urgency >= 3)
@@ -170,6 +173,7 @@ export default async function handler(req: Request): Promise<Response> {
         const existingCase = await sql`
           SELECT id FROM support_cases 
           WHERE channel_id = ${msg.channel_id}
+            AND org_id = ${orgId}
             AND status NOT IN ('resolved', 'closed')
             AND created_at >= NOW() - INTERVAL '24 hours'
           LIMIT 1
@@ -203,12 +207,13 @@ export default async function handler(req: Request): Promise<Response> {
           
           await sql`
             INSERT INTO support_cases (
-              id, ticket_number, channel_id, title, description,
+              id, ticket_number, channel_id, org_id, title, description,
               category, priority, status, source_message_id
             ) VALUES (
               ${caseId},
               ${ticketNumber},
               ${msg.channel_id},
+              ${orgId},
               ${title},
               ${text},
               ${problemAnalysis.problemTypes[0] || 'general'},

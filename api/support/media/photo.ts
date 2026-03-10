@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -35,7 +36,7 @@ export default async function handler(req: Request): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
   }
 
   if (req.method === 'OPTIONS') {
@@ -62,10 +63,11 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
 
     let botToken: string | null = null
     try {
-      const tokenRows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+      const tokenRows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
       if (tokenRows[0]?.value) botToken = tokenRows[0].value
     } catch {}
     if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN || null
@@ -79,12 +81,12 @@ export default async function handler(req: Request): Promise<Response> {
     let channel
     if (channelId) {
       const result = await sql`
-        SELECT id, telegram_chat_id, photo_url FROM support_channels WHERE id = ${channelId}
+        SELECT id, telegram_chat_id, photo_url FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
       `
       channel = result[0]
     } else if (chatId) {
       const result = await sql`
-        SELECT id, telegram_chat_id, photo_url FROM support_channels WHERE telegram_chat_id = ${chatId}
+        SELECT id, telegram_chat_id, photo_url FROM support_channels WHERE telegram_chat_id = ${chatId} AND org_id = ${orgId}
       `
       channel = result[0]
     }
@@ -113,7 +115,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_channels 
           SET photo_url = ${photoUrl}, updated_at = NOW()
-          WHERE id = ${channel.id}
+          WHERE id = ${channel.id} AND org_id = ${orgId}
         `
       }
     }
@@ -127,7 +129,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (!imageRes.ok) {
         photoUrl = await getFreshPhotoUrl(botToken, channel.telegram_chat_id)
         if (photoUrl) {
-          await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${channel.id}`
+          await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${channel.id} AND org_id = ${orgId}`
           imageRes = await fetch(photoUrl)
         }
         if (!imageRes.ok) return new Response(null, { status: 404, headers: corsHeaders })

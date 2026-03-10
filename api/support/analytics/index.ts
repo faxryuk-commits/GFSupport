@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 // API Version: 2.2 - SLA Categories with real data
 export const config = {
@@ -71,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -86,6 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const period = url.searchParams.get('period') || '30d'
   const customFrom = url.searchParams.get('from')
@@ -140,7 +142,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE priority = 'high' AND created_at >= ${startDate.toISOString()}) as high_priority_cases,
         COUNT(*) FILTER (WHERE priority = 'urgent' AND created_at >= ${startDate.toISOString()}) as urgent_priority_cases
       FROM support_cases
-      WHERE (${market}::text IS NULL OR market_id = ${market})
+      WHERE org_id = ${orgId}
+        AND (${market}::text IS NULL OR market_id = ${market})
     `
     const overview = overviewResult[0] || {}
 
@@ -153,7 +156,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE m.transcript IS NOT NULL) as transcribed_messages
       FROM support_messages m
       JOIN support_channels ch ON ch.id = m.channel_id
-      WHERE m.created_at >= ${startDate.toISOString()}
+      WHERE m.org_id = ${orgId}
+        AND m.created_at >= ${startDate.toISOString()}
         AND (${market}::text IS NULL OR ch.market_id = ${market})
     `
     const messages = messagesResult[0] || {}
@@ -161,7 +165,8 @@ export default async function handler(req: Request): Promise<Response> {
     const channelsResult = await sql`
       SELECT COUNT(*) as total_channels, COUNT(*) FILTER (WHERE is_active = true) as active_channels
       FROM support_channels
-      WHERE (${market}::text IS NULL OR market_id = ${market})
+      WHERE org_id = ${orgId}
+        AND (${market}::text IS NULL OR market_id = ${market})
     `
     const channels = channelsResult[0] || {}
 
@@ -176,7 +181,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed')) as open_count,
         AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution
       FROM support_cases
-      WHERE created_at >= ${startDate.toISOString()}
+      WHERE org_id = ${orgId}
+        AND created_at >= ${startDate.toISOString()}
       GROUP BY category
       ORDER BY count DESC
       LIMIT 10
@@ -187,7 +193,8 @@ export default async function handler(req: Request): Promise<Response> {
         COALESCE(ai_sentiment, 'unknown') as sentiment,
         COUNT(*) as count
       FROM support_messages
-      WHERE created_at >= ${startDate.toISOString()} AND ai_sentiment IS NOT NULL
+      WHERE org_id = ${orgId}
+        AND created_at >= ${startDate.toISOString()} AND ai_sentiment IS NOT NULL
       GROUP BY ai_sentiment
       ORDER BY count DESC
     `
@@ -197,7 +204,8 @@ export default async function handler(req: Request): Promise<Response> {
         COALESCE(ai_intent, 'unknown') as intent,
         COUNT(*) as count
       FROM support_messages
-      WHERE created_at >= ${startDate.toISOString()} AND ai_intent IS NOT NULL
+      WHERE org_id = ${orgId}
+        AND created_at >= ${startDate.toISOString()} AND ai_intent IS NOT NULL
       GROUP BY ai_intent
       ORDER BY count DESC
       LIMIT 10
@@ -214,7 +222,8 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) as occurrences,
           COUNT(DISTINCT channel_id) as affected_companies
         FROM support_cases
-        WHERE created_at >= ${startDate.toISOString()}
+        WHERE org_id = ${orgId}
+          AND created_at >= ${startDate.toISOString()}
           AND category IS NOT NULL
         GROUP BY category
         HAVING COUNT(*) >= 2
@@ -228,7 +237,8 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) as occurrences,
           COUNT(DISTINCT channel_id) as affected_companies
         FROM support_messages
-        WHERE created_at >= ${startDate.toISOString()}
+        WHERE org_id = ${orgId}
+          AND created_at >= ${startDate.toISOString()}
           AND is_problem = true
           AND ai_category IS NOT NULL
         GROUP BY ai_category
@@ -243,7 +253,8 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) as occurrences,
           COUNT(DISTINCT channel_id) as affected_companies
         FROM support_messages
-        WHERE created_at >= ${startDate.toISOString()}
+        WHERE org_id = ${orgId}
+          AND created_at >= ${startDate.toISOString()}
           AND is_problem = true
         GROUP BY channel_id
         HAVING COUNT(*) >= 3
@@ -283,7 +294,8 @@ export default async function handler(req: Request): Promise<Response> {
         OR LOWER(a.username) = LOWER(m.sender_username)
         OR LOWER(a.name) = LOWER(m.sender_name)
       )
-      WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+      WHERE m.org_id = ${orgId}
+        AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
         AND m.sender_id IS NOT NULL
         AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
         AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%delever support%'
@@ -302,7 +314,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases,
         AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
       FROM support_cases c
-      WHERE c.assigned_to IS NOT NULL
+      WHERE c.org_id = ${orgId}
+        AND c.assigned_to IS NOT NULL
       GROUP BY c.assigned_to
     `
     
@@ -330,7 +343,8 @@ export default async function handler(req: Request): Promise<Response> {
             LAG(sender_role) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_sender_role,
             LAG(is_from_client) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_is_from_client
           FROM support_messages
-          WHERE created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+          WHERE org_id = ${orgId}
+            AND created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND created_at <= ${endDate.toISOString()}
         ),
         first_client_messages AS (
@@ -358,6 +372,7 @@ export default async function handler(req: Request): Promise<Response> {
               SELECT MIN(created_at)
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
+                AND sm.org_id = ${orgId}
                 AND sm.created_at > cm.client_msg_at
                 AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
                 AND sm.sender_role IN ('support', 'team', 'agent')
@@ -417,7 +432,8 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) as cases_created,
         COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
       FROM support_cases
-      WHERE created_at >= ${startDate.toISOString()}
+      WHERE org_id = ${orgId}
+        AND created_at >= ${startDate.toISOString()}
       GROUP BY DATE(created_at)
       ORDER BY date
     `
@@ -456,7 +472,8 @@ export default async function handler(req: Request): Promise<Response> {
         MAX(m.created_at) as last_negative_at
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.ai_sentiment IN ('negative', 'frustrated')
+      WHERE m.org_id = ${orgId}
+        AND m.ai_sentiment IN ('negative', 'frustrated')
         AND m.created_at >= ${startDate.toISOString()}
       GROUP BY c.id, c.name
       HAVING COUNT(*) >= 3
@@ -474,7 +491,8 @@ export default async function handler(req: Request): Promise<Response> {
         EXTRACT(EPOCH FROM (NOW() - MIN(c.created_at))) / 3600 as oldest_hours
       FROM support_cases c
       JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.status NOT IN ('resolved', 'closed')
+      WHERE c.org_id = ${orgId}
+        AND c.status NOT IN ('resolved', 'closed')
         AND c.created_at < NOW() - INTERVAL '48 hours'
       GROUP BY ch.id, ch.name
       ORDER BY oldest_hours DESC
@@ -490,7 +508,8 @@ export default async function handler(req: Request): Promise<Response> {
         array_agg(DISTINCT c.category) as categories
       FROM support_cases c
       JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.is_recurring = true
+      WHERE c.org_id = ${orgId}
+        AND c.is_recurring = true
         AND c.created_at >= ${startDate.toISOString()}
       GROUP BY ch.id, ch.name
       HAVING COUNT(*) >= 2
@@ -515,8 +534,9 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(DISTINCT CASE WHEN cs.status NOT IN ('resolved', 'closed') THEN cs.id END) as open_cases,
         COUNT(DISTINCT CASE WHEN cs.is_recurring THEN cs.id END) as recurring_cases
       FROM support_channels c
-      LEFT JOIN support_messages m ON m.channel_id = c.id AND m.created_at >= ${startDate.toISOString()}
-      LEFT JOIN support_cases cs ON cs.channel_id = c.id
+      LEFT JOIN support_messages m ON m.channel_id = c.id AND m.org_id = ${orgId} AND m.created_at >= ${startDate.toISOString()}
+      LEFT JOIN support_cases cs ON cs.channel_id = c.id AND cs.org_id = ${orgId}
+      WHERE c.org_id = ${orgId}
       GROUP BY c.id, c.name
       HAVING COALESCE(SUM(
         CASE 
@@ -555,7 +575,8 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(DISTINCT ch.id) FILTER (WHERE ch.unread_count > 0) as with_unread,
           SUM(COALESCE(ch.unread_count, 0)) as total_unread
         FROM support_channels ch
-        WHERE ch.is_active = true
+        WHERE ch.org_id = ${orgId}
+          AND ch.is_active = true
         GROUP BY ch.sla_category
       `
       
@@ -569,7 +590,8 @@ export default async function handler(req: Request): Promise<Response> {
           AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
         FROM support_cases c
         JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE c.created_at >= ${startDate.toISOString()}
+        WHERE c.org_id = ${orgId}
+          AND c.created_at >= ${startDate.toISOString()}
         GROUP BY ch.sla_category
       `
       
@@ -589,7 +611,8 @@ export default async function handler(req: Request): Promise<Response> {
             LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
           FROM support_messages m
           JOIN support_channels ch ON m.channel_id = ch.id
-          WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+          WHERE m.org_id = ${orgId}
+            AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND m.created_at <= ${endDate.toISOString()}
         ),
         first_client_messages AS (
@@ -616,6 +639,7 @@ export default async function handler(req: Request): Promise<Response> {
               SELECT MIN(sm.created_at)
               FROM support_messages sm
               WHERE sm.channel_id = cm.channel_id
+                AND sm.org_id = ${orgId}
                 AND sm.created_at > cm.client_msg_at
                 AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
                 AND sm.sender_role IN ('support', 'team', 'agent')
@@ -715,14 +739,15 @@ export default async function handler(req: Request): Promise<Response> {
           -- Среднее время ответа
           AVG(EXTRACT(EPOCH FROM (
             (SELECT MIN(sm.created_at) FROM support_messages sm 
-             WHERE sm.channel_id = c.id AND sm.created_at > m.created_at 
+             WHERE sm.channel_id = c.id AND sm.org_id = ${orgId} AND sm.created_at > m.created_at 
              AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false))
             - m.created_at
           )) / 60) FILTER (WHERE m.is_from_client = true OR m.sender_role = 'client') as avg_response_minutes
         FROM support_channels c
-        LEFT JOIN support_messages m ON m.channel_id = c.id
-        LEFT JOIN support_cases cs ON cs.channel_id = c.id
-        WHERE c.is_active = true
+        LEFT JOIN support_messages m ON m.channel_id = c.id AND m.org_id = ${orgId}
+        LEFT JOIN support_cases cs ON cs.channel_id = c.id AND cs.org_id = ${orgId}
+        WHERE c.org_id = ${orgId}
+          AND c.is_active = true
         GROUP BY c.id, c.name, c.sla_category, c.awaiting_reply, c.unread_count, c.last_message_at
       )
       SELECT 
@@ -758,7 +783,8 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.created_at) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_created_at,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${startDate.toISOString()}
       ),
       response_times AS (
         SELECT
@@ -787,7 +813,8 @@ export default async function handler(req: Request): Promise<Response> {
         c.last_message_at
       FROM support_channels c
       LEFT JOIN response_times rt ON rt.channel_id = c.id
-      WHERE c.is_active = true
+      WHERE c.org_id = ${orgId}
+        AND c.is_active = true
       GROUP BY c.id, c.name, c.sla_category, c.client_avg_response_ms, c.client_response_count, c.last_message_at
       HAVING COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) > 0
       ORDER BY COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) DESC

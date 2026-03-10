@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -44,7 +45,7 @@ export default async function handler(req: Request): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
   }
 
   if (req.method === 'OPTIONS') {
@@ -58,6 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const userId = url.searchParams.get('userId')
   
@@ -71,7 +73,7 @@ export default async function handler(req: Request): Promise<Response> {
   let botToken: string | null = null
   try {
     const sql2 = getSQL()
-    const tokenRows = await sql2`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    const tokenRows = await sql2`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
     if (tokenRows[0]?.value) botToken = tokenRows[0].value
   } catch {}
   if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN || null
@@ -95,14 +97,14 @@ export default async function handler(req: Request): Promise<Response> {
     const isValidTelegramId = /^\d{5,15}$/.test(userId)
     if (!isValidTelegramId) {
       const nameRow = await sql`
-        SELECT sender_name FROM support_messages WHERE sender_id = ${userId} LIMIT 1
+        SELECT sender_name FROM support_messages WHERE sender_id = ${userId} AND org_id = ${orgId} LIMIT 1
       `.catch(() => [])
       return fallbackRedirect(nameRow[0]?.sender_name)
     }
 
     const cached = await sql`
       SELECT sender_photo_url, sender_name FROM support_messages 
-      WHERE sender_id = ${userId} AND sender_photo_url IS NOT NULL
+      WHERE sender_id = ${userId} AND sender_photo_url IS NOT NULL AND org_id = ${orgId}
       ORDER BY created_at DESC LIMIT 1
     `
 
@@ -119,7 +121,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (!photoUrl) {
       photoUrl = await getFreshUserPhotoUrl(botToken, userId)
       if (photoUrl) {
-        await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`.catch(() => {})
+        await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId} AND org_id = ${orgId}`.catch(() => {})
       }
     }
 
@@ -132,7 +134,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (!imageRes.ok) {
         photoUrl = await getFreshUserPhotoUrl(botToken, userId)
         if (photoUrl) {
-          await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`.catch(() => {})
+          await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId} AND org_id = ${orgId}`.catch(() => {})
           imageRes = await fetch(photoUrl)
         }
         if (!imageRes.ok) return fallbackRedirect(senderName)

@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import OpenAI from 'openai'
 import { getOpenAIKey } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -422,12 +423,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // POST - Analyze message
   if (req.method === 'POST') {
@@ -453,6 +455,7 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE channel_id = ${channelId}
             AND status = 'resolved'
             AND resolution_notes LIKE '%[Awaiting feedback]%'
+            AND org_id = ${orgId}
           ORDER BY updated_at DESC
           LIMIT 1
         `
@@ -484,7 +487,7 @@ export default async function handler(req: Request): Promise<Response> {
             ai_summary = ${analysis.summary},
             ai_extracted_entities = ${JSON.stringify(analysis.entities)},
             auto_reply_candidate = ${analysis.autoReplyAllowed}
-          WHERE id = ${messageId}
+          WHERE id = ${messageId} AND org_id = ${orgId}
         `
         console.log(`[AI Analyze] Updated message ${messageId}`)
       }
@@ -496,7 +499,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_channels SET
             awaiting_reply = false
-          WHERE id = ${channelId} AND awaiting_reply = true
+          WHERE id = ${channelId} AND awaiting_reply = true AND org_id = ${orgId}
         `
         console.log(`[AI Analyze] Channel ${channelId} marked as not awaiting reply (message doesn't need response)`)
       }
@@ -510,7 +513,7 @@ export default async function handler(req: Request): Promise<Response> {
               WHEN ${analysis.urgency} >= 3 THEN 'high'
               ELSE priority
             END
-          WHERE id = ${channelId}
+          WHERE id = ${channelId} AND org_id = ${orgId}
         `
       }
 
@@ -531,7 +534,7 @@ export default async function handler(req: Request): Promise<Response> {
         try {
           // Check if ticket already exists for this message
           const existingCase = await sql`
-            SELECT id FROM support_cases WHERE source_message_id = ${messageId} LIMIT 1
+            SELECT id FROM support_cases WHERE source_message_id = ${messageId} AND org_id = ${orgId} LIMIT 1
           `
           
           // NEW: Check for recent open case in same channel (within 10 minutes)
@@ -542,6 +545,7 @@ export default async function handler(req: Request): Promise<Response> {
             WHERE c.channel_id = ${channelId}
               AND c.status IN ('detected', 'in_progress')
               AND c.created_at > NOW() - INTERVAL '10 minutes'
+              AND c.org_id = ${orgId}
               -- No staff reply since case was created
               AND NOT EXISTS (
                 SELECT 1 FROM support_messages m
@@ -558,7 +562,7 @@ export default async function handler(req: Request): Promise<Response> {
             const existingCaseId = recentOpenCase[0].id
             
             // Link message to existing case
-            await sql`UPDATE support_messages SET case_id = ${existingCaseId} WHERE id = ${messageId}`
+            await sql`UPDATE support_messages SET case_id = ${existingCaseId} WHERE id = ${messageId} AND org_id = ${orgId}`
             
             // Update case description to include new message info
             const currentDesc = recentOpenCase[0].description || ''
@@ -569,18 +573,19 @@ export default async function handler(req: Request): Promise<Response> {
               UPDATE support_cases 
               SET description = ${newDesc},
                   updated_at = NOW()
-              WHERE id = ${existingCaseId}
+              WHERE id = ${existingCaseId} AND org_id = ${orgId}
             `
             
             // Log activity
             await sql`
-              INSERT INTO support_case_activities (id, case_id, type, title, description, created_at)
+              INSERT INTO support_case_activities (id, case_id, type, title, description, org_id, created_at)
               VALUES (
                 ${'act_' + Date.now()},
                 ${existingCaseId},
                 'message_added',
                 'Добавлено сообщение',
                 ${'Клиент продолжил описывать проблему: ' + text.slice(0, 100)},
+                ${orgId},
                 NOW()
               )
             `
@@ -595,7 +600,7 @@ export default async function handler(req: Request): Promise<Response> {
           } else if (existingCase.length === 0) {
             // Get channel info for case creation
             const channelInfo = await sql`
-              SELECT name, company_id, telegram_chat_id FROM support_channels WHERE id = ${channelId}
+              SELECT name, company_id, telegram_chat_id FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
             `
             
             const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -620,7 +625,7 @@ export default async function handler(req: Request): Promise<Response> {
               INSERT INTO support_cases (
                 id, channel_id, company_id, title, description,
                 category, priority, severity, status, source_message_id,
-                reporter_name, created_at
+                reporter_name, org_id, created_at
               ) VALUES (
                 ${caseId},
                 ${channelId},
@@ -633,22 +638,24 @@ export default async function handler(req: Request): Promise<Response> {
                 'detected',
                 ${messageId},
                 ${senderName || 'Клиент'},
+                ${orgId},
                 NOW()
               )
             `
             
             // Link message to case
-            await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId}`
+            await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId} AND org_id = ${orgId}`
             
             // Create activity
             await sql`
-              INSERT INTO support_case_activities (id, case_id, type, title, description, created_at)
+              INSERT INTO support_case_activities (id, case_id, type, title, description, org_id, created_at)
               VALUES (
                 ${'act_' + Date.now()},
                 ${caseId},
                 'auto_created',
                 'Тикет создан автоматически',
                 ${'AI определил проблему: ' + (analysis.summary || analysis.category)},
+                ${orgId},
                 NOW()
               )
             `

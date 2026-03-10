@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -37,6 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   if (req.method === 'GET') {
@@ -51,13 +53,13 @@ export default async function handler(req: Request): Promise<Response> {
       const topics = await sql`
         SELECT 
           t.*,
-          (SELECT COUNT(*) FROM support_messages WHERE channel_id = t.channel_id AND thread_id = t.thread_id AND is_read = false) as unread_count,
-          (SELECT COUNT(*) FROM support_messages WHERE channel_id = t.channel_id AND thread_id = t.thread_id AND is_from_client = true AND created_at > COALESCE(
-            (SELECT MAX(created_at) FROM support_messages WHERE channel_id = t.channel_id AND thread_id = t.thread_id AND is_from_client = false),
+          (SELECT COUNT(*) FROM support_messages WHERE channel_id = t.channel_id AND thread_id = t.thread_id AND is_read = false AND org_id = ${orgId}) as unread_count,
+          (SELECT COUNT(*) FROM support_messages WHERE channel_id = t.channel_id AND thread_id = t.thread_id AND is_from_client = true AND org_id = ${orgId} AND created_at > COALESCE(
+            (SELECT MAX(created_at) FROM support_messages WHERE channel_id = t.channel_id AND thread_id = t.thread_id AND is_from_client = false AND org_id = ${orgId}),
             '1970-01-01'
           )) as awaiting_reply_count
         FROM support_topics t
-        WHERE t.channel_id = ${channelId}
+        WHERE t.channel_id = ${channelId} AND t.org_id = ${orgId}
         ORDER BY t.last_message_at DESC NULLS LAST
       `
 
@@ -66,7 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
         const recentMessages = await sql`
           SELECT id, sender_name, sender_role, text_content, content_type, created_at, is_from_client
           FROM support_messages
-          WHERE channel_id = ${channelId} AND thread_id = ${topic.thread_id}
+          WHERE channel_id = ${channelId} AND thread_id = ${topic.thread_id} AND org_id = ${orgId}
           ORDER BY created_at DESC
           LIMIT 5
         `

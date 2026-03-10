@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -33,12 +34,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // Ensure table exists
@@ -68,6 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
         const rows = await sql`
           SELECT * FROM support_invites 
           WHERE token = ${token} 
+            AND org_id = ${orgId}
             AND used_at IS NULL 
             AND (expires_at IS NULL OR expires_at > NOW())
         `
@@ -102,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT i.*, a.name as created_by_name
         FROM support_invites i
         LEFT JOIN support_agents a ON i.created_by = a.id
+        WHERE i.org_id = ${orgId}
         ORDER BY i.created_at DESC
         LIMIT 50
       `
@@ -148,8 +152,8 @@ export default async function handler(req: Request): Promise<Response> {
       const createdBy = authHeader.replace('Bearer ', '').split('_')[0] || null
 
       await sql`
-        INSERT INTO support_invites (id, token, email, role, created_by, expires_at)
-        VALUES (${inviteId}, ${token}, ${email || null}, ${role || 'agent'}, ${createdBy}, ${expiresAt.toISOString()})
+        INSERT INTO support_invites (id, token, email, role, created_by, expires_at, org_id)
+        VALUES (${inviteId}, ${token}, ${email || null}, ${role || 'agent'}, ${createdBy}, ${expiresAt.toISOString()}, ${orgId})
       `
 
       // Формируем ссылку на новый проект
@@ -184,7 +188,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     try {
-      await sql`DELETE FROM support_invites WHERE id = ${inviteId}`
+      await sql`DELETE FROM support_invites WHERE id = ${inviteId} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
       return json({ error: e.message }, 500)

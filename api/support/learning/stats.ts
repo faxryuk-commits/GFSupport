@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -35,6 +36,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   try {
     // Overall dialogs stats
@@ -50,6 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(DISTINCT question_category) as categories_count
       FROM support_dialogs
       WHERE is_active = true
+        AND org_id = ${orgId}
     `
 
     // Feedback stats
@@ -60,6 +63,7 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE rating = 'not_helpful') as not_helpful,
         COUNT(*) FILTER (WHERE rating = 'partially') as partially
       FROM support_feedback
+      WHERE org_id = ${orgId}
     `
 
     // Daily stats for last 30 days
@@ -76,6 +80,7 @@ export default async function handler(req: Request): Promise<Response> {
         feedback_partial
       FROM support_learning_stats
       WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+        AND org_id = ${orgId}
       ORDER BY date DESC
     `
 
@@ -86,6 +91,7 @@ export default async function handler(req: Request): Promise<Response> {
         confidence_score, used_count, was_helpful
       FROM support_dialogs
       WHERE is_active = true AND was_helpful = true
+        AND org_id = ${orgId}
       ORDER BY used_count DESC, confidence_score DESC
       LIMIT 10
     `
@@ -98,6 +104,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_dialogs
       WHERE is_active = true 
         AND (requires_human_review = true OR was_helpful = false)
+        AND org_id = ${orgId}
       ORDER BY created_at DESC
       LIMIT 10
     `
@@ -111,6 +118,7 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE was_helpful = true) as helpful
       FROM support_dialogs
       WHERE is_active = true
+        AND org_id = ${orgId}
       GROUP BY question_category
       ORDER BY count DESC
     `

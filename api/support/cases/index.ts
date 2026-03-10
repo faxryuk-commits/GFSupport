@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -37,6 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
   // GET - список кейсов
@@ -64,12 +66,12 @@ export default async function handler(req: Request): Promise<Response> {
         cases = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.status = ANY(${statuses}) AND (${market}::text IS NULL OR c.market_id = ${market})
+          WHERE c.org_id = ${orgId} AND c.status = ANY(${statuses}) AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -77,12 +79,12 @@ export default async function handler(req: Request): Promise<Response> {
         cases = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.priority = ${priority} AND (${market}::text IS NULL OR c.market_id = ${market})
+          WHERE c.org_id = ${orgId} AND c.priority = ${priority} AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -90,12 +92,12 @@ export default async function handler(req: Request): Promise<Response> {
         cases = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.channel_id = ${channelId}
+          WHERE c.org_id = ${orgId} AND c.channel_id = ${channelId}
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -103,12 +105,12 @@ export default async function handler(req: Request): Promise<Response> {
         cases = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.assigned_to = ${assignedTo} AND (${market}::text IS NULL OR c.market_id = ${market})
+          WHERE c.org_id = ${orgId} AND c.assigned_to = ${assignedTo} AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
@@ -116,12 +118,12 @@ export default async function handler(req: Request): Promise<Response> {
         cases = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE (c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'})
+          WHERE c.org_id = ${orgId} AND (c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'})
             AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
@@ -130,24 +132,25 @@ export default async function handler(req: Request): Promise<Response> {
         cases = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
           FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE (${market}::text IS NULL OR c.market_id = ${market})
+          WHERE c.org_id = ${orgId} AND (${market}::text IS NULL OR c.market_id = ${market})
           ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `
       }
 
-      const countResult = await sql`SELECT COUNT(*) as total FROM support_cases WHERE (${market}::text IS NULL OR market_id = ${market})`
+      const countResult = await sql`SELECT COUNT(*) as total FROM support_cases WHERE org_id = ${orgId} AND (${market}::text IS NULL OR market_id = ${market})`
       const total = parseInt(countResult[0]?.total || '0')
 
       // Статистика по статусам
       const statsResult = await sql`
         SELECT status, COUNT(*) as count 
         FROM support_cases 
+        WHERE org_id = ${orgId}
         GROUP BY status
       `
       const stats = Object.fromEntries(statsResult.map((s: any) => [s.status, parseInt(s.count)]))
@@ -233,23 +236,24 @@ export default async function handler(req: Request): Promise<Response> {
       try {
         // Ensure sequence exists and synced with max ticket_number
         await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
-        const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+        const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases WHERE org_id = ${orgId}`
         const maxNum = parseInt(maxResult[0]?.max_num || '1000')
         await sql`SELECT setval('support_case_ticket_seq', GREATEST(nextval('support_case_ticket_seq'), ${maxNum + 1}), false)`
         const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
         ticketNumber = parseInt(seqResult[0]?.num || '1001')
       } catch {
         // Fallback: use max + 1
-        const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases`
+        const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases WHERE org_id = ${orgId}`
         ticketNumber = parseInt(maxResult[0]?.max_num || '1000') + 1
       }
       
       await sql`
         INSERT INTO support_cases (
-          id, ticket_number, channel_id, company_id, lead_id, title, description,
+          id, org_id, ticket_number, channel_id, company_id, lead_id, title, description,
           category, subcategory, priority, severity, assigned_to, tags
         ) VALUES (
           ${caseId},
+          ${orgId},
           ${ticketNumber},
           ${channelId || null},
           ${companyId || null},
@@ -269,9 +273,9 @@ export default async function handler(req: Request): Promise<Response> {
       const createdCase = await sql`
         SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, a.name as assignee_name
         FROM support_cases c
-        LEFT JOIN support_channels ch ON c.channel_id = ch.id
+        LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
         LEFT JOIN support_agents a ON c.assigned_to = a.id
-        WHERE c.id = ${caseId}
+        WHERE c.id = ${caseId} AND c.org_id = ${orgId}
       `
       
       const c = createdCase[0]
@@ -343,7 +347,7 @@ export default async function handler(req: Request): Promise<Response> {
           INSERT INTO support_case_comments (id, case_id, author_id, author_name, text, is_internal)
           VALUES (${commentId}, ${id}, ${authorId || null}, ${authorName || 'Система'}, ${text}, ${isInternal || false})
         `
-        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${id}`
+        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`
 
         const comments = await sql`
           SELECT id, author_id, author_name, text, is_internal, created_at
@@ -403,7 +407,7 @@ export default async function handler(req: Request): Promise<Response> {
           title = COALESCE(${title}, title),
           description = COALESCE(${description}, description),
           updated_at = NOW()
-        WHERE id = ${id}
+        WHERE id = ${id} AND org_id = ${orgId}
       `
 
       return json({ success: true, caseId: id })
@@ -420,9 +424,9 @@ export default async function handler(req: Request): Promise<Response> {
       if (!caseId) return json({ error: 'Case ID required' }, 400)
 
       await sql`DELETE FROM support_case_comments WHERE case_id = ${caseId}`.catch(() => {})
-      await sql`UPDATE support_messages SET case_id = NULL WHERE case_id = ${caseId}`.catch(() => {})
+      await sql`UPDATE support_messages SET case_id = NULL WHERE case_id = ${caseId} AND org_id = ${orgId}`.catch(() => {})
       await sql`DELETE FROM support_case_activities WHERE case_id = ${caseId}`.catch(() => {})
-      await sql`DELETE FROM support_cases WHERE id = ${caseId}`
+      await sql`DELETE FROM support_cases WHERE id = ${caseId} AND org_id = ${orgId}`
 
       return json({ success: true, deleted: caseId })
     } catch (e: any) {

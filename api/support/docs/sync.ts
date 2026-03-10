@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -135,13 +136,14 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
   const pageLimit = Math.min(parseInt(url.searchParams.get('limit') || '50'), DOC_PAGES.length)
   const pagesToSync = DOC_PAGES.slice(0, pageLimit)
   
@@ -188,8 +190,8 @@ export default async function handler(req: Request) {
         const keywords = generateKeywords(content, page.category)
         
         await sql`
-          INSERT INTO support_docs (title, content, url, path, category, keywords, synced_at)
-          VALUES (${title}, ${content}, ${pageUrl}, ${page.path}, ${page.category}, ${keywords}, NOW())
+          INSERT INTO support_docs (title, content, url, path, category, keywords, synced_at, org_id)
+          VALUES (${title}, ${content}, ${pageUrl}, ${page.path}, ${page.category}, ${keywords}, NOW(), ${orgId})
           ON CONFLICT (url) DO UPDATE SET
             title = EXCLUDED.title,
             content = EXCLUDED.content,
@@ -208,6 +210,7 @@ export default async function handler(req: Request) {
     const stats = await sql`
       SELECT COUNT(*) as total, COUNT(DISTINCT category) as categories
       FROM support_docs
+      WHERE org_id = ${orgId}
     `
     
     return json({

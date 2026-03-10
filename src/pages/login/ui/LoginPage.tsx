@@ -30,17 +30,21 @@ export function LoginPage() {
         return
       }
 
-      // Сохраняем токен и данные агента (ключи для useAuth)
       localStorage.setItem('support_agent_token', data.token)
       localStorage.setItem('support_agent_data', JSON.stringify(data.agent))
       localStorage.setItem('support_agent_id', data.agent.id)
-      // Старые ключи для совместимости
       localStorage.setItem('support_agent', JSON.stringify(data.agent))
       localStorage.setItem('auth', JSON.stringify({ 
         email: data.agent.username, 
         role: data.agent.role,
         name: data.agent.name
       }))
+      if (data.org) {
+        localStorage.setItem('support_org_id', data.org.id)
+        localStorage.setItem('support_org_data', JSON.stringify(data.org))
+      } else if (data.agent.orgId) {
+        localStorage.setItem('support_org_id', data.agent.orgId)
+      }
 
       navigate('/overview')
     } catch (err: any) {
@@ -157,7 +161,7 @@ export function LoginPage() {
           </form>
 
           <p className="text-center text-slate-500 text-sm mt-8">
-            Нет доступа? <a href="#" className="text-blue-500 hover:underline">Обратитесь к администратору</a>
+            Нет аккаунта? <a href="/signup" className="text-blue-500 hover:underline font-medium">Зарегистрировать компанию</a>
           </p>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -90,12 +91,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // GET - Check and send reminders
   if (req.method === 'GET') {
@@ -112,6 +114,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND c.reminder_sent = false
           AND c.reminder_at IS NOT NULL
           AND c.reminder_at <= NOW()
+          AND c.org_id = ${orgId}
         ORDER BY c.due_date ASC
         LIMIT 20
       `
@@ -122,6 +125,7 @@ export default async function handler(req: Request): Promise<Response> {
         SET status = 'overdue'
         WHERE status = 'pending' 
           AND due_date < NOW()
+          AND org_id = ${orgId}
       `
 
       const results = []
@@ -135,7 +139,7 @@ export default async function handler(req: Request): Promise<Response> {
             await sql`
               UPDATE support_commitments 
               SET reminder_sent = true
-              WHERE id = ${commitment.id}
+              WHERE id = ${commitment.id} AND org_id = ${orgId}
             `
             results.push({ 
               id: commitment.id, 
@@ -165,6 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE status = 'overdue') as overdue,
           COUNT(*) FILTER (WHERE reminder_sent = false AND reminder_at <= NOW()) as pending_reminders
         FROM support_commitments
+        WHERE org_id = ${orgId}
       `
 
       return json({
@@ -192,7 +197,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT c.*, ch.telegram_chat_id, ch.name as channel_name
         FROM support_commitments c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE c.id = ${commitmentId}
+        WHERE c.id = ${commitmentId} AND c.org_id = ${orgId}
       `
 
       if (commitments.length === 0) {
@@ -211,7 +216,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_commitments 
           SET reminder_sent = true
-          WHERE id = ${commitmentId}
+          WHERE id = ${commitmentId} AND org_id = ${orgId}
         `
         return json({ success: true, message: 'Reminder sent' })
       } else {

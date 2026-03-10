@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -19,10 +20,11 @@ function json(data: any, status = 200) {
 }
 
 // Detect language from recent messages in channel
-async function detectChannelLanguage(sql: any, channelId: string): Promise<'ru' | 'uz' | 'en'> {
+async function detectChannelLanguage(sql: any, channelId: string, orgId: string): Promise<'ru' | 'uz' | 'en'> {
   const recentMessages = await sql`
     SELECT text_content FROM support_messages
     WHERE channel_id = ${channelId}
+      AND org_id = ${orgId}
       AND is_from_client = true
       AND text_content IS NOT NULL
     ORDER BY created_at DESC
@@ -92,7 +94,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -111,6 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     const { caseId, action } = await req.json()
 
     if (!caseId) {
@@ -121,8 +124,8 @@ export default async function handler(req: Request): Promise<Response> {
     const caseResult = await sql`
       SELECT c.*, ch.telegram_chat_id, ch.name as channel_name
       FROM support_cases c
-      LEFT JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.id = ${caseId}
+      LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+      WHERE c.id = ${caseId} AND c.org_id = ${orgId}
     `
 
     if (caseResult.length === 0) {
@@ -137,7 +140,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // Detect language
-    const lang = await detectChannelLanguage(sql, caseData.channel_id)
+    const lang = await detectChannelLanguage(sql, caseData.channel_id, orgId)
     const messages = getLocalizedMessages(lang)
 
     // Action: notify - Send natural text message (no buttons)
@@ -154,10 +157,10 @@ export default async function handler(req: Request): Promise<Response> {
       const msgId = `msg_notify_${Date.now()}`
       await sql`
         INSERT INTO support_messages (
-          id, channel_id, telegram_message_id, sender_name, sender_role,
+          id, channel_id, org_id, telegram_message_id, sender_name, sender_role,
           is_from_client, content_type, text_content, ai_intent, created_at
         ) VALUES (
-          ${msgId}, ${caseData.channel_id}, ${result.result?.message_id},
+          ${msgId}, ${caseData.channel_id}, ${orgId}, ${result.result?.message_id},
           'AI Помощник', 'auto_reply', false, 'text', ${text}, 'case_resolved_notify', NOW()
         )
       `
@@ -167,7 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_cases 
         SET resolution_notes = COALESCE(resolution_notes, '') || '[Awaiting feedback]',
             updated_at = NOW()
-        WHERE id = ${caseId}
+        WHERE id = ${caseId} AND org_id = ${orgId}
       `
 
       return json({ 
@@ -190,7 +193,7 @@ export default async function handler(req: Request): Promise<Response> {
         SET status = 'resolved',
             resolution_notes = REPLACE(COALESCE(resolution_notes, ''), '[Awaiting feedback]', '[Confirmed resolved by client]'),
             updated_at = NOW()
-        WHERE id = ${caseId}
+        WHERE id = ${caseId} AND org_id = ${orgId}
       `
 
       // Record feedback
@@ -222,7 +225,7 @@ export default async function handler(req: Request): Promise<Response> {
             priority = CASE WHEN priority = 'low' THEN 'medium' ELSE priority END,
             resolution_notes = REPLACE(COALESCE(resolution_notes, ''), '[Awaiting feedback]', '[Reopened by client]'),
             updated_at = NOW()
-        WHERE id = ${caseId}
+        WHERE id = ${caseId} AND org_id = ${orgId}
       `
 
       // Record escalation

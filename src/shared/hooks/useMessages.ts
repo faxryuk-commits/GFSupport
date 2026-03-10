@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchMessages, sendMessage, sendMediaMessage } from '../api/messages'
 import { useCache, type CachedMessage } from '../store'
-import type { Message } from '@/entities/message'
+import type { Message } from '../types'
 
 const STALE_TIME = 30 * 1000 // 30 seconds
 

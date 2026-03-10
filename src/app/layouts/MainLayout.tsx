@@ -4,6 +4,7 @@ import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
 import { useMarket } from '@/shared/hooks/useMarket'
+import { useOrg, OrgContext } from '@/shared/hooks/useOrg'
 import { playCaseSoundIfEnabled, playMessageSoundIfEnabled } from '@/shared/lib'
 import { clearCache } from '@/shared/services/api.service'
 
@@ -24,6 +25,7 @@ export function MainLayout() {
   
   useBackgroundNotifications()
   const { markets, selectedMarket, setSelectedMarket } = useMarket()
+  const orgState = useOrg()
 
   const handleMarketChange = useCallback((marketId: string | null) => {
     setSelectedMarket(marketId)
@@ -158,6 +160,8 @@ export function MainLayout() {
     localStorage.removeItem('support_agent_data')
     localStorage.removeItem('support_agent_token')
     localStorage.removeItem('support_agent_id')
+    localStorage.removeItem('support_org_id')
+    localStorage.removeItem('support_org_data')
     navigate('/login')
   }
 
@@ -203,24 +207,29 @@ export function MainLayout() {
   }, [navigate])
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar 
-        unreadChats={unreadChats} 
-        openCases={openCases}
-        pendingCommitments={pendingCommitments}
-        onlineAgentsCount={onlineAgentsCount}
-        currentUser={currentUser || undefined}
-        onLogout={handleLogout}
-        lastUpdated={lastUpdated}
-        markets={markets}
-        selectedMarket={selectedMarket}
-        onMarketChange={handleMarketChange}
-      />
-      <main className="flex-1 h-full overflow-auto">
-        <ErrorBoundary>
-          <Outlet />
-        </ErrorBoundary>
-      </main>
-    </div>
+    <OrgContext.Provider value={orgState}>
+      <div className="flex h-screen bg-slate-50 overflow-hidden">
+        <Sidebar 
+          unreadChats={unreadChats} 
+          openCases={openCases}
+          pendingCommitments={pendingCommitments}
+          onlineAgentsCount={onlineAgentsCount}
+          currentUser={currentUser || undefined}
+          onLogout={handleLogout}
+          lastUpdated={lastUpdated}
+          markets={markets}
+          selectedMarket={selectedMarket}
+          onMarketChange={handleMarketChange}
+          orgName={orgState.org?.name}
+          orgLogo={orgState.org?.logoUrl}
+          orgPlan={orgState.org?.plan}
+        />
+        <main className="flex-1 h-full overflow-auto">
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
+        </main>
+      </div>
+    </OrgContext.Provider>
   )
 }

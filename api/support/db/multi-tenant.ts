@@ -73,7 +73,7 @@ async function stepA(sql: any): Promise<string[]> {
   `))
 
   log.push(await safe('INDEX support_otp', () => sql`
-    CREATE INDEX IF NOT EXISTS idx_otp_email ON support_otp(email, purpose)
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_otp_email_unique ON support_otp(email)
   `))
 
   log.push(await safe('TABLE support_audit_log', () => sql`
@@ -141,6 +141,32 @@ async function stepB(sql: any): Promise<string[]> {
   log.push(await safe('support_reactions.org_id', () =>
     sql`ALTER TABLE support_reactions ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
 
+  // Phase 8 fix: tables missed in original stepB
+  log.push(await safe('support_settings.org_id', () =>
+    sql`ALTER TABLE support_settings ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_broadcasts.org_id', () =>
+    sql`ALTER TABLE support_broadcasts ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_broadcast_scheduled.org_id', () =>
+    sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_broadcast_clicks.org_id', () =>
+    sql`ALTER TABLE support_broadcast_clicks ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_case_activities.org_id', () =>
+    sql`ALTER TABLE support_case_activities ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_auto_templates.org_id', () =>
+    sql`ALTER TABLE support_auto_templates ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_ai_patterns.org_id', () =>
+    sql`ALTER TABLE support_ai_patterns ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_agent_markets.org_id', () =>
+    sql`ALTER TABLE support_agent_markets ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_agent_sessions.org_id', () =>
+    sql`ALTER TABLE support_agent_sessions ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_learning_stats.org_id', () =>
+    sql`ALTER TABLE support_learning_stats ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_embeddings.org_id', () =>
+    sql`ALTER TABLE support_embeddings ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+  log.push(await safe('support_docs.org_id', () =>
+    sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`))
+
   return log
 }
 
@@ -174,6 +200,39 @@ async function stepC(sql: any): Promise<string[]> {
     sql`CREATE INDEX IF NOT EXISTS idx_cases_org_status ON support_cases(org_id, status)`))
   log.push(await safe('idx_channels_org_active', () =>
     sql`CREATE INDEX IF NOT EXISTS idx_channels_org_active ON support_channels(org_id, is_active)`))
+
+  // Phase 8 fix: missing indexes
+  log.push(await safe('idx_markets_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_markets_org ON support_markets(org_id)`))
+  log.push(await safe('idx_reminders_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_reminders_org ON support_reminders(org_id)`))
+  log.push(await safe('idx_solutions_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_solutions_org ON support_solutions(org_id)`))
+  log.push(await safe('idx_topics_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_topics_org ON support_topics(org_id)`))
+  log.push(await safe('idx_invites_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_invites_org ON support_invites(org_id)`))
+  log.push(await safe('idx_feedback_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_feedback_org ON support_feedback(org_id)`))
+  log.push(await safe('idx_dialogs_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_dialogs_org ON support_dialogs(org_id)`))
+  log.push(await safe('idx_reactions_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_reactions_org ON support_reactions(org_id)`))
+  log.push(await safe('idx_settings_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_settings_org ON support_settings(org_id)`))
+  log.push(await safe('idx_broadcasts_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_broadcasts_org ON support_broadcasts(org_id)`))
+  log.push(await safe('idx_agent_sessions_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_agent_sessions_org ON support_agent_sessions(org_id)`))
+  log.push(await safe('idx_docs_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_docs_org ON support_docs(org_id)`))
+  log.push(await safe('idx_embeddings_org', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_embeddings_org ON support_embeddings(org_id)`))
+  // Additional composite indexes
+  log.push(await safe('idx_messages_org_created', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_messages_org_created ON support_messages(org_id, created_at DESC)`))
+  log.push(await safe('idx_commitments_org_status', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_commitments_org_status ON support_commitments(org_id, status)`))
 
   return log
 }
@@ -270,6 +329,32 @@ async function stepD(sql: any): Promise<string[]> {
   log.push(await safe('reactions → org_delever', () =>
     sql`UPDATE support_reactions SET org_id = 'org_delever' WHERE org_id IS NULL`))
 
+  // Phase 8 fix: migrate missed tables
+  log.push(await safe('settings → org_delever', () =>
+    sql`UPDATE support_settings SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('broadcasts → org_delever', () =>
+    sql`UPDATE support_broadcasts SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('broadcast_scheduled → org_delever', () =>
+    sql`UPDATE support_broadcast_scheduled SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('broadcast_clicks → org_delever', () =>
+    sql`UPDATE support_broadcast_clicks SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('case_activities → org_delever', () =>
+    sql`UPDATE support_case_activities SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('auto_templates → org_delever', () =>
+    sql`UPDATE support_auto_templates SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('ai_patterns → org_delever', () =>
+    sql`UPDATE support_ai_patterns SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('agent_markets → org_delever', () =>
+    sql`UPDATE support_agent_markets SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('agent_sessions → org_delever', () =>
+    sql`UPDATE support_agent_sessions SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('learning_stats → org_delever', () =>
+    sql`UPDATE support_learning_stats SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('embeddings → org_delever', () =>
+    sql`UPDATE support_embeddings SET org_id = 'org_delever' WHERE org_id IS NULL`))
+  log.push(await safe('docs → org_delever', () =>
+    sql`UPDATE support_docs SET org_id = 'org_delever' WHERE org_id IS NULL`))
+
   return log
 }
 
@@ -316,11 +401,24 @@ async function stepE(sql: any): Promise<Record<string, any>> {
 }
 
 /**
- * POST /api/support/db/multi-tenant?step=all    — full migration (A+B+C+D)
+ * Step F: Audit log indexes + OTP unique constraint
+ */
+async function stepF_auditIndexes(sql: any): Promise<string[]> {
+  const log: string[] = []
+  log.push(await safe('IDX audit_log org+created', () => sql`CREATE INDEX IF NOT EXISTS idx_audit_org_created ON support_audit_log(org_id, created_at DESC)`))
+  log.push(await safe('IDX audit_log action', () => sql`CREATE INDEX IF NOT EXISTS idx_audit_action ON support_audit_log(action)`))
+  log.push(await safe('IDX audit_log agent', () => sql`CREATE INDEX IF NOT EXISTS idx_audit_agent ON support_audit_log(agent_id)`))
+  log.push(await safe('IDX org slug', () => sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_org_slug ON support_organizations(slug)`))
+  return log
+}
+
+/**
+ * POST /api/support/db/multi-tenant?step=all    — full migration (A+B+C+D+F)
  * POST /api/support/db/multi-tenant?step=A      — only create tables
  * POST /api/support/db/multi-tenant?step=B      — only add org_id columns
  * POST /api/support/db/multi-tenant?step=C      — only create indexes
  * POST /api/support/db/multi-tenant?step=D      — only migrate data
+ * POST /api/support/db/multi-tenant?step=F      — audit indexes + constraints
  * GET  /api/support/db/multi-tenant?step=verify — check integrity
  */
 export default async function handler(req: Request): Promise<Response> {
@@ -359,6 +457,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (step === 'B' || step === 'all') result.stepB = await stepB(sql)
     if (step === 'C' || step === 'all') result.stepC = await stepC(sql)
     if (step === 'D' || step === 'all') result.stepD = await stepD(sql)
+    if (step === 'F' || step === 'all') result.stepF = await stepF_auditIndexes(sql)
 
     result.verification = await stepE(sql)
     return json(result)

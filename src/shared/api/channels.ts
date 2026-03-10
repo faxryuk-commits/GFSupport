@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../services/api.service'
-import type { Channel } from '@/entities/channel'
+import type { Channel } from '../types'
 
 export interface ChannelsResponse {
   channels: Channel[]

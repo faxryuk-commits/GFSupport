@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -21,7 +22,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -30,6 +31,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (!authHeader?.startsWith('Bearer ')) return json({ error: 'Unauthorized' }, 401)
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const action = url.searchParams.get('action')
 
@@ -56,6 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_agent_markets am
         JOIN support_agents a ON a.id = am.agent_id
         WHERE am.market_id = ${marketId}
+          AND am.org_id = ${orgId}
         ORDER BY a.name
       `
       return json({ agents })
@@ -67,25 +70,26 @@ export default async function handler(req: Request): Promise<Response> {
       const channels = await sql`
         SELECT id, name, source, type, is_active, last_message_at
         FROM support_channels WHERE market_id = ${marketId}
+          AND org_id = ${orgId}
         ORDER BY last_message_at DESC NULLS LAST
       `
       return json({ channels })
     }
 
-    const markets = await sql`SELECT * FROM support_markets ORDER BY name`
+    const markets = await sql`SELECT * FROM support_markets WHERE org_id = ${orgId} ORDER BY name`
 
     const counts = await sql`
       SELECT market_id, COUNT(*)::int as count FROM support_channels
-      WHERE market_id IS NOT NULL GROUP BY market_id
+      WHERE market_id IS NOT NULL AND org_id = ${orgId} GROUP BY market_id
     `
     const agentCounts = await sql`
-      SELECT market_id, COUNT(*)::int as count FROM support_agent_markets GROUP BY market_id
+      SELECT market_id, COUNT(*)::int as count FROM support_agent_markets WHERE org_id = ${orgId} GROUP BY market_id
     `
     const channelMap = Object.fromEntries(counts.map((r: any) => [r.market_id, r.count]))
     const agentMap = Object.fromEntries(agentCounts.map((r: any) => [r.market_id, r.count]))
 
     const unassigned = await sql`
-      SELECT COUNT(*)::int as count FROM support_channels WHERE market_id IS NULL
+      SELECT COUNT(*)::int as count FROM support_channels WHERE market_id IS NULL AND org_id = ${orgId}
     `
 
     return json({
@@ -112,8 +116,8 @@ export default async function handler(req: Request): Promise<Response> {
       if (!marketId || !agentIds?.length) return json({ error: 'marketId and agentIds required' }, 400)
       for (const agentId of agentIds) {
         await sql`
-          INSERT INTO support_agent_markets (agent_id, market_id, role)
-          VALUES (${agentId}, ${marketId}, ${role || 'member'})
+          INSERT INTO support_agent_markets (agent_id, market_id, role, org_id)
+          VALUES (${agentId}, ${marketId}, ${role || 'member'}, ${orgId})
           ON CONFLICT (agent_id, market_id) DO UPDATE SET role = ${role || 'member'}
         `
       }
@@ -124,7 +128,7 @@ export default async function handler(req: Request): Promise<Response> {
       const { marketId, channelIds } = body
       if (!marketId || !channelIds?.length) return json({ error: 'marketId and channelIds required' }, 400)
       for (const chId of channelIds) {
-        await sql`UPDATE support_channels SET market_id = ${marketId} WHERE id = ${chId}`
+        await sql`UPDATE support_channels SET market_id = ${marketId} WHERE id = ${chId} AND org_id = ${orgId}`
       }
       return json({ success: true, assigned: channelIds.length })
     }
@@ -132,7 +136,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (action === 'remove-agent') {
       const { marketId, agentId } = body
       if (!marketId || !agentId) return json({ error: 'marketId and agentId required' }, 400)
-      await sql`DELETE FROM support_agent_markets WHERE agent_id = ${agentId} AND market_id = ${marketId}`
+      await sql`DELETE FROM support_agent_markets WHERE agent_id = ${agentId} AND market_id = ${marketId} AND org_id = ${orgId}`
       return json({ success: true })
     }
 
@@ -141,8 +145,8 @@ export default async function handler(req: Request): Promise<Response> {
 
     const id = `market_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     await sql`
-      INSERT INTO support_markets (id, name, code, country, timezone)
-      VALUES (${id}, ${name}, ${code.toLowerCase()}, ${country || null}, ${timezone || 'Asia/Tashkent'})
+      INSERT INTO support_markets (id, name, code, country, timezone, org_id)
+      VALUES (${id}, ${name}, ${code.toLowerCase()}, ${country || null}, ${timezone || 'Asia/Tashkent'}, ${orgId})
     `
     return json({ success: true, marketId: id })
   }
@@ -159,6 +163,7 @@ export default async function handler(req: Request): Promise<Response> {
         timezone = COALESCE(${timezone || null}, timezone),
         is_active = COALESCE(${isActive ?? null}, is_active)
       WHERE id = ${id}
+        AND org_id = ${orgId}
     `
     return json({ success: true })
   }
@@ -166,9 +171,9 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'DELETE') {
     const marketId = url.searchParams.get('id')
     if (!marketId) return json({ error: 'Market ID required' }, 400)
-    await sql`DELETE FROM support_agent_markets WHERE market_id = ${marketId}`
-    await sql`UPDATE support_channels SET market_id = NULL WHERE market_id = ${marketId}`
-    await sql`DELETE FROM support_markets WHERE id = ${marketId}`
+    await sql`DELETE FROM support_agent_markets WHERE market_id = ${marketId} AND org_id = ${orgId}`
+    await sql`UPDATE support_channels SET market_id = NULL WHERE market_id = ${marketId} AND org_id = ${orgId}`
+    await sql`DELETE FROM support_markets WHERE id = ${marketId} AND org_id = ${orgId}`
     return json({ success: true })
   }
 

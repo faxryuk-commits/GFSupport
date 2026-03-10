@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -16,7 +17,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
@@ -26,6 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const telegramId = url.searchParams.get('telegramId')
   const userId = url.searchParams.get('userId')
@@ -39,12 +41,12 @@ export default async function handler(req: Request): Promise<Response> {
     let user
     if (telegramId) {
       const users = await sql`
-        SELECT id, telegram_id, photo_url FROM support_users WHERE telegram_id = ${telegramId} LIMIT 1
+        SELECT id, telegram_id, photo_url FROM support_users WHERE telegram_id = ${telegramId} AND org_id = ${orgId} LIMIT 1
       `
       user = users[0]
     } else {
       const users = await sql`
-        SELECT id, telegram_id, photo_url FROM support_users WHERE id = ${userId} LIMIT 1
+        SELECT id, telegram_id, photo_url FROM support_users WHERE id = ${userId} AND org_id = ${orgId} LIMIT 1
       `
       user = users[0]
     }
@@ -120,7 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Update cached URL in database
     await sql`
       UPDATE support_users SET photo_url = ${freshUrl}, updated_at = NOW()
-      WHERE id = ${user.id}
+      WHERE id = ${user.id} AND org_id = ${orgId}
     `
 
     console.log(`[User Avatar] Updated photo for user ${user.id}`)

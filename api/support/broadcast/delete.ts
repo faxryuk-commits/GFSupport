@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -11,6 +12,7 @@ function json(data: any, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'X-Org-Id',
     },
   })
 }
@@ -53,7 +55,7 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -63,6 +65,7 @@ export default async function handler(req: Request) {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   try {
     const body = await req.json()
@@ -78,6 +81,7 @@ export default async function handler(req: Request) {
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.broadcast_id = ${broadcastId}
+        AND m.org_id = ${orgId}
         AND m.telegram_message_id IS NOT NULL
     `
     
@@ -111,7 +115,7 @@ export default async function handler(req: Request) {
           await sql`
             UPDATE support_messages 
             SET content_type = 'deleted', text_content = '[Сообщение удалено]'
-            WHERE id = ${msg.id}
+            WHERE id = ${msg.id} AND org_id = ${orgId}
           `.catch(() => {})
           
         } else {
@@ -141,7 +145,7 @@ export default async function handler(req: Request) {
       SET 
         message_type = 'deleted',
         successful_count = ${deletedCount}
-      WHERE id = ${broadcastId}
+      WHERE id = ${broadcastId} AND org_id = ${orgId}
     `.catch(() => {})
     
     return json({

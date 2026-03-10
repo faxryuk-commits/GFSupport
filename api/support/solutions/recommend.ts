@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -90,7 +91,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -101,6 +102,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // GET - get recommendations based on query params
   if (req.method === 'GET') {
@@ -114,7 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Get all active solutions
       const solutions = await sql`
         SELECT * FROM support_solutions 
-        WHERE is_active = true
+        WHERE is_active = true AND org_id = ${orgId}
         ORDER BY used_count DESC, success_score DESC
         LIMIT 100
       `
@@ -143,7 +145,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (rankedSolutions.length === 0 && category) {
         const categoryFallback = await sql`
           SELECT * FROM support_solutions 
-          WHERE is_active = true AND category = ${category}
+          WHERE is_active = true AND category = ${category} AND org_id = ${orgId}
           ORDER BY used_count DESC, success_score DESC
           LIMIT ${limit}
         `
@@ -205,7 +207,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         INSERT INTO support_solutions (
           id, case_id, category, subcategory, problem_keywords, problem_pattern,
-          solution_text, solution_steps, resolution_time_minutes, created_by
+          solution_text, solution_steps, resolution_time_minutes, created_by, org_id
         ) VALUES (
           ${solutionId},
           ${caseId || null},
@@ -216,7 +218,8 @@ export default async function handler(req: Request): Promise<Response> {
           ${solutionText},
           ${JSON.stringify(solutionSteps || [])},
           ${resolutionMinutes || null},
-          ${createdBy || null}
+          ${createdBy || null},
+          ${orgId}
         )
       `
 

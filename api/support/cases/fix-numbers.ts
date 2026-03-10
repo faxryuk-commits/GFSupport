@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -37,13 +38,14 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   try {
     // Find cases with NULL or invalid ticket_number
     const invalidCases = await sql`
       SELECT id, ticket_number, created_at 
       FROM support_cases 
-      WHERE ticket_number IS NULL OR ticket_number < 1000
+      WHERE org_id = ${orgId} AND (ticket_number IS NULL OR ticket_number < 1000)
       ORDER BY created_at ASC
     `
 
@@ -52,14 +54,14 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // Get current max ticket number
-    const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases WHERE ticket_number >= 1000`
+    const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases WHERE org_id = ${orgId} AND ticket_number >= 1000`
     let nextNum = parseInt(maxResult[0]?.max_num || '1000') + 1
 
     const fixed: string[] = []
 
     // Update each invalid case
     for (const c of invalidCases) {
-      await sql`UPDATE support_cases SET ticket_number = ${nextNum} WHERE id = ${c.id}`
+      await sql`UPDATE support_cases SET ticket_number = ${nextNum} WHERE id = ${c.id} AND org_id = ${orgId}`
       fixed.push(`${c.id} -> #${nextNum}`)
       nextNum++
     }

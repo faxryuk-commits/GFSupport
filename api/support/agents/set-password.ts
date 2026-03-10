@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -39,7 +40,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -55,6 +56,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   try {
     const body = await req.json()
@@ -68,13 +70,13 @@ export default async function handler(req: Request): Promise<Response> {
     let agent = null
     
     if (agentId) {
-      const result = await sql`SELECT id, name, username, email FROM support_agents WHERE id = ${agentId}`
+      const result = await sql`SELECT id, name, username, email FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId}`
       agent = result[0]
     } else if (username) {
-      const result = await sql`SELECT id, name, username, email FROM support_agents WHERE username = ${username} OR LOWER(username) = LOWER(${username})`
+      const result = await sql`SELECT id, name, username, email FROM support_agents WHERE (username = ${username} OR LOWER(username) = LOWER(${username})) AND org_id = ${orgId}`
       agent = result[0]
     } else if (email) {
-      const result = await sql`SELECT id, name, username, email FROM support_agents WHERE email = ${email} OR LOWER(email) = LOWER(${email})`
+      const result = await sql`SELECT id, name, username, email FROM support_agents WHERE (email = ${email} OR LOWER(email) = LOWER(${email})) AND org_id = ${orgId}`
       agent = result[0]
     }
 
@@ -88,7 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       UPDATE support_agents 
       SET password_hash = ${passwordHash}
-      WHERE id = ${agent.id}
+      WHERE id = ${agent.id} AND org_id = ${orgId}
     `
 
     return json({

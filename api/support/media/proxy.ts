@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -11,13 +12,13 @@ function getSQL() {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
 }
 
-async function getBotToken(): Promise<string | null> {
+async function getBotToken(orgId: string): Promise<string | null> {
   try {
     const sql = getSQL()
-    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
     if (rows[0]?.value) return rows[0].value
   } catch {}
   return process.env.TELEGRAM_BOT_TOKEN || null
@@ -59,6 +60,7 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(null, { headers: corsHeaders })
   }
 
+  const orgId = await getRequestOrgId(req)
   const params = new URL(req.url).searchParams
   const rawUrl = params.get('url')
   const fileId = params.get('fileId')
@@ -66,7 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // --- Route 1: tg:// or fileId — always resolvable ---
   if (fileId || tgUrl) {
-    const botToken = await getBotToken()
+    const botToken = await getBotToken(orgId)
     if (!botToken) return new Response(null, { status: 502, headers: corsHeaders })
 
     let fid = fileId
@@ -103,7 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (rawUrl.includes('api.telegram.org/file/bot')) {
       const filePath = extractFilePath(rawUrl)
       if (filePath) {
-        const botToken = await getBotToken()
+        const botToken = await getBotToken(orgId)
         if (botToken) {
           const retryUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`
           try {

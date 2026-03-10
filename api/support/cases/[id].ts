@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -28,7 +29,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -38,6 +39,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Unauthorized' }, 401)
   }
 
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const pathParts = url.pathname.split('/')
   const caseId = pathParts[pathParts.length - 1]
@@ -58,9 +60,9 @@ export default async function handler(req: Request): Promise<Response> {
           ch.telegram_chat_id,
           a.name as assignee_name
         FROM support_cases c
-        LEFT JOIN support_channels ch ON c.channel_id = ch.id
+        LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
         LEFT JOIN support_agents a ON c.assigned_to = a.id
-        WHERE c.id = ${caseId}
+        WHERE c.id = ${caseId} AND c.org_id = ${orgId}
       `
 
       if (!caseResult || caseResult.length === 0) {
@@ -84,7 +86,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Получаем связанные сообщения
       const messages = await sql`
         SELECT * FROM support_messages
-        WHERE case_id = ${caseId}
+        WHERE case_id = ${caseId} AND org_id = ${orgId}
         ORDER BY created_at ASC
         LIMIT 100
       `
@@ -179,7 +181,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       // Проверяем существование кейса
-      const caseExists = await sql`SELECT id FROM support_cases WHERE id = ${caseId}`
+      const caseExists = await sql`SELECT id FROM support_cases WHERE id = ${caseId} AND org_id = ${orgId}`
       if (!caseExists || caseExists.length === 0) {
         return json({ error: 'Case not found' }, 404)
       }
@@ -212,7 +214,7 @@ export default async function handler(req: Request): Promise<Response> {
       `
 
       // Обновляем время изменения кейса
-      await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${caseId}`
+      await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${caseId} AND org_id = ${orgId}`
 
       // Получаем созданную активность
       const [activity] = await sql`
@@ -269,7 +271,7 @@ export default async function handler(req: Request): Promise<Response> {
             VALUES (${commentId}, ${caseId}, ${authorId || null}, ${authorName || 'Система'}, ${text}, ${isInternal || false})
           `
         })
-        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${caseId}`
+        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${caseId} AND org_id = ${orgId}`
 
         const comments = await sql`
           SELECT id, author_id, author_name, text, is_internal, created_at
@@ -307,7 +309,7 @@ export default async function handler(req: Request): Promise<Response> {
       } = body
 
       // Получаем текущий статус для истории
-      const current = await sql`SELECT status, assigned_to FROM support_cases WHERE id = ${caseId}`
+      const current = await sql`SELECT status, assigned_to FROM support_cases WHERE id = ${caseId} AND org_id = ${orgId}`
       if (!current || current.length === 0) {
         return json({ error: 'Case not found' }, 404)
       }
@@ -323,7 +325,7 @@ export default async function handler(req: Request): Promise<Response> {
         if (status === 'resolved' || status === 'closed') {
           updates.resolved_at = new Date()
           // Вычисляем время решения
-          const caseData = await sql`SELECT created_at FROM support_cases WHERE id = ${caseId}`
+          const caseData = await sql`SELECT created_at FROM support_cases WHERE id = ${caseId} AND org_id = ${orgId}`
           if (caseData[0]) {
             const created = new Date(caseData[0].created_at)
             updates.resolution_time_minutes = Math.floor((Date.now() - created.getTime()) / 60000)
@@ -340,7 +342,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (assignedTo !== undefined) {
         if (assignedTo && assignedTo !== '' && assignedTo !== 'null') {
           // Verify agent exists
-          const agentExists = await sql`SELECT id FROM support_agents WHERE id = ${assignedTo} LIMIT 1`
+          const agentExists = await sql`SELECT id FROM support_agents WHERE id = ${assignedTo} AND org_id = ${orgId} LIMIT 1`
           if (agentExists.length > 0) {
             updates.assigned_to = assignedTo
           } else {
@@ -377,7 +379,7 @@ export default async function handler(req: Request): Promise<Response> {
             resolved_at = ${updates.resolved_at},
             resolution_time_minutes = ${updates.resolution_time_minutes || 0},
             updated_at = NOW()
-          WHERE id = ${caseId}
+          WHERE id = ${caseId} AND org_id = ${orgId}
         `
       } else {
         await sql`
@@ -395,7 +397,7 @@ export default async function handler(req: Request): Promise<Response> {
             impact_mrr = COALESCE(${updates.impact_mrr}, impact_mrr),
             churn_risk_score = COALESCE(${updates.churn_risk_score}, churn_risk_score),
             updated_at = NOW()
-          WHERE id = ${caseId}
+          WHERE id = ${caseId} AND org_id = ${orgId}
         `
       }
 
@@ -435,8 +437,8 @@ export default async function handler(req: Request): Promise<Response> {
       const updated = await sql`
         SELECT c.*, ch.name as channel_name
         FROM support_cases c
-        LEFT JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE c.id = ${caseId}
+        LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+        WHERE c.id = ${caseId} AND c.org_id = ${orgId}
       `
       
       const c = updated[0]
@@ -473,10 +475,10 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       await sql`DELETE FROM support_case_comments WHERE case_id = ${caseId}`.catch(() => {})
       await sql`DELETE FROM support_case_activities WHERE case_id = ${caseId}`
-      await sql`UPDATE support_messages SET case_id = NULL WHERE case_id = ${caseId}`
+      await sql`UPDATE support_messages SET case_id = NULL WHERE case_id = ${caseId} AND org_id = ${orgId}`
       
       // Удаляем кейс
-      const result = await sql`DELETE FROM support_cases WHERE id = ${caseId} RETURNING id`
+      const result = await sql`DELETE FROM support_cases WHERE id = ${caseId} AND org_id = ${orgId} RETURNING id`
       
       if (!result || result.length === 0) {
         return json({ error: 'Case not found' }, 404)

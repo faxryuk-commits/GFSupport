@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -47,7 +48,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -67,6 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   if (req.method === 'GET') {
     try {
@@ -77,7 +79,7 @@ export default async function handler(req: Request): Promise<Response> {
           comp.name as company_name
         FROM support_channels c
         LEFT JOIN crm_companies comp ON c.company_id = comp.id
-        WHERE c.id = ${channelId}
+        WHERE c.id = ${channelId} AND c.org_id = ${orgId}
       `
 
       if (channelResult.length === 0) {
@@ -94,14 +96,14 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE status = 'resolved') as resolved_cases,
           AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution_minutes
         FROM support_cases
-        WHERE channel_id = ${channelId}
+        WHERE channel_id = ${channelId} AND org_id = ${orgId}
       `
 
       // Get recent resolved cases (for context)
       const recentCases = await sql`
         SELECT id, title, category, status, resolution_notes, resolved_at
         FROM support_cases
-        WHERE channel_id = ${channelId} AND status IN ('resolved', 'closed')
+        WHERE channel_id = ${channelId} AND org_id = ${orgId} AND status IN ('resolved', 'closed')
         ORDER BY resolved_at DESC NULLS LAST
         LIMIT 5
       `
@@ -276,13 +278,13 @@ export default async function handler(req: Request): Promise<Response> {
             SET 
               awaiting_reply = false,
               last_team_message_at = NOW()
-            WHERE id = ${channelId}
+            WHERE id = ${channelId} AND org_id = ${orgId}
           `
         } else {
           await sql`
             UPDATE support_channels 
             SET awaiting_reply = true
-            WHERE id = ${channelId}
+            WHERE id = ${channelId} AND org_id = ${orgId}
           `
         }
         
@@ -306,7 +308,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_channels 
           SET awaiting_reply = ${awaitingReply}
-          WHERE id = ${channelId}
+          WHERE id = ${channelId} AND org_id = ${orgId}
         `
         
         return json({ 

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -27,7 +28,7 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +42,7 @@ export default async function handler(req: Request) {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // GET - Fetch auto-reply settings
   if (req.method === 'GET') {
@@ -48,6 +50,7 @@ export default async function handler(req: Request) {
       const rows = await sql`
         SELECT key, value FROM support_settings
         WHERE key LIKE 'auto_reply_%'
+          AND org_id = ${orgId}
       `
       const settings: Record<string, string> = {}
       for (const row of rows) {
@@ -68,8 +71,8 @@ export default async function handler(req: Request) {
       for (const [key, value] of Object.entries(body)) {
         if (key.startsWith('auto_reply_')) {
           await sql`
-            INSERT INTO support_settings (key, value, updated_at)
-            VALUES (${key}, ${String(value)}, NOW())
+            INSERT INTO support_settings (key, value, updated_at, org_id)
+            VALUES (${key}, ${String(value)}, NOW(), ${orgId})
             ON CONFLICT (key) DO UPDATE
             SET value = ${String(value)}, updated_at = NOW()
           `

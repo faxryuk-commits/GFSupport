@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../services/api.service'
-import type { Case, CaseStatus } from '@/entities/case'
+import type { Case, CaseStatus } from '../types'
 
 interface CasesResponse {
   cases: Case[]

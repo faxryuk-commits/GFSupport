@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../lib/identification.js'
-import { getOpenAIKey } from '../lib/db.js'
+import { getOpenAIKey, getOrgBotToken } from '../lib/db.js'
+import { checkOrgRateLimit } from '../lib/rate-limit.js'
 import OpenAI from 'openai'
 
 export const config = {
@@ -29,6 +30,14 @@ function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+async function resolveBotToken(orgId?: string): Promise<string | null> {
+  if (orgId) {
+    const token = await getOrgBotToken(orgId)
+    if (token) return token
+  }
+  return process.env.TELEGRAM_BOT_TOKEN || null
+}
+
 // Extract user info from Telegram update
 function extractUserInfo(from: any) {
   return {
@@ -41,8 +50,8 @@ function extractUserInfo(from: any) {
 }
 
 // Convert Telegram file_id to downloadable URL
-async function getFileUrl(fileId: string): Promise<string | null> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+async function getFileUrl(fileId: string, botToken?: string | null): Promise<string | null> {
+  if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) return null
   
   try {
@@ -156,8 +165,8 @@ async function analyzePhoto(photoUrl: string): Promise<string | null> {
 }
 
 // Get chat photo URL from Telegram
-async function getChatPhotoUrl(chatId: string): Promise<string | null> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+async function getChatPhotoUrl(chatId: string, botToken?: string | null): Promise<string | null> {
+  if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) return null
   
   try {
@@ -183,29 +192,32 @@ async function getChatPhotoUrl(chatId: string): Promise<string | null> {
 }
 
 // Get or create channel for chat
-async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<string> {
+async function getOrCreateChannel(sql: any, chat: any, user: any, defaultOrgId?: string): Promise<{ channelId: string, orgId: string }> {
   const chatId = String(chat.id)
   
   // Check existing channel
   const existing = await sql`
-    SELECT id, photo_url FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
+    SELECT id, photo_url, org_id FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
   `
   
   if (existing[0]) {
+    const orgId = existing[0].org_id || defaultOrgId || 'org_delever'
     // Update photo if missing (async, don't wait)
     if (!existing[0].photo_url) {
-      getChatPhotoUrl(chatId).then(async (photoUrl) => {
-        if (photoUrl) {
-          try {
-            await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${existing[0].id}`
-            console.log(`[Webhook] Updated photo for channel ${existing[0].id}`)
-          } catch (e) {
-            console.log('[Webhook] Failed to update photo:', e)
+      resolveBotToken(orgId).then(token => {
+        getChatPhotoUrl(chatId, token).then(async (photoUrl) => {
+          if (photoUrl) {
+            try {
+              await sql`UPDATE support_channels SET photo_url = ${photoUrl} WHERE id = ${existing[0].id} AND org_id = ${orgId}`
+              console.log(`[Webhook] Updated photo for channel ${existing[0].id}`)
+            } catch (e) {
+              console.log('[Webhook] Failed to update photo:', e)
+            }
           }
-        }
+        }).catch(() => {})
       }).catch(() => {})
     }
-    return existing[0].id
+    return { channelId: existing[0].id, orgId }
   }
   
   // Create new channel with photo
@@ -214,17 +226,20 @@ async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<strin
   const channelType = chat.type === 'private' ? 'client' : 
                       chat.type === 'group' || chat.type === 'supergroup' ? 'partner' : 'client'
   
+  const orgId = defaultOrgId || 'org_delever'
+  const token = await resolveBotToken(orgId)
+  
   // Try to get photo (but don't block on it)
   let photoUrl: string | null = null
   try {
-    photoUrl = await getChatPhotoUrl(chatId)
+    photoUrl = await getChatPhotoUrl(chatId, token)
   } catch (e) {
     console.log('[Webhook] Could not get photo for new channel')
   }
   
   let marketId: string | null = null
   try {
-    const markets = await sql`SELECT id, code FROM support_markets WHERE is_active = true`
+    const markets = await sql`SELECT id, code FROM support_markets WHERE is_active = true AND org_id = ${orgId}`
     const nameLC = chatTitle.toLowerCase()
     for (const m of markets) {
       if (nameLC.includes(m.code)) { marketId = m.id; break }
@@ -233,18 +248,18 @@ async function getOrCreateChannel(sql: any, chat: any, user: any): Promise<strin
 
   await sql`
     INSERT INTO support_channels (
-      id, telegram_chat_id, name, type, photo_url, is_active, market_id, created_at
+      id, telegram_chat_id, name, type, photo_url, is_active, market_id, org_id, created_at
     ) VALUES (
-      ${channelId}, ${chatId}, ${chatTitle}, ${channelType}, ${photoUrl}, true, ${marketId}, NOW()
+      ${channelId}, ${chatId}, ${chatTitle}, ${channelType}, ${photoUrl}, true, ${marketId}, ${orgId}, NOW()
     )
   `
   
   console.log(`[Webhook] Created new channel: ${channelId} for chat ${chatId}${photoUrl ? ' (with photo)' : ''}${marketId ? ' market=' + marketId : ''}`)
-  return channelId
+  return { channelId, orgId }
 }
 
 // Upsert user in support_users table
-async function upsertUser(sql: any, user: any, channelId: string, role: string) {
+async function upsertUser(sql: any, user: any, channelId: string, role: string, orgId: string) {
   if (!user.id) return
   
   const telegramId = String(user.id)
@@ -280,7 +295,7 @@ async function upsertUser(sql: any, user: any, channelId: string, role: string) 
 
     // Check if user exists
     const existing = await sql`
-      SELECT id, channels FROM support_users WHERE telegram_id::text = ${telegramId} LIMIT 1
+      SELECT id, channels FROM support_users WHERE telegram_id::text = ${telegramId} AND org_id = ${orgId} LIMIT 1
     `
     
     if (existing[0]) {
@@ -311,7 +326,7 @@ async function upsertUser(sql: any, user: any, channelId: string, role: string) 
           channels = ${JSON.stringify(normalized)}::jsonb,
           last_seen_at = NOW(),
           updated_at = NOW()
-        WHERE telegram_id::text = ${telegramId}
+        WHERE telegram_id::text = ${telegramId} AND org_id = ${orgId}
       `
     } else {
       // Create new user
@@ -320,8 +335,8 @@ async function upsertUser(sql: any, user: any, channelId: string, role: string) 
       const channels = [{ id: channelId, name: null, addedAt: new Date().toISOString() }]
       
       await sql`
-        INSERT INTO support_users (id, telegram_id, telegram_username, name, role, channels, first_seen_at, last_seen_at)
-        VALUES (${userId}, ${telegramId}, ${user.username}, ${user.fullName}, ${userRole}, ${JSON.stringify(channels)}::jsonb, NOW(), NOW())
+        INSERT INTO support_users (id, telegram_id, telegram_username, name, role, channels, org_id, first_seen_at, last_seen_at)
+        VALUES (${userId}, ${telegramId}, ${user.username}, ${user.fullName}, ${userRole}, ${JSON.stringify(channels)}::jsonb, ${orgId}, NOW(), NOW())
         ON CONFLICT (telegram_id) DO UPDATE SET
           telegram_username = COALESCE(EXCLUDED.telegram_username, support_users.telegram_username),
           name = COALESCE(EXCLUDED.name, support_users.name),
@@ -340,6 +355,7 @@ async function upsertUser(sql: any, user: any, channelId: string, role: string) 
 async function saveMessage(
   sql: any,
   channelId: string,
+  orgId: string,
   telegramMessageId: number,
   user: any,
   role: 'client' | 'support' | 'team',
@@ -362,7 +378,7 @@ async function saveMessage(
   const messageId = generateId('msg')
   const isFromClient = role === 'client'
   
-  await upsertUser(sql, user, channelId, role)
+  await upsertUser(sql, user, channelId, role, orgId)
   
   try {
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
@@ -376,7 +392,7 @@ async function saveMessage(
   
   await sql`
     INSERT INTO support_messages (
-      id, channel_id, telegram_message_id,
+      id, channel_id, org_id, telegram_message_id,
       sender_id, sender_name, sender_username, sender_role,
       is_from_client, content_type, text_content, media_url,
       thumbnail_url, file_name, file_size, mime_type,
@@ -384,7 +400,7 @@ async function saveMessage(
       thread_id, forwarded_from,
       is_read, response_time_ms, created_at
     ) VALUES (
-      ${messageId}, ${channelId}, ${telegramMessageId},
+      ${messageId}, ${channelId}, ${orgId}, ${telegramMessageId},
       ${String(user.id)}, ${user.fullName}, ${user.username}, ${role},
       ${isFromClient}, ${content.contentType}, ${content.text || null}, ${content.mediaUrl || null},
       ${content.thumbnailUrl || null}, ${content.fileName || null}, ${content.fileSize || null}, ${content.mimeType || null},
@@ -400,7 +416,8 @@ async function saveMessage(
 // Update channel stats
 async function updateChannelStats(
   sql: any, 
-  channelId: string, 
+  channelId: string,
+  orgId: string,
   isFromClient: boolean,
   senderName?: string,
   messagePreview?: string
@@ -417,7 +434,7 @@ async function updateChannelStats(
         last_sender_name = COALESCE(${senderName}, last_sender_name),
         last_message_preview = COALESCE(${preview}, last_message_preview),
         awaiting_reply = true
-      WHERE id = ${channelId}
+      WHERE id = ${channelId} AND org_id = ${orgId}
     `
   } else {
     // Support/team message - mark as responded
@@ -428,7 +445,7 @@ async function updateChannelStats(
         last_sender_name = COALESCE(${senderName}, last_sender_name),
         last_message_preview = COALESCE(${preview}, last_message_preview),
         awaiting_reply = false
-      WHERE id = ${channelId}
+      WHERE id = ${channelId} AND org_id = ${orgId}
     `
     // Also mark client messages as read
     await markChannelReadOnReply(sql, channelId)
@@ -446,7 +463,7 @@ async function handleMessageReaction(sql: any, reaction: any): Promise<Response>
     
     // First find channel by telegram_chat_id
     const channelResult = await sql`
-      SELECT id FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
+      SELECT id, org_id FROM support_channels WHERE telegram_chat_id = ${chatId} LIMIT 1
     `
     
     if (channelResult.length === 0) {
@@ -455,12 +472,14 @@ async function handleMessageReaction(sql: any, reaction: any): Promise<Response>
     }
     
     const channelId = channelResult[0].id
+    const orgId = channelResult[0].org_id || 'org_delever'
     
     // Find our message by telegram_message_id AND channel_id
     const msgResult = await sql`
       SELECT id, reactions FROM support_messages 
       WHERE telegram_message_id = ${messageId}
         AND channel_id = ${channelId}
+        AND org_id = ${orgId}
       LIMIT 1
     `
     
@@ -520,6 +539,7 @@ async function handleMessageReaction(sql: any, reaction: any): Promise<Response>
 async function updateCasesOnStaffReply(
   sql: any,
   channelId: string,
+  orgId: string,
   agentTelegramId: string,
   agentName: string,
   systemAgentId?: string | null,
@@ -531,6 +551,7 @@ async function updateCasesOnStaffReply(
       SELECT id, status, assigned_to, title
       FROM support_cases 
       WHERE channel_id = ${channelId}
+        AND org_id = ${orgId}
         AND status IN ('detected', 'in_progress', 'waiting')
       ORDER BY created_at DESC
     `
@@ -578,7 +599,7 @@ async function updateCasesOnStaffReply(
           updated_by = ${agentName},
           first_response_at = COALESCE(first_response_at, NOW()),
           resolved_at = ${newStatus === 'resolved' ? sql`NOW()` : sql`resolved_at`}
-        WHERE id = ${caseItem.id}
+        WHERE id = ${caseItem.id} AND org_id = ${orgId}
       `
       
       // Add activity log
@@ -615,6 +636,7 @@ async function recordAgentActivity(
   telegramUserId: string, 
   userName: string, 
   channelId: string,
+  orgId: string,
   systemAgentId?: string | null
 ) {
   try {
@@ -945,6 +967,7 @@ function detectCommitment(text: string): CommitmentDetection {
 async function createCommitmentReminder(
   sql: any,
   channelId: string,
+  orgId: string,
   messageId: string,
   commitment: CommitmentDetection,
   senderName: string,
@@ -1007,10 +1030,10 @@ async function createCommitmentReminder(
 
     await sql`
       INSERT INTO support_commitments (
-        id, channel_id, message_id, agent_id, agent_name, sender_role,
+        id, channel_id, org_id, message_id, agent_id, agent_name, sender_role,
         commitment_text, commitment_type, is_vague, priority, due_date, reminder_at, status, created_at, updated_at
       ) VALUES (
-        ${commitmentId}, ${channelId}, ${messageId}, ${agentId || null}, ${senderName}, ${senderRole || 'unknown'},
+        ${commitmentId}, ${channelId}, ${orgId}, ${messageId}, ${agentId || null}, ${senderName}, ${senderRole || 'unknown'},
         ${commitment.commitmentText}, ${commitment.commitmentType}, ${commitment.isVague}, ${priority},
         ${deadlineStr}::timestamptz, ${reminderAt.toISOString()}::timestamptz, 'pending', NOW(), NOW()
       )
@@ -1028,9 +1051,10 @@ async function createCommitmentReminder(
 async function sendTelegramMessage(
   chatId: string, 
   text: string, 
-  replyToMessageId?: number
+  replyToMessageId?: number,
+  botToken?: string | null
 ): Promise<boolean> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN
   if (!botToken) return false
   
   try {
@@ -1091,6 +1115,7 @@ function isTicketCommand(text: string, botUsername?: string): boolean {
 async function createTicketFromReply(
   sql: any,
   channelId: string,
+  orgId: string,
   replyToMessage: any,
   requestedBy: { name: string; id: number },
   chatId: string,
@@ -1134,10 +1159,10 @@ async function createTicketFromReply(
       
       await sql`
         INSERT INTO support_messages (
-          id, channel_id, telegram_message_id, sender_id, sender_name, sender_role,
+          id, channel_id, org_id, telegram_message_id, sender_id, sender_name, sender_role,
           is_from_client, content_type, text_content, is_read, created_at
         ) VALUES (
-          ${messageId}, ${channelId}, ${replyToMessage.message_id},
+          ${messageId}, ${channelId}, ${orgId}, ${replyToMessage.message_id},
           ${String(user.id)}, ${senderName}, 'client',
           true, ${contentType}, ${messageText}, true, NOW()
         )
@@ -1178,10 +1203,10 @@ async function createTicketFromReply(
     
     await sql`
       INSERT INTO support_cases (
-        id, channel_id, title, description, category, priority, status,
+        id, channel_id, org_id, title, description, category, priority, status,
         source_message_id, ticket_number, created_by, created_at
       ) VALUES (
-        ${caseId}, ${channelId}, ${title}, ${messageText},
+        ${caseId}, ${channelId}, ${orgId}, ${title}, ${messageText},
         ${aiCategory || 'general'}, ${priority}, 'detected',
         ${messageId}, ${ticketNumber}, ${requestedBy.name}, NOW()
       )
@@ -1222,6 +1247,9 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
 
   try {
+    const webhookUrl = new URL(req.url)
+    const orgParam = webhookUrl.searchParams.get('org')
+
     const update = await req.json()
     console.log('[Webhook] Received update:', JSON.stringify(update).slice(0, 500))
 
@@ -1272,8 +1300,14 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    // Get or create channel
-    const channelId = await getOrCreateChannel(sql, chat, user)
+    // Get or create channel (use org from URL param for new channels)
+    const { channelId, orgId } = await getOrCreateChannel(sql, chat, user, orgParam || undefined)
+    const orgRate = checkOrgRateLimit(orgId)
+    if (!orgRate.allowed) {
+      console.log(`[Webhook] Rate limit exceeded for ${orgId}`)
+      return json({ ok: true })
+    }
+    const botToken = await resolveBotToken(orgId)
 
     // Check for ticket creation command BEFORE processing regular message
     const messageText = message.text || message.caption || ''
@@ -1286,6 +1320,7 @@ export default async function handler(req: Request): Promise<Response> {
       const result = await createTicketFromReply(
         sql,
         channelId,
+        orgId,
         message.reply_to_message,
         { name: user.fullName, id: user.id },
         String(chat.id),
@@ -1299,14 +1334,14 @@ export default async function handler(req: Request): Promise<Response> {
           `👤 Создал: ${user.fullName}\n\n` +
           `Тикет будет обработан в ближайшее время.`
         
-        await sendTelegramMessage(String(chat.id), confirmText, message.message_id)
+        await sendTelegramMessage(String(chat.id), confirmText, message.message_id, botToken)
       } else {
         const errorText = `⚠️ ${result.error || 'Не удалось создать тикет'}`
-        await sendTelegramMessage(String(chat.id), errorText, message.message_id)
+        await sendTelegramMessage(String(chat.id), errorText, message.message_id, botToken)
       }
       
       // Still save the command message itself
-      await saveMessage(sql, channelId, message.message_id, user, identification.role, {
+      await saveMessage(sql, channelId, orgId, message.message_id, user, identification.role, {
         text: messageText,
         contentType: 'text',
       })
@@ -1441,7 +1476,7 @@ export default async function handler(req: Request): Promise<Response> {
               media_url = COALESCE(${mediaUrl || null}, media_url),
               thumbnail_url = COALESCE(${thumbnailUrl || null}, thumbnail_url),
               updated_at = NOW()
-          WHERE channel_id = ${channelId} AND telegram_message_id = ${message.message_id}
+          WHERE channel_id = ${channelId} AND org_id = ${orgId} AND telegram_message_id = ${message.message_id}
           RETURNING id
         `
         if (updated[0]) {
@@ -1455,7 +1490,7 @@ export default async function handler(req: Request): Promise<Response> {
     
     if (identification.role === 'client') {
       const channelData = await sql`
-        SELECT last_agent_message_at FROM support_channels WHERE id = ${channelId}
+        SELECT last_agent_message_at FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
       `
       if (channelData[0]?.last_agent_message_at) {
         const lastAgentTime = new Date(channelData[0].last_agent_message_at).getTime()
@@ -1463,7 +1498,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    const messageId = await saveMessage(sql, channelId, message.message_id, user, identification.role, {
+    const messageId = await saveMessage(sql, channelId, orgId, message.message_id, user, identification.role, {
       text,
       contentType,
       mediaUrl,
@@ -1497,7 +1532,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // Update channel stats with preview
-    await updateChannelStats(sql, channelId, identification.role === 'client', user.fullName, messagePreview)
+    await updateChannelStats(sql, channelId, orgId, identification.role === 'client', user.fullName, messagePreview)
 
     // Update response time tracking
     if (identification.role === 'client' && responseTimeMs) {
@@ -1517,20 +1552,20 @@ export default async function handler(req: Request): Promise<Response> {
               ELSE ((COALESCE(client_avg_response_ms, 0) * client_response_count) + ${responseTimeMs}) / (client_response_count + 1)
             END)
           )
-        WHERE id = ${channelId}
+        WHERE id = ${channelId} AND org_id = ${orgId}
       `
       console.log(`[Webhook] Updated client avg response time for channel ${channelId}`)
     }
 
     // If support/team replied, record activity, mark messages as read, and update cases
     if (identification.role !== 'client') {
-      await recordAgentActivity(sql, String(user.id), user.fullName, channelId, identification.agentId)
+      await recordAgentActivity(sql, String(user.id), user.fullName, channelId, orgId, identification.agentId)
       
       // Update last_agent_message_at for client response time tracking
       await sql`
         UPDATE support_channels SET 
           last_agent_message_at = NOW()
-        WHERE id = ${channelId}
+        WHERE id = ${channelId} AND org_id = ${orgId}
       `
       
       // When staff replies via Telegram, they've seen the messages
@@ -1539,13 +1574,14 @@ export default async function handler(req: Request): Promise<Response> {
         UPDATE support_messages 
         SET is_read = true, read_at = NOW()
         WHERE channel_id = ${channelId}
+          AND org_id = ${orgId}
           AND is_read = false
           AND is_from_client = true
       `
       
       // Reset unread count
       await sql`
-        UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId}
+        UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId} AND org_id = ${orgId}
       `
       
       // Update open cases for this channel
@@ -1554,7 +1590,8 @@ export default async function handler(req: Request): Promise<Response> {
       // - Mark as 'resolved' if message contains resolution keywords
       const casesResult = await updateCasesOnStaffReply(
         sql, 
-        channelId, 
+        channelId,
+        orgId,
         String(user.id), 
         user.fullName, 
         identification.agentId,
@@ -1574,7 +1611,8 @@ export default async function handler(req: Request): Promise<Response> {
       if (commitment.hasCommitment) {
         const commitmentId = await createCommitmentReminder(
           sql, 
-          channelId, 
+          channelId,
+          orgId,
           messageId, 
           commitment, 
           user.fullName, 
@@ -1600,7 +1638,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE support_messages 
           SET text_content = ${transcribedText}, transcript = ${transcribedText}
-          WHERE id = ${messageId}
+          WHERE id = ${messageId} AND org_id = ${orgId}
         `.catch(() => {})
         console.log(`[Webhook] Transcribed voice: ${transcribedText.slice(0, 100)}`)
       }
@@ -1611,7 +1649,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (photoDesc) {
         analysisText = `[Фото] ${photoDesc}`
         await sql`
-          UPDATE support_messages SET ai_summary = ${photoDesc} WHERE id = ${messageId}
+          UPDATE support_messages SET ai_summary = ${photoDesc} WHERE id = ${messageId} AND org_id = ${orgId}
         `.catch(() => {})
       }
     }
@@ -1621,7 +1659,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (transcribedText) {
         analysisText = transcribedText
         await sql`
-          UPDATE support_messages SET transcript = ${transcribedText} WHERE id = ${messageId}
+          UPDATE support_messages SET transcript = ${transcribedText} WHERE id = ${messageId} AND org_id = ${orgId}
         `.catch(() => {})
         console.log(`[Webhook] Transcribed video audio: ${transcribedText.slice(0, 100)}`)
       }

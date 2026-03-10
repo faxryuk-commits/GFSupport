@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -43,11 +44,12 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const botToken = process.env.TELEGRAM_BOT_TOKEN
 
   try {
     const channelResult = await sql`
-      SELECT telegram_chat_id, name, source FROM support_channels WHERE id = ${channelId}
+      SELECT telegram_chat_id, name, source FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
     `
 
     if (channelResult.length === 0) {
@@ -86,6 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
         MAX(created_at) as last_seen
       FROM support_messages
       WHERE channel_id = ${channelId}
+        AND org_id = ${orgId}
         AND sender_name IS NOT NULL
         AND sender_name != ''
         AND TRIM(sender_name) != ''
@@ -98,7 +101,7 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       const agents = await sql`
         SELECT LOWER(name) as lname, LOWER(username) as lusername
-        FROM support_agents WHERE name IS NOT NULL
+        FROM support_agents WHERE name IS NOT NULL AND org_id = ${orgId}
       `
       for (const a of agents) {
         if (a.lname) agentNames.add(a.lname.trim())

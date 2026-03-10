@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -33,16 +34,18 @@ export default async function handler(req: Request): Promise<Response> {
       const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
       if (!connectionString) return json({ error: 'No DB connection' }, 500)
       
+      const orgId = await getRequestOrgId(req)
       const sql = neon(connectionString)
-      const channels = await sql`SELECT COUNT(*) as c FROM support_channels WHERE is_active = true`
-      const messages = await sql`SELECT COUNT(*) as c FROM support_messages`
+      const channels = await sql`SELECT COUNT(*) as c FROM support_channels WHERE is_active = true AND org_id = ${orgId}`
+      const messages = await sql`SELECT COUNT(*) as c FROM support_messages WHERE org_id = ${orgId}`
       const recent = await sql`
         SELECT id, channel_id, sender_name, SUBSTRING(text_content, 1, 50) as text, created_at
-        FROM support_messages ORDER BY created_at DESC LIMIT 10
+        FROM support_messages WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 10
       `
       
       return json({
         debug: true,
+        orgId,
         stats: { channels: channels[0]?.c, messages: messages[0]?.c },
         recentMessages: recent
       })
@@ -58,29 +61,31 @@ export default async function handler(req: Request): Promise<Response> {
       const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
       if (!connectionString) return json({ error: 'No DB connection' }, 500)
       
+      const orgId = await getRequestOrgId(req)
       const sql = neon(connectionString)
       const channelInfo = await sql`
         SELECT * FROM support_channels 
-        WHERE name ILIKE ${'%' + channelName + '%'} 
+        WHERE name ILIKE ${'%' + channelName + '%'} AND org_id = ${orgId}
         LIMIT 1
       `
       
       if (channelInfo.length === 0) {
-        return json({ error: 'Channel not found', search: channelName })
+        return json({ error: 'Channel not found', search: channelName, orgId })
       }
       
       const ch = channelInfo[0]
-      const msgCount = await sql`SELECT COUNT(*) as c FROM support_messages WHERE channel_id = ${ch.id}`
+      const msgCount = await sql`SELECT COUNT(*) as c FROM support_messages WHERE channel_id = ${ch.id} AND org_id = ${orgId}`
       const recentMsgs = await sql`
         SELECT id, sender_name, sender_role, SUBSTRING(text_content, 1, 100) as text, content_type, created_at
         FROM support_messages 
-        WHERE channel_id = ${ch.id}
+        WHERE channel_id = ${ch.id} AND org_id = ${orgId}
         ORDER BY created_at DESC 
         LIMIT 20
       `
       
       return json({
         channel: ch,
+        orgId,
         messageCount: msgCount[0]?.c,
         recentMessages: recentMsgs
       })

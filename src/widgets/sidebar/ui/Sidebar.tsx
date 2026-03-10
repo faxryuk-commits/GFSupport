@@ -17,6 +17,7 @@ import {
   Target,
   Globe,
   ChevronDown,
+  Shield,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -113,6 +114,9 @@ interface SidebarProps {
   markets?: MarketOption[]
   selectedMarket?: string | null
   onMarketChange?: (marketId: string | null) => void
+  orgName?: string
+  orgLogo?: string
+  orgPlan?: string
 }
 
 const mainNavItems = [
@@ -130,11 +134,12 @@ const mainNavItems = [
 
 const bottomItems = [
   { path: '/settings', label: 'Настройки', icon: Settings },
+  { path: '/admin', label: 'Суперадмин', icon: Shield, adminOnly: true },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout, markets = [], selectedMarket, onMarketChange }: SidebarProps) {
+export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout, markets = [], selectedMarket, onMarketChange, orgName, orgLogo, orgPlan }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
@@ -281,13 +286,22 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
           isCollapsed ? 'w-[72px]' : 'w-[240px]'
         }`}
       >
-      {/* Logo */}
+      {/* Logo + Org */}
       <div className={`p-4 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
-        <Link to="/overview" className="flex items-center gap-2">
-          <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
-            <MessageSquare className="w-5 h-5 text-white" />
-          </div>
-          {!isCollapsed && <span className="text-white font-bold text-lg">SUPPORT</span>}
+        <Link to="/overview" className="flex items-center gap-2 min-w-0">
+          {orgLogo ? (
+            <img src={orgLogo} alt={orgName || 'Org'} className="w-9 h-9 rounded-xl flex-shrink-0 object-cover" />
+          ) : (
+            <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+              <MessageSquare className="w-5 h-5 text-white" />
+            </div>
+          )}
+          {!isCollapsed && (
+            <div className="min-w-0">
+              <span className="text-white font-bold text-lg block truncate">{orgName || 'SUPPORT'}</span>
+              {orgPlan && <span className="text-[10px] text-slate-400 uppercase tracking-wider">{orgPlan}</span>}
+            </div>
+          )}
         </Link>
         <button
           onClick={toggleCollapse}
@@ -348,9 +362,11 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       <div className="px-3 pb-4">
         {/* Settings */}
         <div className="space-y-1 mb-4">
-          {bottomItems.map(item => (
-            <NavItem key={item.path} {...item} />
-          ))}
+          {bottomItems
+            .filter(item => !('adminOnly' in item && item.adminOnly) || currentUser?.role === 'Администратор')
+            .map(item => (
+              <NavItem key={item.path} {...item} />
+            ))}
         </div>
 
         {/* User */}

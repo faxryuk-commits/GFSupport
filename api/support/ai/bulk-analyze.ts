@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -141,12 +142,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const action = url.searchParams.get('action') || 'analyze'
   
@@ -168,6 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE m.text_content IS NOT NULL 
             AND m.text_content != ''
             AND DATE(m.created_at) = CURRENT_DATE
+            AND m.org_id = ${orgId}
           ORDER BY m.created_at DESC
           LIMIT ${limit}
         `
@@ -180,6 +183,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN support_channels c ON m.channel_id = c.id
           WHERE m.text_content IS NOT NULL 
             AND m.text_content != ''
+            AND m.org_id = ${orgId}
           ORDER BY m.created_at DESC
           LIMIT ${limit}
         `
@@ -317,6 +321,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN support_channels c ON m.channel_id = c.id
           WHERE m.id = ANY(${messageIds})
             AND m.case_id IS NULL
+            AND m.org_id = ${orgId}
         `
       } else {
         // Get today's unresolved problems without tickets
@@ -330,6 +335,7 @@ export default async function handler(req: Request): Promise<Response> {
             AND DATE(m.created_at) = CURRENT_DATE
             AND m.is_from_client = true
             AND m.case_id IS NULL
+            AND m.org_id = ${orgId}
           ORDER BY m.created_at ASC
           LIMIT 100
         `
@@ -352,12 +358,13 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT id FROM support_cases 
           WHERE channel_id = ${msg.channel_id} 
             AND status IN ('detected', 'in_progress', 'waiting', 'blocked')
+            AND org_id = ${orgId}
           LIMIT 1
         `
         
         if (existingCase.length > 0) {
           // Link message to existing case
-          await sql`UPDATE support_messages SET case_id = ${existingCase[0].id} WHERE id = ${msg.id}`
+          await sql`UPDATE support_messages SET case_id = ${existingCase[0].id} WHERE id = ${msg.id} AND org_id = ${orgId}`
           skipped.push({ id: msg.id, reason: 'linked_to_existing', caseId: existingCase[0].id })
           continue
         }
@@ -370,13 +377,13 @@ export default async function handler(req: Request): Promise<Response> {
                         analysis.problemType.includes('order') ? 'order' : 'general'
         
         // Get next ticket number
-        const maxNum = await sql`SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_num FROM support_cases`
+        const maxNum = await sql`SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_num FROM support_cases WHERE org_id = ${orgId}`
         const ticketNumber = maxNum[0]?.next_num || 1
         
         await sql`
           INSERT INTO support_cases (
             id, channel_id, company_id, title, description,
-            category, priority, status, source_message_id, reporter_name, ticket_number, created_at
+            category, priority, status, source_message_id, reporter_name, ticket_number, org_id, created_at
           ) VALUES (
             ${caseId},
             ${msg.channel_id},
@@ -389,12 +396,13 @@ export default async function handler(req: Request): Promise<Response> {
             ${msg.id},
             ${msg.sender_name || 'Клиент'},
             ${ticketNumber},
+            ${orgId},
             NOW()
           )
         `
         
         // Link message to case
-        await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${msg.id}`
+        await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${msg.id} AND org_id = ${orgId}`
         
         created.push({
           caseId,

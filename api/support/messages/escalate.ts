@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getOrgBotToken } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,7 +26,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -35,6 +37,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     const { messageId, reason = 'manual' } = await req.json()
 
     if (!messageId) {
@@ -47,6 +50,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.id = ${messageId}
+        AND m.org_id = ${orgId}
     `
 
     if (msgResult.length === 0) {
@@ -59,20 +63,20 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       UPDATE support_messages 
       SET ai_urgency = 5, is_problem = true
-      WHERE id = ${messageId}
+      WHERE id = ${messageId} AND org_id = ${orgId}
     `
 
     // Update channel - set awaiting_reply and increment urgency indicator
     await sql`
       UPDATE support_channels
       SET awaiting_reply = true, unread_count = COALESCE(unread_count, 0) + 1
-      WHERE id = ${msg.channel_id}
+      WHERE id = ${msg.channel_id} AND org_id = ${orgId}
     `
 
     const escalationId = `esc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 
     // Send notification to Telegram (if configured)
-    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    const botToken = await getOrgBotToken(orgId)
     const notifyChatId = process.env.SUPPORT_NOTIFY_CHAT_ID
 
     if (botToken && notifyChatId) {

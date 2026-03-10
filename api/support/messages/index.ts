@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -37,7 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -49,6 +50,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const url = new URL(req.url)
+  const orgId = await getRequestOrgId(req)
 
   // GET - список сообщений
   // mode=hot: операционный режим (7 дней, только активные каналы, 50 msg/канал)
@@ -85,6 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_messages m
           LEFT JOIN support_channels ch ON m.channel_id = ch.id
           WHERE m.channel_id = ${channelId}
+            AND m.org_id = ${orgId}
             AND m.created_at > NOW() - INTERVAL '90 days'
           ORDER BY m.created_at ASC
           LIMIT ${limit} OFFSET ${offset}
@@ -93,6 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
         countResult = await sql`
           SELECT COUNT(*) as total FROM support_messages
           WHERE channel_id = ${channelId}
+            AND org_id = ${orgId}
             AND created_at > NOW() - INTERVAL '90 days'
         `
       } else if (mode === 'hot') {
@@ -101,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
         const priorityChannels = await sql`
           SELECT id FROM support_channels 
           WHERE is_active = true 
+            AND org_id = ${orgId}
             AND (awaiting_reply = true OR unread_count > 0)
           ORDER BY last_message_at DESC NULLS LAST
           LIMIT ${config.maxChannels}
@@ -118,6 +123,7 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages m
             LEFT JOIN support_channels ch ON m.channel_id = ch.id
             WHERE m.channel_id = ANY(${channelIds})
+              AND m.org_id = ${orgId}
               AND m.created_at > NOW() - INTERVAL '7 days'
             ORDER BY m.created_at DESC
             LIMIT ${limit * Math.min(channelIds.length, 50)}
@@ -136,14 +142,16 @@ export default async function handler(req: Request): Promise<Response> {
             ch.telegram_chat_id
           FROM support_messages m
           LEFT JOIN support_channels ch ON m.channel_id = ch.id
-          WHERE m.created_at > NOW() - INTERVAL '30 days'
+          WHERE m.org_id = ${orgId}
+            AND m.created_at > NOW() - INTERVAL '30 days'
           ORDER BY m.created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `
         
         countResult = await sql`
           SELECT COUNT(*) as total FROM support_messages
-          WHERE created_at > NOW() - INTERVAL '30 days'
+          WHERE org_id = ${orgId}
+            AND created_at > NOW() - INTERVAL '30 days'
         `
       }
 
@@ -161,6 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE content_type = 'voice') as voice,
           COUNT(*) FILTER (WHERE content_type IN ('video', 'video_note')) as video
         FROM support_messages
+        WHERE org_id = ${orgId}
       `
       const stats = statsResult[0] || {}
 
@@ -242,6 +251,7 @@ export default async function handler(req: Request): Promise<Response> {
             is_read = ${markAsRead !== false},
             read_at = ${markAsRead !== false ? new Date().toISOString() : null}
           WHERE id = ANY(${messageIds})
+            AND org_id = ${orgId}
         `
       } else if (channelId) {
         // Mark all messages in channel
@@ -249,11 +259,11 @@ export default async function handler(req: Request): Promise<Response> {
           UPDATE support_messages SET 
             is_read = true,
             read_at = NOW()
-          WHERE channel_id = ${channelId} AND is_read = false
+          WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_read = false
         `
         // Reset unread count
         await sql`
-          UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId}
+          UPDATE support_channels SET unread_count = 0 WHERE id = ${channelId} AND org_id = ${orgId}
         `
       }
 

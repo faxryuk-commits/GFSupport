@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -33,7 +34,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
@@ -43,6 +44,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // Ensure required columns exist
   try {
@@ -83,6 +85,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE token = ${token} 
         AND used_at IS NULL 
         AND (expires_at IS NULL OR expires_at > NOW())
+        AND (org_id IS NULL OR org_id = ${orgId})
     `
 
     if (inviteRows.length === 0) {
@@ -93,7 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Проверяем что email не занят (если указан)
     if (email) {
-      const existingEmail = await sql`SELECT id FROM support_agents WHERE email = ${email}`
+      const existingEmail = await sql`SELECT id FROM support_agents WHERE email = ${email} AND org_id = ${orgId}`
       if (existingEmail.length > 0) {
         return json({ error: 'Этот email уже зарегистрирован' }, 400)
       }
@@ -102,7 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Проверяем что telegram не занят (если указан)
     if (telegram) {
       const cleanTelegram = telegram.replace('@', '').trim()
-      const existingTg = await sql`SELECT id FROM support_agents WHERE username = ${cleanTelegram}`
+      const existingTg = await sql`SELECT id FROM support_agents WHERE username = ${cleanTelegram} AND org_id = ${orgId}`
       if (existingTg.length > 0) {
         return json({ error: 'Этот Telegram уже зарегистрирован' }, 400)
       }
@@ -118,7 +121,7 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       INSERT INTO support_agents (
         id, name, username, email, role, status, password_hash,
-        phone, position, department, created_at
+        phone, position, department, created_at, org_id
       ) VALUES (
         ${agentId},
         ${name.trim()},
@@ -130,7 +133,8 @@ export default async function handler(req: Request): Promise<Response> {
         ${phone || null},
         ${position || null},
         ${department || null},
-        NOW()
+        NOW(),
+        ${orgId}
       )
     `
 

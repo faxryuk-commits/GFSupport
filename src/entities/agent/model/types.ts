@@ -1,35 +1,5 @@
-export type AgentRole = 'admin' | 'manager' | 'agent'
-export type AgentStatus = 'online' | 'away' | 'offline'
-
-export interface Agent {
-  id: string
-  name: string
-  email?: string
-  username?: string
-  telegramId?: number
-  role: AgentRole
-  status?: AgentStatus
-  avatarUrl?: string
-  isActive?: boolean
-  lastActiveAt?: string
-  lastSeenAt?: string
-  createdAt?: string
-  assignedChannels?: number
-  activeChats?: number
-  metrics?: AgentMetrics
-  points?: number
-  phone?: string
-  position?: string
-  department?: string
-}
-
-export interface AgentMetrics {
-  messagesHandled: number
-  resolvedConversations: number
-  avgFirstResponseMin: number
-  avgResolutionMin: number
-  satisfactionScore: number
-}
+export type { Agent, AgentRole, AgentStatus, AgentMetrics } from '@/shared/types'
+import type { AgentRole } from '@/shared/types'
 
 export interface AgentLevel {
   name: string

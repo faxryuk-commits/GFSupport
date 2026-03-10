@@ -1,4 +1,6 @@
 import { neon } from '@neondatabase/serverless'
+import { getOrgBotToken } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -21,13 +23,14 @@ function json(data: any, status = 200) {
 }
 
 // Save dialog for AI learning
-async function saveDialogForLearning(sql: any, channelId: string, answerText: string, answerBy: string) {
+async function saveDialogForLearning(sql: any, channelId: string, answerText: string, answerBy: string, orgId: string) {
   try {
     // Find the last client message that this is responding to
     const lastClientMsg = await sql`
       SELECT text_content, ai_category
       FROM support_messages
-      WHERE channel_id = ${channelId} 
+      WHERE channel_id = ${channelId}
+        AND org_id = ${orgId}
         AND sender_role = 'client'
         AND text_content IS NOT NULL
         AND LENGTH(text_content) > 5
@@ -288,7 +291,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -302,12 +305,12 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Unauthorized' }, 401)
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
+  const botToken = await getOrgBotToken(orgId)
   if (!botToken) {
     return json({ error: 'Bot not configured' }, 500)
   }
-
-  const sql = getSQL()
 
   try {
     const body = await req.json()
@@ -319,7 +322,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Get channel info
     const channelResult = await sql`
-      SELECT * FROM support_channels WHERE id = ${channelId}
+      SELECT * FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
     `
     
     if (channelResult.length === 0) {
@@ -350,10 +353,10 @@ export default async function handler(req: Request): Promise<Response> {
 
       await sql`
         INSERT INTO support_messages (
-          id, channel_id, sender_id, sender_name, sender_username, sender_role,
+          id, channel_id, org_id, sender_id, sender_name, sender_username, sender_role,
           is_from_client, content_type, text_content, is_read, created_at
         ) VALUES (
-          ${messageId}, ${channelId}, ${senderId || null}, ${senderName || 'Support'},
+          ${messageId}, ${channelId}, ${orgId}, ${senderId || null}, ${senderName || 'Support'},
           ${senderUsername || null}, 'support', false, 'text', ${text}, true, NOW()
         )
       `
@@ -385,18 +388,18 @@ export default async function handler(req: Request): Promise<Response> {
       let threadName = null
       if (threadId) {
         const topicResult = await sql`
-          SELECT name FROM support_topics WHERE channel_id = ${channelId} AND thread_id = ${threadId}
+          SELECT name FROM support_topics WHERE channel_id = ${channelId} AND thread_id = ${threadId} AND org_id = ${orgId}
         `
         threadName = topicResult[0]?.name
       }
 
       await sql`
         INSERT INTO support_messages (
-          id, channel_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
+          id, channel_id, org_id, telegram_message_id, sender_id, sender_name, sender_username, sender_role,
           is_from_client, content_type, text_content, is_processed, is_read,
           reply_to_message_id, thread_id, thread_name
         ) VALUES (
-          ${messageId}, ${channelId}, ${sentMessage.message_id},
+          ${messageId}, ${channelId}, ${orgId}, ${sentMessage.message_id},
           ${senderId || null}, ${senderName || 'Support'}, ${senderUsername || null},
           'support', false, 'text', ${text}, true, true,
           ${replyToMessageId || null}, ${threadId || null}, ${threadName}
@@ -409,7 +412,7 @@ export default async function handler(req: Request): Promise<Response> {
             messages_count = messages_count + 1,
             last_message_at = NOW(),
             last_sender_name = ${senderName || 'Support'}
-          WHERE channel_id = ${channelId} AND thread_id = ${threadId}
+          WHERE channel_id = ${channelId} AND thread_id = ${threadId} AND org_id = ${orgId}
         `
       }
     }
@@ -421,7 +424,7 @@ export default async function handler(req: Request): Promise<Response> {
         last_sender_name = ${senderName || 'Support'},
         last_message_preview = ${messagePreview},
         awaiting_reply = false
-      WHERE id = ${channelId}
+      WHERE id = ${channelId} AND org_id = ${orgId}
     `
 
     const commitment = detectCommitment(text)
@@ -430,7 +433,7 @@ export default async function handler(req: Request): Promise<Response> {
       reminderId = await createReminder(sql, commitment, channelId, messageId, senderName || 'Support')
     }
 
-    saveDialogForLearning(sql, channelId, text, senderName || 'Support').catch(() => {})
+    saveDialogForLearning(sql, channelId, text, senderName || 'Support', orgId).catch(() => {})
 
     return json({
       success: true,

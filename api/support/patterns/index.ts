@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -117,12 +118,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // Ensure table exists
   try {
@@ -236,6 +238,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_messages
           WHERE sender_role = 'client'
             AND text_content IS NOT NULL
+            AND org_id = ${orgId}
             AND LENGTH(text_content) > 3
           ORDER BY created_at DESC
           LIMIT ${limit}
@@ -345,7 +348,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Default: Get all patterns
     try {
       const rows = await sql`
-        SELECT * FROM support_ai_patterns WHERE is_active = true ORDER BY category, name
+        SELECT * FROM support_ai_patterns WHERE is_active = true AND org_id = ${orgId} ORDER BY category, name
       `
 
       // If no patterns in DB, return defaults
@@ -388,13 +391,14 @@ export default async function handler(req: Request): Promise<Response> {
       for (const [id, data] of Object.entries(patterns)) {
         const patternData = data as any
         await sql`
-          INSERT INTO support_ai_patterns (id, category, name, data, updated_at)
+          INSERT INTO support_ai_patterns (id, category, name, data, updated_at, org_id)
           VALUES (
             ${id},
             ${patternData.category || 'general'},
             ${patternData.name || id},
             ${JSON.stringify(patternData)},
-            NOW()
+            NOW(),
+            ${orgId}
           )
           ON CONFLICT (id) DO UPDATE SET
             data = ${JSON.stringify(patternData)},
@@ -427,6 +431,7 @@ export default async function handler(req: Request): Promise<Response> {
           is_active = COALESCE(${isActive}, is_active),
           updated_at = NOW()
         WHERE id = ${id}
+          AND org_id = ${orgId}
       `
 
       return json({ success: true })
@@ -446,7 +451,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     try {
-      await sql`DELETE FROM support_ai_patterns WHERE id = ${id}`
+      await sql`DELETE FROM support_ai_patterns WHERE id = ${id} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
       return json({ error: e.message }, 500)

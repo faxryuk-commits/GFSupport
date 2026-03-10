@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,7 +27,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -41,6 +42,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const bucket = url.searchParams.get('bucket') || 'all'
   const period = url.searchParams.get('period') || '30d'
@@ -107,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
     let channelFilter: string[] = []
     if (slaCategory) {
       const catChannels = await sql`
-        SELECT id FROM support_channels WHERE sla_category = ${slaCategory}
+        SELECT id FROM support_channels WHERE org_id = ${orgId} AND sla_category = ${slaCategory}
       `
       channelFilter = catChannels.map((c: any) => c.id)
       if (channelFilter.length === 0) {
@@ -133,7 +135,8 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
           AND (${!useChannelFilter} OR m.channel_id = ANY(${channelFilter.length > 0 ? channelFilter : ['__none__']}))
       ),
@@ -170,6 +173,7 @@ export default async function handler(req: Request): Promise<Response> {
             SELECT sm.id
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
+              AND sm.org_id = ${orgId}
               AND sm.created_at > cm.client_msg_at
               AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
               AND sm.sender_role IN ('support', 'team', 'agent')
@@ -181,6 +185,7 @@ export default async function handler(req: Request): Promise<Response> {
             SELECT MIN(created_at)
             FROM support_messages sm
             WHERE sm.channel_id = cm.channel_id
+              AND sm.org_id = ${orgId}
               AND sm.created_at > cm.client_msg_at
               AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
               AND sm.sender_role IN ('support', 'team', 'agent')
@@ -207,7 +212,7 @@ export default async function handler(req: Request): Promise<Response> {
           ELSE false 
         END as was_escalated
       FROM response_times rt
-      JOIN support_channels ch ON rt.channel_id = ch.id
+      JOIN support_channels ch ON rt.channel_id = ch.id AND ch.org_id = ${orgId}
       LEFT JOIN support_messages rm ON rm.id = rt.response_message_id
       WHERE rt.response_at IS NOT NULL
         AND EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 >= ${minMinutes}
@@ -224,7 +229,8 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
       ),
       first_client AS (
@@ -242,12 +248,12 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT 
           cm.id, cm.channel_id, cm.sender_name,
           (SELECT MIN(created_at) FROM support_messages sm
-           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+           WHERE sm.channel_id = cm.channel_id AND sm.org_id = ${orgId} AND sm.created_at > cm.client_msg_at
              AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,
           (SELECT sender_name FROM support_messages sm
-           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+           WHERE sm.channel_id = cm.channel_id AND sm.org_id = ${orgId} AND sm.created_at > cm.client_msg_at
              AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
            ORDER BY sm.created_at ASC LIMIT 1
@@ -282,7 +288,8 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
-        WHERE m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
       ),
       first_client AS (
@@ -300,13 +307,13 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT 
           cm.id, cm.channel_id,
           (SELECT sender_name FROM support_messages sm
-           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+           WHERE sm.channel_id = cm.channel_id AND sm.org_id = ${orgId} AND sm.created_at > cm.client_msg_at
              AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
            ORDER BY sm.created_at ASC LIMIT 1
           ) as responder_name,
           (SELECT MIN(created_at) FROM support_messages sm
-           WHERE sm.channel_id = cm.channel_id AND sm.created_at > cm.client_msg_at
+           WHERE sm.channel_id = cm.channel_id AND sm.org_id = ${orgId} AND sm.created_at > cm.client_msg_at
              AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
              AND sm.sender_role IN ('support', 'team', 'agent') AND sm.is_from_client = false
           ) as response_at,

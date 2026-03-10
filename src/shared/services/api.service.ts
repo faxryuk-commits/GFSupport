@@ -9,15 +9,23 @@ interface CacheItem {
 const cache = new Map<string, CacheItem>()
 const CACHE_TTL = 5000
 
+const ORG_KEY = 'support_org_id'
+
 function getToken(): string {
   return localStorage.getItem('support_agent_token') || ''
 }
 
+function getOrgId(): string {
+  return localStorage.getItem(ORG_KEY) || ''
+}
+
 function getHeaders(): HeadersInit {
   const token = getToken()
+  const orgId = getOrgId()
   return {
     'Content-Type': 'application/json',
-    ...(token && { Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}` })
+    ...(token && { Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}` }),
+    ...(orgId && { 'X-Org-Id': orgId }),
   }
 }
 
@@ -98,10 +106,12 @@ export async function apiDelete<T>(endpoint: string): Promise<T> {
 
 export async function apiUpload<T>(endpoint: string, formData: FormData): Promise<T> {
   const token = getToken()
+  const orgId = getOrgId()
   const res = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
     headers: {
-      ...(token && { Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}` })
+      ...(token && { Authorization: token.startsWith('Bearer') ? token : `Bearer ${token}` }),
+      ...(orgId && { 'X-Org-Id': orgId }),
     },
     body: formData
   })

@@ -17,6 +17,8 @@ const DocsPage = lazy(() => import('@/pages/docs/ui/DocsPage').then(m => ({ defa
 const ProblemAnalysisPage = lazy(() => import('@/pages/learning/ui/ProblemAnalysisPage'))
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
 const SLAReportPage = lazy(() => import('@/pages/sla-report/ui/SLAReportPage').then(m => ({ default: m.SLAReportPage })))
+const SuperAdminPage = lazy(() => import('@/pages/admin/ui/SuperAdminPage'))
+const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
 
 
 function PageLoader() {
@@ -33,6 +35,7 @@ export default function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<Suspense fallback={<PageLoader />}><OrgRegisterPage /></Suspense>} />
         <Route path="/support/register/:token" element={<RegisterPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
 
@@ -59,6 +62,9 @@ export default function App() {
           
           {/* Settings */}
           <Route path="/settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
+          
+          {/* Super Admin */}
+          <Route path="/admin" element={<Suspense fallback={<PageLoader />}><SuperAdminPage /></Suspense>} />
         </Route>
 
         {/* Redirects - old routes to settings */}

@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,12 +27,13 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // Ensure tables exist
   try {
@@ -92,7 +94,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
 
         // Update agent status
-        await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agentId}`
+        await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agentId} AND org_id = ${orgId}`
 
         // Record activity
         await sql`
@@ -114,7 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
 
         // Update agent status
-        await sql`UPDATE support_agents SET status = 'offline' WHERE id = ${agentId}`
+        await sql`UPDATE support_agents SET status = 'offline' WHERE id = ${agentId} AND org_id = ${orgId}`
 
         // Record activity
         await sql`
@@ -138,7 +140,7 @@ export default async function handler(req: Request): Promise<Response> {
         `
         
         // Also update agent status to online
-        await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agentId}`
+        await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agentId} AND org_id = ${orgId}`
 
         return json({ success: true })
       }
@@ -172,7 +174,7 @@ export default async function handler(req: Request): Promise<Response> {
           MAX(COALESCE(s.ended_at, NOW())) as last_activity,
           COUNT(DISTINCT DATE(s.started_at)) as days_worked
         FROM support_agent_sessions s
-        JOIN support_agents ag ON s.agent_id = ag.id
+        JOIN support_agents ag ON s.agent_id = ag.id AND ag.org_id = ${orgId}
         WHERE s.started_at >= ${intervalFilter} ${agentFilter}
         GROUP BY s.agent_id, ag.name
       `
@@ -187,6 +189,7 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE a.activity_type = 'case_handled') as cases_handled,
           COUNT(*) FILTER (WHERE a.activity_type = 'heartbeat') as heartbeats
         FROM support_agent_activity a
+        JOIN support_agents ag ON a.agent_id = ag.id AND ag.org_id = ${orgId}
         WHERE a.activity_at >= ${intervalFilter} ${agentFilterActivity}
         GROUP BY a.agent_id
       `
@@ -201,6 +204,7 @@ export default async function handler(req: Request): Promise<Response> {
           SUM(s.duration_minutes) as work_minutes,
           COUNT(DISTINCT s.id) as sessions
         FROM support_agent_sessions s
+        JOIN support_agents ag ON s.agent_id = ag.id AND ag.org_id = ${orgId}
         WHERE s.started_at >= ${intervalFilter} ${agentFilter}
         GROUP BY s.agent_id, DATE(s.started_at)
         ORDER BY work_date DESC
@@ -211,11 +215,12 @@ export default async function handler(req: Request): Promise<Response> {
       const effectiveTimeQuery = await sql`
         WITH activity_gaps AS (
           SELECT 
-            agent_id,
-            activity_at,
-            LAG(activity_at) OVER (PARTITION BY agent_id ORDER BY activity_at) as prev_activity
-          FROM support_agent_activity
-          WHERE activity_at >= ${intervalFilter} ${agentFilterActivity}
+            a.agent_id,
+            a.activity_at,
+            LAG(a.activity_at) OVER (PARTITION BY a.agent_id ORDER BY a.activity_at) as prev_activity
+          FROM support_agent_activity a
+          JOIN support_agents ag ON a.agent_id = ag.id AND ag.org_id = ${orgId}
+          WHERE a.activity_at >= ${intervalFilter} ${agentFilterActivity}
         )
         SELECT 
           agent_id,

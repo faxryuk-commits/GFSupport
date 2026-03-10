@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -102,6 +103,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (createTest && detection.hasCommitment) {
     const sql = getSQL()
+    const orgId = await getRequestOrgId(req)
     
     // Ensure table exists
     try {
@@ -134,12 +136,12 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       INSERT INTO support_reminders (
         id, channel_id, message_id, commitment_text, commitment_type,
-        is_vague, detected_deadline, auto_deadline, reminder_at, assigned_name
+        is_vague, detected_deadline, auto_deadline, reminder_at, assigned_name, org_id
       ) VALUES (
         ${reminderId}, 'test_channel', 'test_msg', ${detection.commitmentText},
         ${detection.commitmentType}, ${detection.isVague},
         ${detection.detectedDeadline?.toISOString() || null},
-        ${deadline.toISOString()}, ${reminderAt.toISOString()}, 'Test User'
+        ${deadline.toISOString()}, ${reminderAt.toISOString()}, 'Test User', ${orgId}
       )
     `
 

@@ -7,6 +7,7 @@
  */
 
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = { runtime: 'edge' }
 
@@ -33,7 +34,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -45,6 +46,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
 
   // GET - List agents without telegram_id
   if (req.method === 'GET') {
@@ -55,7 +57,7 @@ export default async function handler(req: Request): Promise<Response> {
           id, name, username, email, role, status,
           telegram_id, created_at
         FROM support_agents
-        WHERE telegram_id IS NULL OR telegram_id = ''
+        WHERE (telegram_id IS NULL OR telegram_id = '') AND org_id = ${orgId}
         ORDER BY name
       `
 
@@ -65,7 +67,7 @@ export default async function handler(req: Request): Promise<Response> {
           id, name, username, email, role, status,
           telegram_id, created_at
         FROM support_agents
-        WHERE telegram_id IS NOT NULL AND telegram_id != ''
+        WHERE telegram_id IS NOT NULL AND telegram_id != '' AND org_id = ${orgId}
         ORDER BY name
       `
 
@@ -175,7 +177,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (telegramId) {
         const existingAgent = await sql`
           SELECT id, name FROM support_agents 
-          WHERE telegram_id = ${String(telegramId)}
+          WHERE telegram_id = ${String(telegramId)} AND org_id = ${orgId}
           LIMIT 1
         `
         if (existingAgent[0] && existingAgent[0].id !== agentId) {
@@ -209,25 +211,25 @@ export default async function handler(req: Request): Promise<Response> {
             UPDATE support_agents 
             SET telegram_id = ${String(telegramId)}, 
                 username = ${telegramUsername.replace('@', '')}
-            WHERE id = ${agentId}
+            WHERE id = ${agentId} AND org_id = ${orgId}
           `
         } else if (telegramId) {
           await sql`
             UPDATE support_agents 
             SET telegram_id = ${String(telegramId)}
-            WHERE id = ${agentId}
+            WHERE id = ${agentId} AND org_id = ${orgId}
           `
         } else if (telegramUsername) {
           await sql`
             UPDATE support_agents 
             SET username = ${telegramUsername.replace('@', '')}
-            WHERE id = ${agentId}
+            WHERE id = ${agentId} AND org_id = ${orgId}
           `
         }
 
         // Get updated agent
         const updated = await sql`
-          SELECT id, name, username, telegram_id FROM support_agents WHERE id = ${agentId}
+          SELECT id, name, username, telegram_id FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId}
         `
 
         return json({
@@ -303,11 +305,11 @@ export default async function handler(req: Request): Promise<Response> {
       if (agentId) {
         if (field === 'username') {
           await sql`
-            UPDATE support_agents SET username = NULL WHERE id = ${agentId}
+            UPDATE support_agents SET username = NULL WHERE id = ${agentId} AND org_id = ${orgId}
           `
         } else {
           await sql`
-            UPDATE support_agents SET telegram_id = NULL WHERE id = ${agentId}
+            UPDATE support_agents SET telegram_id = NULL WHERE id = ${agentId} AND org_id = ${orgId}
           `
         }
         return json({ success: true, message: `Agent ${field} binding removed` })

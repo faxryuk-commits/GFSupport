@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getOpenAIKey } from '../lib/db.js'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -57,7 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
@@ -68,6 +69,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const channelId = url.searchParams.get('channelId')
 
@@ -79,7 +81,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Get channel info
     const channels = await sql`
       SELECT id, name, awaiting_reply, last_client_message_at, last_team_message_at
-      FROM support_channels WHERE id = ${channelId}
+      FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId}
     `
     
     if (channels.length === 0) {
@@ -94,7 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
         ai_sentiment, ai_intent, ai_urgency, ai_summary,
         created_at
       FROM support_messages
-      WHERE channel_id = ${channelId}
+      WHERE channel_id = ${channelId} AND org_id = ${orgId}
       ORDER BY created_at DESC
       LIMIT 50
     `
@@ -104,7 +106,7 @@ export default async function handler(req: Request): Promise<Response> {
       reminders = await sql`
         SELECT commitment_text, due_date as deadline, status
         FROM support_commitments
-        WHERE channel_id = ${channelId} AND status = 'pending'
+        WHERE channel_id = ${channelId} AND status = 'pending' AND org_id = ${orgId}
         ORDER BY COALESCE(due_date, created_at) ASC
       `
     } catch { /* table may not exist */ }
@@ -234,7 +236,7 @@ export default async function handler(req: Request): Promise<Response> {
         const solutions = await sql`
           SELECT id, category, solution_text, solution_steps, success_score, is_verified
           FROM support_solutions
-          WHERE is_active = true
+          WHERE is_active = true AND org_id = ${orgId}
           ORDER BY success_score DESC
           LIMIT 20
         `
@@ -309,13 +311,13 @@ export default async function handler(req: Request): Promise<Response> {
               CASE WHEN content ILIKE ${searchPattern} THEN 5 ELSE 0 END
             ) as relevance
           FROM support_docs
-          WHERE 
-            title ILIKE ${searchPattern}
+          WHERE org_id = ${orgId}
+            AND (title ILIKE ${searchPattern}
             OR content ILIKE ${searchPattern}
             OR EXISTS (
               SELECT 1 FROM unnest(${uniqueTerms.map(t => `%${t}%`)}::text[]) AS pattern 
               WHERE title ILIKE pattern OR content ILIKE pattern
-            )
+            ))
           ORDER BY relevance DESC, title
           LIMIT 5
         `.catch(() => [])
@@ -400,6 +402,7 @@ ${kbContext}
             FROM support_dialogs
             WHERE is_active = true
               AND (was_helpful IS NULL OR was_helpful = true)
+              AND org_id = ${orgId}
               AND (
                 question_text ILIKE ${searchPattern}
                 OR question_text ILIKE ${'%' + searchTerms[0] + '%'}

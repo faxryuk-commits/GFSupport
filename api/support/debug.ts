@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from './lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -20,7 +21,7 @@ export default async function handler(req: Request): Promise<Response> {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
@@ -32,17 +33,19 @@ export default async function handler(req: Request): Promise<Response> {
     }
     
     const sql = neon(connectionString)
+    const orgId = await getRequestOrgId(req)
     
     // Count channels
-    const channelCount = await sql`SELECT COUNT(*) as count FROM support_channels WHERE is_active = true`
+    const channelCount = await sql`SELECT COUNT(*) as count FROM support_channels WHERE is_active = true AND org_id = ${orgId}`
     
     // Count messages
-    const messageCount = await sql`SELECT COUNT(*) as count FROM support_messages`
+    const messageCount = await sql`SELECT COUNT(*) as count FROM support_messages WHERE org_id = ${orgId}`
     
     // Recent messages
     const recentMessages = await sql`
       SELECT id, channel_id, sender_name, text_content, created_at 
       FROM support_messages 
+      WHERE org_id = ${orgId}
       ORDER BY created_at DESC 
       LIMIT 10
     `
@@ -51,7 +54,7 @@ export default async function handler(req: Request): Promise<Response> {
     const channels = await sql`
       SELECT id, name, telegram_chat_id, last_message_at, unread_count
       FROM support_channels
-      WHERE is_active = true
+      WHERE is_active = true AND org_id = ${orgId}
       ORDER BY last_message_at DESC NULLS LAST
       LIMIT 10
     `

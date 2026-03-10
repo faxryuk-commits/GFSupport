@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut } from '../services/api.service'
-import type { Agent } from '@/entities/agent'
+import type { Agent } from '../types'
 
 interface AgentsResponse {
   agents: Agent[]

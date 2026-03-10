@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless'
+import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
@@ -41,17 +42,19 @@ export default async function handler(req: Request) {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Org-Id',
       },
     })
   }
 
   const sql = getSQL()
+  const orgId = await getRequestOrgId(req)
   
   try {
     // Проверяем настройки автоответчика
     const settings = await sql`
       SELECT value FROM support_settings WHERE key = 'autoresponder_enabled'
+        AND org_id = ${orgId}
     `.catch(() => [])
     
     const autoresponderEnabled = settings[0]?.value === 'true'
@@ -63,6 +66,7 @@ export default async function handler(req: Request) {
       LEFT JOIN support_agent_sessions s ON s.agent_id = a.id
       WHERE a.status = 'online' 
         AND (s.ended_at IS NULL OR s.ended_at > NOW() - INTERVAL '10 minutes')
+        AND a.org_id = ${orgId}
     `
     
     const allOffline = onlineAgents.length === 0
@@ -82,6 +86,7 @@ export default async function handler(req: Request) {
       FROM support_messages m
       JOIN support_channels c ON c.id = m.channel_id
       WHERE m.is_from_client = true
+        AND m.org_id = ${orgId}
         AND m.created_at > NOW() - INTERVAL '1 hour'
         AND NOT EXISTS (
           SELECT 1 FROM support_messages m2 
