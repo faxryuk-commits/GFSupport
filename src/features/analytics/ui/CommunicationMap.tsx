@@ -97,7 +97,7 @@ function SourceBadge({ source }: { source: string }) {
     : <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">TG</span>
 }
 
-export function CommunicationMap() {
+export function CommunicationMap({ source = 'all' }: { source?: string }) {
   const [data, setData] = useState<CommData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -105,7 +105,7 @@ export function CommunicationMap() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const result = await apiGet<CommData>('/analytics/conversation-sessions?days=14')
+      const result = await apiGet<CommData>(`/analytics/conversation-sessions?days=14&source=${source}`)
       setData(result)
       setError(null)
     } catch (e: any) {
@@ -113,7 +113,7 @@ export function CommunicationMap() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [source])
 
   useEffect(() => { loadData() }, [loadData])
 

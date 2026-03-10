@@ -9,7 +9,9 @@ import {
   Target,
   MessageSquare,
   Timer,
-  BarChart3
+  BarChart3,
+  MessageCircle,
+  Phone
 } from 'lucide-react'
 import { AgentPerformanceTable, AgentExpertise, WeeklyHeatmap, CollaborationMetrics, CommunicationMap } from '@/features/analytics'
 import type { AgentExpertiseEntry, WeeklyEntry, CollaborationData } from '@/features/analytics'
@@ -129,6 +131,14 @@ interface SLAReport {
   weeklyWorkload: WeeklyEntry[]
   teamWeekly: number[]
   collaboration: CollaborationData
+  sourceBreakdown: Array<{
+    source: string
+    totalMessages: number
+    clientMessages: number
+    agentMessages: number
+    avgResponseMin: number | null
+    channels: number
+  }>
 }
 
 export function SLAReportPage() {
@@ -144,6 +154,7 @@ export function SLAReportPage() {
   const [fromDate, setFromDate] = useState(weekAgo.toISOString().split('T')[0])
   const [toDate, setToDate] = useState(today.toISOString().split('T')[0])
   const [slaMinutes, setSlaMinutes] = useState(10)
+  const [source, setSource] = useState<'all' | 'telegram' | 'whatsapp'>('all')
   
   const loadReport = async () => {
     setLoading(true)
@@ -152,7 +163,7 @@ export function SLAReportPage() {
     try {
       const token = localStorage.getItem('support_agent_token')
       const res = await fetch(
-        `/api/support/analytics/sla-report?from=${fromDate}&to=${toDate}&sla_minutes=${slaMinutes}`,
+        `/api/support/analytics/sla-report?from=${fromDate}&to=${toDate}&sla_minutes=${slaMinutes}&source=${source}`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       
@@ -242,6 +253,35 @@ export function SLAReportPage() {
               <option value={60}>60 минут</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              <MessageCircle className="w-4 h-4 inline mr-1" />
+              Источник
+            </label>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              {([
+                { value: 'all', label: 'Все' },
+                { value: 'telegram', label: 'Telegram' },
+                { value: 'whatsapp', label: 'WhatsApp' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSource(opt.value)}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    source === opt.value
+                      ? opt.value === 'telegram' ? 'bg-blue-500 text-white'
+                        : opt.value === 'whatsapp' ? 'bg-green-500 text-white'
+                        : 'bg-slate-700 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {opt.value === 'telegram' && <span className="mr-1">✈</span>}
+                  {opt.value === 'whatsapp' && <Phone className="w-3.5 h-3.5 inline mr-1" />}
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={loadReport}
             disabled={loading}
@@ -267,6 +307,54 @@ export function SLAReportPage() {
       
       {report && (
         <>
+          {/* Source Breakdown Bar */}
+          {report.sourceBreakdown && report.sourceBreakdown.length > 1 && source === 'all' && (() => {
+            const total = report.sourceBreakdown.reduce((s, b) => s + b.totalMessages, 0)
+            if (total === 0) return null
+            const tg = report.sourceBreakdown.find(b => b.source === 'telegram')
+            const wa = report.sourceBreakdown.find(b => b.source === 'whatsapp')
+            const tgPct = tg ? Math.round((tg.totalMessages / total) * 100) : 0
+            const waPct = wa ? Math.round((wa.totalMessages / total) * 100) : 0
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <BarChart3 className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm font-medium text-slate-700">Разбивка по источнику</span>
+                </div>
+                <div className="flex rounded-full h-3 overflow-hidden mb-3">
+                  {tgPct > 0 && <div className="bg-blue-500 transition-all" style={{ width: `${tgPct}%` }} />}
+                  {waPct > 0 && <div className="bg-green-500 transition-all" style={{ width: `${waPct}%` }} />}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {tg && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">Telegram — {tgPct}%</p>
+                        <p className="text-xs text-slate-500">
+                          {tg.totalMessages.toLocaleString()} сообщ. • {tg.channels} каналов
+                          {tg.avgResponseMin !== null && ` • ~${tg.avgResponseMin} мин`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {wa && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">WhatsApp — {waPct}%</p>
+                        <p className="text-xs text-slate-500">
+                          {wa.totalMessages.toLocaleString()} сообщ. • {wa.channels} каналов
+                          {wa.avgResponseMin !== null && ` • ~${wa.avgResponseMin} мин`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Main Summary Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <button onClick={() => setDrilldownMetric('sla')} className={`rounded-xl border p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all ${getComplianceBg(report.responseTimeSummary.slaCompliancePercent)}`}>
@@ -437,7 +525,7 @@ export function SLAReportPage() {
 
           {/* Tab Content: Communications */}
           {activeTab === 'communications' && (
-            <CommunicationMap />
+            <CommunicationMap source={source} />
           )}
         </>
       )}

@@ -47,6 +47,7 @@ export default async function handler(req: Request): Promise<Response> {
   const toDate = url.searchParams.get('to') || new Date().toISOString().split('T')[0]
   const slaMinutes = parseInt(url.searchParams.get('sla_minutes') || '10')
   const market = url.searchParams.get('market') || null
+  const source = url.searchParams.get('source') || 'all'
   
   const fromDateTime = `${fromDate}T00:00:00+05:00` // Tashkent timezone
   const toDateTime = `${toDate}T23:59:59+05:00`
@@ -73,6 +74,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE m.created_at >= ${fromDateTime}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${toDateTime}::timestamptz
           AND (${market}::text IS NULL OR c.market_id = ${market})
+          AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       ),
       client_messages AS (
         SELECT id, channel_id, sender_name as client_name, text_content, created_at as message_at, channel_name
@@ -183,6 +185,7 @@ export default async function handler(req: Request): Promise<Response> {
       LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
       WHERE c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ORDER BY c.created_at DESC
       LIMIT 200
     `
@@ -200,6 +203,7 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(DISTINCT m.channel_id) as channels_served,
         COUNT(DISTINCT DATE(m.created_at)) as active_days
       FROM support_messages m
+      JOIN support_channels sc ON sc.id = m.channel_id
       LEFT JOIN support_agents a ON (
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
@@ -210,6 +214,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(sc.source, 'telegram') = ${source})
       GROUP BY COALESCE(a.name, m.sender_name), COALESCE(a.role, 'agent')
       ORDER BY total_messages DESC
     `
@@ -222,8 +227,10 @@ export default async function handler(req: Request): Promise<Response> {
         COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases
       FROM support_cases c
       JOIN support_agents a ON a.id::text = c.assigned_to::text
+      LEFT JOIN support_channels ch ON ch.id = c.channel_id
       WHERE c.created_at >= ${fromDateTime}::timestamptz
         AND c.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       GROUP BY a.name
     `
 
@@ -630,6 +637,7 @@ export default async function handler(req: Request): Promise<Response> {
         END as category,
         COUNT(*) as msg_count
       FROM support_messages m
+      JOIN support_channels sc ON sc.id = m.channel_id
       LEFT JOIN support_agents a ON (
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
@@ -640,6 +648,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(sc.source, 'telegram') = ${source})
       GROUP BY COALESCE(a.name, m.sender_name), category
       ORDER BY msg_count DESC
     `
@@ -716,6 +725,7 @@ export default async function handler(req: Request): Promise<Response> {
         EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent') as dow,
         COUNT(*) as msg_count
       FROM support_messages m
+      JOIN support_channels sc ON sc.id = m.channel_id
       LEFT JOIN support_agents a ON (
         a.telegram_id::text = m.sender_id::text
         OR a.id::text = m.sender_id::text
@@ -726,6 +736,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(sc.source, 'telegram') = ${source})
       GROUP BY COALESCE(a.name, m.sender_name), EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent')
       ORDER BY agent_name, dow
     `
@@ -774,6 +785,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND m.sender_role IN ('support', 'team', 'agent')
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY m.channel_id, c.name
       HAVING COUNT(DISTINCT COALESCE(a.name, m.sender_name)) >= 1
       ORDER BY agent_count DESC
@@ -799,11 +811,39 @@ export default async function handler(req: Request): Promise<Response> {
       })),
     }
 
+    // =============================================
+    // 12. РАЗБИВКА ПО ИСТОЧНИКУ (Telegram / WhatsApp)
+    // =============================================
+    let sourceBreakdown: any[] = []
+    try {
+      sourceBreakdown = await sql`
+        WITH src AS (
+          SELECT
+            COALESCE(c.source, 'telegram') as src,
+            COUNT(*) as total_messages,
+            COUNT(*) FILTER (WHERE m.is_from_client = true) as client_messages,
+            COUNT(*) FILTER (WHERE m.is_from_client = false) as agent_messages,
+            ROUND(AVG(m.response_time_ms) FILTER (
+              WHERE m.response_time_ms IS NOT NULL AND m.response_time_ms > 0 AND m.response_time_ms < 86400000
+            ))::int as avg_response_ms,
+            COUNT(DISTINCT m.channel_id) as channels
+          FROM support_messages m
+          JOIN support_channels c ON c.id = m.channel_id
+          WHERE m.created_at >= ${fromDateTime}::timestamptz
+            AND m.created_at <= ${toDateTime}::timestamptz
+            AND (${market}::text IS NULL OR c.market_id = ${market})
+          GROUP BY COALESCE(c.source, 'telegram')
+        )
+        SELECT * FROM src ORDER BY total_messages DESC
+      `
+    } catch {}
+
     return json({
       period: {
         from: fromDate,
         to: toDate,
         slaMinutes,
+        source,
         timezone: 'Asia/Tashkent (UTC+5)',
       },
       
@@ -876,6 +916,16 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Коллаборация
       collaboration,
+
+      // Разбивка по источнику
+      sourceBreakdown: sourceBreakdown.map((s: any) => ({
+        source: s.src,
+        totalMessages: parseInt(s.total_messages || '0'),
+        clientMessages: parseInt(s.client_messages || '0'),
+        agentMessages: parseInt(s.agent_messages || '0'),
+        avgResponseMin: s.avg_response_ms ? Math.round(s.avg_response_ms / 60000 * 10) / 10 : null,
+        channels: parseInt(s.channels || '0'),
+      })),
     })
     
   } catch (e: any) {

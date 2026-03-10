@@ -37,6 +37,7 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const market = url.searchParams.get('market') || null
   const days = parseInt(url.searchParams.get('days') || '14')
+  const source = url.searchParams.get('source') || 'all'
 
   try {
     // 1. Общая статистика
@@ -51,6 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
     `, [{}])
     const ms = msgStatsRows[0] || {}
 
@@ -64,6 +66,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND c.last_message_at > NOW() - INTERVAL '7 day'
         AND COALESCE(c.is_active, true) = true
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       ORDER BY c.last_message_at ASC
       LIMIT 15
     `)
@@ -85,6 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND m.is_from_client = false
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY a.name, a.position
       ORDER BY messages_sent DESC
       LIMIT 20
@@ -101,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY 1 ORDER BY 1
     `)
 
@@ -116,6 +121,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY 1 ORDER BY 1
     `)
 
@@ -131,6 +137,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY c.id, c.name, c.source
       ORDER BY total_messages DESC
       LIMIT 10
@@ -148,6 +155,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN support_channels c ON m.channel_id = c.id
       WHERE m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY 1 ORDER BY 1
     `)
 
