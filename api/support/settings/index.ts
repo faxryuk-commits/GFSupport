@@ -104,21 +104,25 @@ export default async function handler(req: Request): Promise<Response> {
       const settings = { ...DEFAULT_SETTINGS, ...dbSettings }
 
       // Маскируем токены для безопасности
+      const hasBotToken = !!dbSettings.telegram_bot_token
+      const hasOpenAIKey = !!dbSettings.openai_api_key
+
       const maskedSettings = {
         ...settings,
-        telegram_bot_token: settings.telegram_bot_token 
+        telegram_bot_token: hasBotToken
           ? `${settings.telegram_bot_token.slice(0, 10)}...${settings.telegram_bot_token.slice(-4)}`
-          : '(using env)',
-        openai_api_key: settings.openai_api_key
+          : '',
+        openai_api_key: hasOpenAIKey
           ? `sk-...${settings.openai_api_key.slice(-4)}`
-          : '(using env)',
+          : '',
       }
 
-      // Проверяем статус env переменных
+      // Показываем env vars только для org_delever (legacy)
+      const isLegacyOrg = orgId === 'org_delever'
       const envStatus = {
-        TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
-        OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
-        TELEGRAM_CHAT_ID: !!process.env.TELEGRAM_CHAT_ID,
+        TELEGRAM_BOT_TOKEN: isLegacyOrg && !!process.env.TELEGRAM_BOT_TOKEN,
+        OPENAI_API_KEY: isLegacyOrg && !!process.env.OPENAI_API_KEY,
+        TELEGRAM_CHAT_ID: isLegacyOrg && !!process.env.TELEGRAM_CHAT_ID,
       }
 
       return json({

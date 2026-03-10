@@ -75,6 +75,7 @@ export function OrgRegisterPage() {
 
       localStorage.setItem('support_agent_token', data.token)
       localStorage.setItem('support_agent_data', JSON.stringify(data.agent))
+      localStorage.setItem('support_agent', JSON.stringify(data.agent))
       localStorage.setItem('support_agent_id', data.agent.id)
       if (data.org) {
         localStorage.setItem('support_org_id', data.org.id)
@@ -224,11 +225,6 @@ export function OrgRegisterPage() {
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">Готово!</h2>
                 <p className="text-slate-500 mt-2">Организация <strong>{companyName}</strong> успешно создана.</p>
-                {orgSlug && (
-                  <p className="text-sm text-slate-400 mt-1">
-                    Ваш адрес: <span className="font-mono text-blue-600">{orgSlug}.gfsupport.app</span>
-                  </p>
-                )}
               </div>
               <button
                 onClick={() => navigate('/overview')}
