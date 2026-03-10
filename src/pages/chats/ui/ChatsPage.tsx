@@ -1055,12 +1055,7 @@ export function ChatsPage() {
               onUseQuickReply={(text) => { setMessageText(text); setShowQuickReplies(false) }}
               isLoadingAI={isLoadingAI}
               disabled={isSending}
-              mentionUsers={channelMembers.length > 0 ? channelMembers : agents.map(a => ({
-                id: a.id,
-                name: a.name,
-                username: a.username,
-                role: 'support' as const,
-              }))}
+              mentionUsers={channelMembers}
             />
           </div>
 

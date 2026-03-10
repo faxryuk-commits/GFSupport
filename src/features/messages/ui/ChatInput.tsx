@@ -25,13 +25,13 @@ export interface AttachedFile {
   type: 'image' | 'video' | 'audio' | 'document'
 }
 
-// Участник для упоминаний
 export interface MentionUser {
   id: string
   name: string
   username?: string
   role?: 'support' | 'team' | 'client'
   avatarUrl?: string
+  isAll?: boolean
 }
 
 interface ChatInputProps {
@@ -243,11 +243,14 @@ export function ChatInput({
   const filteredMentionUsers = mentionUsers.filter(user => {
     if (!mentionQuery) return true
     const query = mentionQuery.toLowerCase()
+    if (user.isAll) {
+      return 'все'.includes(query) || 'all'.includes(query) || 'всех'.includes(query)
+    }
     return (
       user.name.toLowerCase().includes(query) ||
       user.username?.toLowerCase().includes(query)
     )
-  }).slice(0, 20)
+  }).slice(0, 25)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Handle Escape key - close mentions or cancel reply
@@ -492,12 +495,11 @@ export function ChatInput({
         <div className="p-4">
           <div className="flex items-end gap-3">
             <div className="flex-1 relative">
-              {/* Mentions dropdown */}
               {showMentions && filteredMentionUsers.length > 0 && (
                 <div className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20 max-h-72 overflow-y-auto">
-                  <div className="px-3 py-1 text-xs text-slate-500 border-b border-slate-100 flex items-center gap-1">
+                  <div className="px-3 py-1.5 text-xs text-slate-500 border-b border-slate-100 flex items-center gap-1">
                     <AtSign className="w-3 h-3" />
-                    Упомянуть участника
+                    Участники группы
                   </div>
                   {filteredMentionUsers.map((user, index) => (
                     <button
@@ -505,29 +507,38 @@ export function ChatInput({
                       onClick={() => insertMention(user)}
                       className={`w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 ${index === 0 ? 'bg-blue-50' : ''}`}
                     >
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
-                        {user.name.charAt(0).toUpperCase()}
-                      </div>
+                      {user.isAll ? (
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          @
+                        </div>
+                      ) : (
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium flex-shrink-0 ${
+                          user.role === 'support' ? 'bg-gradient-to-br from-blue-400 to-blue-600' :
+                          user.role === 'team' ? 'bg-gradient-to-br from-purple-400 to-purple-600' :
+                          'bg-gradient-to-br from-slate-400 to-slate-600'
+                        }`}>
+                          {user.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-800 truncate">{user.name}</p>
-                        {user.username && (
+                        <p className={`text-sm font-medium truncate ${user.isAll ? 'text-amber-700' : 'text-slate-800'}`}>
+                          {user.isAll ? '@Все участники' : user.name}
+                        </p>
+                        {!user.isAll && user.username && (
                           <p className="text-xs text-slate-500">@{user.username}</p>
                         )}
                       </div>
-                      {user.role && (
+                      {!user.isAll && user.role && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                           user.role === 'support' ? 'bg-blue-100 text-blue-600' :
                           user.role === 'team' ? 'bg-purple-100 text-purple-600' :
                           'bg-slate-100 text-slate-600'
                         }`}>
-                          {user.role === 'support' ? 'Поддержка' : user.role === 'team' ? 'Команда' : 'Клиент'}
+                          {user.role === 'support' ? 'Сотрудник' : user.role === 'team' ? 'Участник' : 'Клиент'}
                         </span>
                       )}
                     </button>
                   ))}
-                  {filteredMentionUsers.length === 0 && (
-                    <p className="px-3 py-2 text-sm text-slate-400">Никого не найдено</p>
-                  )}
                 </div>
               )}
               
