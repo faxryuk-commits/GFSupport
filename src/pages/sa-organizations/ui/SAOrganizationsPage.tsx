@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiGet, apiPost, apiPut, apiDelete } from '@/shared/services/api.service'
-import { Building2, Plus, Users, MessageSquare, FolderOpen, Activity, Check, X, Edit2, Trash2, ChevronDown, ChevronUp, Globe, Bot, Brain } from 'lucide-react'
+import { saGet, saPost, saPut, saDelete } from '@/shared/services/sa-api.service'
+import {
+  Building2, Plus, Users, Globe, MessageSquare, Bot, Brain,
+  Check, X, Trash2, ChevronDown, ChevronUp
+} from 'lucide-react'
 
 interface OrgData {
   id: string
@@ -21,14 +24,6 @@ interface OrgData {
   stats?: { agents: number; channels: number; messagesLast30d: number }
 }
 
-interface GlobalStats {
-  organizations: { total: number; active: number }
-  agents: number
-  channels: number
-  messages: { today: number; last30d: number }
-  openCases: number
-}
-
 interface NewOrgForm {
   name: string
   slug: string
@@ -39,11 +34,13 @@ interface NewOrgForm {
   openaiApiKey: string
 }
 
-const emptyForm: NewOrgForm = { name: '', slug: '', plan: 'starter', maxAgents: 5, maxChannels: 50, telegramBotToken: '', openaiApiKey: '' }
+const emptyForm: NewOrgForm = {
+  name: '', slug: '', plan: 'starter', maxAgents: 5, maxChannels: 50,
+  telegramBotToken: '', openaiApiKey: '',
+}
 
-export function SuperAdminPage() {
+export function SAOrganizationsPage() {
   const [orgs, setOrgs] = useState<OrgData[]>([])
-  const [stats, setStats] = useState<GlobalStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<NewOrgForm>(emptyForm)
@@ -53,12 +50,8 @@ export function SuperAdminPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [orgsData, statsData] = await Promise.all([
-        apiGet<{ organizations: OrgData[] }>('/admin/organizations'),
-        apiGet<{ global: GlobalStats }>('/admin/stats'),
-      ])
-      setOrgs(orgsData.organizations || [])
-      setStats(statsData.global || null)
+      const data = await saGet<{ organizations: OrgData[] }>('/admin/organizations')
+      setOrgs(data.organizations || [])
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -73,7 +66,7 @@ export function SuperAdminPage() {
     setSaving(true)
     setError('')
     try {
-      await apiPost('/admin/organizations', form)
+      await saPost('/admin/organizations', form)
       setShowForm(false)
       setForm(emptyForm)
       await fetchData()
@@ -86,7 +79,7 @@ export function SuperAdminPage() {
 
   const handleToggleActive = async (org: OrgData) => {
     try {
-      await apiPut('/admin/organizations', { id: org.id, isActive: !org.isActive })
+      await saPut('/admin/organizations', { id: org.id, isActive: !org.isActive })
       await fetchData()
     } catch (e: any) {
       setError(e.message)
@@ -96,19 +89,20 @@ export function SuperAdminPage() {
   const handleDelete = async (orgId: string) => {
     if (!confirm('Деактивировать организацию?')) return
     try {
-      await apiDelete(`/admin/organizations?id=${orgId}`)
+      await saDelete(`/admin/organizations?id=${orgId}`)
       await fetchData()
     } catch (e: any) {
       setError(e.message)
     }
   }
 
-  const slugify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  const slugify = (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -116,15 +110,14 @@ export function SuperAdminPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Управление организациями</h1>
-            <p className="text-sm text-slate-500 mt-1">Суперадминистрирование платформы GFSupport</p>
+            <h1 className="text-2xl font-bold text-slate-900">Организации</h1>
+            <p className="text-sm text-slate-500 mt-1">Управление клиентскими аккаунтами</p>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-medium"
           >
             <Plus className="w-4 h-4" />
             Новая организация
@@ -138,18 +131,6 @@ export function SuperAdminPage() {
           </div>
         )}
 
-        {/* Global Stats */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <StatCard icon={Building2} label="Организации" value={`${stats.organizations.active} / ${stats.organizations.total}`} color="blue" />
-            <StatCard icon={Users} label="Агенты" value={stats.agents} color="indigo" />
-            <StatCard icon={Globe} label="Каналы" value={stats.channels} color="purple" />
-            <StatCard icon={MessageSquare} label="Сообщения / 30д" value={stats.messages.last30d.toLocaleString()} color="green" />
-            <StatCard icon={FolderOpen} label="Открытые кейсы" value={stats.openCases} color="amber" />
-          </div>
-        )}
-
-        {/* Create Form */}
         {showForm && (
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <h3 className="font-semibold text-slate-900 mb-4">Создать организацию</h3>
@@ -157,9 +138,9 @@ export function SuperAdminPage() {
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1">Название</label>
                 <input
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                   value={form.name}
-                  onChange={e => { setForm(f => ({ ...f, name: e.target.value, slug: slugify(e.target.value) })) }}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value, slug: slugify(e.target.value) }))}
                   placeholder="Компания ООО"
                 />
               </div>
@@ -167,12 +148,12 @@ export function SuperAdminPage() {
                 <label className="text-sm font-medium text-slate-700 block mb-1">Slug (URL)</label>
                 <div className="flex items-center gap-1">
                   <input
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-mono text-sm"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-mono text-sm"
                     value={form.slug}
                     onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
                     placeholder="company"
                   />
-                  <span className="text-xs text-slate-400 whitespace-nowrap">.gfsupport.app</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">.gfsupport.uz</span>
                 </div>
               </div>
               <div>
@@ -219,31 +200,36 @@ export function SuperAdminPage() {
               <button
                 onClick={handleCreate}
                 disabled={saving || !form.name || !form.slug}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+                className="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
               >
                 {saving ? 'Создание...' : 'Создать'}
               </button>
-              <button onClick={() => { setShowForm(false); setForm(emptyForm) }} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+              <button
+                onClick={() => { setShowForm(false); setForm(emptyForm) }}
+                className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
                 Отмена
               </button>
             </div>
           </div>
         )}
 
-        {/* Orgs List */}
         <div className="space-y-3">
           {orgs.map(org => (
-            <div key={org.id} className={`bg-white rounded-2xl border ${org.isActive ? 'border-slate-200' : 'border-red-200 bg-red-50/30'} shadow-sm overflow-hidden`}>
+            <div
+              key={org.id}
+              className={`bg-white rounded-2xl border ${org.isActive ? 'border-slate-200' : 'border-red-200 bg-red-50/30'} shadow-sm overflow-hidden`}
+            >
               <div
                 className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-slate-50/50 transition-colors"
                 onClick={() => setExpandedOrg(expandedOrg === org.id ? null : org.id)}
               >
                 <div className="flex items-center gap-4 min-w-0">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${org.isActive ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${org.isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
                     <Building2 className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-900 truncate">{org.name}</span>
                       <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-mono">{org.slug}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -254,18 +240,16 @@ export function SuperAdminPage() {
                       {!org.isActive && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Неактивна</span>}
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
-                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />{org.stats?.agents || 0} агентов</span>
-                      <span className="flex items-center gap-1"><Globe className="w-3 h-3" />{org.stats?.channels || 0} каналов</span>
-                      <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" />{(org.stats?.messagesLast30d || 0).toLocaleString()} / 30д</span>
-                      {org.hasTelegram && <span className="flex items-center gap-1"><Bot className="w-3 h-3 text-blue-500" />TG</span>}
-                      {org.hasWhatsApp && <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3 text-green-500" />WA</span>}
-                      {org.hasOpenAI && <span className="flex items-center gap-1"><Brain className="w-3 h-3 text-purple-500" />AI</span>}
+                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />{org.stats?.agents || 0}</span>
+                      <span className="flex items-center gap-1"><Globe className="w-3 h-3" />{org.stats?.channels || 0}</span>
+                      <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" />{(org.stats?.messagesLast30d || 0).toLocaleString()}</span>
+                      {org.hasTelegram && <Bot className="w-3 h-3 text-blue-500" />}
+                      {org.hasWhatsApp && <MessageSquare className="w-3 h-3 text-green-500" />}
+                      {org.hasOpenAI && <Brain className="w-3 h-3 text-purple-500" />}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {expandedOrg === org.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-                </div>
+                {expandedOrg === org.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
               </div>
 
               {expandedOrg === org.id && (
@@ -277,11 +261,13 @@ export function SuperAdminPage() {
                     <MiniStat label="AI Модель" value={org.aiModel || 'gpt-4o-mini'} />
                   </div>
                   {org.telegramBotUsername && (
-                    <p className="text-sm text-slate-600 mb-3">Telegram: <span className="font-mono text-blue-600">@{org.telegramBotUsername}</span></p>
+                    <p className="text-sm text-slate-600 mb-3">
+                      Telegram: <span className="font-mono text-blue-600">@{org.telegramBotUsername}</span>
+                    </p>
                   )}
                   <div className="flex gap-2">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleToggleActive(org) }}
+                      onClick={e => { e.stopPropagation(); handleToggleActive(org) }}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${
                         org.isActive ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'
                       }`}
@@ -290,7 +276,7 @@ export function SuperAdminPage() {
                     </button>
                     {org.id !== 'org_delever' && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(org.id) }}
+                        onClick={e => { e.stopPropagation(); handleDelete(org.id) }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 hover:bg-slate-100"
                       >
                         <Trash2 className="w-3.5 h-3.5" />Удалить
@@ -314,27 +300,6 @@ export function SuperAdminPage() {
   )
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
-  const colors: Record<string, string> = {
-    blue: 'bg-blue-50 text-blue-600',
-    indigo: 'bg-indigo-50 text-indigo-600',
-    purple: 'bg-purple-50 text-purple-600',
-    green: 'bg-green-50 text-green-600',
-    amber: 'bg-amber-50 text-amber-600',
-  }
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors[color] || colors.blue}`}>
-          <Icon className="w-4 h-4" />
-        </div>
-        <span className="text-xs text-slate-500 font-medium">{label}</span>
-      </div>
-      <p className="text-xl font-bold text-slate-900">{value}</p>
-    </div>
-  )
-}
-
 function MiniStat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="bg-slate-50 rounded-lg px-3 py-2">
@@ -344,4 +309,4 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
   )
 }
 
-export default SuperAdminPage
+export default SAOrganizationsPage

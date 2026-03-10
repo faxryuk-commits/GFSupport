@@ -17,7 +17,6 @@ import {
   Target,
   Globe,
   ChevronDown,
-  Shield,
 } from 'lucide-react'
 
 // CSS for coin flip and shine animations
@@ -134,7 +133,6 @@ const mainNavItems = [
 
 const bottomItems = [
   { path: '/settings', label: 'Настройки', icon: Settings },
-  { path: '/admin', label: 'Суперадмин', icon: Shield, adminOnly: true },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
@@ -362,11 +360,9 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       <div className="px-3 pb-4">
         {/* Settings */}
         <div className="space-y-1 mb-4">
-          {bottomItems
-            .filter(item => !('adminOnly' in item && item.adminOnly) || currentUser?.role === 'Администратор')
-            .map(item => (
-              <NavItem key={item.path} {...item} />
-            ))}
+          {bottomItems.map(item => (
+            <NavItem key={item.path} {...item} />
+          ))}
         </div>
 
         {/* User */}

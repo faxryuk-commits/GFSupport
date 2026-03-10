@@ -1,4 +1,5 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
+import { extractSuperAdminContext } from '../lib/sa-auth.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getRequestOrgId } from '../lib/org.js'
 
@@ -8,9 +9,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
 
-  const ctx = await extractAgentContext(req)
-  if (!ctx.agentId) return json({ error: 'Unauthorized' }, 401)
-
+  const sa = await extractSuperAdminContext(req)
   const sql = getSQL()
   const url = new URL(req.url)
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 200)
@@ -18,7 +17,7 @@ export default async function handler(req: Request): Promise<Response> {
   const action = url.searchParams.get('action')
   const agentFilter = url.searchParams.get('agentId')
 
-  if (ctx.isSuperAdmin || ctx.isGlobalAdmin) {
+  if (sa.saId) {
     const orgFilter = url.searchParams.get('orgId')
 
     let logs
@@ -62,7 +61,9 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  // Non-superadmin: only see own org's logs
+  // Non-superadmin: org-admin via agent token
+  const ctx = await extractAgentContext(req)
+  if (!ctx.agentId) return json({ error: 'Unauthorized' }, 401)
   const orgId = await getRequestOrgId(req)
   if (!ctx.isOrgAdmin) return json({ error: 'Admin access required' }, 403)
 

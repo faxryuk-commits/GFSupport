@@ -1,14 +1,13 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
+import { extractSuperAdminContext } from '../lib/sa-auth.js'
 
 export const config = { runtime: 'edge' }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
-  const ctx = await extractAgentContext(req)
-  if (!ctx.agentId) return json({ error: 'Unauthorized' }, 401)
-  if (!ctx.isSuperAdmin && !ctx.isGlobalAdmin) return json({ error: 'Superadmin access required' }, 403)
+  const sa = await extractSuperAdminContext(req)
+  if (!sa.saId) return json({ error: 'Superadmin access required' }, 403)
 
   const sql = getSQL()
 

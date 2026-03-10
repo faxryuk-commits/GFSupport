@@ -1,20 +1,15 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
+import { extractSuperAdminContext } from '../lib/sa-auth.js'
 import { invalidateOrgCache } from '../lib/org.js'
 import { writeAuditLog } from '../lib/audit.js'
 
 export const config = { runtime: 'edge' }
 
-function requireSuperAdmin(ctx: Awaited<ReturnType<typeof extractAgentContext>>) {
-  return ctx.isSuperAdmin || ctx.isGlobalAdmin
-}
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
-  const ctx = await extractAgentContext(req)
-  if (!ctx.agentId) return json({ error: 'Unauthorized' }, 401)
-  if (!requireSuperAdmin(ctx)) return json({ error: 'Superadmin access required' }, 403)
+  const sa = await extractSuperAdminContext(req)
+  if (!sa.saId) return json({ error: 'Superadmin access required' }, 403)
 
   const sql = getSQL()
   const url = new URL(req.url)
@@ -90,7 +85,7 @@ export default async function handler(req: Request): Promise<Response> {
       )
     `
 
-    writeAuditLog({ orgId, agentId: ctx.agentId!, action: 'org.create', details: { name, slug } })
+    writeAuditLog({ orgId, agentId: sa.saId!, action: 'org.create', details: { name, slug } })
 
     return json({ success: true, orgId, message: `Organization "${name}" created` }, 201)
   }
@@ -125,7 +120,7 @@ export default async function handler(req: Request): Promise<Response> {
     `
 
     invalidateOrgCache(id)
-    writeAuditLog({ orgId: id, agentId: ctx.agentId!, action: 'org.update', details: body })
+    writeAuditLog({ orgId: id, agentId: sa.saId!, action: 'org.update', details: body })
 
     return json({ success: true, message: 'Organization updated' })
   }
@@ -137,7 +132,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     await sql`UPDATE support_organizations SET is_active = false, updated_at = NOW() WHERE id = ${orgId}`
     invalidateOrgCache(orgId)
-    writeAuditLog({ orgId, agentId: ctx.agentId!, action: 'org.deactivate' })
+    writeAuditLog({ orgId, agentId: sa.saId!, action: 'org.deactivate' })
 
     return json({ success: true, message: 'Organization deactivated' })
   }
