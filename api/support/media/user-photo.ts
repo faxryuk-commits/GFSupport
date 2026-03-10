@@ -68,7 +68,13 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  let botToken: string | null = null
+  try {
+    const sql2 = getSQL()
+    const tokenRows = await sql2`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    if (tokenRows[0]?.value) botToken = tokenRows[0].value
+  } catch {}
+  if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN || null
   if (!botToken) {
     return new Response(JSON.stringify({ error: 'Bot not configured' }), { 
       status: 500, 
@@ -76,41 +82,51 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
+  // Fallback: redirect to generated avatar
+  function fallbackRedirect(name?: string) {
+    const label = encodeURIComponent(name || userId || '?')
+    return Response.redirect(`https://ui-avatars.com/api/?name=${label}&background=6366f1&color=fff&size=128`, 302)
+  }
+
   try {
     const sql = getSQL()
 
-    // Skip non-numeric IDs (WhatsApp phone numbers that aren't valid Telegram IDs)
+    // For WhatsApp phone numbers — look up sender_name and redirect to placeholder
     const isValidTelegramId = /^\d{5,15}$/.test(userId)
     if (!isValidTelegramId) {
-      return new Response(null, { status: 404, headers: corsHeaders })
+      const nameRow = await sql`
+        SELECT sender_name FROM support_messages WHERE sender_id = ${userId} LIMIT 1
+      `.catch(() => [])
+      return fallbackRedirect(nameRow[0]?.sender_name)
     }
 
     const cached = await sql`
-      SELECT sender_photo_url FROM support_messages 
+      SELECT sender_photo_url, sender_name FROM support_messages 
       WHERE sender_id = ${userId} AND sender_photo_url IS NOT NULL
       ORDER BY created_at DESC LIMIT 1
     `
-    
+
+    const senderName = cached[0]?.sender_name
     let photoUrl = cached[0]?.sender_photo_url
-    
+
     if (photoUrl) {
       try {
         const checkRes = await fetch(photoUrl, { method: 'HEAD' })
         if (!checkRes.ok) photoUrl = null
       } catch { photoUrl = null }
     }
-    
+
     if (!photoUrl) {
       photoUrl = await getFreshUserPhotoUrl(botToken, userId)
       if (photoUrl) {
         await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`.catch(() => {})
       }
     }
-    
+
     if (!photoUrl) {
-      return new Response(null, { status: 404, headers: corsHeaders })
+      return fallbackRedirect(senderName)
     }
-    
+
     try {
       let imageRes = await fetch(photoUrl)
       if (!imageRes.ok) {
@@ -119,9 +135,9 @@ export default async function handler(req: Request): Promise<Response> {
           await sql`UPDATE support_messages SET sender_photo_url = ${photoUrl} WHERE sender_id = ${userId}`.catch(() => {})
           imageRes = await fetch(photoUrl)
         }
-        if (!imageRes.ok) return new Response(null, { status: 404, headers: corsHeaders })
+        if (!imageRes.ok) return fallbackRedirect(senderName)
       }
-      
+
       const imageData = await imageRes.arrayBuffer()
       return new Response(imageData, {
         headers: {
@@ -131,11 +147,11 @@ export default async function handler(req: Request): Promise<Response> {
         }
       })
     } catch {
-      return new Response(null, { status: 404, headers: corsHeaders })
+      return fallbackRedirect(senderName)
     }
-    
+
   } catch (e: any) {
     console.error('User photo proxy error:', e)
-    return new Response(null, { status: 404, headers: corsHeaders })
+    return fallbackRedirect()
   }
 }

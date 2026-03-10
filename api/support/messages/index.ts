@@ -10,6 +10,17 @@ function getSQL() {
   return neon(connectionString)
 }
 
+function toProxyUrl(mediaUrl: string | null): string | null {
+  if (!mediaUrl) return null
+  if (mediaUrl.startsWith('tg://')) {
+    return `/api/support/media/proxy?tg=${encodeURIComponent(mediaUrl)}`
+  }
+  if (mediaUrl.includes('api.telegram.org/file/bot')) {
+    return `/api/support/media/proxy?url=${encodeURIComponent(mediaUrl)}`
+  }
+  return mediaUrl
+}
+
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -171,9 +182,9 @@ export default async function handler(req: Request): Promise<Response> {
           contentType: m.content_type || 'text',
           text: m.text_content || '',
           textContent: m.text_content,
-          mediaUrl: m.media_url,
+          mediaUrl: toProxyUrl(m.media_url),
           mediaType: m.content_type !== 'text' ? m.content_type : undefined,
-          thumbnailUrl: m.thumbnail_url,
+          thumbnailUrl: toProxyUrl(m.thumbnail_url),
           fileName: m.file_name,
           fileSize: m.file_size ? parseInt(m.file_size) : undefined,
           mimeType: m.mime_type,

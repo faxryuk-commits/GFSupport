@@ -1,3 +1,5 @@
+import { neon } from '@neondatabase/serverless'
+
 export const config = {
   runtime: 'edge',
 }
@@ -12,6 +14,18 @@ function json(data: any, status = 200) {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   })
+}
+
+async function getBotToken(): Promise<string | null> {
+  try {
+    const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
+    if (connectionString) {
+      const sql = neon(connectionString)
+      const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+      if (rows[0]?.value) return rows[0].value
+    }
+  } catch {}
+  return process.env.TELEGRAM_BOT_TOKEN || null
 }
 
 export default async function handler(req: Request) {
@@ -32,7 +46,7 @@ export default async function handler(req: Request) {
     return json({ error: 'url or file_id parameter required' }, 400)
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const botToken = await getBotToken()
   if (!botToken) {
     return json({ error: 'Bot token not configured' }, 500)
   }

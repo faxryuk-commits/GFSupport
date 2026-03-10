@@ -20,40 +20,23 @@ function json(data: any, status = 200) {
   })
 }
 
-// Convert tg:// URL to real Telegram file URL
-async function convertMediaUrl(mediaUrl: string | null): Promise<string | null> {
+// Convert media URL to proxied URL to avoid CORS/expiry issues
+function toProxyUrl(mediaUrl: string | null): string | null {
   if (!mediaUrl) return null
-  
-  // Already a valid URL
+
+  if (mediaUrl.startsWith('tg://')) {
+    return `/api/support/media/proxy?tg=${encodeURIComponent(mediaUrl)}`
+  }
+
+  if (mediaUrl.includes('api.telegram.org/file/bot')) {
+    return `/api/support/media/proxy?url=${encodeURIComponent(mediaUrl)}`
+  }
+
+  // Vercel Blob and other HTTPS URLs — pass through
   if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
     return mediaUrl
   }
-  
-  // tg:// format - need to convert
-  if (mediaUrl.startsWith('tg://')) {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN
-    if (!botToken) return null
-    
-    try {
-      // Extract file_id from tg://type/file_id
-      const parts = mediaUrl.replace('tg://', '').split('/')
-      if (parts.length < 2) return null
-      
-      const fileId = parts.slice(1).join('/')
-      
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
-      const data = await response.json()
-      
-      if (data.ok && data.result?.file_path) {
-        return `https://api.telegram.org/file/bot${botToken}/${data.result.file_path}`
-      }
-    } catch (e) {
-      console.error('Failed to convert media URL:', e)
-    }
-    
-    return null
-  }
-  
+
   return mediaUrl
 }
 
@@ -203,21 +186,9 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    // Convert media URLs in parallel
-    const mediaConversions = messages.map((m: any) => 
-      m.media_url && m.media_url.startsWith('tg://') 
-        ? convertMediaUrl(m.media_url) 
-        : Promise.resolve(m.media_url)
-    )
-    const convertedMediaUrls = await Promise.all(mediaConversions)
-    
-    // Convert thumbnail URLs in parallel
-    const thumbConversions = messages.map((m: any) => 
-      m.thumbnail_url && m.thumbnail_url.startsWith('tg://') 
-        ? convertMediaUrl(m.thumbnail_url) 
-        : Promise.resolve(m.thumbnail_url)
-    )
-    const convertedThumbUrls = await Promise.all(thumbConversions)
+    // Convert media/thumbnail URLs to proxy URLs (synchronous, no API calls needed)
+    const convertedMediaUrls = messages.map((m: any) => toProxyUrl(m.media_url))
+    const convertedThumbUrls = messages.map((m: any) => toProxyUrl(m.thumbnail_url))
 
     const formattedMessages = messages.map((m: any, index: number) => {
       // Fill in missing reply text
