@@ -125,11 +125,17 @@ onMessage(async (msg) => {
     messageStats.received++
     messageStats.lastAt = new Date().toISOString()
 
-    console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, FromMe: ${fromMe}, JID: ${jid.slice(0, 30)}`)
+    console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, FromMe: ${fromMe}, JID: ${jid.slice(0, 30)}, MsgID: ${msg.key.id?.slice(0, 15)}`)
 
-    if (jid.endsWith('@broadcast') || jid === 'status@broadcast') return
+    if (jid.endsWith('@broadcast') || jid === 'status@broadcast') {
+      console.log(`[MSG] Skipped: broadcast message`)
+      return
+    }
 
-    if (filterMode === 'groups_only' && !isGroup) return
+    if (filterMode === 'groups_only' && !isGroup) {
+      console.log(`[MSG] Skipped: not a group (filter=${filterMode})`)
+      return
+    }
 
     const text = extractText(msg)
     const contentType = getContentType(msg)

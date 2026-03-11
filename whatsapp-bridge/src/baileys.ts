@@ -128,7 +128,9 @@ export async function startBaileys(authDir: string) {
     })
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
-      if (type !== 'notify') return
+      console.log(`[Baileys] messages.upsert: type=${type}, count=${messages.length}`)
+
+      if (type !== 'notify' && type !== 'append') return
 
       for (const msg of messages) {
         if (!msg.message) continue
