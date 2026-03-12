@@ -1,4 +1,10 @@
-import { getSQL } from './db.js'
+import { neon } from '@neondatabase/serverless'
+
+function getSQL() {
+  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
+  if (!connectionString) throw new Error('Database connection string not found')
+  return neon(connectionString)
+}
 
 const TOGETHER_API = 'https://api.together.xyz/v1/chat/completions'
 const DEFAULT_MODEL = 'Qwen/Qwen2.5-72B-Instruct-Turbo'

@@ -1,11 +1,39 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
+import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
 import { runAgent, type AgentContext } from '../lib/ai-agent.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'], maxDuration: 30 }
+export const config = {
+  runtime: 'edge',
+  regions: ['iad1'],
+  maxDuration: 30,
+}
+
+function getSQL() {
+  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
+  if (!connectionString) throw new Error('Database connection string not found')
+  return neon(connectionString)
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  })
+}
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
+      },
+    })
+  }
 
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) return json({ error: 'Unauthorized' }, 401)
