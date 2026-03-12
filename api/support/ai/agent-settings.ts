@@ -28,7 +28,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
       const rows = await sql`
-        SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key = ANY(${SETTINGS_KEYS})
+        SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key LIKE 'ai_agent_%' OR (org_id = ${orgId} AND key = 'together_api_key')
       `
       const settings: Record<string, string> = {}
       for (const r of rows) settings[r.key] = r.value
