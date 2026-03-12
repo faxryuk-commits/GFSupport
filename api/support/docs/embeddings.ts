@@ -32,7 +32,7 @@ async function getTogetherKey(orgId: string): Promise<string | null> {
   return process.env.TOGETHER_API_KEY || null
 }
 
-async function generateEmbedding(text: string, apiKey: string): Promise<number[] | null> {
+async function generateEmbedding(text: string, apiKey: string): Promise<{ embedding: number[] | null; error?: string }> {
   try {
     const res = await fetch(TOGETHER_EMBED_API, {
       method: 'POST',
@@ -40,10 +40,14 @@ async function generateEmbedding(text: string, apiKey: string): Promise<number[]
       body: JSON.stringify({ model: EMBED_MODEL, input: text.slice(0, 4000) }),
       signal: AbortSignal.timeout(10000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      return { embedding: null, error: `API ${res.status}: ${errText.slice(0, 100)}` }
+    }
     const data = await res.json() as any
-    return data.data?.[0]?.embedding || null
-  } catch { return null }
+    const emb = data.data?.[0]?.embedding
+    return { embedding: emb || null, error: emb ? undefined : 'No embedding in response' }
+  } catch (e: any) { return { embedding: null, error: e.message } }
 }
 
 export default async function handler(req: Request) {
@@ -80,13 +84,13 @@ export default async function handler(req: Request) {
 
     for (const doc of docs) {
       const text = `${doc.category}: ${doc.title}\n${doc.content}`
-      const embedding = await generateEmbedding(text, apiKey)
-      if (embedding) {
-        const embStr = `{${embedding.join(',')}}`
+      const result = await generateEmbedding(text, apiKey)
+      if (result.embedding) {
+        const embStr = `{${result.embedding.join(',')}}`
         await sql`UPDATE support_docs SET embedding = ${embStr}::real[] WHERE id = ${doc.id}`
         generated++
       } else {
-        errors.push(`Doc ${doc.id}: embedding failed`)
+        errors.push(`Doc ${doc.id}: ${result.error || 'unknown'}`)
       }
     }
 
@@ -108,8 +112,9 @@ export default async function handler(req: Request) {
     const query = body.query as string
     if (!query) return json({ error: 'query required' }, 400)
 
-    const queryEmbedding = await generateEmbedding(query, apiKey)
-    if (!queryEmbedding) return json({ error: 'Failed to generate query embedding' }, 500)
+    const qResult = await generateEmbedding(query, apiKey)
+    if (!qResult.embedding) return json({ error: `Failed to generate query embedding: ${qResult.error}` }, 500)
+    const queryEmbedding = qResult.embedding
 
     const embStr = `{${queryEmbedding.join(',')}}`
     const results = await sql`
