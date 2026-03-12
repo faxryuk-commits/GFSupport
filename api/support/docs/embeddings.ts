@@ -21,7 +21,7 @@ function json(data: any, status = 200) {
 }
 
 const TOGETHER_EMBED_API = 'https://api.together.xyz/v1/embeddings'
-const EMBED_MODEL = 'BAAI/bge-large-en-v1.5'
+const EMBED_MODEL = 'intfloat/multilingual-e5-large-instruct'
 
 async function getTogetherKey(orgId: string): Promise<string | null> {
   const sql = getSQL()

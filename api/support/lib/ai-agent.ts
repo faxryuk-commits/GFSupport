@@ -138,7 +138,7 @@ async function fetchRelevantDocs(orgId: string, query: string) {
         const res = await fetch('https://api.together.xyz/v1/embeddings', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'BAAI/bge-large-en-v1.5', input: query.slice(0, 1000) }),
+          body: JSON.stringify({ model: 'intfloat/multilingual-e5-large-instruct', input: query.slice(0, 500) }),
           signal: AbortSignal.timeout(5000),
         })
         if (res.ok) {
