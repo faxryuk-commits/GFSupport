@@ -204,11 +204,16 @@ export default async function handler(req: Request) {
   const sql = getSQL()
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
-  const pageLimit = Math.min(parseInt(url.searchParams.get('limit') || '50'), DOC_PAGES.length)
-  const pagesToSync = DOC_PAGES.slice(0, pageLimit)
-  
+  const offset = parseInt(url.searchParams.get('offset') || '0')
+  const batchSize = Math.min(parseInt(url.searchParams.get('batch') || '20'), 25)
+  const pagesToSync = DOC_PAGES.slice(offset, offset + batchSize)
+
+  if (pagesToSync.length === 0) {
+    const stats = await sql`SELECT COUNT(*) as total, COUNT(DISTINCT category) as categories FROM support_docs WHERE org_id = ${orgId}`
+    return json({ success: true, synced: 0, total: Number(stats[0]?.total || 0), done: true, message: 'Все страницы синхронизированы' })
+  }
+
   try {
-    // Create table if not exists
     await sql`
       CREATE TABLE IF NOT EXISTS support_docs (
         id SERIAL PRIMARY KEY,
@@ -223,61 +228,51 @@ export default async function handler(req: Request) {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `
-    
+
     let synced = 0
     const errors: string[] = []
-    
-    // Process pages sequentially to avoid rate limiting
-    for (const page of pagesToSync) {
+
+    async function syncPage(page: { path: string; category: string }) {
+      const pageUrl = `${GITBOOK_BASE}${page.path}`
       try {
-        const pageUrl = `${GITBOOK_BASE}${page.path}`
-        
         const response = await fetch(pageUrl, {
-          headers: {
-            'User-Agent': 'Delever-Support-Bot/1.0',
-            'Accept': 'text/html',
-          },
+          headers: { 'User-Agent': 'Delever-Support-Bot/1.0', 'Accept': 'text/html' },
+          signal: AbortSignal.timeout(8000),
         })
-        
-        if (!response.ok) {
-          errors.push(`${page.path}: HTTP ${response.status}`)
-          continue
-        }
-        
+        if (!response.ok) { errors.push(`${page.path}: HTTP ${response.status}`); return }
         const html = await response.text()
         const title = extractTitle(html)
         const content = extractText(html)
         const keywords = generateKeywords(content, page.category)
-        
         await sql`
           INSERT INTO support_docs (title, content, url, path, category, keywords, synced_at, org_id)
           VALUES (${title}, ${content}, ${pageUrl}, ${page.path}, ${page.category}, ${keywords}, NOW(), ${orgId})
-          ON CONFLICT (url) DO UPDATE SET
-            title = EXCLUDED.title,
-            content = EXCLUDED.content,
-            category = EXCLUDED.category,
-            keywords = EXCLUDED.keywords,
-            synced_at = NOW()
+          ON CONFLICT (url) DO UPDATE SET title = EXCLUDED.title, content = EXCLUDED.content, category = EXCLUDED.category, keywords = EXCLUDED.keywords, synced_at = NOW()
         `
-        
         synced++
-      } catch (e: any) {
-        errors.push(`${page.path}: ${e.message}`)
-      }
+      } catch (e: any) { errors.push(`${page.path}: ${e.message}`) }
     }
-    
-    // Get stats
-    const stats = await sql`
-      SELECT COUNT(*) as total, COUNT(DISTINCT category) as categories
-      FROM support_docs
-      WHERE org_id = ${orgId}
-    `
-    
+
+    const batches = []
+    for (let i = 0; i < pagesToSync.length; i += 5) {
+      batches.push(pagesToSync.slice(i, i + 5))
+    }
+    for (const batch of batches) {
+      await Promise.all(batch.map(syncPage))
+    }
+
+    const stats = await sql`SELECT COUNT(*) as total, COUNT(DISTINCT category) as categories FROM support_docs WHERE org_id = ${orgId}`
+    const nextOffset = offset + batchSize
+    const hasMore = nextOffset < DOC_PAGES.length
+
     return json({
       success: true,
       synced,
+      batch: `${offset + 1}-${offset + pagesToSync.length} из ${DOC_PAGES.length}`,
       total: Number(stats[0]?.total || 0),
       categories: Number(stats[0]?.categories || 0),
+      hasMore,
+      nextUrl: hasMore ? `/api/support/docs/sync?offset=${nextOffset}&batch=${batchSize}` : null,
       errors: errors.length > 0 ? errors : undefined,
     })
     
