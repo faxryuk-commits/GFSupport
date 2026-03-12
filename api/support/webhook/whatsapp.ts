@@ -387,6 +387,41 @@ export default async function handler(req: Request): Promise<Response> {
       } catch (e: any) { console.error('[WA Case]', e.message) }
     }
 
+    if (isFromClient && text && text.length > 2) {
+      try {
+        const { runAgent, executeDecision } = await import('../lib/ai-agent.js')
+        const agentResult = await runAgent({
+          channelId, channelName: channelName || 'WhatsApp', orgId,
+          incomingMessage: text, senderName: senderName || 'Client',
+          senderPhone: senderPhone || undefined,
+          isGroup: !!isGroup, source: 'whatsapp',
+        })
+        if (agentResult && !agentResult.skipped && agentResult.decision) {
+          const d = agentResult.decision
+          if (d.confidence >= 0.8 && (d.action === 'reply' || d.action === 'reply_and_tag')) {
+            const bridge = await getOrgWhatsAppBridge(orgId)
+            if (bridge.url) {
+              const sendWa = async (_chId: string, msgText: string) => {
+                await fetch(`${bridge.url}/send`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bridge.secret}` },
+                  body: JSON.stringify({ chatId, text: msgText }),
+                }).catch(() => {})
+              }
+              await executeDecision({
+                channelId, channelName: channelName || '', orgId,
+                incomingMessage: text, senderName: senderName || 'Client',
+                isGroup: !!isGroup, source: 'whatsapp',
+              }, d, sendWa)
+            }
+          }
+          console.log(`[WA] AI Agent: action=${d.action}, confidence=${d.confidence}`)
+        }
+      } catch (e: any) {
+        console.log(`[WA] AI Agent skipped: ${e.message}`)
+      }
+    }
+
     return json({ ok: true, messageId: msgId, channelId })
 
   } catch (e: any) {

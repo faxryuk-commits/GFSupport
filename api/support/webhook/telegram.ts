@@ -1715,11 +1715,49 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    if (identification.role === 'client' && analysisText && analysisText.length > 2) {
+      try {
+        const { runAgent, executeDecision } = await import('../lib/ai-agent.js')
+        const agentResult = await runAgent({
+          channelId,
+          channelName: chat.title || chat.firstName || 'Unknown',
+          orgId,
+          incomingMessage: analysisText,
+          senderName: user.fullName,
+          isGroup: chat.type === 'group' || chat.type === 'supergroup',
+          source: 'telegram',
+        })
+        if (agentResult && !agentResult.skipped && agentResult.decision) {
+          const settings = agentResult.decision
+          const canAutoReply = settings.confidence >= 0.8 && (settings.action === 'reply' || settings.action === 'reply_and_tag')
+          if (canAutoReply) {
+            const botToken = await resolveBotToken(orgId)
+            if (botToken) {
+              const sendMsg = async (_chId: string, msgText: string) => {
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ chat_id: chat.id, text: msgText }),
+                })
+              }
+              await executeDecision({
+                channelId, channelName: chat.title || '', orgId,
+                incomingMessage: analysisText, senderName: user.fullName,
+                isGroup: true, source: 'telegram',
+              }, agentResult.decision, sendMsg)
+            }
+          }
+          console.log(`[Webhook] AI Agent: action=${agentResult.decision.action}, confidence=${agentResult.decision.confidence}`)
+        }
+      } catch (e: any) {
+        console.log(`[Webhook] AI Agent skipped: ${e.message}`)
+      }
+    }
+
     return json({ ok: true, messageId, role: identification.role })
 
   } catch (e: any) {
     console.error('[Webhook] Error processing update:', e.message, e.stack)
-    // Always return 200 to Telegram to prevent retries
     return json({ ok: true, error: e.message })
   }
 }

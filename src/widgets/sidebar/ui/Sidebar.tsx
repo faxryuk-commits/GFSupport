@@ -17,6 +17,7 @@ import {
   Target,
   Globe,
   ChevronDown,
+  Bot,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
@@ -130,6 +131,7 @@ const mainNavItems = [
   { path: '/learning/problems', label: 'AI Обучение', icon: Sparkles },
   { path: '/docs', label: 'Документы', icon: FileText },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
+  { path: '/ai-agent', label: 'AI Агент', icon: Bot },
 ]
 
 const bottomItems = [
