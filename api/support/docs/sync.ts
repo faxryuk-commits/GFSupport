@@ -218,6 +218,7 @@ export default async function handler(req: Request) {
     await sql`
       CREATE TABLE IF NOT EXISTS support_docs (
         id SERIAL PRIMARY KEY,
+        org_id VARCHAR(50),
         title TEXT NOT NULL,
         content TEXT,
         url TEXT UNIQUE NOT NULL,
@@ -229,6 +230,7 @@ export default async function handler(req: Request) {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `
+    await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`.catch(() => {})
 
     let synced = 0
     const errors: string[] = []
