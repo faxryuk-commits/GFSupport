@@ -69,7 +69,7 @@ export default async function handler(req: Request) {
     )
   `.catch(() => {})
   
-  // Добавляем новые колонки если их нет
+  await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS message_type VARCHAR(30) DEFAULT 'announcement'`.catch(() => {})
   await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS notification_type VARCHAR(30) DEFAULT 'announcement'`.catch(() => {})
   await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS sender_type VARCHAR(20) DEFAULT 'ai'`.catch(() => {})
   await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS sender_id VARCHAR(64)`.catch(() => {})
