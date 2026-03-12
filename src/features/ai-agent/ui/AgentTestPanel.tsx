@@ -23,9 +23,16 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
     try {
       const ch = channels.find(c => c.id === channelId)
       const res = await testAgentDecision(channelId, message, ch?.name) as any
-      setResult(res.result)
+      console.log('[AI Agent Test] Response:', JSON.stringify(res))
+      if (res?.result) {
+        setResult(res.result)
+      } else if (res?.error) {
+        setError(res.error)
+      } else {
+        setResult({ skipped: true, reason: 'Агент не вернул результат. Проверьте настройки и API ключ.' })
+      }
     } catch (e: any) {
-      setError(e.message || 'Ошибка')
+      setError(e.message || 'Ошибка запроса')
     } finally {
       setLoading(false)
     }

@@ -254,20 +254,30 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     if (!res.ok) {
       const err = await res.text().catch(() => 'unknown')
       console.error(`[AI Agent] Together API error: ${res.status} ${err}`)
-      return null
+      return { decision: null as any, skipped: true, reason: `Together API: ${res.status} — ${err.slice(0, 200)}` }
     }
 
     const data = await res.json() as any
     const content = data.choices?.[0]?.message?.content || ''
+    if (!content) {
+      return { decision: null as any, skipped: true, reason: 'Модель не вернула ответ (пустой content)' }
+    }
+
     const clean = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    const decision: AgentDecision = JSON.parse(clean)
+    let decision: AgentDecision
+    try {
+      decision = JSON.parse(clean)
+    } catch {
+      console.error('[AI Agent] JSON parse failed:', clean.slice(0, 300))
+      return { decision: null as any, skipped: true, reason: `Ошибка парсинга ответа модели: ${clean.slice(0, 100)}` }
+    }
 
     await logDecision(ctx, decision, messages.length, history.length)
 
     return { decision }
   } catch (e: any) {
     console.error('[AI Agent] Error:', e.message)
-    return null
+    return { decision: null as any, skipped: true, reason: `Ошибка: ${e.message}` }
   }
 }
 

@@ -136,8 +136,16 @@ export default async function handler(req: Request): Promise<Response> {
         source: source || 'telegram',
       }
 
-      const result = await runAgent(ctx)
-      return json({ result })
+      try {
+        const result = await runAgent(ctx)
+        if (!result) {
+          return json({ result: null, error: 'Agent returned null — check Together API key and logs' })
+        }
+        return json({ result })
+      } catch (e: any) {
+        console.error('[AI Agent Test] Error:', e.message, e.stack?.slice(0, 300))
+        return json({ result: null, error: `Agent error: ${e.message}` })
+      }
     }
 
     return json({ error: 'Unknown action' }, 400)
