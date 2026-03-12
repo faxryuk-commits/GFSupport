@@ -79,6 +79,7 @@ export async function sendNotification(payload: NotificationPayload) {
   for (const target of targets) {
     let tgSent = false
     let inAppSent = false
+    let smsSent = false
 
     if (target.telegramId) {
       tgSent = await sendTelegramDM(payload.orgId, target.telegramId, payload)
@@ -86,10 +87,14 @@ export async function sendNotification(payload: NotificationPayload) {
 
     inAppSent = await saveInAppNotification(sql, payload, target)
 
-    results.push({ agentId: target.agentId, telegram: tgSent, inApp: inAppSent })
+    if (payload.priority === 'critical' && payload.type === 'escalation') {
+      smsSent = await sendSmsAlert(payload.orgId, target.agentId, payload)
+    }
+
+    results.push({ agentId: target.agentId, telegram: tgSent, inApp: inAppSent, sms: smsSent })
   }
 
-  console.log(`[Notifications] Sent ${payload.type} to ${results.length} targets: ${results.map(r => `${r.agentId}(tg:${r.telegram},app:${r.inApp})`).join(', ')}`)
+  console.log(`[Notifications] Sent ${payload.type} to ${results.length} targets: ${results.map(r => `${r.agentId}(tg:${r.telegram},app:${r.inApp},sms:${r.sms || false})`).join(', ')}`)
   return results
 }
 
@@ -128,6 +133,65 @@ async function sendTelegramDM(orgId: string, telegramId: string, payload: Notifi
     console.error(`[Notifications] TG DM error:`, e.message)
     return false
   }
+}
+
+async function sendSmsAlert(orgId: string, agentId: string, payload: NotificationPayload): Promise<boolean> {
+  const sql = getSQL()
+
+  try {
+    const [agent] = await sql`SELECT phone FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId} LIMIT 1`
+    if (!agent?.phone) return false
+
+    const [smsConfig] = await sql`SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'sms_api_key' LIMIT 1`
+    if (!smsConfig?.value) {
+      console.log(`[Notifications] SMS: no SMS API configured for org ${orgId}, trying Telegram call`)
+      return await sendTelegramCallAlert(orgId, agentId, payload)
+    }
+
+    const message = `DELEVER: ${payload.title}. ${payload.body.slice(0, 100)}. Канал: ${payload.channelName || 'N/A'}`
+    const smsApiKey = smsConfig.value
+
+    const res = await fetch('https://notify.eskiz.uz/api/message/sms/send', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${smsApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile_phone: agent.phone.replace(/\D/g, ''), message, from: 'Delever' }),
+      signal: AbortSignal.timeout(10000),
+    })
+
+    const ok = res.ok
+    console.log(`[Notifications] SMS to ${agent.phone}: ${ok ? 'sent' : 'failed'}`)
+    return ok
+  } catch (e: any) {
+    console.error('[Notifications] SMS error:', e.message)
+    return false
+  }
+}
+
+async function sendTelegramCallAlert(orgId: string, agentId: string, payload: NotificationPayload): Promise<boolean> {
+  const sql = getSQL()
+  try {
+    const [agent] = await sql`SELECT telegram_id FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId} LIMIT 1`
+    if (!agent?.telegram_id) return false
+
+    const botToken = await getOrgBotToken(orgId)
+    if (!botToken) return false
+
+    const urgentMsg = `🚨🚨🚨 СРОЧНО!\n\n${payload.title}\n\n${payload.body}\n\n❗ Это критическая эскалация. Требуется немедленная реакция.`
+
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: agent.telegram_id,
+        text: urgentMsg,
+        parse_mode: 'HTML',
+        disable_notification: false,
+      }),
+    })
+
+    const data = await res.json() as any
+    return data.ok === true
+  } catch { return false }
 }
 
 async function saveInAppNotification(sql: any, payload: NotificationPayload, target: { agentId: string; name: string }): Promise<boolean> {
