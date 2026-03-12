@@ -52,23 +52,23 @@ export interface AgentSettings {
 export function fetchAgentDecisions(limit = 30, channelId?: string) {
   const params = new URLSearchParams({ limit: String(limit) })
   if (channelId) params.set('channelId', channelId)
-  return apiGet<{ decisions: AgentDecisionItem[]; stats: AgentStats }>(`/api/support/ai/agent?${params}`)
+  return apiGet<{ decisions: AgentDecisionItem[]; stats: AgentStats }>(`/ai/agent?${params}`)
 }
 
 export function submitAgentFeedback(decisionId: string, feedback: 'correct' | 'wrong', note?: string) {
-  return apiPost('/api/support/ai/agent', { action: 'feedback', decisionId, feedback, note })
+  return apiPost('/ai/agent', { action: 'feedback', decisionId, feedback, note })
 }
 
 export function testAgentDecision(channelId: string, message: string, channelName?: string) {
-  return apiPost('/api/support/ai/agent', {
+  return apiPost('/ai/agent', {
     action: 'test', channelId, channelName, message, senderName: 'Тестовый клиент',
   })
 }
 
 export function fetchAgentSettings() {
-  return apiGet<AgentSettings>('/api/support/ai/agent-settings')
+  return apiGet<AgentSettings>('/ai/agent-settings')
 }
 
 export function updateAgentSettings(settings: Partial<AgentSettings> & { togetherApiKey?: string }) {
-  return apiPut('/api/support/ai/agent-settings', settings)
+  return apiPut('/ai/agent-settings', settings)
 }
