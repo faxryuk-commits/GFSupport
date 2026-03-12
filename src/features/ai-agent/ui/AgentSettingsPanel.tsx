@@ -3,10 +3,10 @@ import { Settings, Save, Eye, EyeOff, Loader2, Shield, Key } from 'lucide-react'
 import { fetchAgentSettings, updateAgentSettings, type AgentSettings } from '@/shared/api'
 
 const MODELS = [
-  { id: 'Qwen/Qwen2.5-72B-Instruct-Turbo', label: 'Qwen 2.5 72B (рекомендуем)' },
-  { id: 'Qwen/Qwen2.5-7B-Instruct-Turbo', label: 'Qwen 2.5 7B (быстрый)' },
-  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B' },
-  { id: 'mistralai/Mixtral-8x22B-Instruct-v0.1', label: 'Mixtral 8x22B' },
+  { id: 'Qwen/Qwen3-235B-A22B-Instruct', label: 'Qwen 3 235B (рекомендуем)' },
+  { id: 'Qwen/Qwen2.5-7B-Instruct-Turbo', label: 'Qwen 2.5 7B Turbo (быстрый)' },
+  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B Turbo' },
+  { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8', label: 'Llama 4 Maverick' },
 ]
 
 const MODES = [

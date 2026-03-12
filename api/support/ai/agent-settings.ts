@@ -69,7 +69,7 @@ export default async function handler(req: Request): Promise<Response> {
         workEnd: parseInt(settings['ai_agent_work_end'] || '22'),
         timezone: settings['ai_agent_timezone'] || 'Asia/Tashkent',
         excludeChannels: (settings['ai_agent_exclude_channels'] || '').split(',').filter(Boolean),
-        model: settings['ai_agent_model'] || 'Qwen/Qwen2.5-72B-Instruct-Turbo',
+        model: settings['ai_agent_model'] || 'Qwen/Qwen3-235B-A22B-Instruct',
         hasApiKey: !!settings['together_api_key'],
       })
     } catch (e: any) {

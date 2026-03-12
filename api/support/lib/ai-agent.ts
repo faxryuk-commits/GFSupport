@@ -7,7 +7,7 @@ function getSQL() {
 }
 
 const TOGETHER_API = 'https://api.together.xyz/v1/chat/completions'
-const DEFAULT_MODEL = 'Qwen/Qwen2.5-72B-Instruct-Turbo'
+const DEFAULT_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct'
 const FAST_MODEL = 'Qwen/Qwen2.5-7B-Instruct-Turbo'
 
 export interface AgentDecision {
