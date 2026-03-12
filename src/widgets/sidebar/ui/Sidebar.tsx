@@ -18,6 +18,7 @@ import {
   Globe,
   ChevronDown,
   Bot,
+  Bell,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
@@ -92,6 +93,85 @@ const badgeAnimationStyles = `
   transform: rotateY(180deg);
 }
 `
+
+function NotificationBellSidebar() {
+  const [count, setCount] = useState(0)
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<any[]>([])
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const token = localStorage.getItem('auth_token')
+        if (!token) return
+        const res = await fetch('/api/support/notifications?limit=10', {
+          headers: { 'Authorization': `Bearer ${token}`, 'X-Org-Id': localStorage.getItem('org_id') || '' },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setCount(data.unreadCount || 0)
+          setItems(data.notifications || [])
+        }
+      } catch {}
+    }
+    load()
+    const iv = setInterval(load, 30000)
+    return () => clearInterval(iv)
+  }, [])
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const icons: Record<string, string> = { escalation: '🔴', tag: '⚡', critical_case: '🚨', agent_decision: '🤖', sla_breach: '⏰' }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors relative"
+        title="Уведомления"
+      >
+        <Bell className="w-4 h-4" />
+        {count > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full px-0.5">
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute left-full bottom-0 ml-2 w-[340px] bg-white rounded-xl shadow-2xl border border-slate-200 z-50 max-h-[400px] overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-900">Уведомления</span>
+            {count > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{count} новых</span>}
+          </div>
+          <div className="overflow-y-auto max-h-[340px]">
+            {items.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-400">Нет уведомлений</div>
+            ) : (
+              items.slice(0, 8).map((n: any) => (
+                <div key={n.id} className={`px-4 py-2.5 border-b border-slate-50 ${!n.isRead ? 'bg-blue-50/50' : ''}`}>
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm">{icons[n.type] || '📢'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs ${!n.isRead ? 'font-semibold text-slate-900' : 'text-slate-600'}`}>{n.title}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{n.body}</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface MarketOption {
   id: string
@@ -419,6 +499,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                       </span>
                     </div>
                   </div>
+                  <NotificationBellSidebar />
                   {onLogout && (
                     <button 
                       onClick={onLogout}

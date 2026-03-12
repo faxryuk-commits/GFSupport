@@ -459,6 +459,23 @@ export async function executeDecision(
       await sendMessage(ctx.channelId, `⚡ @${decision.tagAgentName}, обратите внимание на сообщение от ${ctx.senderName}`)
       executed.push('agent_tagged')
     } catch (e: any) { console.error('[AI Agent] Tag failed:', e.message) }
+
+    try {
+      const { sendNotification } = await import('./notifications.js')
+      await sendNotification({
+        orgId: ctx.orgId,
+        type: 'tag',
+        title: `Вас тегнул AI-агент`,
+        body: `Клиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 150)}"\n\nАгент считает, что нужна ваша помощь.`,
+        channelId: ctx.channelId,
+        channelName: ctx.channelName,
+        senderName: ctx.senderName,
+        priority: 'high',
+        targetAgentIds: decision.tagAgentId ? [decision.tagAgentId] : undefined,
+        targetRoles: !decision.tagAgentId ? ['admin', 'manager'] : undefined,
+      })
+      executed.push('notification_sent')
+    } catch (e: any) { console.error('[AI Agent] Tag notification failed:', e.message) }
   }
 
   if (decision.action === 'escalate') {
@@ -466,6 +483,22 @@ export async function executeDecision(
       await sendMessage(ctx.channelId, `🔴 Эскалация: ${decision.reasoning}`)
       executed.push('escalated')
     } catch {}
+
+    try {
+      const { sendNotification } = await import('./notifications.js')
+      await sendNotification({
+        orgId: ctx.orgId,
+        type: 'escalation',
+        title: `Эскалация от AI-агента`,
+        body: `Клиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 200)}"\n\nПричина: ${decision.reasoning}`,
+        channelId: ctx.channelId,
+        channelName: ctx.channelName,
+        senderName: ctx.senderName,
+        priority: 'critical',
+        targetRoles: ['admin', 'owner', 'manager'],
+      })
+      executed.push('escalation_notification_sent')
+    } catch (e: any) { console.error('[AI Agent] Escalation notification failed:', e.message) }
   }
 
   if (decision.action === 'create_case' || decision.casePriority) {
@@ -481,6 +514,23 @@ export async function executeDecision(
       `
       executed.push('case_created')
     } catch (e: any) { console.error('[AI Agent] Case failed:', e.message) }
+
+    if (decision.casePriority === 'critical' || decision.casePriority === 'high') {
+      try {
+        const { sendNotification } = await import('./notifications.js')
+        await sendNotification({
+          orgId: ctx.orgId,
+          type: 'critical_case',
+          title: `Новый ${decision.casePriority === 'critical' ? 'критический' : 'важный'} кейс`,
+          body: `"${decision.caseTitle || ctx.incomingMessage.slice(0, 100)}"\n\nОт: ${ctx.senderName}\nПриоритет: ${decision.casePriority}`,
+          channelId: ctx.channelId,
+          channelName: ctx.channelName,
+          senderName: ctx.senderName,
+          priority: decision.casePriority,
+        })
+        executed.push('case_notification_sent')
+      } catch (e: any) { console.error('[AI Agent] Case notification failed:', e.message) }
+    }
   }
 
   return { executed }
