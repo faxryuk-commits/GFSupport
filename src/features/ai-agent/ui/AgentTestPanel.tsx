@@ -113,6 +113,14 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
               {result.decision.caseTitle && (
                 <p className="text-sm text-orange-700">Кейс: [{result.decision.casePriority}] {result.decision.caseTitle}</p>
               )}
+              {result.decision.docLinks?.length > 0 && (
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-xs font-medium text-slate-500 mb-1">Использованная документация:</p>
+                  {result.decision.docLinks.map((url: string, i: number) => (
+                    <a key={i} href={url} target="_blank" className="text-xs text-blue-600 hover:underline block truncate">{url}</a>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="p-4 bg-slate-50 text-slate-600 text-sm rounded-lg">Агент не вернул результат.</div>
