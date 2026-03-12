@@ -71,6 +71,7 @@ export default async function handler(req: Request): Promise<Response> {
         excludeChannels: (settings['ai_agent_exclude_channels'] || '').split(',').filter(Boolean),
         model: settings['ai_agent_model'] || 'Qwen/Qwen3-235B-A22B-Instruct',
         hasApiKey: !!settings['together_api_key'],
+        customInstructions: settings['ai_agent_custom_instructions'] || '',
       })
     } catch (e: any) {
       return json({ error: e.message }, 500)
@@ -92,6 +93,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (body.excludeChannels !== undefined) updates.push(['ai_agent_exclude_channels', body.excludeChannels.join(',')])
       if (body.model) updates.push(['ai_agent_model', body.model])
       if (body.togetherApiKey) updates.push(['together_api_key', body.togetherApiKey])
+      if (body.customInstructions !== undefined) updates.push(['ai_agent_custom_instructions', body.customInstructions])
 
       for (const [key, value] of updates) {
         await sql`

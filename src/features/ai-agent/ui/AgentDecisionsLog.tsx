@@ -36,8 +36,10 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   )
 }
 
-function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id: string, fb: 'correct' | 'wrong') => void }) {
+function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id: string, fb: 'correct' | 'wrong', note?: string) => void }) {
   const [expanded, setExpanded] = useState(false)
+  const [showNoteInput, setShowNoteInput] = useState(false)
+  const [feedbackNote, setFeedbackNote] = useState('')
   const config = ACTION_CONFIG[d.action] || ACTION_CONFIG.wait
   const Icon = config.icon
   const time = new Date(d.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -79,20 +81,52 @@ function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id:
           <div className="text-xs text-slate-400">
             Источник: {d.source} | Контекст: {d.contextMessagesCount} сообщений | Похожая история: {d.similarHistoryCount}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">Оценка:</span>
-            <button
-              onClick={(e) => { e.stopPropagation(); onFeedback(d.id, 'correct') }}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${d.feedback === 'correct' ? 'bg-green-100 text-green-700' : 'hover:bg-green-50 text-slate-400'}`}
-            >
-              <ThumbsUp className="w-3 h-3" /> Верно
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onFeedback(d.id, 'wrong') }}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${d.feedback === 'wrong' ? 'bg-red-100 text-red-700' : 'hover:bg-red-50 text-slate-400'}`}
-            >
-              <ThumbsDown className="w-3 h-3" /> Ошибка
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">Оценка:</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onFeedback(d.id, 'correct') }}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${d.feedback === 'correct' ? 'bg-green-100 text-green-700' : 'hover:bg-green-50 text-slate-400'}`}
+              >
+                <ThumbsUp className="w-3 h-3" /> Верно
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (d.feedback !== 'wrong') setShowNoteInput(true)
+                  onFeedback(d.id, 'wrong')
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${d.feedback === 'wrong' ? 'bg-red-100 text-red-700' : 'hover:bg-red-50 text-slate-400'}`}
+              >
+                <ThumbsDown className="w-3 h-3" /> Ошибка
+              </button>
+            </div>
+            {(showNoteInput || d.feedbackNote) && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={feedbackNote || d.feedbackNote || ''}
+                  onChange={e => setFeedbackNote(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && feedbackNote.trim()) {
+                      onFeedback(d.id, 'wrong', feedbackNote)
+                      setShowNoteInput(false)
+                    }
+                  }}
+                  placeholder="Что не так? Агент учтёт это в будущем..."
+                  className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded-lg"
+                  onClick={e => e.stopPropagation()}
+                />
+                {feedbackNote.trim() && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onFeedback(d.id, 'wrong', feedbackNote); setShowNoteInput(false) }}
+                    className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                  >
+                    Отправить
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -124,9 +158,9 @@ export function AgentDecisionsLog() {
 
   useEffect(() => { load() }, [])
 
-  async function handleFeedback(id: string, fb: 'correct' | 'wrong') {
-    await submitAgentFeedback(id, fb).catch(() => {})
-    setDecisions(prev => prev.map(d => d.id === id ? { ...d, feedback: fb } : d))
+  async function handleFeedback(id: string, fb: 'correct' | 'wrong', note?: string) {
+    await submitAgentFeedback(id, fb, note).catch(() => {})
+    setDecisions(prev => prev.map(d => d.id === id ? { ...d, feedback: fb, feedbackNote: note || d.feedbackNote } : d))
   }
 
   if (loading) return <div className="p-6 text-center text-slate-400">Загрузка решений...</div>

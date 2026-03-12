@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings, Save, Eye, EyeOff, Loader2, Shield, Key } from 'lucide-react'
+import { Settings, Save, Eye, EyeOff, Loader2, Shield, Key, Sparkles } from 'lucide-react'
 import { fetchAgentSettings, updateAgentSettings, type AgentSettings } from '@/shared/api'
 
 const MODELS = [
@@ -32,7 +32,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
         enabled: false, mode: 'assist', autoReply: false,
         minConfidence: 0.8, workStart: 9, workEnd: 22,
         timezone: 'Asia/Tashkent', excludeChannels: [],
-        model: MODELS[0].id, hasApiKey: false,
+        model: MODELS[0].id, hasApiKey: false, customInstructions: '',
       }))
       .finally(() => setLoading(false))
   }, [])
@@ -158,6 +158,26 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
           />
         </div>
+      </div>
+
+      <div className="border-t border-slate-200 pt-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <h3 className="text-sm font-semibold text-slate-800">Инструкции для агента</h3>
+        </div>
+        <p className="text-xs text-slate-500 mb-3">
+          Напишите как агент должен общаться — стиль, тон, правила. Агент будет строго следовать этим указаниям.
+        </p>
+        <textarea
+          value={settings.customInstructions}
+          onChange={e => setSettings({ ...settings, customInstructions: e.target.value })}
+          placeholder={`Примеры:\n• Всегда обращайся на "вы" и по имени\n• На узбекском отвечай мягко и уважительно\n• Не используй эмодзи\n• Если вопрос про оплату — всегда тегай @Финансы\n• При жалобах — сразу извиняйся и проси детали`}
+          rows={5}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm resize-y placeholder:text-slate-400"
+        />
+        <p className="text-xs text-slate-400 mt-1">
+          {settings.customInstructions.length}/1000 символов
+        </p>
       </div>
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-100">

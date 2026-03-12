@@ -47,6 +47,7 @@ export interface AgentSettings {
   excludeChannels: string[]
   model: string
   hasApiKey: boolean
+  customInstructions: string
 }
 
 export function fetchAgentDecisions(limit = 30, channelId?: string) {

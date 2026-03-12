@@ -60,9 +60,10 @@ async function getAgentSettings(orgId: string) {
       workingHoursEnd: parseInt(s['ai_agent_work_end'] || '22'),
       excludeChannels: (s['ai_agent_exclude_channels'] || '').split(',').filter(Boolean),
       model: s['ai_agent_model'] || DEFAULT_MODEL,
+      customInstructions: s['ai_agent_custom_instructions'] || '',
     }
   } catch {
-    return { enabled: false, mode: 'assist' as const, maxConfidenceForAutoReply: 0.8, workingHoursStart: 9, workingHoursEnd: 22, excludeChannels: [] as string[], model: DEFAULT_MODEL }
+    return { enabled: false, mode: 'assist' as const, maxConfidenceForAutoReply: 0.8, workingHoursStart: 9, workingHoursEnd: 22, excludeChannels: [] as string[], model: DEFAULT_MODEL, customInstructions: '' }
   }
 }
 
@@ -153,6 +154,26 @@ async function fetchRelevantDocs(orgId: string, query: string) {
   } catch { return [] }
 }
 
+async function fetchFeedbackExamples(orgId: string) {
+  const sql = getSQL()
+  try {
+    const good = await sql`
+      SELECT incoming_message, action, reply_text, reasoning
+      FROM support_agent_decisions WHERE org_id = ${orgId} AND feedback = 'correct'
+      ORDER BY created_at DESC LIMIT 3
+    `
+    const bad = await sql`
+      SELECT incoming_message, action, reply_text, reasoning, feedback_note
+      FROM support_agent_decisions WHERE org_id = ${orgId} AND feedback = 'wrong'
+      ORDER BY created_at DESC LIMIT 3
+    `
+    return {
+      good: good.map((r: any) => ({ msg: (r.incoming_message || '').slice(0, 150), action: r.action, reply: (r.reply_text || '').slice(0, 200) })),
+      bad: bad.map((r: any) => ({ msg: (r.incoming_message || '').slice(0, 150), action: r.action, reply: (r.reply_text || '').slice(0, 200), note: r.feedback_note || '' })),
+    }
+  } catch { return { good: [], bad: [] } }
+}
+
 async function fetchOpenCases(orgId: string, channelId: string) {
   const sql = getSQL()
   try {
@@ -182,7 +203,7 @@ async function fetchChannelProfile(orgId: string, channelId: string) {
   } catch { return null }
 }
 
-function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[]): string {
+function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], customInstructions: string): string {
   const agentList = agents.length > 0
     ? agents.map(a => `- ${a.name} (${a.role}, ${a.status === 'online' ? 'онлайн' : 'занят'}): id=${a.id}`).join('\n')
     : 'Сейчас нет доступных сотрудников'
@@ -191,7 +212,11 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[]): st
     ? `\nБАЗА ЗНАНИЙ DELEVER (используй для ответов, ссылайся на статьи):\n${docs.map(d => `• [${d.category}] ${d.title}\n  URL: ${d.url}\n  ${d.excerpt}`).join('\n')}`
     : ''
 
-  return `Ты — опытный специалист службы поддержки Delever. Тебя зовут как обычного сотрудника. Ты общаешься живо и естественно, как реальный менеджер.
+  const customBlock = customInstructions.trim()
+    ? `\nОСОБЫЕ ИНСТРУКЦИИ ОТ РУКОВОДСТВА (строго соблюдай):\n${customInstructions.trim()}`
+    : ''
+
+  return `Ты — опытный и дружелюбный специалист службы поддержки Delever. Ты общаешься как живой менеджер поддержки — тепло, с заботой, и всегда стараешься помочь.
 
 ТЕКУЩЕЕ ВРЕМЯ: ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}
 РАБОЧИЕ ЧАСЫ: ${isWorkHours ? 'ДА' : 'НЕТ — ночь/выходной'}
@@ -199,32 +224,40 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[]): st
 ДОСТУПНЫЕ СОТРУДНИКИ:
 ${agentList}
 ${docsBlock}
+${customBlock}
 
-ТВОЙ СТИЛЬ ОБЩЕНИЯ:
-- Пиши как живой человек, НЕ как робот. Без шаблонных "Ваше обращение зафиксировано"
-- Задавай уточняющие вопросы: "А какой у вас филиал?", "Можете скинуть скрин?", "Это в приложении или на сайте?"
-- Используй имя клиента если знаешь: "Да, Ахмед, сейчас разберёмся"
-- Если знаешь ответ — давай конкретную инструкцию, а не общие фразы
-- Если есть статья в базе знаний — дай ссылку: "Вот инструкция: [ссылка]"
-- Если не знаешь — честно скажи "Сейчас уточню у коллег" вместо пустых обещаний
-- Пиши коротко. Не растекайся. 2-3 предложения максимум
+ЯЗЫК ОБЩЕНИЯ:
+- Определи на каком языке пишет клиент (русский, узбекский, английский) и отвечай на ТОМ ЖЕ языке
+- Если клиент пишет на узбекском — отвечай на узбекском ВЕЖЛИВО и тепло
+- Если на русском — на русском. Если смешивает — приоритет русский
+- НИКОГДА не звучи грубо, резко или требовательно. Ты помогаешь, а не допрашиваешь
+
+СТИЛЬ ОБЩЕНИЯ:
+- Пиши как живой человек, НЕ как робот. БЕЗ шаблонов типа "Ваше обращение зафиксировано"
+- Будь тёплым: "Здравствуйте! Давайте разберёмся 😊", "Понял, сейчас посмотрю"
+- Уточняй мягко: "Подскажите, пожалуйста, какой у вас филиал?", "А можете скрин отправить?"
+- Используй имя клиента: "Ахмед, добрый день! Давайте разберёмся"
+- Если знаешь ответ — дай конкретную инструкцию с пошаговыми шагами
+- Если есть статья — дай ссылку: "Вот подробная инструкция: [ссылка]"
+- Если не знаешь — "Хороший вопрос, сейчас уточню у коллег и вернусь"
+- Коротко: 2-4 предложения. Не перегружай
 
 ПРАВИЛА РЕШЕНИЙ:
-1. REPLY — если можешь дать полезный ответ (есть в документации, знаешь из истории, простой вопрос). ВСЕГДА задавай уточняющий вопрос если информации мало
-2. REPLY_AND_TAG — если ответил, но нужно внимание специалиста (сложный кейс)
-3. TAG_AGENT — если вопрос техничный / нужен конкретный человек и ты не можешь помочь
-4. ESCALATE — клиент злится, повторное обращение без решения, критическая проблема
+1. REPLY — если можешь помочь (есть в документации, знаешь из истории). Если мало деталей — вежливо уточни
+2. REPLY_AND_TAG — ответил, но нужен специалист для сложного кейса
+3. TAG_AGENT — вопрос техничный / нужен конкретный человек
+4. ESCALATE — клиент расстроен, повторное обращение, критическая проблема
 5. CREATE_CASE — новая проблема, нужно расследование
-6. WAIT — если лучше дождаться сотрудника (сомнения, непонятный контекст)
+6. WAIT — лучше дождаться сотрудника
 
-ЕСЛИ ЕСТЬ СТАТЬЯ В БАЗЕ ЗНАНИЙ — обязательно включи ссылку в replyText. Формат: "Подробнее: <url>"
+ЕСЛИ ЕСТЬ СТАТЬЯ В БАЗЕ ЗНАНИЙ — включи ссылку в replyText: "Подробнее: <url>"
 
-В НЕРАБОЧЕЕ ВРЕМЯ: "Привет! Сейчас нерабочее время, но я зафиксировал обращение. Утром коллеги свяжутся с вами. Если срочно — опишите подробнее, передам."
+В НЕРАБОЧЕЕ ВРЕМЯ: "Добрый вечер! Сейчас нерабочее время, но я всё передам коллегам — утром с вами свяжутся. Если срочно, опишите подробнее 🙏"
 
 ОТВЕЧАЙ JSON:
 {
   "action": "reply|tag_agent|escalate|create_case|wait|reply_and_tag",
-  "replyText": "живой текст ответа (если отвечаешь)",
+  "replyText": "тёплый живой текст ответа",
   "tagAgentId": "id (если тегаешь)",
   "tagAgentName": "имя (если тегаешь)",
   "escalateToRole": "admin",
@@ -236,7 +269,7 @@ ${docsBlock}
 }`
 }
 
-function buildUserPrompt(ctx: AgentContext, messages: any[], history: any[], cases: any[], profile: any): string {
+function buildUserPrompt(ctx: AgentContext, messages: any[], history: any[], cases: any[], profile: any, feedback?: { good: any[]; bad: any[] }): string {
   const chatHistory = messages.length > 0
     ? messages.map(m => `[${m.role === 'client' ? '👤' : '💬'}] ${m.sender}: ${m.text}`).join('\n')
     : '(новый диалог, истории нет)'
@@ -253,6 +286,16 @@ function buildUserPrompt(ctx: AgentContext, messages: any[], history: any[], cas
     ? `\nПРОФИЛЬ КАНАЛА: ${profile.name}, тип: ${profile.type}${profile.tags?.length ? ', теги: ' + profile.tags.join(', ') : ''}${profile.waitingMinutes ? ', клиент ждёт: ' + profile.waitingMinutes + ' мин' : ''}`
     : ''
 
+  let feedbackBlock = ''
+  if (feedback) {
+    if (feedback.good.length > 0) {
+      feedbackBlock += `\n\nТВОИ ПРОШЛЫЕ УДАЧНЫЕ ОТВЕТЫ (повторяй этот стиль):\n${feedback.good.map((f, i) => `✅ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"`).join('\n')}`
+    }
+    if (feedback.bad.length > 0) {
+      feedbackBlock += `\n\nТВОИ ПРОШЛЫЕ ОШИБКИ (не повторяй!):\n${feedback.bad.map((f, i) => `❌ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"${f.note ? ` (замечание: ${f.note})` : ''}`).join('\n')}`
+    }
+  }
+
   return `КАНАЛ: ${ctx.channelName} (${ctx.source}, ${ctx.isGroup ? 'группа' : 'личка'})
 ОТПРАВИТЕЛЬ: ${ctx.senderName}${profileBlock}
 
@@ -261,9 +304,9 @@ ${chatHistory}
 
 НОВОЕ СООБЩЕНИЕ:
 ${ctx.senderName}: ${ctx.incomingMessage}
-${historyBlock}${casesBlock}
+${historyBlock}${casesBlock}${feedbackBlock}
 
-Прими решение. Помни: отвечай как живой человек, не как бот.`
+Прими решение. Помни: отвечай тепло и по-человечески.`
 }
 
 export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDecision; skipped?: boolean; reason?: string } | null> {
@@ -277,17 +320,18 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const apiKey = await getTogetherKey(ctx.orgId)
   if (!apiKey) return { decision: null as any, skipped: true, reason: 'no_api_key' }
 
-  const [messages, agents, history, cases, docs, profile] = await Promise.all([
+  const [messages, agents, history, cases, docs, profile, feedback] = await Promise.all([
     fetchRecentMessages(ctx.orgId, ctx.channelId),
     fetchAvailableAgents(ctx.orgId),
     fetchSimilarHistory(ctx.orgId, ctx.incomingMessage),
     fetchOpenCases(ctx.orgId, ctx.channelId),
     fetchRelevantDocs(ctx.orgId, ctx.incomingMessage),
     fetchChannelProfile(ctx.orgId, ctx.channelId),
+    fetchFeedbackExamples(ctx.orgId),
   ])
 
-  const systemPrompt = buildSystemPrompt(agents, workHours, docs)
-  const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile)
+  const systemPrompt = buildSystemPrompt(agents, workHours, docs, settings.customInstructions)
+  const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile, feedback)
 
   try {
     const res = await fetch(TOGETHER_API, {
