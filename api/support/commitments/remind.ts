@@ -21,60 +21,34 @@ function json(data: any, status = 200) {
   })
 }
 
-// ОТКЛЮЧЕНО: Отправка напоминаний в Telegram-каналы клиентов
-// Информирование работает только внутри системы для сотрудников
-async function sendTelegramReminder(
-  chatId: string, 
+async function sendCommitmentNotification(
+  orgId: string,
   commitment: any
 ): Promise<boolean> {
-  // Отключено - не отправляем напоминания в каналы с клиентами
-  console.log(`[Remind] Telegram notifications disabled - skipping channel ${chatId}`)
-  return false
-  
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
-  if (!botToken) return false
-
-  const isOverdue = new Date(commitment.due_date) < new Date()
-  const statusEmoji = isOverdue ? '⚠️' : '⏰'
-  const statusText = isOverdue ? 'ПРОСРОЧЕНО' : 'Напоминание'
-  
-  const roleLabels: Record<string, string> = {
-    client: '👤 Клиент',
-    support: '👨‍💼 Поддержка', 
-    team: '👥 Команда',
-    partner: '🤝 Партнёр',
-  }
-  const roleLabel = roleLabels[commitment.sender_role] || commitment.sender_role
-
-  const message = `${statusEmoji} <b>${statusText}</b>
-
-📝 Обязательство: "${commitment.commitment_text}"
-👤 Дал: ${commitment.agent_name} (${roleLabel})
-⏰ Срок: ${new Date(commitment.due_date).toLocaleString('ru-RU', { 
-    timeZone: 'Asia/Tashkent',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  })}
-${isOverdue ? '\n❗️ Срок истёк. Пожалуйста, обновите статус.' : ''}
-
-Ответьте "готово" или "выполнено" чтобы закрыть обязательство.`
-
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: 'HTML',
-      }),
+    const { sendNotification } = await import('../lib/notifications.js')
+
+    const isOverdue = new Date(commitment.due_date) < new Date()
+    const dueDate = new Date(commitment.due_date).toLocaleString('ru-RU', {
+      timeZone: 'Asia/Tashkent', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
     })
-    const data = await res.json()
-    return data.ok === true
-  } catch (e) {
-    console.error('[Remind] Failed to send Telegram message:', e)
+
+    const results = await sendNotification({
+      orgId,
+      type: isOverdue ? 'sla_breach' : 'agent_decision',
+      title: isOverdue
+        ? `⚠️ Просроченное обязательство`
+        : `⏰ Напоминание об обязательстве`,
+      body: `"${(commitment.commitment_text || '').slice(0, 200)}"\n\nОтветственный: ${commitment.agent_name || 'не указан'}\nСрок: ${dueDate}\nКанал: ${commitment.channel_name || 'N/A'}${isOverdue ? '\n\n❗ Срок истёк!' : ''}`,
+      channelId: commitment.channel_id,
+      channelName: commitment.channel_name,
+      priority: isOverdue ? 'high' : 'medium',
+      targetRoles: ['admin', 'manager'],
+    })
+
+    return results.length > 0
+  } catch (e: any) {
+    console.error('[Remind] Notification error:', e.message)
     return false
   }
 }
@@ -129,37 +103,21 @@ export default async function handler(req: Request): Promise<Response> {
       `
 
       const results = []
-      
+
       for (const commitment of dueCommitments) {
-        if (commitment.telegram_chat_id) {
-          const sent = await sendTelegramReminder(commitment.telegram_chat_id, commitment)
-          
-          if (sent) {
-            // Mark reminder as sent
-            await sql`
-              UPDATE support_commitments 
-              SET reminder_sent = true
-              WHERE id = ${commitment.id} AND org_id = ${orgId}
-            `
-            results.push({ 
-              id: commitment.id, 
-              channel: commitment.channel_name,
-              status: 'sent' 
-            })
-          } else {
-            results.push({ 
-              id: commitment.id, 
-              channel: commitment.channel_name,
-              status: 'failed' 
-            })
-          }
-        } else {
-          results.push({ 
-            id: commitment.id, 
-            channel: commitment.channel_name,
-            status: 'no_chat_id' 
-          })
+        const sent = await sendCommitmentNotification(orgId, commitment)
+        if (sent) {
+          await sql`
+            UPDATE support_commitments
+            SET reminder_sent = true
+            WHERE id = ${commitment.id} AND org_id = ${orgId}
+          `
         }
+        results.push({
+          id: commitment.id,
+          channel: commitment.channel_name,
+          status: sent ? 'sent' : 'failed',
+        })
       }
 
       // Get counts
@@ -206,11 +164,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       const commitment = commitments[0]
       
-      if (!commitment.telegram_chat_id) {
-        return json({ error: 'No Telegram chat ID for this channel' }, 400)
-      }
-
-      const sent = await sendTelegramReminder(commitment.telegram_chat_id, commitment)
+      const sent = await sendCommitmentNotification(orgId, commitment)
       
       if (sent) {
         await sql`

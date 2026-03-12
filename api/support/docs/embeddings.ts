@@ -37,7 +37,7 @@ async function generateEmbedding(text: string, apiKey: string): Promise<{ embedd
     const res = await fetch(TOGETHER_EMBED_API, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: EMBED_MODEL, input: text.slice(0, 4000) }),
+      body: JSON.stringify({ model: EMBED_MODEL, input: text.slice(0, 1200) }),
       signal: AbortSignal.timeout(10000),
     })
     if (!res.ok) {
@@ -69,7 +69,7 @@ export default async function handler(req: Request) {
     const batch = Math.min(parseInt(url.searchParams.get('batch') || '10'), 15)
 
     const docs = await sql`
-      SELECT id, title, LEFT(content, 2000) as content, category
+      SELECT id, title, LEFT(content, 800) as content, category
       FROM support_docs WHERE org_id = ${orgId} AND (embedding IS NULL OR array_length(embedding, 1) IS NULL)
       ORDER BY id LIMIT ${batch} OFFSET ${offset}
     `

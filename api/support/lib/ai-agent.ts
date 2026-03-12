@@ -1,4 +1,11 @@
 import { neon } from '@neondatabase/serverless'
+import {
+  getTogetherKey, getAgentSettings, isWorkingHours,
+  fetchRecentMessages, fetchAvailableAgents, fetchSimilarHistory,
+  fetchRelevantDocs, fetchFeedbackExamples, fetchOpenCases,
+  fetchTeamStyleExamples, fetchTopCategories, fetchOverdueCommitments,
+  fetchChannelProfile,
+} from './ai-agent-data.js'
 
 function getSQL() {
   const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
@@ -33,219 +40,7 @@ export interface AgentContext {
   source: 'telegram' | 'whatsapp'
 }
 
-async function getTogetherKey(orgId?: string): Promise<string | null> {
-  const sql = getSQL()
-  if (orgId) {
-    try {
-      const [setting] = await sql`
-        SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'together_api_key' LIMIT 1
-      `
-      if (setting?.value) return setting.value
-    } catch {}
-  }
-  return process.env.TOGETHER_API_KEY || null
-}
-
-async function getAgentSettings(orgId: string) {
-  const sql = getSQL()
-  try {
-    const rows = await sql`SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key LIKE 'ai_agent_%'`
-    const s: Record<string, string> = {}
-    for (const r of rows) s[r.key] = r.value
-    return {
-      enabled: s['ai_agent_enabled'] === 'true',
-      mode: (s['ai_agent_mode'] || 'assist') as 'autonomous' | 'assist' | 'night_only',
-      maxConfidenceForAutoReply: parseFloat(s['ai_agent_min_confidence'] || '0.8'),
-      workingHoursStart: parseInt(s['ai_agent_work_start'] || '9'),
-      workingHoursEnd: parseInt(s['ai_agent_work_end'] || '22'),
-      excludeChannels: (s['ai_agent_exclude_channels'] || '').split(',').filter(Boolean),
-      model: s['ai_agent_model'] || DEFAULT_MODEL,
-      customInstructions: s['ai_agent_custom_instructions'] || '',
-    }
-  } catch {
-    return { enabled: false, mode: 'assist' as const, maxConfidenceForAutoReply: 0.8, workingHoursStart: 9, workingHoursEnd: 22, excludeChannels: [] as string[], model: DEFAULT_MODEL, customInstructions: '' }
-  }
-}
-
-function isWorkingHours(start: number, end: number): boolean {
-  const h = (new Date().getUTCHours() + 5) % 24
-  return h >= start && h < end
-}
-
-async function fetchRecentMessages(orgId: string, channelId: string, limit = 30) {
-  const sql = getSQL()
-  const msgs = await sql`
-    SELECT sender_name, sender_role, is_from_client, text_content, transcript, content_type, created_at
-    FROM support_messages WHERE channel_id = ${channelId} AND org_id = ${orgId}
-    ORDER BY created_at DESC LIMIT ${limit}
-  `
-  return msgs.reverse().map((m: any) => ({
-    sender: m.sender_name,
-    role: m.is_from_client ? 'client' : 'support',
-    text: (m.text_content || m.transcript || `[${m.content_type}]`).slice(0, 400),
-    time: m.created_at,
-  }))
-}
-
-async function fetchAvailableAgents(orgId: string) {
-  const sql = getSQL()
-  const agents = await sql`
-    SELECT id, name, role, status FROM support_agents
-    WHERE org_id = ${orgId} AND status != 'offline'
-    ORDER BY CASE WHEN status = 'online' THEN 0 ELSE 1 END, name
-  `
-  return agents.map((a: any) => ({ id: a.id, name: a.name, role: a.role, status: a.status }))
-}
-
-async function fetchSimilarHistory(orgId: string, query: string) {
-  const sql = getSQL()
-  const words = query.toLowerCase().replace(/[^\wа-яёўқғҳ\s]/gi, '').split(/\s+/).filter(w => w.length > 3).slice(0, 5)
-  if (words.length === 0) return []
-  const patterns = words.map(w => `%${w}%`)
-  try {
-    const rows = await sql`
-      SELECT DISTINCT ON (m2.text_content)
-        m1.text_content as question, m2.text_content as answer, m2.sender_name as answered_by,
-        m1.channel_id
-      FROM support_messages m1
-      JOIN support_messages m2 ON m2.channel_id = m1.channel_id AND m2.org_id = m1.org_id
-        AND m2.is_from_client = false AND m2.created_at > m1.created_at
-        AND m2.created_at < m1.created_at + INTERVAL '4 hours'
-      WHERE m1.org_id = ${orgId} AND m1.is_from_client = true
-        AND (m1.text_content ILIKE ${patterns[0]} OR m1.text_content ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]})
-      ORDER BY m2.text_content, m1.created_at DESC
-      LIMIT 8
-    `
-    return rows.map((r: any) => ({
-      question: (r.question || '').slice(0, 300),
-      answer: (r.answer || '').slice(0, 400),
-      answeredBy: r.answered_by,
-    }))
-  } catch { return [] }
-}
-
-async function fetchRelevantDocs(orgId: string, query: string) {
-  const sql = getSQL()
-
-  const hasEmbeddings = await sql`
-    SELECT COUNT(*) as cnt FROM support_docs WHERE org_id = ${orgId} AND embedding IS NOT NULL AND array_length(embedding, 1) > 0
-  `.then(r => Number(r[0]?.cnt || 0) > 10).catch(() => false)
-
-  if (hasEmbeddings) {
-    try {
-      const apiKey = await getTogetherKey(orgId)
-      if (apiKey) {
-        const res = await fetch('https://api.together.xyz/v1/embeddings', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'intfloat/multilingual-e5-large-instruct', input: query.slice(0, 500) }),
-          signal: AbortSignal.timeout(5000),
-        })
-        if (res.ok) {
-          const data = await res.json() as any
-          const emb = data.data?.[0]?.embedding
-          if (emb) {
-            const embStr = `{${emb.join(',')}}`
-            const docs = await sql`
-              SELECT title, url, category, LEFT(content, 400) as excerpt
-              FROM support_docs
-              WHERE org_id = ${orgId} AND embedding IS NOT NULL AND array_length(embedding, 1) > 0
-              ORDER BY (
-                (SELECT SUM(a * b) FROM unnest(embedding, ${embStr}::real[]) AS t(a, b)) /
-                NULLIF(
-                  SQRT((SELECT SUM(a * a) FROM unnest(embedding) AS t(a))) *
-                  SQRT((SELECT SUM(b * b) FROM unnest(${embStr}::real[]) AS t(b))),
-                  0
-                )
-              ) DESC NULLS LAST
-              LIMIT 4
-            `
-            if (docs.length > 0) {
-              return docs.map((d: any) => ({
-                title: d.title, url: d.url, category: d.category,
-                excerpt: (d.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 300),
-              }))
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
-  const words = query.toLowerCase().replace(/[^\wа-яёўқғҳ\s]/gi, '').split(/\s+/).filter(w => w.length > 3).slice(0, 6)
-  if (words.length === 0) return []
-  try {
-    const patterns = words.map(w => `%${w}%`)
-    const docs = await sql`
-      SELECT title, url, category, LEFT(content, 400) as excerpt,
-        (CASE WHEN title ILIKE ${patterns[0]} THEN 15 ELSE 0 END +
-         CASE WHEN content ILIKE ${patterns[0]} THEN 5 ELSE 0 END +
-         CASE WHEN title ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]} THEN 10 ELSE 0 END +
-         CASE WHEN content ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]} THEN 3 ELSE 0 END
-        ) as score
-      FROM support_docs WHERE org_id = ${orgId}
-        AND (title ILIKE ${patterns[0]} OR content ILIKE ${patterns[0]}
-             OR title ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]}
-             OR content ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]})
-      ORDER BY score DESC LIMIT 5
-    `
-    return docs.filter((d: any) => d.score > 0).map((d: any) => ({
-      title: d.title, url: d.url, category: d.category,
-      excerpt: (d.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 300),
-    }))
-  } catch { return [] }
-}
-
-async function fetchFeedbackExamples(orgId: string) {
-  const sql = getSQL()
-  try {
-    const good = await sql`
-      SELECT incoming_message, action, reply_text, reasoning
-      FROM support_agent_decisions WHERE org_id = ${orgId} AND feedback = 'correct'
-      ORDER BY created_at DESC LIMIT 3
-    `
-    const bad = await sql`
-      SELECT incoming_message, action, reply_text, reasoning, feedback_note
-      FROM support_agent_decisions WHERE org_id = ${orgId} AND feedback = 'wrong'
-      ORDER BY created_at DESC LIMIT 3
-    `
-    return {
-      good: good.map((r: any) => ({ msg: (r.incoming_message || '').slice(0, 150), action: r.action, reply: (r.reply_text || '').slice(0, 200) })),
-      bad: bad.map((r: any) => ({ msg: (r.incoming_message || '').slice(0, 150), action: r.action, reply: (r.reply_text || '').slice(0, 200), note: r.feedback_note || '' })),
-    }
-  } catch { return { good: [], bad: [] } }
-}
-
-async function fetchOpenCases(orgId: string, channelId: string) {
-  const sql = getSQL()
-  try {
-    const cases = await sql`
-      SELECT id, title, priority, status, assigned_agent_id
-      FROM support_cases
-      WHERE channel_id = ${channelId} AND org_id = ${orgId} AND status NOT IN ('resolved', 'closed')
-      ORDER BY created_at DESC LIMIT 3
-    `
-    return cases.map((c: any) => ({ id: c.id, title: c.title, priority: c.priority, status: c.status }))
-  } catch { return [] }
-}
-
-async function fetchChannelProfile(orgId: string, channelId: string) {
-  const sql = getSQL()
-  try {
-    const [ch] = await sql`
-      SELECT name, type, tags, awaiting_reply, last_client_message_at, last_team_message_at
-      FROM support_channels WHERE id = ${channelId} AND org_id = ${orgId} LIMIT 1
-    `
-    if (!ch) return null
-    let waitMin: number | null = null
-    if (ch.awaiting_reply && ch.last_client_message_at) {
-      waitMin = Math.round((Date.now() - new Date(ch.last_client_message_at).getTime()) / 60000)
-    }
-    return { name: ch.name, type: ch.type, tags: ch.tags, waitingMinutes: waitMin }
-  } catch { return null }
-}
-
-function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], customInstructions: string): string {
+function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], customInstructions: string, topCategories?: any[], teamExamples?: any[]): string {
   const agentList = agents.length > 0
     ? agents.map(a => `- ${a.name} (${a.role}, ${a.status === 'online' ? 'онлайн' : 'занят'}): id=${a.id}`).join('\n')
     : 'Сейчас нет доступных сотрудников'
@@ -258,7 +53,15 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], cus
     ? `\nОСОБЫЕ ИНСТРУКЦИИ ОТ РУКОВОДСТВА (строго соблюдай):\n${customInstructions.trim()}`
     : ''
 
-  return `Ты — опытный и дружелюбный специалист службы поддержки Delever. Ты общаешься как живой менеджер поддержки — тепло, с заботой, и всегда стараешься помочь.
+  const categoriesBlock = topCategories && topCategories.length > 0
+    ? `\nЧАСТЫЕ ТЕМЫ ОБРАЩЕНИЙ (по убыванию): ${topCategories.map(c => `${c.category}(${c.count})`).join(', ')}`
+    : ''
+
+  const teamStyleBlock = teamExamples && teamExamples.length > 0
+    ? `\nПРИМЕРЫ ОТВЕТОВ КОМАНДЫ (копируй их стиль, длину, тон):\n${teamExamples.map((e, i) => `${i + 1}. Клиент: "${e.client}"\n   ${e.agent}: "${e.reply}"`).join('\n')}`
+    : ''
+
+  return `Ты — опытный менеджер поддержки Delever. Delever — платформа управления онлайн-заказами и доставкой для ресторанов в Узбекистане. Клиенты — владельцы/менеджеры ресторанов, они используют Delever для приёма заказов, меню, интеграции с iiko/R-Keeper, мобильного приложения.
 
 ТЕКУЩЕЕ ВРЕМЯ: ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}
 РАБОЧИЕ ЧАСЫ: ${isWorkHours ? 'ДА' : 'НЕТ — ночь/выходной'}
@@ -267,98 +70,147 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], cus
 ${agentList}
 ${docsBlock}
 ${customBlock}
+${categoriesBlock}
+${teamStyleBlock}
 
-ЯЗЫК ОБЩЕНИЯ:
-- Определи на каком языке пишет клиент (русский, узбекский, английский) и отвечай на ТОМ ЖЕ языке
-- Если клиент пишет на узбекском — отвечай на узбекском ВЕЖЛИВО и тепло
-- Если на русском — на русском. Если смешивает — приоритет русский
-- НИКОГДА не звучи грубо, резко или требовательно. Ты помогаешь, а не допрашиваешь
+═══ ЯЗЫК / TIL / LANGUAGE ═══
 
-СТИЛЬ ОБЩЕНИЯ:
-- Пиши как живой человек, НЕ как робот. БЕЗ шаблонов типа "Ваше обращение зафиксировано"
-- Будь тёплым: "Здравствуйте! Давайте разберёмся 😊", "Понял, сейчас посмотрю"
-- Уточняй мягко: "Подскажите, пожалуйста, какой у вас филиал?", "А можете скрин отправить?"
-- Используй имя клиента: "Ахмед, добрый день! Давайте разберёмся"
-- Если знаешь ответ — дай конкретную инструкцию с пошаговыми шагами
-- Если есть статья — дай ссылку: "Вот подробная инструкция: [ссылка]"
-- Если не знаешь — "Хороший вопрос, сейчас уточню у коллег и вернусь"
-- Коротко: 2-4 предложения. Не перегружай
+Клиенты пишут на ТРЁХ языках, часто смешивая в одном сообщении:
 
-ПРАВИЛА РЕШЕНИЙ (строго соблюдай приоритет):
-1. ESCALATE — ОБЯЗАТЕЛЬНО если хотя бы ОДНО из условий:
-   - Клиент злится, расстроен, пишет КАПСОМ или с восклицательными знаками
-   - Повторная жалоба (клиент писал об этом раньше)
-   - Критическая проблема: система не работает, заказы не проходят, данные теряются
-   - Клиент ждёт ответа больше 30 минут и повторяет вопрос
-   - Клиент упоминает потерю денег/клиентов/заказов
-   - Слова-маркеры: "опять", "снова", "уже третий раз", "сколько можно", "никто не отвечает", "ишламаяпти", "бузилган"
-2. REPLY — если можешь помочь (есть в документации, знаешь из истории). Если мало деталей — вежливо уточни
-3. REPLY_AND_TAG — ответил, но нужен специалист для сложного кейса
-4. TAG_AGENT — вопрос техничный / нужен конкретный человек
-5. CREATE_CASE — новая проблема, нужно расследование. Ставь priority=critical если: сервис полностью не работает, массовый сбой, потеря данных
-6. WAIT — лучше дождаться сотрудника (только если вопрос не срочный)
+1. УЗБЕКСКИЙ ЛАТИНИЦА (самый частый): "salom", "ishlamayapti", "yordam bering", "buyurtma", "filial"
+2. РУССКИЙ: "здравствуйте", "не работает", "помогите"
+3. УЗБЕКСКИЙ КИРИЛЛИЦА: "ишламаяпти", "буюртма", "ёрдам"
 
-ЕСЛИ ЕСТЬ СТАТЬЯ В БАЗЕ ЗНАНИЙ — включи ссылку в replyText: "Подробнее: <url>"
+ПРАВИЛО: Определи язык клиента и отвечай НА ТОМ ЖЕ ЯЗЫКЕ и в ТОЙ ЖЕ ПИСЬМЕННОСТИ.
 
-В НЕРАБОЧЕЕ ВРЕМЯ: "Добрый вечер! Сейчас нерабочее время, но я всё передам коллегам — утром с вами свяжутся. Если срочно, опишите подробнее 🙏"
+Примеры на узбекском (учись):
+- "Assalomu alaykum! Tushundim, hozir ko'rib beraman 😊"
+- "Salom! Muammoni tushundim. Quyidagilarni tekshirib ko'ring: ..."
+- "Rahmat, murojaat uchun! Hozir mutaxassis ulayaman."
+- "Kechirasiz noqulaylik uchun! Buni tezda hal qilamiz."
 
-ОТВЕЧАЙ JSON:
+Примеры на русском:
+- "Здравствуйте! Давайте разберёмся, сейчас посмотрю."
+- "Понял, спасибо что написали. Проверьте пожалуйста..."
+- "Передам коллегам, скоро вернусь с ответом."
+
+НИКОГДА НЕ ПИШИ:
+- Формально: "Ваше обращение зарегистрировано", "Благодарим за обращение"
+- Грубо: "Конкретроқ айтсангиз", "Нима демоқчисиз?"
+- Роботоподобно: "Я AI-ассистент...", "Как языковая модель..."
+
+═══ СТИЛЬ ═══
+
+- Пиши как живой менеджер: коротко, конкретно, тепло
+- Называй клиента по имени если знаешь
+- Уточняй мягко если мало деталей: "Qaysi filial?", "Скрин юборсангиз тезроқ ёрдам берамиз"
+- Если знаешь ответ — давай пошаговую инструкцию (1, 2, 3...)
+- Если есть статья в базе — дай ссылку: "Batafsil: <url>" / "Подробнее: <url>"
+- Если не знаешь точно — "Yaxshi savol, hozir hamkasblarimdan aniqlab javob beraman"
+- Длина: 2-4 предложения. Не перегружай
+
+═══ ПРАВИЛА РЕШЕНИЙ (строго по приоритету) ═══
+
+1. **ESCALATE** — ОБЯЗАТЕЛЬНО при ЛЮБОМ из условий:
+   - Клиент злится/расстроен, КАПС, много "!" или "?"
+   - Повторная жалоба (в переписке видно что он уже писал об этом)
+   - Критический сбой: система/сайт/приложение не работает, заказы не проходят
+   - Клиент ждёт больше 30 мин и повторяет вопрос
+   - Потеря денег/клиентов/данных
+   - Просроченное обязательство перед клиентом
+   - МАРКЕРЫ на узбекском: "ishlamayapti", "yana", "yana xuddi shunday", "necha marta aytaman", "javob bermayapsizlar", "buzilgan", "yo'qoldi", "pul qaytaring"
+   - МАРКЕРЫ на русском: "опять", "снова", "третий раз", "сколько можно", "никто не отвечает", "верните деньги"
+   - МАРКЕРЫ на кириллице: "ишламаяпти", "бузилган", "яна", "жавоб берилмаяпти"
+   - Всегда ставь escalateToRole="admin", casePriority="critical"
+
+2. **REPLY** — можешь помочь сам (есть в документации или истории). Если мало данных — вежливо уточни
+
+3. **REPLY_AND_TAG** — ответил клиенту, но нужен специалист для доработки
+
+4. **TAG_AGENT** — технический вопрос, нужен конкретный человек (iiko-интеграция, биллинг, баг)
+
+5. **CREATE_CASE** — новая проблема для расследования. priority=critical если: массовый сбой, потеря данных
+
+6. **WAIT** — только если вопрос не срочный и лучше дождаться специалиста
+
+═══ ЭКСПЕРТНЫЕ ЗНАНИЯ DELEVER ═══
+
+Частые проблемы и решения (используй в ответах):
+- iiko интеграция (стоп-лист, модификаторы, синхронизация) → проверь настройки в iiko и Delever
+- Меню (позиции не отображаются, модификаторы) → Delever CMS → Меню → проверь активность
+- Заказы (не приходят, дублируются, статус) → проверь интеграцию и подключение
+- Приложение (не открывается, крашится) → версия, ОС, переустановка
+- Оплата/биллинг → передай менеджеру
+
+═══ ОТВЕТ JSON ═══
+
 {
   "action": "reply|tag_agent|escalate|create_case|wait|reply_and_tag",
-  "replyText": "тёплый живой текст ответа",
+  "replyText": "тёплый живой текст на языке клиента",
   "tagAgentId": "id (если тегаешь)",
   "tagAgentName": "имя (если тегаешь)",
   "escalateToRole": "admin",
   "casePriority": "low|medium|high|critical",
-  "caseTitle": "краткий заголовок кейса",
-  "reasoning": "почему принял такое решение",
+  "caseTitle": "краткий заголовок",
+  "reasoning": "почему принял решение (на русском)",
   "confidence": 0.85,
-  "docLinks": ["url1", "url2"]
+  "docLinks": ["url1"]
 }`
 }
 
-function buildUserPrompt(ctx: AgentContext, messages: any[], history: any[], cases: any[], profile: any, feedback?: { good: any[]; bad: any[] }): string {
+function buildUserPrompt(
+  ctx: AgentContext, messages: any[], history: any[], cases: any[],
+  profile: any, feedback?: { good: any[]; bad: any[] }, overdueCommitments?: any[]
+): string {
   const chatHistory = messages.length > 0
     ? messages.map(m => `[${m.role === 'client' ? '👤' : '💬'}] ${m.sender}: ${m.text}`).join('\n')
     : '(новый диалог, истории нет)'
 
   const historyBlock = history.length > 0
-    ? `\n\nПОХОЖИЕ ДИАЛОГИ ИЗ ПРОШЛОГО (учись на них, повторяй стиль ответов сотрудников):\n${history.map((h, i) => `--- Пример ${i + 1} ---\nКлиент: ${h.question}\nОтвет (${h.answeredBy}): ${h.answer}`).join('\n')}`
+    ? `\n\nПОХОЖИЕ ДИАЛОГИ ИЗ ПРОШЛОГО (учись на них, повторяй стиль ответов):\n${history.map((h, i) => `--- Пример ${i + 1} ---\nКлиент: ${h.question}\nОтвет (${h.answeredBy}): ${h.answer}`).join('\n')}`
     : ''
 
   const casesBlock = cases.length > 0
-    ? `\n\nОТКРЫТЫЕ КЕЙСЫ:\n${cases.map(c => `- [${c.priority}] ${c.title} (${c.status})`).join('\n')}`
+    ? `\n\nОТКРЫТЫЕ КЕЙСЫ ПО ЭТОМУ КАНАЛУ:\n${cases.map(c => `- [${c.priority}] ${c.title} (${c.status})`).join('\n')}`
     : ''
 
   const profileBlock = profile
-    ? `\nПРОФИЛЬ КАНАЛА: ${profile.name}, тип: ${profile.type}${profile.tags?.length ? ', теги: ' + profile.tags.join(', ') : ''}${profile.waitingMinutes ? ', клиент ждёт: ' + profile.waitingMinutes + ' мин' : ''}`
+    ? `\nПРОФИЛЬ КАНАЛА: ${profile.name}, тип: ${profile.type}${profile.tags?.length ? ', теги: ' + profile.tags.join(', ') : ''}${profile.waitingMinutes ? ', ⚠️ КЛИЕНТ ЖДЁТ: ' + profile.waitingMinutes + ' мин!' : ''}`
     : ''
 
   let feedbackBlock = ''
   if (feedback) {
     if (feedback.good.length > 0) {
-      feedbackBlock += `\n\nТВОИ ПРОШЛЫЕ УДАЧНЫЕ ОТВЕТЫ (повторяй этот стиль):\n${feedback.good.map((f, i) => `✅ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"`).join('\n')}`
+      feedbackBlock += `\n\nТВОИ УДАЧНЫЕ ОТВЕТЫ (повторяй стиль):\n${feedback.good.map((f, i) => `✅ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"`).join('\n')}`
     }
     if (feedback.bad.length > 0) {
-      feedbackBlock += `\n\nТВОИ ПРОШЛЫЕ ОШИБКИ (не повторяй!):\n${feedback.bad.map((f, i) => `❌ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"${f.note ? ` (замечание: ${f.note})` : ''}`).join('\n')}`
+      feedbackBlock += `\n\nТВОИ ОШИБКИ (не повторяй!):\n${feedback.bad.map((f, i) => `❌ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"${f.note ? ` [${f.note}]` : ''}`).join('\n')}`
     }
   }
 
+  const overdueBlock = overdueCommitments && overdueCommitments.length > 0
+    ? `\n\n⚠️ ПРОСРОЧЕННЫЕ ОБЯЗАТЕЛЬСТВА перед этим клиентом (ОБЯЗАТЕЛЬНО учти при ответе, извинись!):\n${overdueCommitments.map(c => `- "${c.text}" (дедлайн: ${c.deadline}, ответственный: ${c.agent})`).join('\n')}`
+    : ''
+
+  const waitWarning = profile?.waitingMinutes && profile.waitingMinutes > 30
+    ? `\n\n⚠️ КЛИЕНТ ЖДЁТ ${profile.waitingMinutes} МИНУТ! Это критично — извинись за задержку и помоги быстро.`
+    : ''
+
   return `КАНАЛ: ${ctx.channelName} (${ctx.source}, ${ctx.isGroup ? 'группа' : 'личка'})
 ОТПРАВИТЕЛЬ: ${ctx.senderName}${profileBlock}
-
+${waitWarning}
 ПЕРЕПИСКА:
 ${chatHistory}
 
 НОВОЕ СООБЩЕНИЕ:
 ${ctx.senderName}: ${ctx.incomingMessage}
-${historyBlock}${casesBlock}${feedbackBlock}
+${historyBlock}${casesBlock}${overdueBlock}${feedbackBlock}
 
-Прими решение. Помни: отвечай тепло и по-человечески.`
+Прими решение. Отвечай на языке клиента, тепло и конкретно.`
 }
 
 export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDecision; skipped?: boolean; reason?: string } | null> {
-  const settings = await getAgentSettings(ctx.orgId)
+  const settings = await getAgentSettings(ctx.orgId, DEFAULT_MODEL)
   if (!settings.enabled) return { decision: null as any, skipped: true, reason: 'agent_disabled' }
   if (settings.excludeChannels.includes(ctx.channelId)) return { decision: null as any, skipped: true, reason: 'channel_excluded' }
 
@@ -368,18 +220,21 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const apiKey = await getTogetherKey(ctx.orgId)
   if (!apiKey) return { decision: null as any, skipped: true, reason: 'no_api_key' }
 
-  const [messages, agents, history, cases, docs, profile, feedback] = await Promise.all([
+  const [messages, agents, history, cases, docs, profile, feedback, teamExamples, topCategories, overdueCommitments] = await Promise.all([
     fetchRecentMessages(ctx.orgId, ctx.channelId),
     fetchAvailableAgents(ctx.orgId),
     fetchSimilarHistory(ctx.orgId, ctx.incomingMessage),
     fetchOpenCases(ctx.orgId, ctx.channelId),
-    fetchRelevantDocs(ctx.orgId, ctx.incomingMessage),
+    fetchRelevantDocs(ctx.orgId, ctx.incomingMessage, apiKey),
     fetchChannelProfile(ctx.orgId, ctx.channelId),
     fetchFeedbackExamples(ctx.orgId),
+    fetchTeamStyleExamples(ctx.orgId),
+    fetchTopCategories(ctx.orgId),
+    fetchOverdueCommitments(ctx.orgId, ctx.channelId),
   ])
 
-  const systemPrompt = buildSystemPrompt(agents, workHours, docs, settings.customInstructions)
-  const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile, feedback)
+  const systemPrompt = buildSystemPrompt(agents, workHours, docs, settings.customInstructions, topCategories, teamExamples)
+  const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile, feedback, overdueCommitments)
 
   try {
     const res = await fetch(TOGETHER_API, {
