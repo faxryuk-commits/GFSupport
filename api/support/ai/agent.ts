@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
-import { runAgent, type AgentContext } from '../lib/ai-agent.js'
+import { runAgent, executeDecision, type AgentContext } from '../lib/ai-agent.js'
 
 export const config = {
   runtime: 'edge',
@@ -141,7 +141,19 @@ export default async function handler(req: Request): Promise<Response> {
         if (!result) {
           return json({ result: null, error: 'Agent returned null — check Together API key and logs' })
         }
-        return json({ result })
+
+        let executedActions: string[] = []
+        if (result.decision && !result.skipped) {
+          const d = result.decision
+          const needsExecution = d.action === 'escalate' || d.action === 'tag_agent' || d.action === 'create_case'
+          if (needsExecution) {
+            const noopSend = async () => {}
+            const execResult = await executeDecision(ctx, d, noopSend)
+            executedActions = execResult.executed
+          }
+        }
+
+        return json({ result, executedActions })
       } catch (e: any) {
         console.error('[AI Agent Test] Error:', e.message, e.stack?.slice(0, 300))
         return json({ result: null, error: `Agent error: ${e.message}` })

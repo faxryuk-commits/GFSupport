@@ -1728,26 +1728,29 @@ export default async function handler(req: Request): Promise<Response> {
           source: 'telegram',
         })
         if (agentResult && !agentResult.skipped && agentResult.decision) {
-          const settings = agentResult.decision
-          const canAutoReply = settings.confidence >= 0.8 && (settings.action === 'reply' || settings.action === 'reply_and_tag')
-          if (canAutoReply) {
-            const botToken = await resolveBotToken(orgId)
-            if (botToken) {
-              const sendMsg = async (_chId: string, msgText: string) => {
+          const d = agentResult.decision
+          const botToken = await resolveBotToken(orgId)
+          const sendMsg = botToken
+            ? async (_chId: string, msgText: string) => {
                 await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ chat_id: chat.id, text: msgText }),
                 })
               }
-              await executeDecision({
-                channelId, channelName: chat.title || '', orgId,
-                incomingMessage: analysisText, senderName: user.fullName,
-                isGroup: true, source: 'telegram',
-              }, agentResult.decision, sendMsg)
-            }
+            : async () => {}
+
+          const canAutoReply = d.confidence >= 0.8 && (d.action === 'reply' || d.action === 'reply_and_tag')
+          const needsExecution = canAutoReply || d.action === 'escalate' || d.action === 'tag_agent' || d.action === 'create_case'
+
+          if (needsExecution) {
+            await executeDecision({
+              channelId, channelName: chat.title || '', orgId,
+              incomingMessage: analysisText, senderName: user.fullName,
+              isGroup: true, source: 'telegram',
+            }, d, sendMsg)
           }
-          console.log(`[Webhook] AI Agent: action=${agentResult.decision.action}, confidence=${agentResult.decision.confidence}`)
+          console.log(`[Webhook] AI Agent: action=${d.action}, confidence=${d.confidence}, executed=${needsExecution}`)
         }
       } catch (e: any) {
         console.log(`[Webhook] AI Agent skipped: ${e.message}`)

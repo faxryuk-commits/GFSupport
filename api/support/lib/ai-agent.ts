@@ -284,13 +284,19 @@ ${customBlock}
 - Если не знаешь — "Хороший вопрос, сейчас уточню у коллег и вернусь"
 - Коротко: 2-4 предложения. Не перегружай
 
-ПРАВИЛА РЕШЕНИЙ:
-1. REPLY — если можешь помочь (есть в документации, знаешь из истории). Если мало деталей — вежливо уточни
-2. REPLY_AND_TAG — ответил, но нужен специалист для сложного кейса
-3. TAG_AGENT — вопрос техничный / нужен конкретный человек
-4. ESCALATE — клиент расстроен, повторное обращение, критическая проблема
-5. CREATE_CASE — новая проблема, нужно расследование
-6. WAIT — лучше дождаться сотрудника
+ПРАВИЛА РЕШЕНИЙ (строго соблюдай приоритет):
+1. ESCALATE — ОБЯЗАТЕЛЬНО если хотя бы ОДНО из условий:
+   - Клиент злится, расстроен, пишет КАПСОМ или с восклицательными знаками
+   - Повторная жалоба (клиент писал об этом раньше)
+   - Критическая проблема: система не работает, заказы не проходят, данные теряются
+   - Клиент ждёт ответа больше 30 минут и повторяет вопрос
+   - Клиент упоминает потерю денег/клиентов/заказов
+   - Слова-маркеры: "опять", "снова", "уже третий раз", "сколько можно", "никто не отвечает", "ишламаяпти", "бузилган"
+2. REPLY — если можешь помочь (есть в документации, знаешь из истории). Если мало деталей — вежливо уточни
+3. REPLY_AND_TAG — ответил, но нужен специалист для сложного кейса
+4. TAG_AGENT — вопрос техничный / нужен конкретный человек
+5. CREATE_CASE — новая проблема, нужно расследование. Ставь priority=critical если: сервис полностью не работает, массовый сбой, потеря данных
+6. WAIT — лучше дождаться сотрудника (только если вопрос не срочный)
 
 ЕСЛИ ЕСТЬ СТАТЬЯ В БАЗЕ ЗНАНИЙ — включи ссылку в replyText: "Подробнее: <url>"
 
@@ -462,17 +468,29 @@ export async function executeDecision(
 
     try {
       const { sendNotification } = await import('./notifications.js')
+      if (decision.tagAgentId) {
+        await sendNotification({
+          orgId: ctx.orgId,
+          type: 'tag',
+          title: `Вас тегнул AI-агент`,
+          body: `Клиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 150)}"\n\nАгент считает, что нужна ваша помощь.`,
+          channelId: ctx.channelId,
+          channelName: ctx.channelName,
+          senderName: ctx.senderName,
+          priority: 'high',
+          targetAgentIds: [decision.tagAgentId],
+        })
+      }
       await sendNotification({
         orgId: ctx.orgId,
         type: 'tag',
-        title: `Вас тегнул AI-агент`,
-        body: `Клиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 150)}"\n\nАгент считает, что нужна ваша помощь.`,
+        title: `AI-агент тегнул ${decision.tagAgentName || 'сотрудника'}`,
+        body: `Канал: ${ctx.channelName}\nКлиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 150)}"\n\nПричина: ${decision.reasoning?.slice(0, 200) || 'нужна помощь'}`,
         channelId: ctx.channelId,
         channelName: ctx.channelName,
         senderName: ctx.senderName,
         priority: 'high',
-        targetAgentIds: decision.tagAgentId ? [decision.tagAgentId] : undefined,
-        targetRoles: !decision.tagAgentId ? ['admin', 'manager'] : undefined,
+        targetRoles: ['admin'],
       })
       executed.push('notification_sent')
     } catch (e: any) { console.error('[AI Agent] Tag notification failed:', e.message) }

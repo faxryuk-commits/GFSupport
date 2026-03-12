@@ -398,24 +398,28 @@ export default async function handler(req: Request): Promise<Response> {
         })
         if (agentResult && !agentResult.skipped && agentResult.decision) {
           const d = agentResult.decision
-          if (d.confidence >= 0.8 && (d.action === 'reply' || d.action === 'reply_and_tag')) {
-            const bridge = await getOrgWhatsAppBridge(orgId)
-            if (bridge.url) {
-              const sendWa = async (_chId: string, msgText: string) => {
+          const bridge = await getOrgWhatsAppBridge(orgId)
+          const sendWa = bridge.url
+            ? async (_chId: string, msgText: string) => {
                 await fetch(`${bridge.url}/send`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bridge.secret}` },
                   body: JSON.stringify({ chatId, text: msgText }),
                 }).catch(() => {})
               }
-              await executeDecision({
-                channelId, channelName: channelName || '', orgId,
-                incomingMessage: text, senderName: senderName || 'Client',
-                isGroup: !!isGroup, source: 'whatsapp',
-              }, d, sendWa)
-            }
+            : async () => {}
+
+          const canAutoReply = d.confidence >= 0.8 && (d.action === 'reply' || d.action === 'reply_and_tag')
+          const needsExecution = canAutoReply || d.action === 'escalate' || d.action === 'tag_agent' || d.action === 'create_case'
+
+          if (needsExecution) {
+            await executeDecision({
+              channelId, channelName: channelName || '', orgId,
+              incomingMessage: text, senderName: senderName || 'Client',
+              isGroup: !!isGroup, source: 'whatsapp',
+            }, d, sendWa)
           }
-          console.log(`[WA] AI Agent: action=${d.action}, confidence=${d.confidence}`)
+          console.log(`[WA] AI Agent: action=${d.action}, confidence=${d.confidence}, executed=${needsExecution}`)
         }
       } catch (e: any) {
         console.log(`[WA] AI Agent skipped: ${e.message}`)
