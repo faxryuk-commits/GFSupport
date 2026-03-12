@@ -3,7 +3,8 @@ import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
-  maxDuration: 60,
+  maxDuration: 300,
+  regions: ['iad1'],
 }
 
 function json(data: any, status = 200) {
@@ -205,7 +206,7 @@ export default async function handler(req: Request) {
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
   const offset = parseInt(url.searchParams.get('offset') || '0')
-  const batchSize = Math.min(parseInt(url.searchParams.get('batch') || '20'), 25)
+  const batchSize = Math.min(parseInt(url.searchParams.get('batch') || '10'), 15)
   const pagesToSync = DOC_PAGES.slice(offset, offset + batchSize)
 
   if (pagesToSync.length === 0) {
@@ -254,8 +255,8 @@ export default async function handler(req: Request) {
     }
 
     const batches = []
-    for (let i = 0; i < pagesToSync.length; i += 5) {
-      batches.push(pagesToSync.slice(i, i + 5))
+    for (let i = 0; i < pagesToSync.length; i += 3) {
+      batches.push(pagesToSync.slice(i, i + 3))
     }
     for (const batch of batches) {
       await Promise.all(batch.map(syncPage))
