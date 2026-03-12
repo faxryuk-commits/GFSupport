@@ -126,29 +126,71 @@ async function fetchSimilarHistory(orgId: string, query: string) {
 
 async function fetchRelevantDocs(orgId: string, query: string) {
   const sql = getSQL()
+
+  const hasEmbeddings = await sql`
+    SELECT COUNT(*) as cnt FROM support_docs WHERE org_id = ${orgId} AND embedding IS NOT NULL AND array_length(embedding, 1) > 0
+  `.then(r => Number(r[0]?.cnt || 0) > 10).catch(() => false)
+
+  if (hasEmbeddings) {
+    try {
+      const apiKey = await getTogetherKey(orgId)
+      if (apiKey) {
+        const res = await fetch('https://api.together.xyz/v1/embeddings', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'BAAI/bge-large-en-v1.5', input: query.slice(0, 1000) }),
+          signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok) {
+          const data = await res.json() as any
+          const emb = data.data?.[0]?.embedding
+          if (emb) {
+            const embStr = `{${emb.join(',')}}`
+            const docs = await sql`
+              SELECT title, url, category, LEFT(content, 400) as excerpt
+              FROM support_docs
+              WHERE org_id = ${orgId} AND embedding IS NOT NULL AND array_length(embedding, 1) > 0
+              ORDER BY (
+                (SELECT SUM(a * b) FROM unnest(embedding, ${embStr}::real[]) AS t(a, b)) /
+                NULLIF(
+                  SQRT((SELECT SUM(a * a) FROM unnest(embedding) AS t(a))) *
+                  SQRT((SELECT SUM(b * b) FROM unnest(${embStr}::real[]) AS t(b))),
+                  0
+                )
+              ) DESC NULLS LAST
+              LIMIT 4
+            `
+            if (docs.length > 0) {
+              return docs.map((d: any) => ({
+                title: d.title, url: d.url, category: d.category,
+                excerpt: (d.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+              }))
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   const words = query.toLowerCase().replace(/[^\wа-яёўқғҳ\s]/gi, '').split(/\s+/).filter(w => w.length > 3).slice(0, 6)
   if (words.length === 0) return []
   try {
     const patterns = words.map(w => `%${w}%`)
     const docs = await sql`
-      SELECT title, url, category, LEFT(content, 500) as excerpt,
+      SELECT title, url, category, LEFT(content, 400) as excerpt,
         (CASE WHEN title ILIKE ${patterns[0]} THEN 15 ELSE 0 END +
          CASE WHEN content ILIKE ${patterns[0]} THEN 5 ELSE 0 END +
          CASE WHEN title ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]} THEN 10 ELSE 0 END +
          CASE WHEN content ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]} THEN 3 ELSE 0 END
         ) as score
-      FROM support_docs
-      WHERE org_id = ${orgId}
+      FROM support_docs WHERE org_id = ${orgId}
         AND (title ILIKE ${patterns[0]} OR content ILIKE ${patterns[0]}
              OR title ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]}
              OR content ILIKE ${patterns.length > 1 ? patterns[1] : patterns[0]})
-      ORDER BY score DESC
-      LIMIT 5
+      ORDER BY score DESC LIMIT 5
     `
     return docs.filter((d: any) => d.score > 0).map((d: any) => ({
-      title: d.title,
-      url: d.url,
-      category: d.category,
+      title: d.title, url: d.url, category: d.category,
       excerpt: (d.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 300),
     }))
   } catch { return [] }
