@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings, Save, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Settings, Save, Eye, EyeOff, Loader2, Shield, Key } from 'lucide-react'
 import { fetchAgentSettings, updateAgentSettings, type AgentSettings } from '@/shared/api'
 
 const MODELS = [
@@ -21,7 +21,9 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
   const [showKey, setShowKey] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingKey, setSavingKey] = useState(false)
   const [msg, setMsg] = useState('')
+  const [keyMsg, setKeyMsg] = useState('')
 
   useEffect(() => {
     fetchAgentSettings()
@@ -40,9 +42,9 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
     setSaving(true)
     setMsg('')
     try {
-      await updateAgentSettings({ ...settings, togetherApiKey: apiKey || undefined })
+      const { hasApiKey: _, ...safeSettings } = settings
+      await updateAgentSettings(safeSettings)
       setMsg('Сохранено')
-      setApiKey('')
       onSaved?.()
       const fresh = await fetchAgentSettings()
       setSettings(fresh)
@@ -50,6 +52,24 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
       setMsg('Ошибка сохранения')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleSaveKey() {
+    if (!apiKey.trim()) return
+    setSavingKey(true)
+    setKeyMsg('')
+    try {
+      await updateAgentSettings({ togetherApiKey: apiKey })
+      setKeyMsg('Ключ сохранён')
+      setApiKey('')
+      setShowKey(false)
+      const fresh = await fetchAgentSettings()
+      setSettings(fresh)
+    } catch {
+      setKeyMsg('Ошибка сохранения ключа')
+    } finally {
+      setSavingKey(false)
     }
   }
 
@@ -140,43 +160,60 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
         </div>
       </div>
 
-      <div>
-        <label className="text-sm font-medium text-slate-700 block mb-1">
-          Together API Key
-          {settings.hasApiKey && (
-            <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">настроен</span>
-          )}
-        </label>
-        <div className="relative">
-          <input
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder={settings.hasApiKey ? '••••••• (оставьте пустым чтобы не менять)' : 'Введите Together API Key'}
-            className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg text-sm"
-          />
-          <button
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-          >
-            {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-        <p className="text-xs text-slate-400 mt-1">
-          Получите ключ на <a href="https://api.together.xyz" target="_blank" className="text-blue-500 hover:underline">together.xyz</a>
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between pt-2">
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
         <button
           onClick={handleSave}
           disabled={saving}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Сохранить
+          Сохранить настройки
         </button>
         {msg && <span className={`text-sm ${msg === 'Сохранено' ? 'text-green-600' : 'text-red-500'}`}>{msg}</span>}
+      </div>
+
+      <div className="border-t border-slate-200 pt-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Key className="w-4 h-4 text-slate-600" />
+          <h3 className="text-sm font-semibold text-slate-800">Together API Key</h3>
+          {settings.hasApiKey && (
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <Shield className="w-3 h-3" /> настроен
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder={settings.hasApiKey ? '••••••• (введите новый чтобы заменить)' : 'Введите Together API Key'}
+              className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg text-sm"
+              autoComplete="off"
+            />
+            <button
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          <button
+            onClick={handleSaveKey}
+            disabled={savingKey || !apiKey.trim()}
+            className="flex items-center gap-1 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-900 disabled:opacity-50 shrink-0"
+          >
+            {savingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+            Сохранить ключ
+          </button>
+        </div>
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-slate-400">
+            Ключ передаётся по HTTPS и хранится зашифрованно. Получите на <a href="https://api.together.xyz" target="_blank" className="text-blue-500 hover:underline">together.xyz</a>
+          </p>
+          {keyMsg && <span className={`text-xs ${keyMsg.includes('сохранён') ? 'text-green-600' : 'text-red-500'}`}>{keyMsg}</span>}
+        </div>
       </div>
     </div>
   )
