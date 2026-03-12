@@ -215,6 +215,7 @@ export default async function handler(req: Request) {
   }
 
   try {
+    try { await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)` } catch {}
     await sql`
       CREATE TABLE IF NOT EXISTS support_docs (
         id SERIAL PRIMARY KEY,
@@ -230,7 +231,6 @@ export default async function handler(req: Request) {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `
-    await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50)`.catch(() => {})
 
     let synced = 0
     const errors: string[] = []
