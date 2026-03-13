@@ -60,14 +60,55 @@ export async function fetchRecentMessages(orgId: string, channelId: string, limi
   }))
 }
 
-export async function fetchAvailableAgents(orgId: string) {
+export async function fetchAvailableAgents(orgId: string, channelId?: string) {
   const sql = getSQL()
   const agents = await sql`
     SELECT id, name, role, status FROM support_agents
     WHERE org_id = ${orgId} AND status != 'offline'
     ORDER BY CASE WHEN status = 'online' THEN 0 ELSE 1 END, name
   `
-  return agents.map((a: any) => ({ id: a.id, name: a.name, role: a.role, status: a.status }))
+
+  let channelTopAgent: string | null = null
+  if (channelId) {
+    try {
+      const [top] = await sql`
+        SELECT sender_name, COUNT(*)::int as cnt
+        FROM support_messages
+        WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_from_client = false
+          AND sender_name IS NOT NULL AND LENGTH(sender_name) > 1
+        GROUP BY sender_name ORDER BY cnt DESC LIMIT 1
+      `
+      if (top?.sender_name) channelTopAgent = top.sender_name
+    } catch {}
+  }
+
+  const agentSpecs: Record<string, string[]> = {}
+  try {
+    const rows = await sql`
+      SELECT m.sender_name, m.ai_category, COUNT(*)::int as cnt
+      FROM support_messages m
+      WHERE m.org_id = ${orgId} AND m.is_from_client = false AND m.ai_category IS NOT NULL
+        AND m.sender_name IS NOT NULL AND LENGTH(m.sender_name) > 1
+      GROUP BY m.sender_name, m.ai_category
+      HAVING COUNT(*) >= 5
+      ORDER BY m.sender_name, cnt DESC
+    `
+    for (const r of rows) {
+      if (!agentSpecs[r.sender_name]) agentSpecs[r.sender_name] = []
+      if (agentSpecs[r.sender_name].length < 4) {
+        agentSpecs[r.sender_name].push(r.ai_category)
+      }
+    }
+  } catch {}
+
+  return agents.map((a: any) => ({
+    id: a.id,
+    name: a.name,
+    role: a.role,
+    status: a.status,
+    specializations: agentSpecs[a.name] || [],
+    isChannelPrimary: channelTopAgent ? a.name === channelTopAgent : false,
+  }))
 }
 
 export async function fetchSimilarHistory(orgId: string, query: string) {
@@ -253,6 +294,44 @@ export async function fetchOverdueCommitments(orgId: string, channelId: string) 
       agent: r.agent_name,
     }))
   } catch { return [] }
+}
+
+export async function shouldSkipChannel(orgId: string, channelId: string): Promise<{ skip: boolean; reason?: string }> {
+  const sql = getSQL()
+  try {
+    const [lastTeamMsg] = await sql`
+      SELECT created_at FROM support_messages
+      WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_from_client = false
+      ORDER BY created_at DESC LIMIT 1
+    `
+    const [lastClientMsg] = await sql`
+      SELECT created_at FROM support_messages
+      WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_from_client = true
+      ORDER BY created_at DESC LIMIT 1
+    `
+    if (lastTeamMsg?.created_at && lastClientMsg?.created_at) {
+      const teamTime = new Date(lastTeamMsg.created_at).getTime()
+      const clientTime = new Date(lastClientMsg.created_at).getTime()
+      if (teamTime > clientTime) {
+        return { skip: true, reason: 'team_already_replied' }
+      }
+    }
+
+    const [lastAgentReply] = await sql`
+      SELECT created_at FROM support_agent_decisions
+      WHERE channel_id = ${channelId} AND org_id = ${orgId}
+        AND action IN ('reply', 'reply_and_tag', 'tag_agent')
+      ORDER BY created_at DESC LIMIT 1
+    `
+    if (lastAgentReply?.created_at) {
+      const agentTime = new Date(lastAgentReply.created_at).getTime()
+      const minsSinceAgent = (Date.now() - agentTime) / 60000
+      if (minsSinceAgent < 5) {
+        return { skip: true, reason: `agent_replied_${Math.round(minsSinceAgent)}m_ago` }
+      }
+    }
+  } catch {}
+  return { skip: false }
 }
 
 export async function fetchChannelProfile(orgId: string, channelId: string) {

@@ -4,7 +4,7 @@ import {
   fetchRecentMessages, fetchAvailableAgents, fetchSimilarHistory,
   fetchRelevantDocs, fetchFeedbackExamples, fetchOpenCases,
   fetchTeamStyleExamples, fetchTopCategories, fetchOverdueCommitments,
-  fetchChannelProfile,
+  fetchChannelProfile, shouldSkipChannel,
 } from './ai-agent-data.js'
 
 function getSQL() {
@@ -41,120 +41,94 @@ export interface AgentContext {
 }
 
 function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], customInstructions: string, topCategories?: any[], teamExamples?: any[]): string {
-  const agentList = agents.length > 0
-    ? agents.map(a => `- ${a.name} (${a.role}, ${a.status === 'online' ? 'онлайн' : 'занят'}): id=${a.id}`).join('\n')
-    : 'Сейчас нет доступных сотрудников'
+  const primary = agents.find((a: any) => a.isChannelPrimary)
+  const agentLines = agents.map((a: any) => {
+    const parts = [`${a.name} (${a.role}, ${a.status === 'online' ? 'онлайн' : 'занят'})`]
+    if (a.specializations?.length) parts.push(`темы: ${a.specializations.join(', ')}`)
+    if (a.isChannelPrimary) parts.push('★ ОСНОВНОЙ МЕНЕДЖЕР КАНАЛА')
+    return `- ${parts.join(' | ')}: id=${a.id}`
+  })
+  const agentList = agentLines.length > 0 ? agentLines.join('\n') : 'Сейчас нет доступных сотрудников'
 
   const docsBlock = docs.length > 0
-    ? `\nБАЗА ЗНАНИЙ DELEVER (используй для ответов, ссылайся на статьи):\n${docs.map(d => `• [${d.category}] ${d.title}\n  URL: ${d.url}\n  ${d.excerpt}`).join('\n')}`
+    ? `\nБАЗА ЗНАНИЙ:\n${docs.map(d => `• [${d.category}] ${d.title}\n  ${d.url}\n  ${d.excerpt}`).join('\n')}`
     : ''
 
   const customBlock = customInstructions.trim()
-    ? `\nОСОБЫЕ ИНСТРУКЦИИ ОТ РУКОВОДСТВА (строго соблюдай):\n${customInstructions.trim()}`
+    ? `\nИНСТРУКЦИИ РУКОВОДСТВА:\n${customInstructions.trim()}`
     : ''
 
   const categoriesBlock = topCategories && topCategories.length > 0
-    ? `\nЧАСТЫЕ ТЕМЫ ОБРАЩЕНИЙ (по убыванию): ${topCategories.map(c => `${c.category}(${c.count})`).join(', ')}`
+    ? `\nЧАСТЫЕ ТЕМЫ: ${topCategories.map(c => `${c.category}(${c.count})`).join(', ')}`
     : ''
 
   const teamStyleBlock = teamExamples && teamExamples.length > 0
-    ? `\nПРИМЕРЫ ОТВЕТОВ КОМАНДЫ (копируй их стиль, длину, тон):\n${teamExamples.map((e, i) => `${i + 1}. Клиент: "${e.client}"\n   ${e.agent}: "${e.reply}"`).join('\n')}`
+    ? `\nСТИЛЬ КОМАНДЫ:\n${teamExamples.map((e, i) => `${i + 1}. "${e.client}" → ${e.agent}: "${e.reply}"`).join('\n')}`
     : ''
 
-  return `Ты — опытный менеджер поддержки Delever. Delever — платформа управления онлайн-заказами и доставкой для ресторанов в Узбекистане. Клиенты — владельцы/менеджеры ресторанов, они используют Delever для приёма заказов, меню, интеграции с iiko/R-Keeper, мобильного приложения.
+  return `Ты — менеджер поддержки Delever (платформа онлайн-заказов для ресторанов, Узбекистан).
 
-ТЕКУЩЕЕ ВРЕМЯ: ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}
-РАБОЧИЕ ЧАСЫ: ${isWorkHours ? 'ДА' : 'НЕТ — ночь/выходной'}
+ВРЕМЯ: ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}
+РАБОЧИЕ ЧАСЫ: ${isWorkHours ? 'ДА' : 'НЕТ'}
 
-ДОСТУПНЫЕ СОТРУДНИКИ:
+СОТРУДНИКИ:
 ${agentList}
-${docsBlock}
-${customBlock}
-${categoriesBlock}
-${teamStyleBlock}
+${primary ? `\n★ Основной менеджер канала: ${primary.name} (id=${primary.id}) — тегай ЕГО первым.` : ''}
+${docsBlock}${customBlock}${categoriesBlock}${teamStyleBlock}
 
-═══ ЯЗЫК / TIL / LANGUAGE ═══
+═══ КАТЕГОРИЧЕСКИЕ ЗАПРЕТЫ ═══
 
-Клиенты пишут на ТРЁХ языках, часто смешивая в одном сообщении:
+1. НЕ ПОВТОРЯЙ слова клиента дословно. "ТС Сатпаева д30/5" — не пиши это обратно.
+2. НЕ ЗДОРОВАЙСЯ повторно. Посмотри переписку — если уже здоровался, не делай этого снова.
+3. НЕ ОБЕЩАЙ действий. Ты НЕ МОЖЕШЬ проверить сервер, зайти в панель, починить.
+   ❌ "Сейчас проверю", "Я посмотрю", "Сходим и починим"
+   ✅ "Передаю специалисту", "Попробуйте: 1)... 2)...", "Вот инструкция: ..."
+4. НЕ ПИШИ как робот: "Ваше обращение зарегистрировано", "Я AI-ассистент"
+5. НЕ ПИШИ грубо, даже на узбекском
 
-1. УЗБЕКСКИЙ ЛАТИНИЦА (самый частый): "salom", "ishlamayapti", "yordam bering", "buyurtma", "filial"
-2. РУССКИЙ: "здравствуйте", "не работает", "помогите"
-3. УЗБЕКСКИЙ КИРИЛЛИЦА: "ишламаяпти", "буюртма", "ёрдам"
+═══ ЯЗЫК ═══
 
-ПРАВИЛО: Определи язык клиента и отвечай НА ТОМ ЖЕ ЯЗЫКЕ и в ТОЙ ЖЕ ПИСЬМЕННОСТИ.
-
-Примеры на узбекском (учись):
-- "Assalomu alaykum! Tushundim, hozir ko'rib beraman 😊"
-- "Salom! Muammoni tushundim. Quyidagilarni tekshirib ko'ring: ..."
-- "Rahmat, murojaat uchun! Hozir mutaxassis ulayaman."
-- "Kechirasiz noqulaylik uchun! Buni tezda hal qilamiz."
-
-Примеры на русском:
-- "Здравствуйте! Давайте разберёмся, сейчас посмотрю."
-- "Понял, спасибо что написали. Проверьте пожалуйста..."
-- "Передам коллегам, скоро вернусь с ответом."
-
-НИКОГДА НЕ ПИШИ:
-- Формально: "Ваше обращение зарегистрировано", "Благодарим за обращение"
-- Грубо: "Конкретроқ айтсангиз", "Нима демоқчисиз?"
-- Роботоподобно: "Я AI-ассистент...", "Как языковая модель..."
+Определи язык клиента и отвечай ТАК ЖЕ (узб. латиница / узб. кириллица / русский).
 
 ═══ СТИЛЬ ═══
 
-- Пиши как живой менеджер: коротко, конкретно, тепло
-- Называй клиента по имени если знаешь
-- Уточняй мягко если мало деталей: "Qaysi filial?", "Скрин юборсангиз тезроқ ёрдам берамиз"
-- Если знаешь ответ — давай пошаговую инструкцию (1, 2, 3...)
-- Если есть статья в базе — дай ссылку: "Batafsil: <url>" / "Подробнее: <url>"
-- Если не знаешь точно — "Yaxshi savol, hozir hamkasblarimdan aniqlab javob beraman"
-- Длина: 2-4 предложения. Не перегружай
+- 1-3 предложения. Конкретно. Без воды.
+- Если знаешь ответ → инструкция (1, 2, 3) или ссылка
+- Если не знаешь → "Передаю коллегам" + tag_agent. Не додумывай.
 
-═══ ПРАВИЛА РЕШЕНИЙ (строго по приоритету) ═══
+═══ КТО ТЕГАТЬ ═══
 
-1. **ESCALATE** — ОБЯЗАТЕЛЬНО при ЛЮБОМ из условий:
-   - Клиент злится/расстроен, КАПС, много "!" или "?"
-   - Повторная жалоба (в переписке видно что он уже писал об этом)
-   - Критический сбой: система/сайт/приложение не работает, заказы не проходят
-   - Клиент ждёт больше 30 мин и повторяет вопрос
-   - Потеря денег/клиентов/данных
-   - Просроченное обязательство перед клиентом
-   - МАРКЕРЫ на узбекском: "ishlamayapti", "yana", "yana xuddi shunday", "necha marta aytaman", "javob bermayapsizlar", "buzilgan", "yo'qoldi", "pul qaytaring"
-   - МАРКЕРЫ на русском: "опять", "снова", "третий раз", "сколько можно", "никто не отвечает", "верните деньги"
-   - МАРКЕРЫ на кириллице: "ишламаяпти", "бузилган", "яна", "жавоб берилмаяпти"
-   - Всегда ставь escalateToRole="admin", casePriority="critical"
+1. ★ Основной менеджер канала (если есть) — он знает контекст
+2. Сотрудник по специализации ("темы" в списке)
+3. Если никто не подходит → admin
 
-2. **REPLY** — можешь помочь сам (есть в документации или истории). Если мало данных — вежливо уточни
+═══ РЕШЕНИЯ ═══
 
-3. **REPLY_AND_TAG** — ответил клиенту, но нужен специалист для доработки
+1. ESCALATE — клиент злится, повторная жалоба, критический сбой, потеря денег.
+   Маркеры: "опять", "снова", "ishlamayapti", "yana", "buzilgan", "бузилган"
+   → escalateToRole="admin", casePriority="critical"
 
-4. **TAG_AGENT** — технический вопрос, нужен конкретный человек (iiko-интеграция, биллинг, баг)
+2. REPLY — знаешь ответ. Дай конкретику, не обещания.
 
-5. **CREATE_CASE** — новая проблема для расследования. priority=critical если: массовый сбой, потеря данных
+3. REPLY_AND_TAG — ответил + нужен специалист для подтверждения.
 
-6. **WAIT** — только если вопрос не срочный и лучше дождаться специалиста
+4. TAG_AGENT — не можешь помочь сам, передай. Не пиши клиенту ничего лишнего.
 
-═══ ЭКСПЕРТНЫЕ ЗНАНИЯ DELEVER ═══
+5. CREATE_CASE — новая проблема. critical если массовый сбой.
 
-Частые проблемы и решения (используй в ответах):
-- iiko интеграция (стоп-лист, модификаторы, синхронизация) → проверь настройки в iiko и Delever
-- Меню (позиции не отображаются, модификаторы) → Delever CMS → Меню → проверь активность
-- Заказы (не приходят, дублируются, статус) → проверь интеграцию и подключение
-- Приложение (не открывается, крашится) → версия, ОС, переустановка
-- Оплата/биллинг → передай менеджеру
+6. WAIT — не срочно, лучше дождаться специалиста.
 
-═══ ОТВЕТ JSON ═══
-
+JSON:
 {
   "action": "reply|tag_agent|escalate|create_case|wait|reply_and_tag",
-  "replyText": "тёплый живой текст на языке клиента",
-  "tagAgentId": "id (если тегаешь)",
-  "tagAgentName": "имя (если тегаешь)",
+  "replyText": "текст (без повторов слов клиента!)",
+  "tagAgentId": "id", "tagAgentName": "имя",
   "escalateToRole": "admin",
   "casePriority": "low|medium|high|critical",
-  "caseTitle": "краткий заголовок",
-  "reasoning": "почему принял решение (на русском)",
+  "caseTitle": "заголовок",
+  "reasoning": "причина (русский)",
   "confidence": 0.85,
-  "docLinks": ["url1"]
+  "docLinks": ["url"]
 }`
 }
 
@@ -164,49 +138,56 @@ function buildUserPrompt(
 ): string {
   const chatHistory = messages.length > 0
     ? messages.map(m => `[${m.role === 'client' ? '👤' : '💬'}] ${m.sender}: ${m.text}`).join('\n')
-    : '(новый диалог, истории нет)'
+    : '(новый диалог)'
+
+  const myPrevReplies = messages
+    .filter(m => m.role === 'support' && (m.sender === 'AI Agent' || m.sender === 'Delever Support' || m.sender === 'Delever Assistent'))
+    .map(m => m.text).slice(-2)
+  const alreadyGreeted = myPrevReplies.some(t =>
+    /здравствуйте|добр|salom|assalomu/i.test(t)
+  )
 
   const historyBlock = history.length > 0
-    ? `\n\nПОХОЖИЕ ДИАЛОГИ ИЗ ПРОШЛОГО (учись на них, повторяй стиль ответов):\n${history.map((h, i) => `--- Пример ${i + 1} ---\nКлиент: ${h.question}\nОтвет (${h.answeredBy}): ${h.answer}`).join('\n')}`
+    ? `\n\nПОХОЖИЕ ДИАЛОГИ:\n${history.map((h, i) => `${i + 1}. "${h.question}" → ${h.answeredBy}: "${h.answer}"`).join('\n')}`
     : ''
 
   const casesBlock = cases.length > 0
-    ? `\n\nОТКРЫТЫЕ КЕЙСЫ ПО ЭТОМУ КАНАЛУ:\n${cases.map(c => `- [${c.priority}] ${c.title} (${c.status})`).join('\n')}`
+    ? `\n\nОТКРЫТЫЕ КЕЙСЫ:\n${cases.map(c => `- [${c.priority}] ${c.title} (${c.status})`).join('\n')}`
     : ''
 
   const profileBlock = profile
-    ? `\nПРОФИЛЬ КАНАЛА: ${profile.name}, тип: ${profile.type}${profile.tags?.length ? ', теги: ' + profile.tags.join(', ') : ''}${profile.waitingMinutes ? ', ⚠️ КЛИЕНТ ЖДЁТ: ' + profile.waitingMinutes + ' мин!' : ''}`
+    ? `\nКАНАЛ: ${profile.name}, ${profile.type}${profile.waitingMinutes ? `, ждёт ${profile.waitingMinutes} мин` : ''}`
     : ''
 
   let feedbackBlock = ''
   if (feedback) {
     if (feedback.good.length > 0) {
-      feedbackBlock += `\n\nТВОИ УДАЧНЫЕ ОТВЕТЫ (повторяй стиль):\n${feedback.good.map((f, i) => `✅ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"`).join('\n')}`
+      feedbackBlock += `\n\nУДАЧНЫЕ ОТВЕТЫ:\n${feedback.good.map((f, i) => `✅ "${f.msg}" → ${f.action}: "${f.reply}"`).join('\n')}`
     }
     if (feedback.bad.length > 0) {
-      feedbackBlock += `\n\nТВОИ ОШИБКИ (не повторяй!):\n${feedback.bad.map((f, i) => `❌ ${i + 1}. "${f.msg}" → ${f.action}: "${f.reply}"${f.note ? ` [${f.note}]` : ''}`).join('\n')}`
+      feedbackBlock += `\n\nОШИБКИ (не повторяй!):\n${feedback.bad.map((f, i) => `❌ "${f.msg}" → "${f.reply}"${f.note ? ` [${f.note}]` : ''}`).join('\n')}`
     }
   }
 
   const overdueBlock = overdueCommitments && overdueCommitments.length > 0
-    ? `\n\n⚠️ ПРОСРОЧЕННЫЕ ОБЯЗАТЕЛЬСТВА перед этим клиентом (ОБЯЗАТЕЛЬНО учти при ответе, извинись!):\n${overdueCommitments.map(c => `- "${c.text}" (дедлайн: ${c.deadline}, ответственный: ${c.agent})`).join('\n')}`
+    ? `\n\n⚠️ ПРОСРОЧЕННЫЕ ОБЯЗАТЕЛЬСТВА:\n${overdueCommitments.map(c => `- "${c.text}" (дедлайн: ${c.deadline}, ${c.agent})`).join('\n')}`
     : ''
 
   const waitWarning = profile?.waitingMinutes && profile.waitingMinutes > 30
-    ? `\n\n⚠️ КЛИЕНТ ЖДЁТ ${profile.waitingMinutes} МИНУТ! Это критично — извинись за задержку и помоги быстро.`
+    ? `\n⚠️ КЛИЕНТ ЖДЁТ ${profile.waitingMinutes} МИНУТ!`
     : ''
 
-  return `КАНАЛ: ${ctx.channelName} (${ctx.source}, ${ctx.isGroup ? 'группа' : 'личка'})
-ОТПРАВИТЕЛЬ: ${ctx.senderName}${profileBlock}
-${waitWarning}
+  return `${ctx.channelName} (${ctx.source}, ${ctx.isGroup ? 'группа' : 'личка'})
+${ctx.senderName}${profileBlock}${waitWarning}
+
 ПЕРЕПИСКА:
 ${chatHistory}
 
-НОВОЕ СООБЩЕНИЕ:
-${ctx.senderName}: ${ctx.incomingMessage}
+НОВОЕ СООБЩЕНИЕ: ${ctx.senderName}: ${ctx.incomingMessage}
+${alreadyGreeted ? '\n⚠️ Ты уже здоровался в этом диалоге — НЕ ЗДОРОВАЙСЯ снова.' : ''}
 ${historyBlock}${casesBlock}${overdueBlock}${feedbackBlock}
 
-Прими решение. Отвечай на языке клиента, тепло и конкретно.`
+Прими решение.`
 }
 
 export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDecision; skipped?: boolean; reason?: string } | null> {
@@ -217,12 +198,15 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const workHours = isWorkingHours(settings.workingHoursStart, settings.workingHoursEnd)
   if (settings.mode === 'night_only' && workHours) return { decision: null as any, skipped: true, reason: 'working_hours' }
 
+  const skipCheck = await shouldSkipChannel(ctx.orgId, ctx.channelId)
+  if (skipCheck.skip) return { decision: null as any, skipped: true, reason: skipCheck.reason }
+
   const apiKey = await getTogetherKey(ctx.orgId)
   if (!apiKey) return { decision: null as any, skipped: true, reason: 'no_api_key' }
 
   const [messages, agents, history, cases, docs, profile, feedback, teamExamples, topCategories, overdueCommitments] = await Promise.all([
     fetchRecentMessages(ctx.orgId, ctx.channelId),
-    fetchAvailableAgents(ctx.orgId),
+    fetchAvailableAgents(ctx.orgId, ctx.channelId),
     fetchSimilarHistory(ctx.orgId, ctx.incomingMessage),
     fetchOpenCases(ctx.orgId, ctx.channelId),
     fetchRelevantDocs(ctx.orgId, ctx.incomingMessage, apiKey),
@@ -246,8 +230,8 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.35,
-        max_tokens: 700,
+        temperature: 0.3,
+        max_tokens: 600,
         response_format: { type: 'json_object' },
       }),
       signal: AbortSignal.timeout(25000),
@@ -325,27 +309,19 @@ export async function executeDecision(
       const { sendNotification } = await import('./notifications.js')
       if (decision.tagAgentId) {
         await sendNotification({
-          orgId: ctx.orgId,
-          type: 'tag',
+          orgId: ctx.orgId, type: 'tag',
           title: `Вас тегнул AI-агент`,
-          body: `Клиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 150)}"\n\nАгент считает, что нужна ваша помощь.`,
-          channelId: ctx.channelId,
-          channelName: ctx.channelName,
-          senderName: ctx.senderName,
-          priority: 'high',
-          targetAgentIds: [decision.tagAgentId],
+          body: `Клиент "${ctx.senderName}": "${ctx.incomingMessage.slice(0, 150)}"\nПричина: ${decision.reasoning?.slice(0, 150) || ''}`,
+          channelId: ctx.channelId, channelName: ctx.channelName, senderName: ctx.senderName,
+          priority: 'high', targetAgentIds: [decision.tagAgentId],
         })
       }
       await sendNotification({
-        orgId: ctx.orgId,
-        type: 'tag',
-        title: `AI-агент тегнул ${decision.tagAgentName || 'сотрудника'}`,
-        body: `Канал: ${ctx.channelName}\nКлиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 150)}"\n\nПричина: ${decision.reasoning?.slice(0, 200) || 'нужна помощь'}`,
-        channelId: ctx.channelId,
-        channelName: ctx.channelName,
-        senderName: ctx.senderName,
-        priority: 'high',
-        targetRoles: ['admin'],
+        orgId: ctx.orgId, type: 'tag',
+        title: `AI тегнул ${decision.tagAgentName}`,
+        body: `${ctx.channelName}: "${ctx.incomingMessage.slice(0, 150)}"`,
+        channelId: ctx.channelId, channelName: ctx.channelName, senderName: ctx.senderName,
+        priority: 'high', targetRoles: ['admin'],
       })
       executed.push('notification_sent')
     } catch (e: any) { console.error('[AI Agent] Tag notification failed:', e.message) }
@@ -360,15 +336,11 @@ export async function executeDecision(
     try {
       const { sendNotification } = await import('./notifications.js')
       await sendNotification({
-        orgId: ctx.orgId,
-        type: 'escalation',
-        title: `Эскалация от AI-агента`,
-        body: `Клиент "${ctx.senderName}" написал: "${ctx.incomingMessage.slice(0, 200)}"\n\nПричина: ${decision.reasoning}`,
-        channelId: ctx.channelId,
-        channelName: ctx.channelName,
-        senderName: ctx.senderName,
-        priority: 'critical',
-        targetRoles: ['admin', 'owner', 'manager'],
+        orgId: ctx.orgId, type: 'escalation',
+        title: `Эскалация`,
+        body: `${ctx.senderName}: "${ctx.incomingMessage.slice(0, 200)}"\nПричина: ${decision.reasoning}`,
+        channelId: ctx.channelId, channelName: ctx.channelName, senderName: ctx.senderName,
+        priority: 'critical', targetRoles: ['admin', 'owner', 'manager'],
       })
       executed.push('escalation_notification_sent')
     } catch (e: any) { console.error('[AI Agent] Escalation notification failed:', e.message) }
@@ -392,13 +364,10 @@ export async function executeDecision(
       try {
         const { sendNotification } = await import('./notifications.js')
         await sendNotification({
-          orgId: ctx.orgId,
-          type: 'critical_case',
-          title: `Новый ${decision.casePriority === 'critical' ? 'критический' : 'важный'} кейс`,
-          body: `"${decision.caseTitle || ctx.incomingMessage.slice(0, 100)}"\n\nОт: ${ctx.senderName}\nПриоритет: ${decision.casePriority}`,
-          channelId: ctx.channelId,
-          channelName: ctx.channelName,
-          senderName: ctx.senderName,
+          orgId: ctx.orgId, type: 'critical_case',
+          title: `${decision.casePriority === 'critical' ? 'Критический' : 'Важный'} кейс`,
+          body: `"${decision.caseTitle || ctx.incomingMessage.slice(0, 100)}"\nОт: ${ctx.senderName}`,
+          channelId: ctx.channelId, channelName: ctx.channelName, senderName: ctx.senderName,
           priority: decision.casePriority,
         })
         executed.push('case_notification_sent')
