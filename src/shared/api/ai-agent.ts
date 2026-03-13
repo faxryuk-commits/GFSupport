@@ -36,6 +36,14 @@ export interface AgentStats {
   avg_confidence: number
 }
 
+export interface AgentRule {
+  id: string
+  category: 'style' | 'escalation' | 'routing' | 'language' | 'restrictions' | 'custom'
+  text: string
+  enabled: boolean
+  createdAt: string
+}
+
 export interface AgentSettings {
   enabled: boolean
   mode: 'autonomous' | 'assist' | 'night_only'
@@ -48,6 +56,7 @@ export interface AgentSettings {
   model: string
   hasApiKey: boolean
   customInstructions: string
+  rules: AgentRule[]
 }
 
 export function fetchAgentDecisions(limit = 30, channelId?: string) {
@@ -70,6 +79,6 @@ export function fetchAgentSettings() {
   return apiGet<AgentSettings>('/ai/agent-settings')
 }
 
-export function updateAgentSettings(settings: Partial<AgentSettings> & { togetherApiKey?: string }) {
+export function updateAgentSettings(settings: Partial<AgentSettings> & { togetherApiKey?: string; rules?: AgentRule[] }) {
   return apiPut('/ai/agent-settings', settings)
 }

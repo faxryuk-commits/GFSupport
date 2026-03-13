@@ -19,12 +19,23 @@ export async function getTogetherKey(orgId?: string): Promise<string | null> {
   return process.env.TOGETHER_API_KEY || null
 }
 
+export interface AgentRuleItem {
+  id: string
+  category: string
+  text: string
+  enabled: boolean
+}
+
 export async function getAgentSettings(orgId: string, defaultModel: string) {
   const sql = getSQL()
   try {
     const rows = await sql`SELECT key, value FROM support_settings WHERE org_id = ${orgId} AND key LIKE 'ai_agent_%'`
     const s: Record<string, string> = {}
     for (const r of rows) s[r.key] = r.value
+
+    let rules: AgentRuleItem[] = []
+    try { rules = JSON.parse(s['ai_agent_rules'] || '[]') } catch { rules = [] }
+
     return {
       enabled: s['ai_agent_enabled'] === 'true',
       mode: (s['ai_agent_mode'] || 'assist') as 'autonomous' | 'assist' | 'night_only',
@@ -34,9 +45,10 @@ export async function getAgentSettings(orgId: string, defaultModel: string) {
       excludeChannels: (s['ai_agent_exclude_channels'] || '').split(',').filter(Boolean),
       model: s['ai_agent_model'] || defaultModel,
       customInstructions: s['ai_agent_custom_instructions'] || '',
+      rules,
     }
   } catch {
-    return { enabled: false, mode: 'assist' as const, maxConfidenceForAutoReply: 0.8, workingHoursStart: 9, workingHoursEnd: 22, excludeChannels: [] as string[], model: defaultModel, customInstructions: '' }
+    return { enabled: false, mode: 'assist' as const, maxConfidenceForAutoReply: 0.8, workingHoursStart: 9, workingHoursEnd: 22, excludeChannels: [] as string[], model: defaultModel, customInstructions: '', rules: [] as AgentRuleItem[] }
   }
 }
 

@@ -72,6 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
         model: settings['ai_agent_model'] || 'Qwen/Qwen3-235B-A22B-Instruct',
         hasApiKey: !!settings['together_api_key'],
         customInstructions: settings['ai_agent_custom_instructions'] || '',
+        rules: (() => { try { return JSON.parse(settings['ai_agent_rules'] || '[]') } catch { return [] } })(),
       })
     } catch (e: any) {
       return json({ error: e.message }, 500)
@@ -94,6 +95,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (body.model) updates.push(['ai_agent_model', body.model])
       if (body.togetherApiKey) updates.push(['together_api_key', body.togetherApiKey])
       if (body.customInstructions !== undefined) updates.push(['ai_agent_custom_instructions', body.customInstructions])
+      if (body.rules !== undefined) updates.push(['ai_agent_rules', JSON.stringify(body.rules)])
 
       for (const [key, value] of updates) {
         await sql`

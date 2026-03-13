@@ -32,7 +32,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
         enabled: false, mode: 'assist', autoReply: false,
         minConfidence: 0.8, workStart: 9, workEnd: 22,
         timezone: 'Asia/Tashkent', excludeChannels: [],
-        model: MODELS[0].id, hasApiKey: false, customInstructions: '',
+        model: MODELS[0].id, hasApiKey: false, customInstructions: '', rules: [],
       }))
       .finally(() => setLoading(false))
   }, [])

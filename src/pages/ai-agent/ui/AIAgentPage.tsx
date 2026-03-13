@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Bot } from 'lucide-react'
-import { AgentSettingsPanel, AgentDecisionsLog, AgentTestPanel } from '@/features/ai-agent'
+import { AgentSettingsPanel, AgentDecisionsLog, AgentTestPanel, AgentRulesSandbox } from '@/features/ai-agent'
 import { fetchChannels } from '@/shared/api'
 
-type Tab = 'log' | 'settings' | 'test'
+type Tab = 'log' | 'rules' | 'settings' | 'test'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'log', label: 'Журнал решений' },
+  { id: 'rules', label: 'Правила' },
   { id: 'settings', label: 'Настройки' },
   { id: 'test', label: 'Тестирование' },
 ]
@@ -51,6 +52,7 @@ export function AIAgentPage() {
       </div>
 
       {tab === 'log' && <AgentDecisionsLog />}
+      {tab === 'rules' && <AgentRulesSandbox />}
       {tab === 'settings' && <AgentSettingsPanel />}
       {tab === 'test' && <AgentTestPanel channels={channels} />}
     </div>

@@ -5,6 +5,7 @@ import {
   fetchRelevantDocs, fetchFeedbackExamples, fetchOpenCases,
   fetchTeamStyleExamples, fetchTopCategories, fetchOverdueCommitments,
   fetchChannelProfile, shouldSkipChannel,
+  type AgentRuleItem,
 } from './ai-agent-data.js'
 
 function getSQL() {
@@ -40,7 +41,7 @@ export interface AgentContext {
   source: 'telegram' | 'whatsapp'
 }
 
-function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], customInstructions: string, topCategories?: any[], teamExamples?: any[]): string {
+function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], customInstructions: string, topCategories?: any[], teamExamples?: any[], rules?: AgentRuleItem[]): string {
   const primary = agents.find((a: any) => a.isChannelPrimary)
   const agentLines = agents.map((a: any) => {
     const parts = [`${a.name} (${a.role}, ${a.status === 'online' ? 'онлайн' : 'занят'})`]
@@ -56,6 +57,13 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], cus
 
   const customBlock = customInstructions.trim()
     ? `\nИНСТРУКЦИИ РУКОВОДСТВА:\n${customInstructions.trim()}`
+    : ''
+
+  const activeRules = (rules || []).filter(r => r.enabled)
+  const rulesBlock = activeRules.length > 0
+    ? `\n═══ ПРАВИЛА ОТ РУКОВОДСТВА (ОБЯЗАТЕЛЬНО СОБЛЮДАЙ!) ═══\n${
+        activeRules.map((r, i) => `${i + 1}. [${r.category}] ${r.text}`).join('\n')
+      }`
     : ''
 
   const categoriesBlock = topCategories && topCategories.length > 0
@@ -74,7 +82,7 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], cus
 СОТРУДНИКИ:
 ${agentList}
 ${primary ? `\n★ Основной менеджер канала: ${primary.name} (id=${primary.id}) — тегай ЕГО первым.` : ''}
-${docsBlock}${customBlock}${categoriesBlock}${teamStyleBlock}
+${docsBlock}${customBlock}${rulesBlock}${categoriesBlock}${teamStyleBlock}
 
 ═══ КАТЕГОРИЧЕСКИЕ ЗАПРЕТЫ ═══
 
@@ -217,7 +225,7 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     fetchOverdueCommitments(ctx.orgId, ctx.channelId),
   ])
 
-  const systemPrompt = buildSystemPrompt(agents, workHours, docs, settings.customInstructions, topCategories, teamExamples)
+  const systemPrompt = buildSystemPrompt(agents, workHours, docs, settings.customInstructions, topCategories, teamExamples, settings.rules)
   const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile, feedback, overdueCommitments)
 
   try {
