@@ -362,7 +362,11 @@ export default async function handler(req: Request): Promise<Response> {
       `
     } else {
       const chatId = channel.telegram_chat_id
-      const telegramPayload: any = { chat_id: chatId, text, parse_mode: 'Markdown' }
+      const hasMarkdownChars = /[_*\[\]()~`>#+\-=|{}.!]/.test(text)
+      const telegramPayload: any = { chat_id: chatId, text }
+      if (!hasMarkdownChars) {
+        telegramPayload.parse_mode = 'Markdown'
+      }
 
       if (threadId && channel.is_forum) {
         telegramPayload.message_thread_id = threadId
