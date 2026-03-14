@@ -83,12 +83,25 @@ export default async function handler(req: Request): Promise<Response> {
         type VARCHAR(20) DEFAULT 'client',
         company_id VARCHAR(50),
         lead_id VARCHAR(50),
+        org_id VARCHAR(50),
+        source VARCHAR(20) DEFAULT 'telegram',
         is_active BOOLEAN DEFAULT true,
         members_count INTEGER DEFAULT 0,
         settings JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT NOW(),
         last_message_at TIMESTAMP,
-        CONSTRAINT fk_channel_company FOREIGN KEY (company_id) REFERENCES crm_companies(id) ON DELETE SET NULL
+        last_client_message_at TIMESTAMP,
+        last_team_message_at TIMESTAMP,
+        last_sender_name VARCHAR(255),
+        last_message_preview TEXT,
+        unread_count INTEGER DEFAULT 0,
+        awaiting_reply BOOLEAN DEFAULT false,
+        tags TEXT[],
+        external_chat_id VARCHAR(100),
+        is_forum BOOLEAN DEFAULT false,
+        photo_url TEXT,
+        sla_category VARCHAR(50),
+        market VARCHAR(100)
       )
     `
     created.push('support_channels')
@@ -105,6 +118,7 @@ export default async function handler(req: Request): Promise<Response> {
         channel_id VARCHAR(50),
         company_id VARCHAR(50),
         lead_id VARCHAR(50),
+        org_id VARCHAR(50),
         title VARCHAR(500) NOT NULL,
         description TEXT,
         status VARCHAR(30) DEFAULT 'detected',
@@ -114,6 +128,7 @@ export default async function handler(req: Request): Promise<Response> {
         priority VARCHAR(20) DEFAULT 'medium',
         severity VARCHAR(20) DEFAULT 'normal',
         assigned_to VARCHAR(50),
+        assigned_agent_id VARCHAR(50),
         first_response_at TIMESTAMP,
         resolved_at TIMESTAMP,
         resolution_time_minutes INTEGER,
@@ -124,11 +139,10 @@ export default async function handler(req: Request): Promise<Response> {
         related_case_id VARCHAR(50),
         tags TEXT[],
         metadata JSONB DEFAULT '{}',
+        source_message_id VARCHAR(50),
+        ticket_number VARCHAR(20),
         created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-        CONSTRAINT fk_case_channel FOREIGN KEY (channel_id) REFERENCES support_channels(id) ON DELETE SET NULL,
-        CONSTRAINT fk_case_company FOREIGN KEY (company_id) REFERENCES crm_companies(id) ON DELETE SET NULL,
-        CONSTRAINT fk_case_assignee FOREIGN KEY (assigned_to) REFERENCES crm_managers(id) ON DELETE SET NULL
+        updated_at TIMESTAMP DEFAULT NOW()
       )
     `
     created.push('support_cases')
@@ -147,10 +161,12 @@ export default async function handler(req: Request): Promise<Response> {
         id VARCHAR(50) PRIMARY KEY,
         channel_id VARCHAR(50) NOT NULL,
         case_id VARCHAR(50),
+        org_id VARCHAR(50),
         telegram_message_id BIGINT,
-        sender_id BIGINT,
+        sender_id VARCHAR(100),
         sender_name VARCHAR(255),
         sender_username VARCHAR(100),
+        sender_role VARCHAR(20) DEFAULT 'client',
         is_from_client BOOLEAN DEFAULT true,
         content_type VARCHAR(30) DEFAULT 'text',
         text_content TEXT,
@@ -166,11 +182,13 @@ export default async function handler(req: Request): Promise<Response> {
         ai_extracted_entities JSONB DEFAULT '{}',
         is_problem BOOLEAN DEFAULT false,
         is_processed BOOLEAN DEFAULT false,
+        is_read BOOLEAN DEFAULT false,
+        read_at TIMESTAMP,
         reply_to_message_id BIGINT,
+        thread_id VARCHAR(50),
+        thread_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
-        processed_at TIMESTAMP,
-        CONSTRAINT fk_message_channel FOREIGN KEY (channel_id) REFERENCES support_channels(id) ON DELETE CASCADE,
-        CONSTRAINT fk_message_case FOREIGN KEY (case_id) REFERENCES support_cases(id) ON DELETE SET NULL
+        processed_at TIMESTAMP
       )
     `
     created.push('support_messages')
@@ -203,32 +221,32 @@ export default async function handler(req: Request): Promise<Response> {
     `
     created.push('support_automations')
 
-    // 5. Support Case Activities (История действий по кейсу)
+    // 5. Support Case Activities
     await sql`
       CREATE TABLE IF NOT EXISTS support_case_activities (
         id VARCHAR(50) PRIMARY KEY,
         case_id VARCHAR(50) NOT NULL,
         manager_id VARCHAR(50),
+        org_id VARCHAR(50),
         type VARCHAR(50) NOT NULL,
         title VARCHAR(255),
         description TEXT,
         from_status VARCHAR(30),
         to_status VARCHAR(30),
         metadata JSONB DEFAULT '{}',
-        created_at TIMESTAMP DEFAULT NOW(),
-        CONSTRAINT fk_activity_case FOREIGN KEY (case_id) REFERENCES support_cases(id) ON DELETE CASCADE,
-        CONSTRAINT fk_activity_manager FOREIGN KEY (manager_id) REFERENCES crm_managers(id) ON DELETE SET NULL
+        created_at TIMESTAMP DEFAULT NOW()
       )
     `
     created.push('support_case_activities')
 
-    // 6. Support Invites (Приглашения для регистрации сотрудников)
+    // 6. Support Invites
     await sql`
       CREATE TABLE IF NOT EXISTS support_invites (
         id VARCHAR(50) PRIMARY KEY,
         token VARCHAR(100) UNIQUE NOT NULL,
         email VARCHAR(255),
         role VARCHAR(20) DEFAULT 'agent',
+        org_id VARCHAR(50),
         created_by VARCHAR(50),
         used_at TIMESTAMP,
         used_by VARCHAR(50),
@@ -237,6 +255,180 @@ export default async function handler(req: Request): Promise<Response> {
       )
     `
     created.push('support_invites')
+
+    // 7. Support Agents
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_agents (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50),
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        role VARCHAR(20) DEFAULT 'agent',
+        status VARCHAR(20) DEFAULT 'offline',
+        password_hash VARCHAR(255),
+        telegram_id VARCHAR(50),
+        avatar_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_active_at TIMESTAMP
+      )
+    `
+    created.push('support_agents')
+
+    // 8. Support Settings
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_settings (
+        org_id VARCHAR(50) NOT NULL,
+        key VARCHAR(100) NOT NULL,
+        value TEXT,
+        PRIMARY KEY (org_id, key)
+      )
+    `
+    created.push('support_settings')
+
+    // 9. Support Topics
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_topics (
+        id VARCHAR(50) PRIMARY KEY,
+        channel_id VARCHAR(50),
+        org_id VARCHAR(50),
+        thread_id VARCHAR(50),
+        name VARCHAR(255),
+        messages_count INTEGER DEFAULT 0,
+        last_message_at TIMESTAMP,
+        last_sender_name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('support_topics')
+
+    // 10. Support Agent Decisions (AI)
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_agent_decisions (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50),
+        channel_id VARCHAR(50),
+        channel_name VARCHAR(255),
+        source VARCHAR(20),
+        incoming_message TEXT,
+        sender_name VARCHAR(255),
+        action VARCHAR(30),
+        reply_text TEXT,
+        tag_agent_id VARCHAR(50),
+        tag_agent_name VARCHAR(255),
+        escalate_to_role VARCHAR(50),
+        case_priority VARCHAR(20),
+        case_title VARCHAR(500),
+        reasoning TEXT,
+        confidence REAL,
+        context_messages_count INTEGER DEFAULT 0,
+        similar_history_count INTEGER DEFAULT 0,
+        feedback VARCHAR(20),
+        feedback_note TEXT,
+        executed_actions TEXT[],
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('support_agent_decisions')
+
+    // 11. Support Notifications
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_notifications (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50),
+        agent_id VARCHAR(50),
+        agent_name VARCHAR(255),
+        type VARCHAR(30),
+        title VARCHAR(500),
+        body TEXT,
+        channel_id VARCHAR(50),
+        channel_name VARCHAR(255),
+        sender_name VARCHAR(255),
+        priority VARCHAR(20) DEFAULT 'normal',
+        is_read BOOLEAN DEFAULT false,
+        read_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('support_notifications')
+
+    // 12. Support Docs (GitBook)
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_docs (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50),
+        title VARCHAR(500),
+        url TEXT,
+        category VARCHAR(100),
+        content TEXT,
+        embedding REAL[],
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('support_docs')
+
+    // 13. Support Commitments
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_commitments (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50),
+        channel_id VARCHAR(50),
+        message_id VARCHAR(50),
+        commitment_text TEXT,
+        commitment_type VARCHAR(20),
+        agent_name VARCHAR(255),
+        deadline TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('support_commitments')
+
+    // 14. Support Dialogs (learning)
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_dialogs (
+        id VARCHAR(50) PRIMARY KEY,
+        channel_id VARCHAR(50),
+        org_id VARCHAR(50),
+        question_text TEXT,
+        question_hash VARCHAR(20),
+        question_category VARCHAR(100),
+        answer_text TEXT,
+        answer_by VARCHAR(255),
+        answer_type VARCHAR(20) DEFAULT 'manual',
+        used_count INTEGER DEFAULT 1,
+        last_used_at TIMESTAMP DEFAULT NOW(),
+        embedding REAL[],
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('support_dialogs')
+
+    // 15. Super Admin
+    await sql`
+      CREATE TABLE IF NOT EXISTS super_admins (
+        id VARCHAR(50) PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('super_admins')
+
+    // 16. Organizations
+    await sql`
+      CREATE TABLE IF NOT EXISTS organizations (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        plan VARCHAR(20) DEFAULT 'free',
+        owner_agent_id VARCHAR(50),
+        bot_token TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `
+    created.push('organizations')
 
     // Создаём дефолтные автоматизации
     const defaultAutomations = [
