@@ -238,10 +238,10 @@ export default async function handler(req: Request) {
           )
         `.catch(() => {})
 
-        // Обновляем статус запланированной рассылки
         await sql`
           UPDATE support_broadcast_scheduled 
-          SET status = 'sent', sent_at = NOW(), broadcast_id = ${broadcastId}
+          SET status = 'sent', sent_at = NOW(), broadcast_id = ${broadcastId},
+              recipients_count = ${channels.length}, delivered_count = ${successful}
           WHERE id = ${scheduled.id} AND org_id = ${orgId}
         `
 

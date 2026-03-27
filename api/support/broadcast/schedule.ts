@@ -198,12 +198,24 @@ export default async function handler(req: Request) {
         let recipientsCount = 0
         if (filterType === 'selected' && selectedChannels.length > 0) {
           recipientsCount = selectedChannels.length
+        } else if (filterType === 'clients') {
+          const countResult = await sql`
+            SELECT COUNT(*) as count FROM support_channels 
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
+              AND (type = 'client' OR sla_category = 'client')
+          `
+          recipientsCount = parseInt(countResult[0]?.count || '0')
+        } else if (filterType === 'partners') {
+          const countResult = await sql`
+            SELECT COUNT(*) as count FROM support_channels 
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
+              AND (type = 'partner' OR sla_category = 'partner')
+          `
+          recipientsCount = parseInt(countResult[0]?.count || '0')
         } else {
           const countResult = await sql`
             SELECT COUNT(*) as count FROM support_channels 
             WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
-            ${filterType === 'clients' ? sql`AND (type = 'client' OR sla_category = 'client')` : sql``}
-            ${filterType === 'partners' ? sql`AND (type = 'partner' OR sla_category = 'partner')` : sql``}
           `
           recipientsCount = parseInt(countResult[0]?.count || '0')
         }
@@ -284,16 +296,27 @@ export default async function handler(req: Request) {
         return json({ error: 'Scheduled time must be in the future' }, 400)
       }
       
-      // Подсчитываем количество получателей
       let recipientsCount = 0
       if (filterType === 'selected' && selectedChannels.length > 0) {
         recipientsCount = selectedChannels.length
+      } else if (filterType === 'clients') {
+        const countResult = await sql`
+          SELECT COUNT(*) as count FROM support_channels 
+          WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
+            AND (type = 'client' OR sla_category = 'client')
+        `
+        recipientsCount = parseInt(countResult[0]?.count || '0')
+      } else if (filterType === 'partners') {
+        const countResult = await sql`
+          SELECT COUNT(*) as count FROM support_channels 
+          WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
+            AND (type = 'partner' OR sla_category = 'partner')
+        `
+        recipientsCount = parseInt(countResult[0]?.count || '0')
       } else {
         const countResult = await sql`
           SELECT COUNT(*) as count FROM support_channels 
           WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
-          ${filterType === 'clients' ? sql`AND (type = 'client' OR sla_category = 'client')` : sql``}
-          ${filterType === 'partners' ? sql`AND (type = 'partner' OR sla_category = 'partner')` : sql``}
         `
         recipientsCount = parseInt(countResult[0]?.count || '0')
       }
