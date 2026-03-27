@@ -9,11 +9,15 @@ function getSQL() {
   return neon(cs)
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-  })
+function json(data: any, status = 200, cacheSeconds = 0) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+  }
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
+  }
+  return new Response(JSON.stringify(data), { status, headers })
 }
 
 async function safeQuery(sql: any, query: Promise<any[]>, fallback: any = []): Promise<any> {
@@ -226,7 +230,7 @@ export default async function handler(req: Request): Promise<Response> {
         outgoing: parseInt(d.outgoing),
         avgResponseMin: d.avg_response_ms ? Math.round(parseInt(d.avg_response_ms) / 60000) : null,
       })),
-    })
+    }, 200, 60)
   } catch (e: any) {
     console.error('[CommAnalytics] Fatal:', e.message)
     return json({ error: e.message || 'Internal error' }, 500)

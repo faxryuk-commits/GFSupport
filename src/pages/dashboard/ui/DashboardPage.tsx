@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { AlertTriangle, Clock } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { EmptyState, LoadingState } from '@/shared/ui'
-import { fetchDashboardMetrics, fetchAnalytics, type DashboardMetrics, type AnalyticsData } from '@/shared/api'
+import { fetchAnalytics, type DashboardMetrics, type AnalyticsData } from '@/shared/api'
 import { fetchChannels } from '@/shared/api'
 import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 import { ResponseTimeDetailsModal, WeeklyScoreWidget } from '@/features/analytics'
 import { CommitmentsPanel } from '@/features/commitments/ui'
-import { ProblemDetailsModal } from './ProblemDetailsModal'
 import { generateAIRecommendations } from '../model/recommendations'
 import { formatWaitTime } from '../model/types'
 import type { AttentionItem, RecentActivity, ResponseTimeModalData } from '../model/types'
@@ -17,7 +16,6 @@ import { AIRecommendationsPanel } from './AIRecommendationsPanel'
 import { MetricsSection } from './MetricsSection'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
-import { DetailedAnalyticsSection } from './DetailedAnalyticsSection'
 import { SLACategoryModal } from './SLACategoryModal'
 
 export function DashboardPage() {
@@ -34,7 +32,6 @@ export function DashboardPage() {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
 
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
-  const [problemDetailsModal, setProblemDetailsModal] = useState<{ category: string; label: string } | null>(null)
   const [slaCategoryModal, setSlaCategoryModal] = useState<{ category: string; label: string } | null>(null)
   const [slaCategoryMessages, setSlaCategoryMessages] = useState<any[]>([])
   const [slaCategoryLoading, setSlaCategoryLoading] = useState(false)
@@ -42,12 +39,32 @@ export function DashboardPage() {
   const loadData = useCallback(async () => {
     try {
       setError(null)
-      const [metricsData, analyticsData, channelsData, agentsData] = await Promise.all([
-        fetchDashboardMetrics(dateRange),
+      const [analyticsData, channelsData, agentsData] = await Promise.all([
         fetchAnalytics(dateRange),
         fetchChannels(),
         fetchAgents()
       ])
+
+      const rtd = analyticsData?.team?.responseTimeDistribution || []
+      const slaPercent = rtd.length > 0
+        ? Math.round(
+            ((rtd.find((d) => d.bucket === '5min')?.count || 0) +
+             (rtd.find((d) => d.bucket === '10min')?.count || 0)) /
+            Math.max(rtd.reduce((sum, d) => sum + d.count, 0), 1) * 100
+          )
+        : (analyticsData?.channels?.avgFirstResponse != null ? 95 : 100)
+
+      const metricsData: DashboardMetrics = {
+        waiting: channelsData.filter((c: any) => c.awaitingReply).length,
+        avgResponseTime: analyticsData?.channels?.avgFirstResponse
+          ? `${Math.round(analyticsData.channels.avgFirstResponse)}м`
+          : '—',
+        slaPercent,
+        urgentCases: analyticsData?.cases?.urgent || 0,
+        resolvedToday: analyticsData?.cases?.resolved || 0,
+        totalChannels: analyticsData?.channels?.total || 0,
+        activeAgents: 0
+      }
 
       setMetrics(metricsData)
       setAnalytics(analyticsData)
@@ -189,22 +206,17 @@ export function DashboardPage() {
           />
         )}
 
-        {analytics && (
-          <DetailedAnalyticsSection
-            analytics={analytics}
-            onProblemClick={(cat, label) => setProblemDetailsModal({ category: cat, label })}
-          />
-        )}
-
-        {/* Problem Details Modal */}
-        {problemDetailsModal && (
-          <ProblemDetailsModal
-            isOpen={!!problemDetailsModal}
-            onClose={() => setProblemDetailsModal(null)}
-            category={problemDetailsModal.category}
-            categoryLabel={problemDetailsModal.label}
-          />
-        )}
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-800">Детальная аналитика</h3>
+              <p className="text-sm text-slate-500 mt-1">Время ответа, агенты, кейсы, инсайты</p>
+            </div>
+            <a href="/sla-report" className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              SLA Отчёт <span className="text-xs">→</span>
+            </a>
+          </div>
+        </div>
 
         {/* SLA Category Modal */}
         {slaCategoryModal && (

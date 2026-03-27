@@ -11,14 +11,15 @@ function getSQL() {
   return neon(connectionString)
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
+function json(data: any, status = 200, cacheSeconds = 0) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+  }
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
+  }
+  return new Response(JSON.stringify(data), { status, headers })
 }
 
 // Convert media URL to proxied URL to avoid CORS/expiry issues
@@ -81,8 +82,6 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
 
   try {
-    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
-
     const channelResult = await sql`
       SELECT 
         id, name, type, is_forum, awaiting_reply, unread_count,
@@ -99,12 +98,9 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     let messages: any[]
-    let mode = 'latest' // Для логирования
 
     // Режим polling: получить только НОВЫЕ сообщения после since
     if (since) {
-      mode = 'polling'
-      console.log(`[Channel Messages] POLLING mode, since=${since}`)
       messages = await sql`
         SELECT
           id, telegram_message_id, sender_id, sender_name, sender_username,
@@ -123,8 +119,6 @@ export default async function handler(req: Request): Promise<Response> {
     }
     // Загрузка СТАРЫХ сообщений (перед before timestamp) - для подгрузки истории
     else if (before) {
-      mode = 'history'
-      console.log(`[Channel Messages] HISTORY mode, before=${before}`)
       const olderMessages = await sql`
         SELECT
           id, telegram_message_id, sender_id, sender_name, sender_username,
@@ -146,8 +140,6 @@ export default async function handler(req: Request): Promise<Response> {
     }
     // Первая загрузка: последние N сообщений
     else {
-      mode = 'latest'
-      console.log(`[Channel Messages] LATEST mode, limit=${limit}`)
       const latestMessages = await sql`
         SELECT
           id, telegram_message_id, sender_id, sender_name, sender_username,
@@ -167,23 +159,16 @@ export default async function handler(req: Request): Promise<Response> {
       messages = latestMessages.reverse()
     }
     
-    // Логируем результат
-    if (messages.length > 0) {
-      const first = messages[0]
-      const last = messages[messages.length - 1]
-      console.log(`[Channel Messages] ${mode}: found ${messages.length} msgs, first=${first.created_at}, last=${last.created_at}`)
-    } else {
-      console.log(`[Channel Messages] ${mode}: no messages found`)
+    let total = 0
+    if (!since) {
+      const countResult = await sql`
+        SELECT COUNT(*) as total FROM support_messages
+        WHERE channel_id = ${channelId}
+          AND org_id = ${orgId}
+          AND created_at > NOW() - INTERVAL '90 days'
+      `
+      total = parseInt(countResult[0]?.total || '0')
     }
-
-    // Get total count for pagination
-    const countResult = await sql`
-      SELECT COUNT(*) as total FROM support_messages
-      WHERE channel_id = ${channelId}
-        AND org_id = ${orgId}
-        AND created_at > NOW() - INTERVAL '90 days'
-    `
-    const total = parseInt(countResult[0]?.total || '0')
 
     // Resolve reply quotes from loaded messages
     const messagesByTgId: Record<string, any> = {}
@@ -261,7 +246,6 @@ export default async function handler(req: Request): Promise<Response> {
         photoUrl: channel.photo_url,
       },
       messages: formattedMessages,
-      // Для совместимости с фронтендом
       total,
       hasMore: messages.length >= limit,
       pagination: {
@@ -269,7 +253,7 @@ export default async function handler(req: Request): Promise<Response> {
         limit,
         hasMore: messages.length >= limit,
       }
-    })
+    }, 200, since ? 2 : 0)
 
   } catch (e: any) {
     console.error('[Channel Messages] Error:', e.message)

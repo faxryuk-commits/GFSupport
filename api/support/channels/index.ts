@@ -44,9 +44,6 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
 
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
-
   // GET - список каналов
   if (req.method === 'GET') {
     try {
@@ -59,104 +56,37 @@ export default async function handler(req: Request): Promise<Response> {
       const limitParam = parseInt(url.searchParams.get('limit') || '100')
       const offsetParam = parseInt(url.searchParams.get('offset') || '0')
 
-      let channels
+      const isActiveFlag = isActive === null ? 'skip' : isActive
 
-      if (search && source) {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
+      const [channels, countResult, statsResult, sourceStats] = await Promise.all([
+        sql`
+          WITH ch_msgs AS (
+            SELECT channel_id, COUNT(*)::int AS cnt
+            FROM support_messages WHERE org_id = ${orgId} GROUP BY channel_id
+          ),
+          ch_cases AS (
+            SELECT channel_id, COUNT(*)::int AS cnt
+            FROM support_cases WHERE org_id = ${orgId} AND status NOT IN ('resolved', 'closed') GROUP BY channel_id
+          )
+          SELECT c.*, COALESCE(m.cnt, 0) AS messages_count, COALESCE(cs.cnt, 0) AS open_cases_count
           FROM support_channels c
-          WHERE c.name ILIKE ${'%' + search + '%'} AND COALESCE(c.source, 'telegram') = ${source}
-            AND c.org_id = ${orgId}
-            AND (${market} = '__ALL__' OR c.market_id = ${market})
-          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (search) {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-          FROM support_channels c
-          WHERE c.name ILIKE ${'%' + search + '%'}
-            AND c.org_id = ${orgId}
-            AND (${market} = '__ALL__' OR c.market_id = ${market})
-          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (source) {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-          FROM support_channels c
-          WHERE COALESCE(c.source, 'telegram') = ${source}
-            AND c.org_id = ${orgId}
-            AND (${market} = '__ALL__' OR c.market_id = ${market})
-          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (type && type !== 'all') {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-          FROM support_channels c
-          WHERE c.type = ${type}
-            AND c.org_id = ${orgId}
-            AND (${market} = '__ALL__' OR c.market_id = ${market})
-          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (isActive === 'true') {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-          FROM support_channels c
-          WHERE c.is_active = true
-            AND c.org_id = ${orgId}
-            AND (${market} = '__ALL__' OR c.market_id = ${market})
-          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (isActive === 'false') {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-          FROM support_channels c
-          WHERE c.is_active = false
-            AND c.org_id = ${orgId}
-            AND (${market} = '__ALL__' OR c.market_id = ${market})
-          ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else {
-        channels = await sql`
-          SELECT c.*,
-            (SELECT COUNT(*) FROM support_messages WHERE channel_id = c.id) as messages_count,
-            (SELECT COUNT(*) FROM support_cases WHERE channel_id = c.id AND status NOT IN ('resolved', 'closed')) as open_cases_count
-          FROM support_channels c
+          LEFT JOIN ch_msgs m ON m.channel_id = c.id
+          LEFT JOIN ch_cases cs ON cs.channel_id = c.id
           WHERE c.org_id = ${orgId}
             AND (${market} = '__ALL__' OR c.market_id = ${market})
+            AND (${search || ''}::text = '' OR c.name ILIKE ${'%' + (search || '') + '%'})
+            AND (${source || ''}::text = '' OR COALESCE(c.source, 'telegram') = ${source || ''})
+            AND (${type || 'all'}::text = 'all' OR c.type = ${type || 'all'})
+            AND (${isActiveFlag}::text = 'skip' OR c.is_active = ${isActive === 'true'})
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      }
-
-      const [countResult, statsResult] = await Promise.all([
+        `,
         sql`SELECT COUNT(*) as total FROM support_channels WHERE org_id = ${orgId} AND (${market} = '__ALL__' OR market_id = ${market})`,
         sql`SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
             FROM support_channels WHERE org_id = ${orgId} AND (${market} = '__ALL__' OR market_id = ${market}) GROUP BY type`,
+        sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
+            FROM support_channels WHERE org_id = ${orgId} GROUP BY COALESCE(source, 'telegram')`,
       ])
-
-      let sourceStats: any[] = []
-      try {
-        sourceStats = await sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
-            FROM support_channels WHERE org_id = ${orgId} GROUP BY COALESCE(source, 'telegram')`
-      } catch { /* source column might not exist yet */ }
 
       const total = parseInt(countResult[0]?.total || '0')
 
@@ -200,7 +130,7 @@ export default async function handler(req: Request): Promise<Response> {
           { total: parseInt(s.count), active: parseInt(s.active_count) }
         ])),
         sourceCounts: Object.fromEntries(sourceStats.map((s: any) => [s.source, s.count])),
-      }, 200, 5)
+      }, 200, 3)
 
     } catch (e: any) {
       console.error('Channels fetch error:', e)

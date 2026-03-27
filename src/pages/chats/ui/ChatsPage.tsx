@@ -278,13 +278,15 @@ export function ChatsPage() {
     }
   }, [])
 
-  // Real-time polling: обновление каналов каждые 5 секунд (только когда вкладка видима)
+  // Real-time polling: обновление каналов каждые 8 секунд (только когда вкладка видима)
   useEffect(() => {
     const channelsRef = { current: channels }
     channelsRef.current = channels
+    let pollInFlight = false
 
     const pollChannels = async () => {
-      if (document.visibilityState === 'hidden') return
+      if (document.visibilityState === 'hidden' || pollInFlight) return
+      pollInFlight = true
       try {
         const channelsData = await fetchChannels()
         const mappedChannels = channelsData.map(mapChannelToUI)
@@ -301,25 +303,25 @@ export function ChatsPage() {
         }
         
         setChannels(mappedChannels)
-      } catch (error) {
-        console.error('Polling channels error:', error)
+      } catch {
+        // silent retry on next interval
+      } finally {
+        pollInFlight = false
       }
     }
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        pollChannels()
-      }
+      if (document.visibilityState === 'visible') pollChannels()
     }
     
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    const pollInterval = setInterval(pollChannels, 5000)
+    const pollInterval = setInterval(pollChannels, 8000)
 
     return () => {
       clearInterval(pollInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, []) // убрана зависимость от channels — использует ref для доступа к актуальным данным
+  }, [])
 
   // Глобальный обработчик Escape - выход из режима ответа/цитирования
   useEffect(() => {
@@ -430,14 +432,14 @@ export function ChatsPage() {
     }
     
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    const pollInterval = setInterval(pollMessages, 3000)
+    const pollInterval = setInterval(pollMessages, 4000)
 
     return () => {
       isActive = false
       clearInterval(pollInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [selectedChannel?.id]) // зависимость только от ID канала, не от messages
+  }, [selectedChannel?.id])
 
   // Загрузка AI контекста для канала
   const loadAIContext = useCallback(async (channelId: string) => {

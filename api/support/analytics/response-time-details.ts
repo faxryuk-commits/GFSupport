@@ -11,14 +11,15 @@ function getSQL() {
   return neon(connectionString)
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
+function json(data: any, status = 200, cacheSeconds = 0) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+  }
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
+  }
+  return new Response(JSON.stringify(data, null, 2), { status, headers })
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -379,7 +380,7 @@ export default async function handler(req: Request): Promise<Response> {
       })),
       details: mappedDetails,
       messages: mappedDetails,
-    })
+    }, 200, 30)
   } catch (error: any) {
     console.error('Response time details error:', error)
     return json({ 

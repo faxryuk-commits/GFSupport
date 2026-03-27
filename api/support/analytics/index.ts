@@ -12,14 +12,15 @@ function getSQL() {
   return neon(connectionString)
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
+function json(data: any, status = 200, cacheSeconds = 0) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+  }
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
+  }
+  return new Response(JSON.stringify(data, null, 2), { status, headers })
 }
 
 // Format milliseconds to human-readable duration
@@ -127,271 +128,255 @@ export default async function handler(req: Request): Promise<Response> {
     // 1. OVERVIEW METRICS
     // ============================================
     
-    const overviewResult = await sql`
-      SELECT
-        COUNT(*) as total_cases,
-        COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed')) as open_cases,
-        COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as resolved_cases,
-        COUNT(*) FILTER (WHERE created_at >= ${startDate.toISOString()}) as new_cases_period,
-        AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution_minutes,
-        COUNT(*) FILTER (WHERE priority = 'urgent') as urgent_cases,
-        COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('resolved', 'closed')) as urgent_open_cases,
-        COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases,
-        COUNT(*) FILTER (WHERE priority = 'low' AND created_at >= ${startDate.toISOString()}) as low_priority_cases,
-        COUNT(*) FILTER (WHERE priority = 'medium' AND created_at >= ${startDate.toISOString()}) as medium_priority_cases,
-        COUNT(*) FILTER (WHERE priority = 'high' AND created_at >= ${startDate.toISOString()}) as high_priority_cases,
-        COUNT(*) FILTER (WHERE priority = 'urgent' AND created_at >= ${startDate.toISOString()}) as urgent_priority_cases
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND (${market}::text IS NULL OR market_id = ${market})
-    `
-    const overview = overviewResult[0] || {}
-
-    const messagesResult = await sql`
-      SELECT
-        COUNT(*) as total_messages,
-        COUNT(*) FILTER (WHERE m.is_problem = true) as problem_messages,
-        COUNT(*) FILTER (WHERE m.content_type = 'voice') as voice_messages,
-        COUNT(*) FILTER (WHERE m.content_type IN ('video', 'video_note')) as video_messages,
-        COUNT(*) FILTER (WHERE m.transcript IS NOT NULL) as transcribed_messages
-      FROM support_messages m
-      JOIN support_channels ch ON ch.id = m.channel_id
-      WHERE m.org_id = ${orgId}
-        AND m.created_at >= ${startDate.toISOString()}
-        AND (${market}::text IS NULL OR ch.market_id = ${market})
-    `
-    const messages = messagesResult[0] || {}
-
-    const channelsResult = await sql`
-      SELECT COUNT(*) as total_channels, COUNT(*) FILTER (WHERE is_active = true) as active_channels
-      FROM support_channels
-      WHERE org_id = ${orgId}
-        AND (${market}::text IS NULL OR market_id = ${market})
-    `
-    const channels = channelsResult[0] || {}
-
-    // ============================================
-    // 2. PROBLEM PATTERNS (топ категорий и проблем)
-    // ============================================
-    
-    const categoryPatterns = await sql`
-      SELECT 
-        COALESCE(category, 'uncategorized') as category,
-        COUNT(*) as count,
-        COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed')) as open_count,
-        AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND created_at >= ${startDate.toISOString()}
-      GROUP BY category
-      ORDER BY count DESC
-      LIMIT 10
-    `
-
-    const sentimentDistribution = await sql`
-      SELECT 
-        COALESCE(ai_sentiment, 'unknown') as sentiment,
-        COUNT(*) as count
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND created_at >= ${startDate.toISOString()} AND ai_sentiment IS NOT NULL
-      GROUP BY ai_sentiment
-      ORDER BY count DESC
-    `
-
-    const intentDistribution = await sql`
-      SELECT 
-        COALESCE(ai_intent, 'unknown') as intent,
-        COUNT(*) as count
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND created_at >= ${startDate.toISOString()} AND ai_intent IS NOT NULL
-      GROUP BY ai_intent
-      ORDER BY count DESC
-      LIMIT 10
-    `
-
-    // Топ повторяющихся проблем - улучшенная логика
-    // Группируем по категории + подкатегории или типу проблемы
-    const recurringProblems = await sql`
-      WITH problem_patterns AS (
-        -- Группировка кейсов по категории
+    const [overviewResult, messagesResult, channelsResult, categoryPatterns, sentimentDistribution, intentDistribution] = await Promise.all([
+      sql`
+        SELECT
+          COUNT(*) as total_cases,
+          COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed')) as open_cases,
+          COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as resolved_cases,
+          COUNT(*) FILTER (WHERE created_at >= ${startDate.toISOString()}) as new_cases_period,
+          AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution_minutes,
+          COUNT(*) FILTER (WHERE priority = 'urgent') as urgent_cases,
+          COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('resolved', 'closed')) as urgent_open_cases,
+          COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases,
+          COUNT(*) FILTER (WHERE priority = 'low' AND created_at >= ${startDate.toISOString()}) as low_priority_cases,
+          COUNT(*) FILTER (WHERE priority = 'medium' AND created_at >= ${startDate.toISOString()}) as medium_priority_cases,
+          COUNT(*) FILTER (WHERE priority = 'high' AND created_at >= ${startDate.toISOString()}) as high_priority_cases,
+          COUNT(*) FILTER (WHERE priority = 'urgent' AND created_at >= ${startDate.toISOString()}) as urgent_priority_cases
+        FROM support_cases
+        WHERE org_id = ${orgId}
+          AND (${market}::text IS NULL OR market_id = ${market})
+      `,
+      sql`
+        SELECT
+          COUNT(*) as total_messages,
+          COUNT(*) FILTER (WHERE m.is_problem = true) as problem_messages,
+          COUNT(*) FILTER (WHERE m.content_type = 'voice') as voice_messages,
+          COUNT(*) FILTER (WHERE m.content_type IN ('video', 'video_note')) as video_messages,
+          COUNT(*) FILTER (WHERE m.transcript IS NOT NULL) as transcribed_messages
+        FROM support_messages m
+        JOIN support_channels ch ON ch.id = m.channel_id
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${startDate.toISOString()}
+          AND (${market}::text IS NULL OR ch.market_id = ${market})
+      `,
+      sql`
+        SELECT COUNT(*) as total_channels, COUNT(*) FILTER (WHERE is_active = true) as active_channels
+        FROM support_channels
+        WHERE org_id = ${orgId}
+          AND (${market}::text IS NULL OR market_id = ${market})
+      `,
+      sql`
         SELECT 
-          category as problem_type,
-          'category' as source,
-          COUNT(*) as occurrences,
-          COUNT(DISTINCT channel_id) as affected_companies
+          COALESCE(category, 'uncategorized') as category,
+          COUNT(*) as count,
+          COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed')) as open_count,
+          AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes > 0) as avg_resolution
         FROM support_cases
         WHERE org_id = ${orgId}
           AND created_at >= ${startDate.toISOString()}
-          AND category IS NOT NULL
         GROUP BY category
-        HAVING COUNT(*) >= 2
-        
-        UNION ALL
-        
-        -- Группировка сообщений с проблемами по категории AI
+        ORDER BY count DESC
+        LIMIT 10
+      `,
+      sql`
         SELECT 
-          ai_category as problem_type,
-          'ai_category' as source,
-          COUNT(*) as occurrences,
-          COUNT(DISTINCT channel_id) as affected_companies
+          COALESCE(ai_sentiment, 'unknown') as sentiment,
+          COUNT(*) as count
         FROM support_messages
         WHERE org_id = ${orgId}
-          AND created_at >= ${startDate.toISOString()}
-          AND is_problem = true
-          AND ai_category IS NOT NULL
-        GROUP BY ai_category
-        HAVING COUNT(*) >= 3
-        
-        UNION ALL
-        
-        -- Каналы с множеством проблем
+          AND created_at >= ${startDate.toISOString()} AND ai_sentiment IS NOT NULL
+        GROUP BY ai_sentiment
+        ORDER BY count DESC
+      `,
+      sql`
         SELECT 
-          'Множественные обращения' as problem_type,
-          'multi_contact' as source,
-          COUNT(*) as occurrences,
-          COUNT(DISTINCT channel_id) as affected_companies
+          COALESCE(ai_intent, 'unknown') as intent,
+          COUNT(*) as count
         FROM support_messages
         WHERE org_id = ${orgId}
+          AND created_at >= ${startDate.toISOString()} AND ai_intent IS NOT NULL
+        GROUP BY ai_intent
+        ORDER BY count DESC
+        LIMIT 10
+      `,
+    ])
+    const overview = overviewResult[0] || {}
+    const messages = messagesResult[0] || {}
+    const channels = channelsResult[0] || {}
+
+    const [recurringProblems, teamPerformance, caseMetrics, dailyCasesRaw] = await Promise.all([
+      sql`
+        WITH problem_patterns AS (
+          -- Группировка кейсов по категории
+          SELECT 
+            category as problem_type,
+            'category' as source,
+            COUNT(*) as occurrences,
+            COUNT(DISTINCT channel_id) as affected_companies
+          FROM support_cases
+          WHERE org_id = ${orgId}
+            AND created_at >= ${startDate.toISOString()}
+            AND category IS NOT NULL
+          GROUP BY category
+          HAVING COUNT(*) >= 2
+          
+          UNION ALL
+          
+          -- Группировка сообщений с проблемами по категории AI
+          SELECT 
+            ai_category as problem_type,
+            'ai_category' as source,
+            COUNT(*) as occurrences,
+            COUNT(DISTINCT channel_id) as affected_companies
+          FROM support_messages
+          WHERE org_id = ${orgId}
+            AND created_at >= ${startDate.toISOString()}
+            AND is_problem = true
+            AND ai_category IS NOT NULL
+          GROUP BY ai_category
+          HAVING COUNT(*) >= 3
+          
+          UNION ALL
+          
+          -- Каналы с множеством проблем
+          SELECT 
+            'Множественные обращения' as problem_type,
+            'multi_contact' as source,
+            COUNT(*) as occurrences,
+            COUNT(DISTINCT channel_id) as affected_companies
+          FROM support_messages
+          WHERE org_id = ${orgId}
+            AND created_at >= ${startDate.toISOString()}
+            AND is_problem = true
+          GROUP BY channel_id
+          HAVING COUNT(*) >= 3
+        )
+        SELECT 
+          problem_type as problem,
+          SUM(occurrences) as occurrences,
+          SUM(affected_companies) as affected_companies
+        FROM problem_patterns
+        WHERE problem_type IS NOT NULL AND problem_type != ''
+        GROUP BY problem_type
+        ORDER BY occurrences DESC
+        LIMIT 10
+      `,
+      sql`
+        SELECT 
+          COALESCE(a.name, m.sender_name, m.sender_username, 'Неизвестный') as manager_name,
+          COALESCE(a.id, m.sender_id::text) as manager_id,
+          a.username as agent_username,
+          a.role as agent_role,
+          COUNT(*) as total_messages,
+          COUNT(DISTINCT m.channel_id) as channels_served,
+          COUNT(DISTINCT DATE(m.created_at)) as active_days,
+          MIN(m.created_at) as first_message_at,
+          MAX(m.created_at) as last_message_at
+        FROM support_messages m
+        LEFT JOIN support_agents a ON (
+          a.telegram_id::text = m.sender_id::text 
+          OR LOWER(a.username) = LOWER(m.sender_username)
+          OR LOWER(a.name) = LOWER(m.sender_name)
+        )
+        WHERE m.org_id = ${orgId}
+          AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
+          AND m.sender_id IS NOT NULL
+          AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
+          AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%delever support%'
+          AND LOWER(COALESCE(m.sender_username, '')) NOT LIKE '%bot%'
+        GROUP BY a.id, a.name, a.username, a.role, m.sender_id, m.sender_name, m.sender_username
+        HAVING COUNT(*) >= 1
+        ORDER BY total_messages DESC
+        LIMIT 20
+      `,
+      sql`
+        SELECT 
+          c.assigned_to as manager_id,
+          COUNT(*) as total_cases,
+          COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases,
+          AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
+        FROM support_cases c
+        WHERE c.org_id = ${orgId}
+          AND c.assigned_to IS NOT NULL
+        GROUP BY c.assigned_to
+      `,
+      sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as cases_created,
+          COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
+        FROM support_cases
+        WHERE org_id = ${orgId}
           AND created_at >= ${startDate.toISOString()}
-          AND is_problem = true
-        GROUP BY channel_id
-        HAVING COUNT(*) >= 3
-      )
-      SELECT 
-        problem_type as problem,
-        SUM(occurrences) as occurrences,
-        SUM(affected_companies) as affected_companies
-      FROM problem_patterns
-      WHERE problem_type IS NOT NULL AND problem_type != ''
-      GROUP BY problem_type
-      ORDER BY occurrences DESC
-      LIMIT 10
-    `
+        GROUP BY DATE(created_at)
+        ORDER BY date
+      `,
+    ])
 
-    // ============================================
-    // 3. TEAM METRICS
-    // ============================================
-    
-    // Метрики команды по сообщениям (кто сколько ответил)
-    // Связываем с таблицей agents по telegram_id для правильных имён
-    // Исключаем ботов и системные аккаунты
-    const teamPerformance = await sql`
-      SELECT 
-        COALESCE(a.name, m.sender_name, m.sender_username, 'Неизвестный') as manager_name,
-        COALESCE(a.id, m.sender_id::text) as manager_id,
-        a.username as agent_username,
-        a.role as agent_role,
-        COUNT(*) as total_messages,
-        COUNT(DISTINCT m.channel_id) as channels_served,
-        COUNT(DISTINCT DATE(m.created_at)) as active_days,
-        MIN(m.created_at) as first_message_at,
-        MAX(m.created_at) as last_message_at
-      FROM support_messages m
-      LEFT JOIN support_agents a ON (
-        a.telegram_id::text = m.sender_id::text 
-        OR LOWER(a.username) = LOWER(m.sender_username)
-        OR LOWER(a.name) = LOWER(m.sender_name)
-      )
-      WHERE m.org_id = ${orgId}
-        AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
-        AND m.sender_id IS NOT NULL
-        AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
-        AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%delever support%'
-        AND LOWER(COALESCE(m.sender_username, '')) NOT LIKE '%bot%'
-      GROUP BY a.id, a.name, a.username, a.role, m.sender_id, m.sender_name, m.sender_username
-      HAVING COUNT(*) >= 1
-      ORDER BY total_messages DESC
-      LIMIT 20
-    `
-
-    // Дополнительно: метрики по кейсам если есть assigned_to
-    const caseMetrics = await sql`
-      SELECT 
-        c.assigned_to as manager_id,
-        COUNT(*) as total_cases,
-        COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed')) as resolved_cases,
-        AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
-      FROM support_cases c
-      WHERE c.org_id = ${orgId}
-        AND c.assigned_to IS NOT NULL
-      GROUP BY c.assigned_to
-    `
-    
-    // Объединяем данные
     const caseMetricsMap = new Map(caseMetrics.map((c: any) => [c.manager_id?.toString(), c]))
 
-    // Время первого ответа - вычисляем из сообщений
-    // Находим разницу между первым сообщением клиента и первым ответом от поддержки для каждого канала
+    const dailyTrend: Array<{date: Date, cases_created: number, cases_resolved: number}> = []
+    const casesMap = new Map(dailyCasesRaw.map((d: any) => [
+      new Date(d.date).toISOString().split('T')[0], 
+      { created: parseInt(d.cases_created), resolved: parseInt(d.cases_resolved) }
+    ]))
+    
+    const currentDate = new Date()
+    const iterDate = new Date(startDate)
+    while (iterDate <= currentDate) {
+      const dateStr = iterDate.toISOString().split('T')[0]
+      const data = casesMap.get(dateStr) || { created: 0, resolved: 0 }
+      dailyTrend.push({
+        date: new Date(iterDate),
+        cases_created: data.created,
+        cases_resolved: data.resolved
+      })
+      iterDate.setDate(iterDate.getDate() + 1)
+    }
+
     let avgFirstResponse: number | null = null
     let responseTimeDistribution: any[] = []
     
     try {
-      // Вычисляем время ответа для КАЖДОГО сообщения клиента ЗА ПЕРИОД
-      // Находим следующий ответ поддержки после каждого сообщения клиента
       const responseTimesResult = await sql`
-        WITH all_messages AS (
-          SELECT 
-            id,
-            channel_id,
-            sender_id,
-            text_content,
-            created_at,
-            sender_role,
-            is_from_client,
-            LAG(sender_role) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_sender_role,
-            LAG(is_from_client) OVER (PARTITION BY channel_id ORDER BY created_at) as prev_is_from_client
+        WITH all_msgs AS (
+          SELECT
+            channel_id, created_at, sender_role, is_from_client, text_content,
+            LAG(sender_role) OVER w as prev_sender_role,
+            LAG(is_from_client) OVER w as prev_is_from_client,
+            LEAD(created_at) OVER w as next_at,
+            LEAD(sender_role) OVER w as next_role,
+            LEAD(is_from_client) OVER w as next_is_client
           FROM support_messages
           WHERE org_id = ${orgId}
             AND created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND created_at <= ${endDate.toISOString()}
+          WINDOW w AS (PARTITION BY channel_id ORDER BY created_at)
         ),
-        first_client_messages AS (
-          SELECT id, channel_id, sender_id, created_at as client_msg_at
-          FROM all_messages
-          WHERE sender_role = 'client'
-            AND is_from_client = true
+        client_starts AS (
+          SELECT channel_id, created_at as client_msg_at, next_at, next_role, next_is_client
+          FROM all_msgs
+          WHERE sender_role = 'client' AND is_from_client = true
             AND created_at >= ${startDate.toISOString()}
-            AND (
-              prev_sender_role IS NULL
-              OR prev_sender_role IN ('support', 'team', 'agent')
-              OR prev_is_from_client = false
-            )
+            AND (prev_sender_role IS NULL OR prev_sender_role IN ('support','team','agent') OR prev_is_from_client = false)
             AND NOT (
               COALESCE(LENGTH(text_content), 0) <= 50
               AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
             )
-        ),
-        response_times AS (
-          SELECT 
-            cm.id as client_msg_id,
-            cm.channel_id,
-            cm.client_msg_at,
-            (
-              SELECT MIN(created_at)
-              FROM support_messages sm
-              WHERE sm.channel_id = cm.channel_id
-                AND sm.org_id = ${orgId}
-                AND sm.created_at > cm.client_msg_at
-                AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
-                AND sm.sender_role IN ('support', 'team', 'agent')
-                AND sm.is_from_client = false
-            ) as response_at
-          FROM first_client_messages cm
         )
-        SELECT 
-          EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 as response_minutes
-        FROM response_times
-        WHERE response_at IS NOT NULL
+        SELECT
+          EXTRACT(EPOCH FROM (next_at - client_msg_at)) / 60 as response_minutes
+        FROM client_starts
+        WHERE next_at IS NOT NULL
+          AND (next_role IN ('support','team','agent') OR next_is_client = false)
+          AND next_at <= client_msg_at + INTERVAL '4 hours'
       `
       
       if (responseTimesResult.length > 0) {
-        // Среднее время
         const totalMinutes = responseTimesResult.reduce((sum: number, r: any) => sum + parseFloat(r.response_minutes || 0), 0)
         avgFirstResponse = Math.round(totalMinutes / responseTimesResult.length)
         
-        // Распределение по интервалам
         const buckets = {
           '5min': { count: 0, total: 0 },
           '10min': { count: 0, total: 0 },
@@ -425,130 +410,92 @@ export default async function handler(req: Request): Promise<Response> {
       console.error('responseTimeDistribution error:', e)
     }
 
-    // Кейсы по дням (тренд) - получаем данные и заполняем пропуски в JS
-    const dailyCasesRaw = await sql`
-      SELECT 
-        DATE(created_at) as date,
-        COUNT(*) as cases_created,
-        COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as cases_resolved
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND created_at >= ${startDate.toISOString()}
-      GROUP BY DATE(created_at)
-      ORDER BY date
-    `
-    
-    // Создаём массив всех дней периода и заполняем данными
-    const dailyTrend: Array<{date: Date, cases_created: number, cases_resolved: number}> = []
-    const casesMap = new Map(dailyCasesRaw.map((d: any) => [
-      new Date(d.date).toISOString().split('T')[0], 
-      { created: parseInt(d.cases_created), resolved: parseInt(d.cases_resolved) }
-    ]))
-    
-    const currentDate = new Date()
-    const iterDate = new Date(startDate)
-    while (iterDate <= currentDate) {
-      const dateStr = iterDate.toISOString().split('T')[0]
-      const data = casesMap.get(dateStr) || { created: 0, resolved: 0 }
-      dailyTrend.push({
-        date: new Date(iterDate),
-        cases_created: data.created,
-        cases_resolved: data.resolved
-      })
-      iterDate.setDate(iterDate.getDate() + 1)
-    }
-
     // ============================================
     // 4. CHURN SIGNALS
     // ============================================
     
-    // Каналы с негативным sentiment
-    const negativeCompanies = await sql`
-      SELECT 
-        c.id as company_id,
-        c.name as company_name,
-        COUNT(*) as negative_messages,
-        COUNT(DISTINCT m.id) as total_messages,
-        MAX(m.created_at) as last_negative_at
-      FROM support_messages m
-      JOIN support_channels c ON m.channel_id = c.id
-      WHERE m.org_id = ${orgId}
-        AND m.ai_sentiment IN ('negative', 'frustrated')
-        AND m.created_at >= ${startDate.toISOString()}
-      GROUP BY c.id, c.name
-      HAVING COUNT(*) >= 3
-      ORDER BY negative_messages DESC
-      LIMIT 10
-    `
-
-    // Каналы с нерешёнными кейсами > 48 часов
-    const stuckCases = await sql`
-      SELECT 
-        ch.id as company_id,
-        ch.name as company_name,
-        COUNT(*) as stuck_cases,
-        MIN(c.created_at) as oldest_case_at,
-        EXTRACT(EPOCH FROM (NOW() - MIN(c.created_at))) / 3600 as oldest_hours
-      FROM support_cases c
-      JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.org_id = ${orgId}
-        AND c.status NOT IN ('resolved', 'closed')
-        AND c.created_at < NOW() - INTERVAL '48 hours'
-      GROUP BY ch.id, ch.name
-      ORDER BY oldest_hours DESC
-      LIMIT 10
-    `
-
-    // Каналы с повторяющимися проблемами
-    const recurringByCompany = await sql`
-      SELECT 
-        ch.id as company_id,
-        ch.name as company_name,
-        COUNT(*) as recurring_cases,
-        array_agg(DISTINCT c.category) as categories
-      FROM support_cases c
-      JOIN support_channels ch ON c.channel_id = ch.id
-      WHERE c.org_id = ${orgId}
-        AND c.is_recurring = true
-        AND c.created_at >= ${startDate.toISOString()}
-      GROUP BY ch.id, ch.name
-      HAVING COUNT(*) >= 2
-      ORDER BY recurring_cases DESC
-      LIMIT 10
-    `
-
-    // Churn risk score calculation
-    const churnRiskCompanies = await sql`
-      SELECT 
-        c.id as company_id,
-        c.name as company_name,
-        0 as mrr,
-        COALESCE(SUM(
+    const [negativeCompanies, stuckCases, recurringByCompany, churnRiskCompanies] = await Promise.all([
+      sql`
+        SELECT 
+          c.id as company_id,
+          c.name as company_name,
+          COUNT(*) as negative_messages,
+          COUNT(DISTINCT m.id) as total_messages,
+          MAX(m.created_at) as last_negative_at
+        FROM support_messages m
+        JOIN support_channels c ON m.channel_id = c.id
+        WHERE m.org_id = ${orgId}
+          AND m.ai_sentiment IN ('negative', 'frustrated')
+          AND m.created_at >= ${startDate.toISOString()}
+        GROUP BY c.id, c.name
+        HAVING COUNT(*) >= 3
+        ORDER BY negative_messages DESC
+        LIMIT 10
+      `,
+      sql`
+        SELECT 
+          ch.id as company_id,
+          ch.name as company_name,
+          COUNT(*) as stuck_cases,
+          MIN(c.created_at) as oldest_case_at,
+          EXTRACT(EPOCH FROM (NOW() - MIN(c.created_at))) / 3600 as oldest_hours
+        FROM support_cases c
+        JOIN support_channels ch ON c.channel_id = ch.id
+        WHERE c.org_id = ${orgId}
+          AND c.status NOT IN ('resolved', 'closed')
+          AND c.created_at < NOW() - INTERVAL '48 hours'
+        GROUP BY ch.id, ch.name
+        ORDER BY oldest_hours DESC
+        LIMIT 10
+      `,
+      sql`
+        SELECT 
+          ch.id as company_id,
+          ch.name as company_name,
+          COUNT(*) as recurring_cases,
+          array_agg(DISTINCT c.category) as categories
+        FROM support_cases c
+        JOIN support_channels ch ON c.channel_id = ch.id
+        WHERE c.org_id = ${orgId}
+          AND c.is_recurring = true
+          AND c.created_at >= ${startDate.toISOString()}
+        GROUP BY ch.id, ch.name
+        HAVING COUNT(*) >= 2
+        ORDER BY recurring_cases DESC
+        LIMIT 10
+      `,
+      sql`
+        SELECT 
+          c.id as company_id,
+          c.name as company_name,
+          0 as mrr,
+          COALESCE(SUM(
+            CASE 
+              WHEN m.ai_sentiment IN ('negative', 'frustrated') THEN 3
+              WHEN m.ai_urgency >= 4 THEN 2
+              WHEN m.is_problem = true THEN 1
+              ELSE 0
+            END
+          ), 0) as risk_score,
+          COUNT(DISTINCT CASE WHEN cs.status NOT IN ('resolved', 'closed') THEN cs.id END) as open_cases,
+          COUNT(DISTINCT CASE WHEN cs.is_recurring THEN cs.id END) as recurring_cases
+        FROM support_channels c
+        LEFT JOIN support_messages m ON m.channel_id = c.id AND m.org_id = ${orgId} AND m.created_at >= ${startDate.toISOString()}
+        LEFT JOIN support_cases cs ON cs.channel_id = c.id AND cs.org_id = ${orgId}
+        WHERE c.org_id = ${orgId}
+        GROUP BY c.id, c.name
+        HAVING COALESCE(SUM(
           CASE 
             WHEN m.ai_sentiment IN ('negative', 'frustrated') THEN 3
             WHEN m.ai_urgency >= 4 THEN 2
             WHEN m.is_problem = true THEN 1
             ELSE 0
           END
-        ), 0) as risk_score,
-        COUNT(DISTINCT CASE WHEN cs.status NOT IN ('resolved', 'closed') THEN cs.id END) as open_cases,
-        COUNT(DISTINCT CASE WHEN cs.is_recurring THEN cs.id END) as recurring_cases
-      FROM support_channels c
-      LEFT JOIN support_messages m ON m.channel_id = c.id AND m.org_id = ${orgId} AND m.created_at >= ${startDate.toISOString()}
-      LEFT JOIN support_cases cs ON cs.channel_id = c.id AND cs.org_id = ${orgId}
-      WHERE c.org_id = ${orgId}
-      GROUP BY c.id, c.name
-      HAVING COALESCE(SUM(
-        CASE 
-          WHEN m.ai_sentiment IN ('negative', 'frustrated') THEN 3
-          WHEN m.ai_urgency >= 4 THEN 2
-          WHEN m.is_problem = true THEN 1
-          ELSE 0
-        END
-      ), 0) >= 5
-      ORDER BY risk_score DESC
-      LIMIT 15
-    `
+        ), 0) >= 5
+        ORDER BY risk_score DESC
+        LIMIT 15
+      `,
+    ])
 
     // ============================================
     // 5. SLA METRICS BY CATEGORY
@@ -566,97 +513,93 @@ export default async function handler(req: Request): Promise<Response> {
     let byCategory: Record<string, any> = {}
     
     try {
-      // Метрики по SLA категориям каналов
-      const slaCategoryMetrics = await sql`
-        SELECT 
-          COALESCE(ch.sla_category, 'client') as sla_category,
-          COUNT(DISTINCT ch.id) as total_channels,
-          COUNT(DISTINCT ch.id) FILTER (WHERE ch.awaiting_reply = true) as waiting_reply,
-          COUNT(DISTINCT ch.id) FILTER (WHERE ch.unread_count > 0) as with_unread,
-          SUM(COALESCE(ch.unread_count, 0)) as total_unread
-        FROM support_channels ch
-        WHERE ch.org_id = ${orgId}
-          AND ch.is_active = true
-        GROUP BY ch.sla_category
-      `
-      
-      // Кейсы по SLA категориям
-      const slaCasesMetrics = await sql`
-        SELECT 
-          COALESCE(ch.sla_category, 'client') as sla_category,
-          COUNT(*) as total_cases,
-          COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed')) as open_cases,
-          COUNT(*) FILTER (WHERE c.priority = 'urgent') as urgent_cases,
-          AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
-        FROM support_cases c
-        JOIN support_channels ch ON c.channel_id = ch.id
-        WHERE c.org_id = ${orgId}
-          AND c.created_at >= ${startDate.toISOString()}
-        GROUP BY ch.sla_category
-      `
-      
-      // Время ответа по SLA категориям
-      // Считаем только ПЕРВОЕ сообщение клиента в серии (до ответа сотрудника)
-      const slaResponseMetrics = await sql`
-        WITH all_messages AS (
+      const [slaCategoryMetrics, slaCasesMetrics, slaResponseMetrics] = await Promise.all([
+        sql`
           SELECT 
-            m.id,
-            m.channel_id,
-            m.text_content,
-            m.sender_role,
-            m.is_from_client,
-            m.created_at,
-            ch.sla_category,
-            LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
-            LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
-          FROM support_messages m
-          JOIN support_channels ch ON m.channel_id = ch.id
-          WHERE m.org_id = ${orgId}
-            AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
-            AND m.created_at <= ${endDate.toISOString()}
-        ),
-        first_client_messages AS (
-          SELECT id, channel_id, created_at as client_msg_at, sla_category
-          FROM all_messages
-          WHERE sender_role = 'client'
-            AND is_from_client = true
-            AND created_at >= ${startDate.toISOString()}
-            AND (
-              prev_sender_role IS NULL
-              OR prev_sender_role IN ('support', 'team', 'agent')
-              OR prev_is_from_client = false
-            )
-            AND NOT (
-              COALESCE(LENGTH(text_content), 0) <= 50
-              AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
-            )
-        ),
-        response_times AS (
+            COALESCE(ch.sla_category, 'client') as sla_category,
+            COUNT(DISTINCT ch.id) as total_channels,
+            COUNT(DISTINCT ch.id) FILTER (WHERE ch.awaiting_reply = true) as waiting_reply,
+            COUNT(DISTINCT ch.id) FILTER (WHERE ch.unread_count > 0) as with_unread,
+            SUM(COALESCE(ch.unread_count, 0)) as total_unread
+          FROM support_channels ch
+          WHERE ch.org_id = ${orgId}
+            AND ch.is_active = true
+          GROUP BY ch.sla_category
+        `,
+        sql`
           SELECT 
-            cm.sla_category,
-            cm.client_msg_at,
-            (
-              SELECT MIN(sm.created_at)
-              FROM support_messages sm
-              WHERE sm.channel_id = cm.channel_id
-                AND sm.org_id = ${orgId}
-                AND sm.created_at > cm.client_msg_at
-                AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
-                AND sm.sender_role IN ('support', 'team', 'agent')
-                AND sm.is_from_client = false
-            ) as response_at
-          FROM first_client_messages cm
-        )
-        SELECT 
-          COALESCE(sla_category, 'client') as sla_category,
-          AVG(EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60) as avg_response_minutes,
-          COUNT(*) FILTER (WHERE response_at IS NOT NULL) as responded_count,
-          COUNT(*) FILTER (WHERE response_at IS NOT NULL AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 <= 10) as within_sla,
-          COUNT(*) as total_messages
-        FROM response_times
-        WHERE response_at IS NOT NULL
-        GROUP BY sla_category
-      `
+            COALESCE(ch.sla_category, 'client') as sla_category,
+            COUNT(*) as total_cases,
+            COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed')) as open_cases,
+            COUNT(*) FILTER (WHERE c.priority = 'urgent') as urgent_cases,
+            AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
+          FROM support_cases c
+          JOIN support_channels ch ON c.channel_id = ch.id
+          WHERE c.org_id = ${orgId}
+            AND c.created_at >= ${startDate.toISOString()}
+          GROUP BY ch.sla_category
+        `,
+        sql`
+          WITH all_messages AS (
+            SELECT 
+              m.id,
+              m.channel_id,
+              m.text_content,
+              m.sender_role,
+              m.is_from_client,
+              m.created_at,
+              ch.sla_category,
+              LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
+              LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
+            FROM support_messages m
+            JOIN support_channels ch ON m.channel_id = ch.id
+            WHERE m.org_id = ${orgId}
+              AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+              AND m.created_at <= ${endDate.toISOString()}
+          ),
+          first_client_messages AS (
+            SELECT id, channel_id, created_at as client_msg_at, sla_category
+            FROM all_messages
+            WHERE sender_role = 'client'
+              AND is_from_client = true
+              AND created_at >= ${startDate.toISOString()}
+              AND (
+                prev_sender_role IS NULL
+                OR prev_sender_role IN ('support', 'team', 'agent')
+                OR prev_is_from_client = false
+              )
+              AND NOT (
+                COALESCE(LENGTH(text_content), 0) <= 50
+                AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+              )
+          ),
+          response_times AS (
+            SELECT 
+              cm.sla_category,
+              cm.client_msg_at,
+              (
+                SELECT MIN(sm.created_at)
+                FROM support_messages sm
+                WHERE sm.channel_id = cm.channel_id
+                  AND sm.org_id = ${orgId}
+                  AND sm.created_at > cm.client_msg_at
+                  AND sm.created_at <= cm.client_msg_at + INTERVAL '4 hours'
+                  AND sm.sender_role IN ('support', 'team', 'agent')
+                  AND sm.is_from_client = false
+              ) as response_at
+            FROM first_client_messages cm
+          )
+          SELECT 
+            COALESCE(sla_category, 'client') as sla_category,
+            AVG(EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60) as avg_response_minutes,
+            COUNT(*) FILTER (WHERE response_at IS NOT NULL) as responded_count,
+            COUNT(*) FILTER (WHERE response_at IS NOT NULL AND EXTRACT(EPOCH FROM (response_at - client_msg_at)) / 60 <= 10) as within_sla,
+            COUNT(*) as total_messages
+          FROM response_times
+          WHERE response_at IS NOT NULL
+          GROUP BY sla_category
+        `,
+      ])
       
       const channelsByCat = new Map(slaCategoryMetrics.map((m: any) => [m.sla_category, m]))
       const casesByCat = new Map(slaCasesMetrics.map((m: any) => [m.sla_category, m]))
@@ -711,115 +654,107 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // ============================================
-    // 6. TOP DEMANDING CHANNELS
+    // 6. TOP DEMANDING CHANNELS + SLOWEST CLIENTS
     // ============================================
     
-    // Топ каналов требующих внимания (по нагрузке, проблемам, срочности)
-    const topDemandingChannels = await sql`
-      WITH channel_metrics AS (
+    const [topDemandingChannels, slowestClients] = await Promise.all([
+      sql`
+        WITH msg_stats AS (
+          SELECT
+            channel_id,
+            COUNT(*) as messages_count,
+            COUNT(*) FILTER (WHERE is_problem = true) as problem_count,
+            COUNT(*) FILTER (WHERE ai_sentiment IN ('negative', 'frustrated')) as negative_count,
+            COUNT(*) FILTER (WHERE ai_urgency >= 4) as urgent_count
+          FROM support_messages
+          WHERE org_id = ${orgId} AND created_at >= ${startDate.toISOString()}
+          GROUP BY channel_id
+        ),
+        case_stats AS (
+          SELECT
+            channel_id,
+            COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed')) as open_cases,
+            COUNT(*) FILTER (WHERE is_recurring = true) as recurring_cases
+          FROM support_cases
+          WHERE org_id = ${orgId}
+          GROUP BY channel_id
+        ),
+        channel_metrics AS (
+          SELECT
+            c.id, c.name, c.sla_category, c.awaiting_reply, c.unread_count, c.last_message_at,
+            COALESCE(ms.messages_count, 0) as messages_count,
+            COALESCE(ms.problem_count, 0) as problem_count,
+            COALESCE(ms.negative_count, 0) as negative_count,
+            COALESCE(ms.urgent_count, 0) as urgent_count,
+            COALESCE(cs.open_cases, 0) as open_cases,
+            COALESCE(cs.recurring_cases, 0) as recurring_cases
+          FROM support_channels c
+          LEFT JOIN msg_stats ms ON ms.channel_id = c.id
+          LEFT JOIN case_stats cs ON cs.channel_id = c.id
+          WHERE c.org_id = ${orgId} AND c.is_active = true
+        )
+        SELECT
+          *,
+          (
+            messages_count * 0.1 +
+            problem_count * 3 +
+            negative_count * 4 +
+            urgent_count * 5 +
+            open_cases * 2 +
+            recurring_cases * 3 +
+            CASE WHEN awaiting_reply THEN 10 ELSE 0 END +
+            COALESCE(unread_count, 0) * 0.5
+          ) as attention_score
+        FROM channel_metrics
+        WHERE messages_count > 0 OR open_cases > 0 OR COALESCE(unread_count, 0) > 0
+        ORDER BY attention_score DESC
+        LIMIT 10
+      `,
+      sql`
+        WITH message_pairs AS (
+          SELECT 
+            m.channel_id,
+            m.is_from_client,
+            m.created_at,
+            LAG(m.created_at) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_created_at,
+            LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
+          FROM support_messages m
+          WHERE m.org_id = ${orgId}
+            AND m.created_at >= ${startDate.toISOString()}
+        ),
+        response_times AS (
+          SELECT
+            channel_id,
+            CASE 
+              WHEN NOT is_from_client AND prev_is_from_client 
+              THEN EXTRACT(EPOCH FROM (created_at - prev_created_at)) * 1000 
+            END as agent_response_ms,
+            CASE 
+              WHEN is_from_client AND NOT prev_is_from_client 
+              THEN EXTRACT(EPOCH FROM (created_at - prev_created_at)) * 1000 
+            END as client_response_ms
+          FROM message_pairs
+          WHERE prev_created_at IS NOT NULL
+        )
         SELECT 
           c.id,
           c.name,
           c.sla_category,
-          c.awaiting_reply,
-          c.unread_count,
-          c.last_message_at,
-          -- Количество сообщений за период
-          COUNT(DISTINCT m.id) FILTER (WHERE m.created_at >= ${startDate.toISOString()}) as messages_count,
-          -- Количество проблемных сообщений
-          COUNT(DISTINCT m.id) FILTER (WHERE m.is_problem = true AND m.created_at >= ${startDate.toISOString()}) as problem_count,
-          -- Количество негативных сообщений
-          COUNT(DISTINCT m.id) FILTER (WHERE m.ai_sentiment IN ('negative', 'frustrated') AND m.created_at >= ${startDate.toISOString()}) as negative_count,
-          -- Количество срочных запросов
-          COUNT(DISTINCT m.id) FILTER (WHERE m.ai_urgency >= 4 AND m.created_at >= ${startDate.toISOString()}) as urgent_count,
-          -- Открытые кейсы
-          COUNT(DISTINCT cs.id) FILTER (WHERE cs.status NOT IN ('resolved', 'closed')) as open_cases,
-          -- Повторяющиеся кейсы
-          COUNT(DISTINCT cs.id) FILTER (WHERE cs.is_recurring = true) as recurring_cases,
-          -- Среднее время ответа
-          AVG(EXTRACT(EPOCH FROM (
-            (SELECT MIN(sm.created_at) FROM support_messages sm 
-             WHERE sm.channel_id = c.id AND sm.org_id = ${orgId} AND sm.created_at > m.created_at 
-             AND (sm.sender_role IN ('support', 'team', 'agent') OR sm.is_from_client = false))
-            - m.created_at
-          )) / 60) FILTER (WHERE m.is_from_client = true OR m.sender_role = 'client') as avg_response_minutes
+          COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) as client_avg_response_ms,
+          COALESCE(c.client_response_count, COUNT(rt.client_response_ms)) as client_response_count,
+          AVG(rt.agent_response_ms) as agent_avg_response_ms,
+          COUNT(rt.agent_response_ms) as agent_response_count,
+          c.last_message_at
         FROM support_channels c
-        LEFT JOIN support_messages m ON m.channel_id = c.id AND m.org_id = ${orgId}
-        LEFT JOIN support_cases cs ON cs.channel_id = c.id AND cs.org_id = ${orgId}
+        LEFT JOIN response_times rt ON rt.channel_id = c.id
         WHERE c.org_id = ${orgId}
           AND c.is_active = true
-        GROUP BY c.id, c.name, c.sla_category, c.awaiting_reply, c.unread_count, c.last_message_at
-      )
-      SELECT 
-        *,
-        -- Расчёт "индекса внимания" (attention score)
-        (
-          COALESCE(messages_count, 0) * 0.1 +
-          COALESCE(problem_count, 0) * 3 +
-          COALESCE(negative_count, 0) * 4 +
-          COALESCE(urgent_count, 0) * 5 +
-          COALESCE(open_cases, 0) * 2 +
-          COALESCE(recurring_cases, 0) * 3 +
-          CASE WHEN awaiting_reply THEN 10 ELSE 0 END +
-          COALESCE(unread_count, 0) * 0.5
-        ) as attention_score
-      FROM channel_metrics
-      WHERE messages_count > 0 OR open_cases > 0 OR unread_count > 0
-      ORDER BY attention_score DESC
-      LIMIT 10
-    `
-
-    // ============================================
-    // 7. SLOWEST RESPONDING CLIENTS
-    // ============================================
-    
-    // Calculate response times by looking at time gaps between messages
-    const slowestClients = await sql`
-      WITH message_pairs AS (
-        SELECT 
-          m.channel_id,
-          m.is_from_client,
-          m.created_at,
-          LAG(m.created_at) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_created_at,
-          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
-        FROM support_messages m
-        WHERE m.org_id = ${orgId}
-          AND m.created_at >= ${startDate.toISOString()}
-      ),
-      response_times AS (
-        SELECT
-          channel_id,
-          -- Agent response time: when agent replies after client message
-          CASE 
-            WHEN NOT is_from_client AND prev_is_from_client 
-            THEN EXTRACT(EPOCH FROM (created_at - prev_created_at)) * 1000 
-          END as agent_response_ms,
-          -- Client response time: when client replies after agent message
-          CASE 
-            WHEN is_from_client AND NOT prev_is_from_client 
-            THEN EXTRACT(EPOCH FROM (created_at - prev_created_at)) * 1000 
-          END as client_response_ms
-        FROM message_pairs
-        WHERE prev_created_at IS NOT NULL
-      )
-      SELECT 
-        c.id,
-        c.name,
-        c.sla_category,
-        COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) as client_avg_response_ms,
-        COALESCE(c.client_response_count, COUNT(rt.client_response_ms)) as client_response_count,
-        AVG(rt.agent_response_ms) as agent_avg_response_ms,
-        COUNT(rt.agent_response_ms) as agent_response_count,
-        c.last_message_at
-      FROM support_channels c
-      LEFT JOIN response_times rt ON rt.channel_id = c.id
-      WHERE c.org_id = ${orgId}
-        AND c.is_active = true
-      GROUP BY c.id, c.name, c.sla_category, c.client_avg_response_ms, c.client_response_count, c.last_message_at
-      HAVING COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) > 0
-      ORDER BY COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) DESC
-      LIMIT 10
-    `
+        GROUP BY c.id, c.name, c.sla_category, c.client_avg_response_ms, c.client_response_count, c.last_message_at
+        HAVING COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) > 0
+        ORDER BY COALESCE(c.client_avg_response_ms, AVG(rt.client_response_ms)) DESC
+        LIMIT 10
+      `,
+    ])
 
     // ============================================
     // RESPONSE
@@ -996,7 +931,7 @@ export default async function handler(req: Request): Promise<Response> {
           lastMessageAt: ch.last_message_at,
         }
       }),
-    })
+    }, 200, 60)
 
   } catch (e: any) {
     return json({ error: 'Failed to fetch analytics', details: e.message }, 500)

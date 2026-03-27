@@ -201,6 +201,19 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`CREATE INDEX IF NOT EXISTS idx_messages_problem ON support_messages(is_problem) WHERE is_problem = true`
     await sql`CREATE INDEX IF NOT EXISTS idx_messages_content_type ON support_messages(content_type)`
 
+    // Составные индексы для ускорения аналитики и чатов
+    await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_created ON support_messages(org_id, created_at DESC)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_channel_created ON support_messages(org_id, channel_id, created_at DESC)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_client ON support_messages(org_id, is_from_client, created_at DESC)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_sentiment ON support_messages(org_id, ai_sentiment) WHERE ai_sentiment IS NOT NULL`
+    await sql`CREATE INDEX IF NOT EXISTS idx_messages_channel_created ON support_messages(channel_id, created_at DESC)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_cases_org_created ON support_cases(org_id, created_at DESC)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_cases_org_status ON support_cases(org_id, status)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_cases_org_channel ON support_cases(org_id, channel_id)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_channels_org_active ON support_channels(org_id, is_active)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_channels_org_last_msg ON support_channels(org_id, last_message_at DESC NULLS LAST)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_decisions_org_created ON support_agent_decisions(org_id, created_at DESC)`
+
     // 4. Support Automations (Правила автоматизации)
     await sql`
       CREATE TABLE IF NOT EXISTS support_automations (

@@ -9,11 +9,15 @@ function getSQL() {
   return neon(url)
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-  })
+function json(data: any, status = 200, cacheSeconds = 0) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+  }
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
+  }
+  return new Response(JSON.stringify(data), { status, headers })
 }
 
 interface WeekMetrics {
@@ -216,7 +220,7 @@ export default async function handler(req: Request): Promise<Response> {
       streak,
       trend,
       weeks: results,
-    })
+    }, 200, 120)
   } catch (e: any) {
     return json({ error: e.message }, 500)
   }

@@ -8,7 +8,6 @@ export { LoginPage } from './login'
 export { RegisterPage } from './register'
 
 // Internal exports (used in Settings)
-export { AnalyticsPage } from './analytics'
 export { TeamPage } from './team'
 export { UsersPage } from './users'
 export { AutomationsPage } from './automations'
