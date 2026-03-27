@@ -1,5 +1,41 @@
 import { apiGet } from '../services/api.service'
 
+export interface WeekData {
+  weekStart: string
+  weekEnd: string
+  label: string
+  avgResponseMin: number | null
+  messagesIn: number
+  messagesOut: number
+  casesCreated: number
+  casesResolved: number
+  resolveRate: number
+  commitmentsTotal: number
+  commitmentsOverdue: number
+  commitmentRate: number
+  aiTotal: number
+  aiCorrect: number
+  aiAccuracy: number
+  negativeSentiment: number
+  totalSentiment: number
+  satisfactionRate: number
+  activeAgents: number
+  score: number
+}
+
+export interface WeeklyScoreData {
+  currentScore: number
+  previousScore: number | null
+  delta: number
+  streak: number
+  trend: 'improving' | 'stable' | 'declining'
+  weeks: WeekData[]
+}
+
+export function fetchWeeklyScore(weeks = 8) {
+  return apiGet<WeeklyScoreData>(`/analytics/weekly-score?weeks=${weeks}`)
+}
+
 // SLA категории каналов
 export type SlaCategory = 'client' | 'client_integration' | 'partner' | 'internal'
 

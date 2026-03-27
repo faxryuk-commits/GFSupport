@@ -6,7 +6,7 @@ import { fetchChannels } from '@/shared/api'
 import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
-import { ResponseTimeDetailsModal } from '@/features/analytics'
+import { ResponseTimeDetailsModal, WeeklyScoreWidget } from '@/features/analytics'
 import { CommitmentsPanel } from '@/features/commitments/ui'
 import { ProblemDetailsModal } from './ProblemDetailsModal'
 import { generateAIRecommendations } from '../model/recommendations'
@@ -161,18 +161,11 @@ export function DashboardPage() {
           agents={agents}
         />
 
-        {/* Commitments + Reminders */}
         <div className="grid grid-cols-3 gap-6">
           <div className="col-span-2">
             <CommitmentsPanel className="h-full" />
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock className="w-5 h-5 text-orange-500" />
-              <h3 className="font-semibold text-slate-800">Напоминания</h3>
-            </div>
-            <p className="text-sm text-slate-500 text-center py-4">Нет активных напоминаний</p>
-          </div>
+          <WeeklyScoreWidget />
         </div>
 
         <StatsSection
