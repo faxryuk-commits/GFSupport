@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import { checkAuthRateLimit } from '../lib/rate-limit.js'
 import { writeAuditLog, getClientIP } from '../lib/audit.js'
+import { verifyPassword, hashPassword } from '../lib/password.js'
 
 export const config = {
   runtime: 'edge',
@@ -15,19 +16,8 @@ function getSQL() {
 function json(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   })
-}
-
-// Same hash function as in agents/index.ts
-function hashPassword(password: string): string {
-  let hash = 0
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash
-  }
-  return `h${Math.abs(hash).toString(36)}${password.length}`
 }
 
 // Get avatar URL from Telegram
@@ -72,11 +62,6 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
 
   try {
-    // Ensure email column exists
-    try {
-      await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS email VARCHAR(255)`
-    } catch (e) { /* column may already exist */ }
-
     const ip = getClientIP(req)
     const rateCheck = checkAuthRateLimit(ip)
     if (!rateCheck.allowed) {
@@ -106,10 +91,15 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const agent = agents[0]
-    const passwordHash = hashPassword(password)
 
-    if (agent.password_hash !== passwordHash) {
+    const { valid, needsMigration } = await verifyPassword(password, agent.password_hash || '')
+    if (!valid) {
       return json({ error: 'Invalid password' }, 401)
+    }
+
+    if (needsMigration) {
+      const newHash = await hashPassword(password)
+      await sql`UPDATE support_agents SET password_hash = ${newHash} WHERE id = ${agent.id}`.catch(() => {})
     }
 
     // Update status to online

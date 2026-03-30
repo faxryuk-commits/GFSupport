@@ -34,33 +34,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
-
-  // Ensure tables exist
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_agent_sessions (
-        id VARCHAR(50) PRIMARY KEY,
-        agent_id VARCHAR(50) NOT NULL,
-        started_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        ended_at TIMESTAMP,
-        duration_minutes INTEGER,
-        is_active BOOLEAN DEFAULT true
-      )
-    `
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_agent_activity (
-        id VARCHAR(50) PRIMARY KEY,
-        agent_id VARCHAR(50) NOT NULL,
-        session_id VARCHAR(50),
-        activity_type VARCHAR(50) NOT NULL,
-        activity_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        metadata JSONB DEFAULT '{}'
-      )
-    `
-    await sql`CREATE INDEX IF NOT EXISTS idx_sessions_agent ON support_agent_sessions(agent_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_activity_agent ON support_agent_activity(agent_id)`
-  } catch (e) { /* tables exist */ }
-
   const url = new URL(req.url)
   const agentId = url.searchParams.get('agentId')
   const period = url.searchParams.get('period') || 'day' // day, week, month

@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { hashPassword } from '../lib/password.js'
 
 export const config = { runtime: 'edge' }
 
@@ -19,15 +20,6 @@ function json(data: any, status = 200) {
   })
 }
 
-// Простое хэширование пароля (для production нужен bcrypt)
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password + 'delever_salt_2024')
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -45,15 +37,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
-
-  // Ensure required columns exist
-  try {
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS email VARCHAR(255)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS position VARCHAR(255)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS department VARCHAR(255)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`
-  } catch (e) { /* columns exist */ }
 
   try {
     const body = await req.json()

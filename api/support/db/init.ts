@@ -283,10 +283,39 @@ export default async function handler(req: Request): Promise<Response> {
         telegram_id VARCHAR(50),
         avatar_url TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
-        last_active_at TIMESTAMP
+        last_active_at TIMESTAMP,
+        username VARCHAR(255),
+        position VARCHAR(255),
+        department VARCHAR(255),
+        permissions JSONB DEFAULT '[]'::jsonb
       )
     `
     created.push('support_agents')
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_agent_sessions (
+        id VARCHAR(50) PRIMARY KEY,
+        agent_id VARCHAR(50) NOT NULL,
+        started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        ended_at TIMESTAMP,
+        duration_minutes INTEGER,
+        is_active BOOLEAN DEFAULT true
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_agent_activity (
+        id VARCHAR(50) PRIMARY KEY,
+        agent_id VARCHAR(50) NOT NULL,
+        session_id VARCHAR(50),
+        activity_type VARCHAR(50) NOT NULL,
+        activity_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        metadata JSONB DEFAULT '{}'
+      )
+    `
+    await sql`CREATE INDEX IF NOT EXISTS idx_sessions_agent ON support_agent_sessions(agent_id)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_activity_agent ON support_agent_activity(agent_id)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_activity_at ON support_agent_activity(agent_id, activity_at DESC)`
+    created.push('support_agent_sessions', 'support_agent_activity')
 
     // 8. Support Settings
     await sql`

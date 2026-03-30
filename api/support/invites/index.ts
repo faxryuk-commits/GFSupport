@@ -43,23 +43,6 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
-  // Ensure table exists
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_invites (
-        id VARCHAR(50) PRIMARY KEY,
-        token VARCHAR(100) UNIQUE NOT NULL,
-        email VARCHAR(255),
-        role VARCHAR(20) DEFAULT 'agent',
-        created_by VARCHAR(50),
-        used_at TIMESTAMP,
-        used_by VARCHAR(50),
-        expires_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `
-  } catch (e) { /* table exists */ }
-
   // GET ?token=xxx — проверить валидность токена
   if (req.method === 'GET') {
     const token = url.searchParams.get('token')

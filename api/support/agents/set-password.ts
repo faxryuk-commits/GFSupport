@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { hashPassword } from '../lib/password.js'
 
 export const config = { runtime: 'edge' }
 
@@ -17,15 +18,6 @@ function json(data: any, status = 200) {
       'Access-Control-Allow-Origin': '*',
     },
   })
-}
-
-// Простое хэширование пароля
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password + 'delever_salt_2024')
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**

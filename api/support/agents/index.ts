@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
 import { checkAgentQuota } from '../lib/quota.js'
+import { hashPassword } from '../lib/password.js'
 
 export const config = {
   runtime: 'edge',
@@ -12,25 +13,15 @@ function getSQL() {
   return neon(connectionString)
 }
 
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    }
-  })
-}
-
-// Simple hash for password (in production use bcrypt)
-function hashPassword(password: string): string {
-  let hash = 0
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash
+function json(data: any, status = 200, cacheSeconds = 0) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
   }
-  return `h${Math.abs(hash).toString(36)}${password.length}`
+  if (cacheSeconds > 0) {
+    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
+  }
+  return new Response(JSON.stringify(data), { status, headers })
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -48,16 +39,6 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
-  // Ensure columns exist
-  try {
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS email VARCHAR(255)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS position VARCHAR(100)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS department VARCHAR(100)`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb`
-  } catch (e) { /* columns exist or table doesn't exist yet */ }
-
   // POST - Create new agent
   if (req.method === 'POST') {
     try {
@@ -71,7 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (!quota.allowed) return json({ error: quota.message, quotaExceeded: true }, 403)
 
       const id = `agent_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      const passwordHash = password ? hashPassword(password) : null
+      const passwordHash = password ? await hashPassword(password) : null
       const permissionsJson = permissions ? JSON.stringify(permissions) : '[]'
 
       await sql`
@@ -109,9 +90,8 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE id = ${id} AND org_id = ${orgId}
       `
 
-      // Update password if provided
       if (password) {
-        const passwordHash = hashPassword(password)
+        const passwordHash = await hashPassword(password)
         await sql`UPDATE support_agents SET password_hash = ${passwordHash} WHERE id = ${id} AND org_id = ${orgId}`
       }
 
@@ -183,128 +163,151 @@ export default async function handler(req: Request): Promise<Response> {
   }
   
   try {
-    // Авто-синхронизация из support_users (role='employee')
-    try {
-      await sql`
-        INSERT INTO support_agents (id, name, username, telegram_id, role, org_id)
-        SELECT
-          'agent_' || u.telegram_id::text,
-          u.name,
-          REPLACE(COALESCE(u.telegram_username, ''), '@', ''),
-          u.telegram_id::text,
-          'agent',
-          ${orgId}
-        FROM support_users u
-        WHERE u.role = 'employee'
-          AND u.is_active = true
-          AND u.telegram_id IS NOT NULL
-          AND u.name IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM support_agents sa
-            WHERE sa.telegram_id = u.telegram_id::text AND sa.org_id = ${orgId}
-          )
-        ON CONFLICT (id) DO NOTHING
-      `
-    } catch (e) { /* user sync skipped */ }
+    const rows = await sql`
+      SELECT id, name, username, email, telegram_id, role, status,
+             avatar_url, created_at, phone, position, department, permissions
+      FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC
+    `
 
-    const rows = await sql`SELECT id, name, username, email, telegram_id, role, status, avatar_url, created_at, phone, position, department, permissions FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC`
+    const agentIds = rows.map((r: any) => r.id)
+    if (agentIds.length === 0) return json({ agents: [] }, 200, 5)
 
-    // Batch queries instead of N+1 per agent
-    let activityMap: Record<string, { lastSeen: string }> = {}
-    let metricsMap: Record<string, { messages: number; resolved: number; active: number }> = {}
-
-    try {
-      // One query for all agent activity (online check + last seen)
-      const activityRows = await sql`
+    const [activityRows, msgRows, responseRows, escalationRows] = await Promise.all([
+      sql`
         SELECT agent_id, MAX(activity_at) as last_seen
         FROM support_agent_activity
         WHERE activity_at > NOW() - INTERVAL '24 hours'
+          AND agent_id = ANY(${agentIds})
         GROUP BY agent_id
-      `
-      for (const a of activityRows) {
-        activityMap[a.agent_id] = { lastSeen: a.last_seen }
-      }
-    } catch (e) { /* table might not exist */ }
+      `.catch(() => []),
 
-    try {
-      // One query for message counts per agent
-      const msgRows = await sql`
-        SELECT 
-          COALESCE(a.id, m.sender_id::text) as agent_id,
-          COUNT(*) as msg_count,
-          COUNT(DISTINCT m.channel_id) FILTER (WHERE c.awaiting_reply = false) as resolved_count,
-          COUNT(DISTINCT m.channel_id) FILTER (WHERE c.awaiting_reply = true AND m.created_at > NOW() - INTERVAL '7 days') as active_count
-        FROM support_messages m
-        JOIN support_channels c ON c.id = m.channel_id
-        LEFT JOIN support_agents a ON (
-          a.telegram_id::text = m.sender_id::text
-          OR a.id::text = m.sender_id::text
-          OR LOWER(a.username) = LOWER(m.sender_username)
-          OR LOWER(a.name) = LOWER(m.sender_name)
+      sql`
+        WITH agent_msgs AS (
+          SELECT
+            COALESCE(a.id, m.sender_id::text) as agent_id,
+            m.channel_id, c.awaiting_reply, m.created_at
+          FROM support_messages m
+          JOIN support_channels c ON c.id = m.channel_id
+          LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text
+                                     AND a.org_id = ${orgId}
+          WHERE m.is_from_client = false
+            AND m.created_at > NOW() - INTERVAL '30 days'
+            AND m.org_id = ${orgId}
         )
-        WHERE (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
-          AND m.created_at > NOW() - INTERVAL '30 days'
-        GROUP BY COALESCE(a.id, m.sender_id::text)
-      `
-      for (const m of msgRows) {
-        metricsMap[m.agent_id] = {
-          messages: parseInt(m.msg_count),
-          resolved: parseInt(m.resolved_count),
-          active: parseInt(m.active_count),
-        }
+        SELECT
+          agent_id,
+          COUNT(*) as msg_count,
+          COUNT(DISTINCT channel_id) FILTER (WHERE awaiting_reply = false) as resolved_count,
+          COUNT(DISTINCT channel_id) FILTER (WHERE awaiting_reply = true
+            AND created_at > NOW() - INTERVAL '7 days') as active_count
+        FROM agent_msgs
+        WHERE agent_id = ANY(${agentIds})
+        GROUP BY agent_id
+      `.catch(() => []),
+
+      sql`
+        WITH client_msgs AS (
+          SELECT channel_id, created_at as client_at
+          FROM support_messages
+          WHERE is_from_client = true AND org_id = ${orgId}
+            AND created_at > NOW() - INTERVAL '30 days'
+        ),
+        agent_responses AS (
+          SELECT
+            COALESCE(a.id, m.sender_id::text) as agent_id,
+            m.channel_id,
+            m.created_at as agent_at,
+            (SELECT MAX(cm.client_at) FROM client_msgs cm
+             WHERE cm.channel_id = m.channel_id AND cm.client_at < m.created_at) as prev_client_at
+          FROM support_messages m
+          LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text
+                                     AND a.org_id = ${orgId}
+          WHERE m.is_from_client = false AND m.org_id = ${orgId}
+            AND m.created_at > NOW() - INTERVAL '30 days'
+        )
+        SELECT agent_id,
+          ROUND(AVG(EXTRACT(EPOCH FROM (agent_at - prev_client_at)) / 60))::int as avg_resp_min
+        FROM agent_responses
+        WHERE prev_client_at IS NOT NULL
+          AND agent_id = ANY(${agentIds})
+        GROUP BY agent_id
+      `.catch(() => []),
+
+      sql`
+        SELECT
+          COALESCE(tag_agent_id, 'unknown') as agent_id,
+          COUNT(*) FILTER (WHERE action = 'escalate') as escalations,
+          COUNT(*) FILTER (WHERE feedback_correct = true) as correct,
+          COUNT(*) FILTER (WHERE feedback_correct IS NOT NULL) as total_feedback
+        FROM support_agent_decisions
+        WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '30 days'
+          AND tag_agent_id = ANY(${agentIds})
+        GROUP BY COALESCE(tag_agent_id, 'unknown')
+      `.catch(() => []),
+    ])
+
+    const activityMap: Record<string, string> = {}
+    for (const a of activityRows) activityMap[a.agent_id] = a.last_seen
+
+    const metricsMap: Record<string, any> = {}
+    for (const m of msgRows) {
+      metricsMap[m.agent_id] = {
+        messages: parseInt(m.msg_count), resolved: parseInt(m.resolved_count),
+        active: parseInt(m.active_count),
       }
-    } catch (e) { /* table might not exist */ }
+    }
+
+    const respMap: Record<string, number> = {}
+    for (const r of responseRows) respMap[r.agent_id] = parseInt(r.avg_resp_min) || 0
+
+    const escMap: Record<string, { escalations: number; satisfaction: number }> = {}
+    for (const e of escalationRows) {
+      const total = parseInt(e.total_feedback) || 0
+      escMap[e.agent_id] = {
+        escalations: parseInt(e.escalations) || 0,
+        satisfaction: total > 0 ? parseInt(e.correct) / total : 0,
+      }
+    }
 
     const now = Date.now()
-    const THREE_MINUTES_MS = 3 * 60 * 1000
+    const THREE_MIN = 3 * 60 * 1000
 
     const agentsWithMetrics = rows.map((r: any) => {
-      const activity = activityMap[r.id]
-      const metrics = metricsMap[r.id] || { messages: 0, resolved: 0, active: 0 }
+      const lastSeenAt = activityMap[r.id] || null
+      const isOnline = lastSeenAt ? (now - new Date(lastSeenAt).getTime()) < THREE_MIN : false
+      const m = metricsMap[r.id] || { messages: 0, resolved: 0, active: 0 }
+      const avgResp = respMap[r.id] || 0
+      const esc = escMap[r.id] || { escalations: 0, satisfaction: 0 }
 
-      const lastSeenAt = activity?.lastSeen || null
-      const isOnline = lastSeenAt 
-        ? (now - new Date(lastSeenAt).getTime()) < THREE_MINUTES_MS
-        : false
-      const finalStatus = isOnline ? 'online' : 'offline'
-      
       let permissions: string[] = []
       try {
         if (r.permissions) {
           permissions = typeof r.permissions === 'string' ? JSON.parse(r.permissions) : r.permissions
         }
-      } catch (e) { /* invalid json */ }
+      } catch { /* invalid json */ }
 
       return {
-        id: r.id,
-        name: r.name,
-        username: r.username,
-        email: r.email,
-        telegramId: r.telegram_id,
-        role: r.role || 'agent',
-        status: finalStatus,
-        avatarUrl: r.avatar_url,
-        createdAt: r.created_at,
-        lastSeenAt: lastSeenAt,
-        phone: r.phone,
-        position: r.position,
-        department: r.department,
-        permissions: permissions,
-        assignedChannels: metrics.resolved,
-        activeChats: metrics.active,
+        id: r.id, name: r.name, username: r.username, email: r.email,
+        telegramId: r.telegram_id, role: r.role || 'agent',
+        status: isOnline ? 'online' : 'offline',
+        avatarUrl: r.avatar_url, createdAt: r.created_at,
+        lastSeenAt, phone: r.phone, position: r.position,
+        department: r.department, permissions,
+        assignedChannels: m.resolved, activeChats: m.active,
+        points: m.messages + m.resolved * 5 + (esc.escalations > 0 ? 0 : 10),
         metrics: {
-          totalConversations: metrics.messages,
-          resolvedConversations: metrics.resolved,
-          avgFirstResponseMin: 0,
+          totalConversations: m.messages,
+          resolvedConversations: m.resolved,
+          avgFirstResponseMin: avgResp,
           avgResolutionMin: 0,
-          satisfactionScore: '0',
-          messagesHandled: metrics.messages,
-          escalations: 0
-        }
+          satisfactionScore: esc.satisfaction.toFixed(2),
+          messagesHandled: m.messages,
+          escalations: esc.escalations,
+        },
       }
     })
 
-    return json({ agents: agentsWithMetrics })
+    return json({ agents: agentsWithMetrics }, 200, 5)
   } catch (e: any) {
     if (e.message?.includes('does not exist')) {
       return json({ agents: [] })
