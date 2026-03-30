@@ -307,7 +307,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
     })
 
-    return json({ agents: agentsWithMetrics }, 200, 5)
+    return json({ agents: agentsWithMetrics, _v: 2 }, 200, 5)
   } catch (e: any) {
     if (e.message?.includes('does not exist')) {
       return json({ agents: [] })
