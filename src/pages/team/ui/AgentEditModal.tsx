@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { updateAgent } from '@/shared/api'
 import { Modal } from '@/shared/ui'
@@ -20,6 +20,18 @@ const ROLE_OPTIONS = [
   { value: 'admin', label: 'Администратор' },
 ]
 
+function buildForm(agent: Agent | null) {
+  return {
+    name: agent?.name || '',
+    username: agent?.username || '',
+    email: agent?.email || '',
+    role: (agent?.role || 'agent') as AgentRole,
+    password: '',
+    phone: agent?.phone || '',
+    permissions: ((agent as any)?.permissions || []) as string[],
+  }
+}
+
 export function AgentEditModal({
   agent, onClose, onSaved,
 }: {
@@ -27,17 +39,13 @@ export function AgentEditModal({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState(() => ({
-    name: agent?.name || '',
-    username: agent?.username || '',
-    email: agent?.email || '',
-    role: (agent?.role || 'agent') as AgentRole,
-    password: '',
-    phone: (agent as any)?.phone || '',
-    permissions: ((agent as any)?.permissions || []) as string[],
-  }))
+  const [form, setForm] = useState(buildForm(agent))
   const [showPassword, setShowPassword] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (agent) setForm(buildForm(agent))
+  }, [agent?.id])
 
   async function save() {
     if (!agent) return
@@ -102,6 +110,17 @@ export function AgentEditModal({
             onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="email@example.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
+            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="+998 90 123 45 67"
           />
         </div>
 

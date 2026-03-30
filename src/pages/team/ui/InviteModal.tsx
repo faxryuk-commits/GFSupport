@@ -34,27 +34,33 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [invites, setInvites] = useState<Invite[]>([])
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (isOpen) loadInvites()
+    if (isOpen) { setError(''); loadInvites() }
   }, [isOpen])
 
   async function loadInvites() {
     try {
       const data = await apiGet<{ invites: Invite[] }>('/invites')
       setInvites(data.invites.filter((i: Invite) => !i.isUsed && !i.isExpired))
-    } catch { /* skip */ }
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка загрузки приглашений')
+    }
   }
 
   async function createInvite() {
     try {
       setLoading(true)
+      setError('')
       const resp = await apiPost<{ invite: Invite }>('/invites', {
         email: email || undefined, role, expiresInDays: 7,
       })
       setUrl(resp.invite.url)
       loadInvites()
-    } catch { /* skip */ } finally {
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось создать приглашение')
+    } finally {
       setLoading(false)
     }
   }
@@ -75,6 +81,11 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Пригласить сотрудника">
       <div className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
         {!url ? (
           <>
             <div>

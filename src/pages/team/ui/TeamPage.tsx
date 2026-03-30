@@ -1,40 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { fetchAgents } from '@/shared/api'
 import { apiDelete } from '@/shared/services/api.service'
 import type { Agent } from '@/entities/agent'
-import { AgentCard, mapPointsToLevel, type DisplayAgent } from './AgentCard'
-import { AgentProfileModal } from './AgentProfileModal'
+import { TeamHeader } from './TeamHeader'
+import { AgentTable } from './AgentTable'
+import { AgentDetailPanel } from './AgentDetailPanel'
 import { AgentEditModal } from './AgentEditModal'
-import { InviteButton, InviteModal } from './InviteModal'
+import { InviteModal } from './InviteModal'
 import { ConfirmDialog } from '@/shared/ui'
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Администратор',
-  manager: 'Менеджер',
-  agent: 'Агент поддержки',
-}
-
-function mapAgentToDisplay(agent: Agent): DisplayAgent {
-  const points = agent.points || 0
-  const avgResponseMin = agent.metrics?.avgFirstResponseMin || 0
-  return {
-    id: agent.id,
-    name: agent.name,
-    role: ROLE_LABELS[agent.role] || agent.role,
-    status: agent.status === 'online' ? 'online' : 'offline',
-    avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${agent.email || agent.id}`,
-    email: agent.email,
-    username: agent.username,
-    lastSeenAt: agent.lastSeenAt,
-    createdAt: agent.createdAt,
-    cases: agent.metrics?.resolvedConversations || 0,
-    sla: agent.metrics?.satisfactionScore ? Math.round(Number(agent.metrics.satisfactionScore) * 100) : 0,
-    avgTime: avgResponseMin > 0 ? `${Math.round(avgResponseMin)}м` : '—',
-    messagesHandled: agent.metrics?.messagesHandled || 0,
-    level: mapPointsToLevel(points),
-  }
-}
 
 interface TeamPageProps {
   embedded?: boolean
@@ -44,11 +18,16 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [inviteOpen, setInviteOpen] = useState(false)
-  const [selectedAgent, setSelectedAgent] = useState<DisplayAgent | null>(null)
-  const [profileOpen, setProfileOpen] = useState(false)
+
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
+  const [panelOpen, setPanelOpen] = useState(false)
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
-  const [deactivateAgent, setDeactivateAgent] = useState<DisplayAgent | null>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [deactivateAgent, setDeactivateAgent] = useState<Agent | null>(null)
 
   useEffect(() => { loadAgents() }, [])
 
@@ -69,19 +48,37 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
     try {
       await apiDelete(`/agents?id=${deactivateAgent.id}`)
       setDeactivateAgent(null)
+      if (selectedAgent?.id === deactivateAgent.id) {
+        setPanelOpen(false)
+        setSelectedAgent(null)
+      }
       loadAgents()
     } catch {
       alert('Ошибка деактивации')
     }
   }
 
-  const displayAgents = agents.map(mapAgentToDisplay)
+  const filtered = useMemo(() => {
+    let list = agents
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(a =>
+        a.name.toLowerCase().includes(q) ||
+        (a.email || '').toLowerCase().includes(q) ||
+        (a.username || '').toLowerCase().includes(q)
+      )
+    }
+    if (roleFilter) list = list.filter(a => a.role === roleFilter)
+    if (statusFilter) list = list.filter(a => (a.status || 'offline') === statusFilter)
+    return list
+  }, [agents, search, roleFilter, statusFilter])
+
   const onlineCount = agents.filter(a => a.status === 'online').length
   const avgResponseMinutes = agents.length > 0
     ? agents.reduce((sum, a) => sum + (a.metrics?.avgFirstResponseMin || 0), 0) / agents.length
     : 0
   const avgResponse = avgResponseMinutes > 0 ? `${Math.round(avgResponseMinutes)}м` : '—'
-  const totalCases = displayAgents.reduce((sum, a) => sum + a.cases, 0)
+  const totalCases = agents.reduce((sum, a) => sum + (a.metrics?.resolvedConversations || 0), 0)
 
   if (loading) {
     return (
@@ -105,48 +102,49 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className={`flex items-center ${embedded ? 'justify-end' : 'justify-between'}`}>
-        {!embedded && <h1 className="text-2xl font-bold text-slate-800">Команда</h1>}
-        <InviteButton onClick={() => setInviteOpen(true)} />
-      </div>
+    <div className="p-6 space-y-4">
+      <TeamHeader
+        total={agents.length}
+        onlineCount={onlineCount}
+        avgResponse={avgResponse}
+        totalCases={totalCases}
+        search={search}
+        onSearchChange={setSearch}
+        roleFilter={roleFilter}
+        onRoleChange={setRoleFilter}
+        statusFilter={statusFilter}
+        onStatusChange={setStatusFilter}
+        onInvite={() => setInviteOpen(true)}
+        embedded={embedded}
+      />
 
-      {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
-        <MetricCard value={onlineCount} label="Онлайн сейчас" hasOnline />
-        <MetricCard value={agents.length} label="Всего агентов" />
-        <MetricCard value={avgResponse} label="Сред. ответ" />
-        <MetricCard value={totalCases} label="Обращений" />
-      </div>
+      <AgentTable
+        agents={filtered}
+        selectedId={selectedAgent?.id}
+        onSelect={agent => {
+          setSelectedAgent(agent)
+          setPanelOpen(true)
+        }}
+        onEdit={setEditingAgent}
+        onDeactivate={setDeactivateAgent}
+      />
 
-      {/* Agents Grid */}
-      {displayAgents.length === 0 ? (
-        <div className="text-center py-12 text-slate-500">
-          <p className="text-lg">Агенты не найдены</p>
-          <p className="text-sm mt-1">Пригласите членов команды для начала работы</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-6">
-          {displayAgents.map(agent => {
-            const full = agents.find(a => a.id === agent.id)
-            return (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                onViewProfile={() => { setSelectedAgent(agent); setProfileOpen(true) }}
-                onEdit={() => full && setEditingAgent(full)}
-                onDeactivate={() => setDeactivateAgent(agent)}
-              />
-            )
-          })}
-        </div>
-      )}
+      <AgentDetailPanel
+        agent={selectedAgent}
+        isOpen={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        onEdit={agent => { setPanelOpen(false); setEditingAgent(agent) }}
+        onDeactivate={agent => { setPanelOpen(false); setDeactivateAgent(agent) }}
+      />
 
-      {/* Modals */}
       <InviteModal isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />
-      <AgentProfileModal agent={selectedAgent} isOpen={profileOpen} onClose={() => setProfileOpen(false)} />
-      <AgentEditModal agent={editingAgent} onClose={() => setEditingAgent(null)} onSaved={loadAgents} />
+
+      <AgentEditModal
+        agent={editingAgent}
+        onClose={() => setEditingAgent(null)}
+        onSaved={loadAgents}
+      />
+
       <ConfirmDialog
         isOpen={!!deactivateAgent}
         onClose={() => setDeactivateAgent(null)}
@@ -156,18 +154,6 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         confirmText="Деактивировать"
         variant="danger"
       />
-    </div>
-  )
-}
-
-function MetricCard({ value, label, hasOnline }: { value: string | number; label: string; hasOnline?: boolean }) {
-  return (
-    <div className="bg-white rounded-xl p-5 border border-slate-200">
-      <div className="flex items-center gap-2">
-        <span className="text-3xl font-bold text-slate-800">{value}</span>
-        {hasOnline && <span className="w-2 h-2 bg-green-500 rounded-full" />}
-      </div>
-      <p className="text-sm text-slate-500 mt-1">{label}</p>
     </div>
   )
 }

@@ -1,1 +1,1 @@
-export { AgentCard } from './AgentCard'
+// UI exports from agent entity
