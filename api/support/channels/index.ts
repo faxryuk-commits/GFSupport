@@ -114,9 +114,8 @@ export default async function handler(req: Request): Promise<Response> {
           lastClientMessageAt: c.last_client_message_at,
           lastTeamMessageAt: c.last_team_message_at,
           isForum: c.is_forum || false,
-          // Используем proxy URL для фото, который автоматически обновляет истёкшие URL
           marketId: c.market_id || null,
-          photoUrl: c.photo_url ? `/api/support/media/photo?channelId=${c.id}` : null,
+          photoUrl: c.photo_url || null,
           createdAt: c.created_at,
           lastMessageAt: c.last_message_at,
           updatedAt: c.updated_at,

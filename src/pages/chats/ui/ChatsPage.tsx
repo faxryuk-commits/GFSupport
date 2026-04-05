@@ -58,7 +58,13 @@ function DateDivider({ date }: { date: string }) {
   )
 }
 
-// Преобразование данных канала из API в формат UI компонента
+function resolveMediaUrl(url?: string | null): string | undefined {
+  if (!url) return undefined
+  if (url.startsWith('tg://')) return `/api/support/media/proxy?tg=${encodeURIComponent(url)}`
+  if (url.includes('api.telegram.org/file/')) return `/api/support/media/proxy?url=${encodeURIComponent(url)}`
+  return url
+}
+
 function mapChannelToUI(channel: Channel): ChannelItemData {
   const getRelativeTime = (dateStr: string | null) => {
     if (!dateStr) return ''
@@ -78,8 +84,7 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
   return {
     id: channel.id,
     name: channel.name || channel.companyName || `Канал ${channel.id.slice(0, 6)}`,
-    // Use proxy URL to avoid expired Telegram URLs
-    avatar: channel.id ? `/api/support/media/photo?channelId=${channel.id}` : channel.photoUrl,
+    avatar: resolveMediaUrl(channel.photoUrl),
     lastMessage: channel.lastMessageText || 'Нет сообщений',
     time: getRelativeTime(channel.lastMessageAt),
     unread: channel.unreadCount || 0,
@@ -130,7 +135,7 @@ function mapMessageToUI(message: Message): MessageData {
     id: message.id,
     telegramMessageId: message.telegramMessageId,
     senderName: message.senderName || 'Пользователь',
-    senderAvatarUrl: message.senderPhotoUrl,
+    senderAvatarUrl: resolveMediaUrl(message.senderPhotoUrl),
     text: message.text || '',
     time: formatTime(message.createdAt),
     date: message.createdAt,
@@ -145,9 +150,9 @@ function mapMessageToUI(message: Message): MessageData {
     } : undefined,
     attachments: message.mediaUrl ? [{
       type: getMediaType(message.mediaType),
-      url: message.mediaUrl,
+      url: resolveMediaUrl(message.mediaUrl) || message.mediaUrl,
       name: message.fileName || (message.mediaType === 'document' ? 'Документ' : undefined),
-      thumbnail: message.thumbnailUrl || undefined,
+      thumbnail: resolveMediaUrl(message.thumbnailUrl),
       mimeType: message.mimeType || undefined,
     }] : undefined,
     reactions: mapReactions(message.reactions as Record<string, string[]>),
