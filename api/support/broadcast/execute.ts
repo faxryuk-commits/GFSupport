@@ -32,23 +32,15 @@ async function getActiveBotToken(): Promise<string | null> {
 }
 
 async function sendTelegramMessage(chatId: string | number, text: string, botToken: string, parseMode = 'HTML') {
-  if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found')
-  
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: parseMode,
-    }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode }),
   })
-  
   return response.json()
 }
 
 export default async function handler(req: Request) {
-  // CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
@@ -60,13 +52,9 @@ export default async function handler(req: Request) {
     })
   }
 
-  // Этот endpoint вызывается cron job или вручную
-  // Проверяем cron secret если настроен
   const url = new URL(req.url)
   const cronSecret = url.searchParams.get('secret')
   const expectedSecret = process.env.CRON_SECRET
-
-  // Авторизация: CRON_SECRET или Bearer токен
   const authHeader = req.headers.get('Authorization')
   if (expectedSecret && cronSecret !== expectedSecret && !authHeader?.startsWith('Bearer ')) {
     return json({ error: 'Unauthorized' }, 401)
@@ -76,89 +64,106 @@ export default async function handler(req: Request) {
   const orgId = await getRequestOrgId(req)
 
   try {
-    await sql`ALTER TABLE support_broadcast_scheduled ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
-    await sql`UPDATE support_broadcast_scheduled SET org_id = 'org_delever' WHERE org_id IS NULL`.catch(() => {})
+    // Fail broadcasts stuck in 'processing' for more than 10 minutes (based on sent_at used as processing_started_at)
     await sql`
       UPDATE support_broadcast_scheduled 
-      SET status = 'pending' 
+      SET status = 'failed', error_message = 'Timed out after 10 minutes in processing'
       WHERE org_id = ${orgId}
-        AND status IN ('sending', 'processing')
-        AND created_at < NOW() - INTERVAL '5 minutes'
+        AND status = 'processing'
+        AND sent_at IS NOT NULL
+        AND sent_at < NOW() - INTERVAL '10 minutes'
     `.catch(() => {})
 
-    // Находим все pending рассылки, время которых наступило
     const pendingBroadcasts = await sql`
       SELECT * FROM support_broadcast_scheduled 
       WHERE org_id = ${orgId}
         AND status = 'pending' 
         AND scheduled_at <= NOW()
       ORDER BY scheduled_at ASC
-      LIMIT 10
+      LIMIT 5
     `
 
     if (pendingBroadcasts.length === 0) {
-      return json({
-        success: true,
-        message: 'No pending broadcasts to execute',
-        executed: 0
-      })
+      return json({ success: true, message: 'No pending broadcasts', executed: 0 })
     }
 
     const botToken = await getActiveBotToken()
     if (!botToken) {
-      return json({ success: false, error: 'Telegram bot token не настроен' }, 400)
+      // Mark all pending as failed so they don't loop
+      for (const b of pendingBroadcasts) {
+        await sql`
+          UPDATE support_broadcast_scheduled 
+          SET status = 'failed', error_message = 'Telegram bot token не настроен'
+          WHERE id = ${b.id} AND org_id = ${orgId} AND status = 'pending'
+        `.catch(() => {})
+      }
+      return json({ success: false, error: 'Telegram bot token не настроен, рассылки помечены как failed' }, 400)
     }
 
     const results: any[] = []
 
     for (const scheduled of pendingBroadcasts) {
       try {
-        // Помечаем как "в процессе" чтобы избежать дублирования
-        await sql`
+        // Atomic lock: UPDATE only if still 'pending', use sent_at as processing timestamp
+        const locked = await sql`
           UPDATE support_broadcast_scheduled 
-          SET status = 'processing'
+          SET status = 'processing', sent_at = NOW()
           WHERE id = ${scheduled.id} AND org_id = ${orgId} AND status = 'pending'
+          RETURNING id
         `
+
+        // Another process already picked this up
+        if (!locked || locked.length === 0) {
+          results.push({ scheduledId: scheduled.id, success: false, error: 'Already processing' })
+          continue
+        }
+
+        // Check if already sent (deduplication by broadcast_id)
+        if (scheduled.broadcast_id) {
+          await sql`
+            UPDATE support_broadcast_scheduled 
+            SET status = 'sent'
+            WHERE id = ${scheduled.id} AND org_id = ${orgId}
+          `
+          results.push({ scheduledId: scheduled.id, success: false, error: 'Already has broadcast_id' })
+          continue
+        }
+
+        // Re-check status isn't cancelled (could be cancelled between SELECT and UPDATE)
+        const current = await sql`
+          SELECT status FROM support_broadcast_scheduled 
+          WHERE id = ${scheduled.id} AND org_id = ${orgId}
+        `
+        if (current[0]?.status === 'cancelled') {
+          results.push({ scheduledId: scheduled.id, success: false, error: 'Cancelled' })
+          continue
+        }
 
         let channels
         if (scheduled.filter_type === 'selected' && scheduled.selected_channels?.length > 0) {
           channels = await sql`
-            SELECT id, telegram_chat_id, name
-            FROM support_channels
-            WHERE id = ANY(${scheduled.selected_channels})
-              AND telegram_chat_id IS NOT NULL
-              AND org_id = ${orgId}
+            SELECT id, telegram_chat_id, name FROM support_channels
+            WHERE id = ANY(${scheduled.selected_channels}) AND telegram_chat_id IS NOT NULL AND org_id = ${orgId}
           `
         } else if (scheduled.filter_type === 'active') {
           channels = await sql`
-            SELECT id, telegram_chat_id, name
-            FROM support_channels
-            WHERE telegram_chat_id IS NOT NULL
-              AND org_id = ${orgId}
-              AND last_message_at > NOW() - INTERVAL '30 days'
+            SELECT id, telegram_chat_id, name FROM support_channels
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId} AND last_message_at > NOW() - INTERVAL '30 days'
           `
         } else if (scheduled.filter_type === 'clients') {
           channels = await sql`
-            SELECT id, telegram_chat_id, name
-            FROM support_channels
-            WHERE telegram_chat_id IS NOT NULL
-              AND org_id = ${orgId}
-              AND (type = 'client' OR sla_category = 'client')
+            SELECT id, telegram_chat_id, name FROM support_channels
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId} AND (type = 'client' OR sla_category = 'client')
           `
         } else if (scheduled.filter_type === 'partners') {
           channels = await sql`
-            SELECT id, telegram_chat_id, name
-            FROM support_channels
-            WHERE telegram_chat_id IS NOT NULL
-              AND org_id = ${orgId}
-              AND (type = 'partner' OR sla_category = 'partner')
+            SELECT id, telegram_chat_id, name FROM support_channels
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId} AND (type = 'partner' OR sla_category = 'partner')
           `
         } else {
           channels = await sql`
-            SELECT id, telegram_chat_id, name
-            FROM support_channels
-            WHERE telegram_chat_id IS NOT NULL
-              AND org_id = ${orgId}
+            SELECT id, telegram_chat_id, name FROM support_channels
+            WHERE telegram_chat_id IS NOT NULL AND org_id = ${orgId}
           `
         }
 
@@ -168,42 +173,44 @@ export default async function handler(req: Request) {
             SET status = 'failed', error_message = 'No channels found'
             WHERE id = ${scheduled.id} AND org_id = ${orgId}
           `
-          results.push({
-            scheduledId: scheduled.id,
-            success: false,
-            error: 'No channels found'
-          })
+          results.push({ scheduledId: scheduled.id, success: false, error: 'No channels found' })
           continue
         }
 
-        // Создаём broadcast ID
         const broadcastId = `bc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 
-        // Форматируем сообщение
-        const typeEmoji = {
-          announcement: '📢',
-          update: '🔄',
-          warning: '⚠️'
-        }
-        const emoji = typeEmoji[scheduled.message_type as keyof typeof typeEmoji] || '📢'
-        const typeName = scheduled.message_type === 'announcement' ? 'Объявление' 
-          : scheduled.message_type === 'update' ? 'Обновление' 
-          : 'Предупреждение'
-        
+        // Immediately write broadcast_id to prevent re-execution
+        await sql`
+          UPDATE support_broadcast_scheduled 
+          SET broadcast_id = ${broadcastId}
+          WHERE id = ${scheduled.id} AND org_id = ${orgId}
+        `
+
+        const typeEmoji: Record<string, string> = { announcement: '📢', update: '🔄', warning: '⚠️' }
+        const typeNames: Record<string, string> = { announcement: 'Объявление', update: 'Обновление', warning: 'Предупреждение' }
+        const emoji = typeEmoji[scheduled.message_type] || '📢'
+        const typeName = typeNames[scheduled.message_type] || 'Объявление'
         const formattedMessage = `${emoji} <b>${typeName}</b>\n\n${scheduled.message_text}\n\n<i>— ${scheduled.created_by || 'Support'}</i>`
 
-        // Отправляем в каналы
         let successful = 0
         let failed = 0
 
         for (const channel of channels) {
+          // Check if cancelled mid-send
+          if (successful + failed > 0 && (successful + failed) % 20 === 0) {
+            const check = await sql`
+              SELECT status FROM support_broadcast_scheduled 
+              WHERE id = ${scheduled.id} AND org_id = ${orgId}
+            `
+            if (check[0]?.status === 'cancelled') {
+              break
+            }
+          }
+
           try {
             const result = await sendTelegramMessage(channel.telegram_chat_id, formattedMessage, botToken)
-            
             if (result.ok) {
               successful++
-              
-              // Сохраняем сообщение в БД
               const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
               await sql`
                 INSERT INTO support_messages (
@@ -221,12 +228,16 @@ export default async function handler(req: Request) {
           } catch {
             failed++
           }
-          
-          // Небольшая задержка между сообщениями
           await new Promise(resolve => setTimeout(resolve, 100))
         }
 
-        // Записываем в историю рассылок
+        // Final status check — could have been cancelled during sending
+        const finalCheck = await sql`
+          SELECT status FROM support_broadcast_scheduled 
+          WHERE id = ${scheduled.id} AND org_id = ${orgId}
+        `
+        const wasCancelled = finalCheck[0]?.status === 'cancelled'
+
         await sql`
           INSERT INTO support_broadcasts (
             id, org_id, message_type, message_text, filter_type, sender_name,
@@ -238,12 +249,14 @@ export default async function handler(req: Request) {
           )
         `.catch(() => {})
 
-        await sql`
-          UPDATE support_broadcast_scheduled 
-          SET status = 'sent', sent_at = NOW(), broadcast_id = ${broadcastId},
-              recipients_count = ${channels.length}, delivered_count = ${successful}
-          WHERE id = ${scheduled.id} AND org_id = ${orgId}
-        `
+        if (!wasCancelled) {
+          await sql`
+            UPDATE support_broadcast_scheduled 
+            SET status = 'sent', sent_at = NOW(),
+                recipients_count = ${channels.length}, delivered_count = ${successful}
+            WHERE id = ${scheduled.id} AND org_id = ${orgId}
+          `
+        }
 
         results.push({
           scheduledId: scheduled.id,
@@ -251,22 +264,17 @@ export default async function handler(req: Request) {
           success: true,
           channels: channels.length,
           successful,
-          failed
+          failed,
+          cancelled: wasCancelled,
         })
 
       } catch (e: any) {
-        // Откатываем статус на failed
         await sql`
           UPDATE support_broadcast_scheduled 
-          SET status = 'failed', error_message = ${e.message}
+          SET status = 'failed', error_message = ${e.message?.slice(0, 500)}
           WHERE id = ${scheduled.id} AND org_id = ${orgId}
-        `
-        
-        results.push({
-          scheduledId: scheduled.id,
-          success: false,
-          error: e.message
-        })
+        `.catch(() => {})
+        results.push({ scheduledId: scheduled.id, success: false, error: e.message })
       }
     }
 
@@ -275,7 +283,7 @@ export default async function handler(req: Request) {
       message: `Executed ${results.length} scheduled broadcasts`,
       executed: results.filter(r => r.success).length,
       failed: results.filter(r => !r.success).length,
-      results
+      results,
     })
 
   } catch (e: any) {

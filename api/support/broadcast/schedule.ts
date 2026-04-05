@@ -192,8 +192,8 @@ export default async function handler(req: Request) {
         return json({ error: 'Message text is required' }, 400)
       }
       
-      // Если sendNow=true, создаём с status='pending' и scheduled_at=NOW()
-      // чтобы execute.ts мог сразу подхватить и отправить
+      // sendNow: create with status='pending' and scheduled_at=NOW()
+      // The cron (every 5 min) will pick it up. No self-call to /execute to avoid race conditions.
       if (sendNow) {
         let recipientsCount = 0
         if (filterType === 'selected' && selectedChannels.length > 0) {
@@ -233,43 +233,14 @@ export default async function handler(req: Request) {
             ${mediaUrl || null}, ${mediaType || null}, ${createdBy}, ${recipientsCount}
           )
         `
-        
-        // Сразу вызываем execute для немедленной отправки
-        try {
-          const requestUrl = new URL(req.url)
-          const baseUrl = process.env.VERCEL_URL 
-            ? `https://${process.env.VERCEL_URL}`
-            : `${requestUrl.protocol}//${requestUrl.host}`
-          
-          const execRes = await fetch(`${baseUrl}/api/support/broadcast/execute`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer broadcast-auto-execute',
-              'X-Org-Id': orgId
-            },
-          })
-          const execResult = await execRes.json()
-          console.log(`[Broadcast] Auto-execute result:`, execResult)
-          
-          return json({
-            success: true,
-            id,
-            sendNow: true,
-            recipientsCount,
-            executeResult: execResult,
-            message: 'Broadcast sent immediately'
-          })
-        } catch (execErr: any) {
-          console.log(`[Broadcast] Auto-execute failed, will be picked up by cron:`, execErr.message)
-          return json({
-            success: true,
-            id,
-            sendNow: true,
-            recipientsCount,
-            message: 'Broadcast queued for sending (will execute shortly)'
-          })
-        }
+
+        return json({
+          success: true,
+          id,
+          sendNow: true,
+          recipientsCount,
+          message: 'Broadcast queued — will be sent within 5 minutes by cron'
+        })
       }
       
       if (!scheduledAt) {
@@ -347,16 +318,32 @@ export default async function handler(req: Request) {
     }
   }
 
-  // DELETE - отменить запланированную рассылку
+  // DELETE - отменить рассылку (pending, processing, sending, sent)
   if (req.method === 'DELETE') {
     try {
       const id = url.searchParams.get('id')
-      
+      const stopAll = url.searchParams.get('stopAll')
+
+      // Stop ALL active broadcasts
+      if (stopAll === 'true') {
+        const result = await sql`
+          UPDATE support_broadcast_scheduled 
+          SET status = 'cancelled', error_message = 'Остановлено вручную'
+          WHERE org_id = ${orgId}
+            AND status IN ('pending', 'processing', 'sending')
+          RETURNING id
+        `
+        return json({
+          success: true,
+          cancelled: result.length,
+          message: `Остановлено ${result.length} рассылок`
+        })
+      }
+
       if (!id) {
         return json({ error: 'Schedule ID is required' }, 400)
       }
       
-      // Проверяем существование и статус
       const existing = await sql`
         SELECT id, status FROM support_broadcast_scheduled WHERE id = ${id} AND org_id = ${orgId}
       `
@@ -364,22 +351,19 @@ export default async function handler(req: Request) {
       if (existing.length === 0) {
         return json({ error: 'Scheduled broadcast not found' }, 404)
       }
-      
-      if (existing[0].status !== 'pending') {
-        return json({ error: 'Can only cancel pending broadcasts' }, 400)
+
+      const cancellable = ['pending', 'processing', 'sending', 'sent']
+      if (!cancellable.includes(existing[0].status)) {
+        return json({ error: `Cannot cancel broadcast with status '${existing[0].status}'` }, 400)
       }
       
-      // Помечаем как отменённую
       await sql`
         UPDATE support_broadcast_scheduled 
-        SET status = 'cancelled'
+        SET status = 'cancelled', error_message = 'Остановлено вручную'
         WHERE id = ${id} AND org_id = ${orgId}
       `
       
-      return json({
-        success: true,
-        message: 'Scheduled broadcast cancelled'
-      })
+      return json({ success: true, message: 'Broadcast cancelled' })
     } catch (e: any) {
       return json({ success: false, error: e.message }, 500)
     }

@@ -2,15 +2,16 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { 
   Plus, Send, Clock, Users, CheckCircle, XCircle, Eye, Trash2, Calendar, 
   Loader2, RefreshCw, AlertCircle, Search, Paperclip, X, Megaphone, 
-  Newspaper, Bell, Bot, User, MessageSquare, BarChart3
+  Newspaper, Bell, Bot, User, MessageSquare, BarChart3, OctagonX, Square
 } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
-import { fetchBroadcasts, createBroadcast, cancelBroadcast, type ScheduledBroadcast, fetchChannels, fetchAgents } from '@/shared/api'
+import { fetchBroadcasts, createBroadcast, cancelBroadcast, stopAllBroadcasts, type ScheduledBroadcast, fetchChannels, fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: 'Ожидает', color: 'bg-blue-100 text-blue-700', icon: Clock },
+  processing: { label: 'Обработка', color: 'bg-amber-100 text-amber-700', icon: Loader2 },
   sending: { label: 'Отправляется', color: 'bg-amber-100 text-amber-700', icon: Loader2 },
   sent: { label: 'Отправлено', color: 'bg-green-100 text-green-700', icon: CheckCircle },
   cancelled: { label: 'Отменено', color: 'bg-slate-100 text-slate-600', icon: XCircle },
@@ -57,6 +58,8 @@ export function BroadcastPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isSaving, setIsSaving] = useState(false)
   const [channelSearch, setChannelSearch] = useState('')
+  const [isStopAllDialogOpen, setIsStopAllDialogOpen] = useState(false)
+  const [isStopping, setIsStopping] = useState(false)
 
   const [formData, setFormData] = useState<FormData>({
     messageText: '',
@@ -97,7 +100,8 @@ export function BroadcastPage() {
     : broadcasts.filter(b => b.status === statusFilter)
 
   const totalSent = broadcasts.filter(b => b.status === 'sent').length
-  const pendingCount = broadcasts.filter(b => b.status === 'pending').length
+  const activeStatuses = ['pending', 'processing', 'sending']
+  const pendingCount = broadcasts.filter(b => activeStatuses.includes(b.status)).length
   const totalRecipients = broadcasts.reduce((acc, b) => acc + (b.recipientsCount || 0), 0)
 
   // Фильтрация каналов для выбора
@@ -178,6 +182,22 @@ export function BroadcastPage() {
     }
   }
 
+  const handleStopAll = async () => {
+    try {
+      setIsStopping(true)
+      const result = await stopAllBroadcasts()
+      setIsStopAllDialogOpen(false)
+      if (result.cancelled > 0) {
+        setError(null)
+      }
+      await loadData()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка остановки рассылок')
+    } finally {
+      setIsStopping(false)
+    }
+  }
+
   const toggleChannel = (channelId: string) => {
     setFormData(prev => ({
       ...prev,
@@ -231,9 +251,18 @@ export function BroadcastPage() {
             <p className="text-slate-500 mt-1">Массовая отправка сообщений клиентам</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={loadData} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+            <button onClick={loadData} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" title="Обновить">
               <RefreshCw className="w-5 h-5" />
             </button>
+            {pendingCount > 0 && (
+              <button
+                onClick={() => setIsStopAllDialogOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
+              >
+                <OctagonX className="w-4 h-4" />
+                Остановить все ({pendingCount})
+              </button>
+            )}
             <button 
               onClick={() => setIsCreateModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
@@ -254,7 +283,7 @@ export function BroadcastPage() {
 
         {/* Filters */}
         <div className="flex items-center gap-2">
-          {['all', 'pending', 'sent', 'cancelled', 'failed'].map(status => (
+          {['all', 'pending', 'processing', 'sent', 'cancelled', 'failed'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -533,9 +562,19 @@ export function BroadcastPage() {
         isOpen={isDeleteDialogOpen}
         onClose={() => setIsDeleteDialogOpen(false)}
         onConfirm={handleCancel}
-        title="Отменить рассылку"
-        message="Вы уверены, что хотите отменить эту запланированную рассылку?"
-        confirmText="Отменить"
+        title="Остановить рассылку"
+        message="Рассылка будет остановлена. Если она уже отправляется — часть сообщений может быть доставлена."
+        confirmText="Остановить"
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={isStopAllDialogOpen}
+        onClose={() => setIsStopAllDialogOpen(false)}
+        onConfirm={handleStopAll}
+        title="Остановить ВСЕ рассылки?"
+        message={`Все активные рассылки (${pendingCount}) будут остановлены немедленно. Это действие нельзя отменить.`}
+        confirmText={isStopping ? 'Останавливаю...' : 'Остановить все'}
         variant="danger"
       />
     </>
@@ -637,12 +676,12 @@ function BroadcastCard({ broadcast, onView, onCancel, formatDate }: {
         </div>
 
         <div className="flex items-center gap-2 ml-4">
-          <button onClick={onView} className="p-2 hover:bg-slate-100 rounded-lg">
+          <button onClick={onView} className="p-2 hover:bg-slate-100 rounded-lg" title="Детали">
             <BarChart3 className="w-4 h-4 text-slate-500" />
           </button>
-          {broadcast.status === 'pending' && (
-            <button onClick={onCancel} className="p-2 hover:bg-red-50 rounded-lg">
-              <Trash2 className="w-4 h-4 text-red-500" />
+          {['pending', 'processing', 'sending'].includes(broadcast.status) && (
+            <button onClick={onCancel} className="p-2 hover:bg-red-50 rounded-lg" title="Остановить">
+              <Square className="w-4 h-4 text-red-500" />
             </button>
           )}
         </div>

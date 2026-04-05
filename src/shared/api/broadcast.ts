@@ -9,7 +9,7 @@ export interface ScheduledBroadcast {
   selectedChannels: string[]
   scheduledAt: string
   timezone: string
-  status: 'pending' | 'sending' | 'sent' | 'cancelled' | 'failed'
+  status: 'pending' | 'sending' | 'processing' | 'sent' | 'cancelled' | 'failed'
   senderType: 'ai' | 'agent'
   senderId?: string
   senderName?: string
@@ -69,4 +69,8 @@ export async function createBroadcast(data: CreateBroadcastData): Promise<{ succ
 
 export async function cancelBroadcast(id: string): Promise<{ success: boolean }> {
   return apiDelete(`/broadcast/schedule?id=${id}`)
+}
+
+export async function stopAllBroadcasts(): Promise<{ success: boolean; cancelled: number }> {
+  return apiDelete('/broadcast/schedule?stopAll=true')
 }
