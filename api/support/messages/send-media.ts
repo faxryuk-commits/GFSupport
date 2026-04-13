@@ -1,5 +1,6 @@
 import { getOrgBotToken, getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
+import { checkOrgRateLimit } from '../lib/rate-limit.js'
 
 export const config = {
   runtime: 'edge',
@@ -33,8 +34,11 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'file and channelId required' }, 400)
     }
 
-    const sql = getSQL()
     const orgId = await getRequestOrgId(req)
+    const rateCheck = checkOrgRateLimit(orgId || 'unknown')
+    if (!rateCheck.allowed) return json({ error: 'Too many requests' }, 429)
+
+    const sql = getSQL()
     const botToken = await getOrgBotToken(orgId)
 
     if (!botToken) {

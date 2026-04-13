@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { checkOrgRateLimit } from '../lib/rate-limit.js'
 
 export const config = {
   runtime: 'edge',
@@ -48,9 +49,12 @@ export default async function handler(req: Request) {
     return json({ error: 'Method not allowed' }, 405)
   }
 
-  const sql = getSQL()
   const orgId = await getRequestOrgId(req)
-  
+  const rateCheck = checkOrgRateLimit(orgId || 'unknown')
+  if (!rateCheck.allowed) return json({ error: 'Too many requests' }, 429)
+
+  const sql = getSQL()
+
   try {
     const body = await req.json()
     const { 
