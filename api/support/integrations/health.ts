@@ -94,7 +94,7 @@ async function checkOpenAI(openaiKey: string, aiModel: string): Promise<{
   }
 }
 
-async function checkWhatsApp(sql: any, orgId: string, bridgeUrl: string): Promise<{
+async function checkWhatsApp(sql: any, orgId: string, bridgeUrl: string, bridgeSecret: string): Promise<{
   status: ServiceStatus; phone: string | null; channelsCount: number
 }> {
   let channelsCount = 0
@@ -107,7 +107,7 @@ async function checkWhatsApp(sql: any, orgId: string, bridgeUrl: string): Promis
 
   try {
     const res = await fetch(`${bridgeUrl}/qr`, {
-      headers: { 'Cache-Control': 'no-cache' },
+      headers: { 'Cache-Control': 'no-cache', 'Authorization': `Bearer ${bridgeSecret}` },
       signal: AbortSignal.timeout(4000),
     })
     if (!res.ok) return { status: 'error', phone: null, channelsCount }
@@ -143,7 +143,7 @@ export default async function handler(req: Request): Promise<Response> {
     const [telegram, openai, whatsapp] = await Promise.all([
       checkTelegram(sql, orgId, tokens.botToken),
       checkOpenAI(tokens.openaiKey, tokens.aiModel),
-      checkWhatsApp(sql, orgId, tokens.bridgeUrl),
+      checkWhatsApp(sql, orgId, tokens.bridgeUrl, tokens.bridgeSecret),
     ])
 
     const whisper = {

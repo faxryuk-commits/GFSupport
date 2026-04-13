@@ -56,7 +56,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const res = await fetch(`${bridgeUrl}/qr`, {
-      headers: { 'Cache-Control': 'no-cache' },
+      headers: { 'Cache-Control': 'no-cache', 'Authorization': `Bearer ${bridgeSecret}` },
       signal: AbortSignal.timeout(8000),
     })
 

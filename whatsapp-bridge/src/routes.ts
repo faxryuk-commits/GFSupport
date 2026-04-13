@@ -9,9 +9,7 @@ export function createRouter(bridgeSecret: string, authDir: string): Router {
   const router = Router()
 
   router.use((req: Request, res: Response, next) => {
-    if (req.path === '/status' && req.method === 'GET') return next()
-    if (req.path === '/qr' && req.method === 'GET') return next()
-    if (req.path === '/filter' && req.method === 'GET') return next()
+    // Health check remains public for infrastructure monitoring
     if (req.path === '/health' && req.method === 'GET') return next()
 
     const auth = req.headers.authorization
@@ -37,12 +35,8 @@ export function createRouter(bridgeSecret: string, authDir: string): Router {
 
   router.get('/health', (_req: Request, res: Response) => {
     const status = getStatus()
-    const stats = getMessageStats()
     res.json({
-      connected: status.connected,
-      phone: status.phone,
-      filterMode: getFilterMode(),
-      messages: stats,
+      ok: status.connected,
       uptime: process.uptime(),
     })
   })
