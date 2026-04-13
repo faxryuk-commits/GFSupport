@@ -4,19 +4,49 @@ import type { Channel } from '../types'
 export interface ChannelsResponse {
   channels: Channel[]
   total: number
+  /** Есть ещё страницы (при limit/offset) */
+  hasMore?: boolean
+  limit?: number
+  offset?: number
   stats: {
     [key: string]: { total: number; active: number }
   }
 }
 
-export async function fetchChannels(options?: { limit?: number }): Promise<Channel[]> {
-  const limit = options?.limit || 200
-  return apiGet<ChannelsResponse>(`/channels?limit=${limit}`).then(r => r.channels)
+/**
+ * Загружает все каналы организации одним запросом (limit=1000).
+ * Если каналов больше 1000, догружает следующие страницы.
+ */
+export async function fetchChannels(): Promise<Channel[]> {
+  const PAGE = 1000
+  const first = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}`, false)
+  if (!first.hasMore) return first.channels
+
+  const all = [...first.channels]
+  let offset = PAGE
+  while (all.length < (first.total || Infinity)) {
+    const r = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}&offset=${offset}`, false)
+    all.push(...r.channels)
+    if (!r.hasMore || r.channels.length === 0) break
+    offset += PAGE
+  }
+  return all
 }
 
-export async function fetchChannelsWithStats(options?: { limit?: number }): Promise<ChannelsResponse> {
-  const limit = options?.limit || 200
-  return apiGet<ChannelsResponse>(`/channels?limit=${limit}`)
+export async function fetchChannelsWithStats(): Promise<ChannelsResponse> {
+  const PAGE = 1000
+  const first = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}`, false)
+  if (!first.hasMore) return first
+
+  const channels = [...first.channels]
+  let offset = PAGE
+  while (channels.length < (first.total || Infinity)) {
+    const r = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}&offset=${offset}`, false)
+    channels.push(...r.channels)
+    if (!r.hasMore || r.channels.length === 0) break
+    offset += PAGE
+  }
+  return { ...first, channels, hasMore: false }
 }
 
 export async function fetchChannel(id: string): Promise<Channel> {

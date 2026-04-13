@@ -43,7 +43,7 @@ export function MainLayout() {
       const headers = { Authorization: `Bearer ${token}` }
 
       const [channelsRes, casesRes, commitmentsRes, agentsRes] = await Promise.all([
-        fetch('/api/support/channels?active=true', { headers }),
+        fetch('/api/support/channels?active=true&limit=1000', { headers }),
         fetch('/api/support/cases?status=detected,in_progress,waiting,blocked&limit=500', { headers }),
         fetch('/api/support/commitments?status=pending', { headers }),
         fetch('/api/support/agents', { headers }),

@@ -11,11 +11,25 @@ const COLUMNS: { field: SortField; label: string; className?: string }[] = [
   { field: 'role', label: 'Роль' },
   { field: 'status', label: 'Статус' },
   { field: 'messages', label: 'Сообщения', className: 'text-right' },
-  { field: 'response', label: 'Ответ', className: 'text-right' },
+  { field: 'response', label: 'Ср. FRT', className: 'text-right' },
   { field: 'points', label: 'Уровень', className: 'text-right' },
 ]
 
-function sortAgents(agents: Agent[], field: SortField, dir: SortDir): Agent[] {
+function frtMinutesOrNull(
+  frtByAgentId: Record<string, { avgMinutes: number; totalResponses: number } | undefined>,
+  agent: Agent
+): number | null {
+  const f = frtByAgentId[agent.id]
+  if (f && f.totalResponses > 0) return f.avgMinutes
+  return null
+}
+
+function sortAgents(
+  agents: Agent[],
+  field: SortField,
+  dir: SortDir,
+  frtByAgentId: Record<string, { avgMinutes: number; totalResponses: number } | undefined>,
+): Agent[] {
   const m = dir === 'asc' ? 1 : -1
   return [...agents].sort((a, b) => {
     switch (field) {
@@ -26,7 +40,14 @@ function sortAgents(agents: Agent[], field: SortField, dir: SortDir): Agent[] {
         return m * ((ord[a.status || 'offline'] || 2) - (ord[b.status || 'offline'] || 2))
       }
       case 'messages': return m * ((a.metrics?.messagesHandled || 0) - (b.metrics?.messagesHandled || 0))
-      case 'response': return m * ((a.metrics?.avgFirstResponseMin || 0) - (b.metrics?.avgFirstResponseMin || 0))
+      case 'response': {
+        const va = frtMinutesOrNull(frtByAgentId, a)
+        const vb = frtMinutesOrNull(frtByAgentId, b)
+        if (va === null && vb === null) return 0
+        if (va === null) return 1
+        if (vb === null) return -1
+        return m * (va - vb)
+      }
       case 'points': return m * ((a.points || 0) - (b.points || 0))
       default: return 0
     }
@@ -35,13 +56,14 @@ function sortAgents(agents: Agent[], field: SortField, dir: SortDir): Agent[] {
 
 interface AgentTableProps {
   agents: Agent[]
+  frtByAgentId: Record<string, { avgMinutes: number; totalResponses: number } | undefined>
   selectedId?: string
   onSelect: (agent: Agent) => void
   onEdit: (agent: Agent) => void
   onDeactivate: (agent: Agent) => void
 }
 
-export function AgentTable({ agents, selectedId, onSelect, onEdit, onDeactivate }: AgentTableProps) {
+export function AgentTable({ agents, frtByAgentId, selectedId, onSelect, onEdit, onDeactivate }: AgentTableProps) {
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
@@ -54,7 +76,7 @@ export function AgentTable({ agents, selectedId, onSelect, onEdit, onDeactivate 
     }
   }
 
-  const sorted = sortAgents(agents, sortField, sortDir)
+  const sorted = sortAgents(agents, sortField, sortDir, frtByAgentId)
 
   if (agents.length === 0) {
     return (
@@ -93,6 +115,7 @@ export function AgentTable({ agents, selectedId, onSelect, onEdit, onDeactivate 
             <AgentRow
               key={agent.id}
               agent={agent}
+              frt={frtByAgentId[agent.id] ?? null}
               isSelected={agent.id === selectedId}
               onClick={() => onSelect(agent)}
               onEdit={() => onEdit(agent)}

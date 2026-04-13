@@ -72,7 +72,7 @@ export function MarketsSettings() {
 
   const fetchUnassignedChannels = useCallback(async () => {
     try {
-      const data = await apiGet<{ channels: { id: string; name: string; source: string; type: string; isActive: boolean; marketId: string | null }[] }>('/channels?limit=500', false)
+      const data = await apiGet<{ channels: { id: string; name: string; source: string; type: string; isActive: boolean; marketId: string | null }[] }>('/channels?limit=1000', false)
       setUnassignedChannels((data.channels || []).filter(c => !c.marketId))
     } catch { setUnassignedChannels([]) }
   }, [])

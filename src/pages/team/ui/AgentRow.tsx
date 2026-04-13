@@ -27,19 +27,23 @@ const STATUS_CONFIG: Record<string, { dot: string; label: string }> = {
 
 interface AgentRowProps {
   agent: Agent
+  /** Среднее FRT за период из SLA-отчёта (первый ответ после сообщения клиента). */
+  frt: { avgMinutes: number; totalResponses: number } | null
   isSelected: boolean
   onClick: () => void
   onEdit: () => void
   onDeactivate: () => void
 }
 
-export function AgentRow({ agent, isSelected, onClick, onEdit, onDeactivate }: AgentRowProps) {
+export function AgentRow({ agent, frt, isSelected, onClick, onEdit, onDeactivate }: AgentRowProps) {
   const status = STATUS_CONFIG[agent.status || 'offline'] || STATUS_CONFIG.offline
   const role = AGENT_ROLE_CONFIG[agent.role] || AGENT_ROLE_CONFIG.agent
   const level = getAgentLevel(agent.points || 0)
   const color = AVATAR_COLORS[hashName(agent.name) % AVATAR_COLORS.length]
   const msgs = agent.metrics?.messagesHandled || 0
-  const resp = agent.metrics?.avgFirstResponseMin || 0
+  const respLabel = frt && frt.totalResponses > 0
+    ? `${frt.avgMinutes % 1 === 0 ? Math.round(frt.avgMinutes) : frt.avgMinutes.toFixed(1)}м`
+    : null
 
   return (
     <tr
@@ -87,7 +91,7 @@ export function AgentRow({ agent, isSelected, onClick, onEdit, onDeactivate }: A
       {/* Response time */}
       <td className="px-4 py-3 text-right">
         <span className="text-sm text-slate-700 tabular-nums">
-          {resp > 0 ? `${Math.round(resp)}м` : '—'}
+          {respLabel ?? '—'}
         </span>
       </td>
 

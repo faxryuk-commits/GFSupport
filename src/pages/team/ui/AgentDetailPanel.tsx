@@ -27,13 +27,18 @@ const STATUS_MAP: Record<string, { dot: string; label: string }> = {
 
 interface AgentDetailPanelProps {
   agent: Agent | null
+  /** FRT за выбранный период (SLA-отчёт), если были ответы. */
+  frt: { avgMinutes: number; totalResponses: number } | null
+  frtPeriodLabel: string
   isOpen: boolean
   onClose: () => void
   onEdit: (agent: Agent) => void
   onDeactivate: (agent: Agent) => void
 }
 
-export function AgentDetailPanel({ agent, isOpen, onClose, onEdit, onDeactivate }: AgentDetailPanelProps) {
+export function AgentDetailPanel({
+  agent, frt, frtPeriodLabel, isOpen, onClose, onEdit, onDeactivate,
+}: AgentDetailPanelProps) {
   if (!agent) return null
 
   const status = STATUS_MAP[agent.status || 'offline'] || STATUS_MAP.offline
@@ -123,8 +128,12 @@ export function AgentDetailPanel({ agent, isOpen, onClose, onEdit, onDeactivate 
               />
               <MetricCard
                 icon={<Clock className="w-4 h-4" />}
-                label="Ср. ответ"
-                value={m?.avgFirstResponseMin ? `${Math.round(m.avgFirstResponseMin)}м` : '—'}
+                label={`Ср. FRT (${frtPeriodLabel})`}
+                value={
+                  frt && frt.totalResponses > 0
+                    ? `${frt.avgMinutes % 1 === 0 ? Math.round(frt.avgMinutes) : frt.avgMinutes.toFixed(1)}м`
+                    : '—'
+                }
               />
               <MetricCard
                 icon={<Star className="w-4 h-4" />}

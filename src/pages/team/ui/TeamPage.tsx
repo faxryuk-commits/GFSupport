@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Loader2, AlertCircle } from 'lucide-react'
-import { fetchAgents } from '@/shared/api'
+import { fetchAgents, fetchTeamFrt, type TeamFrtPayload } from '@/shared/api'
 import { apiDelete } from '@/shared/services/api.service'
 import type { Agent } from '@/entities/agent'
 import { TeamHeader } from './TeamHeader'
@@ -9,15 +9,31 @@ import { AgentDetailPanel } from './AgentDetailPanel'
 import { AgentEditModal } from './AgentEditModal'
 import { InviteModal } from './InviteModal'
 import { ConfirmDialog } from '@/shared/ui'
+import { matchSlaAgentFrt } from '../model/matchSlaFrt'
 
 interface TeamPageProps {
   embedded?: boolean
+}
+
+function defaultDateRange() {
+  const today = new Date()
+  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+  return {
+    from: weekAgo.toISOString().split('T')[0],
+    to: today.toISOString().split('T')[0],
+  }
 }
 
 export function TeamPage({ embedded = false }: TeamPageProps) {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [{ from: frtFrom, to: frtTo }, setFrtRange] = useState(defaultDateRange)
+  const [frtSource, setFrtSource] = useState<'all' | 'telegram' | 'whatsapp'>('all')
+  const [teamFrt, setTeamFrt] = useState<TeamFrtPayload | null>(null)
+  const [frtLoading, setFrtLoading] = useState(true)
+  const [frtError, setFrtError] = useState<string | null>(null)
 
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
@@ -30,6 +46,31 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   const [deactivateAgent, setDeactivateAgent] = useState<Agent | null>(null)
 
   useEffect(() => { loadAgents() }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadFrt() {
+      setFrtLoading(true)
+      setFrtError(null)
+      try {
+        const data = await fetchTeamFrt({
+          from: frtFrom,
+          to: frtTo,
+          source: frtSource,
+        })
+        if (!cancelled) setTeamFrt(data)
+      } catch {
+        if (!cancelled) {
+          setTeamFrt(null)
+          setFrtError('Не удалось загрузить FRT')
+        }
+      } finally {
+        if (!cancelled) setFrtLoading(false)
+      }
+    }
+    loadFrt()
+    return () => { cancelled = true }
+  }, [frtFrom, frtTo, frtSource])
 
   async function loadAgents() {
     try {
@@ -74,11 +115,27 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
   }, [agents, search, roleFilter, statusFilter])
 
   const onlineCount = agents.filter(a => a.status === 'online').length
-  const avgResponseMinutes = agents.length > 0
-    ? agents.reduce((sum, a) => sum + (a.metrics?.avgFirstResponseMin || 0), 0) / agents.length
-    : 0
-  const avgResponse = avgResponseMinutes > 0 ? `${Math.round(avgResponseMinutes)}м` : '—'
+
+  const perf = teamFrt?.agentPerformance ?? []
+  const teamAvgFrt = teamFrt?.responseTimeSummary?.avgResponseMinutes
+  const avgResponse = frtLoading
+    ? '…'
+    : teamAvgFrt != null && teamAvgFrt > 0
+      ? `${Math.round(teamAvgFrt)}м`
+      : '—'
+
   const totalCases = agents.reduce((sum, a) => sum + (a.metrics?.resolvedConversations || 0), 0)
+
+  const frtByAgentId = useMemo(() => {
+    const m: Record<string, { avgMinutes: number; totalResponses: number }> = {}
+    for (const a of agents) {
+      const row = matchSlaAgentFrt(perf, a.name)
+      if (row && row.totalResponses > 0) {
+        m[a.id] = { avgMinutes: row.avgMinutes, totalResponses: row.totalResponses }
+      }
+    }
+    return m
+  }, [agents, perf])
 
   if (loading) {
     return (
@@ -108,6 +165,13 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         onlineCount={onlineCount}
         avgResponse={avgResponse}
         totalCases={totalCases}
+        frtFrom={frtFrom}
+        frtTo={frtTo}
+        frtSource={frtSource}
+        onFrtFromChange={v => setFrtRange(r => ({ ...r, from: v }))}
+        onFrtToChange={v => setFrtRange(r => ({ ...r, to: v }))}
+        onFrtSourceChange={setFrtSource}
+        frtError={frtError}
         search={search}
         onSearchChange={setSearch}
         roleFilter={roleFilter}
@@ -120,6 +184,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
 
       <AgentTable
         agents={filtered}
+        frtByAgentId={frtByAgentId}
         selectedId={selectedAgent?.id}
         onSelect={agent => {
           setSelectedAgent(agent)
@@ -131,6 +196,8 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
 
       <AgentDetailPanel
         agent={selectedAgent}
+        frt={selectedAgent ? frtByAgentId[selectedAgent.id] ?? null : null}
+        frtPeriodLabel={`${frtFrom} — ${frtTo}`}
         isOpen={panelOpen}
         onClose={() => setPanelOpen(false)}
         onEdit={agent => { setPanelOpen(false); setEditingAgent(agent) }}

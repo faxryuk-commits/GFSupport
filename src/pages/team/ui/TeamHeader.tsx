@@ -1,4 +1,5 @@
-import { Search, Plus, Users, Clock, MessageSquare, ChevronDown } from 'lucide-react'
+import { Search, Plus, Clock, MessageSquare, ChevronDown } from 'lucide-react'
+import { TeamFrtControls } from './TeamFrtControls'
 
 const ROLE_FILTERS = [
   { value: '', label: 'Все роли' },
@@ -19,6 +20,13 @@ interface TeamHeaderProps {
   onlineCount: number
   avgResponse: string
   totalCases: number
+  frtFrom: string
+  frtTo: string
+  frtSource: 'all' | 'telegram' | 'whatsapp'
+  onFrtFromChange: (v: string) => void
+  onFrtToChange: (v: string) => void
+  onFrtSourceChange: (v: 'all' | 'telegram' | 'whatsapp') => void
+  frtError: string | null
   search: string
   onSearchChange: (v: string) => void
   roleFilter: string
@@ -31,6 +39,9 @@ interface TeamHeaderProps {
 
 export function TeamHeader({
   total, onlineCount, avgResponse, totalCases,
+  frtFrom, frtTo, frtSource,
+  onFrtFromChange, onFrtToChange, onFrtSourceChange,
+  frtError,
   search, onSearchChange,
   roleFilter, onRoleChange,
   statusFilter, onStatusChange,
@@ -79,15 +90,25 @@ export function TeamHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-5 text-sm text-slate-500">
+      <TeamFrtControls
+        frtFrom={frtFrom}
+        frtTo={frtTo}
+        frtSource={frtSource}
+        onFrtFromChange={onFrtFromChange}
+        onFrtToChange={onFrtToChange}
+        onFrtSourceChange={onFrtSourceChange}
+        error={frtError}
+      />
+
+      <div className="flex flex-wrap items-center gap-5 text-sm text-slate-500">
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-green-500" />
           <span className="font-medium text-slate-700">{onlineCount}</span> онлайн
         </span>
         <span className="w-px h-4 bg-slate-200" />
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1.5" title="Среднее FRT за период (тот же расчёт, что в SLA-отчёте; лёгкий API team-frt)">
           <Clock className="w-3.5 h-3.5" />
-          <span className="font-medium text-slate-700">{avgResponse}</span> сред. ответ
+          <span className="font-medium text-slate-700">{avgResponse}</span> сред. FRT
         </span>
         <span className="w-px h-4 bg-slate-200" />
         <span className="flex items-center gap-1.5">
