@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import { checkAuthRateLimit } from '../lib/rate-limit.js'
 import { writeAuditLog, getClientIP } from '../lib/audit.js'
+import { verifyPassword, hashPassword } from '../lib/password.js'
 
 export const config = { runtime: 'edge' }
 
@@ -20,16 +21,6 @@ function json(data: any, status = 200) {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   })
-}
-
-function hashPassword(password: string): string {
-  let hash = 0
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash
-  }
-  return `h${Math.abs(hash).toString(36)}${password.length}`
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -68,9 +59,14 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (!sa) return json({ error: 'Invalid credentials' }, 401)
 
-    const passwordHash = hashPassword(password)
-    if (sa.password_hash !== passwordHash) {
+    const { valid, needsMigration } = await verifyPassword(password, sa.password_hash)
+    if (!valid) {
       return json({ error: 'Invalid credentials' }, 401)
+    }
+
+    if (needsMigration) {
+      const newHash = await hashPassword(password)
+      await sql`UPDATE support_super_admins SET password_hash = ${newHash} WHERE id = ${sa.id}`
     }
 
     await sql`UPDATE support_super_admins SET last_login_at = NOW() WHERE id = ${sa.id}`
@@ -94,6 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
       },
     })
   } catch (e: any) {
-    return json({ error: e.message }, 500)
+    console.error('[SA Login] Error:', e)
+    return json({ error: 'Internal server error' }, 500)
   }
 }
