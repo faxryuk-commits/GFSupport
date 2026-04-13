@@ -1,7 +1,7 @@
 import { getSQL } from './db.js'
 
 export type AuditAction =
-  | 'login' | 'logout'
+  | 'login' | 'logout' | 'sa.login'
   | 'org.create' | 'org.update' | 'org.deactivate'
   | 'agent.create' | 'agent.update' | 'agent.delete'
   | 'channel.create' | 'channel.update' | 'channel.delete'

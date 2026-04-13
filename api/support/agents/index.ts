@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { checkAgentQuota } from '../lib/quota.js'
 import { hashPassword } from '../lib/password.js'
-import { getSQL } from '../lib/db.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',

@@ -7,12 +7,9 @@ export const config = {
 
 async function getBotToken(orgId: string): Promise<string | null> {
   try {
-    const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-    if (connectionString) {
-      const sql = neon(connectionString)
-      const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
-      if (rows[0]?.value) return rows[0].value
-    }
+    const sql = getSQL()
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
+    if (rows[0]?.value) return rows[0].value
   } catch {}
   return process.env.TELEGRAM_BOT_TOKEN || null
 }

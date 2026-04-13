@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { checkChannelQuota } from '../lib/quota.js'
-import { getSQL } from '../lib/db.js'
+import { getSQL, json } from '../lib/db.js'
 
 // Channels API v2.1 - SLA Categories support
 export const config = {

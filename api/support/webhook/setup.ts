@@ -21,11 +21,8 @@ export default async function handler(req: Request): Promise<Response> {
   // Debug mode - database status check (no auth)
   if (url.searchParams.get('debug') === 'db') {
     try {
-      const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-      if (!connectionString) return json({ error: 'No DB connection' }, 500)
-      
       const orgId = await getRequestOrgId(req)
-      const sql = neon(connectionString)
+      const sql = getSQL()
       const channels = await sql`SELECT COUNT(*) as c FROM support_channels WHERE is_active = true AND org_id = ${orgId}`
       const messages = await sql`SELECT COUNT(*) as c FROM support_messages WHERE org_id = ${orgId}`
       const recent = await sql`
@@ -48,11 +45,8 @@ export default async function handler(req: Request): Promise<Response> {
   const channelName = url.searchParams.get('channel')
   if (channelName) {
     try {
-      const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-      if (!connectionString) return json({ error: 'No DB connection' }, 500)
-      
       const orgId = await getRequestOrgId(req)
-      const sql = neon(connectionString)
+      const sql = getSQL()
       const channelInfo = await sql`
         SELECT * FROM support_channels 
         WHERE name ILIKE ${'%' + channelName + '%'} AND org_id = ${orgId}

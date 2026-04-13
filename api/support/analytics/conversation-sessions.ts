@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL } from '../lib/db.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = { runtime: 'edge', maxDuration: 30 }
 

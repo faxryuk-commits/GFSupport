@@ -56,7 +56,7 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
 
     return { agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin }
   } catch {
-    return { ...fallback, agentId }
+    return { ...fallback, agentId: token }
   }
 }
 

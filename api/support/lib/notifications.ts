@@ -67,7 +67,7 @@ export async function sendNotification(payload: NotificationPayload) {
   const sql = getSQL()
   const targets = await getNotifyTargets(payload.orgId, payload)
 
-  const results: { agentId: string; telegram: boolean; inApp: boolean }[] = []
+  const results: { agentId: string; telegram: boolean; inApp: boolean; sms?: boolean }[] = []
 
   for (const target of targets) {
     let tgSent = false

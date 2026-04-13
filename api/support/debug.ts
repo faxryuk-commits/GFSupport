@@ -17,12 +17,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   try {
-    const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-    if (!connectionString) {
-      return json({ error: 'No database connection string' }, 500)
-    }
-    
-    const sql = neon(connectionString)
+    const sql = getSQL()
     const orgId = await getRequestOrgId(req)
     
     // Count channels

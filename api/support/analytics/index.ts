@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL } from '../lib/db.js'
+import { getSQL, json } from '../lib/db.js'
 
 // API Version: 2.2 - SLA Categories with real data
 export const config = {
