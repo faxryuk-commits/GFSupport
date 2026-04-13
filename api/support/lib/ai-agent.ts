@@ -1,5 +1,5 @@
-import { neon } from '@neondatabase/serverless'
 import {
+import { getSQL } from './db.js'
   getTogetherKey, getAgentSettings, isWorkingHours,
   fetchRecentMessages, fetchAvailableAgents, fetchSimilarHistory,
   fetchRelevantDocs, fetchFeedbackExamples, fetchOpenCases,
@@ -7,12 +7,6 @@ import {
   fetchChannelProfile, shouldSkipChannel,
   type AgentRuleItem,
 } from './ai-agent-data.js'
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
 
 const TOGETHER_API = 'https://api.together.xyz/v1/chat/completions'
 const DEFAULT_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct'

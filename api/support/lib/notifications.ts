@@ -1,11 +1,4 @@
-import { neon } from '@neondatabase/serverless'
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
-
+import { getSQL } from './db.js'
 export interface NotificationPayload {
   orgId: string
   type: 'escalation' | 'tag' | 'critical_case' | 'agent_decision' | 'sla_breach'

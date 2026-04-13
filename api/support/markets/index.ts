@@ -1,20 +1,7 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = { runtime: 'edge' }
-
-function getSQL() {
-  const c = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!c) throw new Error('Database connection string not found')
-  return neon(c)
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-  })
-}
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {

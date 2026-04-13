@@ -1,17 +1,7 @@
-import { neon } from '@neondatabase/serverless'
+import { json, getSQL } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
 }
 
 export default async function handler(req: Request): Promise<Response> {

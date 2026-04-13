@@ -1,24 +1,7 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { getSQL } from '../lib/db.js'
 
 export const config = { runtime: 'edge', maxDuration: 30 }
-
-function getSQL() {
-  const cs = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!cs) throw new Error('No database URL')
-  return neon(cs)
-}
-
-function json(data: any, status = 200, cacheSeconds = 0) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-  }
-  if (cacheSeconds > 0) {
-    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
-  }
-  return new Response(JSON.stringify(data), { status, headers })
-}
 
 async function safeQuery(sql: any, query: Promise<any[]>, fallback: any = []): Promise<any> {
   try { return await query } catch (e: any) { console.error('[CommQ]', e.message); return fallback }

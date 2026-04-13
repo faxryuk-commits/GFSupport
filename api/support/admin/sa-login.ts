@@ -1,27 +1,9 @@
-import { neon } from '@neondatabase/serverless'
 import { checkAuthRateLimit } from '../lib/rate-limit.js'
 import { writeAuditLog, getClientIP } from '../lib/audit.js'
 import { verifyPassword, hashPassword } from '../lib/password.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = { runtime: 'edge' }
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  })
-}
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {

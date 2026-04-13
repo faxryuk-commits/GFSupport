@@ -1,5 +1,5 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { getSQL } from '../lib/db.js'
 
 export const runtime = 'edge'
 
@@ -8,7 +8,7 @@ export default async function handler(req: Request) {
     return new Response(JSON.stringify({ error: 'POST required' }), { status: 405 })
   }
 
-  const sql = neon(process.env.DATABASE_URL!)
+  const sql = getSQL()
   const orgId = await getRequestOrgId(req)
 
   try {

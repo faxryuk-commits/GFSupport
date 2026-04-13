@@ -1,20 +1,8 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { json, getSQL } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
-    },
-  })
 }
 
 async function getBotToken(orgId: string): Promise<string | null> {

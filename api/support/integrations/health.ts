@@ -1,27 +1,10 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
   regions: ['iad1'],
   maxDuration: 10,
-}
-
-function getSQL() {
-  const url = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!url) throw new Error('No DB')
-  return neon(url)
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 
-      'Content-Type': 'application/json', 
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Expose-Headers': 'X-Org-Id',
-    },
-  })
 }
 
 type ServiceStatus = 'active' | 'inactive' | 'error'

@@ -1,28 +1,11 @@
-import { neon } from '@neondatabase/serverless'
 import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../lib/identification.js'
-import { getOpenAIKey, getOrgBotToken } from '../lib/db.js'
+import { getOpenAIKey, getOrgBotToken, getSQL, json } from '../lib/db.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
 import OpenAI from 'openai'
 
 export const config = {
   runtime: 'edge',
   regions: ['iad1'],
-}
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
 }
 
 // Generate unique ID
@@ -695,7 +678,6 @@ async function recordAgentActivity(
     console.log('[Webhook] Could not record agent activity:', e)
   }
 }
-
 
 // Commitment detection for tracking promises made by staff
 interface CommitmentDetection {

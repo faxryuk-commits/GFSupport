@@ -1,13 +1,6 @@
-import { neon } from '@neondatabase/serverless'
-
+import { getSQL } from '../lib/db.js'
 export const config = {
   runtime: 'edge',
-}
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
 }
 
 // Типы триггеров

@@ -1,27 +1,11 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
 import { runAgent, executeDecision, type AgentContext } from '../lib/ai-agent.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
   regions: ['iad1'],
   maxDuration: 30,
-}
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
 }
 
 export default async function handler(req: Request): Promise<Response> {

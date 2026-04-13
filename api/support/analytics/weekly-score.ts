@@ -1,24 +1,7 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { getSQL } from '../lib/db.js'
 
 export const config = { runtime: 'edge' }
-
-function getSQL() {
-  const url = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!url) throw new Error('Database connection string not found')
-  return neon(url)
-}
-
-function json(data: any, status = 200, cacheSeconds = 0) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-  }
-  if (cacheSeconds > 0) {
-    headers['Cache-Control'] = `public, s-maxage=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
-  }
-  return new Response(JSON.stringify(data), { status, headers })
-}
 
 interface WeekMetrics {
   weekStart: string

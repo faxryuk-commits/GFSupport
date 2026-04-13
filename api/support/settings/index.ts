@@ -1,26 +1,9 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
+import { getSQL, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
   regions: ['iad1'],
-}
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Expose-Headers': 'X-Org-Id',
-    },
-  })
 }
 
 // Настройки по умолчанию
@@ -258,10 +241,7 @@ export default async function handler(req: Request): Promise<Response> {
 // Хелпер для получения актуального токена (используется в других модулях)
 export async function getActiveBotToken(): Promise<string | null> {
   try {
-    const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-    if (!connectionString) return process.env.TELEGRAM_BOT_TOKEN || null
-    
-    const sql = neon(connectionString)
+    const sql = getSQL()
     const result = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token'`
     
     const dbToken = result[0]?.value
@@ -273,10 +253,7 @@ export async function getActiveBotToken(): Promise<string | null> {
 
 export async function getActiveOpenAIKey(): Promise<string | null> {
   try {
-    const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-    if (!connectionString) return process.env.OPENAI_API_KEY || null
-    
-    const sql = neon(connectionString)
+    const sql = getSQL()
     const result = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key'`
     
     const dbKey = result[0]?.value

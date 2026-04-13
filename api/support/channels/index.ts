@@ -1,27 +1,10 @@
-import { neon } from '@neondatabase/serverless'
 import { getRequestOrgId } from '../lib/org.js'
 import { checkChannelQuota } from '../lib/quota.js'
+import { getSQL } from '../lib/db.js'
 
 // Channels API v2.1 - SLA Categories support
 export const config = {
   runtime: 'edge',
-}
-
-function getSQL() {
-  const connectionString = process.env.POSTGRES_URL || process.env.NEON_URL || process.env.DATABASE_URL
-  if (!connectionString) throw new Error('Database connection string not found')
-  return neon(connectionString)
-}
-
-function json(data: any, status = 200, cacheSeconds = 0) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-  }
-  if (cacheSeconds > 0) {
-    headers['Cache-Control'] = `public, max-age=${cacheSeconds}, stale-while-revalidate=${cacheSeconds * 2}`
-  }
-  return new Response(JSON.stringify(data), { status, headers })
 }
 
 export default async function handler(req: Request): Promise<Response> {

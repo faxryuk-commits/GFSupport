@@ -1,17 +1,6 @@
-import { neon } from '@neondatabase/serverless'
-import { getOpenAIKey } from '../lib/db.js'
+import { getOpenAIKey, json } from '../lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['iad1'] }
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
-}
 
 // Sanitize personal data before storing
 export function sanitizeText(text: string): string {
