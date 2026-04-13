@@ -120,6 +120,10 @@ export async function ensureMigrated() {
     await sql`CREATE INDEX IF NOT EXISTS idx_messages_thread ON support_messages(channel_id, thread_id)`
     await sql`CREATE INDEX IF NOT EXISTS idx_topics_channel ON support_topics(channel_id)`
     await sql`CREATE INDEX IF NOT EXISTS idx_reactions_message ON support_reactions(message_id)`
+    // Performance indexes for common queries
+    await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_created ON support_messages(org_id, created_at DESC)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_channels_org_active ON support_channels(org_id, is_active)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_channels_org_awaiting ON support_channels(org_id, awaiting_reply) WHERE awaiting_reply = true`
   } catch (e) { /* indexes exist */ }
 
   // Add missing columns to existing tables (explicit to avoid dynamic sql)
