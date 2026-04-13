@@ -210,29 +210,39 @@ onMessage(async (msg) => {
   }
 })
 
-async function forwardToWebhook(payload: Record<string, any>) {
-  try {
-    const res = await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${BRIDGE_SECRET}`,
-      },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) {
-      messageStats.forwarded++
-    } else {
-      messageStats.errors++
+async function forwardToWebhook(payload: Record<string, any>, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${BRIDGE_SECRET}`,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000),
+      })
+      if (res.ok) {
+        messageStats.forwarded++
+        return
+      }
       const errText = await res.text().catch(() => 'unknown')
       messageStats.lastError = `${res.status}: ${errText.slice(0, 200)}`
-      console.error(`[Webhook] Failed: ${res.status} ${errText}`)
+      console.error(`[Webhook] Failed (attempt ${attempt + 1}/${retries}): ${res.status}`)
+
+      // Don't retry on client errors (4xx)
+      if (res.status >= 400 && res.status < 500) break
+    } catch (e: any) {
+      messageStats.lastError = e.message
+      console.error(`[Webhook] Error (attempt ${attempt + 1}/${retries}):`, e.message)
     }
-  } catch (e: any) {
-    messageStats.errors++
-    messageStats.lastError = e.message
-    console.error('[Webhook] Error:', e.message)
+
+    // Exponential backoff: 1s, 2s, 4s
+    if (attempt < retries - 1) {
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)))
+    }
   }
+  messageStats.errors++
 }
 
 app.listen(PORT, async () => {
