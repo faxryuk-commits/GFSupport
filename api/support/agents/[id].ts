@@ -66,7 +66,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
 
     } catch (e: any) {
       console.error('Agent fetch error:', e)
-      return json({ error: 'Failed to fetch agent', details: e.message }, 500)
+      return json({ error: 'Failed to fetch agent' }, 500)
     }
   }
 
@@ -112,7 +112,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
 
     } catch (e: any) {
       console.error('Agent update error:', e)
-      return json({ error: 'Failed to update agent', details: e.message }, 500)
+      return json({ error: 'Failed to update agent' }, 500)
     }
   }
 
@@ -127,7 +127,7 @@ export default async function handler(req: Request, { params }: { params: { id: 
 
     } catch (e: any) {
       console.error('Agent delete error:', e)
-      return json({ error: 'Failed to deactivate agent', details: e.message }, 500)
+      return json({ error: 'Failed to deactivate agent' }, 500)
     }
   }
 

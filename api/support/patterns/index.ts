@@ -325,7 +325,7 @@ export default async function handler(req: Request): Promise<Response> {
         
       } catch (e: any) {
         console.error('[Analyze History] Error:', e)
-        return json({ error: e.message }, 500)
+        return json({ error: "Internal server error" }, 500)
       }
     }
     
@@ -358,7 +358,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ patterns, source: 'database' })
 
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -394,7 +394,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true, message: 'Patterns saved' })
 
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -421,7 +421,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true })
 
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -438,7 +438,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`DELETE FROM support_ai_patterns WHERE id = ${id} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 

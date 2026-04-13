@@ -170,6 +170,6 @@ export default async function handler(req: Request): Promise<Response> {
     })
   } catch (e: any) {
     console.error('[Members] error:', e)
-    return json({ error: 'Failed to fetch members', details: e.message }, 500)
+    return json({ error: 'Failed to fetch members' }, 500)
   }
 }

@@ -252,7 +252,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('Search error:', e)
-      return json({ error: 'Search failed', details: e.message }, 500)
+      return json({ error: 'Search failed' }, 500)
     }
   }
 
@@ -327,7 +327,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('Index error:', e)
-      return json({ error: 'Indexing failed', details: e.message }, 500)
+      return json({ error: 'Indexing failed' }, 500)
     }
   }
 

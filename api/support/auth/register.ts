@@ -209,6 +209,6 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Unknown step. Use: get-bot-username, request-otp, verify-and-create' }, 400)
   } catch (e: any) {
     console.error('[Register]', e)
-    return json({ error: e.message }, 500)
+    return json({ error: "Internal server error" }, 500)
   }
 }

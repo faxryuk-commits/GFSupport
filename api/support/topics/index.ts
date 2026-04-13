@@ -87,7 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch topics', details: e.message }, 500)
+      return json({ error: 'Failed to fetch topics' }, 500)
     }
   }
 

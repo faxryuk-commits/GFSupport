@@ -116,7 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       console.error('Channels fetch error:', e)
-      return json({ error: 'Failed to fetch channels', details: e.message }, 500)
+      return json({ error: 'Failed to fetch channels' }, 500)
     }
   }
 
@@ -182,7 +182,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to connect channel', details: e.message }, 500)
+      return json({ error: 'Failed to connect channel' }, 500)
     }
   }
 
@@ -213,7 +213,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to update channel', details: e.message }, 500)
+      return json({ error: 'Failed to update channel' }, 500)
     }
   }
 
@@ -236,7 +236,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to disconnect channel', details: e.message }, 500)
+      return json({ error: 'Failed to disconnect channel' }, 500)
     }
   }
 

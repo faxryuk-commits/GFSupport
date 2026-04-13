@@ -267,6 +267,6 @@ export default async function handler(req: Request): Promise<Response> {
     
   } catch (e: any) {
     console.error('[Auto-process] Error:', e)
-    return json({ error: 'Processing failed', details: e.message }, 500)
+    return json({ error: 'Processing failed' }, 500)
   }
 }

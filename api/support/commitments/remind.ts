@@ -122,7 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to process reminders', details: e.message }, 500)
+      return json({ error: 'Failed to process reminders' }, 500)
     }
   }
 
@@ -162,7 +162,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
     } catch (e: any) {
-      return json({ error: 'Failed to send reminder', details: e.message }, 500)
+      return json({ error: 'Failed to send reminder' }, 500)
     }
   }
 

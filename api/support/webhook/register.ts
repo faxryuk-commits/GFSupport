@@ -99,7 +99,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ error: 'Unknown action. Use: setup-telegram, check-telegram, remove-telegram' }, 400)
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 

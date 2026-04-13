@@ -158,6 +158,6 @@ export default async function handler(req: Request): Promise<Response> {
 
     return json({ telegram, openai, whisper, notify, whatsapp })
   } catch (e: any) {
-    return json({ error: e.message }, 500)
+    return json({ error: "Internal server error" }, 500)
   }
 }

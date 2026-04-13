@@ -67,6 +67,6 @@ export default async function handler(req: Request) {
     
     return json({ error: 'Failed to get file', details: data }, 400)
   } catch (e: any) {
-    return json({ error: 'Failed to convert URL', details: e.message }, 500)
+    return json({ error: 'Failed to convert URL' }, 500)
   }
 }

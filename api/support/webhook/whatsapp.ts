@@ -416,6 +416,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('[WhatsApp Webhook] Error:', e.message, e.stack?.slice(0, 300))
-    return json({ error: e.message }, 500)
+    return json({ error: "Internal server error" }, 500)
   }
 }

@@ -171,7 +171,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to get recommendations', details: e.message }, 500)
+      return json({ error: 'Failed to get recommendations' }, 500)
     }
   }
 
@@ -215,7 +215,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to create solution', details: e.message }, 500)
+      return json({ error: 'Failed to create solution' }, 500)
     }
   }
 

@@ -134,6 +134,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('Rebalance error:', e)
-    return json({ error: 'Failed to rebalance cases', details: e.message }, 500)
+    return json({ error: 'Failed to rebalance cases' }, 500)
   }
 }

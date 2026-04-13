@@ -441,6 +441,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('Send message error:', e)
-    return json({ error: 'Failed to send message', details: e.message }, 500)
+    return json({ error: 'Failed to send message' }, 500)
   }
 }

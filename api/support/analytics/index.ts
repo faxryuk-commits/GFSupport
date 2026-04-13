@@ -917,6 +917,6 @@ export default async function handler(req: Request): Promise<Response> {
     }, 200, 60)
 
   } catch (e: any) {
-    return json({ error: 'Failed to fetch analytics', details: e.message }, 500)
+    return json({ error: 'Failed to fetch analytics' }, 500)
   }
 }

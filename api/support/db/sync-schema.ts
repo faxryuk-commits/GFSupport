@@ -411,8 +411,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     return json({ 
-      error: 'Schema sync failed', 
-      details: e.message,
+      error: 'Schema sync failed',
       partial: synced,
     }, 500)
   }

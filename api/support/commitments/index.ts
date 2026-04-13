@@ -195,7 +195,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch commitments', details: e.message }, 500)
+      return json({ error: 'Failed to fetch commitments' }, 500)
     }
   }
 
@@ -266,7 +266,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to create commitment', details: e.message }, 500)
+      return json({ error: 'Failed to create commitment' }, 500)
     }
   }
 
@@ -386,7 +386,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to update commitment', details: e.message }, 500)
+      return json({ error: 'Failed to update commitment' }, 500)
     }
   }
 
@@ -402,7 +402,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true })
 
     } catch (e: any) {
-      return json({ error: 'Failed to delete commitment', details: e.message }, 500)
+      return json({ error: 'Failed to delete commitment' }, 500)
     }
   }
 

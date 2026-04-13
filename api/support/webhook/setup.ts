@@ -40,7 +40,7 @@ export default async function handler(req: Request): Promise<Response> {
         recentMessages: recent
       })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
   
@@ -80,7 +80,7 @@ export default async function handler(req: Request): Promise<Response> {
         recentMessages: recentMsgs
       })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
   
@@ -113,7 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
           : 'Webhook is configured correctly'
       })
     } catch (e: any) {
-      return json({ error: 'Failed to check webhook', details: e.message }, 500)
+      return json({ error: 'Failed to check webhook' }, 500)
     }
   }
 
@@ -155,7 +155,7 @@ export default async function handler(req: Request): Promise<Response> {
         }, 500)
       }
     } catch (e: any) {
-      return json({ error: 'Failed to register webhook', details: e.message }, 500)
+      return json({ error: 'Failed to register webhook' }, 500)
     }
   }
 

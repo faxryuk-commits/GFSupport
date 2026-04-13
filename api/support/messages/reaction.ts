@@ -125,6 +125,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('Reaction error:', e)
-    return json({ error: 'Failed to set reaction', details: e.message }, 500)
+    return json({ error: 'Failed to set reaction' }, 500)
   }
 }

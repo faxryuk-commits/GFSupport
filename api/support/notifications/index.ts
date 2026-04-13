@@ -62,7 +62,7 @@ export default async function handler(req: Request): Promise<Response> {
         unreadCount: Number(unreadCount?.cnt || 0),
       })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 

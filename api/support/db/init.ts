@@ -529,6 +529,6 @@ export default async function handler(req: Request): Promise<Response> {
     })
 
   } catch (e: any) {
-    return json({ error: 'Init failed', details: e.message }, 500)
+    return json({ error: 'Init failed' }, 500)
   }
 }

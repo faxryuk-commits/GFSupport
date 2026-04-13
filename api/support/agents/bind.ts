@@ -123,7 +123,7 @@ export default async function handler(req: Request): Promise<Response> {
         }
       })
     } catch (e: any) {
-      return json({ error: 'Failed to fetch binding status', details: e.message }, 500)
+      return json({ error: 'Failed to fetch binding status' }, 500)
     }
   }
 
@@ -270,7 +270,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'No valid target specified' }, 400)
 
     } catch (e: any) {
-      return json({ error: 'Failed to bind telegram_id', details: e.message }, 500)
+      return json({ error: 'Failed to bind telegram_id' }, 500)
     }
   }
 
@@ -315,7 +315,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'No valid target specified' }, 400)
 
     } catch (e: any) {
-      return json({ error: 'Failed to remove binding', details: e.message }, 500)
+      return json({ error: 'Failed to remove binding' }, 500)
     }
   }
 

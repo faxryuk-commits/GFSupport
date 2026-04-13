@@ -157,6 +157,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('React error:', e)
-    return json({ error: 'Failed to react', details: e.message }, 500)
+    return json({ error: 'Failed to react' }, 500)
   }
 }

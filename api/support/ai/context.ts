@@ -427,6 +427,6 @@ ${kbContext}
 
   } catch (e: any) {
     console.error('Context analysis error:', e)
-    return json({ error: 'Failed to analyze context', details: e.message }, 500)
+    return json({ error: 'Failed to analyze context' }, 500)
   }
 }

@@ -59,7 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
         rules: (() => { try { return JSON.parse(settings['ai_agent_rules'] || '[]') } catch { return [] } })(),
       })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -90,7 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ success: true, updated: updates.length })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 

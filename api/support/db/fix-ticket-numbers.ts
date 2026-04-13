@@ -74,6 +74,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('Fix numbers error:', e)
-    return json({ error: 'Failed to fix numbers', details: e.message }, 500)
+    return json({ error: 'Failed to fix numbers' }, 500)
   }
 }

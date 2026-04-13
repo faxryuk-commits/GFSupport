@@ -45,7 +45,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ success: true, agentId: id })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -86,7 +86,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ success: true })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -101,7 +101,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`DELETE FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -141,7 +141,7 @@ export default async function handler(req: Request): Promise<Response> {
       
       return json({ success: true, synced, message: `Synced ${synced} agents` })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
   
@@ -295,6 +295,6 @@ export default async function handler(req: Request): Promise<Response> {
     if (e.message?.includes('does not exist')) {
       return json({ agents: [] })
     }
-    return json({ error: e.message }, 500)
+    return json({ error: "Internal server error" }, 500)
   }
 }

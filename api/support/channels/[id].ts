@@ -244,7 +244,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch channel details', details: e.message }, 500)
+      return json({ error: 'Failed to fetch channel details' }, 500)
     }
   }
 
@@ -277,7 +277,7 @@ export default async function handler(req: Request): Promise<Response> {
       
       return json({ error: 'No valid fields to update' }, 400)
     } catch (e: any) {
-      return json({ error: 'Failed to update channel', details: e.message }, 500)
+      return json({ error: 'Failed to update channel' }, 500)
     }
   }
 
@@ -303,7 +303,7 @@ export default async function handler(req: Request): Promise<Response> {
       
       return json({ error: 'No valid fields to update' }, 400)
     } catch (e: any) {
-      return json({ error: 'Failed to update channel', details: e.message }, 500)
+      return json({ error: 'Failed to update channel' }, 500)
     }
   }
 

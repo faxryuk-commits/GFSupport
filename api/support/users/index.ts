@@ -186,7 +186,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('Users fetch error:', e)
-      return json({ error: 'Failed to fetch users', details: e.message }, 500)
+      return json({ error: 'Failed to fetch users' }, 500)
     }
   }
 
@@ -242,7 +242,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('User create error:', e)
-      return json({ error: 'Failed to create user', details: e.message }, 500)
+      return json({ error: 'Failed to create user' }, 500)
     }
   }
 
@@ -284,7 +284,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('User update error:', e)
-      return json({ error: 'Failed to update user', details: e.message }, 500)
+      return json({ error: 'Failed to update user' }, 500)
     }
   }
 
@@ -304,7 +304,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true })
       
     } catch (e: any) {
-      return json({ error: 'Failed to delete user', details: e.message }, 500)
+      return json({ error: 'Failed to delete user' }, 500)
     }
   }
 

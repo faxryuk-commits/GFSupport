@@ -218,7 +218,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       console.error('[Messages API] Error:', e.message, e.stack)
-      return json({ error: 'Failed to fetch messages', details: e.message }, 500)
+      return json({ error: 'Failed to fetch messages' }, 500)
     }
   }
 
@@ -255,7 +255,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       console.error('[Messages API] PATCH Error:', e.message)
-      return json({ error: 'Failed to update messages', details: e.message }, 500)
+      return json({ error: 'Failed to update messages' }, 500)
     }
   }
 

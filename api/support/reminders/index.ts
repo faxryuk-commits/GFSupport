@@ -166,7 +166,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch reminders', details: e.message }, 500)
+      return json({ error: 'Failed to fetch reminders' }, 500)
     }
   }
 
@@ -205,7 +205,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true, action })
 
     } catch (e: any) {
-      return json({ error: 'Failed to update reminder', details: e.message }, 500)
+      return json({ error: 'Failed to update reminder' }, 500)
     }
   }
 

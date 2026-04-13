@@ -65,6 +65,6 @@ export default async function handler(req: Request): Promise<Response> {
       dailyTrend: dailyTrend.map((d: any) => ({ day: d.day, messages: d.messages })),
     })
   } catch (e: any) {
-    return json({ error: e.message }, 500)
+    return json({ error: "Internal server error" }, 500)
   }
 }

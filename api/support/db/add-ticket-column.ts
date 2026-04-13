@@ -97,6 +97,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('Add ticket column error:', e)
-    return json({ error: 'Failed', details: e.message, steps }, 500)
+    return json({ error: 'Failed', steps }, 500)
   }
 }

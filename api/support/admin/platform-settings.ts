@@ -25,7 +25,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
       return json({ settings })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -65,7 +65,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ success: true })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 

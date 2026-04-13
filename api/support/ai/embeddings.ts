@@ -124,7 +124,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('Embedding creation error:', e)
-      return json({ error: 'Failed to create embedding', details: e.message }, 500)
+      return json({ error: 'Failed to create embedding' }, 500)
     }
   }
 
@@ -181,7 +181,7 @@ export default async function handler(req: Request): Promise<Response> {
       
     } catch (e: any) {
       console.error('Semantic search error:', e)
-      return json({ error: 'Search failed', details: e.message }, 500)
+      return json({ error: 'Search failed' }, 500)
     }
   }
 

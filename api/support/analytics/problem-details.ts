@@ -190,6 +190,6 @@ export async function GET(req: Request) {
     })
     
   } catch (e: any) {
-    return json({ error: e.message }, 500)
+    return json({ error: "Internal server error" }, 500)
   }
 }

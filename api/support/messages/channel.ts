@@ -240,6 +240,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   } catch (e: any) {
     console.error('[Channel Messages] Error:', e.message)
-    return json({ error: 'Failed to fetch channel messages', details: e.message }, 500)
+    return json({ error: 'Failed to fetch channel messages' }, 500)
   }
 }

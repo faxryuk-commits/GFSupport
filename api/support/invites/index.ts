@@ -57,7 +57,7 @@ export default async function handler(req: Request): Promise<Response> {
           }
         })
       } catch (e: any) {
-        return json({ error: e.message }, 500)
+        return json({ error: "Internal server error" }, 500)
       }
     }
     
@@ -93,7 +93,7 @@ export default async function handler(req: Request): Promise<Response> {
         }))
       })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -138,7 +138,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 
@@ -158,7 +158,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`DELETE FROM support_invites WHERE id = ${inviteId} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
-      return json({ error: e.message }, 500)
+      return json({ error: "Internal server error" }, 500)
     }
   }
 

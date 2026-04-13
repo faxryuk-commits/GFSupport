@@ -188,7 +188,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       console.error('Cases fetch error:', e)
-      return json({ error: 'Failed to fetch cases', details: e.message }, 500)
+      return json({ error: 'Failed to fetch cases' }, 500)
     }
   }
 
@@ -299,7 +299,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     } catch (e: any) {
       console.error('Case create error:', e)
-      return json({ error: 'Failed to create case', details: e.message }, 500)
+      return json({ error: 'Failed to create case' }, 500)
     }
   }
 
@@ -401,7 +401,7 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true, caseId: id })
 
     } catch (e: any) {
-      return json({ error: 'Failed to update case', details: e.message }, 500)
+      return json({ error: 'Failed to update case' }, 500)
     }
   }
 
@@ -418,7 +418,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ success: true, deleted: caseId })
     } catch (e: any) {
-      return json({ error: 'Failed to delete case', details: e.message }, 500)
+      return json({ error: 'Failed to delete case' }, 500)
     }
   }
 

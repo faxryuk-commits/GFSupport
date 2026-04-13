@@ -647,6 +647,6 @@ export default async function handler(req: Request): Promise<Response> {
     })
 
   } catch (e: any) {
-    return json({ error: 'Migration failed', details: e.message }, 500)
+    return json({ error: 'Migration failed' }, 500)
   }
 }

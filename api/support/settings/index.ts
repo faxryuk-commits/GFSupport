@@ -115,7 +115,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to fetch settings', details: e.message }, 500)
+      return json({ error: 'Failed to fetch settings' }, 500)
     }
   }
 
@@ -160,7 +160,7 @@ export default async function handler(req: Request): Promise<Response> {
       })
 
     } catch (e: any) {
-      return json({ error: 'Failed to update settings', details: e.message }, 500)
+      return json({ error: 'Failed to update settings' }, 500)
     }
   }
 
@@ -202,7 +202,7 @@ export default async function handler(req: Request): Promise<Response> {
             return json({ error: 'Bot token invalid', details: data.description }, 400)
           }
         } catch (e: any) {
-          return json({ error: 'Failed to connect to Telegram', details: e.message }, 500)
+          return json({ error: 'Failed to connect to Telegram' }, 500)
         }
       }
 
@@ -224,14 +224,14 @@ export default async function handler(req: Request): Promise<Response> {
           const err = await res.json().catch(() => ({})) as any
           return json({ error: 'Ключ недействителен', details: err.error?.message || `HTTP ${res.status}` }, 400)
         } catch (e: any) {
-          return json({ error: 'Не удалось подключиться к OpenAI', details: e.message }, 500)
+          return json({ error: 'Не удалось подключиться к OpenAI' }, 500)
         }
       }
 
       return json({ error: 'Unknown action' }, 400)
 
     } catch (e: any) {
-      return json({ error: 'Action failed', details: e.message }, 500)
+      return json({ error: 'Action failed' }, 500)
     }
   }
 
