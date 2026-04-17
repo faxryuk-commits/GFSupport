@@ -405,7 +405,7 @@ export function CasesPage() {
 
   return (
     <>
-      <div className="h-full flex flex-col p-6 overflow-hidden">
+      <div className="h-full flex flex-col p-6 overflow-y-auto">
         {/* Stats Summary */}
         <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
           {[
@@ -640,7 +640,7 @@ export function CasesPage() {
             }}
           />
         ) : viewMode === 'active' ? (
-          <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
+          <div className="flex gap-4 overflow-x-auto pb-4">
             {UI_ACTIVE_COLUMNS.map(col => {
               const config = UI_COLUMN_CONFIG[col]
               const colCases = getCasesByUiColumn(col)
@@ -667,7 +667,7 @@ export function CasesPage() {
                     </div>
                   </div>
 
-                  <div className="flex-1 bg-slate-50 border border-slate-200 border-t-0 rounded-b-xl p-2 space-y-2 min-h-[400px] overflow-y-auto">
+                  <div className="flex-1 bg-slate-50 border border-slate-200 border-t-0 rounded-b-xl p-2 space-y-2 min-h-[260px]">
                     {colCases.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-slate-300 text-sm py-8">
                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-2">
@@ -692,7 +692,7 @@ export function CasesPage() {
             })}
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto pb-4">
+          <div className="pb-4">
             {(() => {
               const doneCases = getCasesByUiColumn('done')
               if (doneCases.length === 0) {

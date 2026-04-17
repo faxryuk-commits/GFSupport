@@ -35,7 +35,7 @@ function isToday(dateStr: string | null | undefined): boolean {
 }
 
 export function CasesNowSection({ cases, onSelectCase }: CasesNowSectionProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
 
   const { attention, stuck, done } = useMemo(() => {
     const attention: Case[] = []
