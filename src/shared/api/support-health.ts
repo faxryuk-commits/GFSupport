@@ -222,6 +222,105 @@ export async function runRootCauseAnalysis(params?: {
   })
 }
 
+// =================== CATEGORY FLOW ===================
+
+export type FlowStatus = 'resolved' | 'in_progress' | 'stuck' | 'ignored' | 'blocked'
+export type Satisfaction = 'happy' | 'neutral' | 'unhappy'
+
+export interface FlowCell {
+  total: number
+  resolved: number
+  in_progress: number
+  stuck: number
+  ignored: number
+  blocked: number
+  happy: number
+  neutral: number
+  unhappy: number
+  churnRisk: number
+}
+
+export interface CategoryFlowSubcategory extends FlowCell {
+  domain: string
+  subcategory: string
+  label: string
+}
+
+export interface CategoryFlowDomain extends FlowCell {
+  domain: string
+  label: string
+  subcategories: CategoryFlowSubcategory[]
+}
+
+export interface CategoryFlowItem {
+  messageId: string
+  channelId: string | null
+  caseId?: string | null
+  domain: string
+  subcategory: string
+  text: string
+  hasChurn?: boolean
+  createdAt: string
+}
+
+export interface CategoryFlowPayload {
+  period: { from: string; to: string; days: number }
+  sla: {
+    targetResponseTime: number
+    targetResolutionTime: number
+    workingHoursStart: number
+    workingHoursEnd: number
+    workingDays: number[]
+  }
+  kpi: FlowCell
+  domains: CategoryFlowDomain[]
+  ignoredList: CategoryFlowItem[]
+  unhappyList: CategoryFlowItem[]
+  totalItems: number
+}
+
+export async function fetchCategoryFlow(period: HealthPeriod = '30d'): Promise<CategoryFlowPayload> {
+  return apiGet<CategoryFlowPayload>(`/analytics/category-flow?period=${period}`)
+}
+
+// =================== BACKFILL TAXONOMY ===================
+
+export interface BackfillTaxonomyStats {
+  days: number
+  total: number
+  tagged: number
+  remaining: number
+}
+
+export interface BackfillTaxonomyResult {
+  processed: number
+  updated: number
+  skipped: number
+  failed: number
+  remaining: number
+  errors: Array<{ id: string; error: string }>
+  elapsedMs: number
+  days: number
+  batchSize: number
+  force: boolean
+}
+
+export async function fetchBackfillTaxonomyStats(days = 30): Promise<BackfillTaxonomyStats> {
+  return apiGet<BackfillTaxonomyStats>(`/ai/backfill-taxonomy?days=${days}`)
+}
+
+export async function runBackfillTaxonomy(params?: {
+  days?: number
+  batchSize?: number
+  force?: boolean
+}): Promise<BackfillTaxonomyResult> {
+  return apiPost<BackfillTaxonomyResult>(`/ai/backfill-taxonomy`, {
+    days: params?.days ?? 30,
+    batchSize: params?.batchSize ?? 25,
+    force: params?.force ?? false,
+  })
+}
+
 export async function fetchHealthDrilldown(params: {
   kind: HealthDrillKind
   value: string

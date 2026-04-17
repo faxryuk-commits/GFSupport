@@ -1,6 +1,15 @@
 import OpenAI from 'openai'
 import { getOpenAIKey, getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
+import {
+  TAXONOMY,
+  isValidDomain,
+  isValidSubcategory,
+  getDomainForSubcategory,
+  LEGACY_CATEGORY_TO_DOMAIN,
+  taxonomyPromptBlock,
+  type DomainKey,
+} from './taxonomy.js'
 
 export const config = {
   runtime: 'edge',
@@ -17,9 +26,16 @@ const ANALYSIS_PROMPT = `Ты анализатор сообщений служб
 - yordam, ko'mak = помощь
 - tez, shoshilinch = срочно
 
+Таксономия обращений (выбирай ключи строго из этого списка):
+${taxonomyPromptBlock()}
+
 Анализируй сообщение и верни ТОЛЬКО JSON без markdown:
 {
   "category": "одно из: technical, integration, billing, complaint, feature_request, order, delivery, menu, app, onboarding, question, feedback, general",
+  "domain": "один из ключей верхнего уровня из таксономии (integrations/cashier/menu/orders/delivery/payment_billing/app/onboarding/account/complaint_feedback/info_question/feature_request/other)",
+  "subcategory": "ключ подкатегории ИЗ выбранного domain (например pos-iiko, receipt-not-printing). Если ничего не подходит — пустая строка",
+  "theme": "краткая формулировка конкретной темы сообщения одной строкой на русском (например: 'чеки не печатаются после обновления iiko'). Нужно для поиска рецидивов",
+  "tags": ["2-4 кратких тега-маркера", "например: iiko, печать-чеков, срочно"],
   "sentiment": "одно из: positive, neutral, negative, frustrated",
   "intent": "одно из: greeting, gratitude, closing, faq_pricing, faq_hours, faq_contacts, ask_question, report_problem, request_feature, complaint, information, response, unknown",
   "urgency": число от 0 до 5 (0 = не срочно, 5 = критично),
@@ -58,7 +74,7 @@ const ANALYSIS_PROMPT = `Ты анализатор сообщений служб
 
 Отвечай ТОЛЬКО JSON, без markdown блоков.`
 
-interface AnalysisResult {
+export interface AnalysisResult {
   category: string
   sentiment: string
   intent: string
@@ -68,6 +84,11 @@ interface AnalysisResult {
   autoReplyAllowed: boolean
   summary: string
   entities: Record<string, string>
+  // Новая таксономия (domain → subcategory → theme + tags)
+  domain: DomainKey
+  subcategory: string | null
+  theme: string | null
+  tags: string[]
 }
 
 // Simple intents that can be detected without AI (for performance)
@@ -325,6 +346,10 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     /\?$/.test(text.trim()) // Ends with question mark
   )
 
+  // Fallback-таксономия: пробуем по legacy category + по хинтам определить subcategory
+  const fallbackDomain: DomainKey = LEGACY_CATEGORY_TO_DOMAIN[category] || 'other'
+  const fallbackSubcategory = detectSubcategoryByHints(lower, fallbackDomain)
+
   return {
     category,
     sentiment,
@@ -335,11 +360,31 @@ function analyzeWithoutAI(text: string): AnalysisResult {
     autoReplyAllowed,
     summary: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
     entities: {},
+    domain: fallbackDomain,
+    subcategory: fallbackSubcategory,
+    theme: null,
+    tags: [],
   }
 }
 
+/**
+ * Fallback-детекция подкатегории по хинтам из таксономии.
+ * Используется только в analyzeWithoutAI и при бекфилле, когда LLM недоступен.
+ */
+function detectSubcategoryByHints(lowerText: string, domain: DomainKey): string | null {
+  const d = TAXONOMY.find((x) => x.key === domain)
+  if (!d) return null
+  for (const s of d.subcategories) {
+    for (const hint of s.hints) {
+      if (!hint) continue
+      if (lowerText.includes(hint.toLowerCase())) return s.key
+    }
+  }
+  return null
+}
+
 // Analyze with OpenAI
-async function analyzeWithAI(text: string): Promise<AnalysisResult> {
+export async function analyzeWithAI(text: string): Promise<AnalysisResult> {
   // OPTIMIZATION: Check for simple intents first (no AI call needed)
   const simpleIntent = detectSimpleIntent(text)
   if (simpleIntent) {
@@ -375,23 +420,63 @@ async function analyzeWithAI(text: string): Promise<AnalysisResult> {
       return analyzeWithoutAI(text)
     }
 
-    const result = JSON.parse(jsonMatch[0]) as AnalysisResult
-    
+    const raw = JSON.parse(jsonMatch[0]) as Partial<AnalysisResult> & Record<string, any>
+
     // Determine autoReplyAllowed based on intent
     const autoReplyIntents = ['greeting', 'gratitude', 'closing', 'faq_pricing', 'faq_hours', 'faq_contacts']
-    const autoReplyAllowed = result.autoReplyAllowed ?? autoReplyIntents.includes(result.intent)
-    
-    // Validate and normalize
+    const autoReplyAllowed = raw.autoReplyAllowed ?? autoReplyIntents.includes(raw.intent as string)
+
+    // === Валидация таксономии ===
+    const category = (raw.category as string) || 'general'
+    const lowerText = text.toLowerCase()
+
+    // 1. domain: берём из LLM, если валиден; иначе маппим из legacy category
+    let domain: DomainKey = isValidDomain(raw.domain as string)
+      ? (raw.domain as DomainKey)
+      : (LEGACY_CATEGORY_TO_DOMAIN[category] || 'other')
+
+    // 2. subcategory: если LLM дал невалидный ключ — null, затем пробуем хинты
+    let subcategory: string | null = null
+    if (raw.subcategory && isValidSubcategory(domain, raw.subcategory as string)) {
+      subcategory = raw.subcategory as string
+    } else if (raw.subcategory && isValidSubcategory(null, raw.subcategory as string)) {
+      // Подкатегория валидна, но относится к другому домену — выравниваем домен
+      const correctDomain = getDomainForSubcategory(raw.subcategory as string)
+      if (correctDomain) {
+        domain = correctDomain
+        subcategory = raw.subcategory as string
+      }
+    }
+    if (!subcategory) {
+      subcategory = detectSubcategoryByHints(lowerText, domain)
+    }
+
+    // 3. theme: свободная строка, тримим и ограничиваем длину
+    const rawTheme = typeof raw.theme === 'string' ? raw.theme.trim() : ''
+    const theme = rawTheme ? rawTheme.slice(0, 300) : null
+
+    // 4. tags: массив строк, до 5 штук, короткие
+    const rawTags = Array.isArray(raw.tags) ? raw.tags : []
+    const tags = rawTags
+      .filter((t): t is string => typeof t === 'string')
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0 && t.length <= 40)
+      .slice(0, 5)
+
     return {
-      category: result.category || 'general',
-      sentiment: result.sentiment || 'neutral',
-      intent: result.intent || 'information',
-      urgency: Math.min(5, Math.max(0, Number(result.urgency) || 1)),
-      isProblem: Boolean(result.isProblem),
-      needsResponse: result.needsResponse !== false, // Default to true if not specified
+      category,
+      sentiment: (raw.sentiment as string) || 'neutral',
+      intent: (raw.intent as string) || 'information',
+      urgency: Math.min(5, Math.max(0, Number(raw.urgency) || 1)),
+      isProblem: Boolean(raw.isProblem),
+      needsResponse: raw.needsResponse !== false,
       autoReplyAllowed,
-      summary: result.summary || text.slice(0, 100),
-      entities: result.entities || {},
+      summary: (raw.summary as string) || text.slice(0, 100),
+      entities: (raw.entities as Record<string, string>) || {},
+      domain,
+      subcategory,
+      theme,
+      tags,
     }
 
   } catch (e: any) {
@@ -469,10 +554,14 @@ export default async function handler(req: Request): Promise<Response> {
             is_problem = ${analysis.isProblem},
             ai_summary = ${analysis.summary},
             ai_extracted_entities = ${JSON.stringify(analysis.entities)},
+            ai_domain = ${analysis.domain},
+            ai_subcategory = ${analysis.subcategory},
+            ai_theme = ${analysis.theme},
+            ai_tags = ${analysis.tags as any},
             auto_reply_candidate = ${analysis.autoReplyAllowed}
           WHERE id = ${messageId} AND org_id = ${orgId}
         `
-        console.log(`[AI Analyze] Updated message ${messageId}`)
+        console.log(`[AI Analyze] Updated message ${messageId} (domain=${analysis.domain}, sub=${analysis.subcategory || '-'}, theme="${analysis.theme ? analysis.theme.slice(0, 60) : '-'}")`)
       }
 
       // Update channel awaiting_reply based on needsResponse

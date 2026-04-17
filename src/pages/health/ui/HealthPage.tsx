@@ -9,6 +9,8 @@ import {
 import { fetchSupportHealth, type SupportHealthPayload, type HealthPeriod, type HealthDrillKind } from '@/shared/api'
 import { HealthDrilldownModal } from './HealthDrilldownModal'
 import { RootCauseSection } from './RootCauseSection'
+import { CategoryFlowSection } from './CategoryFlowSection'
+import { TaxonomyBackfillPanel } from './TaxonomyBackfillPanel'
 
 const PERIOD_OPTIONS: { value: HealthPeriod; label: string }[] = [
   { value: '7d', label: 'Последние 7 дней' },
@@ -178,6 +180,12 @@ export function HealthPage() {
           color="text-slate-600 bg-slate-100"
         />
       </div>
+
+      {/* Новая таксономия: KPI + treemap + stacked bars + таблицы */}
+      <CategoryFlowSection period={period} />
+
+      {/* Переразметка таксономии (админский блок) */}
+      <TaxonomyBackfillPanel period={period} />
 
       {/* Корневые причины — AI-анализ */}
       <RootCauseSection period={period} />

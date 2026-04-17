@@ -166,6 +166,13 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`; synced.push('messages.mime_type') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS sender_username VARCHAR(255)`; synced.push('messages.sender_username') } catch (e) { /* exists */ }
 
+    // ============ HIERARCHICAL AI TAXONOMY ============
+    // Расширенная классификация сообщений: domain → subcategory → theme + tags
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS ai_domain VARCHAR(50)`; synced.push('messages.ai_domain') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS ai_subcategory VARCHAR(100)`; synced.push('messages.ai_subcategory') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS ai_theme VARCHAR(300)`; synced.push('messages.ai_theme') } catch (e) { /* exists */ }
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS ai_tags TEXT[]`; synced.push('messages.ai_tags') } catch (e) { /* exists */ }
+
     // ============ CHANNELS TABLE ============
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS last_client_message_at TIMESTAMP`; synced.push('channels.last_client_message_at') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS last_team_message_at TIMESTAMP`; synced.push('channels.last_team_message_at') } catch (e) { /* exists */ }
@@ -425,6 +432,10 @@ export default async function handler(req: Request): Promise<Response> {
     try { await sql`CREATE INDEX IF NOT EXISTS idx_conv_sessions_channel ON support_conversation_sessions(channel_id)`; synced.push('INDEX: idx_conv_sessions_channel') } catch (e) { /* exists */ }
     try { await sql`CREATE INDEX IF NOT EXISTS idx_conv_sessions_purpose ON support_conversation_sessions(purpose)`; synced.push('INDEX: idx_conv_sessions_purpose') } catch (e) { /* exists */ }
     try { await sql`CREATE INDEX IF NOT EXISTS idx_cases_is_shadow ON support_cases(is_shadow) WHERE is_shadow = true`; synced.push('INDEX: idx_cases_is_shadow') } catch (e) { /* exists */ }
+
+    // Индексы под новую таксономию — агрегация на /health
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_domain ON support_messages(org_id, ai_domain, created_at DESC) WHERE ai_domain IS NOT NULL`; synced.push('INDEX: idx_messages_org_domain') } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_messages_org_subcategory ON support_messages(org_id, ai_subcategory, created_at DESC) WHERE ai_subcategory IS NOT NULL`; synced.push('INDEX: idx_messages_org_subcategory') } catch (e) { /* exists */ }
 
     // ============ CREATE SEQUENCES ============
     try { await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`; synced.push('SEQUENCE: support_case_ticket_seq') } catch (e) { /* exists */ }
