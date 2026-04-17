@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { fetchSupportHealth, type SupportHealthPayload, type HealthPeriod, type HealthDrillKind } from '@/shared/api'
 import { HealthDrilldownModal } from './HealthDrilldownModal'
+import { RootCauseSection } from './RootCauseSection'
 
 const PERIOD_OPTIONS: { value: HealthPeriod; label: string }[] = [
   { value: '7d', label: 'Последние 7 дней' },
@@ -178,6 +179,9 @@ export function HealthPage() {
         />
       </div>
 
+      {/* Корневые причины — AI-анализ */}
+      <RootCauseSection period={period} />
+
       {/* Что делать прямо сейчас */}
       {actions.length > 0 && (
         <div className="bg-white border-2 border-blue-200 rounded-xl p-4 mb-5">
@@ -238,10 +242,10 @@ export function HealthPage() {
           ))}
         </SectionCard>
 
-        {/* Root causes */}
+        {/* Root causes (по полю root_cause из кейсов — заполняет агент) */}
         <SectionCard
-          title="Корневые причины"
-          hint="С наибольшим влиянием на выручку"
+          title="Причины из карточек кейсов"
+          hint="Что агенты вручную указали в root_cause"
           icon={Flame}
           empty={data.topRootCauses.length === 0}
         >

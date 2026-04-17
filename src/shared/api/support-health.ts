@@ -1,4 +1,4 @@
-import { apiGet } from '../services/api.service'
+import { apiGet, apiPost } from '../services/api.service'
 
 export type HealthPeriod = '7d' | '30d' | '90d'
 
@@ -158,6 +158,66 @@ export interface HealthDrillPayload {
   items: HealthDrillItem[]
   channels: HealthDrillChannel[]
   total: number
+}
+
+export interface RootCauseFixStep {
+  step: string
+  owner: string
+}
+
+export interface RootCauseChannel {
+  id: string
+  name: string
+  count: number
+}
+
+export interface RootCauseResult {
+  clusterKey: string
+  clusterLabel: string
+  sampleCount: number
+  rootCause: string
+  whatBreaks: string
+  whyItHappens: string
+  severity: 'critical' | 'high' | 'medium' | 'low' | string
+  affectedCount: number
+  fixSteps: RootCauseFixStep[]
+  tags: string[]
+  affectedChannels: RootCauseChannel[]
+  exampleMessageIds: string[]
+  generatedAt: string
+  model: string
+}
+
+export interface RootCauseAnalysisPayload {
+  period: HealthPeriod
+  generatedAt: string | null
+  results: RootCauseResult[]
+  fromCache?: boolean
+  note?: string
+  error?: string
+}
+
+export async function fetchRootCauseAnalysis(params?: {
+  period?: HealthPeriod
+  market?: string
+}): Promise<RootCauseAnalysisPayload> {
+  const q = new URLSearchParams()
+  q.set('period', params?.period || '7d')
+  if (params?.market) q.set('market', params.market)
+  return apiGet<RootCauseAnalysisPayload>(`/analytics/root-cause-analysis?${q.toString()}`)
+}
+
+export async function runRootCauseAnalysis(params?: {
+  period?: HealthPeriod
+  market?: string
+  force?: boolean
+}): Promise<RootCauseAnalysisPayload> {
+  const q = new URLSearchParams()
+  q.set('period', params?.period || '7d')
+  if (params?.market) q.set('market', params.market)
+  return apiPost<RootCauseAnalysisPayload>(`/analytics/root-cause-analysis?${q.toString()}`, {
+    force: params?.force ?? false,
+  })
 }
 
 export async function fetchHealthDrilldown(params: {

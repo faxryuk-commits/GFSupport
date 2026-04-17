@@ -375,6 +375,34 @@ export default async function handler(req: Request): Promise<Response> {
       synced.push('TABLE: support_agent_markets')
     } catch (e) { /* exists */ }
 
+    // ============ ROOT CAUSE ANALYSIS CACHE ============
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_root_cause_analysis (
+          id VARCHAR(64) PRIMARY KEY,
+          org_id VARCHAR(50) NOT NULL,
+          market_id VARCHAR(50),
+          period_key VARCHAR(10) NOT NULL,
+          cluster_key VARCHAR(100) NOT NULL,
+          cluster_label VARCHAR(255),
+          sample_count INTEGER DEFAULT 0,
+          root_cause TEXT,
+          what_breaks TEXT,
+          why_it_happens TEXT,
+          severity VARCHAR(20),
+          affected_count INTEGER DEFAULT 0,
+          fix_steps JSONB DEFAULT '[]'::jsonb,
+          tags JSONB DEFAULT '[]'::jsonb,
+          affected_channels JSONB DEFAULT '[]'::jsonb,
+          example_message_ids JSONB DEFAULT '[]'::jsonb,
+          model VARCHAR(50),
+          generated_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      synced.push('TABLE: support_root_cause_analysis')
+    } catch (e) { /* exists */ }
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_rca_org_period ON support_root_cause_analysis(org_id, period_key, generated_at DESC)`; synced.push('INDEX: idx_rca_org_period') } catch (e) { /* exists */ }
+
     // ============ MARKET_ID COLUMNS ============
     try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`; synced.push('channels.market_id') } catch (e) { /* exists */ }
     try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`; synced.push('cases.market_id') } catch (e) { /* exists */ }
