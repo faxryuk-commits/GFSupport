@@ -3,6 +3,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { loadSla, businessMinutesBetween, type SlaConfig } from '../lib/sla.js'
 import { TAXONOMY, LEGACY_CATEGORY_TO_DOMAIN, type DomainKey } from '../ai/taxonomy.js'
 import { CHURN_PATTERNS } from '../lib/churn-signals.js'
+import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
 
 export const config = {
   runtime: 'edge',
@@ -69,6 +70,9 @@ export default async function handler(req: Request): Promise<Response> {
   const now = new Date()
   const fromDate = new Date(now.getTime() - days * 86400000)
   const fromISO = fromDate.toISOString()
+
+  // Подстраховка: если миграция ещё не прокатилась, добавим колонки на лету
+  await ensureTaxonomyColumns()
 
   const sla = await loadSla(orgId)
 

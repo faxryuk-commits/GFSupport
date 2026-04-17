@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import { getOpenAIKey, getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
+import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
 import {
   TAXONOMY,
   isValidDomain,
@@ -545,6 +546,8 @@ export default async function handler(req: Request): Promise<Response> {
 
       // Update message in database
       if (messageId) {
+        // Гарантируем наличие колонок таксономии (no-op если уже есть)
+        await ensureTaxonomyColumns()
         await sql`
           UPDATE support_messages SET
             ai_category = ${analysis.category},

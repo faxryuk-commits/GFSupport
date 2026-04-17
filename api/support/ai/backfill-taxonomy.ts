@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { analyzeWithAI } from './analyze.js'
+import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
 
 export const config = {
   runtime: 'edge',
@@ -33,6 +34,9 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
+
+  // Подстраховка: если миграция ещё не прокатилась
+  await ensureTaxonomyColumns()
 
   if (req.method === 'GET') {
     const url = new URL(req.url)
