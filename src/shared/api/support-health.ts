@@ -193,6 +193,8 @@ export interface RootCauseAnalysisPayload {
   generatedAt: string | null
   results: RootCauseResult[]
   fromCache?: boolean
+  partial?: boolean
+  failedClusters?: string[]
   note?: string
   error?: string
 }

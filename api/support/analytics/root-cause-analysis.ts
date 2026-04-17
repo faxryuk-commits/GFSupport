@@ -5,7 +5,13 @@ import { getSQL, getOpenAIKey, json } from '../lib/db.js'
 export const config = {
   runtime: 'edge',
   regions: ['iad1'],
+  maxDuration: 60,
 }
+
+// Максимум кластеров за один запуск, чтобы уложиться в окно edge-функции
+const MAX_CLUSTERS = 5
+// Таймаут на один вызов LLM, сек
+const LLM_TIMEOUT_MS = 18_000
 
 /**
  * GET  /api/support/analytics/root-cause-analysis?period=7d&market=...
@@ -127,35 +133,53 @@ async function loadClusters(
     GROUP BY LOWER(ai_category)
     HAVING COUNT(*) >= 5
     ORDER BY messages DESC
-    LIMIT 8
+    LIMIT ${MAX_CLUSTERS}
   `
 
   if (rows.length === 0) return []
 
-  const clusters: Cluster[] = []
-  for (const row of rows) {
-    const key: string = row.cluster_key
-    const sampleRows: any[] = await sql`
-      SELECT m.id, m.channel_id, ch.name as channel_name,
-             COALESCE(NULLIF(m.ai_summary, ''), NULLIF(m.text_content, ''), NULLIF(m.transcript, '')) as text,
-             m.created_at, COALESCE(m.ai_urgency, 0) as urgency, m.ai_sentiment
+  // Грузим примеры по всем кластерам одним JOIN-запросом, чтобы избежать N+1 и ускорить edge-функцию
+  const keys = rows.map((r: any) => r.cluster_key)
+  const sampleRows: any[] = await sql`
+    SELECT * FROM (
+      SELECT
+        LOWER(m.ai_category) as cluster_key,
+        m.id, m.channel_id, ch.name as channel_name,
+        COALESCE(NULLIF(m.ai_summary, ''), NULLIF(m.text_content, ''), NULLIF(m.transcript, '')) as text,
+        m.created_at, COALESCE(m.ai_urgency, 0) as urgency, m.ai_sentiment,
+        ROW_NUMBER() OVER (
+          PARTITION BY LOWER(m.ai_category)
+          ORDER BY COALESCE(m.ai_urgency, 0) DESC, m.created_at DESC
+        ) as rn
       FROM support_messages m
       LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = ${orgId}
       WHERE m.org_id = ${orgId}
         AND m.is_from_client = true
-        AND LOWER(m.ai_category) = ${key}
+        AND LOWER(m.ai_category) = ANY(${keys}::text[])
         AND m.created_at >= ${fromDate}::timestamptz AND m.created_at < ${toDate}::timestamptz
         AND (${market}::text IS NULL OR ch.market_id = ${market})
-      ORDER BY COALESCE(m.ai_urgency, 0) DESC, m.created_at DESC
-      LIMIT 40
-    `
+    ) t
+    WHERE rn <= 30
+  `
 
-    const samples: ClusterSample[] = sampleRows
+  const byCluster = new Map<string, any[]>()
+  for (const r of sampleRows) {
+    const key = r.cluster_key
+    if (!byCluster.has(key)) byCluster.set(key, [])
+    byCluster.get(key)!.push(r)
+  }
+
+  const clusters: Cluster[] = []
+  for (const row of rows) {
+    const key: string = row.cluster_key
+    const sRows = byCluster.get(key) || []
+
+    const samples: ClusterSample[] = sRows
       .map((r) => ({
         id: String(r.id),
         channelId: r.channel_id || null,
         channelName: r.channel_name || 'Канал',
-        text: (r.text || '').slice(0, 500),
+        text: (r.text || '').slice(0, 400),
         createdAt: r.created_at,
         urgency: parseInt(r.urgency || 0),
         sentiment: r.ai_sentiment || null,
@@ -185,30 +209,34 @@ async function loadClusters(
 }
 
 async function analyzeCluster(openai: OpenAI, model: string, cluster: Cluster): Promise<RCAResult | null> {
-  const chosen = pickSamples(cluster.samples, 12)
+  const chosen = pickSamples(cluster.samples, 10)
   const numbered = chosen
-    .map((s, i) => `[${i + 1}] ${s.channelName} | urgency=${s.urgency}${s.sentiment ? ` | ${s.sentiment}` : ''} | ${s.text.replace(/\s+/g, ' ').trim()}`)
+    .map((s, i) => `[${i + 1}] ${s.channelName} | u=${s.urgency}${s.sentiment ? ` | ${s.sentiment}` : ''} | ${s.text.replace(/\s+/g, ' ').trim()}`)
     .join('\n')
 
-  const userPrompt = `Тема кластера: «${cluster.label}»
-Всего сообщений за период: ${cluster.messages}, уникальных каналов в примерах: ${cluster.channels.length}.
+  const userPrompt = `Тема: «${cluster.label}». Сообщений за период: ${cluster.messages}.
 
-Вот ${chosen.length} примеров:
+${chosen.length} примеров:
 ${numbered}
 
-Сформулируй корневую причину строго по схеме.`
+Сформулируй корневую причину строго по схеме JSON.`
 
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS)
   try {
-    const completion = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 700,
-      response_format: { type: 'json_object' },
-    })
+    const completion = await openai.chat.completions.create(
+      {
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.2,
+        max_tokens: 450,
+        response_format: { type: 'json_object' },
+      },
+      { signal: controller.signal as any },
+    )
 
     const content = completion.choices[0]?.message?.content || ''
     const parsed = JSON.parse(content) as Partial<RCAResult> & { fixSteps?: any[] }
@@ -238,8 +266,11 @@ ${numbered}
       model,
     }
   } catch (e) {
-    console.error('[RCA] analyze error for cluster', cluster.key, e instanceof Error ? e.message : e)
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[RCA] analyze error for cluster', cluster.key, msg)
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -391,10 +422,17 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ period: periodKey, generatedAt: now.toISOString(), results: [], note: 'Недостаточно данных для анализа' }, 200)
     }
 
+    // Запускаем анализ всех кластеров параллельно и принимаем частичные результаты,
+    // чтобы уложиться в окно edge-функции
+    const settled = await Promise.allSettled(
+      clusters.map((c) => analyzeCluster(openai, model, c)),
+    )
     const results: RCAResult[] = []
-    for (const cluster of clusters) {
-      const r = await analyzeCluster(openai, model, cluster)
-      if (r) results.push(r)
+    const failed: string[] = []
+    for (let i = 0; i < settled.length; i++) {
+      const s = settled[i]
+      if (s.status === 'fulfilled' && s.value) results.push(s.value)
+      else failed.push(clusters[i].key)
     }
 
     await saveAnalysis(sql, orgId, periodKey, market, results)
@@ -402,7 +440,18 @@ export default async function handler(req: Request): Promise<Response> {
     const sevRank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 }
     results.sort((a, b) => (sevRank[b.severity] || 0) - (sevRank[a.severity] || 0) || b.affectedCount - a.affectedCount)
 
-    return json({ period: periodKey, generatedAt: now.toISOString(), results, fromCache: false }, 200)
+    return json(
+      {
+        period: periodKey,
+        generatedAt: now.toISOString(),
+        results,
+        fromCache: false,
+        partial: failed.length > 0,
+        failedClusters: failed,
+        note: failed.length > 0 ? `Не удалось проанализировать ${failed.length} из ${clusters.length} кластеров (таймаут или ошибка LLM)` : undefined,
+      },
+      200,
+    )
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error'
     console.error('[RCA]', msg)

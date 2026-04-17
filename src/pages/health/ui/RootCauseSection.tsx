@@ -186,7 +186,12 @@ export function RootCauseSection({ period }: Props) {
 
       {hasResults && (
         <>
-          {isStale && (
+          {data!.partial && (
+            <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
+              {data!.note || 'Часть кластеров не успела проанализироваться — нажми «Обновить», чтобы дойти до остальных'}
+            </div>
+          )}
+          {!data!.partial && isStale && (
             <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-800">
               Анализ устарел — рекомендуем обновить
             </div>
