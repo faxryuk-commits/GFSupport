@@ -95,7 +95,6 @@ export default async function handler(req: Request): Promise<Response> {
         m.transcript,
         c.status AS case_status,
         c.resolved_at AS case_resolved_at,
-        c.last_activity_at AS case_last_activity_at,
         c.updated_at AS case_updated_at
       FROM support_messages m
       LEFT JOIN support_cases c ON c.id = m.case_id AND c.org_id = m.org_id
@@ -277,8 +276,9 @@ export default async function handler(req: Request): Promise<Response> {
     )
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unknown error'
-    console.error('[category-flow]', msg)
-    return json({ error: msg }, 500)
+    const stack = e instanceof Error ? e.stack : undefined
+    console.error('[category-flow] error:', msg, stack)
+    return json({ error: msg, where: 'category-flow' }, 500)
   }
 }
 
@@ -338,9 +338,8 @@ function computeFlow(
   if (caseStatus) {
     if (caseStatus === 'resolved' || caseStatus === 'closed') return 'resolved'
     if (caseStatus === 'blocked') return 'blocked'
-    // Открытый кейс — считаем stuck/in_progress по последней активности
-    const lastActivity: string | null =
-      (m.case_last_activity_at as string | null) || (m.case_updated_at as string | null)
+    // Открытый кейс — считаем stuck/in_progress по последнему updated_at кейса
+    const lastActivity: string | null = m.case_updated_at as string | null
     if (!lastActivity) return 'in_progress'
     const inactivityMin = businessMinutesBetween(lastActivity, now, sla)
     return inactivityMin > sla.targetResolutionTime ? 'stuck' : 'in_progress'
