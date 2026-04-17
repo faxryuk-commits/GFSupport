@@ -55,7 +55,10 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
+            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -68,7 +71,10 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
+            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -81,7 +87,10 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
+            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -94,7 +103,10 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
+            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -107,7 +119,10 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
+            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -121,7 +136,10 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
             a.name as assignee_name,
             (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name
+            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
+            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
+            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
           FROM support_cases c
           LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
           LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -178,6 +196,9 @@ export default async function handler(req: Request): Promise<Response> {
           createdAt: c.created_at,
           updatedAt: c.updated_at,
           updatedBy: c.updated_by,
+          lastActivityAt: c.last_activity_at,
+          lastStatusChangeAt: c.last_status_change_at,
+          lastActivityType: c.last_activity_type,
         })),
         total,
         limit: limitParam,

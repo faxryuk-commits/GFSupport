@@ -72,6 +72,10 @@ export interface Case {
   updatedBy?: string
   updatedByName?: string
   sourceMessageId?: string
+  // Динамика: метки последних активностей (из support_case_activities)
+  lastActivityAt?: string | null
+  lastStatusChangeAt?: string | null
+  lastActivityType?: string | null
 }
 
 export interface Channel {

@@ -15,6 +15,19 @@ export interface CaseComment {
   time: string
 }
 
+export interface CaseActivity {
+  id: string
+  type: string
+  title?: string
+  description?: string
+  fromStatus?: string | null
+  toStatus?: string | null
+  managerId?: string | null
+  managerName?: string | null
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
 export async function fetchCases(filters?: {
   status?: CaseStatus | string
   assignedTo?: string
@@ -35,6 +48,12 @@ export async function fetchCases(filters?: {
 
 export async function fetchCase(id: string): Promise<Case> {
   return apiGet<{ case: Case }>(`/cases/${id}`).then(r => r.case)
+}
+
+export async function fetchCaseActivities(id: string): Promise<CaseActivity[]> {
+  return apiGet<{ activities: CaseActivity[] }>(`/cases/${id}`)
+    .then(r => r.activities || [])
+    .catch(() => [])
 }
 
 export async function createCase(data: {

@@ -2,7 +2,18 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
-import { CASE_STATUS_CONFIG, KANBAN_STATUSES, ACTIVE_STATUSES, ARCHIVE_STATUSES, type CaseStatus, type Case } from '@/entities/case'
+import { CasesNowSection } from './CasesNowSection'
+import {
+  ACTIVE_STATUSES,
+  ARCHIVE_STATUSES,
+  UI_ACTIVE_COLUMNS,
+  UI_COLUMN_CONFIG,
+  getUiColumn,
+  uiColumnToDefaultStatus,
+  type UiColumn,
+  type CaseStatus,
+  type Case,
+} from '@/entities/case'
 import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCaseComment, fetchCaseComments, fetchChannels, fetchAgents, type CaseComment } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
@@ -27,6 +38,10 @@ function mapCaseToCardData(c: Case): CaseCardData {
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     reporterName: c.reporterName,
     commentsCount: c.messagesCount,
+    isRecurring: Boolean(c.isRecurring) || c.status === 'recurring',
+    isBlocked: c.status === 'blocked',
+    lastStatusChangeAt: c.lastStatusChangeAt ?? null,
+    lastActivityAt: c.lastActivityAt ?? null,
   }
 }
 
@@ -211,9 +226,10 @@ export function CasesPage() {
     setChannelFilter('all')
   }
 
-  const getCasesByStatus = (status: CaseStatus): CaseCardData[] => {
+  // Фильтрация по UI-колонке (группирует несколько DB-статусов в одну колонку)
+  const getCasesByUiColumn = (col: UiColumn): CaseCardData[] => {
     return filteredCases
-      .filter(c => c.status === status)
+      .filter(c => getUiColumn(c.status) === col)
       .map(mapCaseToCardData)
   }
 
@@ -226,16 +242,23 @@ export function CasesPage() {
   const handleDragStart = (caseId: string) => setDraggedCase(caseId)
   const handleDragOver = (e: React.DragEvent) => e.preventDefault()
   
-  const handleDrop = async (status: CaseStatus) => {
+  const handleDrop = async (col: UiColumn) => {
     if (!draggedCase) return
-    
+
     const caseId = draggedCase
     setDraggedCase(null)
-    
+
+    const current = cases.find(c => c.id === caseId)
+    if (!current) return
+    // Если уже в этой UI-колонке — ничего не меняем (не теряем blocked/recurring)
+    if (getUiColumn(current.status) === col) return
+
+    const status = uiColumnToDefaultStatus(col)
+
     // Оптимистичное обновление UI
     const previousCases = [...cases]
     setCases(prev => prev.map(c => c.id === caseId ? { ...c, status } : c))
-    
+
     try {
       setUpdatingStatus(caseId)
       await updateCaseStatus(caseId, status)
@@ -595,6 +618,11 @@ export function CasesPage() {
           </div>
         )}
 
+        {/* Что происходит сейчас */}
+        {viewMode === 'active' && cases.length > 0 && (
+          <CasesNowSection cases={cases} onSelectCase={handleViewCase} />
+        )}
+
         {/* Kanban Board / Archive View */}
         {cases.length === 0 && !loading ? (
           <EducationalEmptyState
@@ -611,60 +639,85 @@ export function CasesPage() {
               onClick: () => setIsCreateModalOpen(true),
             }}
           />
-        ) : (
-        <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
-          {(viewMode === 'active' ? KANBAN_STATUSES : ARCHIVE_STATUSES).map(status => {
-            const config = CASE_STATUS_CONFIG[status]
-            const statusCases = getCasesByStatus(status)
-            const isArchiveStatus = ARCHIVE_STATUSES.includes(status as any)
-            
-            return (
-              <div 
-                key={status} 
-                className="flex-shrink-0 w-72 flex flex-col"
-                onDragOver={viewMode === 'active' ? handleDragOver : undefined}
-                onDrop={viewMode === 'active' ? () => handleDrop(status) : undefined}
-              >
-                <div className={`px-3 py-2.5 rounded-t-xl ${config.bgColor}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${isArchiveStatus ? 'bg-slate-400' : 'bg-white/70'}`} />
-                      <span className={`font-semibold text-sm ${isArchiveStatus ? config.color : 'text-white'}`}>
-                        {config.label}
+        ) : viewMode === 'active' ? (
+          <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
+            {UI_ACTIVE_COLUMNS.map(col => {
+              const config = UI_COLUMN_CONFIG[col]
+              const colCases = getCasesByUiColumn(col)
+
+              return (
+                <div
+                  key={col}
+                  className="flex-shrink-0 w-80 flex flex-col"
+                  onDragOver={handleDragOver}
+                  onDrop={() => handleDrop(col)}
+                >
+                  <div className={`px-3 py-2.5 rounded-t-xl ${config.bgColor}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-white/70" />
+                        <span className={`font-semibold text-sm ${config.color}`}>
+                          {config.label}
+                        </span>
+                        <span className={`text-[11px] ${config.color} opacity-70`}>{config.hint}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-white/25 text-white">
+                        {colCases.length}
                       </span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                      isArchiveStatus ? 'bg-white/50 text-slate-600' : 'bg-white/25 text-white'
-                    }`}>
-                      {statusCases.length}
-                    </span>
+                  </div>
+
+                  <div className="flex-1 bg-slate-50 border border-slate-200 border-t-0 rounded-b-xl p-2 space-y-2 min-h-[400px] overflow-y-auto">
+                    {colCases.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 text-sm py-8">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-2">
+                          <Plus className="w-5 h-5" />
+                        </div>
+                        Перетащите сюда
+                      </div>
+                    ) : (
+                      colCases.map(caseItem => (
+                        <CaseCard
+                          key={caseItem.id}
+                          caseItem={caseItem}
+                          onView={() => handleViewCase(caseItem.id)}
+                          onDragStart={() => handleDragStart(caseItem.id)}
+                          isDragging={draggedCase === caseItem.id}
+                        />
+                      ))
+                    )}
                   </div>
                 </div>
-
-                <div className="flex-1 bg-slate-50 border border-slate-200 border-t-0 rounded-b-xl p-2 space-y-2 min-h-[400px] overflow-y-auto">
-                  {statusCases.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 text-sm py-8">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-2">
-                        <Plus className="w-5 h-5" />
-                      </div>
-                      {viewMode === 'active' ? 'Перетащите сюда' : 'Пусто'}
-                    </div>
-                  ) : (
-                    statusCases.map(caseItem => (
-                      <CaseCard 
-                        key={caseItem.id} 
-                        caseItem={caseItem}
-                        onView={() => handleViewCase(caseItem.id)}
-                        onDragStart={() => handleDragStart(caseItem.id)}
-                        isDragging={draggedCase === caseItem.id}
-                      />
-                    ))
-                  )}
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto pb-4">
+            {(() => {
+              const doneCases = getCasesByUiColumn('done')
+              if (doneCases.length === 0) {
+                return (
+                  <div className="h-64 flex flex-col items-center justify-center text-slate-400 text-sm">
+                    <Archive className="w-10 h-10 mb-2 text-slate-300" />
+                    Закрытых кейсов за выбранный период нет
+                  </div>
+                )
+              }
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {doneCases.map(caseItem => (
+                    <CaseCard
+                      key={caseItem.id}
+                      caseItem={caseItem}
+                      onView={() => handleViewCase(caseItem.id)}
+                      onDragStart={() => {}}
+                      isDragging={false}
+                    />
+                  ))}
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })()}
+          </div>
         )}
       </div>
 

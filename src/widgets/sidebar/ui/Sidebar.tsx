@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Bot,
   Bell,
+  Activity,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
@@ -205,6 +206,7 @@ const mainNavItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
+  { path: '/health', label: 'Где болит', icon: Activity },
   { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
   { path: '/sla-report', label: 'SLA Отчёт', icon: Target },
   { path: '/knowledge', label: 'База знаний', icon: Brain },

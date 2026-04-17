@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
-import { fetchCaseComments, type CaseComment } from '@/shared/api'
+import { fetchCaseComments, fetchCaseActivities, type CaseComment, type CaseActivity } from '@/shared/api'
 
 function formatDate(dateStr: string | undefined | null): string {
   if (!dateStr) return 'Не указано'
@@ -27,6 +27,112 @@ function formatRelativeTime(dateStr: string): string {
   if (hrs > 0) return `${hrs}ч назад`
   if (mins > 0) return `${mins}м назад`
   return 'только что'
+}
+
+// ===== Таймлайн истории кейса =====
+
+const STATUS_LABELS: Record<string, string> = {
+  detected: 'Обнаружен',
+  in_progress: 'В работе',
+  waiting: 'Ожидание',
+  blocked: 'Заблокирован',
+  recurring: 'Повторяется',
+  resolved: 'Решён',
+  closed: 'Закрыт',
+  cancelled: 'Отменён',
+}
+
+function describeActivity(a: CaseActivity): { icon: 'history' | 'clock' | 'chat' | 'system'; text: string } {
+  const actor = a.managerName ? a.managerName : 'Система'
+  switch (a.type) {
+    case 'status_change':
+    case 'status_changed': {
+      const from = a.fromStatus ? (STATUS_LABELS[a.fromStatus] || a.fromStatus) : null
+      const to = a.toStatus ? (STATUS_LABELS[a.toStatus] || a.toStatus) : null
+      if (from && to) return { icon: 'history', text: `${actor} перевёл: ${from} → ${to}` }
+      if (to) return { icon: 'history', text: `${actor} установил статус: ${to}` }
+      return { icon: 'history', text: a.title || 'Смена статуса' }
+    }
+    case 'assigned':
+    case 'assignment':
+      return { icon: 'history', text: a.title || `${actor} изменил ответственного` }
+    case 'comment':
+    case 'comment_added':
+      return { icon: 'chat', text: `${actor} оставил комментарий` }
+    case 'created':
+      return { icon: 'clock', text: a.title || 'Кейс создан' }
+    default:
+      return { icon: 'system', text: a.title || a.description || a.type }
+  }
+}
+
+function CaseHistoryTimeline({
+  createdAt, activities, loading,
+}: { createdAt: string; activities: CaseActivity[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8 text-slate-400 text-sm">
+        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+        Загрузка истории…
+      </div>
+    )
+  }
+
+  // Сортируем хронологически от старых к новым
+  const sorted = [...activities].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  const hasCreatedEvent = sorted.some(a => a.type === 'created')
+
+  return (
+    <div className="space-y-3">
+      {!hasCreatedEvent && (
+        <TimelineItem
+          icon="clock"
+          text="Кейс создан"
+          time={createdAt}
+        />
+      )}
+      {sorted.length === 0 ? (
+        <div className="text-sm text-slate-400 py-4">Ещё нет записей в истории.</div>
+      ) : (
+        sorted.map(a => {
+          const d = describeActivity(a)
+          return (
+            <TimelineItem
+              key={a.id}
+              icon={d.icon}
+              text={d.text}
+              description={a.description && a.description !== d.text ? a.description : undefined}
+              time={a.createdAt}
+            />
+          )
+        })
+      )}
+    </div>
+  )
+}
+
+function TimelineItem({
+  icon, text, description, time,
+}: { icon: 'history' | 'clock' | 'chat' | 'system'; text: string; description?: string; time: string }) {
+  const iconMap = {
+    history: { el: <History className="w-4 h-4 text-blue-600" />, bg: 'bg-blue-100' },
+    clock:   { el: <Clock className="w-4 h-4 text-green-600" />, bg: 'bg-green-100' },
+    chat:    { el: <MessageSquare className="w-4 h-4 text-purple-600" />, bg: 'bg-purple-100' },
+    system:  { el: <History className="w-4 h-4 text-slate-500" />, bg: 'bg-slate-100' },
+  }[icon]
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className={`w-8 h-8 rounded-full ${iconMap.bg} flex items-center justify-center flex-shrink-0`}>
+        {iconMap.el}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-slate-800">{text}</p>
+        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+        <p className="text-xs text-slate-400 mt-0.5">{formatDate(time)} · {formatRelativeTime(time)}</p>
+      </div>
+    </div>
+  )
 }
 
 interface Agent {
@@ -78,6 +184,8 @@ export function CaseDetailModal({
   const [isInternalComment, setIsInternalComment] = useState(false)
   const [comments, setComments] = useState<CaseComment[]>([])
   const [loadingComments, setLoadingComments] = useState(false)
+  const [activities, setActivities] = useState<CaseActivity[]>([])
+  const [loadingActivities, setLoadingActivities] = useState(false)
 
   const loadComments = useCallback(async () => {
     if (!caseData?.id) return
@@ -92,11 +200,25 @@ export function CaseDetailModal({
     }
   }, [caseData?.id])
 
+  const loadActivities = useCallback(async () => {
+    if (!caseData?.id) return
+    setLoadingActivities(true)
+    try {
+      const data = await fetchCaseActivities(caseData.id)
+      setActivities(data)
+    } catch {
+      setActivities([])
+    } finally {
+      setLoadingActivities(false)
+    }
+  }, [caseData?.id])
+
   useEffect(() => {
     if (isOpen && caseData?.id) {
       loadComments()
+      loadActivities()
     }
-  }, [isOpen, caseData?.id, loadComments])
+  }, [isOpen, caseData?.id, loadComments, loadActivities])
 
   if (!caseData) return null
 
@@ -269,49 +391,11 @@ export function CaseDetailModal({
           </TabPanel>
 
           <TabPanel tabId="history" activeTab={detailTab}>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-800">Кейс создан</p>
-                  <p className="text-xs text-slate-500">{formatDate(caseData.createdAt)}</p>
-                </div>
-              </div>
-              {caseData.assignee && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                    <History className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-800">Назначен на {caseData.assignee.name}</p>
-                  </div>
-                </div>
-              )}
-              {caseData.updatedAt && caseData.updatedAt !== caseData.createdAt && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                    <History className="w-4 h-4 text-slate-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-800">Обновлён</p>
-                    <p className="text-xs text-slate-500">{formatDate(caseData.updatedAt)}</p>
-                  </div>
-                </div>
-              )}
-              {comments.length > 0 && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-800">{comments.length} комментариев</p>
-                    <p className="text-xs text-slate-500">Последний: {formatRelativeTime(comments[comments.length - 1].time)}</p>
-                  </div>
-                </div>
-              )}
-            </div>
+            <CaseHistoryTimeline
+              createdAt={caseData.createdAt}
+              activities={activities}
+              loading={loadingActivities}
+            />
           </TabPanel>
         </div>
 
