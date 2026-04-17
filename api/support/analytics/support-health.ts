@@ -142,6 +142,7 @@ export default async function handler(req: Request): Promise<Response> {
         c.title,
         c.status,
         c.priority,
+        c.channel_id,
         ch.name as channel_name,
         a.name as assignee_name,
         COALESCE(lsc.changed_at, c.created_at) as in_status_since,
@@ -186,8 +187,13 @@ export default async function handler(req: Request): Promise<Response> {
         AND (${market}::text IS NULL OR market_id = ${market})
     `
 
+    // Мусорные значения AI-классификации, которые не несут сигнала для "где болит"
+    const noiseCategories = ['unknown', 'other', 'general', 'noise', 'small_talk', 'greeting', 'closing', 'information', 'none', '']
+    const noiseIntents = ['unknown', 'other', 'greeting', 'closing', 'small_talk', 'information', 'none', 'report_problem', '']
+
     // 8. О чём реально пишут клиенты (AI-темы из сообщений)
     //    Берём только клиентские сообщения, где AI успел определить категорию
+    //    Исключаем мусорные значения и порог min 3 сообщения
     const topAiTopics = await sql`
       WITH curr AS (
         SELECT LOWER(ai_category) as topic, COUNT(*)::int as cnt
@@ -195,8 +201,10 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId}
           AND is_from_client = true
           AND ai_category IS NOT NULL AND ai_category <> ''
+          AND LOWER(ai_category) <> ALL(${noiseCategories}::text[])
           AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
         GROUP BY LOWER(ai_category)
+        HAVING COUNT(*) >= 3
       ),
       prev AS (
         SELECT LOWER(ai_category) as topic, COUNT(*)::int as cnt
@@ -204,6 +212,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId}
           AND is_from_client = true
           AND ai_category IS NOT NULL AND ai_category <> ''
+          AND LOWER(ai_category) <> ALL(${noiseCategories}::text[])
           AND created_at >= ${prevFromDate}::timestamptz AND created_at < ${fromDate}::timestamptz
         GROUP BY LOWER(ai_category)
       )
@@ -223,7 +232,7 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT 8
     `
 
-    // 9. Что хотят клиенты (AI intents)
+    // 9. Что хотят клиенты (AI intents) — фильтруем мусор и порог 3
     const topIntents = await sql`
       SELECT
         LOWER(ai_intent) as intent,
@@ -235,8 +244,10 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE org_id = ${orgId}
         AND is_from_client = true
         AND ai_intent IS NOT NULL AND ai_intent <> ''
+        AND LOWER(ai_intent) <> ALL(${noiseIntents}::text[])
         AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
       GROUP BY LOWER(ai_intent)
+      HAVING COUNT(*) >= 3
       ORDER BY messages DESC
       LIMIT 6
     `
@@ -378,6 +389,7 @@ export default async function handler(req: Request): Promise<Response> {
           title: r.title,
           status: r.status,
           priority: r.priority,
+          channelId: r.channel_id || null,
           channelName: r.channel_name,
           assigneeName: r.assignee_name,
           hoursInStatus: Math.round(Number(r.hours_in_status || 0) * 10) / 10,

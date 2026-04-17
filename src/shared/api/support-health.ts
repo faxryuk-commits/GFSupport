@@ -36,6 +36,7 @@ export interface HealthStuckCase {
   title: string
   status: string
   priority: string
+  channelId?: string
   channelName?: string
   assigneeName?: string
   hoursInStatus: number
@@ -123,4 +124,54 @@ export async function fetchSupportHealth(params?: {
   q.set('period', params?.period || '7d')
   if (params?.market) q.set('market', params.market)
   return apiGet<SupportHealthPayload>(`/analytics/support-health?${q.toString()}`)
+}
+
+export type HealthDrillKind = 'topic' | 'intent' | 'content_type' | 'language'
+
+export interface HealthDrillItem {
+  id: string
+  channelId: string
+  channelName: string
+  senderName: string
+  contentType: string
+  text: string
+  transcript: string
+  transcriptLanguage: string | null
+  aiSummary: string | null
+  aiCategory: string | null
+  aiIntent: string | null
+  aiSentiment: string | null
+  aiUrgency: number
+  createdAt: string
+}
+
+export interface HealthDrillChannel {
+  id: string
+  name: string
+  count: number
+}
+
+export interface HealthDrillPayload {
+  kind: HealthDrillKind
+  value: string
+  period: HealthPeriod
+  items: HealthDrillItem[]
+  channels: HealthDrillChannel[]
+  total: number
+}
+
+export async function fetchHealthDrilldown(params: {
+  kind: HealthDrillKind
+  value: string
+  period?: HealthPeriod
+  market?: string
+  limit?: number
+}): Promise<HealthDrillPayload> {
+  const q = new URLSearchParams()
+  q.set('kind', params.kind)
+  q.set('value', params.value)
+  q.set('period', params.period || '7d')
+  if (params.market) q.set('market', params.market)
+  if (params.limit) q.set('limit', String(params.limit))
+  return apiGet<HealthDrillPayload>(`/analytics/health-drilldown?${q.toString()}`)
 }

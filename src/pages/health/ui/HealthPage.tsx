@@ -4,9 +4,10 @@ import {
   Activity, AlertTriangle, Clock, TrendingUp, TrendingDown,
   Repeat, Users, Loader2, RefreshCw, Flame, Timer, ArrowRight,
   MessageSquare, Mic, Video, Image as ImageIcon, FileText, Languages,
-  Target, UserX, Smile, Frown,
+  Target, UserX, Smile, Frown, Zap,
 } from 'lucide-react'
-import { fetchSupportHealth, type SupportHealthPayload, type HealthPeriod } from '@/shared/api'
+import { fetchSupportHealth, type SupportHealthPayload, type HealthPeriod, type HealthDrillKind } from '@/shared/api'
+import { HealthDrilldownModal } from './HealthDrilldownModal'
 
 const PERIOD_OPTIONS: { value: HealthPeriod; label: string }[] = [
   { value: '7d', label: 'Последние 7 дней' },
@@ -40,12 +41,19 @@ function formatHours(h: number): string {
   return `${Math.round(h / 24)}д`
 }
 
+interface DrillState {
+  kind: HealthDrillKind
+  value: string
+  title: string
+}
+
 export function HealthPage() {
   const navigate = useNavigate()
   const [period, setPeriod] = useState<HealthPeriod>('7d')
   const [data, setData] = useState<SupportHealthPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [drill, setDrill] = useState<DrillState | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -91,6 +99,11 @@ export function HealthPage() {
   if (!data) return null
 
   const createdDeltaTone = data.stats.createdDelta > 0 ? 'text-red-600' : data.stats.createdDelta < 0 ? 'text-green-600' : 'text-slate-500'
+  const actions = buildActions(data, {
+    openDrill: (d) => setDrill(d),
+    goChannel: (id) => navigate(`/chats?channel=${id}`),
+    goCases: () => navigate('/cases'),
+  })
 
   return (
     <div className="h-full overflow-y-auto p-6 bg-slate-50">
@@ -164,6 +177,43 @@ export function HealthPage() {
           color="text-slate-600 bg-slate-100"
         />
       </div>
+
+      {/* Что делать прямо сейчас */}
+      {actions.length > 0 && (
+        <div className="bg-white border-2 border-blue-200 rounded-xl p-4 mb-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Zap className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-800">Что делать сейчас</div>
+              <div className="text-xs text-slate-500">Самые важные сигналы за период — с кнопкой прямого действия</div>
+            </div>
+          </div>
+          <ul className="space-y-2">
+            {actions.map((a, i) => (
+              <li
+                key={i}
+                className={`flex items-start gap-3 p-3 rounded-lg border ${a.tone === 'red' ? 'bg-red-50 border-red-100' : a.tone === 'amber' ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className={`text-sm font-semibold ${a.tone === 'red' ? 'text-red-800' : a.tone === 'amber' ? 'text-amber-800' : 'text-slate-800'}`}>
+                    {a.title}
+                  </div>
+                  <div className="text-xs text-slate-600 mt-0.5">{a.hint}</div>
+                </div>
+                <button
+                  onClick={a.onAction}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 flex-shrink-0 ${a.tone === 'red' ? 'bg-red-600 text-white hover:bg-red-700' : a.tone === 'amber' ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-slate-700 text-white hover:bg-slate-800'}`}
+                >
+                  {a.actionLabel}
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Что болит в продукте */}
@@ -278,7 +328,7 @@ export function HealthPage() {
           {data.topAiTopics.map((t) => (
             <RowLink
               key={t.topic}
-              onClick={() => navigate(`/chats?topic=${encodeURIComponent(t.topic)}`)}
+              onClick={() => setDrill({ kind: 'topic', value: t.topic, title: formatCategory(t.topic) })}
               left={
                 <>
                   <span className="font-medium text-slate-800">{formatCategory(t.topic)}</span>
@@ -300,7 +350,7 @@ export function HealthPage() {
           {data.topIntents.map((it) => (
             <RowLink
               key={it.intent}
-              onClick={() => navigate(`/chats?intent=${encodeURIComponent(it.intent)}`)}
+              onClick={() => setDrill({ kind: 'intent', value: it.intent, title: formatIntent(it.intent) })}
               left={
                 <>
                   <span className="font-medium text-slate-800">{formatIntent(it.intent)}</span>
@@ -337,7 +387,7 @@ export function HealthPage() {
           {data.contentMix.map((ct) => (
             <RowLink
               key={ct.contentType}
-              onClick={() => {}}
+              onClick={() => setDrill({ kind: 'content_type', value: ct.contentType, title: formatContentType(ct.contentType) })}
               left={
                 <>
                   <span className="flex items-center gap-2 font-medium text-slate-800">
@@ -362,7 +412,7 @@ export function HealthPage() {
           {data.byLanguage.map((l) => (
             <RowLink
               key={l.language}
-              onClick={() => {}}
+              onClick={() => setDrill({ kind: 'language', value: l.language, title: languageLabel(l.language) })}
               left={
                 <>
                   <span className="font-medium text-slate-800">{languageLabel(l.language)}</span>
@@ -439,7 +489,7 @@ export function HealthPage() {
             {data.stuckCases.map(c => (
               <RowLink
                 key={c.id}
-                onClick={() => navigate('/cases')}
+                onClick={() => c.channelId ? navigate(`/chats?channel=${c.channelId}`) : navigate('/cases')}
                 left={
                   <>
                     <span className="text-xs font-mono text-blue-600 font-semibold">
@@ -476,8 +526,133 @@ export function HealthPage() {
       <div className="text-xs text-slate-400 mt-4 text-center">
         Данные за период с {new Date(data.period.from).toLocaleDateString('ru-RU')} по {new Date(data.period.to).toLocaleDateString('ru-RU')}
       </div>
+
+      {drill && (
+        <HealthDrilldownModal
+          kind={drill.kind}
+          value={drill.value}
+          title={drill.title}
+          period={period}
+          onClose={() => setDrill(null)}
+        />
+      )}
     </div>
   )
+}
+
+// ===== action items builder =====
+
+interface ActionItem {
+  title: string
+  hint: string
+  actionLabel: string
+  tone: 'red' | 'amber' | 'slate'
+  onAction: () => void
+}
+
+interface ActionHandlers {
+  openDrill: (d: DrillState) => void
+  goChannel: (id: string) => void
+  goCases: () => void
+}
+
+function buildActions(data: SupportHealthPayload, h: ActionHandlers): ActionItem[] {
+  const out: ActionItem[] = []
+
+  if (data.stats.unassignedNow > 0) {
+    out.push({
+      title: `${data.stats.unassignedNow} ${pluralCases(data.stats.unassignedNow)} без ответственного`,
+      hint: 'Нужно назначить агента, иначе время первого ответа просядет',
+      actionLabel: 'Распределить',
+      tone: 'red',
+      onAction: h.goCases,
+    })
+  }
+
+  const stuckTop = data.stuckCases.slice(0, 3)
+  if (stuckTop.length > 0) {
+    const maxH = Math.max(...stuckTop.map((c) => c.hoursInStatus))
+    out.push({
+      title: `${data.stuckCases.length} ${pluralCases(data.stuckCases.length)} зависли > 24ч`,
+      hint: `Самый старый — ${Math.round(maxH)}ч в статусе. Посмотри и двинь${stuckTop[0].assigneeName ? `, ответственный: ${stuckTop[0].assigneeName}` : ''}`,
+      actionLabel: 'К кейсам',
+      tone: 'amber',
+      onAction: () => (stuckTop[0].channelId ? h.goChannel(stuckTop[0].channelId) : h.goCases()),
+    })
+  }
+
+  const worstAgent = data.bottomAgents.find((a) => a.stuck >= 2 || (a.assigned >= 5 && a.resolvedPct < 40))
+  if (worstAgent) {
+    out.push({
+      title: `${worstAgent.agentName}: ${worstAgent.stuck > 0 ? `${worstAgent.stuck} зависших, ` : ''}закрыто ${worstAgent.resolvedPct}% из ${worstAgent.assigned}`,
+      hint: 'Разберите один на один — либо разгрузить, либо помочь с конкретными кейсами',
+      actionLabel: 'К кейсам',
+      tone: 'red',
+      onAction: h.goCases,
+    })
+  }
+
+  const growingTopic = data.topAiTopics.find((t) => t.delta >= 5 && (t.deltaPct == null || t.deltaPct >= 25))
+  if (growingTopic) {
+    const pct = growingTopic.deltaPct != null ? `, +${growingTopic.deltaPct}%` : ''
+    out.push({
+      title: `Тема «${formatCategory(growingTopic.topic)}» резко выросла (+${growingTopic.delta}${pct})`,
+      hint: 'Посмотри сообщения — возможно, появилась системная проблема или нужна доработка',
+      actionLabel: 'Смотреть',
+      tone: 'amber',
+      onAction: () => h.openDrill({ kind: 'topic', value: growingTopic.topic, title: formatCategory(growingTopic.topic) }),
+    })
+  }
+
+  const urgentIntent = data.topIntents.find((it) => it.urgent >= 3 || (it.negative >= 5 && it.messages >= 10))
+  if (urgentIntent) {
+    const mark = urgentIntent.urgent >= 3 ? `${urgentIntent.urgent} срочных` : `${urgentIntent.negative} негативных`
+    out.push({
+      title: `«${formatIntent(urgentIntent.intent)}»: ${mark} сообщений`,
+      hint: 'Разобраться с первопричиной и ответить клиентам',
+      actionLabel: 'Смотреть',
+      tone: 'red',
+      onAction: () => h.openDrill({ kind: 'intent', value: urgentIntent.intent, title: formatIntent(urgentIntent.intent) }),
+    })
+  }
+
+  const hot = data.hotChannels[0]
+  if (hot && data.hotChannels.length > 1) {
+    const second = data.hotChannels[1]
+    if (hot.totalCases >= 5 && hot.totalCases >= second.totalCases * 2) {
+      out.push({
+        title: `${hot.channelName} грузит в ${(hot.totalCases / Math.max(1, second.totalCases)).toFixed(1)}× больше остальных`,
+        hint: `${hot.totalCases} кейсов, открыто ${hot.openCases}. Это либо крупный клиент, либо системная боль — разобраться`,
+        actionLabel: 'Открыть чат',
+        tone: 'amber',
+        onAction: () => h.goChannel(hot.channelId),
+      })
+    }
+  }
+
+  const voice = data.contentMix.find((c) => c.contentType === 'voice')
+  if (voice && voice.share >= 25) {
+    out.push({
+      title: `${voice.share}% сообщений — голосовые`,
+      hint: 'Посмотри расшифровки — так клиенты часто прячут жалобы, которые AI видит в тексте лучше',
+      actionLabel: 'Смотреть',
+      tone: 'slate',
+      onAction: () => h.openDrill({ kind: 'content_type', value: 'voice', title: 'Голосовые' }),
+    })
+  }
+
+  const nonRu = data.byLanguage.find((l) => l.language !== 'ru' && l.share >= 30)
+  if (nonRu) {
+    out.push({
+      title: `${nonRu.share}% общения на ${languageLabel(nonRu.language).toLowerCase()}`,
+      hint: 'Убедись, что в смене есть агент, свободно владеющий этим языком',
+      actionLabel: 'Смотреть',
+      tone: 'slate',
+      onAction: () => h.openDrill({ kind: 'language', value: nonRu.language, title: languageLabel(nonRu.language) }),
+    })
+  }
+
+  return out.slice(0, 5)
 }
 
 // ===== helpers =====
