@@ -17,8 +17,8 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: 2,
     maxChannels: 3,
     maxMessagesPerMonth: 1000,
-    features: ['chats', 'channels', 'cases', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/settings'],
+    features: ['chats', 'channels', 'cases', 'health', 'settings'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/health', '/settings'],
   },
   business: {
     name: 'Business',
@@ -26,8 +26,8 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: 10,
     maxChannels: 20,
     maxMessagesPerMonth: 20000,
-    features: ['chats', 'channels', 'cases', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/commitments', '/sla-report', '/knowledge', '/docs', '/broadcast', '/ai-agent', '/settings'],
+    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'settings'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/health', '/commitments', '/sla-report', '/knowledge', '/docs', '/broadcast', '/ai-agent', '/settings'],
   },
   enterprise: {
     name: 'Enterprise',
@@ -35,8 +35,8 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: -1,
     maxChannels: -1,
     maxMessagesPerMonth: -1,
-    features: ['chats', 'channels', 'cases', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/commitments', '/sla-report', '/knowledge', '/learning/problems', '/docs', '/broadcast', '/ai-agent', '/settings'],
+    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'settings'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/health', '/commitments', '/sla-report', '/knowledge', '/learning/problems', '/docs', '/broadcast', '/ai-agent', '/settings'],
   },
 }
 

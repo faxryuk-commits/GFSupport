@@ -51,6 +51,54 @@ export interface HealthStats {
   createdDelta: number
 }
 
+export interface HealthAiTopic {
+  topic: string
+  messages: number
+  prevMessages: number
+  delta: number
+  deltaPct: number | null
+}
+
+export interface HealthIntent {
+  intent: string
+  messages: number
+  channels: number
+  negative: number
+  urgent: number
+}
+
+export interface HealthContentType {
+  contentType: string
+  messages: number
+  share: number
+}
+
+export interface HealthLanguage {
+  language: string
+  messages: number
+  share: number
+}
+
+export interface HealthSentiment {
+  negative: number
+  neutral: number
+  positive: number
+  total: number
+}
+
+export interface HealthBottomAgent {
+  agentId: string
+  agentName: string
+  avatarUrl: string | null
+  assigned: number
+  resolved: number
+  openNow: number
+  stuck: number
+  resolvedPct: number
+  avgResolutionHours: number | null
+  avgFirstResponseMin: number | null
+}
+
 export interface SupportHealthPayload {
   period: { from: string; to: string; days: number; prevFrom: string }
   topCategories: HealthTopCategory[]
@@ -59,6 +107,12 @@ export interface SupportHealthPayload {
   hotChannels: HealthHotChannel[]
   stuckCases: HealthStuckCase[]
   stats: HealthStats
+  topAiTopics: HealthAiTopic[]
+  topIntents: HealthIntent[]
+  contentMix: HealthContentType[]
+  byLanguage: HealthLanguage[]
+  sentiment: HealthSentiment
+  bottomAgents: HealthBottomAgent[]
 }
 
 export async function fetchSupportHealth(params?: {

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import {
   Activity, AlertTriangle, Clock, TrendingUp, TrendingDown,
   Repeat, Users, Loader2, RefreshCw, Flame, Timer, ArrowRight,
+  MessageSquare, Mic, Video, Image as ImageIcon, FileText, Languages,
+  Target, UserX, Smile, Frown,
 } from 'lucide-react'
 import { fetchSupportHealth, type SupportHealthPayload, type HealthPeriod } from '@/shared/api'
 
@@ -266,6 +268,165 @@ export function HealthPage() {
           ))}
         </SectionCard>
 
+        {/* О чём реально пишут клиенты (AI-темы) */}
+        <SectionCard
+          title="О чём реально пишут клиенты"
+          hint="AI определил темы из текста и расшифровок аудио/видео"
+          icon={MessageSquare}
+          empty={data.topAiTopics.length === 0}
+        >
+          {data.topAiTopics.map((t) => (
+            <RowLink
+              key={t.topic}
+              onClick={() => navigate(`/chats?topic=${encodeURIComponent(t.topic)}`)}
+              left={
+                <>
+                  <span className="font-medium text-slate-800">{formatCategory(t.topic)}</span>
+                  <span className="text-xs text-slate-500">{t.messages} {pluralMessages(t.messages)}</span>
+                </>
+              }
+              right={<DeltaBadge delta={t.delta} pct={t.deltaPct} />}
+            />
+          ))}
+        </SectionCard>
+
+        {/* Что хотят клиенты (intents) */}
+        <SectionCard
+          title="Что хотят клиенты"
+          hint="Намерения из сообщений: жалобы, просьбы, вопросы"
+          icon={Target}
+          empty={data.topIntents.length === 0}
+        >
+          {data.topIntents.map((it) => (
+            <RowLink
+              key={it.intent}
+              onClick={() => navigate(`/chats?intent=${encodeURIComponent(it.intent)}`)}
+              left={
+                <>
+                  <span className="font-medium text-slate-800">{formatIntent(it.intent)}</span>
+                  <span className="text-xs text-slate-500">
+                    {it.messages} {pluralMessages(it.messages)} • {it.channels} {pluralChannels(it.channels)}
+                  </span>
+                </>
+              }
+              right={
+                <div className="flex items-center gap-1">
+                  {it.urgent > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 rounded">
+                      срочно: {it.urgent}
+                    </span>
+                  )}
+                  {it.negative > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-red-50 text-red-700 rounded">
+                      негатив: {it.negative}
+                    </span>
+                  )}
+                </div>
+              }
+            />
+          ))}
+        </SectionCard>
+
+        {/* Как клиенты общаются: текст/голос/видео/фото */}
+        <SectionCard
+          title="Как клиенты пишут"
+          hint="Распределение сообщений по типу контента"
+          icon={Mic}
+          empty={data.contentMix.length === 0}
+        >
+          {data.contentMix.map((ct) => (
+            <RowLink
+              key={ct.contentType}
+              onClick={() => {}}
+              left={
+                <>
+                  <span className="flex items-center gap-2 font-medium text-slate-800">
+                    {contentTypeIcon(ct.contentType)}
+                    {formatContentType(ct.contentType)}
+                  </span>
+                  <span className="text-xs text-slate-500">{ct.messages} {pluralMessages(ct.messages)}</span>
+                </>
+              }
+              right={<ShareBar percent={ct.share} />}
+            />
+          ))}
+        </SectionCard>
+
+        {/* Языки переписки */}
+        <SectionCard
+          title="Языки общения"
+          hint="По расшифровкам голосовых и видео"
+          icon={Languages}
+          empty={data.byLanguage.length === 0}
+        >
+          {data.byLanguage.map((l) => (
+            <RowLink
+              key={l.language}
+              onClick={() => {}}
+              left={
+                <>
+                  <span className="font-medium text-slate-800">{languageLabel(l.language)}</span>
+                  <span className="text-xs text-slate-500">{l.messages} {pluralMessages(l.messages)}</span>
+                </>
+              }
+              right={<ShareBar percent={l.share} />}
+            />
+          ))}
+        </SectionCard>
+
+        {/* Слабые звенья команды - на всю ширину */}
+        <div className="lg:col-span-2">
+          <SectionCard
+            title="Кто из команды тянет назад"
+            hint="Агенты ≥3 кейса за период: сортировка по зависшим и % закрытых"
+            icon={UserX}
+            accent="border-amber-200"
+            empty={data.bottomAgents.length === 0}
+          >
+            {data.bottomAgents.map((a) => (
+              <li
+                key={a.agentId}
+                className="px-4 py-3 hover:bg-slate-50 flex items-center gap-3"
+              >
+                <div className="w-9 h-9 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-slate-600 font-semibold text-sm overflow-hidden">
+                  {a.avatarUrl ? (
+                    <img src={a.avatarUrl} alt={a.agentName} className="w-full h-full object-cover" />
+                  ) : (
+                    a.agentName.slice(0, 1).toUpperCase()
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-800 truncate">{a.agentName}</div>
+                  <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span>назначено: {a.assigned}</span>
+                    <span className={a.resolvedPct < 50 ? 'text-red-600 font-semibold' : 'text-slate-500'}>
+                      закрыто: {a.resolved} ({a.resolvedPct}%)
+                    </span>
+                    {a.avgFirstResponseMin != null && (
+                      <span>FRT: {formatMinutes(a.avgFirstResponseMin)}</span>
+                    )}
+                    {a.avgResolutionHours != null && (
+                      <span>ср. закрытие: {a.avgResolutionHours.toFixed(1)}ч</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {a.stuck > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-semibold bg-red-50 text-red-700 rounded">
+                      зависло: {a.stuck}
+                    </span>
+                  )}
+                  {a.openNow > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 rounded">
+                      в работе: {a.openNow}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </SectionCard>
+        </div>
+
         {/* Застряли без движения - на всю ширину */}
         <div className="lg:col-span-2">
           <SectionCard
@@ -301,6 +462,17 @@ export function HealthPage() {
         </div>
       </div>
 
+      {/* Sentiment bar */}
+      {data.sentiment.total > 0 && (
+        <div className="mt-5 bg-white border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-semibold text-slate-800">Настроение клиентов</div>
+            <div className="text-xs text-slate-500">{data.sentiment.total} оценённых сообщений</div>
+          </div>
+          <SentimentBar s={data.sentiment} />
+        </div>
+      )}
+
       <div className="text-xs text-slate-400 mt-4 text-center">
         Данные за период с {new Date(data.period.from).toLocaleDateString('ru-RU')} по {new Date(data.period.to).toLocaleDateString('ru-RU')}
       </div>
@@ -333,6 +505,137 @@ function statusLabel(status: string): string {
     blocked: 'блокировке',
   }
   return m[status] || status
+}
+
+function pluralMessages(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'сообщение'
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'сообщения'
+  return 'сообщений'
+}
+
+const INTENT_LABELS: Record<string, string> = {
+  complaint: 'Жалоба',
+  question: 'Вопрос',
+  request: 'Просьба / запрос',
+  bug: 'Сообщение об ошибке',
+  feedback: 'Отзыв',
+  order: 'Про заказ',
+  refund: 'Возврат / компенсация',
+  status: 'Проверить статус',
+  help: 'Помощь',
+  integration: 'Интеграция',
+  billing: 'Оплата',
+  technical: 'Техвопрос',
+  feature_request: 'Хочет функцию',
+  onboarding: 'Подключение',
+  cancel: 'Отмена',
+  other: 'Другое',
+}
+
+function formatIntent(intent: string): string {
+  if (!intent) return 'Без намерения'
+  const key = intent.toLowerCase()
+  return INTENT_LABELS[key] || intent.charAt(0).toUpperCase() + intent.slice(1)
+}
+
+const CONTENT_LABELS: Record<string, string> = {
+  text: 'Текст',
+  voice: 'Голосовые',
+  audio: 'Аудио',
+  video: 'Видео',
+  video_note: 'Видеосообщение',
+  photo: 'Фото',
+  image: 'Фото',
+  document: 'Документ',
+  file: 'Файл',
+  sticker: 'Стикер',
+  animation: 'Гифка',
+  location: 'Геолокация',
+  contact: 'Контакт',
+}
+
+function formatContentType(ct: string): string {
+  return CONTENT_LABELS[ct?.toLowerCase()] || ct || 'Прочее'
+}
+
+function contentTypeIcon(ct: string) {
+  const key = (ct || '').toLowerCase()
+  const cls = 'w-4 h-4 text-slate-400'
+  if (key === 'voice' || key === 'audio') return <Mic className={cls} />
+  if (key === 'video' || key === 'video_note' || key === 'animation') return <Video className={cls} />
+  if (key === 'photo' || key === 'image') return <ImageIcon className={cls} />
+  if (key === 'document' || key === 'file') return <FileText className={cls} />
+  return <MessageSquare className={cls} />
+}
+
+const LANG_LABELS: Record<string, string> = {
+  ru: 'Русский',
+  uz: 'Узбекский',
+  'uz-latn': 'Узбекский (лат.)',
+  'uz-cyrl': 'Узбекский (кир.)',
+  en: 'Английский',
+  tr: 'Турецкий',
+  kk: 'Казахский',
+  ky: 'Киргизский',
+  tg: 'Таджикский',
+  ar: 'Арабский',
+}
+
+function languageLabel(lang: string): string {
+  if (!lang) return 'Не определён'
+  return LANG_LABELS[lang.toLowerCase()] || lang.toUpperCase()
+}
+
+function formatMinutes(min: number): string {
+  if (min < 60) return `${min} мин`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m > 0 ? `${h}ч ${m}м` : `${h}ч`
+}
+
+function ShareBar({ percent }: { percent: number }) {
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-blue-500 rounded-full"
+          style={{ width: `${Math.min(100, percent)}%` }}
+        />
+      </div>
+      <span className="text-xs font-semibold text-slate-600 w-10 text-right">
+        {percent.toFixed(percent < 10 ? 1 : 0)}%
+      </span>
+    </div>
+  )
+}
+
+function SentimentBar({ s }: { s: { negative: number; neutral: number; positive: number; total: number } }) {
+  const total = s.total || 1
+  const neg = Math.round((s.negative / total) * 100)
+  const neu = Math.round((s.neutral / total) * 100)
+  const pos = Math.max(0, 100 - neg - neu)
+  return (
+    <>
+      <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
+        <div className="bg-red-500" style={{ width: `${neg}%` }} />
+        <div className="bg-slate-300" style={{ width: `${neu}%` }} />
+        <div className="bg-green-500" style={{ width: `${pos}%` }} />
+      </div>
+      <div className="flex items-center justify-between text-xs mt-2">
+        <span className="flex items-center gap-1 text-red-600 font-medium">
+          <Frown className="w-3.5 h-3.5" />
+          Негатив: {s.negative} ({neg}%)
+        </span>
+        <span className="text-slate-500">Нейтрально: {s.neutral} ({neu}%)</span>
+        <span className="flex items-center gap-1 text-green-600 font-medium">
+          <Smile className="w-3.5 h-3.5" />
+          Позитив: {s.positive} ({pos}%)
+        </span>
+      </div>
+    </>
+  )
 }
 
 // ===== компоненты =====
