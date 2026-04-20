@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
-import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp } from './baileys.js'
+import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp, requestPairCode } from './baileys.js'
 import { getFilterMode, setFilterMode, getMessageStats, type FilterMode } from './index.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
@@ -26,7 +26,40 @@ export function createRouter(bridgeSecret: string, authDir: string): Router {
 
   router.get('/qr', (_req: Request, res: Response) => {
     const status = getStatus()
-    res.json({ connected: status.connected, phone: status.phone, qr: status.qr, lastError: status.lastError, filterMode: getFilterMode() })
+    res.json({
+      connected: status.connected,
+      phone: status.phone,
+      qr: status.qr,
+      lastError: status.lastError,
+      filterMode: getFilterMode(),
+      mode: status.mode,
+      pairCode: status.pairCode,
+      pairCodeExpiresAt: status.pairCodeExpiresAt,
+      pairCodePhone: status.pairCodePhone,
+    })
+  })
+
+  router.post('/pair-code', async (req: Request, res: Response) => {
+    try {
+      const { phone } = req.body || {}
+      if (!phone || typeof phone !== 'string') {
+        return res.status(400).json({ error: 'phone is required' })
+      }
+      const result = await requestPairCode(authDir, phone)
+      if (result.error) {
+        const code = result.error === 'invalid_phone' ? 400 : result.error === 'already_connected' ? 409 : 500
+        return res.status(code).json({ error: result.error })
+      }
+      res.json({
+        success: true,
+        code: result.code,
+        expiresAt: result.expiresAt,
+        phone: result.phone,
+      })
+    } catch (e: any) {
+      console.error('[Route /pair-code]', e.message)
+      res.status(500).json({ error: e.message })
+    }
   })
 
   router.get('/filter', (_req: Request, res: Response) => {

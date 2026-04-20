@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   RefreshCw, CheckCircle, Loader2, Wifi, WifiOff,
   MessageSquare, Users2, Activity, AlertTriangle, Settings2,
+  QrCode, Phone, Copy, Check as CheckIcon,
 } from 'lucide-react'
 import { Modal } from '@/shared/ui'
 import { apiGet, apiPost } from '@/shared/services/api.service'
@@ -27,6 +28,8 @@ export interface HealthData {
   whatsapp: { status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number }
 }
 
+type LinkMode = 'qr' | 'pair_code'
+
 interface WhatsAppStatus {
   connected: boolean
   phone: string | null
@@ -35,6 +38,10 @@ interface WhatsAppStatus {
   error?: string
   lastError?: string | null
   filterMode?: FilterMode
+  mode?: LinkMode
+  pairCode?: string | null
+  pairCodeExpiresAt?: number | null
+  pairCodePhone?: string | null
 }
 
 interface IntegrationsSettingsProps {
@@ -107,12 +114,64 @@ function IntegrationCard({
   )
 }
 
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [waStatus, setWaStatus] = useState<WhatsAppStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [filterSaving, setFilterSaving] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+  const [linkTab, setLinkTab] = useState<LinkMode>('qr')
+  const [phoneInput, setPhoneInput] = useState('')
+  const [requestingCode, setRequestingCode] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
+  const [nowTick, setNowTick] = useState(Date.now())
+  const [copiedCode, setCopiedCode] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const handleRequestPairCode = async () => {
+    const digits = phoneInput.replace(/\D/g, '')
+    if (digits.length < 10 || digits.length > 15) {
+      setCodeError('Введите номер в международном формате (10-15 цифр)')
+      return
+    }
+    setCodeError(null)
+    setRequestingCode(true)
+    try {
+      const res = await apiPost<{ success?: boolean; code?: string; expiresAt?: number; error?: string }>(
+        '/integrations/whatsapp-status',
+        { action: 'pair-code', phone: digits }
+      )
+      if (res?.error) {
+        setCodeError(res.error === 'already_connected' ? 'Аккаунт уже подключён' : `Не удалось получить код: ${res.error}`)
+      } else if (res?.code) {
+        setWaStatus((prev) => ({
+          ...(prev || { connected: false, phone: null, qr: null, configured: true }),
+          mode: 'pair_code',
+          pairCode: res.code,
+          pairCodeExpiresAt: res.expiresAt || null,
+          pairCodePhone: digits,
+        }))
+      }
+    } catch (e: any) {
+      setCodeError(`Ошибка соединения с мостом: ${e?.message || 'unknown'}`)
+    }
+    setRequestingCode(false)
+  }
+
+  const handleCopyCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code.replace(/-/g, ''))
+      setCopiedCode(true)
+      setTimeout(() => setCopiedCode(false), 1500)
+    } catch { /* noop */ }
+  }
 
   const handleFilterChange = async (mode: FilterMode) => {
     setFilterSaving(true)
@@ -136,8 +195,12 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
   useEffect(() => {
     if (!isOpen) {
       if (intervalRef.current) clearInterval(intervalRef.current)
+      if (tickRef.current) clearInterval(tickRef.current)
       setWaStatus(null)
       setLoading(true)
+      setPhoneInput('')
+      setCodeError(null)
+      setLinkTab('qr')
       return
     }
 
@@ -154,7 +217,11 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
     poll()
     intervalRef.current = setInterval(poll, 3000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+    tickRef.current = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (tickRef.current) clearInterval(tickRef.current)
+    }
   }, [isOpen])
 
   return (
@@ -236,45 +303,142 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
           </div>
         )}
 
-        {!loading && !waStatus?.connected && waStatus?.qr && (
-          <div className="flex flex-col items-center">
-            <img src={waStatus.qr} alt="WhatsApp QR Code" className="w-64 h-64 rounded-lg border border-slate-200" />
-            <p className="text-sm text-slate-500 mt-3 text-center">
-              Откройте WhatsApp → Настройки → Связанные устройства → Привязать устройство
-            </p>
-            <div className="flex items-center gap-2 mt-2 text-xs text-slate-400">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Ожидание сканирования...
+        {!loading && !waStatus?.connected && waStatus?.configured !== false && (
+          <div>
+            {/* Переключатель способа привязки */}
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-lg mb-4">
+              <button
+                onClick={() => setLinkTab('qr')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  linkTab === 'qr' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <QrCode className="w-4 h-4" />
+                QR-код
+              </button>
+              <button
+                onClick={() => setLinkTab('pair_code')}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  linkTab === 'pair_code' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Phone className="w-4 h-4" />
+                Код по номеру
+              </button>
             </div>
+
+            {linkTab === 'qr' && (
+              <div className="flex flex-col items-center">
+                {waStatus?.qr ? (
+                  <>
+                    <img src={waStatus.qr} alt="WhatsApp QR Code" className="w-64 h-64 rounded-lg border border-slate-200" />
+                    <p className="text-sm text-slate-500 mt-3 text-center">
+                      Откройте WhatsApp → Настройки → Связанные устройства → Привязать устройство
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 text-xs text-slate-400">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Ожидание сканирования...
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center py-10">
+                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+                    <p className="text-sm font-medium text-slate-700">Генерация QR-кода...</p>
+                    {waStatus?.lastError && (
+                      <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">{waStatus.lastError}</p>
+                    )}
+                    <p className="text-xs text-slate-400 mt-3 text-center max-w-xs">
+                      Если QR не появляется или WhatsApp пишет «Can't link new devices» — попробуйте «Код по номеру».
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {linkTab === 'pair_code' && (
+              <div className="space-y-4">
+                {waStatus?.pairCode && waStatus.pairCodeExpiresAt && waStatus.pairCodeExpiresAt > nowTick ? (
+                  <div className="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl p-5 text-center">
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">Код привязки</p>
+                    <div className="flex items-center justify-center gap-2 mb-3">
+                      <span className="text-4xl font-mono font-bold text-slate-900 tracking-widest select-all">
+                        {waStatus.pairCode}
+                      </span>
+                      <button
+                        onClick={() => handleCopyCode(waStatus.pairCode!)}
+                        className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+                        title="Скопировать код"
+                      >
+                        {copiedCode ? <CheckIcon className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-slate-600" />}
+                      </button>
+                    </div>
+                    <p className="text-sm text-slate-600">
+                      Истекает через <span className="font-mono font-semibold text-emerald-700">
+                        {formatCountdown(waStatus.pairCodeExpiresAt - nowTick)}
+                      </span>
+                    </p>
+                    {waStatus.pairCodePhone && (
+                      <p className="text-xs text-slate-400 mt-1">для номера +{waStatus.pairCodePhone}</p>
+                    )}
+                    <div className="mt-4 pt-4 border-t border-emerald-200 text-left">
+                      <p className="text-xs font-semibold text-slate-700 mb-2">На телефоне:</p>
+                      <ol className="text-xs text-slate-600 space-y-1 list-decimal list-inside">
+                        <li>Откройте WhatsApp → Настройки → Связанные устройства</li>
+                        <li>Привязать устройство → <b>Привязать с помощью номера телефона</b></li>
+                        <li>Введите ваш номер и затем код выше</li>
+                      </ol>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Номер телефона WhatsApp</label>
+                      <input
+                        type="tel"
+                        value={phoneInput}
+                        onChange={(e) => { setPhoneInput(e.target.value); setCodeError(null) }}
+                        placeholder="+998 90 123 45 67"
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        В международном формате, пробелы и скобки можно.
+                      </p>
+                    </div>
+                    {codeError && (
+                      <div className="flex items-start gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>{codeError}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={handleRequestPairCode}
+                      disabled={requestingCode || !phoneInput.trim()}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white font-medium rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {requestingCode ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Запрашиваем код у WhatsApp…</>
+                      ) : (
+                        <><Phone className="w-4 h-4" /> Получить код привязки</>
+                      )}
+                    </button>
+                    <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
+                      <b>Когда помогает:</b> если QR выдаёт «Can't link new devices at this time» —
+                      этот способ идёт по другому API WhatsApp и часто проходит, когда QR-flow временно заблокирован.
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {!loading && !waStatus?.connected && !waStatus?.qr && (
+        {!loading && !waStatus?.connected && waStatus?.configured === false && (
           <div className="flex flex-col items-center py-8">
             <WifiOff className="w-12 h-12 text-slate-400 mb-3" />
-            {!waStatus?.configured ? (
-              <>
-                <p className="text-sm font-medium text-slate-700">Мост не настроен</p>
-                <p className="text-xs text-slate-400 mt-1 text-center">
-                  Добавьте WHATSAPP_BRIDGE_URL в переменные Vercel
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-slate-700">
-                  {waStatus?.lastError ? 'Ожидание QR-кода...' : 'Мост недоступен'}
-                </p>
-                <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">
-                  {waStatus?.lastError || waStatus?.error || 'Проверьте что сервис запущен на Railway'}
-                </p>
-                {waStatus?.lastError && (
-                  <div className="flex items-center gap-2 mt-3 text-xs text-amber-500">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    QR генерируется, подождите...
-                  </div>
-                )}
-              </>
-            )}
+            <p className="text-sm font-medium text-slate-700">Мост не настроен</p>
+            <p className="text-xs text-slate-400 mt-1 text-center">
+              Добавьте WHATSAPP_BRIDGE_URL в переменные Vercel
+            </p>
           </div>
         )}
 

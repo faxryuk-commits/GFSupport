@@ -38,6 +38,23 @@ export default async function handler(req: Request): Promise<Response> {
         return json(data, res.status)
       }
 
+      if (action === 'pair-code') {
+        const phone = (body.phone || '').toString().trim()
+        if (!phone) return json({ error: 'phone required' }, 400)
+        const res = await fetch(`${bridgeUrl}/pair-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${bridgeSecret}`,
+          },
+          body: JSON.stringify({ phone }),
+          // requestPairingCode может ждать ~15 сек пока WhatsApp ответит
+          signal: AbortSignal.timeout(25000),
+        })
+        const data = await res.json()
+        return json(data, res.status)
+      }
+
       const res = await fetch(`${bridgeUrl}/filter`, {
         method: 'POST',
         headers: {
