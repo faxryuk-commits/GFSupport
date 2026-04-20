@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { checkChannelQuota } from '../lib/quota.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 // Channels API v2.1 - SLA Categories support
 export const config = {
@@ -26,6 +27,8 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
+
+  await ensureChannelSourceColumn()
 
   // GET - список каналов
   if (req.method === 'GET') {

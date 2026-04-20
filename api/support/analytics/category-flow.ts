@@ -3,7 +3,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { loadSla, businessMinutesBetween, type SlaConfig } from '../lib/sla.js'
 import { TAXONOMY, LEGACY_CATEGORY_TO_DOMAIN, type DomainKey } from '../ai/taxonomy.js'
 import { CHURN_PATTERNS } from '../lib/churn-signals.js'
-import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
+import { ensureTaxonomyColumns, ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 export const config = {
   runtime: 'edge',
@@ -76,6 +76,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Подстраховка: если миграция ещё не прокатилась, добавим колонки на лету
   await ensureTaxonomyColumns()
+  await ensureChannelSourceColumn()
 
   const sla = await loadSla(orgId)
 

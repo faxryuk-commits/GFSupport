@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 export const config = { runtime: 'edge', maxDuration: 30 }
 
@@ -27,6 +28,8 @@ export default async function handler(req: Request): Promise<Response> {
   const market = url.searchParams.get('market') || null
   const days = parseInt(url.searchParams.get('days') || '14')
   const source = url.searchParams.get('source') || 'all'
+
+  await ensureChannelSourceColumn()
 
   try {
     // 1. Общая статистика

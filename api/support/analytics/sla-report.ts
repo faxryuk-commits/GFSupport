@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 export const config = {
   runtime: 'edge',
@@ -37,7 +38,9 @@ export default async function handler(req: Request): Promise<Response> {
   
   const fromDateTime = `${fromDate}T00:00:00+05:00` // Tashkent timezone
   const toDateTime = `${toDate}T23:59:59+05:00`
-  
+
+  await ensureChannelSourceColumn()
+
   try {
     // =============================================
     // 1. ВРЕМЯ ПЕРВОГО ОТВЕТА - детальный список

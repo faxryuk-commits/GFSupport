@@ -10,6 +10,7 @@ import { getSQL } from './db.js'
  */
 
 let taxonomyColumnsEnsured = false
+let channelSourceEnsured = false
 
 export async function ensureTaxonomyColumns(): Promise<void> {
   if (taxonomyColumnsEnsured) return
@@ -24,6 +25,21 @@ export async function ensureTaxonomyColumns(): Promise<void> {
     taxonomyColumnsEnsured = true
   } catch (e) {
     console.error('[ensureTaxonomyColumns]', e)
-    // Не зажигаем — endpoint упадёт с более понятной ошибкой дальше
+  }
+}
+
+/**
+ * Идемпотентно добавляет колонку `source` в support_channels (telegram/whatsapp/...).
+ * Нужна для per-source аналитики на /health, /sla-report, /category-flow.
+ */
+export async function ensureChannelSourceColumn(): Promise<void> {
+  if (channelSourceEnsured) return
+  const sql = getSQL()
+  try {
+    await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'`
+    await sql`CREATE INDEX IF NOT EXISTS idx_channels_org_source ON support_channels(org_id, source)`
+    channelSourceEnsured = true
+  } catch (e) {
+    console.error('[ensureChannelSourceColumn]', e)
   }
 }
