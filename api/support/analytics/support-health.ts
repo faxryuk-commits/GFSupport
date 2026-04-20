@@ -58,7 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE sc.org_id = ${orgId}
           AND sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz
           AND (${market}::text IS NULL OR sc.market_id = ${market})
-          AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY cat
       ),
       prev AS (
@@ -68,7 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE sc.org_id = ${orgId}
           AND sc.created_at >= ${prevFromDate}::timestamptz AND sc.created_at < ${fromDate}::timestamptz
           AND (${market}::text IS NULL OR sc.market_id = ${market})
-          AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY cat
       )
       SELECT
@@ -98,7 +98,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE sc.org_id = ${orgId}
         AND sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz
         AND (${market}::text IS NULL OR sc.market_id = ${market})
-        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         AND sc.root_cause IS NOT NULL AND sc.root_cause <> ''
       GROUP BY sc.root_cause
       ORDER BY cases DESC
@@ -116,7 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE sc.org_id = ${orgId}
         AND sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz
         AND (${market}::text IS NULL OR sc.market_id = ${market})
-        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         AND sc.is_recurring = true
       GROUP BY sc.category
       ORDER BY cases DESC
@@ -137,7 +137,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE c.org_id = ${orgId}
         AND c.created_at >= ${fromDate}::timestamptz AND c.created_at < ${toDate}::timestamptz
         AND (${market}::text IS NULL OR c.market_id = ${market})
-        AND (${source}::text = 'all' OR COALESCE(ch.source, c.source, 'telegram') = ${source})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         AND c.channel_id IS NOT NULL
       GROUP BY c.channel_id, ch.name, ch.source
       ORDER BY total_cases DESC, open_cases DESC
@@ -171,7 +171,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE c.org_id = ${orgId}
         AND c.status NOT IN ('resolved','closed','cancelled')
         AND (${market}::text IS NULL OR c.market_id = ${market})
-        AND (${source}::text = 'all' OR COALESCE(ch.source, c.source, 'telegram') = ${source})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         AND COALESCE(lsc.changed_at, c.created_at) < NOW() - INTERVAL '24 hours'
       ORDER BY hours_in_status DESC
       LIMIT 10
@@ -194,7 +194,7 @@ export default async function handler(req: Request): Promise<Response> {
       LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
       WHERE sc.org_id = ${orgId}
         AND (${market}::text IS NULL OR sc.market_id = ${market})
-        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
     `
 
     // 7. Предыдущий период — для дельт на общих метриках
@@ -206,14 +206,14 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE sc.org_id = ${orgId}
         AND sc.created_at >= ${prevFromDate}::timestamptz AND sc.created_at < ${fromDate}::timestamptz
         AND (${market}::text IS NULL OR sc.market_id = ${market})
-        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
     `
 
     // 7a. Разбивка bySource: ключевые метрики отдельно для Telegram и WhatsApp
     //     Всегда считаем по обоим, игнорируя текущий фильтр source — для split-бейджей в UI
     const bySourceRaw = await sql`
       SELECT
-        COALESCE(ch.source, sc.source, 'telegram') as src,
+        COALESCE(ch.source, 'telegram') as src,
         COUNT(*) FILTER (WHERE sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz)::int as created,
         COUNT(*) FILTER (WHERE sc.resolved_at >= ${fromDate}::timestamptz AND sc.resolved_at < ${toDate}::timestamptz)::int as resolved,
         COUNT(*) FILTER (WHERE sc.status NOT IN ('resolved','closed','cancelled'))::int as open_now
@@ -221,7 +221,7 @@ export default async function handler(req: Request): Promise<Response> {
       LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
       WHERE sc.org_id = ${orgId}
         AND (${market}::text IS NULL OR sc.market_id = ${market})
-      GROUP BY COALESCE(ch.source, sc.source, 'telegram')
+      GROUP BY COALESCE(ch.source, 'telegram')
     `
 
     // Мусорные значения AI-классификации, которые не несут сигнала для "где болит"
@@ -368,7 +368,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND c.assigned_to IS NOT NULL AND c.assigned_to <> ''
           AND c.created_at >= ${fromDate}::timestamptz AND c.created_at < ${toDate}::timestamptz
           AND (${market}::text IS NULL OR c.market_id = ${market})
-          AND (${source}::text = 'all' OR COALESCE(ch.source, c.source, 'telegram') = ${source})
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       )
       SELECT
         a.id as agent_id,
