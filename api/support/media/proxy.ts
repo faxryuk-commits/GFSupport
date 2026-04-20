@@ -45,6 +45,21 @@ function respondWithMedia(body: ArrayBuffer, contentType: string | null): Respon
 }
 
 /**
+ * Пустой ответ для протухших/битых URL. Кэшируется неделю, чтобы
+ * браузер не долбил повторно один и тот же мёртвый URL при каждом
+ * рендере чата. Status 204 — не считается ошибкой в Network tab.
+ */
+function respondEmpty(): Response {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders,
+      'Cache-Control': 'public, max-age=604800, immutable',
+    },
+  })
+}
+
+/**
  * GET /api/support/media/proxy?url=...    — проксирует HTTPS media URL
  * GET /api/support/media/proxy?fileId=... — резолвит Telegram file_id и проксирует
  * GET /api/support/media/proxy?tg=tg://photo/FILE_ID — резолвит tg:// URL и проксирует
@@ -73,7 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (!fid) return new Response(null, { status: 400, headers: corsHeaders })
 
     const freshUrl = await resolveFileUrl(botToken, fid)
-    if (!freshUrl) return new Response(null, { status: 404, headers: corsHeaders })
+    if (!freshUrl) return respondEmpty()
 
     try {
       const res = await fetch(freshUrl)
@@ -81,7 +96,7 @@ export default async function handler(req: Request): Promise<Response> {
         return respondWithMedia(await res.arrayBuffer(), res.headers.get('Content-Type'))
       }
     } catch {}
-    return new Response(null, { status: 404, headers: corsHeaders })
+    return respondEmpty()
   }
 
   // --- Route 2: direct URL ---
@@ -110,10 +125,13 @@ export default async function handler(req: Request): Promise<Response> {
           } catch {}
         }
       }
+      // Telegram file ссылка протухла и retry не помог — кэшируем пустой
+      // ответ чтобы браузер не долбил повторно.
+      return respondEmpty()
     }
 
-    return new Response(null, { status: 404, headers: corsHeaders })
+    return respondEmpty()
   } catch {
-    return new Response(null, { status: 502, headers: corsHeaders })
+    return respondEmpty()
   }
 }

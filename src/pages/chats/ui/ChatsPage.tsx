@@ -60,8 +60,12 @@ function DateDivider({ date }: { date: string }) {
 
 function resolveMediaUrl(url?: string | null): string | undefined {
   if (!url) return undefined
+  // tg:// — прокси резолвит file_id в свежий URL, это надёжно
   if (url.startsWith('tg://')) return `/api/support/media/proxy?tg=${encodeURIComponent(url)}`
-  if (url.includes('api.telegram.org/file/')) return `/api/support/media/proxy?url=${encodeURIComponent(url)}`
+  // Прямые api.telegram.org/file/bot-ссылки одноразовые и живут ~1 час.
+  // Старые сообщения в БД — гарантированно протухли, нет смысла их грузить.
+  // UI fallback'ится на инициалы/placeholder.
+  if (url.includes('api.telegram.org/file/')) return undefined
   return url
 }
 
