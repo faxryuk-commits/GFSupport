@@ -27,6 +27,7 @@ export interface AttentionItem {
   issue: string
   priority: 'normal' | 'high' | 'urgent'
   type: 'chat' | 'case'
+  source?: 'telegram' | 'whatsapp'
 }
 
 export interface RecentActivity {

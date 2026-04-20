@@ -110,6 +110,7 @@ export function CasesPage() {
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
   const [showFilters, setShowFilters] = useState(false)
   
   const [selectedCase, setSelectedCase] = useState<Case | null>(null)
@@ -205,10 +206,18 @@ export function CasesPage() {
       
       // Фильтр по группе/каналу
       const matchesChannel = channelFilter === 'all' || c.channelId === channelFilter
-      
-      return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel
+
+      // Фильтр по платформе (Telegram/WhatsApp) — через канал кейса
+      let matchesSource = true
+      if (sourceFilter !== 'all') {
+        const channel = channels.find((ch) => ch.id === c.channelId)
+        const channelSource = (channel?.source as string | undefined) || 'telegram'
+        matchesSource = channelSource === sourceFilter
+      }
+
+      return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel && matchesSource
     })
-  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter, currentUser?.id])
+  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter, sourceFilter, channels, currentUser?.id])
 
   // Количество активных фильтров
   const activeFiltersCount = useMemo(() => {
@@ -216,14 +225,16 @@ export function CasesPage() {
     if (dateFilter !== 'all') count++
     if (categoryFilter !== 'all') count++
     if (channelFilter !== 'all') count++
+    if (sourceFilter !== 'all') count++
     return count
-  }, [dateFilter, categoryFilter, channelFilter])
+  }, [dateFilter, categoryFilter, channelFilter, sourceFilter])
 
   // Сброс фильтров
   const resetFilters = () => {
     setDateFilter('all')
     setCategoryFilter('all')
     setChannelFilter('all')
+    setSourceFilter('all')
   }
 
   // Фильтрация по UI-колонке (группирует несколько DB-статусов в одну колонку)
@@ -614,6 +625,34 @@ export function CasesPage() {
                   <option key={ch.id} value={ch.id}>{ch.name || `Группа ${ch.id.slice(0, 6)}`}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Source Filter (Telegram / WhatsApp) */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500">Платформа</label>
+              <div className="inline-flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
+                {(['all', 'telegram', 'whatsapp'] as const).map((s) => {
+                  const active = sourceFilter === s
+                  const label = s === 'all' ? 'Все' : s === 'telegram' ? 'TG' : 'WA'
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setSourceFilter(s)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                        active
+                          ? s === 'whatsapp'
+                            ? 'bg-emerald-500 text-white'
+                            : s === 'telegram'
+                              ? 'bg-sky-500 text-white'
+                              : 'bg-blue-500 text-white'
+                          : 'text-slate-600 hover:text-slate-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
         )}

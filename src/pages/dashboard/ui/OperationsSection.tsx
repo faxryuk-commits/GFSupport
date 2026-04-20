@@ -75,7 +75,19 @@ export function OperationsSection({ needsAttention, agents }: Props) {
                   <Avatar name={item.name} size="md" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-800">{item.name}</span>
+                      <span className="font-medium text-slate-800 truncate">{item.name}</span>
+                      {item.source && (
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                            item.source === 'whatsapp'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-sky-50 text-sky-700 border-sky-200'
+                          }`}
+                          title={item.source === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                        >
+                          {item.source === 'whatsapp' ? 'WA' : 'TG'}
+                        </span>
+                      )}
                       <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${priorityColors[item.priority]}`}>
                         <Clock className="w-3 h-3" />{item.waitTime}
                       </span>

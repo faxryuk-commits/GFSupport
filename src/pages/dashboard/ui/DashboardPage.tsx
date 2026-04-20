@@ -13,7 +13,7 @@ import { formatWaitTime } from '../model/types'
 import type { AttentionItem, RecentActivity, ResponseTimeModalData } from '../model/types'
 import { DashboardHeader } from './DashboardHeader'
 import { AIRecommendationsPanel } from './AIRecommendationsPanel'
-import { ChannelSourceSummary } from './ChannelSourceSummary'
+import { ChannelSourceSummary, type SourceFilter } from './ChannelSourceSummary'
 import { MetricsSection } from './MetricsSection'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
@@ -31,6 +31,7 @@ export function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [needsAttention, setNeedsAttention] = useState<AttentionItem[]>([])
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
   const [slaCategoryModal, setSlaCategoryModal] = useState<{ category: string; label: string } | null>(null)
@@ -74,14 +75,15 @@ export function DashboardPage() {
 
       const attentionItems: AttentionItem[] = channelsData
         .filter(ch => ch.awaitingReply)
-        .slice(0, 15)
+        .slice(0, 50)
         .map(ch => ({
           id: ch.id,
           name: ch.name || ch.companyName || `Канал ${ch.id}`,
           waitTime: formatWaitTime(ch.lastMessageAt ?? undefined),
           issue: ch.lastMessageText || 'Ожидает ответа',
           priority: ch.unreadCount > 5 ? 'urgent' : ch.unreadCount > 2 ? 'high' : 'normal',
-          type: 'chat' as const
+          type: 'chat' as const,
+          source: (ch.source as 'telegram' | 'whatsapp' | undefined) || 'telegram',
         }))
       setNeedsAttention(attentionItems)
 
@@ -139,6 +141,12 @@ export function DashboardPage() {
     [analytics, metrics, agents]
   )
 
+  // Применяем фильтр по платформе к списку "Требует внимания" на клиенте
+  const filteredAttention = useMemo(() => {
+    if (sourceFilter === 'all') return needsAttention.slice(0, 15)
+    return needsAttention.filter((a) => (a.source || 'telegram') === sourceFilter).slice(0, 15)
+  }, [needsAttention, sourceFilter])
+
   if (isLoading) {
     return <LoadingState text="Загрузка дашборда..." />
   }
@@ -168,7 +176,11 @@ export function DashboardPage() {
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <AIRecommendationsPanel recommendations={aiRecommendations} />
 
-        <ChannelSourceSummary channels={channels} />
+        <ChannelSourceSummary
+          channels={channels}
+          value={sourceFilter}
+          onChange={setSourceFilter}
+        />
 
         <MetricsSection
           metrics={metrics}
@@ -177,7 +189,7 @@ export function DashboardPage() {
         />
 
         <OperationsSection
-          needsAttention={needsAttention}
+          needsAttention={filteredAttention}
           agents={agents}
         />
 
