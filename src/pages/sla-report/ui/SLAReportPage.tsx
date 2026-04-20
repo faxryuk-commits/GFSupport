@@ -181,7 +181,8 @@ export function SLAReportPage() {
   
   useEffect(() => {
     loadReport()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source])
   
   const getComplianceColor = (rate: number) => {
     if (rate >= 95) return 'text-green-600'
@@ -305,6 +306,57 @@ export function SLAReportPage() {
         </div>
       )}
       
+      {report && source !== 'all' && report.responseTimeSummary.totalClientMessages === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              {source === 'whatsapp' ? (
+                <Phone className="w-5 h-5 text-amber-600" />
+              ) : (
+                <span className="text-amber-600 text-xl">✈</span>
+              )}
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-amber-900 mb-1">
+                По {source === 'whatsapp' ? 'WhatsApp' : 'Telegram'} нет данных за выбранный период
+              </h3>
+              <p className="text-sm text-amber-800 mb-3">
+                За {fromDate} — {toDate} в базе не найдено ни одного сообщения для каналов этой платформы.
+                Это может означать:
+              </p>
+              <ul className="text-sm text-amber-800 space-y-1 list-disc pl-5 mb-3">
+                {source === 'whatsapp' ? (
+                  <>
+                    <li>WhatsApp-бридж не подключён или разлогинен (проверьте в «Настройки → Интеграции»)</li>
+                    <li>Бридж работает, но исторические сообщения не синхронизированы — приходят только новые после подключения</li>
+                    <li>За этот период по WhatsApp не было активности</li>
+                  </>
+                ) : (
+                  <>
+                    <li>Telegram-бот не добавлен в каналы или не имеет прав читать сообщения</li>
+                    <li>За этот период по Telegram не было активности</li>
+                  </>
+                )}
+              </ul>
+              <div className="flex items-center gap-3 text-sm">
+                <a
+                  href="/settings"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium"
+                >
+                  Проверить интеграции
+                </a>
+                <button
+                  onClick={() => setSource('all')}
+                  className="text-amber-700 hover:text-amber-900 underline"
+                >
+                  Показать все платформы
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {report && (
         <>
           {/* Source Breakdown Bar */}
