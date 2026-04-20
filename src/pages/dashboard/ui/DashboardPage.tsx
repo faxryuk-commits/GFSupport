@@ -13,6 +13,7 @@ import { formatWaitTime } from '../model/types'
 import type { AttentionItem, RecentActivity, ResponseTimeModalData } from '../model/types'
 import { DashboardHeader } from './DashboardHeader'
 import { AIRecommendationsPanel } from './AIRecommendationsPanel'
+import { ChannelSourceSummary } from './ChannelSourceSummary'
 import { MetricsSection } from './MetricsSection'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
@@ -26,7 +27,7 @@ export function DashboardPage() {
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
-  const [_channels, setChannels] = useState<Channel[]>([])
+  const [channels, setChannels] = useState<Channel[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [needsAttention, setNeedsAttention] = useState<AttentionItem[]>([])
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
@@ -166,6 +167,8 @@ export function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <AIRecommendationsPanel recommendations={aiRecommendations} />
+
+        <ChannelSourceSummary channels={channels} />
 
         <MetricsSection
           metrics={metrics}

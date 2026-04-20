@@ -6,16 +6,29 @@ import {
   MessageSquare, Mic, Video, Image as ImageIcon, FileText, Languages,
   Target, UserX, Smile, Frown, Zap,
 } from 'lucide-react'
-import { fetchSupportHealth, type SupportHealthPayload, type HealthPeriod, type HealthDrillKind } from '@/shared/api'
+import {
+  fetchSupportHealth,
+  type SupportHealthPayload,
+  type HealthPeriod,
+  type HealthDrillKind,
+  type HealthSource,
+} from '@/shared/api'
 import { HealthDrilldownModal } from './HealthDrilldownModal'
 import { RootCauseSection } from './RootCauseSection'
 import { CategoryFlowSection } from './CategoryFlowSection'
 import { TaxonomyBackfillPanel } from './TaxonomyBackfillPanel'
+import { PlatformBadge } from './PlatformBadge'
 
 const PERIOD_OPTIONS: { value: HealthPeriod; label: string }[] = [
   { value: '7d', label: 'Последние 7 дней' },
   { value: '30d', label: 'Последние 30 дней' },
   { value: '90d', label: 'Последние 90 дней' },
+]
+
+const SOURCE_OPTIONS: { value: HealthSource; label: string }[] = [
+  { value: 'all', label: 'Все' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'whatsapp', label: 'WhatsApp' },
 ]
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -53,6 +66,7 @@ interface DrillState {
 export function HealthPage() {
   const navigate = useNavigate()
   const [period, setPeriod] = useState<HealthPeriod>('7d')
+  const [source, setSource] = useState<HealthSource>('all')
   const [data, setData] = useState<SupportHealthPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,7 +76,7 @@ export function HealthPage() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetchSupportHealth({ period })
+      const res = await fetchSupportHealth({ period, source })
       setData(res)
     } catch (e) {
       console.error(e)
@@ -70,7 +84,7 @@ export function HealthPage() {
     } finally {
       setLoading(false)
     }
-  }, [period])
+  }, [period, source])
 
   useEffect(() => { load() }, [load])
 
@@ -120,6 +134,34 @@ export function HealthPage() {
           <p className="text-sm text-slate-500 mt-1">Сводка сигналов, на которые стоит реагировать сегодня</p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
+            {SOURCE_OPTIONS.map((opt) => {
+              const active = source === opt.value
+              const counts = opt.value !== 'all' ? data?.bySource?.[opt.value] : null
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => setSource(opt.value)}
+                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-colors ${
+                    active ? 'bg-blue-500 text-white' : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                  title={
+                    counts
+                      ? `Создано: ${counts.created} · Закрыто: ${counts.resolved} · Открыто: ${counts.openNow}`
+                      : opt.label
+                  }
+                >
+                  {opt.value !== 'all' && <PlatformBadge source={opt.value} size="xs" />}
+                  <span>{opt.label}</span>
+                  {counts && !active && (
+                    <span className="text-[10px] text-slate-400">
+                      {counts.created}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
           <select
             value={period}
             onChange={e => setPeriod(e.target.value as HealthPeriod)}
@@ -151,18 +193,21 @@ export function HealthPage() {
               {' '}{Math.abs(data.stats.createdDelta)} к прошлому периоду
             </span>
           }
+          split={sourceSplit(data.bySource, 'created')}
           icon={TrendingUp}
           color="text-blue-600 bg-blue-50"
         />
         <KpiCard
           label="Закрыто за период"
           value={data.stats.totalResolved}
+          split={sourceSplit(data.bySource, 'resolved')}
           icon={TrendingDown}
           color="text-green-600 bg-green-50"
         />
         <KpiCard
           label="Открыто сейчас"
           value={data.stats.openNow}
+          split={sourceSplit(data.bySource, 'openNow')}
           icon={Clock}
           color="text-amber-600 bg-amber-50"
         />
@@ -182,7 +227,7 @@ export function HealthPage() {
       </div>
 
       {/* Новая таксономия: KPI + treemap + stacked bars + таблицы */}
-      <CategoryFlowSection period={period} />
+      <CategoryFlowSection period={period} source={source} />
 
       {/* Переразметка таксономии (админский блок) */}
       <TaxonomyBackfillPanel period={period} />
@@ -289,7 +334,10 @@ export function HealthPage() {
               onClick={() => navigate(`/chats?channel=${ch.channelId}`)}
               left={
                 <>
-                  <span className="font-medium text-slate-800 truncate">{ch.channelName}</span>
+                  <span className="flex items-center gap-1.5 font-medium text-slate-800 truncate">
+                    <PlatformBadge source={ch.source} />
+                    {ch.channelName}
+                  </span>
                   <span className="text-xs text-slate-500">
                     {ch.totalCases} {pluralCases(ch.totalCases)} • открыто {ch.openCases} • ср. возраст {formatHours(ch.avgAgeHours)}
                   </span>
@@ -504,8 +552,11 @@ export function HealthPage() {
                 onClick={() => c.channelId ? navigate(`/chats?channel=${c.channelId}`) : navigate('/cases')}
                 left={
                   <>
-                    <span className="text-xs font-mono text-blue-600 font-semibold">
-                      {c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 6).toUpperCase()}
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-xs font-mono text-blue-600 font-semibold">
+                        {c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 6).toUpperCase()}
+                      </span>
+                      <PlatformBadge source={c.source} />
                     </span>
                     <span className="font-medium text-slate-800 truncate">{c.title}</span>
                     <span className="text-xs text-slate-500 truncate">
@@ -831,12 +882,13 @@ interface KpiCardProps {
   label: string
   value: number | string
   hint?: React.ReactNode
+  split?: { tg: number; wa: number } | null
   icon: typeof TrendingUp
   color: string
   warn?: boolean
 }
 
-function KpiCard({ label, value, hint, icon: Icon, color, warn }: KpiCardProps) {
+function KpiCard({ label, value, hint, split, icon: Icon, color, warn }: KpiCardProps) {
   return (
     <div className={`bg-white border ${warn ? 'border-red-200' : 'border-slate-200'} rounded-xl p-3`}>
       <div className="flex items-center gap-2 mb-1">
@@ -845,10 +897,32 @@ function KpiCard({ label, value, hint, icon: Icon, color, warn }: KpiCardProps) 
         </div>
         <span className="text-xs text-slate-500 uppercase tracking-wide">{label}</span>
       </div>
-      <div className="text-2xl font-bold text-slate-800">{value}</div>
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <div className="text-2xl font-bold text-slate-800">{value}</div>
+        {split && (split.tg > 0 || split.wa > 0) && (
+          <div className="flex items-center gap-1 text-[11px] font-semibold">
+            <span className="inline-flex items-center gap-0.5 text-sky-700" title="Telegram">
+              <PlatformBadge source="telegram" />
+              {split.tg}
+            </span>
+            <span className="inline-flex items-center gap-0.5 text-emerald-700" title="WhatsApp">
+              <PlatformBadge source="whatsapp" />
+              {split.wa}
+            </span>
+          </div>
+        )}
+      </div>
       {hint && <div className="text-xs text-slate-500 mt-0.5">{hint}</div>}
     </div>
   )
+}
+
+function sourceSplit(
+  bySource: Record<'telegram' | 'whatsapp', { created: number; resolved: number; openNow: number }> | undefined,
+  key: 'created' | 'resolved' | 'openNow',
+): { tg: number; wa: number } | null {
+  if (!bySource) return null
+  return { tg: bySource.telegram?.[key] || 0, wa: bySource.whatsapp?.[key] || 0 }
 }
 
 interface SectionCardProps {

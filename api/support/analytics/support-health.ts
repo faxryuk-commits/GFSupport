@@ -35,6 +35,9 @@ export default async function handler(req: Request): Promise<Response> {
 
   const period = url.searchParams.get('period') || '7d'
   const market = url.searchParams.get('market') || null
+  const rawSource = (url.searchParams.get('source') || 'all').toLowerCase()
+  const source: 'all' | 'telegram' | 'whatsapp' =
+    rawSource === 'telegram' ? 'telegram' : rawSource === 'whatsapp' ? 'whatsapp' : 'all'
   const days = period === '30d' ? 30 : period === '90d' ? 90 : 7
 
   const now = new Date()
@@ -46,19 +49,23 @@ export default async function handler(req: Request): Promise<Response> {
     // 1. Топ категорий + WoW дельта
     const topCategories = await sql`
       WITH curr AS (
-        SELECT COALESCE(NULLIF(category, ''), 'general') as cat, COUNT(*)::int as cnt
-        FROM support_cases
-        WHERE org_id = ${orgId}
-          AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-          AND (${market}::text IS NULL OR market_id = ${market})
+        SELECT COALESCE(NULLIF(sc.category, ''), 'general') as cat, COUNT(*)::int as cnt
+        FROM support_cases sc
+        LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+        WHERE sc.org_id = ${orgId}
+          AND sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz
+          AND (${market}::text IS NULL OR sc.market_id = ${market})
+          AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
         GROUP BY cat
       ),
       prev AS (
-        SELECT COALESCE(NULLIF(category, ''), 'general') as cat, COUNT(*)::int as cnt
-        FROM support_cases
-        WHERE org_id = ${orgId}
-          AND created_at >= ${prevFromDate}::timestamptz AND created_at < ${fromDate}::timestamptz
-          AND (${market}::text IS NULL OR market_id = ${market})
+        SELECT COALESCE(NULLIF(sc.category, ''), 'general') as cat, COUNT(*)::int as cnt
+        FROM support_cases sc
+        LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+        WHERE sc.org_id = ${orgId}
+          AND sc.created_at >= ${prevFromDate}::timestamptz AND sc.created_at < ${fromDate}::timestamptz
+          AND (${market}::text IS NULL OR sc.market_id = ${market})
+          AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
         GROUP BY cat
       )
       SELECT
@@ -80,15 +87,17 @@ export default async function handler(req: Request): Promise<Response> {
     // 2. Топ root_cause с impact_mrr
     const topRootCauses = await sql`
       SELECT
-        COALESCE(NULLIF(root_cause, ''), 'Не указано') as root_cause,
+        COALESCE(NULLIF(sc.root_cause, ''), 'Не указано') as root_cause,
         COUNT(*)::int as cases,
-        ROUND(COALESCE(SUM(impact_mrr), 0)::numeric, 2)::float as impact_mrr
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-        AND (${market}::text IS NULL OR market_id = ${market})
-        AND root_cause IS NOT NULL AND root_cause <> ''
-      GROUP BY root_cause
+        ROUND(COALESCE(SUM(sc.impact_mrr), 0)::numeric, 2)::float as impact_mrr
+      FROM support_cases sc
+      LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+      WHERE sc.org_id = ${orgId}
+        AND sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz
+        AND (${market}::text IS NULL OR sc.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+        AND sc.root_cause IS NOT NULL AND sc.root_cause <> ''
+      GROUP BY sc.root_cause
       ORDER BY cases DESC
       LIMIT 5
     `
@@ -96,15 +105,17 @@ export default async function handler(req: Request): Promise<Response> {
     // 3. Повторяющиеся проблемы (is_recurring=true) по категориям
     const recurring = await sql`
       SELECT
-        COALESCE(NULLIF(category, ''), 'general') as category,
+        COALESCE(NULLIF(sc.category, ''), 'general') as category,
         COUNT(*)::int as cases,
-        COUNT(DISTINCT channel_id)::int as channels_count
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-        AND (${market}::text IS NULL OR market_id = ${market})
-        AND is_recurring = true
-      GROUP BY category
+        COUNT(DISTINCT sc.channel_id)::int as channels_count
+      FROM support_cases sc
+      LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+      WHERE sc.org_id = ${orgId}
+        AND sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz
+        AND (${market}::text IS NULL OR sc.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+        AND sc.is_recurring = true
+      GROUP BY sc.category
       ORDER BY cases DESC
       LIMIT 5
     `
@@ -114,6 +125,7 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT
         c.channel_id,
         ch.name as channel_name,
+        COALESCE(ch.source, 'telegram') as channel_source,
         COUNT(*)::int as total_cases,
         SUM(CASE WHEN c.status NOT IN ('resolved','closed','cancelled') THEN 1 ELSE 0 END)::int as open_cases,
         ROUND(AVG(EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600)::numeric, 1)::float as avg_age_hours
@@ -122,8 +134,9 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE c.org_id = ${orgId}
         AND c.created_at >= ${fromDate}::timestamptz AND c.created_at < ${toDate}::timestamptz
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, c.source, 'telegram') = ${source})
         AND c.channel_id IS NOT NULL
-      GROUP BY c.channel_id, ch.name
+      GROUP BY c.channel_id, ch.name, ch.source
       ORDER BY total_cases DESC, open_cases DESC
       LIMIT 5
     `
@@ -144,6 +157,7 @@ export default async function handler(req: Request): Promise<Response> {
         c.priority,
         c.channel_id,
         ch.name as channel_name,
+        COALESCE(ch.source, 'telegram') as channel_source,
         a.name as assignee_name,
         COALESCE(lsc.changed_at, c.created_at) as in_status_since,
         EXTRACT(EPOCH FROM (NOW() - COALESCE(lsc.changed_at, c.created_at))) / 3600 as hours_in_status
@@ -154,6 +168,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE c.org_id = ${orgId}
         AND c.status NOT IN ('resolved','closed','cancelled')
         AND (${market}::text IS NULL OR c.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, c.source, 'telegram') = ${source})
         AND COALESCE(lsc.changed_at, c.created_at) < NOW() - INTERVAL '24 hours'
       ORDER BY hours_in_status DESC
       LIMIT 10
@@ -162,29 +177,48 @@ export default async function handler(req: Request): Promise<Response> {
     // 6. Общая статистика периода
     const statsRow = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz)::int as total_created,
-        COUNT(*) FILTER (WHERE resolved_at >= ${fromDate}::timestamptz AND resolved_at < ${toDate}::timestamptz)::int as total_resolved,
-        ROUND(AVG(resolution_time_minutes) FILTER (
-          WHERE resolved_at >= ${fromDate}::timestamptz AND resolved_at < ${toDate}::timestamptz
-            AND resolution_time_minutes IS NOT NULL
+        COUNT(*) FILTER (WHERE sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz)::int as total_created,
+        COUNT(*) FILTER (WHERE sc.resolved_at >= ${fromDate}::timestamptz AND sc.resolved_at < ${toDate}::timestamptz)::int as total_resolved,
+        ROUND(AVG(sc.resolution_time_minutes) FILTER (
+          WHERE sc.resolved_at >= ${fromDate}::timestamptz AND sc.resolved_at < ${toDate}::timestamptz
+            AND sc.resolution_time_minutes IS NOT NULL
         )::numeric / 60.0, 1)::float as avg_resolution_hours,
-        COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled'))::int as open_now,
+        COUNT(*) FILTER (WHERE sc.status NOT IN ('resolved','closed','cancelled'))::int as open_now,
         COUNT(*) FILTER (
-          WHERE status NOT IN ('resolved','closed','cancelled') AND (assigned_to IS NULL OR assigned_to = '')
+          WHERE sc.status NOT IN ('resolved','closed','cancelled') AND (sc.assigned_to IS NULL OR sc.assigned_to = '')
         )::int as unassigned_now
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND (${market}::text IS NULL OR market_id = ${market})
+      FROM support_cases sc
+      LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+      WHERE sc.org_id = ${orgId}
+        AND (${market}::text IS NULL OR sc.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
     `
 
     // 7. Предыдущий период — для дельт на общих метриках
     const prevStatsRow = await sql`
       SELECT
         COUNT(*)::int as total_created
-      FROM support_cases
-      WHERE org_id = ${orgId}
-        AND created_at >= ${prevFromDate}::timestamptz AND created_at < ${fromDate}::timestamptz
-        AND (${market}::text IS NULL OR market_id = ${market})
+      FROM support_cases sc
+      LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+      WHERE sc.org_id = ${orgId}
+        AND sc.created_at >= ${prevFromDate}::timestamptz AND sc.created_at < ${fromDate}::timestamptz
+        AND (${market}::text IS NULL OR sc.market_id = ${market})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, sc.source, 'telegram') = ${source})
+    `
+
+    // 7a. Разбивка bySource: ключевые метрики отдельно для Telegram и WhatsApp
+    //     Всегда считаем по обоим, игнорируя текущий фильтр source — для split-бейджей в UI
+    const bySourceRaw = await sql`
+      SELECT
+        COALESCE(ch.source, sc.source, 'telegram') as src,
+        COUNT(*) FILTER (WHERE sc.created_at >= ${fromDate}::timestamptz AND sc.created_at < ${toDate}::timestamptz)::int as created,
+        COUNT(*) FILTER (WHERE sc.resolved_at >= ${fromDate}::timestamptz AND sc.resolved_at < ${toDate}::timestamptz)::int as resolved,
+        COUNT(*) FILTER (WHERE sc.status NOT IN ('resolved','closed','cancelled'))::int as open_now
+      FROM support_cases sc
+      LEFT JOIN support_channels ch ON ch.id = sc.channel_id AND ch.org_id = sc.org_id
+      WHERE sc.org_id = ${orgId}
+        AND (${market}::text IS NULL OR sc.market_id = ${market})
+      GROUP BY COALESCE(ch.source, sc.source, 'telegram')
     `
 
     // Мусорные значения AI-классификации, которые не несут сигнала для "где болит"
@@ -196,25 +230,29 @@ export default async function handler(req: Request): Promise<Response> {
     //    Исключаем мусорные значения и порог min 3 сообщения
     const topAiTopics = await sql`
       WITH curr AS (
-        SELECT LOWER(ai_category) as topic, COUNT(*)::int as cnt
-        FROM support_messages
-        WHERE org_id = ${orgId}
-          AND is_from_client = true
-          AND ai_category IS NOT NULL AND ai_category <> ''
-          AND LOWER(ai_category) <> ALL(${noiseCategories}::text[])
-          AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-        GROUP BY LOWER(ai_category)
+        SELECT LOWER(m.ai_category) as topic, COUNT(*)::int as cnt
+        FROM support_messages m
+        LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+        WHERE m.org_id = ${orgId}
+          AND m.is_from_client = true
+          AND m.ai_category IS NOT NULL AND m.ai_category <> ''
+          AND LOWER(m.ai_category) <> ALL(${noiseCategories}::text[])
+          AND m.created_at >= ${fromDate}::timestamptz AND m.created_at < ${toDate}::timestamptz
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+        GROUP BY LOWER(m.ai_category)
         HAVING COUNT(*) >= 3
       ),
       prev AS (
-        SELECT LOWER(ai_category) as topic, COUNT(*)::int as cnt
-        FROM support_messages
-        WHERE org_id = ${orgId}
-          AND is_from_client = true
-          AND ai_category IS NOT NULL AND ai_category <> ''
-          AND LOWER(ai_category) <> ALL(${noiseCategories}::text[])
-          AND created_at >= ${prevFromDate}::timestamptz AND created_at < ${fromDate}::timestamptz
-        GROUP BY LOWER(ai_category)
+        SELECT LOWER(m.ai_category) as topic, COUNT(*)::int as cnt
+        FROM support_messages m
+        LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+        WHERE m.org_id = ${orgId}
+          AND m.is_from_client = true
+          AND m.ai_category IS NOT NULL AND m.ai_category <> ''
+          AND LOWER(m.ai_category) <> ALL(${noiseCategories}::text[])
+          AND m.created_at >= ${prevFromDate}::timestamptz AND m.created_at < ${fromDate}::timestamptz
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+        GROUP BY LOWER(m.ai_category)
       )
       SELECT
         c.topic,
@@ -235,18 +273,20 @@ export default async function handler(req: Request): Promise<Response> {
     // 9. Что хотят клиенты (AI intents) — фильтруем мусор и порог 3
     const topIntents = await sql`
       SELECT
-        LOWER(ai_intent) as intent,
+        LOWER(m.ai_intent) as intent,
         COUNT(*)::int as messages,
-        COUNT(DISTINCT channel_id)::int as channels,
-        COUNT(*) FILTER (WHERE ai_sentiment IN ('negative','frustrated'))::int as negative,
-        COUNT(*) FILTER (WHERE COALESCE(ai_urgency, 0) >= 3)::int as urgent
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND is_from_client = true
-        AND ai_intent IS NOT NULL AND ai_intent <> ''
-        AND LOWER(ai_intent) <> ALL(${noiseIntents}::text[])
-        AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-      GROUP BY LOWER(ai_intent)
+        COUNT(DISTINCT m.channel_id)::int as channels,
+        COUNT(*) FILTER (WHERE m.ai_sentiment IN ('negative','frustrated'))::int as negative,
+        COUNT(*) FILTER (WHERE COALESCE(m.ai_urgency, 0) >= 3)::int as urgent
+      FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = true
+        AND m.ai_intent IS NOT NULL AND m.ai_intent <> ''
+        AND LOWER(m.ai_intent) <> ALL(${noiseIntents}::text[])
+        AND m.created_at >= ${fromDate}::timestamptz AND m.created_at < ${toDate}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+      GROUP BY LOWER(m.ai_intent)
       HAVING COUNT(*) >= 3
       ORDER BY messages DESC
       LIMIT 6
@@ -255,27 +295,31 @@ export default async function handler(req: Request): Promise<Response> {
     // 10. Типы контента: текст/голос/видео/фото/документ
     const contentMix = await sql`
       SELECT
-        COALESCE(NULLIF(LOWER(content_type), ''), 'text') as content_type,
+        COALESCE(NULLIF(LOWER(m.content_type), ''), 'text') as content_type,
         COUNT(*)::int as messages
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND is_from_client = true
-        AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-      GROUP BY COALESCE(NULLIF(LOWER(content_type), ''), 'text')
+      FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = true
+        AND m.created_at >= ${fromDate}::timestamptz AND m.created_at < ${toDate}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+      GROUP BY COALESCE(NULLIF(LOWER(m.content_type), ''), 'text')
       ORDER BY messages DESC
     `
 
     // 11. Распределение по языкам (из транскрипций voice/video)
     const byLanguage = await sql`
       SELECT
-        LOWER(transcript_language) as language,
+        LOWER(m.transcript_language) as language,
         COUNT(*)::int as messages
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND is_from_client = true
-        AND transcript_language IS NOT NULL AND transcript_language <> ''
-        AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
-      GROUP BY LOWER(transcript_language)
+      FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = true
+        AND m.transcript_language IS NOT NULL AND m.transcript_language <> ''
+        AND m.created_at >= ${fromDate}::timestamptz AND m.created_at < ${toDate}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+      GROUP BY LOWER(m.transcript_language)
       ORDER BY messages DESC
       LIMIT 8
     `
@@ -283,14 +327,16 @@ export default async function handler(req: Request): Promise<Response> {
     // 12. Настроение клиентов — % negative/neutral/positive
     const sentimentRow = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE ai_sentiment = 'negative' OR ai_sentiment = 'frustrated')::int as negative,
-        COUNT(*) FILTER (WHERE ai_sentiment = 'neutral')::int as neutral,
-        COUNT(*) FILTER (WHERE ai_sentiment = 'positive')::int as positive,
-        COUNT(*) FILTER (WHERE ai_sentiment IS NOT NULL AND ai_sentiment <> '')::int as total
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND is_from_client = true
-        AND created_at >= ${fromDate}::timestamptz AND created_at < ${toDate}::timestamptz
+        COUNT(*) FILTER (WHERE m.ai_sentiment = 'negative' OR m.ai_sentiment = 'frustrated')::int as negative,
+        COUNT(*) FILTER (WHERE m.ai_sentiment = 'neutral')::int as neutral,
+        COUNT(*) FILTER (WHERE m.ai_sentiment = 'positive')::int as positive,
+        COUNT(*) FILTER (WHERE m.ai_sentiment IS NOT NULL AND m.ai_sentiment <> '')::int as total
+      FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+      WHERE m.org_id = ${orgId}
+        AND m.is_from_client = true
+        AND m.created_at >= ${fromDate}::timestamptz AND m.created_at < ${toDate}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
     `
 
     // 13. Кто из сотрудников слабее: для агентов с ≥3 назначенными кейсами за период
@@ -313,11 +359,13 @@ export default async function handler(req: Request): Promise<Response> {
           c.first_response_at,
           COALESCE(lsc.changed_at, c.created_at) as in_status_since
         FROM support_cases c
+        LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
         LEFT JOIN last_status_change lsc ON lsc.case_id = c.id
         WHERE c.org_id = ${orgId}
           AND c.assigned_to IS NOT NULL AND c.assigned_to <> ''
           AND c.created_at >= ${fromDate}::timestamptz AND c.created_at < ${toDate}::timestamptz
           AND (${market}::text IS NULL OR c.market_id = ${market})
+          AND (${source}::text = 'all' OR COALESCE(ch.source, c.source, 'telegram') = ${source})
       )
       SELECT
         a.id as agent_id,
@@ -356,9 +404,25 @@ export default async function handler(req: Request): Promise<Response> {
     const totalContent = contentMix.reduce((s: number, r: any) => s + parseInt(r.messages || 0), 0) || 0
     const totalLang = byLanguage.reduce((s: number, r: any) => s + parseInt(r.messages || 0), 0) || 0
 
+    // Разбивка по source для split-бейджей (TG/WA)
+    const bySourceMap: Record<string, { created: number; resolved: number; openNow: number }> = {
+      telegram: { created: 0, resolved: 0, openNow: 0 },
+      whatsapp: { created: 0, resolved: 0, openNow: 0 },
+    }
+    for (const r of bySourceRaw as any[]) {
+      const src = (r.src as string) === 'whatsapp' ? 'whatsapp' : 'telegram'
+      bySourceMap[src] = {
+        created: parseInt(r.created || 0),
+        resolved: parseInt(r.resolved || 0),
+        openNow: parseInt(r.open_now || 0),
+      }
+    }
+
     return json(
       {
         period: { from: fromDate, to: toDate, days, prevFrom: prevFromDate },
+        source,
+        bySource: bySourceMap,
         topCategories: topCategories.map((r: any) => ({
           category: r.category,
           cases: parseInt(r.cases || 0),
@@ -379,6 +443,7 @@ export default async function handler(req: Request): Promise<Response> {
         hotChannels: hotChannels.map((r: any) => ({
           channelId: r.channel_id,
           channelName: r.channel_name || 'Без названия',
+          source: (r.channel_source as string) === 'whatsapp' ? 'whatsapp' : 'telegram',
           totalCases: parseInt(r.total_cases || 0),
           openCases: parseInt(r.open_cases || 0),
           avgAgeHours: Number(r.avg_age_hours || 0),
@@ -391,6 +456,7 @@ export default async function handler(req: Request): Promise<Response> {
           priority: r.priority,
           channelId: r.channel_id || null,
           channelName: r.channel_name,
+          source: (r.channel_source as string) === 'whatsapp' ? 'whatsapp' : 'telegram',
           assigneeName: r.assignee_name,
           hoursInStatus: Math.round(Number(r.hours_in_status || 0) * 10) / 10,
         })),

@@ -1,6 +1,13 @@
 import { apiGet, apiPost } from '../services/api.service'
 
 export type HealthPeriod = '7d' | '30d' | '90d'
+export type HealthSource = 'all' | 'telegram' | 'whatsapp'
+
+export interface HealthSourceCell {
+  created: number
+  resolved: number
+  openNow: number
+}
 
 export interface HealthTopCategory {
   category: string
@@ -25,6 +32,7 @@ export interface HealthRecurring {
 export interface HealthHotChannel {
   channelId: string
   channelName: string
+  source?: HealthSource
   totalCases: number
   openCases: number
   avgAgeHours: number
@@ -38,6 +46,7 @@ export interface HealthStuckCase {
   priority: string
   channelId?: string
   channelName?: string
+  source?: HealthSource
   assigneeName?: string
   hoursInStatus: number
 }
@@ -102,6 +111,8 @@ export interface HealthBottomAgent {
 
 export interface SupportHealthPayload {
   period: { from: string; to: string; days: number; prevFrom: string }
+  source?: HealthSource
+  bySource?: Record<'telegram' | 'whatsapp', HealthSourceCell>
   topCategories: HealthTopCategory[]
   topRootCauses: HealthRootCause[]
   recurring: HealthRecurring[]
@@ -119,10 +130,12 @@ export interface SupportHealthPayload {
 export async function fetchSupportHealth(params?: {
   period?: HealthPeriod
   market?: string
+  source?: HealthSource
 }): Promise<SupportHealthPayload> {
   const q = new URLSearchParams()
   q.set('period', params?.period || '7d')
   if (params?.market) q.set('market', params.market)
+  if (params?.source && params.source !== 'all') q.set('source', params.source)
   return apiGet<SupportHealthPayload>(`/analytics/support-health?${q.toString()}`)
 }
 
@@ -255,6 +268,8 @@ export interface CategoryFlowDomain extends FlowCell {
 export interface CategoryFlowItem {
   messageId: string
   channelId: string | null
+  channelName?: string | null
+  source?: 'telegram' | 'whatsapp'
   caseId?: string | null
   domain: string
   subcategory: string
@@ -265,6 +280,7 @@ export interface CategoryFlowItem {
 
 export interface CategoryFlowPayload {
   period: { from: string; to: string; days: number }
+  source?: HealthSource
   sla: {
     targetResponseTime: number
     targetResolutionTime: number
@@ -273,14 +289,21 @@ export interface CategoryFlowPayload {
     workingDays: number[]
   }
   kpi: FlowCell
+  bySource?: Record<'telegram' | 'whatsapp', FlowCell>
   domains: CategoryFlowDomain[]
   ignoredList: CategoryFlowItem[]
   unhappyList: CategoryFlowItem[]
   totalItems: number
 }
 
-export async function fetchCategoryFlow(period: HealthPeriod = '30d'): Promise<CategoryFlowPayload> {
-  return apiGet<CategoryFlowPayload>(`/analytics/category-flow?period=${period}`)
+export async function fetchCategoryFlow(
+  period: HealthPeriod = '30d',
+  source: HealthSource = 'all',
+): Promise<CategoryFlowPayload> {
+  const q = new URLSearchParams()
+  q.set('period', period)
+  if (source !== 'all') q.set('source', source)
+  return apiGet<CategoryFlowPayload>(`/analytics/category-flow?${q.toString()}`)
 }
 
 // =================== BACKFILL TAXONOMY ===================

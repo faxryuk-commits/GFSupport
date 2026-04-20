@@ -67,6 +67,9 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const period = url.searchParams.get('period') || '30d'
   const days = period === '7d' ? 7 : period === '90d' ? 90 : 30
+  const rawSource = (url.searchParams.get('source') || 'all').toLowerCase()
+  const source: 'all' | 'telegram' | 'whatsapp' =
+    rawSource === 'telegram' ? 'telegram' : rawSource === 'whatsapp' ? 'whatsapp' : 'all'
   const now = new Date()
   const fromDate = new Date(now.getTime() - days * 86400000)
   const fromISO = fromDate.toISOString()
@@ -77,7 +80,8 @@ export default async function handler(req: Request): Promise<Response> {
   const sla = await loadSla(orgId)
 
   try {
-    // === 1. Клиентские «содержательные» сообщения за период + join с кейсом ===
+    // === 1. Клиентские «содержательные» сообщения за период + join с кейсом + канал ===
+    // ch.source даёт нам платформу: 'telegram' | 'whatsapp'
     const messages = (await sql`
       SELECT
         m.id,
@@ -93,10 +97,13 @@ export default async function handler(req: Request): Promise<Response> {
         m.ai_urgency,
         m.text_content,
         m.transcript,
+        COALESCE(ch.source, 'telegram') AS channel_source,
+        ch.name AS channel_name,
         c.status AS case_status,
         c.resolved_at AS case_resolved_at,
         c.updated_at AS case_updated_at
       FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
       LEFT JOIN support_cases c ON c.id = m.case_id AND c.org_id = m.org_id
       WHERE m.org_id = ${orgId}
         AND m.created_at >= ${fromISO}::timestamptz
@@ -105,6 +112,7 @@ export default async function handler(req: Request): Promise<Response> {
           m.is_problem = true
           OR m.ai_intent IN ('report_problem', 'complaint', 'ask_question', 'request_feature')
         )
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ORDER BY m.created_at DESC
       LIMIT 10000
     `) as any[]
@@ -112,13 +120,15 @@ export default async function handler(req: Request): Promise<Response> {
     // === 2. Все ответы агентов за период (для расчёта ignored) ===
     // Берём по каналам, чтобы быстро проверять "был ли ответ после X мин"
     const agentReplies = (await sql`
-      SELECT channel_id, created_at
-      FROM support_messages
-      WHERE org_id = ${orgId}
-        AND created_at >= ${fromISO}::timestamptz
-        AND sender_role IN ('support', 'team')
-        AND is_from_client = false
-      ORDER BY channel_id, created_at ASC
+      SELECT m.channel_id, m.created_at
+      FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+      WHERE m.org_id = ${orgId}
+        AND m.created_at >= ${fromISO}::timestamptz
+        AND m.sender_role IN ('support', 'team')
+        AND m.is_from_client = false
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+      ORDER BY m.channel_id, m.created_at ASC
     `) as any[]
 
     // Group ответов агента по channel_id, уже отсортированы по created_at
@@ -144,6 +154,8 @@ export default async function handler(req: Request): Promise<Response> {
       hasChurn: boolean
       messageId: string
       channelId: string | null
+      channelName: string | null
+      channelSource: 'telegram' | 'whatsapp'
       caseId: string | null
       text: string
       createdAt: string
@@ -163,6 +175,8 @@ export default async function handler(req: Request): Promise<Response> {
       const flow = computeFlow(m, repliesByChannel.get(m.channel_id) || [], sla, now)
       const sat = computeSatisfaction(m)
       const hasChurn = detectChurn(text)
+      const channelSource: 'telegram' | 'whatsapp' =
+        (m.channel_source as string) === 'whatsapp' ? 'whatsapp' : 'telegram'
 
       items.push({
         domain,
@@ -172,6 +186,8 @@ export default async function handler(req: Request): Promise<Response> {
         hasChurn,
         messageId: m.id,
         channelId: m.channel_id || null,
+        channelName: m.channel_name || null,
+        channelSource,
         caseId,
         text,
         createdAt: m.created_at,
@@ -180,6 +196,8 @@ export default async function handler(req: Request): Promise<Response> {
 
     // === 4. Агрегация KPI + по доменам + по подкатегориям ===
     const kpi: FlowCell = emptyCell()
+    const kpiByTelegram: FlowCell = emptyCell()
+    const kpiByWhatsapp: FlowCell = emptyCell()
     const domainMap = new Map<DomainKey, FlowCell & { subcategories: Map<string, FlowCell> }>()
 
     for (const d of TAXONOMY) {
@@ -188,6 +206,8 @@ export default async function handler(req: Request): Promise<Response> {
 
     for (const it of items) {
       bumpCell(kpi, it.flow, it.sat, it.hasChurn)
+      if (it.channelSource === 'whatsapp') bumpCell(kpiByWhatsapp, it.flow, it.sat, it.hasChurn)
+      else bumpCell(kpiByTelegram, it.flow, it.sat, it.hasChurn)
       const dom = domainMap.get(it.domain)
       if (!dom) continue
       bumpCell(dom, it.flow, it.sat, it.hasChurn)
@@ -234,6 +254,8 @@ export default async function handler(req: Request): Promise<Response> {
       .map((i) => ({
         messageId: i.messageId,
         channelId: i.channelId,
+        channelName: i.channelName,
+        source: i.channelSource,
         domain: i.domain,
         subcategory: i.subcategory,
         text: i.text,
@@ -247,6 +269,8 @@ export default async function handler(req: Request): Promise<Response> {
       .map((i) => ({
         messageId: i.messageId,
         channelId: i.channelId,
+        channelName: i.channelName,
+        source: i.channelSource,
         caseId: i.caseId,
         domain: i.domain,
         subcategory: i.subcategory,
@@ -258,6 +282,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json(
       {
         period: { from: fromISO, to: now.toISOString(), days },
+        source,
         sla: {
           targetResponseTime: sla.targetResponseTime,
           targetResolutionTime: sla.targetResolutionTime,
@@ -266,6 +291,10 @@ export default async function handler(req: Request): Promise<Response> {
           workingDays: sla.workingDays,
         },
         kpi,
+        bySource: {
+          telegram: kpiByTelegram,
+          whatsapp: kpiByWhatsapp,
+        },
         domains,
         ignoredList,
         unhappyList,

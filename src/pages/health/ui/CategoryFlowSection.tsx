@@ -6,11 +6,14 @@ import {
   type CategoryFlowPayload,
   type CategoryFlowDomain,
   type HealthPeriod,
+  type HealthSource,
   type FlowStatus,
 } from '../../../shared/api/support-health'
+import { PlatformBadge } from './PlatformBadge'
 
 interface Props {
   period: HealthPeriod
+  source?: HealthSource
 }
 
 const FLOW_COLORS: Record<FlowStatus, { bg: string; text: string; label: string }> = {
@@ -21,7 +24,7 @@ const FLOW_COLORS: Record<FlowStatus, { bg: string; text: string; label: string 
   blocked:     { bg: 'bg-slate-500',   text: 'text-slate-700',   label: 'Заблокированы' },
 }
 
-export function CategoryFlowSection({ period }: Props) {
+export function CategoryFlowSection({ period, source = 'all' }: Props) {
   const [data, setData] = useState<CategoryFlowPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -31,7 +34,7 @@ export function CategoryFlowSection({ period }: Props) {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetchCategoryFlow(period)
+      const res = await fetchCategoryFlow(period, source)
       setData(res)
       if (res.domains.length > 0 && !activeDomain) {
         const firstWithData = res.domains.find((d) => d.total > 0)
@@ -48,7 +51,7 @@ export function CategoryFlowSection({ period }: Props) {
     setActiveDomain(null)
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period])
+  }, [period, source])
 
   const selectedDomain: CategoryFlowDomain | null = useMemo(() => {
     if (!data || !activeDomain) return null
@@ -91,11 +94,26 @@ export function CategoryFlowSection({ period }: Props) {
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Обращения по категориям</h3>
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              Обращения по категориям
+              {source !== 'all' && <PlatformBadge source={source} size="sm" withLabel />}
+            </h3>
             <p className="text-sm text-slate-500">
               Всего {data.kpi.total} обращений за {data.period.days} дн. · SLA ответа {data.sla.targetResponseTime} мин ·
               разрешение {data.sla.targetResolutionTime} мин (в рабочих часах)
             </p>
+            {data.bySource && source === 'all' && (data.bySource.telegram.total > 0 || data.bySource.whatsapp.total > 0) && (
+              <div className="flex items-center gap-3 mt-2 text-xs">
+                <span className="inline-flex items-center gap-1 text-sky-700 font-medium">
+                  <PlatformBadge source="telegram" withLabel />
+                  {data.bySource.telegram.total} · решено {data.bySource.telegram.resolved} · игнор {data.bySource.telegram.ignored} · недов. {data.bySource.telegram.unhappy}
+                </span>
+                <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+                  <PlatformBadge source="whatsapp" withLabel />
+                  {data.bySource.whatsapp.total} · решено {data.bySource.whatsapp.resolved} · игнор {data.bySource.whatsapp.ignored} · недов. {data.bySource.whatsapp.unhappy}
+                </span>
+              </div>
+            )}
           </div>
           <button
             onClick={load}
@@ -330,7 +348,9 @@ function IgnoredTable({ items }: { items: CategoryFlowPayload['ignoredList'] }) 
                 <ArrowDown className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-slate-800 line-clamp-2">{it.text || '(без текста)'}</div>
-                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+                    <PlatformBadge source={it.source} />
+                    {it.channelName && <span className="text-slate-600 truncate max-w-[160px]">{it.channelName}</span>}
                     <span className="px-1.5 py-0.5 bg-slate-100 rounded">{it.domain}</span>
                     <span>·</span>
                     <span>{new Date(it.createdAt).toLocaleString('ru-RU')}</span>
@@ -373,6 +393,8 @@ function UnhappyTable({ items }: { items: CategoryFlowPayload['unhappyList'] }) 
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-slate-800 line-clamp-2">{it.text || '(без текста)'}</div>
                   <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+                    <PlatformBadge source={it.source} />
+                    {it.channelName && <span className="text-slate-600 truncate max-w-[160px]">{it.channelName}</span>}
                     <span className="px-1.5 py-0.5 bg-slate-100 rounded">{it.domain}</span>
                     {it.hasChurn && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">угрожает уйти</span>}
                     <span>·</span>
