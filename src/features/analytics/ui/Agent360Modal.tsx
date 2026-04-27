@@ -3,6 +3,7 @@ import {
   Loader2, AlertTriangle, MessageSquare, Clock, CheckCircle, Trophy,
   Phone, Hash, Mic, Image as ImageIcon, Video, FileText, Globe2, TrendingUp,
   TrendingDown, Minus, Smile, Meh, Frown, AlertCircle, Activity,
+  Sparkles, ThumbsUp, AlertOctagon, Lightbulb, RefreshCw,
 } from 'lucide-react'
 import { Modal } from '@/shared/ui'
 
@@ -255,6 +256,9 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
           </div>
         </div>
       </div>
+
+      {/* AI-обзор */}
+      <AgentAiSummary data={data} />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -628,6 +632,182 @@ function SectionBox({ title, icon, children }: { title: string; icon: React.Reac
         <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
       </div>
       <div className="divide-y divide-slate-50">{children}</div>
+    </div>
+  )
+}
+
+/* ============================================================ */
+/* AI Summary                                                    */
+/* ============================================================ */
+
+interface AiSummary {
+  tldr: string
+  strengths: string[]
+  concerns: string[]
+  recommendations: string[]
+  verdict: 'top' | 'solid' | 'watch' | 'risk'
+}
+
+const VERDICT_META: Record<AiSummary['verdict'], { label: string; bg: string; text: string; ring: string }> = {
+  top: { label: 'Топ-исполнитель', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200' },
+  solid: { label: 'Стабильно', bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200' },
+  watch: { label: 'Под наблюдение', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200' },
+  risk: { label: 'Срочно вмешаться', bg: 'bg-red-50', text: 'text-red-700', ring: 'ring-red-200' },
+}
+
+function AgentAiSummary({ data }: { data: Agent360Payload }) {
+  const [summary, setSummary] = useState<AiSummary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const token = localStorage.getItem('support_agent_token')
+        const res = await fetch('/api/support/analytics/agent-360-summary', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token || ''}`,
+          },
+          body: JSON.stringify({ payload: data }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.message || json?.error || `HTTP ${res.status}`)
+        }
+        if (!cancelled) setSummary(json?.summary || null)
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Не удалось получить AI-обзор')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.profile?.name, data.period?.from, data.period?.to, data.period?.source, reloadKey])
+
+  return (
+    <div className="bg-gradient-to-br from-violet-50 via-white to-blue-50 border border-violet-200 rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-violet-100 text-violet-600">
+            <Sparkles className="w-4 h-4" />
+          </span>
+          <div>
+            <h4 className="text-sm font-semibold text-slate-800">AI-обзор по сотруднику</h4>
+            <p className="text-[11px] text-slate-500">сгенерировано на основе метрик за период</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {summary && !loading && (
+            <span className={`text-[11px] font-medium px-2 py-1 rounded-full ${VERDICT_META[summary.verdict].bg} ${VERDICT_META[summary.verdict].text} ring-1 ${VERDICT_META[summary.verdict].ring}`}>
+              {VERDICT_META[summary.verdict].label}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setReloadKey((k) => k + 1)}
+            disabled={loading}
+            className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 disabled:opacity-50"
+            title="Перегенерировать"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Думаю…' : 'Обновить'}
+          </button>
+        </div>
+      </div>
+
+      {loading && !summary && (
+        <div className="flex items-center gap-2 text-sm text-slate-500 py-3">
+          <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+          AI анализирует профиль (10–20 секунд)…
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">AI-обзор не построился</p>
+            <p className="mt-0.5">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {summary && (
+        <div className="space-y-3">
+          {summary.tldr && (
+            <p className="text-sm text-slate-800 leading-relaxed">{summary.tldr}</p>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <SummaryColumn
+              icon={<ThumbsUp className="w-3.5 h-3.5" />}
+              title="Сильные стороны"
+              tone="green"
+              items={summary.strengths}
+              empty="Нет явных сильных метрик за период"
+            />
+            <SummaryColumn
+              icon={<AlertOctagon className="w-3.5 h-3.5" />}
+              title="Что просаживает"
+              tone="red"
+              items={summary.concerns}
+              empty="Просадок не обнаружено"
+            />
+            <SummaryColumn
+              icon={<Lightbulb className="w-3.5 h-3.5" />}
+              title="Что делать"
+              tone="blue"
+              items={summary.recommendations}
+              empty="Рекомендаций нет"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SummaryColumn({
+  icon, title, tone, items, empty,
+}: {
+  icon: React.ReactNode
+  title: string
+  tone: 'green' | 'red' | 'blue'
+  items: string[]
+  empty: string
+}) {
+  const toneClass = {
+    green: 'bg-green-50 text-green-700 border-green-100',
+    red: 'bg-red-50 text-red-700 border-red-100',
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+  }[tone]
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-3">
+      <div className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${toneClass} mb-2`}>
+        {icon}
+        {title}
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs text-slate-400">{empty}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((it, idx) => (
+            <li key={idx} className="text-xs text-slate-700 leading-relaxed flex gap-1.5">
+              <span className="text-slate-300 mt-0.5">•</span>
+              <span>{it}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
