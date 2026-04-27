@@ -31,6 +31,9 @@ interface Agent360Payload {
     channelsServed: number
     activeDays: number
     avgFRT: number | null
+    frtSessions?: number
+    avgInBetween?: number | null
+    inBetweenResponses?: number
     resolvedCases: number
     openCases: number
     stuckCases: number
@@ -271,10 +274,15 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
         />
         <KpiCard
           icon={<Clock className="w-4 h-4" />}
-          label="Среднее время ответа"
+          label="Время первой реакции"
           value={formatMinutes(kpi.avgFRT)}
-          sub={kpi.activeDays ? `${kpi.activeDays} активных дней` : 'нет ответов'}
+          sub={
+            kpi.frtSessions
+              ? `${kpi.frtSessions} сессий · в беседе ${formatMinutes(kpi.avgInBetween ?? null)}`
+              : 'нет данных по FRT'
+          }
           accent="violet"
+          title="Классический FRT — первый ответ агента на новый запрос клиента (исключая короткие 'спасибо/ок'). Совпадает с SLA-лидербордом. В скобках — средняя задержка между сообщением клиента и любым ответом агента в беседе."
         />
         <KpiCard
           icon={<CheckCircle className="w-4 h-4" />}
@@ -588,9 +596,10 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
 /* Subcomponents                                                 */
 /* ============================================================ */
 
-function KpiCard({ icon, label, value, sub, accent }: {
+function KpiCard({ icon, label, value, sub, accent, title }: {
   icon: React.ReactNode; label: string; value: string; sub: string
   accent: 'blue' | 'green' | 'violet' | 'red' | 'slate'
+  title?: string
 }) {
   const colors: Record<string, string> = {
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
@@ -600,7 +609,10 @@ function KpiCard({ icon, label, value, sub, accent }: {
     slate: 'bg-slate-50 text-slate-600 border-slate-100',
   }
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-3">
+    <div
+      className="bg-white border border-slate-200 rounded-xl p-3"
+      title={title}
+    >
       <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${colors[accent]}`}>
         {icon}
         <span>{label}</span>

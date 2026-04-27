@@ -450,69 +450,169 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT 6
       `,
 
-      // 13. FRT агента + распределение per-source (avg отдельно)
+      // 13. FRT (Time to First Response) — унифицировано с sla-report.ts.
+      //
+      // Логика — как в SLA-таблице:
+      //   • берём только сообщения клиента, которые ОТКРЫВАЮТ новую беседу
+      //     (предыдущее в канале — от агента или это первое в канале);
+      //   • выкидываем короткие "спасибо/ок/рахмат/болди/тушунарли" ≤ 50 символов;
+      //   • для каждого такого сообщения находим, кто из команды ответил первым;
+      //   • атрибутируем замер тому, кто был первым отвечающим.
+      //
+      // Дополнительно считаем `avg_in_between` — старая широкая метрика
+      // (среднее по всем сообщениям клиента, без анти-thanks-фильтра),
+      // отдаём её отдельно для прозрачности.
       sql`
-        WITH client_msgs AS (
+        WITH all_msgs AS (
           SELECT
-            m.id, m.channel_id, m.created_at,
-            COALESCE(ch.source, 'telegram') AS source
+            m.id, m.channel_id, m.created_at, m.sender_role, m.is_from_client,
+            m.sender_name, m.text_content,
+            COALESCE(ch.source, 'telegram') AS source,
+            LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) AS prev_role,
+            LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) AS prev_is_client
           FROM support_messages m
-          JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+          LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
           WHERE m.org_id = ${orgId}
-            AND m.is_from_client = true
-            AND m.sender_role = 'client'
-            AND m.created_at >= ${fromTs}::timestamptz
+            AND m.created_at >= ${fromTs}::timestamptz - INTERVAL '24 hours'
             AND m.created_at <= ${toTs}::timestamptz
             AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         ),
-        responses AS (
+        session_starts AS (
+          SELECT id, channel_id, created_at, source
+          FROM all_msgs
+          WHERE is_from_client = true
+            AND sender_role = 'client'
+            AND created_at >= ${fromTs}::timestamptz
+            AND (
+              prev_role IS NULL
+              OR prev_role IN ('support','team','agent')
+              OR prev_is_client = false
+            )
+            AND NOT (
+              COALESCE(LENGTH(text_content), 0) <= 50
+              AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|болди|да|нет|йук|ха|понятно|good|thanks|thank you|hozir|тушундим)(\\s|$)'
+            )
+        ),
+        first_response AS (
           SELECT
-            cm.id AS client_id,
-            cm.source,
-            cm.created_at AS client_at,
+            ss.id AS session_id,
+            ss.source,
+            ss.created_at AS client_at,
             (
-              SELECT m2.created_at
-              FROM support_messages m2
+              SELECT m2.created_at FROM support_messages m2
               WHERE m2.org_id = ${orgId}
-                AND m2.channel_id = cm.channel_id
+                AND m2.channel_id = ss.channel_id
                 AND m2.is_from_client = false
                 AND m2.sender_role IN ('support','team','agent')
-                AND LOWER(m2.sender_name) = LOWER(${resolvedName})
-                AND m2.created_at > cm.created_at
-                AND m2.created_at <= cm.created_at + INTERVAL '4 hours'
-              ORDER BY m2.created_at ASC
-              LIMIT 1
-            ) AS response_at
-          FROM client_msgs cm
+                AND m2.created_at > ss.created_at
+                AND m2.created_at <= ss.created_at + INTERVAL '4 hours'
+              ORDER BY m2.created_at ASC LIMIT 1
+            ) AS response_at,
+            (
+              SELECT LOWER(COALESCE(m2.sender_name, '')) FROM support_messages m2
+              WHERE m2.org_id = ${orgId}
+                AND m2.channel_id = ss.channel_id
+                AND m2.is_from_client = false
+                AND m2.sender_role IN ('support','team','agent')
+                AND m2.created_at > ss.created_at
+                AND m2.created_at <= ss.created_at + INTERVAL '4 hours'
+              ORDER BY m2.created_at ASC LIMIT 1
+            ) AS responder_name_lc
+          FROM session_starts ss
+        ),
+        ours AS (
+          SELECT source, EXTRACT(EPOCH FROM (response_at - client_at))/60.0 AS mins
+          FROM first_response
+          WHERE response_at IS NOT NULL
+            AND responder_name_lc = LOWER(${resolvedName})
+        ),
+        in_between_raw AS (
+          SELECT
+            COALESCE(ch.src, 'telegram') AS source,
+            EXTRACT(EPOCH FROM (resp.created_at - cm.created_at))/60.0 AS mins
+          FROM (
+            SELECT m.id, m.channel_id, m.created_at,
+              COALESCE(c.source, 'telegram') AS src
+            FROM support_messages m
+            LEFT JOIN support_channels c ON c.id = m.channel_id AND c.org_id = m.org_id
+            WHERE m.org_id = ${orgId}
+              AND m.is_from_client = true
+              AND m.sender_role = 'client'
+              AND m.created_at >= ${fromTs}::timestamptz
+              AND m.created_at <= ${toTs}::timestamptz
+              AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
+          ) cm
+          LEFT JOIN support_channels ch ON ch.id = cm.channel_id AND ch.org_id = ${orgId}
+          JOIN LATERAL (
+            SELECT m2.created_at FROM support_messages m2
+            WHERE m2.org_id = ${orgId}
+              AND m2.channel_id = cm.channel_id
+              AND m2.is_from_client = false
+              AND m2.sender_role IN ('support','team','agent')
+              AND LOWER(m2.sender_name) = LOWER(${resolvedName})
+              AND m2.created_at > cm.created_at
+              AND m2.created_at <= cm.created_at + INTERVAL '4 hours'
+            ORDER BY m2.created_at ASC LIMIT 1
+          ) resp ON true
         )
         SELECT
+          'frt'::text AS metric,
           source,
-          COUNT(*) FILTER (WHERE response_at IS NOT NULL)::int AS responses,
-          AVG(EXTRACT(EPOCH FROM (response_at - client_at))/60.0) FILTER (WHERE response_at IS NOT NULL) AS avg_minutes,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (response_at - client_at))/60.0) FILTER (WHERE response_at IS NOT NULL) AS median_minutes
-        FROM responses
-        GROUP BY 1
+          COUNT(*)::int AS responses,
+          AVG(mins) AS avg_minutes,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mins) AS median_minutes
+        FROM ours
+        GROUP BY 2
+        UNION ALL
+        SELECT
+          'in_between'::text AS metric,
+          source,
+          COUNT(*)::int AS responses,
+          AVG(mins) AS avg_minutes,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mins) AS median_minutes
+        FROM in_between_raw
+        GROUP BY 2
       `,
     ])
 
     const kpiRow = kpiRes[0] || {}
     const teamMedians = teamMedianRes[0] || {}
 
-    // Считаем общий avgFRT и medianFRT (взвешенно по всем источникам)
+    // FRT (классический, "первая реакция на новый запрос") + дополнительная
+    // метрика in_between ("средняя задержка ответа в любых сообщениях клиента"),
+    // обе посчитаны в одном запросе, разделены полем metric.
     let totalResponsesFrt = 0
-    let totalMinutes = 0
+    let totalMinutesFrt = 0
+    let totalResponsesInBetween = 0
+    let totalMinutesInBetween = 0
     const frtBySource = new Map<string, { responses: number; avg: number | null; median: number | null }>()
+    const inBetweenBySource = new Map<string, { responses: number; avg: number | null }>()
     for (const r of frtRes as any[]) {
+      const metric = String(r.metric || 'frt')
+      const src = String(r.source || 'telegram')
       const responses = Number(r.responses || 0)
       const avg = r.avg_minutes != null ? Number(r.avg_minutes) : null
       const median = r.median_minutes != null ? Number(r.median_minutes) : null
-      frtBySource.set(r.source, { responses, avg, median })
-      if (responses && avg != null) {
-        totalResponsesFrt += responses
-        totalMinutes += avg * responses
+      if (metric === 'frt') {
+        frtBySource.set(src, { responses, avg, median })
+        if (responses && avg != null) {
+          totalResponsesFrt += responses
+          totalMinutesFrt += avg * responses
+        }
+      } else if (metric === 'in_between') {
+        inBetweenBySource.set(src, { responses, avg })
+        if (responses && avg != null) {
+          totalResponsesInBetween += responses
+          totalMinutesInBetween += avg * responses
+        }
       }
     }
-    const overallAvgFrt = totalResponsesFrt > 0 ? Math.round((totalMinutes / totalResponsesFrt) * 10) / 10 : null
+    const overallAvgFrt = totalResponsesFrt > 0
+      ? Math.round((totalMinutesFrt / totalResponsesFrt) * 10) / 10
+      : null
+    const overallAvgInBetween = totalResponsesInBetween > 0
+      ? Math.round((totalMinutesInBetween / totalResponsesInBetween) * 10) / 10
+      : null
 
     // bySource
     const bySource: BySourceRow[] = (bySourceRes as any[]).map((r) => {
@@ -645,7 +745,15 @@ export default async function handler(req: Request): Promise<Response> {
         totalChars: totalCharsAgent,
         channelsServed,
         activeDays,
+        // Классический FRT — первая реакция на новый запрос клиента,
+        // унифицирован с sla-report.ts (та же логика, тот же SLA-лидерборд).
         avgFRT: overallAvgFrt,
+        frtSessions: totalResponsesFrt,
+        // Вторичная метрика: средняя задержка между сообщением клиента и ответом
+        // нашего агента — без анти-thanks-фильтра. Полезна для оценки "быстро ли
+        // агент держит беседу". Может быть значительно выше avgFRT.
+        avgInBetween: overallAvgInBetween,
+        inBetweenResponses: totalResponsesInBetween,
         resolvedCases,
         openCases: Math.max(0, openCases),
         stuckCases,
