@@ -301,7 +301,7 @@ export default async function handler(req: Request): Promise<Response> {
             AND c.resolved_at <= ${toTs}::timestamptz
             AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
           GROUP BY (c.resolved_at AT TIME ZONE 'Asia/Tashkent')::date
-        )
+        ),
         -- Полный диапазон дат [fromTs..toTs] в Asia/Tashkent.
         -- Пустые дни тоже попадают в ряд (0/0) — иначе на графике
         -- "прыгающая" шкала и непонятно где какой день.
