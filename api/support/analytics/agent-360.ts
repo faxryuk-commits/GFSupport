@@ -158,7 +158,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND LOWER(m.sender_name) = LOWER(${resolvedName})
           AND m.created_at >= ${fromTs}::timestamptz
           AND m.created_at <= ${toTs}::timestamptz
-        GROUP BY COALESCE(ch.source, 'telegram')
+        GROUP BY 1
         ORDER BY messages DESC
       `,
 
@@ -176,7 +176,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.created_at >= ${fromTs}::timestamptz
           AND m.created_at <= ${toTs}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-        GROUP BY COALESCE(NULLIF(m.content_type, ''), 'text')
+        GROUP BY 1
         ORDER BY count DESC
         LIMIT 8
       `,
@@ -202,7 +202,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.transcript_language IS NOT NULL
           AND m.created_at >= ${fromTs}::timestamptz
           AND m.created_at <= ${toTs}::timestamptz
-        GROUP BY COALESCE(NULLIF(m.transcript_language, ''), 'unknown')
+        GROUP BY 1
         ORDER BY count DESC
         LIMIT 6
       `,
@@ -224,7 +224,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND c.created_at >= ${fromTs}::timestamptz
           AND c.created_at <= ${toTs}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-        GROUP BY domain, subcategory
+        GROUP BY 1, 2
         ORDER BY count DESC
         LIMIT 10
       `,
@@ -245,7 +245,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND c.created_at >= ${fromTs}::timestamptz
           AND c.created_at <= ${toTs}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-        GROUP BY status
+        GROUP BY 1
       `,
 
       // 7. Тренд по дням
@@ -351,7 +351,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.ai_sentiment IS NOT NULL
           AND m.created_at >= ${fromTs}::timestamptz
           AND m.created_at <= ${toTs}::timestamptz
-        GROUP BY sentiment
+        GROUP BY 1
       `,
 
       // 10. Последние решённые кейсы
@@ -466,7 +466,7 @@ export default async function handler(req: Request): Promise<Response> {
           AVG(EXTRACT(EPOCH FROM (response_at - client_at))/60.0) FILTER (WHERE response_at IS NOT NULL) AS avg_minutes,
           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (response_at - client_at))/60.0) FILTER (WHERE response_at IS NOT NULL) AS median_minutes
         FROM responses
-        GROUP BY source
+        GROUP BY 1
       `,
     ])
 
