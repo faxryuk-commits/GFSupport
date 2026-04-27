@@ -159,9 +159,17 @@ export function Agent360Modal({
         const res = await fetch(`/api/support/analytics/agent-360?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token || ''}` },
         })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const json = await res.json()
-        if (json?.error) throw new Error(json.error)
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          if (json?.error === 'agent_not_in_team') {
+            throw new Error(
+              json?.message ||
+                'Этот пользователь не входит в нашу команду поддержки — 360°-профиль доступен только для членов команды.'
+            )
+          }
+          throw new Error(json?.message || json?.error || `HTTP ${res.status}`)
+        }
+        if (json?.error) throw new Error(json.message || json.error)
         if (!cancelled) setData(json)
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Ошибка загрузки')

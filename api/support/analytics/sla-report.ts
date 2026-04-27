@@ -299,13 +299,21 @@ export default async function handler(req: Request): Promise<Response> {
     const agentRoleMap: Record<string, string> = {}
     for (const a of allDbAgents) agentRoleMap[a.name] = a.role || 'agent'
 
+    // Whitelist: только сотрудники нашей организации из support_agents.
+    // Иначе в таблицу попадают админы клиентских групп (Telegram отдаёт им роль
+    // 'support'/'team'/'agent' и is_from_client=false), хотя в нашу команду они
+    // не входят. Используем нормализованные имена (lowercase) для сравнения.
+    const teamNamesLower = new Set(allDbAgents.map((a: any) => String(a.name || '').toLowerCase()))
+
     const allAgentNames = new Set([
       ...Object.keys(agentResponseTimes),
       ...agentStatsData.map((s: any) => s.agent_name),
       ...allDbAgents.map((a: any) => a.name),
     ])
-    
-    const agentDetails = Array.from(allAgentNames).map(name => {
+
+    const agentDetails = Array.from(allAgentNames)
+      .filter((name) => name && teamNamesLower.has(String(name).toLowerCase()))
+      .map(name => {
       const times = agentResponseTimes[name] || []
       const sorted = [...times].sort((a, b) => a - b)
       const withinSLACount = times.filter(t => t <= slaMinutes).length

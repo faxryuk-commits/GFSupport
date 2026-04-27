@@ -107,8 +107,17 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT 1
     `
 
-    const resolvedName: string = agentRow?.name || name
-    if (!resolvedName) return json({ error: 'agent not found' }, 404)
+    // Профиль 360° строим ТОЛЬКО для членов нашей команды (support_agents).
+    // Если такого агента нет в нашей оргструктуре — это сотрудник клиента/партнёра,
+    // а не наш, и собирать по нему профиль команды не имеет смысла.
+    if (!agentRow) {
+      return json({
+        error: 'agent_not_in_team',
+        message: 'Этот пользователь не входит в нашу команду поддержки (нет в support_agents). 360° доступен только для членов команды.',
+        hint: name ? `name="${name}"` : `agentId="${agentId}"`,
+      }, 404)
+    }
+    const resolvedName: string = agentRow.name
 
     // Запускаем все агрегации параллельно
     const [
