@@ -54,7 +54,7 @@ interface AgentRow {
 
 interface DuplicateGroup {
   key: string
-  reason: 'name' | 'telegram_id' | 'email'
+  reason: 'name' | 'telegram_id' | 'email' | 'first_name'
   members: Array<{
     id: string
     name: string
@@ -75,6 +75,8 @@ function groupAgents(agents: AgentRow[]): DuplicateGroup[] {
   const byNorm = new Map<string, AgentRow[]>()
   const byTg = new Map<string, AgentRow[]>()
   const byEmail = new Map<string, AgentRow[]>()
+  // Группировка по первому токену имени ("Jamoliddin" + "Jamoliddin Jamolov")
+  const byFirstName = new Map<string, AgentRow[]>()
 
   for (const a of agents) {
     const n = normalizeName(a.name)
@@ -82,6 +84,13 @@ function groupAgents(agents: AgentRow[]): DuplicateGroup[] {
       const arr = byNorm.get(n) || []
       arr.push(a)
       byNorm.set(n, arr)
+
+      const first = n.split(' ')[0]
+      if (first && first.length >= 3) {
+        const arr2 = byFirstName.get(first) || []
+        arr2.push(a)
+        byFirstName.set(first, arr2)
+      }
     }
     if (a.telegram_id) {
       const k = String(a.telegram_id).trim()
@@ -143,6 +152,24 @@ function groupAgents(agents: AgentRow[]): DuplicateGroup[] {
   for (const [k, rows] of byTg) pushGroup(`tg:${k}`, 'telegram_id', rows)
   for (const [k, rows] of byEmail) pushGroup(`email:${k}`, 'email', rows)
   for (const [k, rows] of byNorm) pushGroup(`name:${k}`, 'name', rows)
+
+  // Группы по первому имени — добавляем только когда:
+  //  • есть хотя бы один однословный участник (например, "Jamoliddin"),
+  //  • нет конфликта по telegram_id (set заполненных id ≤ 1),
+  //  • нет конфликта по email (set заполненных email ≤ 1).
+  // Иначе это просто разные тёзки с разными аккаунтами.
+  for (const [k, rows] of byFirstName) {
+    if (rows.length < 2) continue
+    const hasSingleToken = rows.some((r) => normalizeName(r.name).split(' ').length === 1)
+    if (!hasSingleToken) continue
+    const tgs = new Set(rows.map((r) => r.telegram_id).filter(Boolean) as string[])
+    if (tgs.size > 1) continue
+    const emails = new Set(
+      rows.map((r) => (r.email || '').toLowerCase()).filter(Boolean) as string[]
+    )
+    if (emails.size > 1) continue
+    pushGroup(`firstname:${k}`, 'first_name', rows)
+  }
 
   return groups
 }

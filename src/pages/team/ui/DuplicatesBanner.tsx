@@ -19,7 +19,7 @@ interface DuplicateMember {
 
 interface DuplicateGroup {
   key: string
-  reason: 'name' | 'telegram_id' | 'email'
+  reason: 'name' | 'telegram_id' | 'email' | 'first_name'
   members: DuplicateMember[]
 }
 
@@ -31,6 +31,7 @@ const REASON_LABEL: Record<DuplicateGroup['reason'], string> = {
   name: 'одинаковое имя',
   telegram_id: 'один Telegram ID',
   email: 'один email',
+  first_name: 'совпадение по имени (без фамилии)',
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -176,13 +177,18 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-3 text-xs text-slate-500">
+      <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 flex-wrap">
         <Users className="w-3.5 h-3.5" />
         <span>
           Совпадение по: <span className="font-medium text-slate-700">{REASON_LABEL[group.reason]}</span>
         </span>
         <span className="text-slate-400">·</span>
         <span>{group.members.length} записи</span>
+        {group.reason === 'first_name' && (
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+            проверьте вручную
+          </span>
+        )}
       </div>
 
       <div className="space-y-2">
