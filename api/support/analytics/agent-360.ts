@@ -302,18 +302,24 @@ export default async function handler(req: Request): Promise<Response> {
             AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
           GROUP BY (c.resolved_at AT TIME ZONE 'Asia/Tashkent')::date
         )
+        -- Полный диапазон дат [fromTs..toTs] в Asia/Tashkent.
+        -- Пустые дни тоже попадают в ряд (0/0) — иначе на графике
+        -- "прыгающая" шкала и непонятно где какой день.
+        all_days AS (
+          SELECT generate_series(
+            (${fromTs}::timestamptz AT TIME ZONE 'Asia/Tashkent')::date,
+            (${toTs}::timestamptz   AT TIME ZONE 'Asia/Tashkent')::date,
+            INTERVAL '1 day'
+          )::date AS d
+        )
         SELECT
-          TO_CHAR(d, 'YYYY-MM-DD') AS date,
+          TO_CHAR(ad.d, 'YYYY-MM-DD') AS date,
           COALESCE(am.messages, 0)::int AS messages,
           COALESCE(ar.resolved, 0)::int AS resolved
-        FROM (
-          SELECT d FROM agent_msgs
-          UNION
-          SELECT d FROM agent_resolved
-        ) days
+        FROM all_days ad
         LEFT JOIN agent_msgs am USING (d)
         LEFT JOIN agent_resolved ar USING (d)
-        ORDER BY d
+        ORDER BY ad.d
       `,
 
       // 8. Медианы команды для сравнения (только активные агенты в этом периоде)

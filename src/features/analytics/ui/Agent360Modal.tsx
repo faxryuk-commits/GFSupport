@@ -114,6 +114,23 @@ function formatDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+// Короткая дата для оси X в "Активность по дням": "12 апр".
+// Принимаем YYYY-MM-DD (как с бэка) и отдаём день+месяц на русском.
+function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+}
+
+// Полная дата с днём недели для tooltip: "пн, 12 апр 2026".
+function formatLongDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 function SourceBadge({ source }: { source: string }) {
   if (source === 'whatsapp') {
     return (
@@ -225,6 +242,31 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
     [dailyTrend]
   )
 
+  // Сводка ряда: суммы и активные дни.
+  const dailyStats = useMemo(() => {
+    const totalMsg = dailyTrend.reduce((s, d) => s + d.messages, 0)
+    const totalRes = dailyTrend.reduce((s, d) => s + d.resolved, 0)
+    const activeDays = dailyTrend.filter((d) => d.messages > 0 || d.resolved > 0).length
+    const peak = dailyTrend.reduce(
+      (acc, d) => (d.messages > acc.messages ? d : acc),
+      { date: '', messages: 0 } as { date: string; messages: number },
+    )
+    return { totalMsg, totalRes, activeDays, peak }
+  }, [dailyTrend])
+
+  // Метки дат под графиком: первая, ~25%, середина, ~75%, последняя.
+  const dailyLabels = useMemo(() => {
+    if (dailyTrend.length === 0) return [] as { date: string; left: number }[]
+    const n = dailyTrend.length
+    const idxs = Array.from(new Set([0, Math.floor(n * 0.25), Math.floor(n * 0.5), Math.floor(n * 0.75), n - 1]))
+      .filter((i) => i >= 0 && i < n)
+      .sort((a, b) => a - b)
+    return idxs.map((i) => ({
+      date: formatShortDate(dailyTrend[i].date),
+      left: n > 1 ? (i / (n - 1)) * 100 : 50,
+    }))
+  }, [dailyTrend])
+
   const totalResolved = useMemo(
     () => statusFunnel.find((s) => s.status === 'resolved')?.count || 0,
     [statusFunnel]
@@ -326,31 +368,12 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
 
       {/* Trend */}
       {dailyTrend.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-slate-700">Активность по дням</h4>
-            <span className="text-xs text-slate-400">{dailyTrend.length} дней</span>
-          </div>
-          <div className="flex items-end gap-1 h-24">
-            {dailyTrend.map((d) => {
-              const h = Math.max(2, Math.round((d.messages / maxDailyMsg) * 100))
-              return (
-                <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group relative" title={`${d.date}: ${d.messages} сообщ., решено ${d.resolved}`}>
-                  <div className="w-full bg-blue-100 rounded-t relative" style={{ height: `${h}%` }}>
-                    <div className="absolute inset-x-0 bottom-0 bg-blue-500 rounded-t" style={{ height: '100%' }} />
-                    {d.resolved > 0 && (
-                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-green-500 rounded-full" />
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
-            <span>{dailyTrend[0]?.date}</span>
-            <span>{dailyTrend[dailyTrend.length - 1]?.date}</span>
-          </div>
-        </div>
+        <DailyActivityChart
+          data={dailyTrend}
+          max={maxDailyMsg}
+          stats={dailyStats}
+          labels={dailyLabels}
+        />
       )}
 
       {/* Two columns: source/content/language vs domain/funnel/sentiment */}
@@ -646,6 +669,142 @@ function VsTeamItem({ label, value, median, delta }: {
         )}
       </div>
       <p className="text-xs text-slate-400 mt-0.5">медиана команды: {median}</p>
+    </div>
+  )
+}
+
+/* ============================================================ */
+/* DailyActivityChart                                            */
+/* ============================================================ */
+
+interface DailyChartStats {
+  totalMsg: number
+  totalRes: number
+  activeDays: number
+  peak: { date: string; messages: number }
+}
+
+function DailyActivityChart({
+  data,
+  max,
+  stats,
+  labels,
+}: {
+  data: Array<{ date: string; messages: number; resolved: number; avgFRT: number | null }>
+  max: number
+  stats: DailyChartStats
+  labels: Array<{ date: string; left: number }>
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <h4 className="text-sm font-semibold text-slate-700">Активность по дням</h4>
+          <span
+            className="text-[11px] text-slate-400"
+            title="Сообщения сотрудника и кейсы, решённые им, по дням периода. Шкала по горизонтали — даты, по вертикали — количество сообщений."
+          >
+            ⓘ
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />
+            сообщения
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+            решённые кейсы
+          </span>
+        </div>
+      </div>
+
+      {/* Сам график */}
+      <div className="relative h-28">
+        <div className="flex items-end gap-[2px] h-full">
+          {data.map((d, i) => {
+            const hMsg = d.messages > 0 ? Math.max(4, Math.round((d.messages / max) * 100)) : 0
+            // Решённые рисуем как насыщенно-зелёную часть в основании столбика.
+            const hRes = d.resolved > 0 ? Math.min(hMsg || 4, 6 + d.resolved * 4) : 0
+            const isHover = hover === i
+            const isEmpty = d.messages === 0 && d.resolved === 0
+            return (
+              <div
+                key={d.date}
+                className="flex-1 h-full flex items-end relative cursor-pointer"
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover((cur) => (cur === i ? null : cur))}
+              >
+                <div className="w-full h-full flex items-end relative">
+                  {isEmpty ? (
+                    <div className="w-full h-[2px] bg-slate-200 rounded-full" />
+                  ) : (
+                    <div
+                      className={`w-full rounded-t ${isHover ? 'bg-blue-600' : 'bg-blue-500'}`}
+                      style={{ height: `${hMsg}%` }}
+                    >
+                      {hRes > 0 && (
+                        <div
+                          className="absolute left-0 right-0 bottom-0 bg-emerald-500 rounded-t"
+                          style={{ height: `${hRes}px` }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Tooltip */}
+                {isHover && (
+                  <div
+                    className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap pointer-events-none
+                               bg-slate-900 text-white text-[11px] rounded-md px-2 py-1.5 shadow-lg"
+                  >
+                    <div className="font-medium">{formatLongDate(d.date)}</div>
+                    <div className="text-slate-300">
+                      {d.messages} сообщ.
+                      {d.resolved > 0 && <> · решено {d.resolved}</>}
+                      {d.avgFRT != null && <> · ~{Math.round(d.avgFRT)}м FRT</>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Метки дат */}
+      <div className="relative h-4 mt-1">
+        {labels.map((l, idx) => (
+          <span
+            key={`${l.date}-${idx}`}
+            className="absolute -translate-x-1/2 text-[10px] text-slate-400"
+            style={{ left: `${l.left}%` }}
+          >
+            {l.date}
+          </span>
+        ))}
+      </div>
+
+      {/* Итоги */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100">
+        <span>
+          Σ сообщений: <span className="font-semibold text-slate-700">{stats.totalMsg}</span>
+        </span>
+        <span>
+          Σ решённых: <span className="font-semibold text-slate-700">{stats.totalRes}</span>
+        </span>
+        <span>
+          активных дней: <span className="font-semibold text-slate-700">{stats.activeDays}</span> из {data.length}
+        </span>
+        {stats.peak.messages > 0 && (
+          <span>
+            пик: <span className="font-semibold text-slate-700">{stats.peak.messages}</span> сообщ. ({formatShortDate(stats.peak.date)})
+          </span>
+        )}
+      </div>
     </div>
   )
 }
