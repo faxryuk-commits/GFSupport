@@ -76,11 +76,44 @@ export function AgentEditModal({
 
   return (
     <Modal isOpen={!!agent} onClose={onClose} title="Редактировать сотрудника" size="md">
-      <div className="space-y-5">
+      {/*
+        Защита от автозаполнения Chrome/Safari/1Password:
+        - <form autoComplete="off"> + уникальные name="agent-edit-*"
+        - autoComplete="off" / "new-password" на каждом инпуте
+        - data-1p-ignore / data-lpignore — менеджеры паролей пропустят форму
+        - скрытые "decoy" поля сверху: Chrome заполняет их вместо реальных
+      */}
+      <form
+        autoComplete="off"
+        onSubmit={(e) => { e.preventDefault(); save() }}
+        className="space-y-5"
+      >
+        {/* Decoy для Chrome — он автозаполняет первое подходящее поле */}
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, opacity: 0 }}
+        />
+        <input
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, opacity: 0 }}
+        />
+
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Имя *</label>
           <input
             type="text"
+            name="agent-edit-name"
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
             value={form.name}
             onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -94,6 +127,10 @@ export function AgentEditModal({
             <span className="inline-flex items-center px-3 border border-r-0 border-slate-300 rounded-l-lg bg-slate-50 text-slate-500">@</span>
             <input
               type="text"
+              name="agent-edit-tg-username"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
               value={form.username}
               onChange={e => setForm(prev => ({ ...prev, username: e.target.value.replace('@', '') }))}
               className="flex-1 px-4 py-2.5 border border-slate-300 rounded-r-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -106,6 +143,10 @@ export function AgentEditModal({
           <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
           <input
             type="email"
+            name="agent-edit-email"
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
             value={form.email}
             onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -117,6 +158,10 @@ export function AgentEditModal({
           <label className="block text-sm font-medium text-slate-700 mb-1">Телефон</label>
           <input
             type="tel"
+            name="agent-edit-phone"
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
             value={form.phone}
             onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -127,6 +172,7 @@ export function AgentEditModal({
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
           <select
+            name="agent-edit-role"
             value={form.role}
             onChange={e => setForm(prev => ({ ...prev, role: e.target.value as AgentRole }))}
             className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
@@ -144,6 +190,10 @@ export function AgentEditModal({
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
+              name="agent-edit-new-password"
+              autoComplete="new-password"
+              data-1p-ignore="true"
+              data-lpignore="true"
               value={form.password}
               onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
@@ -185,20 +235,21 @@ export function AgentEditModal({
 
         <div className="flex gap-3 pt-4 border-t border-slate-200">
           <button
+            type="button"
             onClick={onClose}
             className="flex-1 px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium"
           >
             Отмена
           </button>
           <button
-            onClick={save}
+            type="submit"
             disabled={saving || !form.name.trim()}
             className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Сохранение...' : 'Сохранить'}
           </button>
         </div>
-      </div>
+      </form>
     </Modal>
   )
 }
