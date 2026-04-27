@@ -13,11 +13,20 @@ interface Props {
 }
 
 export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props) {
+  // SLA: показываем прочерк, если не было замеров FRT за период.
+  const slaSample = metrics?.slaSampleSize ?? 0
+  const slaValue = metrics?.slaPercent == null
+    ? '—'
+    : `${metrics.slaPercent}%`
+  const slaSub = metrics?.slaPercent == null
+    ? 'нет замеров'
+    : `по ${slaSample} ответам`
+
   const metricsDisplay = [
-    { label: 'Ожидают ответа', value: metrics?.waiting || 0, icon: Clock, color: 'blue', trend: 'neutral' as const },
-    { label: 'Среднее время', value: metrics?.avgResponseTime || '-', icon: Zap, color: 'green', trend: 'neutral' as const },
-    { label: 'SLA выполнено', value: `${metrics?.slaPercent || 0}%`, icon: Target, color: 'emerald', trend: 'up' as const },
-    { label: 'Открытых кейсов', value: analytics?.cases?.open || 0, icon: Briefcase, color: 'amber', trend: 'neutral' as const },
+    { label: 'Ожидают ответа', value: metrics?.waiting || 0, icon: Clock, color: 'blue', trend: 'neutral' as const, sub: '' },
+    { label: 'Среднее время', value: metrics?.avgResponseTime || '-', icon: Zap, color: 'green', trend: 'neutral' as const, sub: '' },
+    { label: 'SLA выполнено', value: slaValue, icon: Target, color: 'emerald', trend: 'up' as const, sub: slaSub },
+    { label: 'Открытых кейсов', value: analytics?.cases?.open || 0, icon: Briefcase, color: 'amber', trend: 'neutral' as const, sub: '' },
   ]
 
   return (
@@ -48,6 +57,9 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
                 <div className="mt-3">
                   <p className="text-2xl font-bold text-slate-800">{metric.value}</p>
                   <p className="text-sm text-slate-500 mt-0.5">{metric.label}</p>
+                  {metric.sub && (
+                    <p className="text-xs text-slate-400 mt-0.5">{metric.sub}</p>
+                  )}
                 </div>
               </div>
             )
@@ -58,10 +70,21 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
       {/* SLA by Category */}
       {analytics?.byCategory && Object.keys(analytics.byCategory).length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Target className="w-4 h-4 text-slate-400" />
             <h3 className="text-sm font-medium text-slate-600">Метрики по типам каналов (SLA)</h3>
-            <span className="text-xs text-slate-400">• Приоритет 1 - клиентские каналы</span>
+            <span className="text-xs text-slate-400">• Приоритет 1 — клиентские каналы</span>
+            <span
+              className="text-[11px] text-slate-400 ml-auto"
+              title={
+                'Среднее время и SLA % считаются по ответам, зафиксированным в выбранном периоде. ' +
+                'Открытые кейсы — на текущий момент (включают кейсы, заведённые ранее периода). ' +
+                'Поэтому суммы открытых кейсов по сегментам совпадают с верхним счётчиком, ' +
+                'а замеры FRT — нет.'
+              }
+            >
+              ⓘ как читать
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-4">
             {(Object.entries(analytics.byCategory) as [SlaCategory, typeof analytics.byCategory[SlaCategory]][]).map(([category, data]) => {
@@ -75,6 +98,12 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
               }
               const colors = colorMap[config.color] || colorMap.slate
 
+              // "Недостаточно данных" — нет ни одного замера времени ответа
+              // в каналах этой категории за период. avgMinutes/slaPercent
+              // на нулевой выборке вводят в заблуждение, поэтому ставим прочерки.
+              const hasResponseData = (data.response.respondedCount || 0) > 0
+              const respondedCount = data.response.respondedCount || 0
+
               return (
                 <div key={category} className={`${colors.bg} ${colors.border} border-2 rounded-xl p-5 ${isPriority ? 'ring-2 ring-offset-2 ring-blue-200' : ''}`}>
                   <div className="flex items-center justify-between mb-4">
@@ -82,7 +111,17 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
                       <Target className={`w-5 h-5 ${colors.icon}`} />
                       <h4 className={`font-semibold ${colors.text}`}>{data.label}</h4>
                     </div>
-                    {isPriority && <Badge variant="info" size="sm">Приоритет 1</Badge>}
+                    <div className="flex items-center gap-2">
+                      {!hasResponseData && (
+                        <span
+                          className="text-[11px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600"
+                          title="За период не зафиксировано ни одного ответа на сообщение клиента в этой категории — метрики времени ответа и SLA не считаются."
+                        >
+                          недостаточно данных
+                        </span>
+                      )}
+                      {isPriority && <Badge variant="info" size="sm">Приоритет 1</Badge>}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-4 gap-3">
@@ -91,18 +130,36 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
                       <p className="text-xl font-bold text-slate-800">{data.channels.waitingReply}</p>
                       <p className="text-xs text-slate-500">Ожидают ответа</p>
                     </div>
-                    <button onClick={() => onSlaCategoryClick(category, data.label)}
-                      className="bg-white rounded-lg p-3 text-center hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all cursor-pointer">
+                    <button
+                      onClick={() => hasResponseData && onSlaCategoryClick(category, data.label)}
+                      disabled={!hasResponseData}
+                      className={`bg-white rounded-lg p-3 text-center transition-all ${
+                        hasResponseData
+                          ? 'hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 cursor-pointer'
+                          : 'opacity-60 cursor-not-allowed'
+                      }`}
+                      title={hasResponseData ? `${respondedCount} замеров` : 'Нет данных за период'}
+                    >
                       <div className="flex items-center justify-center mb-1"><Zap className="w-4 h-4 text-green-500" /></div>
                       <p className="text-xl font-bold text-slate-800">
-                        {data.response.avgMinutes > 0 ? `${data.response.avgMinutes}м` : '—'}
+                        {hasResponseData && data.response.avgMinutes > 0 ? `${data.response.avgMinutes}м` : '—'}
                       </p>
-                      <p className="text-xs text-slate-500">Среднее время</p>
+                      <p className="text-xs text-slate-500">
+                        Среднее время{hasResponseData ? ` · n=${respondedCount}` : ''}
+                      </p>
                     </button>
-                    <div className="bg-white rounded-lg p-3 text-center">
+                    <div className="bg-white rounded-lg p-3 text-center" title={hasResponseData && data.slaPercent != null ? '' : 'SLA нельзя посчитать без замеров'}>
                       <div className="flex items-center justify-center mb-1"><Target className="w-4 h-4 text-emerald-500" /></div>
-                      <p className={`text-xl font-bold ${data.slaPercent >= 90 ? 'text-green-600' : data.slaPercent >= 70 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {data.slaPercent}%
+                      <p className={`text-xl font-bold ${
+                        !hasResponseData || data.slaPercent == null
+                          ? 'text-slate-300'
+                          : data.slaPercent >= 90
+                          ? 'text-green-600'
+                          : data.slaPercent >= 70
+                          ? 'text-amber-600'
+                          : 'text-red-600'
+                      }`}>
+                        {hasResponseData && data.slaPercent != null ? `${data.slaPercent}%` : '—'}
                       </p>
                       <p className="text-xs text-slate-500">SLA выполнено</p>
                     </div>

@@ -121,16 +121,32 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
               {analytics.team.responseTimeDistribution.map((item, i) => {
                 const total = analytics.team.responseTimeDistribution!.reduce((sum, r) => sum + r.count, 0)
                 const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
-                const colors = ['bg-green-500', 'bg-emerald-500', 'bg-amber-500', 'bg-orange-500', 'bg-red-500']
-                const bucketLabels = ['до 5 минут', 'до 10 минут', 'до 30 минут', 'до 1 часа', 'более 1 часа']
+                // Цвет берём по техническому ключу bucket, не по индексу — иначе при
+                // отсутствии какого-то бакета цвета сдвигаются.
+                const bucketColors: Record<string, string> = {
+                  '5min': 'bg-green-500',
+                  '10min': 'bg-emerald-500',
+                  '30min': 'bg-amber-500',
+                  '60min': 'bg-orange-500',
+                  '60plus': 'bg-red-500',
+                }
+                const bucketTitles: Record<string, string> = {
+                  '5min': 'до 5 минут',
+                  '10min': 'до 10 минут',
+                  '30min': 'до 30 минут',
+                  '60min': 'до 1 часа',
+                  '60plus': 'более 1 часа',
+                }
+                const color = bucketColors[item.bucket] || 'bg-slate-400'
+                const label = item.bucketLabel || bucketTitles[item.bucket] || item.bucket
                 return (
                   <button key={i}
                     onClick={() => onResponseTimeClick({
                       bucket: item.bucket,
-                      bucketLabel: bucketLabels[i] || item.bucket,
+                      bucketLabel: label,
                       count: item.count,
                       avgMinutes: item.avgMinutes,
-                      color: colors[i] || 'bg-slate-400'
+                      color
                     })}
                     className="text-center p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer group">
                     <div className="mb-2">
@@ -138,9 +154,9 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
                       <div className="text-xs text-slate-500">{percent}%</div>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
-                      <div className={`h-full ${colors[i] || 'bg-slate-400'} rounded-full`} style={{ width: `${percent}%` }} />
+                      <div className={`h-full ${color} rounded-full`} style={{ width: `${percent}%` }} />
                     </div>
-                    <div className="text-sm font-medium text-slate-700">{item.bucket}</div>
+                    <div className="text-sm font-medium text-slate-700">{label}</div>
                     <div className="text-xs text-slate-400">
                       сред. {item.avgMinutes > 0 ? `${Math.round(item.avgMinutes)} мин` : '—'}
                     </div>

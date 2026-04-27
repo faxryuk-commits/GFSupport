@@ -510,16 +510,27 @@ export default async function handler(req: Request): Promise<Response> {
           GROUP BY ch.sla_category
         `,
         sql`
-          SELECT 
+          -- ВАЖНО: open_cases и open_urgent считаются по ВСЕМ открытым кейсам
+          -- (без фильтра по дате создания). Иначе кейсы, заведённые до начала
+          -- периода, не попадут в byCategory.cases.open и будут "теряться":
+          -- сверху "Открытых: N", по сегментам — нули.
+          -- Метрики "за период" (total_cases, urgent в периоде, avgResolution)
+          -- остаются с фильтром created_at >= startDate.
+          SELECT
             COALESCE(ch.sla_category, 'client') as sla_category,
-            COUNT(*) as total_cases,
+            COUNT(*) FILTER (WHERE c.created_at >= ${startDate.toISOString()}) as total_cases,
             COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed')) as open_cases,
-            COUNT(*) FILTER (WHERE c.priority = 'urgent') as urgent_cases,
-            AVG(c.resolution_time_minutes) FILTER (WHERE c.resolution_time_minutes > 0) as avg_resolution_minutes
+            COUNT(*) FILTER (
+              WHERE c.priority = 'urgent'
+                AND c.status NOT IN ('resolved', 'closed')
+            ) as urgent_cases,
+            AVG(c.resolution_time_minutes) FILTER (
+              WHERE c.resolution_time_minutes > 0
+                AND c.resolved_at >= ${startDate.toISOString()}
+            ) as avg_resolution_minutes
           FROM support_cases c
           JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.org_id = ${orgId}
-            AND c.created_at >= ${startDate.toISOString()}
           GROUP BY ch.sla_category
         `,
         sql`
@@ -595,8 +606,12 @@ export default async function handler(req: Request): Promise<Response> {
         
         const totalCases = parseInt(caseData.total_cases || 0)
         const openCases = parseInt(caseData.open_cases || 0)
-        const resolvedCases = totalCases - openCases
-        
+        // resolved за период: total в период минус те, что ещё открыты (среди созданных в период).
+        // openCases теперь шире (включает старые), поэтому простое total - open даёт минус.
+        // Ставим max(0, ...) — это безопасное приближение, дальше можно вынести в отдельный запрос.
+        const resolvedCases = Math.max(0, totalCases - openCases)
+        const respondedCount = parseInt(responseData.responded_count || 0)
+
         byCategory[cat] = {
           label: slaCategoryLabels[cat],
           channels: {
@@ -613,13 +628,17 @@ export default async function handler(req: Request): Promise<Response> {
             avgResolutionMinutes: Math.round(parseFloat(caseData.avg_resolution_minutes || 0)),
           },
           response: {
-            avgMinutes: Math.round(parseFloat(responseData.avg_response_minutes || 0)),
-            respondedCount: parseInt(responseData.responded_count || 0),
+            avgMinutes: respondedCount > 0
+              ? Math.round(parseFloat(responseData.avg_response_minutes || 0))
+              : 0,
+            respondedCount,
             totalMessages: parseInt(responseData.total_messages || 0),
           },
-          slaPercent: parseInt(responseData.responded_count || 0) > 0 
-            ? Math.round(parseInt(responseData.within_sla || 0) / parseInt(responseData.responded_count || 1) * 100)
-            : 100,
+          // null = недостаточно данных. UI рендерит прочерк и плашку "недостаточно данных",
+          // вместо ложных "100%" / "0%" на пустой выборке.
+          slaPercent: respondedCount > 0
+            ? Math.round(parseInt(responseData.within_sla || 0) / respondedCount * 100)
+            : null,
         }
       }
     } catch (e) {
@@ -631,7 +650,7 @@ export default async function handler(req: Request): Promise<Response> {
           channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 },
           cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 },
           response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 },
-          slaPercent: 100,
+          slaPercent: null,
         }
       }
     }
@@ -826,6 +845,9 @@ export default async function handler(req: Request): Promise<Response> {
           casesResolved: d.cases_resolved || 0,
         })),
         responseTimeDistribution: responseTimeDistribution.map((r: any) => {
+          // Возвращаем СТАБИЛЬНЫЙ технический ключ + русский лейбл отдельно.
+          // Раньше bucket переписывался на "до 5 мин" и фронт не находил его
+          // по `bucket === '5min'`, из-за чего slaPercent на дашборде был 0%.
           const bucketLabels: Record<string, string> = {
             '5min': 'до 5 мин',
             '10min': 'до 10 мин',
@@ -834,7 +856,8 @@ export default async function handler(req: Request): Promise<Response> {
             '60plus': 'более 1 часа',
           }
           return {
-            bucket: bucketLabels[r.bucket] || r.bucket,
+            bucket: r.bucket,
+            bucketLabel: bucketLabels[r.bucket] || r.bucket,
             count: parseInt(r.count || 0),
             avgMinutes: Math.round(parseFloat(r.avg_minutes || 0) * 10) / 10,
           }

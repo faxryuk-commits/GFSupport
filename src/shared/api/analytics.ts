@@ -67,7 +67,8 @@ export interface SlaCategoryMetrics {
     respondedCount: number
     totalMessages: number
   }
-  slaPercent: number
+  // null — недостаточно данных за период (нет ни одного зафиксированного ответа)
+  slaPercent: number | null
 }
 
 // Интерфейсы для данных с API
@@ -120,7 +121,7 @@ interface ApiAnalyticsResponse {
       lastActiveAt?: string
     }>
     dailyTrend: Array<{ date: string; casesCreated: number; casesResolved: number }>
-    responseTimeDistribution?: Array<{ bucket: string; count: number; avgMinutes: number }>
+    responseTimeDistribution?: Array<{ bucket: string; bucketLabel?: string; count: number; avgMinutes: number }>
   }
   churnSignals: {
     negativeCompanies: Array<{
@@ -241,7 +242,7 @@ export interface AnalyticsData {
       lastActiveAt?: string
     }>
     dailyTrend: Array<{ date: string; cases: number; resolved: number; messages: number }>
-    responseTimeDistribution: Array<{ bucket: string; count: number; avgMinutes: number }>
+    responseTimeDistribution: Array<{ bucket: string; bucketLabel?: string; count: number; avgMinutes: number }>
   }
   churnSignals: {
     negativeCompanies: Array<{
@@ -393,6 +394,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         })),
         responseTimeDistribution: (raw.teamMetrics?.responseTimeDistribution || []).map(r => ({
           bucket: r.bucket,
+          bucketLabel: (r as any).bucketLabel,
           count: r.count,
           avgMinutes: r.avgMinutes,
         })),
@@ -415,17 +417,17 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         })),
       },
       byCategory: raw.byCategory || {
-        client: { label: 'Delever + Клиенты', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
-        client_integration: { label: 'Delever + Клиенты + Интеграция', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
-        partner: { label: 'Delever + Партнёры', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
-        internal: { label: 'Внутренняя команда', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 },
+        client: { label: 'Delever + Клиенты', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: null },
+        client_integration: { label: 'Delever + Клиенты + Интеграция', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: null },
+        partner: { label: 'Delever + Партнёры', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: null },
+        internal: { label: 'Внутренняя команда', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: null },
       },
       topDemandingChannels: raw.topDemandingChannels || [],
       slowestClients: raw.slowestClients || [],
     }
   } catch (error) {
     console.error('Failed to fetch analytics:', error)
-    const emptyCategory: SlaCategoryMetrics = { label: '', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: 100 }
+    const emptyCategory: SlaCategoryMetrics = { label: '', channels: { total: 0, waitingReply: 0, withUnread: 0, totalUnread: 0 }, cases: { total: 0, open: 0, resolved: 0, urgent: 0, avgResolutionMinutes: 0 }, response: { avgMinutes: 0, respondedCount: 0, totalMessages: 0 }, slaPercent: null }
     // Возвращаем пустые данные при ошибке
     return {
       period: '30d',
@@ -452,7 +454,9 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
 export interface DashboardMetrics {
   waiting: number
   avgResponseTime: string
-  slaPercent: number
+  // null — недостаточно данных для расчёта (не было замеров FRT за период)
+  slaPercent: number | null
+  slaSampleSize?: number
   urgentCases: number
   resolvedToday: number
   totalChannels: number
@@ -470,13 +474,16 @@ export async function fetchDashboardMetrics(period?: string): Promise<DashboardM
     const awaitingChannels = channels.filter((c: any) => c?.awaitingReply).length
 
     const rtd = analytics?.team?.responseTimeDistribution || []
-    const slaPercent = rtd.length > 0
+    const slaSampleSize = rtd.reduce((sum, d) => sum + d.count, 0)
+    // null = недостаточно данных. Не подменяем на 0/95/100 — это вводило в
+    // заблуждение и давало "SLA 0%" при отсутствии замеров.
+    const slaPercent = slaSampleSize > 0
       ? Math.round(
           ((rtd.find((d) => d.bucket === '5min')?.count || 0) +
            (rtd.find((d) => d.bucket === '10min')?.count || 0)) /
-          Math.max(rtd.reduce((sum, d) => sum + d.count, 0), 1) * 100
+          slaSampleSize * 100
         )
-      : (analytics?.channels?.avgFirstResponse != null ? 95 : 100)
+      : null
 
     return {
       waiting: awaitingChannels,
@@ -484,6 +491,7 @@ export async function fetchDashboardMetrics(period?: string): Promise<DashboardM
         ? `${Math.round(analytics.channels.avgFirstResponse)}м` 
         : '—',
       slaPercent,
+      slaSampleSize,
       urgentCases: analytics?.cases?.urgent || 0,
       resolvedToday: analytics?.cases?.resolved || 0,
       totalChannels: analytics?.channels?.total || 0,
@@ -494,7 +502,8 @@ export async function fetchDashboardMetrics(period?: string): Promise<DashboardM
     return {
       waiting: 0,
       avgResponseTime: '—',
-      slaPercent: 0,
+      slaPercent: null,
+      slaSampleSize: 0,
       urgentCases: 0,
       resolvedToday: 0,
       totalChannels: 0,

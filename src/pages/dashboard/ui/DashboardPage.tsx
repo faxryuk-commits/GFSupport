@@ -48,13 +48,16 @@ export function DashboardPage() {
       ])
 
       const rtd = analyticsData?.team?.responseTimeDistribution || []
-      const slaPercent = rtd.length > 0
+      const slaSampleSize = rtd.reduce((sum, d) => sum + d.count, 0)
+      // null = недостаточно замеров FRT за период. Раньше тут стояло
+      // 0/95/100 в зависимости от наличия avgFirstResponse — это путало.
+      const slaPercent = slaSampleSize > 0
         ? Math.round(
             ((rtd.find((d) => d.bucket === '5min')?.count || 0) +
              (rtd.find((d) => d.bucket === '10min')?.count || 0)) /
-            Math.max(rtd.reduce((sum, d) => sum + d.count, 0), 1) * 100
+            slaSampleSize * 100
           )
-        : (analyticsData?.channels?.avgFirstResponse != null ? 95 : 100)
+        : null
 
       const metricsData: DashboardMetrics = {
         waiting: channelsData.filter((c: any) => c.awaitingReply).length,
@@ -62,6 +65,7 @@ export function DashboardPage() {
           ? `${Math.round(analyticsData.channels.avgFirstResponse)}м`
           : '—',
         slaPercent,
+        slaSampleSize,
         urgentCases: analyticsData?.cases?.urgent || 0,
         resolvedToday: analyticsData?.cases?.resolved || 0,
         totalChannels: analyticsData?.channels?.total || 0,
