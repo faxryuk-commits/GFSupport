@@ -153,7 +153,8 @@ export default async function handler(req: Request): Promise<Response> {
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       `,
 
-      // 2. Разбивка по источнику (Telegram/WhatsApp)
+      // 2. Разбивка по источнику (Telegram/WhatsApp) — с тем же source-фильтром,
+      // что и KPI, иначе сумма bySource расходится с KPI.totalResponses.
       sql`
         SELECT
           COALESCE(ch.source, 'telegram') AS source,
@@ -167,11 +168,13 @@ export default async function handler(req: Request): Promise<Response> {
           AND LOWER(m.sender_name) = LOWER(${resolvedName})
           AND m.created_at >= ${fromTs}::timestamptz
           AND m.created_at <= ${toTs}::timestamptz
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY 1
         ORDER BY messages DESC
       `,
 
-      // 3. Разбивка по типу контента (text/voice/photo/video/document)
+      // 3. Разбивка по типу контента (text/voice/photo/video/document).
+      // Без LIMIT — иначе сумма count'ов меньше KPI.totalResponses.
       sql`
         SELECT
           COALESCE(NULLIF(m.content_type, ''), 'text') AS type,
@@ -187,7 +190,6 @@ export default async function handler(req: Request): Promise<Response> {
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY 1
         ORDER BY count DESC
-        LIMIT 8
       `,
 
       // 4. Языки переписки клиентов в каналах, где работает агент
@@ -216,7 +218,9 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT 6
       `,
 
-      // 5. Топ AI-категорий по кейсам, назначенным агенту
+      // 5. Топ AI-категорий по кейсам агента.
+      // "Активные в периоде": создан до конца периода И (ещё не решён ИЛИ решён в периоде).
+      // Иначе кейсы, созданные до fromTs, но закрытые внутри периода, выпадают из аналитики.
       sql`
         SELECT
           COALESCE(NULLIF(c.category, ''), 'general') AS domain,
@@ -230,15 +234,18 @@ export default async function handler(req: Request): Promise<Response> {
             (${agentId}::text <> '' AND c.assigned_to = ${agentId})
             OR LOWER(a.name) = LOWER(${resolvedName})
           )
-          AND c.created_at >= ${fromTs}::timestamptz
           AND c.created_at <= ${toTs}::timestamptz
+          AND (
+            c.resolved_at IS NULL
+            OR c.resolved_at >= ${fromTs}::timestamptz
+          )
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY 1, 2
         ORDER BY count DESC
         LIMIT 10
       `,
 
-      // 6. Воронка статусов кейсов агента
+      // 6. Воронка статусов кейсов агента — те же "активные в периоде".
       sql`
         SELECT
           COALESCE(NULLIF(c.status, ''), 'detected') AS status,
@@ -251,8 +258,11 @@ export default async function handler(req: Request): Promise<Response> {
             (${agentId}::text <> '' AND c.assigned_to = ${agentId})
             OR LOWER(a.name) = LOWER(${resolvedName})
           )
-          AND c.created_at >= ${fromTs}::timestamptz
           AND c.created_at <= ${toTs}::timestamptz
+          AND (
+            c.resolved_at IS NULL
+            OR c.resolved_at >= ${fromTs}::timestamptz
+          )
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY 1
       `,
@@ -384,33 +394,39 @@ export default async function handler(req: Request): Promise<Response> {
           AND c.resolved_at <= ${toTs}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         ORDER BY c.resolved_at DESC
-        LIMIT 8
+        LIMIT 12
       `,
 
-      // 11. Зависшие кейсы (открытые, более 24 часов)
+      // 11. Зависшие кейсы (открытые, более 24 часов).
+      // Возвращаем 12 для списка + полный COUNT через WINDOW, чтобы KPI не врал.
       sql`
-        SELECT
-          c.id AS case_id,
-          c.ticket_number AS ticket,
-          c.title,
-          c.status,
-          c.priority,
-          c.created_at,
-          EXTRACT(EPOCH FROM (NOW() - c.created_at))/86400.0 AS days_open
-        FROM support_cases c
-        LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
-        LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
-        WHERE c.org_id = ${orgId}
-          AND c.status NOT IN ('resolved', 'closed', 'cancelled')
-          AND (
-            (${agentId}::text <> '' AND c.assigned_to = ${agentId})
-            OR LOWER(a.name) = LOWER(${resolvedName})
-          )
-          AND c.created_at <= ${toTs}::timestamptz
-          AND EXTRACT(EPOCH FROM (NOW() - c.created_at)) > 86400
-          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-        ORDER BY c.created_at ASC
-        LIMIT 8
+        WITH stuck AS (
+          SELECT
+            c.id AS case_id,
+            c.ticket_number AS ticket,
+            c.title,
+            c.status,
+            c.priority,
+            c.created_at,
+            EXTRACT(EPOCH FROM (NOW() - c.created_at))/86400.0 AS days_open
+          FROM support_cases c
+          LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
+          LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
+          WHERE c.org_id = ${orgId}
+            AND c.status NOT IN ('resolved', 'closed', 'cancelled')
+            AND (
+              (${agentId}::text <> '' AND c.assigned_to = ${agentId})
+              OR LOWER(a.name) = LOWER(${resolvedName})
+            )
+            AND c.created_at <= ${toTs}::timestamptz
+            AND EXTRACT(EPOCH FROM (NOW() - c.created_at)) > 86400
+            AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+        )
+        SELECT case_id, ticket, title, status, priority, created_at, days_open,
+               (SELECT COUNT(*) FROM stuck)::int AS total_stuck
+        FROM stuck
+        ORDER BY created_at ASC
+        LIMIT 12
       `,
 
       // 12. Топ каналов (групп) агента
@@ -574,7 +590,7 @@ export default async function handler(req: Request): Promise<Response> {
       resolutionHours: r.resolution_time_minutes != null ? Math.round((r.resolution_time_minutes / 60) * 10) / 10 : null,
     }))
 
-    // Stuck
+    // Stuck — список ограничен 12, общее число берём из total_stuck.
     const stuck: CaseRow[] = (stuckRes as any[]).map((r) => ({
       caseId: r.case_id,
       ticket: r.ticket || null,
@@ -583,6 +599,7 @@ export default async function handler(req: Request): Promise<Response> {
       createdAt: r.created_at,
       daysOpen: r.days_open != null ? Math.round(Number(r.days_open) * 10) / 10 : 0,
     }))
+    const totalStuck = Number((stuckRes as any[])[0]?.total_stuck || 0)
 
     const totalMessages = Number(kpiRow.total_messages || 0)
     const totalCharsAgent = Number(kpiRow.total_chars || 0)
@@ -593,13 +610,15 @@ export default async function handler(req: Request): Promise<Response> {
     const statusMap = new Map(statusFunnel.map((s) => [s.status, s.count]))
     const totalCases = statusFunnel.reduce((s, r) => s + r.count, 0)
     const resolvedCases = (statusMap.get('resolved') || 0) + (statusMap.get('closed') || 0)
-    const stuckCases = stuck.length
-    const openCases = totalCases - resolvedCases - (statusMap.get('cancelled') || 0)
+    const stuckCases = totalStuck
+    const openCases = Math.max(0, totalCases - resolvedCases - (statusMap.get('cancelled') || 0))
 
-    // vs Team — отклонения в %
+    // vs Team — отклонения в %.
+    // totalResponses берём ИЗ KPI-запроса (а не sum(bySource)), чтобы цифра в карточке
+    // и в разбивке по источнику строго совпадали при любом source-фильтре.
     const medianResponses = teamMedians.median_responses != null ? Number(teamMedians.median_responses) : 0
     const medianResolved = teamMedians.median_resolved != null ? Number(teamMedians.median_resolved) : 0
-    const totalResponses = bySource.reduce((s, r) => s + r.messages, 0)
+    const totalResponses = totalMessages
     const vsTeam = {
       responses: medianResponses > 0 ? Math.round(((totalResponses - medianResponses) / medianResponses) * 100) : null,
       resolved: medianResolved > 0 ? Math.round(((resolvedCases - medianResolved) / medianResolved) * 100) : null,

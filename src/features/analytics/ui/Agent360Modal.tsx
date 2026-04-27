@@ -513,7 +513,14 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
 
       {/* Lists: stuck + recent resolved */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SectionBox title={`Зависшие кейсы (${stuck.length})`} icon={<AlertCircle className="w-4 h-4 text-red-500" />}>
+        <SectionBox
+          title={
+            kpi.stuckCases > stuck.length
+              ? `Зависшие кейсы (${stuck.length} из ${kpi.stuckCases})`
+              : `Зависшие кейсы (${stuck.length})`
+          }
+          icon={<AlertCircle className="w-4 h-4 text-red-500" />}
+        >
           {stuck.length === 0 ? (
             <EmptyHint hint="Нет зависших кейсов — отлично" />
           ) : (
@@ -539,7 +546,14 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
           )}
         </SectionBox>
 
-        <SectionBox title={`Последние решённые (${recentResolved.length})`} icon={<CheckCircle className="w-4 h-4 text-green-500" />}>
+        <SectionBox
+          title={
+            kpi.resolvedCases > recentResolved.length
+              ? `Последние решённые (${recentResolved.length} из ${kpi.resolvedCases})`
+              : `Последние решённые (${recentResolved.length})`
+          }
+          icon={<CheckCircle className="w-4 h-4 text-green-500" />}
+        >
           {recentResolved.length === 0 ? (
             <EmptyHint hint="За период нет решённых кейсов" />
           ) : (
