@@ -648,6 +648,14 @@ interface AiSummary {
   verdict: 'top' | 'solid' | 'watch' | 'risk'
 }
 
+interface AiSummaryHistoryItem {
+  id: string
+  agentName: string
+  period: { from: string; to: string; source: string }
+  summary: AiSummary
+  generatedAt: string
+}
+
 const VERDICT_META: Record<AiSummary['verdict'], { label: string; bg: string; text: string; ring: string }> = {
   top: { label: 'Топ-исполнитель', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200' },
   solid: { label: 'Стабильно', bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200' },
@@ -657,40 +665,99 @@ const VERDICT_META: Record<AiSummary['verdict'], { label: string; bg: string; te
 
 function AgentAiSummary({ data }: { data: Agent360Payload }) {
   const [summary, setSummary] = useState<AiSummary | null>(null)
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
+  const [history, setHistory] = useState<AiSummaryHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
+  const agentName = data.profile?.name || ''
+  const periodFrom = data.period?.from || ''
+  const periodTo = data.period?.to || ''
+  const periodSource = data.period?.source || 'all'
+
+  // 1) При открытии — подтягиваем историю и используем последнюю запись,
+  //    если есть, чтобы не тратить токены без необходимости.
   useEffect(() => {
+    if (!agentName) return
     let cancelled = false
     const load = async () => {
-      setLoading(true)
-      setError(null)
+      setHistoryLoading(true)
       try {
         const token = localStorage.getItem('support_agent_token')
-        const res = await fetch('/api/support/analytics/agent-360-summary', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token || ''}`,
-          },
-          body: JSON.stringify({ payload: data }),
+        const params = new URLSearchParams({ name: agentName, limit: '20' })
+        const res = await fetch(`/api/support/analytics/agent-360-summary?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token || ''}` },
         })
         const json = await res.json().catch(() => null)
-        if (!res.ok) {
-          throw new Error(json?.message || json?.error || `HTTP ${res.status}`)
+        if (cancelled) return
+        const items: AiSummaryHistoryItem[] = Array.isArray(json?.history) ? json.history : []
+        setHistory(items)
+
+        // Если есть запись по тому же периоду+источнику — показываем её сразу
+        const match = items.find(
+          (h) => h.period.from === periodFrom && h.period.to === periodTo && h.period.source === periodSource
+        )
+        if (match) {
+          setSummary(match.summary)
+          setGeneratedAt(match.generatedAt)
+        } else {
+          setSummary(null)
+          setGeneratedAt(null)
+          // Автогенерация если истории по этому периоду нет
+          generate()
         }
-        if (!cancelled) setSummary(json?.summary || null)
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || 'Не удалось получить AI-обзор')
+      } catch {
+        // история не критична — молча игнорируем, но триггерим генерацию
+        if (!cancelled) generate()
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setHistoryLoading(false)
       }
     }
     load()
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.profile?.name, data.period?.from, data.period?.to, data.period?.source, reloadKey])
+  }, [agentName, periodFrom, periodTo, periodSource])
+
+  const generate = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const token = localStorage.getItem('support_agent_token')
+      const res = await fetch('/api/support/analytics/agent-360-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token || ''}`,
+        },
+        body: JSON.stringify({ payload: data }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(json?.message || json?.error || `HTTP ${res.status}`)
+      const s: AiSummary = json?.summary
+      if (!s) throw new Error('пустой ответ AI')
+      setSummary(s)
+      setGeneratedAt(json?.generatedAt || new Date().toISOString())
+      // Добавляем в начало истории
+      if (json?.id) {
+        setHistory((prev) => [
+          {
+            id: String(json.id),
+            agentName,
+            period: { from: periodFrom, to: periodTo, source: periodSource },
+            summary: s,
+            generatedAt: json.generatedAt || new Date().toISOString(),
+          },
+          ...prev,
+        ])
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось получить AI-обзор')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div className="bg-gradient-to-br from-violet-50 via-white to-blue-50 border border-violet-200 rounded-xl p-4">
@@ -712,10 +779,10 @@ function AgentAiSummary({ data }: { data: Agent360Payload }) {
           )}
           <button
             type="button"
-            onClick={() => setReloadKey((k) => k + 1)}
+            onClick={generate}
             disabled={loading}
             className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 disabled:opacity-50"
-            title="Перегенерировать"
+            title="Сгенерировать заново"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Думаю…' : 'Обновить'}
@@ -768,6 +835,94 @@ function AgentAiSummary({ data }: { data: Agent360Payload }) {
               items={summary.recommendations}
               empty="Рекомендаций нет"
             />
+          </div>
+
+          {generatedAt && (
+            <p className="text-[11px] text-slate-400">
+              Сгенерировано {formatDate(generatedAt)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* История генераций ----------------------------------------- */}
+      {history.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-violet-100">
+          <div className="flex items-center justify-between mb-2">
+            <h5 className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+              История генераций
+            </h5>
+            <span className="text-[11px] text-slate-400">
+              {history.length}
+              {historyLoading && (
+                <Loader2 className="inline-block w-3 h-3 ml-1 animate-spin text-slate-400" />
+              )}
+            </span>
+          </div>
+          <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+            {history.map((item) => {
+              const isOpen = expandedId === item.id
+              const v = VERDICT_META[item.summary.verdict]
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white border border-slate-200 rounded-lg text-xs"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isOpen ? null : item.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 rounded-lg"
+                  >
+                    <span className="text-slate-500 tabular-nums w-[88px] shrink-0">
+                      {formatDate(item.generatedAt)}
+                    </span>
+                    <span className="text-slate-400 hidden sm:inline">·</span>
+                    <span className="text-slate-500 hidden sm:inline tabular-nums">
+                      {item.period.from} – {item.period.to}
+                    </span>
+                    <span className="text-slate-400 hidden md:inline">·</span>
+                    <span className="text-slate-500 hidden md:inline">
+                      {item.period.source === 'all' ? 'все' : item.period.source}
+                    </span>
+                    <span className={`ml-auto inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full ${v.bg} ${v.text}`}>
+                      {v.label}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-slate-100 px-3 py-2.5 space-y-2.5 bg-slate-50/40">
+                      {item.summary.tldr && (
+                        <p className="text-[12px] text-slate-700 leading-relaxed">
+                          {item.summary.tldr}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <SummaryColumn
+                          icon={<ThumbsUp className="w-3 h-3" />}
+                          title="Плюсы"
+                          tone="green"
+                          items={item.summary.strengths}
+                          empty="—"
+                        />
+                        <SummaryColumn
+                          icon={<AlertOctagon className="w-3 h-3" />}
+                          title="Минусы"
+                          tone="red"
+                          items={item.summary.concerns}
+                          empty="—"
+                        />
+                        <SummaryColumn
+                          icon={<Lightbulb className="w-3 h-3" />}
+                          title="Действия"
+                          tone="blue"
+                          items={item.summary.recommendations}
+                          empty="—"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { getRequestOrgId } from '../lib/org.js'
-import { getOpenAIKey, json } from '../lib/db.js'
+import { getSQL, getOpenAIKey, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -9,14 +9,50 @@ export const config = {
 }
 
 /**
+ * GET  /api/support/analytics/agent-360-summary?name=Имя&limit=20
+ *   → последние сохранённые AI-саммари по сотруднику (история).
  * POST /api/support/analytics/agent-360-summary
  *   body: { payload: Agent360Payload }  // тот же payload, что отдаёт agent-360.ts
- *   → возвращает JSON-саммари по сотруднику для руководителя:
- *     { tldr, strengths[], concerns[], recommendations[], verdict }
+ *   → генерирует новое саммари через LLM, сохраняет в support_agent_ai_summaries,
+ *     возвращает { summary, id, generatedAt }.
  *
  * Делаем отдельным endpoint'ом, чтобы основной /agent-360 отдавался мгновенно,
  * а медленный LLM-вызов не задерживал отрисовку модалки.
  */
+
+let summaryTableEnsured = false
+
+async function ensureSummaryTable(): Promise<void> {
+  if (summaryTableEnsured) return
+  const sql = getSQL()
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_agent_ai_summaries (
+        id SERIAL PRIMARY KEY,
+        org_id VARCHAR(50) NOT NULL,
+        agent_name VARCHAR(255) NOT NULL,
+        agent_id VARCHAR(50),
+        period_from DATE NOT NULL,
+        period_to DATE NOT NULL,
+        source VARCHAR(20) NOT NULL DEFAULT 'all',
+        verdict VARCHAR(20) NOT NULL DEFAULT 'solid',
+        tldr TEXT,
+        strengths JSONB NOT NULL DEFAULT '[]'::jsonb,
+        concerns JSONB NOT NULL DEFAULT '[]'::jsonb,
+        recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+        kpi_snapshot JSONB,
+        generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_agent_summaries_lookup
+      ON support_agent_ai_summaries (org_id, LOWER(agent_name), generated_at DESC)
+    `
+    summaryTableEnsured = true
+  } catch (e) {
+    console.error('[ensureSummaryTable]', e)
+  }
+}
 
 const LLM_TIMEOUT_MS = 22_000
 
@@ -133,15 +169,61 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
   }
 
+  const orgId = await getRequestOrgId(req)
+  await ensureSummaryTable()
+  const sql = getSQL()
+
+  // ---- GET: история ----------------------------------------------------
+  if (req.method === 'GET') {
+    const url = new URL(req.url)
+    const name = (url.searchParams.get('name') || '').trim()
+    if (!name) return json({ error: 'name_required' }, 400)
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)))
+
+    try {
+      const rows = await sql`
+        SELECT id, agent_name, period_from, period_to, source, verdict,
+               tldr, strengths, concerns, recommendations, generated_at
+        FROM support_agent_ai_summaries
+        WHERE org_id = ${orgId}
+          AND LOWER(agent_name) = LOWER(${name})
+        ORDER BY generated_at DESC
+        LIMIT ${limit}
+      `
+      return json({
+        history: rows.map((r: any) => ({
+          id: String(r.id),
+          agentName: r.agent_name,
+          period: {
+            from: r.period_from instanceof Date ? r.period_from.toISOString().slice(0, 10) : String(r.period_from).slice(0, 10),
+            to: r.period_to instanceof Date ? r.period_to.toISOString().slice(0, 10) : String(r.period_to).slice(0, 10),
+            source: r.source,
+          },
+          summary: {
+            tldr: r.tldr || '',
+            strengths: Array.isArray(r.strengths) ? r.strengths : [],
+            concerns: Array.isArray(r.concerns) ? r.concerns : [],
+            recommendations: Array.isArray(r.recommendations) ? r.recommendations : [],
+            verdict: r.verdict,
+          },
+          generatedAt: r.generated_at,
+        })),
+      })
+    } catch (e: any) {
+      console.error('[agent-360-summary GET]', e)
+      return json({ error: 'db_failed', message: e?.message || 'DB error' }, 500)
+    }
+  }
+
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
-  const orgId = await getRequestOrgId(req)
+  // ---- POST: генерация + сохранение ------------------------------------
   const apiKey = await getOpenAIKey(orgId)
   if (!apiKey) {
     return json(
@@ -169,7 +251,43 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const summary = await callLLM(client, compactPayload(payload))
-    return json({ summary, generatedAt: new Date().toISOString() })
+    const profile = payload.profile || {}
+    const period = payload.period || ({} as any)
+    const agentName = String(profile.name || '').slice(0, 255)
+    const fromDate = String(period.from || '').slice(0, 10)
+    const toDate = String(period.to || '').slice(0, 10)
+    const source = String(period.source || 'all').slice(0, 20)
+    const kpiSnapshot = payload.kpi || {}
+
+    let savedId: string | null = null
+    let generatedAt = new Date().toISOString()
+    if (agentName && fromDate && toDate) {
+      try {
+        const [row] = await sql`
+          INSERT INTO support_agent_ai_summaries (
+            org_id, agent_name, period_from, period_to, source,
+            verdict, tldr, strengths, concerns, recommendations, kpi_snapshot
+          )
+          VALUES (
+            ${orgId}, ${agentName}, ${fromDate}::date, ${toDate}::date, ${source},
+            ${summary.verdict}, ${summary.tldr},
+            ${JSON.stringify(summary.strengths)}::jsonb,
+            ${JSON.stringify(summary.concerns)}::jsonb,
+            ${JSON.stringify(summary.recommendations)}::jsonb,
+            ${JSON.stringify(kpiSnapshot)}::jsonb
+          )
+          RETURNING id, generated_at
+        `
+        if (row) {
+          savedId = String(row.id)
+          generatedAt = row.generated_at instanceof Date ? row.generated_at.toISOString() : String(row.generated_at)
+        }
+      } catch (e) {
+        console.error('[agent-360-summary INSERT]', e)
+      }
+    }
+
+    return json({ summary, id: savedId, generatedAt })
   } catch (e: any) {
     const aborted = e?.name === 'AbortError'
     return json(
