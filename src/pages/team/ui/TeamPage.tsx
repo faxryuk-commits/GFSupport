@@ -8,6 +8,7 @@ import { AgentTable } from './AgentTable'
 import { AgentDetailPanel } from './AgentDetailPanel'
 import { AgentEditModal } from './AgentEditModal'
 import { InviteModal } from './InviteModal'
+import { DuplicatesBanner } from './DuplicatesBanner'
 import { ConfirmDialog } from '@/shared/ui'
 import { matchSlaAgentFrt } from '../model/matchSlaFrt'
 
@@ -160,6 +161,8 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
 
   return (
     <div className="p-6 space-y-4">
+      <DuplicatesBanner onMerged={loadAgents} />
+
       <TeamHeader
         total={agents.length}
         onlineCount={onlineCount}
