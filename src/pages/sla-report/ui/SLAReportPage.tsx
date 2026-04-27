@@ -13,7 +13,7 @@ import {
   MessageCircle,
   Phone
 } from 'lucide-react'
-import { AgentPerformanceTable, AgentExpertise, WeeklyHeatmap, CollaborationMetrics, CommunicationMap } from '@/features/analytics'
+import { AgentPerformanceTable, AgentExpertise, WeeklyHeatmap, CollaborationMetrics, CommunicationMap, Agent360Modal } from '@/features/analytics'
 import type { AgentExpertiseEntry, WeeklyEntry, CollaborationData } from '@/features/analytics'
 import { ResponseTimeTab, CasesTab, MetricDrilldownModal } from '@/features/sla-report'
 import type { DrilldownMetric } from '@/features/sla-report'
@@ -147,6 +147,7 @@ export function SLAReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'response' | 'cases' | 'agents' | 'insights' | 'communications'>('response')
   const [drilldownMetric, setDrilldownMetric] = useState<DrilldownMetric | null>(null)
+  const [agent360Name, setAgent360Name] = useState<string | null>(null)
   
   // Date range (default: last 7 days)
   const today = new Date()
@@ -561,8 +562,14 @@ export function SLAReportPage() {
               <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-500" />
                 Производительность сотрудников
+                <span className="ml-auto text-xs font-normal text-slate-400">
+                  Кликните на иконку диаграммы — откроется 360°-профиль
+                </span>
               </h3>
-              <AgentPerformanceTable agents={report.agentPerformance} />
+              <AgentPerformanceTable
+                agents={report.agentPerformance}
+                onOpen360={(name) => setAgent360Name(name)}
+              />
             </div>
           )}
 
@@ -604,6 +611,15 @@ export function SLAReportPage() {
           agents={report.agentPerformance}
         />
       )}
+
+      <Agent360Modal
+        isOpen={!!agent360Name}
+        agentName={agent360Name}
+        from={fromDate}
+        to={toDate}
+        source={source}
+        onClose={() => setAgent360Name(null)}
+      />
     </div>
   )
 }

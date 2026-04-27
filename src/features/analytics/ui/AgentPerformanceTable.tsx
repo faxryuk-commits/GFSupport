@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Users, Trophy, Zap, Target, ArrowUpDown, Crown, Shield, Heart, ChevronDown, Lightbulb } from 'lucide-react'
+import { Users, Trophy, Zap, Target, ArrowUpDown, Crown, Shield, Heart, ChevronDown, Lightbulb, PieChart } from 'lucide-react'
 import { getRecommendations, type TeamAvg } from './AgentRecommendations'
 
 export interface AgentPerformanceData {
@@ -106,9 +106,11 @@ function EngagementRing({ score, level, breakdown }: {
 
 interface Props {
   agents: AgentPerformanceData[]
+  /** Открыть полный 360°-профиль конкретного агента. Если не передан — кнопка не показывается. */
+  onOpen360?: (agentName: string) => void
 }
 
-export function AgentPerformanceTable({ agents }: Props) {
+export function AgentPerformanceTable({ agents, onOpen360 }: Props) {
   const [sortField, setSortField] = useState<SortField>('totalResponses')
   const [sortAsc, setSortAsc] = useState(false)
 
@@ -237,6 +239,7 @@ export function AgentPerformanceTable({ agents }: Props) {
                 teamAvg={teamAvg}
                 isExpanded={expandedAgent === agent.name}
                 onToggle={() => setExpandedAgent(expandedAgent === agent.name ? null : agent.name)}
+                onOpen360={onOpen360}
               />
             ))}
           </tbody>
@@ -246,13 +249,14 @@ export function AgentPerformanceTable({ agents }: Props) {
   )
 }
 
-function AgentRowWithRecs({ agent, maxResponses, maxChars, teamAvg, isExpanded, onToggle }: {
+function AgentRowWithRecs({ agent, maxResponses, maxChars, teamAvg, isExpanded, onToggle, onOpen360 }: {
   agent: AgentPerformanceData
   maxResponses: number
   maxChars: number
   teamAvg: TeamAvg
   isExpanded: boolean
   onToggle: () => void
+  onOpen360?: (agentName: string) => void
 }) {
   const recs = useMemo(() => getRecommendations(agent, teamAvg), [agent, teamAvg])
   const typeColors = {
@@ -264,7 +268,15 @@ function AgentRowWithRecs({ agent, maxResponses, maxChars, teamAvg, isExpanded, 
 
   return (
     <>
-      <AgentRow agent={agent} maxResponses={maxResponses} maxChars={maxChars} onToggle={onToggle} isExpanded={isExpanded} hasIssues={hasIssues} />
+      <AgentRow
+        agent={agent}
+        maxResponses={maxResponses}
+        maxChars={maxChars}
+        onToggle={onToggle}
+        isExpanded={isExpanded}
+        hasIssues={hasIssues}
+        onOpen360={onOpen360}
+      />
       {isExpanded && (
         <tr>
           <td colSpan={10} className="p-0">
@@ -293,13 +305,14 @@ function AgentRowWithRecs({ agent, maxResponses, maxChars, teamAvg, isExpanded, 
   )
 }
 
-function AgentRow({ agent, maxResponses, maxChars, onToggle, isExpanded, hasIssues }: {
+function AgentRow({ agent, maxResponses, maxChars, onToggle, isExpanded, hasIssues, onOpen360 }: {
   agent: AgentPerformanceData
   maxResponses: number
   maxChars: number
   onToggle: () => void
   isExpanded: boolean
   hasIssues: boolean
+  onOpen360?: (agentName: string) => void
 }) {
   const role = ROLE_CONFIG[agent.role] || ROLE_CONFIG.agent
   const RoleIcon = role.icon
@@ -336,6 +349,15 @@ function AgentRow({ agent, maxResponses, maxChars, onToggle, isExpanded, hasIssu
               )}
             </div>
           </div>
+          {onOpen360 && !agent.isInactive && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpen360(agent.name) }}
+              className="flex-shrink-0 p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+              title="Открыть 360°-профиль"
+            >
+              <PieChart className="w-4 h-4" />
+            </button>
+          )}
           <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
         </div>
       </td>
