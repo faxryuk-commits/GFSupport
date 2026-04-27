@@ -528,7 +528,7 @@ export default async function handler(req: Request): Promise<Response> {
         ),
         in_between_raw AS (
           SELECT
-            COALESCE(ch.src, 'telegram') AS source,
+            cm.src AS source,
             EXTRACT(EPOCH FROM (resp.created_at - cm.created_at))/60.0 AS mins
           FROM (
             SELECT m.id, m.channel_id, m.created_at,
@@ -542,7 +542,6 @@ export default async function handler(req: Request): Promise<Response> {
               AND m.created_at <= ${toTs}::timestamptz
               AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
           ) cm
-          LEFT JOIN support_channels ch ON ch.id = cm.channel_id AND ch.org_id = ${orgId}
           JOIN LATERAL (
             SELECT m2.created_at FROM support_messages m2
             WHERE m2.org_id = ${orgId}
