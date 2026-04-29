@@ -188,6 +188,7 @@ export default async function handler(req: Request): Promise<Response> {
     period?: string
     source?: string
     includePII?: boolean
+    stream?: boolean
   } = {}
   try { body = await req.json() } catch {
     return json({ error: 'invalid_json' }, 400)
@@ -258,7 +259,6 @@ export default async function handler(req: Request): Promise<Response> {
     // пользователь спросит явно, и инструменты сходят заново.
   }
 
-  // ---- LLM tool-loop ---------------------------------------------------
   const client = new OpenAI({ apiKey })
   const toolCtx: ToolCtx = {
     orgId,
@@ -266,119 +266,250 @@ export default async function handler(req: Request): Promise<Response> {
     maxBytes: 8 * 1024,
   }
 
-  const startedAt = Date.now()
-  const collectedToolCalls: Array<{
-    id: string
-    name: string
-    args: unknown
-    result: unknown
-    durationMs: number
-  }> = []
+  const wantStream = body.stream !== false
+  if (wantStream) {
+    return streamRun({
+      client,
+      llmMessages,
+      sessionId,
+      isNewSession,
+      sql,
+      toolCtx,
+    })
+  }
+  return jsonRun({
+    client,
+    llmMessages,
+    sessionId,
+    isNewSession,
+    sql,
+    toolCtx,
+  })
+}
 
+// =====================================================================
+// JSON-режим (без стрима) — оставлен для curl и обратной совместимости.
+// =====================================================================
+
+interface RunCtx {
+  client: OpenAI
+  llmMessages: any[]
+  sessionId: string
+  isNewSession: boolean
+  sql: ReturnType<typeof getSQL>
+  toolCtx: ToolCtx
+}
+
+async function jsonRun(ctx: RunCtx): Promise<Response> {
+  const startedAt = Date.now()
+  const collected: any[] = []
   let finalContent = ''
+
   for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
     if (Date.now() - startedAt > TOTAL_TIMEOUT_MS) {
-      finalContent = 'Не успел собрать данные за отведённое время. Попробуй уточнить вопрос или сократить период.'
+      finalContent = 'Не успел собрать данные за отведённое время.'
       break
     }
-
-    const resp = await client.chat.completions.create({
+    const resp = await ctx.client.chat.completions.create({
       model: MODEL,
       temperature: 0.2,
       max_tokens: 700,
-      messages: llmMessages,
+      messages: ctx.llmMessages,
       tools: getOpenAITools(),
     })
-
     const choice = resp.choices?.[0]?.message
-    if (!choice) {
-      finalContent = 'Не удалось получить ответ модели.'
-      break
-    }
-
+    if (!choice) { finalContent = 'Не удалось получить ответ.'; break }
     const toolCalls = choice.tool_calls || []
     if (!toolCalls.length) {
       finalContent = (choice.content || '').trim() || 'Не удалось сформулировать ответ.'
       break
     }
-
-    // Подшиваем сам assistant-сообщение с tool_calls в контекст.
-    llmMessages.push({
-      role: 'assistant',
-      content: choice.content || '',
-      tool_calls: toolCalls,
-    })
-
+    ctx.llmMessages.push({ role: 'assistant', content: choice.content || '', tool_calls: toolCalls })
     for (const tc of toolCalls) {
-      const name = tc.function?.name || ''
-      let args: Record<string, unknown> = {}
-      try { args = JSON.parse(tc.function?.arguments || '{}') } catch {}
-
-      let result: unknown
-      const t0 = Date.now()
-      if (!isActiveTool(name)) {
-        result = { error: 'unknown_tool', tried: name }
-      } else {
-        try {
-          result = await TOOLS[name].execute(args, toolCtx)
-        } catch (e: any) {
-          result = { error: 'tool_failed', message: e?.message || 'tool error' }
-        }
-      }
-      const durationMs = Date.now() - t0
-
-      collectedToolCalls.push({
-        id: tc.id || genId('tc'),
-        name,
-        args,
-        result,
-        durationMs,
-      })
-
-      // Сохраняем tool-вызов отдельным сообщением — будет видно во фронте.
-      await sql`
-        INSERT INTO support_ai_chat_messages (id, session_id, role, tool_name, tool_args, tool_result)
-        VALUES (
-          ${genId('msg')}, ${sessionId}, 'tool',
-          ${name},
-          ${JSON.stringify(args)}::jsonb,
-          ${JSON.stringify(result)}::jsonb
-        )
-      `
-
-      llmMessages.push({
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: JSON.stringify(result),
-      })
+      const out = await runOneTool(tc, ctx)
+      collected.push(out)
+      ctx.llmMessages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(out.result) })
     }
   }
+  if (!finalContent) finalContent = 'Слишком много шагов рассуждения, уточни вопрос.'
 
-  if (!finalContent) {
-    finalContent = 'Слишком много шагов рассуждения, не уложился. Уточни вопрос.'
-  }
-
-  // Сохраняем финальный ответ ассистента.
   const assistantMsgId = genId('msg')
-  await sql`
+  await ctx.sql`
     INSERT INTO support_ai_chat_messages (id, session_id, role, content)
-    VALUES (${assistantMsgId}, ${sessionId}, 'assistant', ${finalContent})
+    VALUES (${assistantMsgId}, ${ctx.sessionId}, 'assistant', ${finalContent})
   `
-  await sql`
-    UPDATE support_ai_chat_sessions
-    SET updated_at = NOW()
-    WHERE id = ${sessionId}
-  `
+  await ctx.sql`UPDATE support_ai_chat_sessions SET updated_at = NOW() WHERE id = ${ctx.sessionId}`
 
   return json({
-    sessionId,
-    isNewSession,
+    sessionId: ctx.sessionId,
+    isNewSession: ctx.isNewSession,
     assistantMessage: {
       id: assistantMsgId,
       role: 'assistant',
       content: finalContent,
-      toolCalls: collectedToolCalls,
+      toolCalls: collected,
       createdAt: new Date().toISOString(),
     },
   })
+}
+
+async function runOneTool(tc: any, ctx: RunCtx) {
+  const name = tc.function?.name || ''
+  let args: Record<string, unknown> = {}
+  try { args = JSON.parse(tc.function?.arguments || '{}') } catch {}
+  let result: unknown
+  const t0 = Date.now()
+  if (!isActiveTool(name)) {
+    result = { error: 'unknown_tool', tried: name }
+  } else {
+    try { result = await TOOLS[name].execute(args, ctx.toolCtx) }
+    catch (e: any) { result = { error: 'tool_failed', message: e?.message || 'tool error' } }
+  }
+  const durationMs = Date.now() - t0
+  await ctx.sql`
+    INSERT INTO support_ai_chat_messages (id, session_id, role, tool_name, tool_args, tool_result)
+    VALUES (
+      ${genId('msg')}, ${ctx.sessionId}, 'tool',
+      ${name},
+      ${JSON.stringify(args)}::jsonb,
+      ${JSON.stringify(result)}::jsonb
+    )
+  `
+  return { id: tc.id || genId('tc'), name, args, result, durationMs }
+}
+
+// =====================================================================
+// SSE-стрим — основной режим для UI.
+// События: ready, tool_start, tool_end, token, done, error.
+// Token-стрим включается на финальной итерации (когда модель не зовёт tools).
+// =====================================================================
+
+function streamRun(ctx: RunCtx): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    async start(controller) {
+      function send(event: string, data: unknown) {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+      }
+
+      const startedAt = Date.now()
+      const collected: any[] = []
+      let finalContent = ''
+
+      try {
+        send('ready', { sessionId: ctx.sessionId, isNewSession: ctx.isNewSession })
+
+        for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
+          if (Date.now() - startedAt > TOTAL_TIMEOUT_MS) {
+            finalContent = 'Не успел собрать данные за отведённое время. Уточни вопрос.'
+            break
+          }
+
+          // Не-стримящий запрос — нам нужен либо весь tool_calls, либо явный финал.
+          const resp = await ctx.client.chat.completions.create({
+            model: MODEL,
+            temperature: 0.2,
+            max_tokens: 700,
+            messages: ctx.llmMessages,
+            tools: getOpenAITools(),
+          })
+          const choice = resp.choices?.[0]?.message
+          if (!choice) { finalContent = 'Не удалось получить ответ.'; break }
+          const toolCalls = choice.tool_calls || []
+
+          if (!toolCalls.length) {
+            // Финал. Здесь делаем второй вызов УЖЕ в стрим-режиме, чтобы пользователь
+            // видел токены по мере появления. Это второй запрос к LLM, но дешёвый —
+            // на финальной итерации tool_calls уже не будет.
+            finalContent = (choice.content || '').trim() || 'Не удалось сформулировать ответ.'
+
+            const ts = await ctx.client.chat.completions.create({
+              model: MODEL,
+              temperature: 0.2,
+              max_tokens: 700,
+              messages: ctx.llmMessages,
+              tools: getOpenAITools(),
+              stream: true,
+            })
+            let streamed = ''
+            for await (const part of ts) {
+              const delta = part.choices?.[0]?.delta?.content || ''
+              if (delta) {
+                streamed += delta
+                send('token', { delta })
+              }
+              const finish = part.choices?.[0]?.finish_reason
+              if (finish === 'stop') break
+            }
+            if (streamed.trim()) finalContent = streamed.trim()
+            break
+          }
+
+          // Есть tool_calls — выполняем их и шлём прогресс на фронт.
+          ctx.llmMessages.push({
+            role: 'assistant',
+            content: choice.content || '',
+            tool_calls: toolCalls,
+          })
+          for (const tc of toolCalls) {
+            send('tool_start', {
+              id: tc.id,
+              name: tc.function?.name,
+              args: safeParse(tc.function?.arguments),
+            })
+            const out = await runOneTool(tc, ctx)
+            collected.push(out)
+            send('tool_end', {
+              id: out.id,
+              name: out.name,
+              args: out.args,
+              result: out.result,
+              durationMs: out.durationMs,
+            })
+            ctx.llmMessages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: JSON.stringify(out.result),
+            })
+          }
+        }
+
+        if (!finalContent) finalContent = 'Слишком много шагов рассуждения. Уточни вопрос.'
+
+        const assistantMsgId = genId('msg')
+        await ctx.sql`
+          INSERT INTO support_ai_chat_messages (id, session_id, role, content)
+          VALUES (${assistantMsgId}, ${ctx.sessionId}, 'assistant', ${finalContent})
+        `
+        await ctx.sql`UPDATE support_ai_chat_sessions SET updated_at = NOW() WHERE id = ${ctx.sessionId}`
+
+        send('done', {
+          messageId: assistantMsgId,
+          content: finalContent,
+          toolCalls: collected,
+          createdAt: new Date().toISOString(),
+        })
+      } catch (e: any) {
+        send('error', { message: e?.message || 'stream failed' })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      // Чтобы Vercel/прокси не буферизовали:
+      'X-Accel-Buffering': 'no',
+    },
+  })
+}
+
+function safeParse(s: string | undefined | null): any {
+  try { return JSON.parse(s || '{}') } catch { return {} }
 }

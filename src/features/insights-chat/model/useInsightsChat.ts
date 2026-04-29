@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   listSessions,
   loadSession,
-  sendChat,
+  streamChat,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
 } from '../api/insightsChat'
-import type { InsightsMessage, InsightsSession } from './types'
+import type { InsightsMessage, InsightsSession, InsightsToolCall } from './types'
 
 export interface UseInsightsChatState {
   sessions: InsightsSession[]
@@ -91,60 +91,103 @@ export function useInsightsChat() {
       messages: [
         ...s.messages,
         { id: userTempId, role: 'user', content: message },
-        { id: assistantTempId, role: 'assistant', content: '', pending: true },
+        { id: assistantTempId, role: 'assistant', content: '', pending: true, toolCalls: [] },
       ],
     }))
 
-    try {
-      const resp = await sendChat({
-        sessionId: activeRef.current || undefined,
-        message,
-        period: state.period,
-        source: state.source,
-      })
-      setState((s) => {
-        const isNew = !s.activeSessionId
-        return {
-          ...s,
-          sending: false,
-          activeSessionId: resp.sessionId,
-          messages: s.messages
-            .filter((m) => m.id !== assistantTempId)
-            .concat({
-              id: resp.assistantMessage.id,
-              role: 'assistant',
-              content: resp.assistantMessage.content,
-              toolCalls: resp.assistantMessage.toolCalls || [],
-              createdAt: resp.assistantMessage.createdAt,
-            }),
-          // Обновим список сессий на лету (опционально перезагрузим).
-          sessions: isNew && resp.isNewSession
-            ? [
-                {
-                  id: resp.sessionId,
-                  title: message.slice(0, 60),
-                  updatedAt: new Date().toISOString(),
-                },
-                ...s.sessions,
-              ]
-            : s.sessions.map((sess) =>
-                sess.id === resp.sessionId
-                  ? { ...sess, updatedAt: new Date().toISOString() }
-                  : sess,
-              ),
-        }
-      })
-    } catch (e: any) {
+    let liveContent = ''
+    const liveToolCalls: InsightsToolCall[] = []
+    let createdSessionId: string | null = activeRef.current
+    let isNewSession = false
+
+    function patchAssistant(patch: Partial<InsightsMessage>) {
       setState((s) => ({
         ...s,
-        sending: false,
-        error: e?.message || 'Не удалось отправить сообщение',
         messages: s.messages.map((m) =>
-          m.id === assistantTempId
-            ? { ...m, pending: false, error: true, content: e?.message || 'Ошибка ответа' }
-            : m,
+          m.id === assistantTempId ? { ...m, ...patch } : m,
         ),
       }))
+    }
+
+    try {
+      await streamChat(
+        {
+          sessionId: activeRef.current || undefined,
+          message,
+          period: state.period,
+          source: state.source,
+        },
+        {
+          onReady: (d) => {
+            createdSessionId = d.sessionId
+            isNewSession = d.isNewSession
+            setState((s) => ({ ...s, activeSessionId: d.sessionId }))
+            activeRef.current = d.sessionId
+          },
+          onToolStart: (c) => {
+            // Показываем pending-карточку tool-вызова сразу.
+            liveToolCalls.push({
+              id: c.id,
+              name: c.name,
+              args: c.args,
+              result: { _running: true },
+              durationMs: 0,
+            })
+            patchAssistant({ pending: true, toolCalls: [...liveToolCalls] })
+          },
+          onToolEnd: (c) => {
+            const idx = liveToolCalls.findIndex((x) => x.id === c.id)
+            if (idx >= 0) liveToolCalls[idx] = c
+            else liveToolCalls.push(c)
+            patchAssistant({ pending: true, toolCalls: [...liveToolCalls] })
+          },
+          onToken: (delta) => {
+            liveContent += delta
+            patchAssistant({ pending: false, content: liveContent })
+          },
+          onDone: (d) => {
+            patchAssistant({
+              id: d.messageId,
+              pending: false,
+              content: d.content || liveContent,
+              toolCalls: d.toolCalls && d.toolCalls.length ? d.toolCalls : liveToolCalls,
+              createdAt: d.createdAt,
+            })
+          },
+          onError: (msg) => {
+            patchAssistant({ pending: false, error: true, content: msg })
+          },
+        },
+      )
+
+      // Обновляем список сессий после успешного ответа.
+      setState((s) => {
+        const sid = createdSessionId
+        if (!sid) return { ...s, sending: false }
+        const exists = s.sessions.some((x) => x.id === sid)
+        const sessions = exists
+          ? s.sessions.map((x) =>
+              x.id === sid ? { ...x, updatedAt: new Date().toISOString() } : x,
+            )
+          : isNewSession
+          ? [
+              {
+                id: sid,
+                title: message.slice(0, 60),
+                updatedAt: new Date().toISOString(),
+              },
+              ...s.sessions,
+            ]
+          : s.sessions
+        return { ...s, sending: false, sessions }
+      })
+    } catch (e: any) {
+      patchAssistant({
+        pending: false,
+        error: true,
+        content: e?.message || 'Не удалось получить ответ',
+      })
+      setState((s) => ({ ...s, sending: false, error: e?.message || 'stream failed' }))
     }
   }, [state.period, state.source])
 

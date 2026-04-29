@@ -403,20 +403,350 @@ const slaReportTool: ToolDef = {
   },
 }
 
+// ---------- agent 360 ------------------------------------------------------
+
+const agent360Tool: ToolDef = {
+  name: 'get_agent_360',
+  description:
+    'Краткий 360°-профиль сотрудника НАШЕЙ команды поддержки за период: число ответов, ' +
+    'медианный/средний FRT, количество решённых кейсов, сравнение с медианой команды. ' +
+    'Используй для вопросов «как Жамолиддин на этой неделе», «сравни Фирдавса с командой».',
+  parameters: {
+    type: 'object',
+    properties: {
+      agentName: { type: 'string', description: 'Имя сотрудника (как в support_agents.name)' },
+      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
+      source: { type: 'string', enum: ['all', 'telegram', 'whatsapp'] },
+    },
+    required: ['agentName'],
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const name = String(args.agentName || '').trim()
+    if (!name) return { error: 'agentName_required' }
+    const { from, to, days } = periodToDates(args.period as string | undefined)
+    const source = clampSource(args.source)
+    const sql = getSQL()
+
+    const [agentRow] = await sql`
+      SELECT id, name, role FROM support_agents
+      WHERE org_id = ${ctx.orgId} AND LOWER(name) = LOWER(${name})
+      LIMIT 1
+    `
+    if (!agentRow) {
+      return {
+        error: 'agent_not_in_team',
+        hint: 'Этого имени нет в support_agents. 360°-профиль строится только для сотрудников нашей команды.',
+        searched: name,
+      }
+    }
+    const resolvedName: string = agentRow.name
+
+    // Ответы агента + FRT.
+    const [kpi] = await sql`
+      WITH first_client AS (
+        SELECT m.id, m.channel_id, m.created_at,
+               LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) AS prev
+        FROM support_messages m
+        LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+        WHERE m.org_id = ${ctx.orgId}
+          AND m.is_from_client = true
+          AND m.created_at >= ${from.toISOString()} - INTERVAL '6 hours'
+          AND m.created_at <= ${to.toISOString()}
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+      ),
+      sessions AS (
+        SELECT id, channel_id, created_at FROM first_client WHERE prev IS NULL OR prev = false
+      ),
+      our_responses AS (
+        SELECT s.created_at AS asked_at,
+          (SELECT m2.created_at FROM support_messages m2
+            WHERE m2.org_id = ${ctx.orgId}
+              AND m2.channel_id = s.channel_id
+              AND m2.is_from_client = false
+              AND m2.sender_role IN ('support', 'team', 'agent')
+              AND LOWER(m2.sender_name) = LOWER(${resolvedName})
+              AND m2.created_at > s.created_at
+              AND m2.created_at <= s.created_at + INTERVAL '4 hours'
+            ORDER BY m2.created_at ASC LIMIT 1
+          ) AS responded_at
+        FROM sessions s
+        WHERE s.created_at >= ${from.toISOString()}
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE responded_at IS NOT NULL)::int AS responses,
+        ROUND(AVG(EXTRACT(EPOCH FROM (responded_at - asked_at)) / 60.0)::numeric, 1)::float AS avg_minutes,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (responded_at - asked_at)) / 60.0)::numeric, 1)::float AS median_minutes
+      FROM our_responses
+    `
+
+    const [resolvedRow] = await sql`
+      SELECT COUNT(*)::int AS resolved
+      FROM support_cases c
+      LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
+      LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
+      WHERE c.org_id = ${ctx.orgId}
+        AND c.resolved_at IS NOT NULL
+        AND c.resolved_at >= ${from.toISOString()}
+        AND c.resolved_at <= ${to.toISOString()}
+        AND (
+          LOWER(a.name) = LOWER(${resolvedName})
+          OR (a.id IS NULL AND c.assigned_to::text = ${agentRow.id})
+        )
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+    `
+
+    // Медиана команды для сравнения.
+    const [team] = await sql`
+      WITH per_agent AS (
+        SELECT LOWER(m.sender_name) AS k, COUNT(*)::int AS n
+        FROM support_messages m
+        LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+        WHERE m.org_id = ${ctx.orgId}
+          AND m.is_from_client = false
+          AND m.sender_role IN ('support', 'team', 'agent')
+          AND m.created_at >= ${from.toISOString()}
+          AND m.created_at <= ${to.toISOString()}
+          AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+        GROUP BY 1
+      )
+      SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY n)::numeric, 0)::int AS median_n
+      FROM per_agent
+      WHERE n > 0
+    `
+
+    return trimToBudget({
+      profile: { name: resolvedName, role: agentRow.role || 'agent' },
+      period: { from: from.toISOString(), to: to.toISOString(), days, source },
+      kpi: {
+        responses: Number(kpi?.responses || 0),
+        avgFRT: kpi?.responses > 0 ? Number(kpi.avg_minutes || 0) : null,
+        medianFRT: kpi?.responses > 0 ? Number(kpi.median_minutes || 0) : null,
+        resolvedCases: Number(resolvedRow?.resolved || 0),
+      },
+      vsTeam: {
+        medianResponses: Number(team?.median_n || 0),
+      },
+    }, ctx.maxBytes || DEFAULT_MAX_BYTES)
+  },
+}
+
+// ---------- find channels --------------------------------------------------
+
+const findChannelsTool: ToolDef = {
+  name: 'find_channels',
+  description:
+    'Поиск каналов по имени. Возвращает топ-10 совпадений с числом сообщений, открытых кейсов, ' +
+    'awaitingReply, источником, sla-категорией. Используй когда пользователь упомянул конкретного клиента/группу.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Часть имени канала для поиска' },
+      source: { type: 'string', enum: ['all', 'telegram', 'whatsapp'] },
+      onlyAwaiting: { type: 'boolean' },
+      limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
+    },
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const query = String(args.query || '').trim()
+    const source = clampSource(args.source)
+    const onlyAwaiting = !!args.onlyAwaiting
+    const limit = Math.max(1, Math.min(20, Number(args.limit) || 10))
+    const sql = getSQL()
+
+    const rows = await sql`
+      SELECT
+        ch.id,
+        ch.name,
+        COALESCE(ch.source, 'telegram') AS source,
+        ch.sla_category,
+        ch.awaiting_reply,
+        COALESCE(ch.unread_count, 0)::int AS unread,
+        ch.last_message_at,
+        (SELECT COUNT(*) FROM support_cases c
+          WHERE c.org_id = ${ctx.orgId}
+            AND c.channel_id = ch.id
+            AND c.status NOT IN ('resolved', 'closed'))::int AS open_cases,
+        (SELECT COUNT(*) FROM support_messages m
+          WHERE m.org_id = ${ctx.orgId}
+            AND m.channel_id = ch.id
+            AND m.created_at >= NOW() - INTERVAL '7 days')::int AS msgs_7d
+      FROM support_channels ch
+      WHERE ch.org_id = ${ctx.orgId}
+        AND ch.is_active = true
+        AND (${query} = '' OR ch.name ILIKE ${'%' + query + '%'})
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+        AND (${onlyAwaiting}::boolean = false OR ch.awaiting_reply = true)
+      ORDER BY ch.last_message_at DESC NULLS LAST
+      LIMIT ${limit}
+    `
+    return trimToBudget(maskPII({
+      total: (rows as any[]).length,
+      channels: (rows as any[]).map((r) => ({
+        id: r.id,
+        name: r.name,
+        source: r.source,
+        slaCategory: r.sla_category || 'client',
+        awaitingReply: !!r.awaiting_reply,
+        unread: Number(r.unread || 0),
+        openCases: Number(r.open_cases || 0),
+        messages7d: Number(r.msgs_7d || 0),
+        lastMessageAt: r.last_message_at,
+      })),
+    }, !!ctx.includePII), ctx.maxBytes || DEFAULT_MAX_BYTES)
+  },
+}
+
+// ---------- find cases ------------------------------------------------------
+
+const findCasesTool: ToolDef = {
+  name: 'find_cases',
+  description:
+    'Поиск кейсов по фильтрам: status, priority, period (по created_at), assignedTo (имя агента). ' +
+    'Возвращает топ N (до 20) с заголовком, статусом, приоритетом, числом дней без активности.',
+  parameters: {
+    type: 'object',
+    properties: {
+      status: {
+        type: 'string',
+        description: 'Например: open, resolved, urgent, stuck (>24ч без активности)',
+        enum: ['any', 'open', 'resolved', 'closed', 'urgent', 'stuck'],
+      },
+      assignedTo: { type: 'string', description: 'Имя агента' },
+      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
+      limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
+    },
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const status = String(args.status || 'open')
+    const assignedTo = String(args.assignedTo || '').trim()
+    const { from, to } = periodToDates(args.period as string | undefined)
+    const limit = Math.max(1, Math.min(20, Number(args.limit) || 10))
+    const sql = getSQL()
+
+    const rows = await sql`
+      SELECT
+        c.id, c.case_number, c.title, c.status, c.priority,
+        c.channel_id, c.assigned_to, c.created_at, c.resolved_at,
+        EXTRACT(EPOCH FROM (NOW() - COALESCE(c.last_activity_at, c.created_at))) / 3600.0 AS hours_idle,
+        a.name AS agent_name,
+        ch.name AS channel_name,
+        COALESCE(ch.source, 'telegram') AS source
+      FROM support_cases c
+      LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
+      LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
+      WHERE c.org_id = ${ctx.orgId}
+        AND c.created_at >= ${from.toISOString()}
+        AND c.created_at <= ${to.toISOString()}
+        AND (${status} = 'any' OR (
+          (${status} = 'open' AND c.status NOT IN ('resolved', 'closed')) OR
+          (${status} = 'resolved' AND c.status = 'resolved') OR
+          (${status} = 'closed' AND c.status = 'closed') OR
+          (${status} = 'urgent' AND c.priority = 'urgent' AND c.status NOT IN ('resolved', 'closed')) OR
+          (${status} = 'stuck' AND c.status NOT IN ('resolved', 'closed')
+                              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(c.last_activity_at, c.created_at))) / 3600.0 >= 24)
+        ))
+        AND (${assignedTo} = '' OR LOWER(a.name) = LOWER(${assignedTo}))
+      ORDER BY c.created_at DESC
+      LIMIT ${limit}
+    `
+
+    return trimToBudget(maskPII({
+      filters: { status, assignedTo, period: { from: from.toISOString(), to: to.toISOString() } },
+      total: (rows as any[]).length,
+      cases: (rows as any[]).map((r) => ({
+        id: r.id,
+        caseNumber: r.case_number,
+        title: r.title,
+        status: r.status,
+        priority: r.priority,
+        agent: r.agent_name,
+        channel: r.channel_name,
+        source: r.source,
+        createdAt: r.created_at,
+        resolvedAt: r.resolved_at,
+        hoursIdle: r.hours_idle != null ? Math.round(Number(r.hours_idle) * 10) / 10 : null,
+      })),
+    }, !!ctx.includePII), ctx.maxBytes || DEFAULT_MAX_BYTES)
+  },
+}
+
+// ---------- category flow --------------------------------------------------
+
+const categoryFlowTool: ToolDef = {
+  name: 'get_category_flow',
+  description:
+    'Воронка по AI-категориям обращений за период: сколько всего, сколько решено/в работе/застряло/проигнорено, ' +
+    'распределение настроений (happy/neutral/unhappy). Используй для вопросов «какие проблемы чаще всего», ' +
+    '«что застревает», «по чему больше всего недовольств».',
+  parameters: {
+    type: 'object',
+    properties: {
+      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
+      source: { type: 'string', enum: ['all', 'telegram', 'whatsapp'] },
+      limit: { type: 'integer', minimum: 1, maximum: 15, default: 8 },
+    },
+    additionalProperties: false,
+  },
+  async execute(args, ctx) {
+    const { from, to, days } = periodToDates(args.period as string | undefined)
+    const source = clampSource(args.source)
+    const limit = Math.max(1, Math.min(15, Number(args.limit) || 8))
+    const sql = getSQL()
+
+    const rows = await sql`
+      SELECT
+        COALESCE(NULLIF(m.ai_domain, ''), m.ai_category, 'без категории') AS domain,
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE m.ai_sentiment = 'positive')::int AS positive,
+        COUNT(*) FILTER (WHERE m.ai_sentiment = 'negative')::int AS negative,
+        COUNT(*) FILTER (WHERE m.is_problem = true)::int AS problems
+      FROM support_messages m
+      LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
+      WHERE m.org_id = ${ctx.orgId}
+        AND m.created_at >= ${from.toISOString()}
+        AND m.created_at <= ${to.toISOString()}
+        AND m.is_from_client = true
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+      GROUP BY 1
+      ORDER BY total DESC
+      LIMIT ${limit}
+    `
+
+    return trimToBudget({
+      period: { from: from.toISOString(), to: to.toISOString(), days, source },
+      categories: (rows as any[]).map((r) => ({
+        domain: r.domain,
+        total: Number(r.total),
+        positive: Number(r.positive),
+        negative: Number(r.negative),
+        problems: Number(r.problems),
+      })),
+    }, ctx.maxBytes || DEFAULT_MAX_BYTES)
+  },
+}
+
 // ---------- registry -------------------------------------------------------
 
 export const TOOLS: Record<ToolName, ToolDef> = {
   get_dashboard_metrics: dashboardMetricsTool,
   get_sla_report: slaReportTool,
-  // Остальные (agent_360, find_channels, find_cases, get_category_flow)
-  // подключим следующим коммитом — поэтапно, чтобы LLM не путался.
-  get_agent_360: dashboardMetricsTool, // placeholder, не публикуем в LLM-схеме
-  find_channels: dashboardMetricsTool,
-  find_cases: dashboardMetricsTool,
-  get_category_flow: dashboardMetricsTool,
+  get_agent_360: agent360Tool,
+  find_channels: findChannelsTool,
+  find_cases: findCasesTool,
+  get_category_flow: categoryFlowTool,
 }
 
-const ACTIVE_TOOLS: ToolName[] = ['get_dashboard_metrics', 'get_sla_report']
+const ACTIVE_TOOLS: ToolName[] = [
+  'get_dashboard_metrics',
+  'get_sla_report',
+  'get_agent_360',
+  'find_channels',
+  'find_cases',
+  'get_category_flow',
+]
 
 // Схема для chat.completions tools[].
 export function getOpenAITools() {
