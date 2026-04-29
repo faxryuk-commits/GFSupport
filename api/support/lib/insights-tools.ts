@@ -41,10 +41,75 @@ const DEFAULT_PERIOD_DAYS = 7
 
 // ---------- helpers --------------------------------------------------------
 
-function periodToDates(period?: string): { from: Date; to: Date; days: number } {
-  const to = new Date()
+const MONTH_RU: Record<string, number> = {
+  'январь': 0, 'января': 0, 'jan': 0, 'january': 0,
+  'февраль': 1, 'февраля': 1, 'feb': 1, 'february': 1,
+  'март': 2, 'марта': 2, 'mar': 2, 'march': 2,
+  'апрель': 3, 'апреля': 3, 'apr': 3, 'april': 3,
+  'май': 4, 'мая': 4, 'may': 4,
+  'июнь': 5, 'июня': 5, 'jun': 5, 'june': 5,
+  'июль': 6, 'июля': 6, 'jul': 6, 'july': 6,
+  'август': 7, 'августа': 7, 'aug': 7, 'august': 7,
+  'сентябрь': 8, 'сентября': 8, 'sep': 8, 'sept': 8, 'september': 8,
+  'октябрь': 9, 'октября': 9, 'oct': 9, 'october': 9,
+  'ноябрь': 10, 'ноября': 10, 'nov': 10, 'november': 10,
+  'декабрь': 11, 'декабря': 11, 'dec': 11, 'december': 11,
+}
+
+function periodToDates(
+  period?: string,
+  explicit?: { dateFrom?: string; dateTo?: string }
+): { from: Date; to: Date; days: number; label: string } {
+  // Явные ISO-даты имеют приоритет.
+  if (explicit?.dateFrom || explicit?.dateTo) {
+    const from = explicit?.dateFrom ? new Date(explicit.dateFrom) : new Date(Date.now() - 7 * 86400_000)
+    const to = explicit?.dateTo ? new Date(explicit.dateTo) : new Date()
+    if (!isNaN(from.getTime()) && !isNaN(to.getTime())) {
+      const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400_000))
+      return { from, to, days, label: `${from.toISOString().slice(0, 10)}…${to.toISOString().slice(0, 10)}` }
+    }
+  }
+
+  const now = new Date()
+  const raw = (period || '').toLowerCase().trim()
+
+  // YYYY-MM (например '2026-04')
+  const ym = raw.match(/^(\d{4})-(\d{1,2})$/)
+  if (ym) {
+    const y = Number(ym[1])
+    const m = Number(ym[2]) - 1
+    const from = new Date(Date.UTC(y, m, 1))
+    const to = new Date(Date.UTC(y, m + 1, 1))
+    return { from, to, days: Math.round((to.getTime() - from.getTime()) / 86400_000), label: raw }
+  }
+
+  // Текстовое имя месяца («апрель», «april»). Если месяц > текущего — берём прошлый год.
+  if (MONTH_RU[raw] !== undefined) {
+    const m = MONTH_RU[raw]
+    const y = m > now.getUTCMonth() ? now.getUTCFullYear() - 1 : now.getUTCFullYear()
+    const from = new Date(Date.UTC(y, m, 1))
+    const to = new Date(Date.UTC(y, m + 1, 1))
+    return { from, to, days: Math.round((to.getTime() - from.getTime()) / 86400_000), label: `${y}-${String(m + 1).padStart(2, '0')}` }
+  }
+
+  if (raw === 'this_month' || raw === 'этот_месяц') {
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const days = Math.round((now.getTime() - from.getTime()) / 86400_000) + 1
+    return { from, to: now, days, label: 'this_month' }
+  }
+  if (raw === 'last_month' || raw === 'прошлый_месяц') {
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    return { from, to, days: Math.round((to.getTime() - from.getTime()) / 86400_000), label: 'last_month' }
+  }
+  if (raw === 'yesterday' || raw === 'вчера') {
+    const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    const from = new Date(to.getTime() - 86400_000)
+    return { from, to, days: 1, label: 'yesterday' }
+  }
+
   let days = DEFAULT_PERIOD_DAYS
-  switch ((period || '').toLowerCase()) {
+  switch (raw) {
     case 'today':
     case '1d':
       days = 1
@@ -69,8 +134,9 @@ function periodToDates(period?: string): { from: Date; to: Date; days: number } 
     default:
       days = DEFAULT_PERIOD_DAYS
   }
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000)
-  return { from, to, days }
+  const to = now
+  const from = new Date(to.getTime() - days * 86400_000)
+  return { from, to, days, label: `${days}d` }
 }
 
 function clampSource(source?: unknown): 'all' | 'telegram' | 'whatsapp' {
@@ -126,6 +192,37 @@ function trimToBudget(payload: unknown, maxBytes: number): unknown {
 
 // ---------- tools ----------------------------------------------------------
 
+const PERIOD_PROP = {
+  type: 'string',
+  description:
+    'Окно данных. Поддерживается: today, yesterday, 7d, 14d, 30d, 90d, ' +
+    'this_month, last_month, имя месяца («апрель»), или формат YYYY-MM. ' +
+    'По умолчанию 7d. Если пользователь упомянул конкретный месяц — используй его имя.',
+} as const
+
+const DATE_FROM_PROP = {
+  type: 'string',
+  description: 'ISO-дата начала периода (YYYY-MM-DD). Имеет приоритет над period.',
+} as const
+
+const DATE_TO_PROP = {
+  type: 'string',
+  description: 'ISO-дата конца периода (YYYY-MM-DD). Имеет приоритет над period.',
+} as const
+
+const SOURCE_PROP = {
+  type: 'string',
+  enum: ['all', 'telegram', 'whatsapp'],
+  description: 'Источник каналов. По умолчанию all.',
+} as const
+
+function readPeriodArgs(args: Record<string, unknown>) {
+  return periodToDates(args.period as string | undefined, {
+    dateFrom: args.dateFrom as string | undefined,
+    dateTo: args.dateTo as string | undefined,
+  })
+}
+
 const dashboardMetricsTool: ToolDef = {
   name: 'get_dashboard_metrics',
   description:
@@ -136,21 +233,15 @@ const dashboardMetricsTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      period: {
-        type: 'string',
-        enum: ['today', '7d', '14d', '30d', '90d'],
-        description: 'Окно данных. По умолчанию 7d.',
-      },
-      source: {
-        type: 'string',
-        enum: ['all', 'telegram', 'whatsapp'],
-        description: 'Источник каналов. По умолчанию all.',
-      },
+      period: PERIOD_PROP,
+      dateFrom: DATE_FROM_PROP,
+      dateTo: DATE_TO_PROP,
+      source: SOURCE_PROP,
     },
     additionalProperties: false,
   },
   async execute(args, ctx) {
-    const { from, to, days } = periodToDates(args.period as string | undefined)
+    const { from, to, days } = readPeriodArgs(args)
     const source = clampSource(args.source)
     const sql = getSQL()
 
@@ -258,14 +349,16 @@ const slaReportTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
-      source: { type: 'string', enum: ['all', 'telegram', 'whatsapp'] },
+      period: PERIOD_PROP,
+      dateFrom: DATE_FROM_PROP,
+      dateTo: DATE_TO_PROP,
+      source: SOURCE_PROP,
       limit: { type: 'integer', minimum: 1, maximum: 30, default: 10 },
     },
     additionalProperties: false,
   },
   async execute(args, ctx) {
-    const { from, to, days } = periodToDates(args.period as string | undefined)
+    const { from, to, days } = readPeriodArgs(args)
     const source = clampSource(args.source)
     const limit = Math.max(1, Math.min(30, Number(args.limit) || 10))
     const sql = getSQL()
@@ -415,8 +508,10 @@ const agent360Tool: ToolDef = {
     type: 'object',
     properties: {
       agentName: { type: 'string', description: 'Имя сотрудника (как в support_agents.name)' },
-      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
-      source: { type: 'string', enum: ['all', 'telegram', 'whatsapp'] },
+      period: PERIOD_PROP,
+      dateFrom: DATE_FROM_PROP,
+      dateTo: DATE_TO_PROP,
+      source: SOURCE_PROP,
     },
     required: ['agentName'],
     additionalProperties: false,
@@ -424,7 +519,7 @@ const agent360Tool: ToolDef = {
   async execute(args, ctx) {
     const name = String(args.agentName || '').trim()
     if (!name) return { error: 'agentName_required' }
-    const { from, to, days } = periodToDates(args.period as string | undefined)
+    const { from, to, days } = readPeriodArgs(args)
     const source = clampSource(args.source)
     const sql = getSQL()
 
@@ -615,7 +710,9 @@ const findCasesTool: ToolDef = {
         enum: ['any', 'open', 'resolved', 'closed', 'urgent', 'stuck'],
       },
       assignedTo: { type: 'string', description: 'Имя агента' },
-      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
+      period: PERIOD_PROP,
+      dateFrom: DATE_FROM_PROP,
+      dateTo: DATE_TO_PROP,
       limit: { type: 'integer', minimum: 1, maximum: 20, default: 10 },
     },
     additionalProperties: false,
@@ -623,7 +720,7 @@ const findCasesTool: ToolDef = {
   async execute(args, ctx) {
     const status = String(args.status || 'open')
     const assignedTo = String(args.assignedTo || '').trim()
-    const { from, to } = periodToDates(args.period as string | undefined)
+    const { from, to } = readPeriodArgs(args)
     const limit = Math.max(1, Math.min(20, Number(args.limit) || 10))
     const sql = getSQL()
 
@@ -685,14 +782,16 @@ const categoryFlowTool: ToolDef = {
   parameters: {
     type: 'object',
     properties: {
-      period: { type: 'string', enum: ['today', '7d', '14d', '30d', '90d'] },
-      source: { type: 'string', enum: ['all', 'telegram', 'whatsapp'] },
+      period: PERIOD_PROP,
+      dateFrom: DATE_FROM_PROP,
+      dateTo: DATE_TO_PROP,
+      source: SOURCE_PROP,
       limit: { type: 'integer', minimum: 1, maximum: 15, default: 8 },
     },
     additionalProperties: false,
   },
   async execute(args, ctx) {
-    const { from, to, days } = periodToDates(args.period as string | undefined)
+    const { from, to, days } = readPeriodArgs(args)
     const source = clampSource(args.source)
     const limit = Math.max(1, Math.min(15, Number(args.limit) || 8))
     const sql = getSQL()
