@@ -47,7 +47,9 @@ const SYSTEM_PROMPT = `Ты — аналитик службы поддержки
 - НИКОГДА не показывай телефоны и email клиентов в открытом виде. Если они мелькнули в данных — оставь как «***».
 
 Если запрос неоднозначный — задай ОДИН уточняющий вопрос, не десять.
-Если данных мало (n < 5) — честно скажи «выборка маленькая, цифры неустойчивые».`
+Если данных мало (n < 5) — честно скажи «выборка маленькая, цифры неустойчивые».
+
+Если ВСЕ инструменты вернули объект вида {"error": ...} — это технический сбой в БД, НЕ повторяй вызов того же инструмента с теми же аргументами. Кратко сообщи пользователю «инструмент X сломан: <message>» и предложи попробовать другой инструмент или сузить фильтры. Никогда не пиши «к сожалению, не могу получить данные» без конкретики.`
 
 const MODEL = 'gpt-4o-mini'
 const MAX_TOOL_LOOPS = 5
@@ -362,8 +364,25 @@ async function runOneTool(tc: any, ctx: RunCtx) {
   if (!isActiveTool(name)) {
     result = { error: 'unknown_tool', tried: name }
   } else {
-    try { result = await TOOLS[name].execute(args, ctx.toolCtx) }
-    catch (e: any) { result = { error: 'tool_failed', message: e?.message || 'tool error' } }
+    try {
+      result = await TOOLS[name].execute(args, ctx.toolCtx)
+    } catch (e: any) {
+      console.error('[insights-chat] tool failed:', name, {
+        args,
+        message: e?.message,
+        code: e?.code,
+        detail: e?.detail,
+        hint: e?.hint,
+        stack: e?.stack?.split('\n').slice(0, 4).join(' | '),
+      })
+      const detail = [e?.message, e?.detail, e?.hint].filter(Boolean).join(' | ')
+      result = {
+        error: 'tool_failed',
+        tool: name,
+        message: detail || 'tool error',
+        code: e?.code || null,
+      }
+    }
   }
   const durationMs = Date.now() - t0
   await ctx.sql`
@@ -490,7 +509,17 @@ function streamRun(ctx: RunCtx): Response {
           createdAt: new Date().toISOString(),
         })
       } catch (e: any) {
-        send('error', { message: e?.message || 'stream failed' })
+        console.error('[insights-chat] stream failed:', {
+          message: e?.message,
+          code: e?.code,
+          status: e?.status,
+          stack: e?.stack?.split('\n').slice(0, 6).join(' | '),
+        })
+        send('error', {
+          message: e?.message || 'stream failed',
+          code: e?.code || null,
+          status: e?.status || null,
+        })
       } finally {
         controller.close()
       }

@@ -158,13 +158,13 @@ const dashboardMetricsTool: ToolDef = {
       SELECT
         COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE status NOT IN ('resolved', 'closed'))::int AS open,
-        COUNT(*) FILTER (WHERE status = 'resolved' AND resolved_at >= ${from.toISOString()})::int AS resolved,
+        COUNT(*) FILTER (WHERE status = 'resolved' AND resolved_at >= ${from.toISOString()}::timestamptz)::int AS resolved,
         COUNT(*) FILTER (WHERE priority = 'urgent' AND status NOT IN ('resolved', 'closed'))::int AS urgent_open
       FROM support_cases c
       LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
       WHERE c.org_id = ${ctx.orgId}
-        AND c.created_at >= ${from.toISOString()}
-        AND c.created_at <= ${to.toISOString()}
+        AND c.created_at >= ${from.toISOString()}::timestamptz
+        AND c.created_at <= ${to.toISOString()}::timestamptz
         AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
     `
 
@@ -178,8 +178,8 @@ const dashboardMetricsTool: ToolDef = {
         LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
         WHERE m.org_id = ${ctx.orgId}
           AND m.is_from_client = true
-          AND m.created_at >= ${from.toISOString()} - INTERVAL '6 hours'
-          AND m.created_at <= ${to.toISOString()}
+          AND m.created_at >= ${from.toISOString()}::timestamptz - INTERVAL '6 hours'
+          AND m.created_at <= ${to.toISOString()}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ),
       sessions AS (
@@ -200,7 +200,7 @@ const dashboardMetricsTool: ToolDef = {
           ) AS responded_at,
           s.created_at AS asked_at
         FROM sessions s
-        WHERE s.created_at >= ${from.toISOString()}
+        WHERE s.created_at >= ${from.toISOString()}::timestamptz
       )
       SELECT
         COUNT(*) FILTER (WHERE responded_at IS NOT NULL)::int AS responses,
@@ -219,8 +219,8 @@ const dashboardMetricsTool: ToolDef = {
       FROM support_messages m
       LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
       WHERE m.org_id = ${ctx.orgId}
-        AND m.created_at >= ${from.toISOString()}
-        AND m.created_at <= ${to.toISOString()}
+        AND m.created_at >= ${from.toISOString()}::timestamptz
+        AND m.created_at <= ${to.toISOString()}::timestamptz
       GROUP BY 1
       ORDER BY 2 DESC
     `
@@ -279,8 +279,8 @@ const slaReportTool: ToolDef = {
         LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
         WHERE m.org_id = ${ctx.orgId}
           AND m.is_from_client = true
-          AND m.created_at >= ${from.toISOString()} - INTERVAL '6 hours'
-          AND m.created_at <= ${to.toISOString()}
+          AND m.created_at >= ${from.toISOString()}::timestamptz - INTERVAL '6 hours'
+          AND m.created_at <= ${to.toISOString()}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ),
       sessions AS (
@@ -307,7 +307,7 @@ const slaReportTool: ToolDef = {
               AND m2.created_at <= s.created_at + INTERVAL '4 hours'
           ) AS responded_at
         FROM sessions s
-        WHERE s.created_at >= ${from.toISOString()}
+        WHERE s.created_at >= ${from.toISOString()}::timestamptz
       ),
       team_only AS (
         SELECT fr.agent_name, fr.asked_at, fr.responded_at
@@ -340,8 +340,8 @@ const slaReportTool: ToolDef = {
         LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
         WHERE m.org_id = ${ctx.orgId}
           AND m.is_from_client = true
-          AND m.created_at >= ${from.toISOString()} - INTERVAL '6 hours'
-          AND m.created_at <= ${to.toISOString()}
+          AND m.created_at >= ${from.toISOString()}::timestamptz - INTERVAL '6 hours'
+          AND m.created_at <= ${to.toISOString()}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ),
       sessions AS (
@@ -358,7 +358,7 @@ const slaReportTool: ToolDef = {
               AND m2.created_at <= s.created_at + INTERVAL '4 hours'
           ) AS responded_at
         FROM sessions s
-        WHERE s.created_at >= ${from.toISOString()}
+        WHERE s.created_at >= ${from.toISOString()}::timestamptz
       )
       SELECT
         CASE
@@ -451,8 +451,8 @@ const agent360Tool: ToolDef = {
         LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
         WHERE m.org_id = ${ctx.orgId}
           AND m.is_from_client = true
-          AND m.created_at >= ${from.toISOString()} - INTERVAL '6 hours'
-          AND m.created_at <= ${to.toISOString()}
+          AND m.created_at >= ${from.toISOString()}::timestamptz - INTERVAL '6 hours'
+          AND m.created_at <= ${to.toISOString()}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ),
       sessions AS (
@@ -471,7 +471,7 @@ const agent360Tool: ToolDef = {
             ORDER BY m2.created_at ASC LIMIT 1
           ) AS responded_at
         FROM sessions s
-        WHERE s.created_at >= ${from.toISOString()}
+        WHERE s.created_at >= ${from.toISOString()}::timestamptz
       )
       SELECT
         COUNT(*) FILTER (WHERE responded_at IS NOT NULL)::int AS responses,
@@ -487,8 +487,8 @@ const agent360Tool: ToolDef = {
       LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
       WHERE c.org_id = ${ctx.orgId}
         AND c.resolved_at IS NOT NULL
-        AND c.resolved_at >= ${from.toISOString()}
-        AND c.resolved_at <= ${to.toISOString()}
+        AND c.resolved_at >= ${from.toISOString()}::timestamptz
+        AND c.resolved_at <= ${to.toISOString()}::timestamptz
         AND (
           LOWER(a.name) = LOWER(${resolvedName})
           OR (a.id IS NULL AND c.assigned_to::text = ${agentRow.id})
@@ -505,8 +505,8 @@ const agent360Tool: ToolDef = {
         WHERE m.org_id = ${ctx.orgId}
           AND m.is_from_client = false
           AND m.sender_role IN ('support', 'team', 'agent')
-          AND m.created_at >= ${from.toISOString()}
-          AND m.created_at <= ${to.toISOString()}
+          AND m.created_at >= ${from.toISOString()}::timestamptz
+          AND m.created_at <= ${to.toISOString()}::timestamptz
           AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
         GROUP BY 1
       )
@@ -555,6 +555,7 @@ const findChannelsTool: ToolDef = {
     const limit = Math.max(1, Math.min(20, Number(args.limit) || 10))
     const sql = getSQL()
 
+    const onlyAwaitingFlag = onlyAwaiting ? 1 : 0
     const rows = await sql`
       SELECT
         ch.id,
@@ -575,9 +576,9 @@ const findChannelsTool: ToolDef = {
       FROM support_channels ch
       WHERE ch.org_id = ${ctx.orgId}
         AND ch.is_active = true
-        AND (${query} = '' OR ch.name ILIKE ${'%' + query + '%'})
+        AND (${query}::text = '' OR ch.name ILIKE ${'%' + query + '%'})
         AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-        AND (${onlyAwaiting}::boolean = false OR ch.awaiting_reply = true)
+        AND (${onlyAwaitingFlag}::int = 0 OR ch.awaiting_reply = true)
       ORDER BY ch.last_message_at DESC NULLS LAST
       LIMIT ${limit}
     `
@@ -628,9 +629,9 @@ const findCasesTool: ToolDef = {
 
     const rows = await sql`
       SELECT
-        c.id, c.case_number, c.title, c.status, c.priority,
-        c.channel_id, c.assigned_to, c.created_at, c.resolved_at,
-        EXTRACT(EPOCH FROM (NOW() - COALESCE(c.last_activity_at, c.created_at))) / 3600.0 AS hours_idle,
+        c.id, c.ticket_number, c.title, c.status, c.priority,
+        c.channel_id, c.assigned_to, c.created_at, c.resolved_at, c.updated_at,
+        EXTRACT(EPOCH FROM (NOW() - COALESCE(c.updated_at, c.created_at))) / 3600.0 AS hours_idle,
         a.name AS agent_name,
         ch.name AS channel_name,
         COALESCE(ch.source, 'telegram') AS source
@@ -638,15 +639,15 @@ const findCasesTool: ToolDef = {
       LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
       LEFT JOIN support_channels ch ON ch.id = c.channel_id AND ch.org_id = c.org_id
       WHERE c.org_id = ${ctx.orgId}
-        AND c.created_at >= ${from.toISOString()}
-        AND c.created_at <= ${to.toISOString()}
+        AND c.created_at >= ${from.toISOString()}::timestamptz
+        AND c.created_at <= ${to.toISOString()}::timestamptz
         AND (${status} = 'any' OR (
           (${status} = 'open' AND c.status NOT IN ('resolved', 'closed')) OR
           (${status} = 'resolved' AND c.status = 'resolved') OR
           (${status} = 'closed' AND c.status = 'closed') OR
           (${status} = 'urgent' AND c.priority = 'urgent' AND c.status NOT IN ('resolved', 'closed')) OR
           (${status} = 'stuck' AND c.status NOT IN ('resolved', 'closed')
-                              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(c.last_activity_at, c.created_at))) / 3600.0 >= 24)
+                              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(c.updated_at, c.created_at))) / 3600.0 >= 24)
         ))
         AND (${assignedTo} = '' OR LOWER(a.name) = LOWER(${assignedTo}))
       ORDER BY c.created_at DESC
@@ -658,7 +659,7 @@ const findCasesTool: ToolDef = {
       total: (rows as any[]).length,
       cases: (rows as any[]).map((r) => ({
         id: r.id,
-        caseNumber: r.case_number,
+        caseNumber: r.ticket_number,
         title: r.title,
         status: r.status,
         priority: r.priority,
@@ -706,8 +707,8 @@ const categoryFlowTool: ToolDef = {
       FROM support_messages m
       LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
       WHERE m.org_id = ${ctx.orgId}
-        AND m.created_at >= ${from.toISOString()}
-        AND m.created_at <= ${to.toISOString()}
+        AND m.created_at >= ${from.toISOString()}::timestamptz
+        AND m.created_at <= ${to.toISOString()}::timestamptz
         AND m.is_from_client = true
         AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       GROUP BY 1
