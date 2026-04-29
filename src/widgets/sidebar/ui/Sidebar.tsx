@@ -10,16 +10,13 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Brain,
-  FileText,
-  Sparkles,
   Clock,
   Target,
   Globe,
   ChevronDown,
-  Bot,
   Bell,
   Activity,
+  Sparkles,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
@@ -201,6 +198,9 @@ interface SidebarProps {
   orgPlan?: string
 }
 
+// AI-разделы (AI Агент / База знаний / Документы / AI Обучение) перенесены
+// в Настройки → "AI и контент". Их роуты остались живыми, но из главного
+// меню убраны, чтобы освободить место под единый ИИ-чат.
 const mainNavItems = [
   { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
@@ -209,11 +209,8 @@ const mainNavItems = [
   { path: '/health', label: 'Где болит', icon: Activity },
   { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
   { path: '/sla-report', label: 'SLA Отчёт', icon: Target },
-  { path: '/knowledge', label: 'База знаний', icon: Brain },
-  { path: '/learning/problems', label: 'AI Обучение', icon: Sparkles },
-  { path: '/docs', label: 'Документы', icon: FileText },
+  { path: '/insights-chat', label: 'ИИ-чат', icon: Sparkles },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
-  { path: '/ai-agent', label: 'AI Агент', icon: Bot },
 ]
 
 const bottomItems = [

@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { 
   Settings, Bell, Link2, Shield, Database, Palette, Save, RefreshCw, 
   AlertCircle, Loader2, UsersRound, Users, Zap, ChevronRight, Check,
-  Building2, Globe, Bot, Clock, Volume2, UserCog
+  Building2, Globe, Bot, Clock, Volume2, UserCog,
+  Brain, FileText, Sparkles,
 } from 'lucide-react'
 import {
   GeneralSettings,
@@ -36,7 +38,7 @@ import { TeamPage } from '@/pages/team/ui/TeamPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 
-type SettingsTab = 'general' | 'team' | 'users' | 'markets' | 'automations' | 'autoreply' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
+type SettingsTab = 'general' | 'team' | 'users' | 'markets' | 'automations' | 'autoreply' | 'ai-content' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
 interface TabConfig {
   id: SettingsTab
@@ -54,6 +56,7 @@ const tabs: TabConfig[] = [
   { id: 'markets', label: 'Рынки', description: 'Страны, доступы, привязки', icon: Globe, color: 'text-teal-600', bgColor: 'bg-teal-100' },
   { id: 'automations', label: 'Автоматизации', description: 'Правила и триггеры', icon: Zap, color: 'text-amber-600', bgColor: 'bg-amber-100' },
   { id: 'autoreply', label: 'AI Автоответы', description: 'Приветствия, FAQ, шаблоны', icon: Bot, color: 'text-purple-600', bgColor: 'bg-purple-100' },
+  { id: 'ai-content', label: 'AI и контент', description: 'AI Агент, документы, база знаний, обучение', icon: Bot, color: 'text-fuchsia-600', bgColor: 'bg-fuchsia-100' },
   { id: 'notifications', label: 'Уведомления', description: 'Настройка оповещений', icon: Bell, color: 'text-rose-600', bgColor: 'bg-rose-100' },
   { id: 'integrations', label: 'Интеграции', description: 'Telegram, AI, Whisper', icon: Link2, color: 'text-cyan-600', bgColor: 'bg-cyan-100' },
   { id: 'security', label: 'Безопасность', description: 'Защита и доступы', icon: Shield, color: 'text-orange-600', bgColor: 'bg-orange-100' },
@@ -600,6 +603,77 @@ export function SettingsPage() {
                   settings={autoReplySettings}
                   onSettingsChange={setAutoReplySettings}
                 />
+                </>
+              )}
+
+              {activeTab === 'ai-content' && (
+                <>
+                  <TabGuide
+                    id="settings-ai-content"
+                    text="AI-разделы и контент перенесены сюда из главного меню. Они продолжают работать как раньше — открывайте по карточкам, чтобы редактировать."
+                    tips={[
+                      'AI Агент — журнал решений автоответчика, правила, тестирование. Используется для ответов в каналах.',
+                      'База знаний и Документы — контент, который AI Агент использует, чтобы отвечать клиентам. Держите его актуальным.',
+                      'AI Обучение — найденные пары «проблема → решение» из истории чатов.',
+                    ]}
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[
+                      {
+                        to: '/ai-agent',
+                        icon: Bot,
+                        title: 'AI Агент',
+                        description: 'Автоответчик в каналах: журнал решений, правила, тестирование, фидбек.',
+                        color: 'from-blue-500 to-purple-600',
+                      },
+                      {
+                        to: '/knowledge',
+                        icon: Brain,
+                        title: 'База знаний',
+                        description: 'Статьи и шаблоны для команды и AI Агента.',
+                        color: 'from-emerald-500 to-teal-600',
+                      },
+                      {
+                        to: '/docs',
+                        icon: FileText,
+                        title: 'Документы',
+                        description: 'Документы и инструкции, доступные AI Агенту как контекст.',
+                        color: 'from-amber-500 to-orange-600',
+                      },
+                      {
+                        to: '/learning/problems',
+                        icon: Sparkles,
+                        title: 'AI Обучение',
+                        description: 'Проблемы и решения, найденные в истории чатов.',
+                        color: 'from-fuchsia-500 to-pink-600',
+                      },
+                    ].map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className="group flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition-all"
+                        >
+                          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${item.color} flex items-center justify-center flex-shrink-0`}>
+                            <Icon className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="font-semibold text-slate-900">{item.title}</h4>
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 group-hover:translate-x-0.5 transition-all" />
+                            </div>
+                            <p className="text-sm text-slate-500 mt-0.5">{item.description}</p>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs text-slate-500">
+                    Совет: вопросы по данным («какой SLA на этой неделе?», «кто отстаёт по FRT?»)
+                    лучше задавать в новом разделе <span className="font-medium text-slate-700">«ИИ-чат»</span> в главном меню — он умеет дёргать аналитику и
+                    показывать источники цифр.
+                  </div>
                 </>
               )}
 

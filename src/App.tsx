@@ -31,6 +31,7 @@ const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPa
 const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
 const HealthPage = lazy(() => import('@/pages/health/ui/HealthPage').then(m => ({ default: m.HealthPage })))
+const InsightsChatPage = lazy(() => import('@/pages/insights-chat/ui/InsightsChatPage').then(m => ({ default: m.InsightsChatPage })))
 
 const SALoginPage = lazy(() => import('@/pages/sa-login/ui/SALoginPage'))
 const SADashboardPage = lazy(() => import('@/pages/sa-dashboard/ui/SADashboardPage'))
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/learning/problems" element={<ProblemAnalysisPage />} />
           <Route path="/broadcast" element={<BroadcastPage />} />
           <Route path="/ai-agent" element={<AIAgentPage />} />
+          <Route path="/insights-chat" element={<InsightsChatPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
