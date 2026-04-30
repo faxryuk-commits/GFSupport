@@ -219,7 +219,7 @@ export async function runBroadcastWorker(opts: RunnerOptions): Promise<RunnerSta
             SET status = 'queued',
                 error_code = ${outcome.errorCode},
                 error_message = ${outcome.errorMessage},
-                retry_after_at = NOW() + (${retryAfter} || ' seconds')::interval,
+                retry_after_at = NOW() + make_interval(secs => ${retryAfter}::int),
                 updated_at = NOW()
             WHERE id = ${r.id}
           `
