@@ -50,80 +50,98 @@ export default async function handler(req: Request): Promise<Response> {
       found: {},
     }
 
-    // 1. support_agents — везде, без org_id фильтра
+    const sid = senderId || ''
+    const uname = (senderId || '').replace('@', '')
+
+    // 1. support_agents — без org_id фильтра, разными способами поиска
     try {
-      results.found.supportAgents = await sql`
-        SELECT id, org_id, name, username, telegram_id, email, role,
-               created_at, deleted_at IS NOT NULL AS is_deleted
-        FROM support_agents
-        WHERE
-          (${senderId || null}::text IS NOT NULL AND (
-              telegram_id::text = ${senderId || ''}
-              OR id = ${senderId || ''}
-              OR LOWER(username) = LOWER(${senderId || ''})
-          ))
-          OR (${namePattern}::text IS NOT NULL AND name ILIKE ${namePattern})
-          OR (${userPattern}::text IS NOT NULL AND username ILIKE ${userPattern})
-        LIMIT 20
-      `
-    } catch (e: any) {
-      results.found.supportAgents_error = e?.message
-      // Fallback на старую схему без deleted_at
-      try {
+      if (sid) {
         results.found.supportAgents = await sql`
           SELECT id, org_id, name, username, telegram_id, email, role, created_at
           FROM support_agents
-          WHERE
-            (${senderId || null}::text IS NOT NULL AND (
-                telegram_id::text = ${senderId || ''}
-                OR id = ${senderId || ''}
-                OR LOWER(username) = LOWER(${senderId || ''})
-            ))
-            OR (${namePattern}::text IS NOT NULL AND name ILIKE ${namePattern})
-            OR (${userPattern}::text IS NOT NULL AND username ILIKE ${userPattern})
+          WHERE id = ${sid}
+             OR telegram_id::text = ${sid}
+             OR LOWER(username) = LOWER(${uname})
           LIMIT 20
         `
-      } catch (e2: any) {
-        results.found.supportAgents_error2 = e2?.message
+      } else {
+        const r1 = namePattern ? await sql`
+          SELECT id, org_id, name, username, telegram_id, email, role, created_at
+          FROM support_agents WHERE name ILIKE ${namePattern} LIMIT 20
+        ` : []
+        const r2 = userPattern ? await sql`
+          SELECT id, org_id, name, username, telegram_id, email, role, created_at
+          FROM support_agents WHERE username ILIKE ${userPattern} LIMIT 20
+        ` : []
+        const merged = [...(r1 as any[]), ...(r2 as any[])]
+        const seen = new Set()
+        results.found.supportAgents = merged.filter((r) => {
+          if (seen.has(r.id)) return false
+          seen.add(r.id)
+          return true
+        })
       }
-    }
-
-    // 2. crm_managers (если таблица существует)
-    try {
-      results.found.crmManagers = await sql`
-        SELECT id, name, telegram_username, telegram_id, role
-        FROM crm_managers
-        WHERE
-          (${senderId || null}::text IS NOT NULL AND (
-              telegram_id::text = ${senderId || ''}
-              OR id = ${senderId || ''}
-              OR LOWER(telegram_username) = LOWER(${(senderId || '').replace('@', '')})
-          ))
-          OR (${namePattern}::text IS NOT NULL AND name ILIKE ${namePattern})
-          OR (${userPattern}::text IS NOT NULL AND telegram_username ILIKE ${userPattern})
-        LIMIT 20
-      `
     } catch (e: any) {
-      results.found.crmManagers_error = e?.message
+      results.found.supportAgents_error = e?.message
     }
 
-    // 3. support_users (Telegram-юзеры всех типов)
+    // 2. support_users (если есть). Колонки могут отличаться,
+    // поэтому пробуем по очереди разные схемы.
     try {
-      results.found.supportUsers = await sql`
-        SELECT user_id, name, username, role,
-               last_seen_at, created_at
-        FROM support_users
-        WHERE
-          (${senderId || null}::text IS NOT NULL AND (
-              user_id::text = ${senderId || ''}
-              OR LOWER(username) = LOWER(${(senderId || '').replace('@', '')})
-          ))
-          OR (${namePattern}::text IS NOT NULL AND name ILIKE ${namePattern})
-          OR (${userPattern}::text IS NOT NULL AND username ILIKE ${userPattern})
-        LIMIT 20
-      `
+      if (sid) {
+        results.found.supportUsers = await sql`
+          SELECT * FROM support_users
+          WHERE id = ${sid}
+             OR username = ${uname}
+             OR LOWER(username) = LOWER(${uname})
+          LIMIT 10
+        `
+      } else if (namePattern) {
+        results.found.supportUsers = await sql`
+          SELECT * FROM support_users WHERE name ILIKE ${namePattern} LIMIT 10
+        `
+      } else if (userPattern) {
+        results.found.supportUsers = await sql`
+          SELECT * FROM support_users WHERE username ILIKE ${userPattern} LIMIT 10
+        `
+      }
     } catch (e: any) {
       results.found.supportUsers_error = e?.message
+    }
+
+    // 3. Уникальные значения sender_id, sender_name, sender_username
+    // в support_messages — для самого этого человека
+    try {
+      if (sid) {
+        results.found.distinctSenderRecords = await sql`
+          SELECT DISTINCT sender_id, sender_name, sender_username, sender_role,
+                 COUNT(*)::int AS messages,
+                 MIN(created_at) AS first_seen,
+                 MAX(created_at) AS last_seen
+          FROM support_messages
+          WHERE sender_id::text = ${sid}
+             OR LOWER(COALESCE(sender_name, '')) = LOWER(${sid})
+             OR LOWER(COALESCE(sender_username, '')) = LOWER(${uname})
+          GROUP BY sender_id, sender_name, sender_username, sender_role
+          ORDER BY messages DESC
+          LIMIT 10
+        `
+      } else if (namePattern) {
+        results.found.distinctSenderRecords = await sql`
+          SELECT DISTINCT sender_id, sender_name, sender_username, sender_role,
+                 COUNT(*)::int AS messages,
+                 MIN(created_at) AS first_seen,
+                 MAX(created_at) AS last_seen
+          FROM support_messages
+          WHERE sender_name ILIKE ${namePattern}
+             OR sender_username ILIKE ${namePattern}
+          GROUP BY sender_id, sender_name, sender_username, sender_role
+          ORDER BY messages DESC
+          LIMIT 10
+        `
+      }
+    } catch (e: any) {
+      results.found.distinctSenderRecords_error = e?.message
     }
 
     // 4. Образцы недавних сообщений с этим sender_id
@@ -146,28 +164,31 @@ export default async function handler(req: Request): Promise<Response> {
     const analysis: string[] = []
     const sa = results.found.supportAgents || []
     if (sa.length === 0) {
-      analysis.push('В support_agents записи нет — поэтому он не появится в дашборде агентов.')
+      analysis.push('В support_agents записи нет ни в одном org_id — поэтому он не появится в дашборде. Скорее всего запись была удалена.')
     } else {
       for (const a of sa) {
         if (a.org_id && a.org_id !== callerOrgId) {
           analysis.push(`Найден в support_agents, но с org_id="${a.org_id}" (вы запрашиваете под "${callerOrgId}"). Поэтому скрыт фильтром.`)
         } else if (!a.org_id) {
           analysis.push(`Найден в support_agents, но org_id IS NULL. Не будет учтён фильтром по org_id.`)
-        }
-        if (a.is_deleted) {
-          analysis.push(`Найден в support_agents, но помечен как удалённый (deleted_at IS NOT NULL).`)
+        } else {
+          analysis.push(`Найден в support_agents с org_id="${a.org_id}". Должен быть виден в дашборде.`)
         }
       }
-    }
-
-    const cm = results.found.crmManagers || []
-    if (cm.length > 0) {
-      analysis.push(`Найден в crm_managers (${cm.length}). Эта таблица влияет на identifySender, но НЕ показывается в /agents.`)
     }
 
     if (results.found.recentMessages?.length > 0) {
       const last = results.found.recentMessages[0]
       analysis.push(`Последние сообщения сохранены с sender_role="${last.sender_role}", org_id="${last.org_id}", is_from_client=${last.is_from_client}.`)
+    }
+
+    if (sa.length === 0 && results.found.recentMessages?.length > 0) {
+      analysis.push(
+        'Сотрудник продолжает писать через систему, потому что Bearer-токен = agent.id, ' +
+        'а /messages/send проверяет только наличие заголовка Authorization, не сверяя ' +
+        'токен с support_agents. То есть фронт у него в localStorage хранит данные ' +
+        'когда-то существовавшего агента, и система это принимает.',
+      )
     }
 
     results.analysis = analysis.length > 0 ? analysis : ['Никаких отклонений не обнаружено.']
