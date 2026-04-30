@@ -139,11 +139,13 @@ export interface BroadcastRecipient {
 export async function fetchBroadcastRecipients(
   id: string,
   status?: 'queued' | 'sending' | 'delivered' | 'failed' | 'skipped' | 'all',
+  search?: string,
   limit = 100,
   offset = 0,
 ): Promise<{ items: BroadcastRecipient[]; total: number }> {
   const params = new URLSearchParams({ id, limit: String(limit), offset: String(offset) })
   if (status) params.set('status', status)
+  if (search && search.trim()) params.set('search', search.trim())
   const r = await apiGet<{ success: boolean; items: BroadcastRecipient[]; total: number }>(
     `/broadcast/recipients?${params}`,
     false,
@@ -156,4 +158,21 @@ export async function retryBroadcast(
   scope: 'failed' | 'all' = 'failed',
 ): Promise<{ success: boolean; requeued: number }> {
   return apiPost('/broadcast/retry', { id, scope })
+}
+
+export async function cloneUndeliveredBroadcast(data: {
+  sourceId: string
+  scope?: 'undelivered' | 'failed' | 'skipped' | 'queued'
+  overrideText?: string
+  sendNow?: boolean
+  scheduledAt?: string
+  createdBy?: string
+}): Promise<{
+  success: boolean
+  id?: string
+  recipientsCount?: number
+  message?: string
+  error?: string
+}> {
+  return apiPost('/broadcast/clone-undelivered', data)
 }
