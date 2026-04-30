@@ -63,3 +63,47 @@ export async function bindTelegramAccount(telegramData: {
     telegramUsername: telegramData.username,
   })
 }
+
+// ---------- Shadow agents (отвечают, но не зарегистрированы) -------------
+
+export interface ShadowSender {
+  senderId: string
+  senderName: string | null
+  senderUsername: string | null
+  messages: number
+  channels: number
+  firstSeen: string
+  lastSeen: string
+  possibleMatches: Array<{
+    id: string
+    name: string
+    username: string | null
+    telegramId: string | null
+  }>
+  canBindBy: string
+}
+
+export async function fetchShadowAgents(days = 30): Promise<{
+  total: number
+  hint: string
+  shadowSenders: ShadowSender[]
+}> {
+  return apiGet(`/agents/unregistered?days=${days}`)
+}
+
+export async function restoreShadowAgent(data: {
+  senderId: string
+  senderName?: string
+  senderUsername?: string
+  telegramId?: string
+  role?: string
+}): Promise<{
+  success: boolean
+  action: 'restored' | 'already_exists'
+  agent: { id: string; name: string; username: string | null; telegramId: string | null }
+  messagesAttached: number
+  message?: string
+  error?: string
+}> {
+  return apiPost('/agents/restore', data)
+}
