@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
+import { runBroadcastWorker } from '../lib/broadcast-runner.js'
 
 export const config = {
   runtime: 'edge',
@@ -210,9 +211,21 @@ async function handleCreate(req: Request, sql: ReturnType<typeof getSQL>, orgId:
   // 3. Bulk-создание получателей (параметризованный INSERT через UNNEST).
   await insertRecipients(sql, id, orgId, channels)
 
-  // 4. Если sendNow — дёргаем worker fire-and-forget, чтобы не ждать cron.
+  // 4. Если sendNow — запускаем worker INLINE с бюджетом ~20s.
+  // Для маленьких рассылок (1-50 получателей) всё уйдёт за один запрос.
+  // Для больших — оставшееся подхватит cron каждую минуту.
+  // Это снимает зависимость от Vercel cron для немедленной отправки.
+  let inlineStats: any = null
   if (sendNow) {
-    triggerWorker(req, id).catch(() => {})
+    try {
+      inlineStats = await runBroadcastWorker({
+        orgId,
+        targetBroadcastId: id,
+        budgetMs: 20_000,
+      })
+    } catch (e) {
+      console.warn('[broadcast/schedule] inline worker error:', e)
+    }
   }
 
   return json({
@@ -222,8 +235,10 @@ async function handleCreate(req: Request, sql: ReturnType<typeof getSQL>, orgId:
     scheduledAt: scheduledAtUtc.toISOString(),
     status: sendNow ? 'queued' : 'queued',
     sendNow,
+    inlineStats,
     message: sendNow
-      ? 'Рассылка поставлена в очередь, worker уже стартовал'
+      ? `Запущено: доставлено ${inlineStats?.delivered || 0} из ${channels.length}` +
+        (inlineStats?.delivered < channels.length ? ', остальные обрабатываются' : '')
       : 'Рассылка запланирована',
   })
 }
@@ -329,15 +344,6 @@ function guessMediaType(url: string): string {
   return 'document'
 }
 
-async function triggerWorker(req: Request, broadcastId: string): Promise<void> {
-  const url = new URL(req.url)
-  const secret = process.env.CRON_SECRET
-  if (!secret) return
-  const workerUrl = `${url.protocol}//${url.host}/api/support/broadcast/worker?secret=${encodeURIComponent(secret)}&id=${encodeURIComponent(broadcastId)}`
-  const ctrl = new AbortController()
-  setTimeout(() => ctrl.abort(), 1500)
-  await fetch(workerUrl, { signal: ctrl.signal }).catch(() => {})
-}
 
 // ---------------------------------------------------------------------------
 // DELETE: отмена кампании или всех активных

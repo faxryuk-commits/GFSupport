@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AlertCircle, AlertTriangle, CheckCircle, Clock, Copy, Loader2, RefreshCw,
+  AlertCircle, AlertTriangle, CheckCircle, Clock, Copy, Loader2, Play, RefreshCw,
   Search, Send, Square, XCircle,
 } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
@@ -9,6 +9,7 @@ import {
   fetchBroadcastRecipients,
   retryBroadcast,
   cloneUndeliveredBroadcast,
+  kickBroadcast,
   type BroadcastProgress,
   type BroadcastRecipient,
   type ScheduledBroadcast,
@@ -55,6 +56,7 @@ export function BroadcastDetailsModal({ isOpen, broadcast, onClose, onCancel, on
   const [isLoadingProgress, setIsLoadingProgress] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
   const [isCloning, setIsCloning] = useState(false)
+  const [isKicking, setIsKicking] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
   const [showCloneConfirm, setShowCloneConfirm] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'recipients'>('overview')
@@ -157,6 +159,31 @@ export function BroadcastDetailsModal({ isOpen, broadcast, onClose, onCancel, on
     }
   }
 
+  const handleKick = async () => {
+    if (!broadcastId) return
+    try {
+      setIsKicking(true)
+      const result = await kickBroadcast(broadcastId)
+      if (result.success && result.stats) {
+        const { delivered, failed, requeued, skipped } = result.stats
+        const parts: string[] = []
+        if (delivered > 0) parts.push(`доставлено ${delivered}`)
+        if (failed > 0) parts.push(`ошибок ${failed}`)
+        if (requeued > 0) parts.push(`в ретрае ${requeued}`)
+        if (skipped > 0) parts.push(`пропущено ${skipped}`)
+        setToast(parts.length > 0 ? `Запустили: ${parts.join(', ')}` : 'Нечего отправлять')
+        onChanged()
+      } else {
+        setToast(result.error || 'Не удалось запустить worker')
+      }
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Ошибка запуска')
+    } finally {
+      setIsKicking(false)
+      setTimeout(() => setToast(null), 5000)
+    }
+  }
+
   const handleClone = async () => {
     if (!broadcastId) return
     try {
@@ -196,6 +223,7 @@ export function BroadcastDetailsModal({ isOpen, broadcast, onClose, onCancel, on
   const undelivered = total - delivered // всё что не доставлено
   const progressPct = total > 0 ? Math.round((delivered / total) * 100) : 0
   const canClone = undelivered > 0 && total > 0 && !isLive && status !== 'queued'
+  const canKick = (queued > 0) && status !== 'cancelled'
 
   return (
     <>
@@ -213,6 +241,18 @@ export function BroadcastDetailsModal({ isOpen, broadcast, onClose, onCancel, on
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {canKick && (
+                <button
+                  type="button"
+                  onClick={handleKick}
+                  disabled={isKicking}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 disabled:opacity-50"
+                  title="Запустить worker сейчас, не дожидаясь cron"
+                >
+                  {isKicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  Запустить сейчас ({queued})
+                </button>
+              )}
               {failed > 0 && status !== 'queued' && status !== 'running' && (
                 <button
                   type="button"

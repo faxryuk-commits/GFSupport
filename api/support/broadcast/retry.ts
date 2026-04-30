@@ -1,9 +1,11 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
+import { runBroadcastWorker } from '../lib/broadcast-runner.js'
 
 export const config = {
   runtime: 'edge',
+  maxDuration: 30,
 }
 
 /**
@@ -68,8 +70,8 @@ export default async function handler(req: Request): Promise<Response> {
 
     const requeuedCount = (requeued as any[]).length
 
+    let inlineStats: any = null
     if (requeuedCount > 0) {
-      // Поднимаем кампанию обратно в running.
       await sql`
         UPDATE support_broadcast_scheduled
         SET status = 'queued',
@@ -79,25 +81,21 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE id = ${broadcastId} AND org_id = ${orgId}
       `
 
-      // Fire-and-forget: дёргаем воркер, чтобы не ждать cron.
-      triggerWorker(req, broadcastId).catch(() => {})
+      // Inline-запуск worker'а: для маленьких retry-запросов всё уйдёт сразу.
+      try {
+        inlineStats = await runBroadcastWorker({
+          orgId,
+          targetBroadcastId: broadcastId,
+          budgetMs: 20_000,
+        })
+      } catch (e) {
+        console.warn('[broadcast/retry] inline worker error:', e)
+      }
     }
 
-    return json({ success: true, requeued: requeuedCount })
+    return json({ success: true, requeued: requeuedCount, inlineStats })
   } catch (e: any) {
     console.error('[broadcast/retry] error:', e)
     return json({ success: false, error: e?.message || 'retry error' }, 500)
   }
-}
-
-async function triggerWorker(req: Request, broadcastId: string): Promise<void> {
-  const url = new URL(req.url)
-  const secret = process.env.CRON_SECRET
-  if (!secret) return
-  const workerUrl = `${url.protocol}//${url.host}/api/support/broadcast/worker?secret=${encodeURIComponent(secret)}&id=${encodeURIComponent(broadcastId)}`
-  // Без await — fire-and-forget. AbortController с маленьким таймаутом, чтобы
-  // запрос точно ушёл, но мы не блокировались.
-  const ctrl = new AbortController()
-  setTimeout(() => ctrl.abort(), 1500)
-  await fetch(workerUrl, { signal: ctrl.signal }).catch(() => {})
 }

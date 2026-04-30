@@ -160,6 +160,14 @@ export async function retryBroadcast(
   return apiPost('/broadcast/retry', { id, scope })
 }
 
+export async function kickBroadcast(id: string): Promise<{
+  success: boolean
+  stats?: { delivered: number; failed: number; requeued: number; skipped: number; elapsedMs: number }
+  error?: string
+}> {
+  return apiPost('/broadcast/kick', { id })
+}
+
 export async function cloneUndeliveredBroadcast(data: {
   sourceId: string
   scope?: 'undelivered' | 'failed' | 'skipped' | 'queued'

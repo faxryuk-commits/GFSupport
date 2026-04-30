@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
+import { runBroadcastWorker } from '../lib/broadcast-runner.js'
 
 export const config = {
   runtime: 'edge',
@@ -157,9 +158,18 @@ export default async function handler(req: Request): Promise<Response> {
       `
     }
 
-    // 5. Если sendNow — fire-and-forget worker.
+    // 5. Если sendNow — запускаем worker INLINE с бюджетом ~20s.
+    let inlineStats: any = null
     if (sendNow) {
-      triggerWorker(req, newId).catch(() => {})
+      try {
+        inlineStats = await runBroadcastWorker({
+          orgId,
+          targetBroadcastId: newId,
+          budgetMs: 20_000,
+        })
+      } catch (e) {
+        console.warn('[broadcast/clone-undelivered] inline worker error:', e)
+      }
     }
 
     return json({
@@ -169,8 +179,11 @@ export default async function handler(req: Request): Promise<Response> {
       scope,
       recipientsCount: recipients.length,
       sendNow,
+      inlineStats,
       message: sendNow
-        ? `Создан дубль на ${recipients.length} получателей, отправка запущена`
+        ? `Создан дубль на ${recipients.length} получателей, ` +
+          `доставлено ${inlineStats?.delivered || 0}` +
+          (inlineStats && inlineStats.delivered < recipients.length ? ', остальные в очереди' : '')
         : `Создан дубль на ${recipients.length} получателей, запланировано на ${scheduledAtUtc.toISOString()}`,
     })
   } catch (e: any) {
@@ -188,12 +201,3 @@ function parseScheduledAt(input: string | undefined): Date | null {
   return new Date(localMs - 5 * 60 * 60 * 1000)
 }
 
-async function triggerWorker(req: Request, broadcastId: string): Promise<void> {
-  const url = new URL(req.url)
-  const secret = process.env.CRON_SECRET
-  if (!secret) return
-  const workerUrl = `${url.protocol}//${url.host}/api/support/broadcast/worker?secret=${encodeURIComponent(secret)}&id=${encodeURIComponent(broadcastId)}`
-  const ctrl = new AbortController()
-  setTimeout(() => ctrl.abort(), 1500)
-  await fetch(workerUrl, { signal: ctrl.signal }).catch(() => {})
-}
