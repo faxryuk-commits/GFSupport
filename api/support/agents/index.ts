@@ -171,11 +171,16 @@ export default async function handler(req: Request): Promise<Response> {
             m.channel_id, c.awaiting_reply, m.created_at
           FROM support_messages m
           JOIN support_channels c ON c.id = m.channel_id
-          LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text
-                                     AND a.org_id = ${orgId}
+          LEFT JOIN support_agents a ON (
+              a.telegram_id::text = m.sender_id::text
+              OR a.id = m.sender_id::text
+              OR (m.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(m.sender_username))
+            )
+            AND a.org_id = ${orgId}
           WHERE m.is_from_client = false
             AND m.created_at > NOW() - INTERVAL '30 days'
             AND m.org_id = ${orgId}
+            AND COALESCE(m.sender_role, '') <> 'broadcast'
         )
         SELECT
           agent_id,
@@ -203,10 +208,15 @@ export default async function handler(req: Request): Promise<Response> {
             (SELECT MAX(cm.client_at) FROM client_msgs cm
              WHERE cm.channel_id = m.channel_id AND cm.client_at < m.created_at) as prev_client_at
           FROM support_messages m
-          LEFT JOIN support_agents a ON a.telegram_id::text = m.sender_id::text
-                                     AND a.org_id = ${orgId}
+          LEFT JOIN support_agents a ON (
+              a.telegram_id::text = m.sender_id::text
+              OR a.id = m.sender_id::text
+              OR (m.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(m.sender_username))
+            )
+            AND a.org_id = ${orgId}
           WHERE m.is_from_client = false AND m.org_id = ${orgId}
             AND m.created_at > NOW() - INTERVAL '30 days'
+            AND COALESCE(m.sender_role, '') <> 'broadcast'
         )
         SELECT agent_id,
           ROUND(AVG(EXTRACT(EPOCH FROM (agent_at - prev_client_at)) / 60))::int as avg_resp_min
