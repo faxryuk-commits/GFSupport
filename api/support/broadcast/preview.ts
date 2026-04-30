@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -18,6 +19,7 @@ export default async function handler(req: Request) {
     })
   }
 
+  await ensureBroadcastSchema()
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)

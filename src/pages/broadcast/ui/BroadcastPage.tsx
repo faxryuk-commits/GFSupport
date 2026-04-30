@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { 
-  Plus, Send, Clock, Users, CheckCircle, XCircle, Eye, Trash2, Calendar, 
-  Loader2, RefreshCw, AlertCircle, Search, Paperclip, X, Megaphone, 
-  Newspaper, Bell, Bot, User, MessageSquare, BarChart3, OctagonX, Square
+import {
+  Plus, Send, Clock, Users, CheckCircle, XCircle, Calendar,
+  Loader2, RefreshCw, AlertCircle, Search, Paperclip, X, Megaphone,
+  Newspaper, Bell, Bot, User, BarChart3, OctagonX, Square
 } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { fetchBroadcasts, createBroadcast, cancelBroadcast, stopAllBroadcasts, type ScheduledBroadcast, fetchChannels, fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
+import { BroadcastDetailsModal } from './BroadcastDetailsModal'
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
-  pending: { label: 'Ожидает', color: 'bg-blue-100 text-blue-700', icon: Clock },
-  processing: { label: 'Обработка', color: 'bg-amber-100 text-amber-700', icon: Loader2 },
+  pending: { label: 'В очереди', color: 'bg-blue-100 text-blue-700', icon: Clock },
+  processing: { label: 'Отправляется', color: 'bg-amber-100 text-amber-700', icon: Loader2 },
   sending: { label: 'Отправляется', color: 'bg-amber-100 text-amber-700', icon: Loader2 },
   sent: { label: 'Отправлено', color: 'bg-green-100 text-green-700', icon: CheckCircle },
   cancelled: { label: 'Отменено', color: 'bg-slate-100 text-slate-600', icon: XCircle },
@@ -102,7 +103,14 @@ export function BroadcastPage() {
   const totalSent = broadcasts.filter(b => b.status === 'sent').length
   const activeStatuses = ['pending', 'processing', 'sending']
   const pendingCount = broadcasts.filter(b => activeStatuses.includes(b.status)).length
-  const totalRecipients = broadcasts.reduce((acc, b) => acc + (b.recipientsCount || 0), 0)
+  const totalDelivered = broadcasts.reduce((acc, b) => acc + (b.deliveredCount || 0), 0)
+
+  // Авто-обновление списка пока есть активные кампании.
+  useEffect(() => {
+    if (pendingCount === 0) return
+    const t = setInterval(() => loadData(), 5000)
+    return () => clearInterval(t)
+  }, [pendingCount, loadData])
 
   // Фильтрация каналов для выбора
   const filteredChannels = useMemo(() => {
@@ -277,8 +285,8 @@ export function BroadcastPage() {
         <div className="grid grid-cols-4 gap-4">
           <StatCard icon={Send} color="blue" value={broadcasts.length} label="Всего рассылок" />
           <StatCard icon={CheckCircle} color="green" value={totalSent} label="Отправлено" />
-          <StatCard icon={Clock} color="amber" value={pendingCount} label="Запланировано" />
-          <StatCard icon={Users} color="purple" value={totalRecipients} label="Получателей" />
+          <StatCard icon={Clock} color="amber" value={pendingCount} label="Активных" />
+          <StatCard icon={Users} color="purple" value={totalDelivered} label="Доставлено сообщений" />
         </div>
 
         {/* Filters */}
@@ -553,17 +561,29 @@ export function BroadcastPage() {
         </div>
       </Modal>
 
-      {/* View Modal */}
-      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Детали рассылки" size="lg">
-        {selectedBroadcast && <BroadcastDetails broadcast={selectedBroadcast} formatDate={formatDate} />}
-      </Modal>
+      {/* Details Modal — live-progress, причины ошибок, retry */}
+      <BroadcastDetailsModal
+        isOpen={isViewModalOpen}
+        broadcast={selectedBroadcast}
+        onClose={() => setIsViewModalOpen(false)}
+        onCancel={async (id) => {
+          try {
+            await cancelBroadcast(id)
+            await loadData()
+          } catch (e) {
+            setError(e instanceof Error ? e.message : 'Ошибка отмены')
+          }
+        }}
+        onChanged={loadData}
+        formatDate={formatDate}
+      />
 
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}
         onClose={() => setIsDeleteDialogOpen(false)}
         onConfirm={handleCancel}
         title="Остановить рассылку"
-        message="Рассылка будет остановлена. Если она уже отправляется — часть сообщений может быть доставлена."
+        message="Рассылка будет остановлена. Уже доставленные сообщения останутся."
         confirmText="Остановить"
         variant="danger"
       />
@@ -629,30 +649,9 @@ function BroadcastCard({ broadcast, onView, onCancel, formatDate }: {
           </div>
           
           <p className="text-sm text-slate-600 line-clamp-2 mb-3">{broadcast.messageText}</p>
-          
-          {/* Analytics Row */}
-          <div className="flex items-center gap-4 text-sm mb-2">
-            <div className="flex items-center gap-1.5 text-slate-500">
-              <Users className="w-4 h-4" />
-              <span>{broadcast.recipientsCount || 0} получ.</span>
-            </div>
-            {broadcast.status === 'sent' && (
-              <>
-                <div className="flex items-center gap-1.5 text-green-600">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>{broadcast.deliveredCount || 0} доставл.</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-blue-600">
-                  <Eye className="w-4 h-4" />
-                  <span>{broadcast.viewedCount || 0} просм.</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-purple-600">
-                  <MessageSquare className="w-4 h-4" />
-                  <span>{broadcast.reactionCount || 0} реакц.</span>
-                </div>
-              </>
-            )}
-          </div>
+
+          {/* Прогресс */}
+          <BroadcastProgressLine broadcast={broadcast} />
           
           <div className="flex items-center gap-6 text-sm text-slate-500">
             {broadcast.status === 'pending' && broadcast.scheduledAt && (
@@ -690,84 +689,30 @@ function BroadcastCard({ broadcast, onView, onCancel, formatDate }: {
   )
 }
 
-function BroadcastDetails({ broadcast, formatDate }: { broadcast: ScheduledBroadcast; formatDate: (date: string | null) => string }) {
-  const config = statusConfig[broadcast.status] || defaultStatusConfig
-  
+function BroadcastProgressLine({ broadcast }: { broadcast: ScheduledBroadcast }) {
+  const total = broadcast.recipientsCount || 0
+  const delivered = broadcast.deliveredCount || 0
+  const failed = broadcast.failedCount || 0
+  const queued = broadcast.queuedCount || 0
+  const isActive = ['pending', 'processing', 'sending'].includes(broadcast.status)
+  const showLine = total > 0 && (isActive || delivered > 0 || failed > 0)
+  if (!showLine) return null
+
+  const pctDelivered = total > 0 ? (delivered / total) * 100 : 0
+  const pctFailed = total > 0 ? (failed / total) * 100 : 0
+  const pctQueued = total > 0 ? (queued / total) * 100 : 0
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <span className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full ${config.color}`}>
-          {config.label}
-        </span>
-        {broadcast.senderName && (
-          <span className="text-sm text-slate-500">Отправитель: {broadcast.senderName}</span>
-        )}
+    <div className="mb-2 space-y-1">
+      <div className="flex items-center justify-between text-xs text-slate-500">
+        <span>{delivered} из {total} доставлено{failed > 0 ? ` · ${failed} ошибок` : ''}</span>
+        {total > 0 && <span>{Math.round(pctDelivered)}%</span>}
       </div>
-
-      <div>
-        <p className="text-sm text-slate-500 mb-1">Сообщение</p>
-        <p className="text-slate-800 whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">{broadcast.messageText}</p>
+      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
+        <div className="bg-green-500 transition-all duration-500" style={{ width: `${pctDelivered}%` }} />
+        <div className="bg-red-400 transition-all duration-500" style={{ width: `${pctFailed}%` }} />
+        <div className="bg-amber-300 transition-all duration-500" style={{ width: `${pctQueued}%` }} />
       </div>
-
-      {broadcast.mediaUrl && (
-        <div>
-          <p className="text-sm text-slate-500 mb-1">Вложение</p>
-          <a href={broadcast.mediaUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-sm">
-            {broadcast.mediaUrl}
-          </a>
-        </div>
-      )}
-
-      {/* Analytics */}
-      <div className="bg-slate-50 rounded-xl p-4">
-        <p className="text-sm font-medium text-slate-700 mb-3">Статистика</p>
-        <div className="grid grid-cols-4 gap-4">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-slate-800">{broadcast.recipientsCount || 0}</p>
-            <p className="text-xs text-slate-500">Получателей</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-green-600">{broadcast.deliveredCount || 0}</p>
-            <p className="text-xs text-slate-500">Доставлено</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-blue-600">{broadcast.viewedCount || 0}</p>
-            <p className="text-xs text-slate-500">Просмотрено</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-purple-600">{broadcast.reactionCount || 0}</p>
-            <p className="text-xs text-slate-500">Реакций</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-sm text-slate-500">Аудитория</p>
-          <p className="font-medium text-slate-800">{filterLabels[broadcast.filterType] || broadcast.filterType}</p>
-        </div>
-        <div>
-          <p className="text-sm text-slate-500">Тип</p>
-          <p className="font-medium text-slate-800 capitalize">{broadcast.notificationType || 'Объявление'}</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-sm text-slate-500">Создано</p>
-          <p className="font-medium text-slate-800">{formatDate(broadcast.createdAt)}</p>
-        </div>
-        <div>
-          <p className="text-sm text-slate-500">{broadcast.sentAt ? 'Отправлено' : 'Запланировано'}</p>
-          <p className="font-medium text-slate-800">{formatDate(broadcast.sentAt || broadcast.scheduledAt)}</p>
-        </div>
-      </div>
-
-      {broadcast.errorMessage && (
-        <div className="bg-red-50 p-3 rounded-lg">
-          <p className="text-sm text-red-600">{broadcast.errorMessage}</p>
-        </div>
-      )}
     </div>
   )
 }

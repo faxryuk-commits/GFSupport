@@ -27,7 +27,11 @@
       "schedule": "0 */6 * * *"
     },
     {
-      "path": "/api/support/broadcast/execute",
+      "path": "/api/support/broadcast/worker",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/support/broadcast/worker-sweep",
       "schedule": "*/5 * * * *"
     },
     {

@@ -1,4 +1,6 @@
 import { getSQL } from '../lib/db.js'
+import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
+
 export const config = {
   runtime: 'edge',
 }
@@ -6,31 +8,17 @@ export const config = {
 export default async function handler(req: Request) {
   const sql = getSQL()
   const url = new URL(req.url)
-  
-  // Параметры трекинга
-  const broadcastId = url.searchParams.get('b') // ID рассылки
-  const linkId = url.searchParams.get('l') // ID ссылки
-  const targetUrl = url.searchParams.get('url') // Целевой URL
-  
+
+  const broadcastId = url.searchParams.get('b')
+  const linkId = url.searchParams.get('l')
+  const targetUrl = url.searchParams.get('url')
+
   if (!targetUrl) {
     return new Response('Missing target URL', { status: 400 })
   }
-  
+
   try {
-    // Создаём таблицу кликов если нет
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_broadcast_clicks (
-        id SERIAL PRIMARY KEY,
-        org_id VARCHAR(50) DEFAULT 'org_delever',
-        broadcast_id VARCHAR(50),
-        link_id VARCHAR(50),
-        target_url TEXT,
-        user_agent TEXT,
-        ip_hash VARCHAR(64),
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `.catch(() => {})
-    await sql`ALTER TABLE support_broadcast_clicks ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+    await ensureBroadcastSchema()
 
     // Получаем org_id из рассылки (трекинг вызывается по ссылке без auth)
     let orgId = 'org_delever'

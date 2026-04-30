@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -47,9 +48,10 @@ export default async function handler(req: Request) {
     return json({ error: 'Method not allowed' }, 405)
   }
 
+  await ensureBroadcastSchema()
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
-  
+
   try {
     const body = await req.json()
     const { broadcastId } = body
