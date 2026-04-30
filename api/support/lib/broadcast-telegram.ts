@@ -42,19 +42,60 @@ async function callTelegram(botToken: string, path: string, body: Record<string,
 }
 
 /**
+ * Эвристика «это похоже на ссылку, а не на медиафайл».
+ * Telegram умеет скачивать только прямые URL картинок/видео/документов
+ * (например .jpg, .mp4, .pdf). Если URL ведёт на HTML-страницу
+ * (t.me/..., youtube.com, наш собственный сайт) — sendPhoto/sendDocument
+ * упадут с "Bad Request: wrong type of the web page content".
+ *
+ * В этом случае мы НЕ пытаемся отправить как медиа, а добавляем ссылку
+ * в сам текст и шлём как обычный sendMessage с превью.
+ */
+function looksLikeWebPage(url: string): boolean {
+  const u = url.toLowerCase().trim()
+  // t.me-ссылки и любые "пустые" пути без явного расширения файла
+  if (/^https?:\/\/(t\.me|telegram\.me|telegram\.org)\b/.test(u)) return true
+  // прямой файл — оканчивается на типичное расширение медиа
+  const fileExtMatch = u.match(/\.([a-z0-9]{2,5})(?:\?.*)?$/)
+  if (!fileExtMatch) return true // нет расширения — почти точно HTML
+  const allowed = new Set([
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+    'mp4', 'mov', 'webm', 'mkv', 'avi',
+    'mp3', 'wav', 'ogg', 'm4a', 'oga',
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'zip', 'rar', '7z', 'tar', 'gz',
+    'csv', 'txt', 'json', 'xml',
+  ])
+  return !allowed.has(fileExtMatch[1])
+}
+
+/**
  * Отправляет сообщение в Telegram с поддержкой медиа.
  * Никогда не throw'ит — все ошибки превращает в структурированный outcome.
+ *
+ * Особенности:
+ * - Если mediaUrl указан, но URL ведёт на HTML-страницу (t.me, youtube и т.п.) —
+ *   автоматически отправляем как обычное текстовое сообщение со ссылкой
+ *   в конце, чтобы избежать "Bad Request: wrong type of the web page content".
+ * - Если sendPhoto/Video/Document всё же упал с этой ошибкой — делаем
+ *   second-chance fallback на sendMessage.
  */
 export async function sendBroadcastMessage(input: SendInput): Promise<TgSendOutcome> {
   const { chatId, text, mediaUrl, mediaType, botToken } = input
   const parseMode = input.parseMode || 'HTML'
 
+  // Если URL похож на веб-страницу — не пытаемся отправить как медиа.
+  const treatAsLink = !!(mediaUrl && looksLikeWebPage(mediaUrl))
+
   try {
     let result: any
-    if (!mediaUrl) {
+    if (!mediaUrl || treatAsLink) {
+      const finalText = treatAsLink && mediaUrl
+        ? `${text}\n\n${mediaUrl}`
+        : text
       result = await callTelegram(botToken, 'sendMessage', {
         chat_id: chatId,
-        text,
+        text: finalText,
         parse_mode: parseMode,
         disable_web_page_preview: false,
       })
@@ -67,8 +108,25 @@ export async function sendBroadcastMessage(input: SendInput): Promise<TgSendOutc
         caption,
         parse_mode: parseMode,
       })
+
+      // Fallback: если Telegram не смог распарсить URL как медиа —
+      // повторяем как обычное текстовое сообщение со ссылкой.
+      const desc = String(result?.description || '').toLowerCase()
+      if (!result?.ok && (
+        desc.includes('wrong type of the web page content') ||
+        desc.includes('failed to get http url content') ||
+        desc.includes('wrong file identifier')
+      )) {
+        result = await callTelegram(botToken, 'sendMessage', {
+          chat_id: chatId,
+          text: `${text}\n\n${mediaUrl}`,
+          parse_mode: parseMode,
+          disable_web_page_preview: false,
+        })
+      }
+
       // Длинный текст: отправляем второе сообщение с продолжением
-      if (result?.ok && text.length > CAPTION_LIMIT) {
+      if (result?.ok && text.length > CAPTION_LIMIT && !treatAsLink) {
         await callTelegram(botToken, 'sendMessage', {
           chat_id: chatId,
           text: text.slice(CAPTION_LIMIT - 3),
