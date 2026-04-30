@@ -54,9 +54,12 @@ export default async function handler(req: Request): Promise<Response> {
       )
       SELECT s.*
       FROM msg_senders s
-      LEFT JOIN support_agents a
-        ON a.telegram_id::text = s.sender_id::text
-       AND a.org_id = ${orgId}
+      LEFT JOIN support_agents a ON (
+          a.telegram_id::text = s.sender_id::text
+          OR a.id = s.sender_id::text
+          OR (s.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(s.sender_username))
+        )
+        AND a.org_id = ${orgId}
       WHERE a.id IS NULL
       ORDER BY s.messages DESC
       LIMIT 50
