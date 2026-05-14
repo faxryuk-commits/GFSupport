@@ -6,6 +6,8 @@ import {
   Sparkles, ThumbsUp, AlertOctagon, Lightbulb, RefreshCw,
 } from 'lucide-react'
 import { Modal } from '@/shared/ui'
+import { fetchMetric } from '@/shared/api'
+import type { MetricResult } from '@/shared/api'
 
 /* ============================================================ */
 /* Types                                                         */
@@ -154,12 +156,14 @@ export function Agent360Modal({
   isOpen, onClose, agentName, agentId, from, to, source,
 }: Agent360ModalProps) {
   const [data, setData] = useState<Agent360Payload | null>(null)
+  const [frtMetric, setFrtMetric] = useState<MetricResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen || (!agentName && !agentId)) {
       setData(null)
+      setFrtMetric(null)
       setError(null)
       return
     }
@@ -192,6 +196,19 @@ export function Agent360Modal({
         }
         if (json?.error) throw new Error(json.message || json.error)
         if (!cancelled) setData(json)
+
+        // Параллельно — FRT-бенчмарк из семантического слоя.
+        // Не блокирует основной payload: если упало, просто не показываем бейдж.
+        if (json?.profile?.id) {
+          fetchMetric({
+            key: 'frt_avg_minutes',
+            agentId: json.profile.id,
+            period: '30d',
+            source: source === 'all' ? undefined : source,
+          })
+            .then((m) => { if (!cancelled) setFrtMetric(m.result) })
+            .catch(() => { if (!cancelled) setFrtMetric(null) })
+        }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Ошибка загрузки')
       } finally {
@@ -223,7 +240,7 @@ export function Agent360Modal({
           </div>
         )}
 
-        {!loading && !error && data && <Agent360Body data={data} />}
+        {!loading && !error && data && <Agent360Body data={data} frtMetric={frtMetric} />}
       </div>
     </Modal>
   )
@@ -233,7 +250,7 @@ export function Agent360Modal({
 /* Body                                                          */
 /* ============================================================ */
 
-function Agent360Body({ data }: { data: Agent360Payload }) {
+function Agent360Body({ data, frtMetric }: { data: Agent360Payload; frtMetric: MetricResult | null }) {
   const { profile, kpi, period, bySource, byContentType, byLanguage, byDomain,
     statusFunnel, dailyTrend, sentiment, vsTeam, recentResolved, stuck, topChannels } = data
 
@@ -325,6 +342,7 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
           }
           accent="violet"
           title="Классический FRT — первый ответ агента на новый запрос клиента (исключая короткие 'спасибо/ок'). Совпадает с SLA-лидербордом. В скобках — средняя задержка между сообщением клиента и любым ответом агента в беседе."
+          benchmark={frtMetric}
         />
         <KpiCard
           icon={<CheckCircle className="w-4 h-4" />}
@@ -619,10 +637,11 @@ function Agent360Body({ data }: { data: Agent360Payload }) {
 /* Subcomponents                                                 */
 /* ============================================================ */
 
-function KpiCard({ icon, label, value, sub, accent, title }: {
+function KpiCard({ icon, label, value, sub, accent, title, benchmark }: {
   icon: React.ReactNode; label: string; value: string; sub: string
   accent: 'blue' | 'green' | 'violet' | 'red' | 'slate'
   title?: string
+  benchmark?: MetricResult | null
 }) {
   const colors: Record<string, string> = {
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
@@ -642,6 +661,50 @@ function KpiCard({ icon, label, value, sub, accent, title }: {
       </div>
       <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{value}</p>
       <p className="mt-0.5 text-xs text-slate-500">{sub}</p>
+      {benchmark && <BenchmarkStrip benchmark={benchmark} />}
+    </div>
+  )
+}
+
+function BenchmarkStrip({ benchmark }: { benchmark: MetricResult }) {
+  const { bronze, silver, gold } = benchmark.benchmarks
+  const hasAny = bronze || silver || gold
+  if (!hasAny) {
+    return (
+      <p className="mt-2 text-[10px] text-slate-400 border-t border-slate-100 pt-2">
+        нет бенчмарка — запустите пересчёт на странице «Бенчмарки»
+      </p>
+    )
+  }
+  const statusBg =
+    benchmark.status === 'good'
+      ? 'bg-emerald-50 text-emerald-700'
+      : benchmark.status === 'borderline'
+      ? 'bg-amber-50 text-amber-700'
+      : benchmark.status === 'bad'
+      ? 'bg-rose-50 text-rose-700'
+      : 'bg-slate-50 text-slate-500'
+  const statusLabel =
+    benchmark.status === 'good'
+      ? 'Gold'
+      : benchmark.status === 'borderline'
+      ? 'Silver'
+      : benchmark.status === 'bad'
+      ? 'ниже Bronze'
+      : '—'
+  const fmt = (n: number) => `${n.toFixed(1)}м`
+  return (
+    <div className="mt-2 border-t border-slate-100 pt-2">
+      <div className="flex items-center gap-2 text-[10px]">
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded font-medium ${statusBg}`}>
+          {statusLabel}
+        </span>
+        <div className="flex items-center gap-1.5 text-slate-500">
+          {bronze && <span>🥉 {fmt(bronze.value)}</span>}
+          {silver && <span>🥈 {fmt(silver.value)}</span>}
+          {gold && <span>🥇 {fmt(gold.value)}</span>}
+        </div>
+      </div>
     </div>
   )
 }
