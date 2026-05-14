@@ -230,8 +230,8 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT
           COALESCE(tag_agent_id, 'unknown') as agent_id,
           COUNT(*) FILTER (WHERE action = 'escalate') as escalations,
-          COUNT(*) FILTER (WHERE feedback_correct = true) as correct,
-          COUNT(*) FILTER (WHERE feedback_correct IS NOT NULL) as total_feedback
+          COUNT(*) FILTER (WHERE feedback = 'correct') as correct,
+          COUNT(*) FILTER (WHERE feedback IS NOT NULL AND feedback <> '') as total_feedback
         FROM support_agent_decisions
         WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '30 days'
           AND tag_agent_id = ANY(${agentIds})
