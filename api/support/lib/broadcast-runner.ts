@@ -97,6 +97,20 @@ export async function runBroadcastWorker(opts: RunnerOptions): Promise<RunnerSta
     return (row as CampaignRow) || null
   }
 
+  // Inline sweep: rescue recipients stuck in 'sending' for >2 min
+  // so we don't depend on the separate worker-sweep cron.
+  await sql`
+    UPDATE support_broadcast_recipients
+    SET status = 'queued',
+        updated_at = NOW(),
+        retry_after_at = NOW() + INTERVAL '3 seconds'
+    WHERE status = 'sending'
+      AND last_attempt_at IS NOT NULL
+      AND last_attempt_at < NOW() - INTERVAL '2 minutes'
+      ${orgId ? sql`AND org_id = ${orgId}` : sql``}
+      ${targetBroadcastId ? sql`AND broadcast_id = ${targetBroadcastId}` : sql``}
+  `.catch(() => {})
+
   while (Date.now() < deadline) {
     const batch = await sql`
       UPDATE support_broadcast_recipients r

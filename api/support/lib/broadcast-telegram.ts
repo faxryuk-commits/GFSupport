@@ -37,6 +37,7 @@ async function callTelegram(botToken: string, path: string, body: Record<string,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   })
   return res.json().catch(() => ({ ok: false, description: 'invalid_json' }))
 }
