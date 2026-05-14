@@ -136,7 +136,7 @@ export function AnalyticsPage() {
 
       {tab === 'pulse' && <PulseTab period={period} source={sourceFilter} />}
       {tab === 'diagnosis' && <DiagnosisTab period={period} source={sourceFilter} />}
-      {tab === 'detail' && <DetailTab period={period} />}
+      {tab === 'detail' && <DetailTab period={period} source={sourceFilter} />}
     </div>
   )
 }

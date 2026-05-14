@@ -64,3 +64,36 @@ export const fetchMetric = (params: FetchMetricParams): Promise<MetricResponse> 
   if (params.role) qs.set('role', params.role)
   return apiGet<MetricResponse>(`/analytics/metric?${qs.toString()}`)
 }
+
+export interface MetricPerAgentRow {
+  agentId: string
+  agentName: string | null
+  value: number
+  sampleSize: number
+  status: MetricStatus
+}
+
+export interface MetricPerAgentResponse {
+  descriptor: MetricDescriptor
+  period: MetricResult['period']
+  benchmarks: MetricResult['benchmarks']
+  rows: MetricPerAgentRow[]
+}
+
+export interface FetchMetricPerAgentParams {
+  key: string
+  period?: FetchMetricParams['period']
+  market?: string | null
+  source?: string | null
+}
+
+export const fetchMetricPerAgent = (
+  params: FetchMetricPerAgentParams,
+): Promise<MetricPerAgentResponse> => {
+  const qs = new URLSearchParams()
+  qs.set('key', params.key)
+  if (params.period) qs.set('period', params.period)
+  if (params.market) qs.set('market', params.market)
+  if (params.source) qs.set('source', params.source)
+  return apiGet<MetricPerAgentResponse>(`/analytics/metric-per-agent?${qs.toString()}`)
+}
