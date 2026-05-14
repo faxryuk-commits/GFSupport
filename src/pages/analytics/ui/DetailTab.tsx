@@ -12,6 +12,7 @@ import {
 interface DetailTabProps {
   period: '7d' | '30d' | '90d'
   source?: 'all' | 'telegram' | 'whatsapp'
+  roles?: string[] | null
 }
 
 type SortKey = 'agentName' | 'frt' | 'sla' | 'sessions'
@@ -63,7 +64,7 @@ function MetricCell({
   )
 }
 
-export function DetailTab({ period, source }: DetailTabProps) {
+export function DetailTab({ period, source, roles }: DetailTabProps) {
   const [frtData, setFrtData] = useState<MetricPerAgentResponse | null>(null)
   const [slaData, setSlaData] = useState<MetricPerAgentResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -80,16 +81,19 @@ export function DetailTab({ period, source }: DetailTabProps) {
     setFrtData(null)
     setSlaData(null)
 
+    const rolesFilter = roles && roles.length > 0 ? roles : null
     Promise.all([
       fetchMetricPerAgent({
         key: 'frt_avg_minutes',
         period,
         source: source === 'all' ? undefined : source,
+        roles: rolesFilter,
       }).catch(() => null),
       fetchMetricPerAgent({
         key: 'sla_compliance_rate',
         period,
         source: source === 'all' ? undefined : source,
+        roles: rolesFilter,
       }).catch(() => null),
     ])
       .then(([frt, sla]) => {
@@ -107,7 +111,7 @@ export function DetailTab({ period, source }: DetailTabProps) {
     return () => {
       cancelled = true
     }
-  }, [period, source])
+  }, [period, source, roles])
 
   const merged: MergedRow[] = useMemo(() => {
     const map = new Map<string, MergedRow>()

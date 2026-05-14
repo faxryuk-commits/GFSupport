@@ -40,7 +40,12 @@ const SUPPORTED: Record<
   {
     descriptor: MetricDescriptor
     compute: (
-      scope: { orgId: string; market: string | null; source: string | null },
+      scope: {
+        orgId: string
+        market: string | null
+        source: string | null
+        roles: string[] | null
+      },
       period: ReturnType<typeof resolvePeriod>,
     ) => Promise<{
       rows: Array<{
@@ -99,9 +104,11 @@ export default async function handler(req: Request): Promise<Response> {
   const period = resolvePeriod(parsePeriodParam(url.searchParams.get('period')))
   const market = url.searchParams.get('market')
   const source = url.searchParams.get('source')
+  const rawRoles = url.searchParams.get('roles')
+  const roles = rawRoles ? rawRoles.split(',').map((r) => r.trim()).filter(Boolean) : null
 
   try {
-    const result = await entry.compute({ orgId, market, source }, period)
+    const result = await entry.compute({ orgId, market, source, roles }, period)
     return json(
       {
         descriptor: entry.descriptor,

@@ -52,6 +52,7 @@ export interface FetchMetricParams {
   market?: string | null
   source?: string | null
   role?: string | null
+  roles?: string[] | null
 }
 
 export const fetchMetric = (params: FetchMetricParams): Promise<MetricResponse> => {
@@ -62,6 +63,7 @@ export const fetchMetric = (params: FetchMetricParams): Promise<MetricResponse> 
   if (params.market) qs.set('market', params.market)
   if (params.source) qs.set('source', params.source)
   if (params.role) qs.set('role', params.role)
+  if (params.roles && params.roles.length > 0) qs.set('roles', params.roles.join(','))
   return apiGet<MetricResponse>(`/analytics/metric?${qs.toString()}`)
 }
 
@@ -85,6 +87,8 @@ export interface FetchMetricPerAgentParams {
   period?: FetchMetricParams['period']
   market?: string | null
   source?: string | null
+  /** Список ролей (lower-case или как в support_agents.role) — фильтр кого считать. */
+  roles?: string[] | null
 }
 
 export const fetchMetricPerAgent = (
@@ -95,5 +99,6 @@ export const fetchMetricPerAgent = (
   if (params.period) qs.set('period', params.period)
   if (params.market) qs.set('market', params.market)
   if (params.source) qs.set('source', params.source)
+  if (params.roles && params.roles.length > 0) qs.set('roles', params.roles.join(','))
   return apiGet<MetricPerAgentResponse>(`/analytics/metric-per-agent?${qs.toString()}`)
 }

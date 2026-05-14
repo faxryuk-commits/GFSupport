@@ -60,12 +60,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   const orgId = await getRequestOrgId(req)
   const period = resolvePeriod(parsePeriodParam(url.searchParams.get('period')))
+  const rawRoles = url.searchParams.get('roles')
   const scope: MetricScope = {
     orgId,
     agentId: url.searchParams.get('agentId'),
     market: url.searchParams.get('market'),
     source: url.searchParams.get('source'),
     role: url.searchParams.get('role'),
+    roles: rawRoles ? rawRoles.split(',').map((r) => r.trim()).filter(Boolean) : null,
   }
 
   try {

@@ -56,6 +56,9 @@ export async function computeFrtAvg(
   const market = scope.market ?? null
   const source = scope.source && scope.source !== 'all' ? scope.source : 'all'
   const agentId = scope.agentId ?? null
+  // roles: null / [] = без фильтра; иначе lowercased список ролей
+  const rolesFilter =
+    scope.roles && scope.roles.length > 0 ? scope.roles.map((r) => r.toLowerCase()) : null
 
   // ВАЖНО: расширенный JOIN с support_agents — единственный способ корректно
   // атрибутировать web-агентов (sender_id='agent_xxx'). Семантика повторяет
@@ -110,6 +113,7 @@ export async function computeFrtAvg(
             AND m2.created_at > ss.created_at
             AND m2.created_at <= ss.created_at + INTERVAL '4 hours'
             AND (${agentId}::text IS NULL OR a.id::text = ${agentId}::text)
+            AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
           ORDER BY m2.created_at ASC
           LIMIT 1
         ) AS response_at
@@ -178,7 +182,7 @@ interface PerAgentRawRow {
 }
 
 export async function computeFrtAvgPerAgent(
-  scope: Pick<MetricScope, 'orgId' | 'market' | 'source'>,
+  scope: Pick<MetricScope, 'orgId' | 'market' | 'source' | 'roles'>,
   period: ResolvedPeriod,
 ): Promise<FrtPerAgentResult> {
   const sql = getSQL()
@@ -186,6 +190,8 @@ export async function computeFrtAvgPerAgent(
   const toISO = period.to.toISOString()
   const market = scope.market ?? null
   const source = scope.source && scope.source !== 'all' ? scope.source : 'all'
+  const rolesFilter =
+    scope.roles && scope.roles.length > 0 ? scope.roles.map((r) => r.toLowerCase()) : null
 
   const rawRows = (await sql`
     WITH all_msgs AS (
@@ -248,6 +254,7 @@ export async function computeFrtAvgPerAgent(
             AND m2.sender_role IN ('support','team','agent')
             AND m2.created_at > ss.created_at
             AND m2.created_at <= ss.created_at + INTERVAL '4 hours'
+            AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
           ORDER BY m2.created_at ASC
           LIMIT 1
         ) AS responder_agent_id
@@ -262,6 +269,7 @@ export async function computeFrtAvgPerAgent(
     LEFT JOIN support_agents a ON a.id::text = fr.responder_agent_id AND a.org_id = ${scope.orgId}
     WHERE fr.response_at IS NOT NULL
       AND fr.responder_agent_id IS NOT NULL
+      AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
     GROUP BY fr.responder_agent_id, a.name
     ORDER BY avg_minutes ASC
   `) as PerAgentRawRow[]

@@ -117,19 +117,16 @@ export default async function handler(req: Request): Promise<Response> {
   const periodsCount = Math.min(Math.max(parseInt(url.searchParams.get('periods') || '8', 10), 2), 24)
   const source = url.searchParams.get('source')
 
-  if (!agentId) return json({ error: 'Missing agentId' }, 400)
   if (!key) return json({ error: 'Missing key' }, 400)
 
   const entry = METRIC_REGISTRY[key]
   if (!entry) return json({ error: `Unknown metric: ${key}`, available: Object.keys(METRIC_REGISTRY) }, 404)
-  if (!entry.descriptor.perAgent) {
-    return json(
-      { error: `Metric "${key}" is not per-agent; trend not applicable.` },
-      400,
-    )
-  }
+  // agentId опционален: если не задан — считаем тренд для команды целиком
+  // (для не-perAgent метрик — сразу team-wide; для perAgent — без фильтра агента).
 
   const orgId = await getRequestOrgId(req)
+  const rawRoles = url.searchParams.get('roles')
+  const roles = rawRoles ? rawRoles.split(',').map((r) => r.trim()).filter(Boolean) : null
   const now = new Date()
   const periods = buildPeriods(granularity, periodsCount, now)
 
@@ -150,6 +147,7 @@ export default async function handler(req: Request): Promise<Response> {
               market: null,
               source,
               role: null,
+              roles,
             },
             resolved,
           )
@@ -188,7 +186,7 @@ export default async function handler(req: Request): Promise<Response> {
           label: last.label,
         }
         const r = await entry.compute(
-          { orgId, agentId, market: null, source, role: null },
+          { orgId, agentId, market: null, source, role: null, roles },
           lastResolved,
         )
         benchmarks = r.benchmarks
@@ -199,7 +197,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     return json(
       {
-        agentId,
+        agentId: agentId ?? null,
         descriptor: entry.descriptor,
         granularity,
         benchmarks,

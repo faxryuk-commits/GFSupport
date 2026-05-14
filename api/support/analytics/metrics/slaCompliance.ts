@@ -53,6 +53,8 @@ export async function computeSlaCompliance(
   const market = scope.market ?? null
   const source = scope.source && scope.source !== 'all' ? scope.source : 'all'
   const agentId = scope.agentId ?? null
+  const rolesFilter =
+    scope.roles && scope.roles.length > 0 ? scope.roles.map((r) => r.toLowerCase()) : null
   const slaMinutes = DEFAULT_SLA_MINUTES
 
   const rows = (await sql`
@@ -105,6 +107,7 @@ export async function computeSlaCompliance(
             AND m2.created_at > ss.created_at
             AND m2.created_at <= ss.created_at + INTERVAL '4 hours'
             AND (${agentId}::text IS NULL OR a.id::text = ${agentId}::text)
+            AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
           ORDER BY m2.created_at ASC
           LIMIT 1
         ) AS response_at
@@ -170,7 +173,7 @@ interface PerAgentRawRow {
 }
 
 export async function computeSlaCompliancePerAgent(
-  scope: Pick<MetricScope, 'orgId' | 'market' | 'source'>,
+  scope: Pick<MetricScope, 'orgId' | 'market' | 'source' | 'roles'>,
   period: ResolvedPeriod,
 ): Promise<SlaPerAgentResult> {
   const sql = getSQL()
@@ -178,6 +181,8 @@ export async function computeSlaCompliancePerAgent(
   const toISO = period.to.toISOString()
   const market = scope.market ?? null
   const source = scope.source && scope.source !== 'all' ? scope.source : 'all'
+  const rolesFilter =
+    scope.roles && scope.roles.length > 0 ? scope.roles.map((r) => r.toLowerCase()) : null
   const slaMinutes = DEFAULT_SLA_MINUTES
 
   const rawRows = (await sql`
@@ -241,6 +246,7 @@ export async function computeSlaCompliancePerAgent(
             AND m2.sender_role IN ('support','team','agent')
             AND m2.created_at > ss.created_at
             AND m2.created_at <= ss.created_at + INTERVAL '4 hours'
+            AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
           ORDER BY m2.created_at ASC
           LIMIT 1
         ) AS responder_agent_id
@@ -257,6 +263,7 @@ export async function computeSlaCompliancePerAgent(
     LEFT JOIN support_agents a ON a.id::text = fr.responder_agent_id AND a.org_id = ${scope.orgId}
     WHERE fr.response_at IS NOT NULL
       AND fr.responder_agent_id IS NOT NULL
+      AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
     GROUP BY fr.responder_agent_id, a.name
     ORDER BY (COUNT(*) FILTER (
       WHERE EXTRACT(EPOCH FROM (fr.response_at - fr.client_at)) / 60.0 <= ${slaMinutes}

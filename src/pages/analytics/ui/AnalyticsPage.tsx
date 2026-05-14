@@ -12,6 +12,7 @@
 import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Activity, Heart, FileSpreadsheet } from 'lucide-react'
+import { RoleFilter, defaultRoleFilter, type RoleFilterValue } from '@/features/analytics'
 import { PulseTab } from './PulseTab'
 import { DiagnosisTab } from './DiagnosisTab'
 import { DetailTab } from './DetailTab'
@@ -68,6 +69,7 @@ export function AnalyticsPage() {
     const s = params.get('source')
     return s === 'telegram' || s === 'whatsapp' ? s : 'all'
   })
+  const [roleFilter, setRoleFilter] = useState<RoleFilterValue>(() => defaultRoleFilter())
 
   const setTab = (next: Tab) => {
     const merged = new URLSearchParams(params)
@@ -108,6 +110,7 @@ export function AnalyticsPage() {
               </option>
             ))}
           </select>
+          <RoleFilter value={roleFilter} onChange={setRoleFilter} />
         </div>
       </div>
 
@@ -134,9 +137,13 @@ export function AnalyticsPage() {
         </nav>
       </div>
 
-      {tab === 'pulse' && <PulseTab period={period} source={sourceFilter} />}
+      {tab === 'pulse' && (
+        <PulseTab period={period} source={sourceFilter} roles={roleFilter.roles} />
+      )}
       {tab === 'diagnosis' && <DiagnosisTab period={period} source={sourceFilter} />}
-      {tab === 'detail' && <DetailTab period={period} source={sourceFilter} />}
+      {tab === 'detail' && (
+        <DetailTab period={period} source={sourceFilter} roles={roleFilter.roles} />
+      )}
     </div>
   )
 }

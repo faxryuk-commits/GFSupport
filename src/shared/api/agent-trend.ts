@@ -28,21 +28,24 @@ export interface AgentTrendResponse {
 }
 
 export interface FetchAgentTrendParams {
-  agentId: string
+  /** Если не задан — тренд команды целиком (team-wide). */
+  agentId?: string | null
   key: string
   granularity?: TrendGranularity
   periods?: number
   source?: string | null
+  roles?: string[] | null
 }
 
 export const fetchAgentTrend = (
   params: FetchAgentTrendParams,
 ): Promise<AgentTrendResponse> => {
   const qs = new URLSearchParams()
-  qs.set('agentId', params.agentId)
+  if (params.agentId) qs.set('agentId', params.agentId)
   qs.set('key', params.key)
   if (params.granularity) qs.set('granularity', params.granularity)
   if (params.periods) qs.set('periods', String(params.periods))
   if (params.source) qs.set('source', params.source)
+  if (params.roles && params.roles.length > 0) qs.set('roles', params.roles.join(','))
   return apiGet<AgentTrendResponse>(`/analytics/agent-trend?${qs.toString()}`)
 }

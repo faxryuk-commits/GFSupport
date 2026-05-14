@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Clock, Target, Smile, Repeat, Bot } from 'lucide-react'
-import { BenchmarkCard, CustomerHealthBanner } from '@/features/analytics'
+import { BenchmarkCard, CustomerHealthBanner, TeamTrendStrip } from '@/features/analytics'
 import { fetchMetric, type MetricResult, type FetchMetricParams } from '@/shared/api'
 
 const PULSE_METRICS: Array<{
@@ -53,9 +53,10 @@ const PULSE_METRICS: Array<{
 interface PulseTabProps {
   period: FetchMetricParams['period']
   source?: string
+  roles?: string[] | null
 }
 
-export function PulseTab({ period, source }: PulseTabProps) {
+export function PulseTab({ period, source, roles }: PulseTabProps) {
   // null = ещё грузится, undefined = ошибка/нет, MetricResult = есть данные
   const [metrics, setMetrics] = useState<Record<string, MetricResult | null | undefined>>({})
 
@@ -72,6 +73,7 @@ export function PulseTab({ period, source }: PulseTabProps) {
           key: m.key,
           period,
           source: source === 'all' ? undefined : source,
+          roles: roles && roles.length > 0 ? roles : null,
         })
           .then((r) => ({ key: m.key, result: r.result as MetricResult }))
           .catch(() => ({ key: m.key, result: undefined as MetricResult | undefined })),
@@ -86,7 +88,7 @@ export function PulseTab({ period, source }: PulseTabProps) {
     return () => {
       cancelled = true
     }
-  }, [period, source])
+  }, [period, source, roles])
 
   // Группировка по уровню — L2 indicators сверху, L3 activity ниже
   const indicators = PULSE_METRICS.filter(
@@ -152,6 +154,14 @@ export function PulseTab({ period, source }: PulseTabProps) {
           ))}
         </div>
       </section>
+
+      <TeamTrendStrip
+        metricKeys={PULSE_METRICS.map((m) => m.key)}
+        source={source}
+        roles={roles && roles.length > 0 ? roles : null}
+        granularity="weekly"
+        periods={8}
+      />
 
       <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-4 py-3">
         <strong>Pulse</strong> — сводка по 4 ключевым метрикам с целевыми уровнями Bronze (минимум) /
