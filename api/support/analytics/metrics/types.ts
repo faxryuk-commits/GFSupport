@@ -1,0 +1,110 @@
+/**
+ * Семантический слой аналитики — общие типы.
+ *
+ * Архитектурное правило: ни один endpoint не пишет SQL для KPI напрямую.
+ * Endpoint собирает набор MetricDescriptor'ов и вызывает metrics.compute(...).
+ * Это единственный путь, обеспечивающий, что «среднее время первого ответа»
+ * считается одной формулой во всех виджетах.
+ *
+ * См. delever_context.md в memory: «клиент» в этих типах = покупатель Delever,
+ * org_id = Delever-org.
+ */
+
+/** Уровень в дереве метрик. Каждый уровень UP объясняет «зачем» для уровня ниже. */
+export type MetricLevel =
+  | 'outcome' // L0 — бизнес-исход (LTV, MRR, churn компании Delever). Часто proxy.
+  | 'driver' // L1 — что определяет outcome (активность клиентов, объёмы, repeat-rate).
+  | 'indicator' // L2 — что предсказывает driver (sentiment, churn-сигналы, FCR, escalation rate).
+  | 'activity' // L3 — что делают агенты (FRT, SLA%, resolution time).
+
+/** Единица измерения — используется фронтом для подписи и форматирования. */
+export type MetricUnit =
+  | 'minutes'
+  | 'hours'
+  | 'seconds'
+  | 'percent' // значение в шкале 0..100
+  | 'ratio' // значение в шкале 0..1
+  | 'count'
+  | 'currency'
+
+/** Желательное направление метрики: чем больше — лучше или чем меньше — лучше. */
+export type MetricDirection = 'higher_better' | 'lower_better'
+
+/** Уровни бенчмарка. См. benchmark_targets.tier. */
+export type Tier = 'bronze' | 'silver' | 'gold'
+
+/** Источник целевого значения. */
+export type BenchmarkSource = 'percentile_internal' | 'manual' | 'industry_default'
+
+/** Статус значения относительно бенчмарка. Считается на фронте по value + targets. */
+export type MetricStatus = 'good' | 'borderline' | 'bad' | 'unknown'
+
+/** Скоуп — на каком срезе считаем (для бенчмарков и для агрегации). */
+export interface MetricScope {
+  orgId: string
+  /** Если задан — считаем для конкретного агента. */
+  agentId?: string | null
+  /** Фильтр по рынку. */
+  market?: string | null
+  /** Фильтр по каналу (telegram/whatsapp/...). */
+  source?: string | null
+  /** Фильтр по роли агента (поддерживается только для team-level метрик). */
+  role?: string | null
+}
+
+/** Период расчёта — нормализованный (см. periodEngine). */
+export interface ResolvedPeriod {
+  /** Inclusive начало. Tashkent-aware. */
+  from: Date
+  /** Inclusive конец. */
+  to: Date
+  /** Гранулярность для отображения и для подбора бенчмарка. */
+  granularity: 'daily' | 'weekly' | 'monthly'
+  /** Человекочитаемая метка («Сегодня», «За 7 дней», «Май 2026»). */
+  label: string
+}
+
+/** Описание метрики — то, что фронт может прочитать, чтобы знать единицы и подписи. */
+export interface MetricDescriptor {
+  key: string
+  level: MetricLevel
+  unit: MetricUnit
+  direction: MetricDirection
+  /** Короткое название для подписи карточки. */
+  labelRu: string
+  /** Развёрнутое описание формулы и нюансов — для tooltip. */
+  formulaRu: string
+  /** Поддерживает ли метрика разрез по агенту. */
+  perAgent: boolean
+}
+
+/** Бенчмарк-таргет — одна строка из benchmark_targets, нормализованная для UI. */
+export interface BenchmarkTarget {
+  tier: Tier
+  value: number
+  source: BenchmarkSource
+  sampleSize: number | null
+  computedAt: string | null
+}
+
+/** Полный набор бенчмарков для одной метрики в одном scope. */
+export interface BenchmarkSet {
+  bronze: BenchmarkTarget | null
+  silver: BenchmarkTarget | null
+  gold: BenchmarkTarget | null
+}
+
+/** Результат расчёта одной метрики. Это контракт фронта с бэком. */
+export interface MetricResult {
+  key: string
+  /** Текущее значение. null = недостаточно данных (не «0», не «—»). */
+  value: number | null
+  /** Сколько наблюдений участвовало в расчёте. */
+  sampleSize: number
+  /** Бенчмарки для этого scope (могут быть пустыми). */
+  benchmarks: BenchmarkSet
+  /** Статус — вычисляется тут же на бэке, чтобы фронт не разъезжался. */
+  status: MetricStatus
+  /** Период, для которого посчитано. */
+  period: ResolvedPeriod
+}

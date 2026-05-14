@@ -455,6 +455,39 @@ export default async function handler(req: Request): Promise<Response> {
     `
     created.push('organizations')
 
+    // 17. Benchmark Targets — целевые значения метрик (бенчмарки)
+    // tier:           'bronze' (минимум, ~p50) | 'silver' (хорошо, ~p75) | 'gold' (отлично, p90 или manual stretch)
+    // scope_role:     'agent' | 'team' | 'org' — на каком уровне применяется
+    // scope_market:   'UZ' | 'KZ' | NULL — фильтр по рынку (NULL = все)
+    // scope_source:   'telegram' | 'whatsapp' | NULL — фильтр по каналу (NULL = все)
+    // period_type:    'daily' | 'weekly' | 'monthly' — окно агрегации
+    // source_type:    'percentile_internal' (автокалибровка) | 'manual' (рукой) | 'industry_default' (отраслевой)
+    // sample_size:    для percentile_internal — сколько наблюдений участвовало в расчёте baseline
+    await sql`
+      CREATE TABLE IF NOT EXISTS benchmark_targets (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50) NOT NULL,
+        metric_key VARCHAR(80) NOT NULL,
+        scope_role VARCHAR(20),
+        scope_market VARCHAR(20),
+        scope_source VARCHAR(20),
+        period_type VARCHAR(20) NOT NULL DEFAULT 'monthly',
+        tier VARCHAR(20) NOT NULL,
+        target_value DOUBLE PRECISION NOT NULL,
+        source_type VARCHAR(30) NOT NULL DEFAULT 'manual',
+        sample_size INTEGER,
+        computed_at TIMESTAMP,
+        set_by VARCHAR(50),
+        set_at TIMESTAMP DEFAULT NOW(),
+        notes TEXT
+      )
+    `
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_benchmark_scope ON benchmark_targets(
+      org_id, metric_key, COALESCE(scope_role,''), COALESCE(scope_market,''), COALESCE(scope_source,''), period_type, tier
+    )`
+    await sql`CREATE INDEX IF NOT EXISTS idx_benchmark_org_metric ON benchmark_targets(org_id, metric_key)`
+    created.push('benchmark_targets')
+
     // Создаём дефолтные автоматизации
     const defaultAutomations = [
       {
