@@ -17,6 +17,7 @@ import {
   Bell,
   Activity,
   Sparkles,
+  Trophy,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
@@ -209,6 +210,7 @@ const mainNavItems = [
   { path: '/health', label: 'Где болит', icon: Activity },
   { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
   { path: '/sla-report', label: 'SLA Отчёт', icon: Target },
+  { path: '/benchmarks', label: 'Бенчмарки', icon: Trophy },
   { path: '/insights-chat', label: 'ИИ-чат', icon: Sparkles },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
 ]
