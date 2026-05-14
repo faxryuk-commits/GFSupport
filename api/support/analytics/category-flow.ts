@@ -126,7 +126,7 @@ export default async function handler(req: Request): Promise<Response> {
       LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
       WHERE m.org_id = ${orgId}
         AND m.created_at >= ${fromISO}::timestamptz
-        AND m.sender_role IN ('support', 'team')
+        AND m.sender_role IN ('support', 'team', 'agent')
         AND m.is_from_client = false
         AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
       ORDER BY m.channel_id, m.created_at ASC
