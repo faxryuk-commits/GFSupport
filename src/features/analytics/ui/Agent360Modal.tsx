@@ -8,6 +8,7 @@ import {
 import { Modal } from '@/shared/ui'
 import { fetchMetric } from '@/shared/api'
 import type { MetricResult } from '@/shared/api'
+import { AgentTrendSection } from './AgentTrendSection'
 
 /* ============================================================ */
 /* Types                                                         */
@@ -359,6 +360,14 @@ function Agent360Body({ data, frtMetric }: { data: Agent360Payload; frtMetric: M
           accent={kpi.stuckCases > 0 ? 'red' : 'slate'}
         />
       </div>
+
+      {/* Per-agent trend по неделям/месяцам — динамика метрик из семантического слоя */}
+      {profile.id && (
+        <AgentTrendSection
+          agentId={profile.id}
+          source={period.source}
+        />
+      )}
 
       {/* vs Team */}
       {(vsTeam.responses != null || vsTeam.resolved != null) && (

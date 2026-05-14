@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Search, AlertCircle, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
+import { Agent360Modal } from '@/features/analytics'
 import {
   fetchMetricPerAgent,
   type MetricPerAgentResponse,
@@ -70,6 +71,7 @@ export function DetailTab({ period, source }: DetailTabProps) {
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('frt')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [selectedAgent, setSelectedAgent] = useState<{ id: string; name: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -306,9 +308,15 @@ export function DetailTab({ period, source }: DetailTabProps) {
                 {sorted.map((row) => (
                   <tr key={row.agentId} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-2 text-slate-900">
-                      {row.agentName || (
-                        <span className="text-slate-400 font-mono text-xs">{row.agentId}</span>
-                      )}
+                      <button
+                        onClick={() => setSelectedAgent({ id: row.agentId, name: row.agentName })}
+                        className="text-left hover:text-blue-600 hover:underline"
+                        title="Открыть 360°-профиль с динамикой по неделям"
+                      >
+                        {row.agentName || (
+                          <span className="text-slate-400 font-mono text-xs">{row.agentId}</span>
+                        )}
+                      </button>
                     </td>
                     <td className="px-4 py-2 text-right">
                       <MetricCell row={row.frt} formatter={formatMinutes} />
@@ -328,8 +336,9 @@ export function DetailTab({ period, source }: DetailTabProps) {
       </div>
 
       <div className="text-xs text-slate-500 px-3">
-        Расширенные таблицы (SLA-violations, expertise по категориям, weekly heatmap, экспорт в
-        xlsx) пока живут на старом{' '}
+        Клик по имени агента открывает 360°-профиль с динамикой метрик по неделям. Расширенные
+        таблицы (SLA-violations, expertise по категориям, weekly heatmap, экспорт в xlsx) пока
+        живут на старом{' '}
         <Link
           to="/sla-report-legacy"
           className="underline text-blue-600 hover:text-blue-700"
@@ -339,6 +348,18 @@ export function DetailTab({ period, source }: DetailTabProps) {
         </Link>
         . Мигрируем постепенно.
       </div>
+
+      {selectedAgent && (frtData || slaData) && (
+        <Agent360Modal
+          isOpen={!!selectedAgent}
+          onClose={() => setSelectedAgent(null)}
+          agentId={selectedAgent.id}
+          agentName={selectedAgent.name}
+          from={(frtData?.period.from || slaData?.period.from || '').slice(0, 10)}
+          to={(frtData?.period.to || slaData?.period.to || '').slice(0, 10)}
+          source={source || 'all'}
+        />
+      )}
     </div>
   )
 }
