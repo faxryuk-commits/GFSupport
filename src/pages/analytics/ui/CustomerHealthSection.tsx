@@ -15,6 +15,9 @@ import {
   Briefcase,
   AlertOctagon,
   Inbox,
+  Send,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 import {
   fetchCustomerHealth,
@@ -23,6 +26,7 @@ import {
   type HealthBand,
 } from '@/shared/api'
 import { ChurnDetailsModal } from './ChurnDetailsModal'
+import { OutreachModal } from './OutreachModal'
 
 interface Props {
   period: '7d' | '30d' | '90d'
@@ -63,6 +67,8 @@ export function CustomerHealthSection({ period, source }: Props) {
   const [bandFilter, setBandFilter] = useState<HealthBand | 'all'>('all')
   const [page, setPage] = useState(0)
   const [churnModal, setChurnModal] = useState<{ channelId: string; channelName: string | null } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [outreachOpen, setOutreachOpen] = useState(false)
   const ROWS_PER_PAGE = 25
 
   // При смене фильтра/поиска возвращаемся на первую страницу
@@ -106,6 +112,39 @@ export function CustomerHealthSection({ period, source }: Props) {
   const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE))
   const pageStart = page * ROWS_PER_PAGE
   const pageRows = filtered.slice(pageStart, pageStart + ROWS_PER_PAGE)
+
+  function toggleSelect(channelId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(channelId)) next.delete(channelId)
+      else next.add(channelId)
+      return next
+    })
+  }
+  function selectAllOnPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const r of pageRows) next.add(r.channelId)
+      return next
+    })
+  }
+  function selectAllInBand(band: HealthBand) {
+    if (!data) return
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const r of data.rows) {
+        if (r.band === band) next.add(r.channelId)
+      }
+      return next
+    })
+  }
+  function clearSelection() {
+    setSelectedIds(new Set())
+  }
+  const selectedRows = useMemo(
+    () => (data ? data.rows.filter((r) => selectedIds.has(r.channelId)) : []),
+    [data, selectedIds],
+  )
 
   if (loading) {
     return (
@@ -247,6 +286,55 @@ export function CustomerHealthSection({ period, source }: Props) {
           </div>
         </header>
 
+        {/* Action bar — появляется когда есть выделение */}
+        {selectedIds.size > 0 && (
+          <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 flex items-center justify-between flex-wrap gap-2">
+            <div className="text-sm text-blue-900 font-medium">
+              Выбрано: <span className="tabular-nums">{selectedIds.size}</span> · готово к
+              outreach
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={clearSelection}
+                className="px-2 py-1 text-xs text-blue-700 hover:text-blue-900 hover:bg-blue-100 rounded"
+              >
+                Снять выделение
+              </button>
+              <button
+                onClick={() => setOutreachOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                <Send className="w-3.5 h-3.5" />
+                Отправить check-in
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk-select preset buttons (когда ничего не выбрано) */}
+        {selectedIds.size === 0 && data && (data.summary.critical > 0 || data.summary.atRisk > 0) && (
+          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 text-xs text-slate-600 flex-wrap">
+            <span>Выбрать всех:</span>
+            {data.summary.critical > 0 && (
+              <button
+                onClick={() => selectAllInBand('critical')}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-rose-200 text-rose-800 rounded hover:bg-rose-50"
+              >
+                критических ({data.summary.critical})
+              </button>
+            )}
+            {data.summary.atRisk > 0 && (
+              <button
+                onClick={() => selectAllInBand('at_risk')}
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-amber-200 text-amber-800 rounded hover:bg-amber-50"
+              >
+                в зоне риска ({data.summary.atRisk})
+              </button>
+            )}
+            <span className="ml-2 text-slate-400">или кликни на чекбоксы в строках ниже</span>
+          </div>
+        )}
+
         <div className="max-h-[560px] overflow-y-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wider sticky top-0 z-10">
@@ -298,7 +386,7 @@ export function CustomerHealthSection({ period, source }: Props) {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-500">
+                  <td colSpan={8} className="text-center py-8 text-slate-500">
                     Нет покупателей в этой выборке
                   </td>
                 </tr>
@@ -307,6 +395,8 @@ export function CustomerHealthSection({ period, source }: Props) {
                 <CustomerRow
                   key={row.channelId}
                   row={row}
+                  selected={selectedIds.has(row.channelId)}
+                  onToggleSelect={() => toggleSelect(row.channelId)}
                   onChurnClick={(channelId, channelName) =>
                     setChurnModal({ channelId, channelName })
                   }
@@ -356,6 +446,12 @@ export function CustomerHealthSection({ period, source }: Props) {
         channelId={churnModal?.channelId ?? null}
         channelName={churnModal?.channelName ?? null}
         period={period}
+      />
+
+      <OutreachModal
+        isOpen={outreachOpen}
+        onClose={() => setOutreachOpen(false)}
+        selectedChannels={selectedRows}
       />
     </div>
   )
@@ -422,9 +518,13 @@ function SummaryCard({
 
 function CustomerRow({
   row,
+  selected,
+  onToggleSelect,
   onChurnClick,
 }: {
   row: CustomerHealthRow
+  selected: boolean
+  onToggleSelect: () => void
   onChurnClick: (channelId: string, channelName: string | null) => void
 }) {
   const style = BAND_STYLES[row.band]
@@ -437,7 +537,16 @@ function CustomerRow({
     `churn ${row.churnScore}.`
 
   return (
-    <tr className="border-t border-slate-100 hover:bg-slate-50">
+    <tr className={`border-t border-slate-100 hover:bg-slate-50 ${selected ? 'bg-blue-50/50' : ''}`}>
+      <td className="px-2 py-2 text-center">
+        <button onClick={onToggleSelect} className="hover:bg-slate-100 rounded p-0.5">
+          {selected ? (
+            <CheckSquare className="w-4 h-4 text-blue-600" />
+          ) : (
+            <Square className="w-4 h-4 text-slate-300" />
+          )}
+        </button>
+      </td>
       <td className="px-4 py-2">
         <Link
           to={`/chats/${row.channelId}`}
