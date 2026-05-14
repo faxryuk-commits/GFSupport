@@ -57,7 +57,7 @@ export async function ensureBenchmarkTable(): Promise<void> {
   try {
     await sql`
       CREATE TABLE IF NOT EXISTS benchmark_targets (
-        id VARCHAR(50) PRIMARY KEY,
+        id TEXT PRIMARY KEY,
         org_id VARCHAR(50) NOT NULL,
         metric_key VARCHAR(80) NOT NULL,
         scope_role VARCHAR(20),
@@ -74,6 +74,11 @@ export async function ensureBenchmarkTable(): Promise<void> {
         notes TEXT
       )
     `
+    // Миграция со старой схемы: id мог быть VARCHAR(50), теперь должен быть TEXT,
+    // потому что естественный ключ собирается из org+metric+scope+period+tier
+    // и для длинных metric_key (sentiment_positive_rate, repeat_contact_rate)
+    // легко выскакивает за 50 символов. Идемпотентно — no-op если уже TEXT.
+    await sql`ALTER TABLE benchmark_targets ALTER COLUMN id TYPE TEXT`.catch(() => {})
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_benchmark_scope ON benchmark_targets(
       org_id, metric_key, COALESCE(scope_role,''), COALESCE(scope_market,''), COALESCE(scope_source,''), period_type, tier
     )`

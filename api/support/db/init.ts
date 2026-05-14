@@ -465,7 +465,7 @@ export default async function handler(req: Request): Promise<Response> {
     // sample_size:    для percentile_internal — сколько наблюдений участвовало в расчёте baseline
     await sql`
       CREATE TABLE IF NOT EXISTS benchmark_targets (
-        id VARCHAR(50) PRIMARY KEY,
+        id TEXT PRIMARY KEY,
         org_id VARCHAR(50) NOT NULL,
         metric_key VARCHAR(80) NOT NULL,
         scope_role VARCHAR(20),
