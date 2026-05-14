@@ -135,9 +135,9 @@ export const CHURN_SQL_KEYWORDS: string[] = [
   '\\yоткаж(ем(ся)?|усь)\\y',
 
   // UZ LATIN
-  '\\yuz(amiz|ib\\s+qo[''’]yamiz|ib\\s+ketamiz|maymiz)\\y',
+  '\\yuz(amiz|ib\\s+qo[\'’]yamiz|ib\\s+ketamiz|maymiz)\\y',
   '\\yboshqa\\s+(kompaniya|xizmat|servis)(ga|da)?\\y',
-  '\\yhamkorlik(ni)?\\s+(tugat|bekor|to[''’]xta)',
+  '\\yhamkorlik(ni)?\\s+(tugat|bekor|to[\'’]xta)',
   '\\yraqobat(chi)?\\y',
 
   // UZ CYR
@@ -164,5 +164,5 @@ export const CHURN_SQL_KEYWORDS: string[] = [
   '\\yверн(уть|ите|ём|ем)\\s+(деньг|средств|платёж)',
   '\\yвозврат\\s+(денег|средств|оплат)',
   '\\ypulni\\s+qaytar\\y',
-  '\\yto[''’]lovni\\s+qaytar\\y',
+  '\\yto[\'’]lovni\\s+qaytar\\y',
 ]
