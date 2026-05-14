@@ -6,7 +6,8 @@ import { fetchChannels } from '@/shared/api'
 import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
-import { ResponseTimeDetailsModal, WeeklyScoreWidget } from '@/features/analytics'
+import { ResponseTimeDetailsModal, WeeklyScoreWidget, PulseStrip } from '@/features/analytics'
+import type { FetchMetricParams } from '@/shared/api'
 import { CommitmentsPanel } from '@/features/commitments/ui'
 import { generateAIRecommendations } from '../model/recommendations'
 import { formatWaitTime } from '../model/types'
@@ -18,6 +19,25 @@ import { MetricsSection } from './MetricsSection'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
 import { SLACategoryModal } from './SLACategoryModal'
+
+function mapDashboardPeriod(range: string): FetchMetricParams['period'] {
+  switch (range) {
+    case 'today':
+      return 'today'
+    case 'yesterday':
+      return 'yesterday'
+    case 'week':
+    case '7d':
+      return '7d'
+    case 'month':
+    case '30d':
+      return '30d'
+    case '90d':
+      return '90d'
+    default:
+      return '30d'
+  }
+}
 
 export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
@@ -179,6 +199,11 @@ export function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <AIRecommendationsPanel recommendations={aiRecommendations} />
+
+        <PulseStrip
+          period={mapDashboardPeriod(dateRange)}
+          source={sourceFilter === 'all' ? undefined : sourceFilter}
+        />
 
         <ChannelSourceSummary
           channels={channels}
