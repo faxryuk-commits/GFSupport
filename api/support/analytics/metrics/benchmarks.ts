@@ -114,10 +114,18 @@ export async function loadBenchmarks(
  * Определить статус значения относительно бенчмарков. Считается на бэке, чтобы
  * фронт не дублировал логику и не разъезжался с правдой.
  *
- * Правило:
- *   higher_better: value >= gold → 'good'; >= silver → 'borderline'; иначе 'bad'.
- *   lower_better:  value <= gold → 'good'; <= silver → 'borderline'; иначе 'bad'.
- *   Если silver/gold нет — 'unknown'.
+ * 4-зонная классификация (lower_better):
+ *   value <= gold     → 'gold'
+ *   value <= silver   → 'silver'
+ *   value <= bronze   → 'bronze'
+ *   value >  bronze   → 'below_bronze'
+ *
+ * Для higher_better — инверсия (>=).
+ *
+ * Если bronze не задан — фолбэк на 3-зонную модель: всё хуже silver идёт
+ * в below_bronze (как раньше).
+ *
+ * Если ни одного tier'а нет — 'unknown'.
  */
 export function classifyStatus(
   value: number | null,
@@ -125,17 +133,20 @@ export function classifyStatus(
   benchmarks: BenchmarkSet,
 ): MetricStatus {
   if (value === null) return 'unknown'
+  const bronze = benchmarks.bronze?.value ?? null
   const silver = benchmarks.silver?.value ?? null
   const gold = benchmarks.gold?.value ?? null
-  if (silver === null && gold === null) return 'unknown'
+  if (bronze === null && silver === null && gold === null) return 'unknown'
 
   if (descriptor.direction === 'higher_better') {
-    if (gold !== null && value >= gold) return 'good'
-    if (silver !== null && value >= silver) return 'borderline'
-    return 'bad'
+    if (gold !== null && value >= gold) return 'gold'
+    if (silver !== null && value >= silver) return 'silver'
+    if (bronze !== null && value >= bronze) return 'bronze'
+    return 'below_bronze'
   } else {
-    if (gold !== null && value <= gold) return 'good'
-    if (silver !== null && value <= silver) return 'borderline'
-    return 'bad'
+    if (gold !== null && value <= gold) return 'gold'
+    if (silver !== null && value <= silver) return 'silver'
+    if (bronze !== null && value <= bronze) return 'bronze'
+    return 'below_bronze'
   }
 }

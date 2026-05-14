@@ -15,11 +15,12 @@ interface BenchmarkCardProps {
   onClick?: () => void
 }
 
-const STATUS_TONE: Record<string, { bar: string; chip: string; chipText: string }> = {
-  good: { bar: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-800 border-emerald-200', chipText: 'Gold' },
-  borderline: { bar: 'bg-amber-500', chip: 'bg-amber-50 text-amber-800 border-amber-200', chipText: 'Silver' },
-  bad: { bar: 'bg-rose-500', chip: 'bg-rose-50 text-rose-800 border-rose-200', chipText: 'ниже Bronze' },
-  unknown: { bar: 'bg-slate-300', chip: 'bg-slate-50 text-slate-500 border-slate-200', chipText: 'нет цели' },
+const STATUS_TONE: Record<string, { bar: string; chip: string; chipText: string; barWidth: string }> = {
+  gold: { bar: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-800 border-emerald-200', chipText: 'Gold', barWidth: '100%' },
+  silver: { bar: 'bg-amber-500', chip: 'bg-amber-50 text-amber-800 border-amber-200', chipText: 'Silver', barWidth: '75%' },
+  bronze: { bar: 'bg-orange-500', chip: 'bg-orange-50 text-orange-800 border-orange-200', chipText: 'Bronze', barWidth: '50%' },
+  below_bronze: { bar: 'bg-rose-500', chip: 'bg-rose-50 text-rose-800 border-rose-200', chipText: 'ниже Bronze', barWidth: '25%' },
+  unknown: { bar: 'bg-slate-300', chip: 'bg-slate-50 text-slate-500 border-slate-200', chipText: 'нет цели', barWidth: '0%' },
 }
 
 function formatValue(v: number, unit: MetricUnit): string {
@@ -95,19 +96,7 @@ export function BenchmarkCard({
       {metric && (metric.benchmarks.bronze || metric.benchmarks.silver || metric.benchmarks.gold) && (
         <div className="space-y-1.5">
           <div className="h-1 w-full bg-slate-100 rounded overflow-hidden">
-            <div
-              className={`h-full ${tone.bar}`}
-              style={{
-                width:
-                  metric.status === 'good'
-                    ? '100%'
-                    : metric.status === 'borderline'
-                    ? '66%'
-                    : metric.status === 'bad'
-                    ? '33%'
-                    : '0%',
-              }}
-            />
+            <div className={`h-full ${tone.bar}`} style={{ width: tone.barWidth }} />
           </div>
           <div className="flex items-center justify-between text-[10px] text-slate-500">
             {metric.benchmarks.bronze && (

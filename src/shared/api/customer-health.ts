@@ -40,6 +40,18 @@ export interface CustomerHealthResponse {
     unknown: number
     total: number
   }
+  /**
+   * Сколько КРИТИЧЕСКИХ И В ЗОНЕ РИСКА каналов получили низкий score по компоненту.
+   * Помогает понять, какой именно фактор тянет совокупный Health Score вниз.
+   * (Каналы могут попадать в несколько компонентов одновременно.)
+   */
+  breakdown?: {
+    lowActivity: number
+    lowSentiment: number
+    poorResolution: number
+    churnSignals: number
+    openCases: number
+  }
   rows: CustomerHealthRow[]
 }
 

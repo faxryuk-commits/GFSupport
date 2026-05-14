@@ -1,6 +1,6 @@
 import { apiGet } from '../services/api.service'
 
-export type MetricStatus = 'good' | 'borderline' | 'bad' | 'unknown'
+export type MetricStatus = 'gold' | 'silver' | 'bronze' | 'below_bronze' | 'unknown'
 export type MetricUnit = 'minutes' | 'hours' | 'seconds' | 'percent' | 'ratio' | 'count' | 'currency'
 export type MetricDirection = 'higher_better' | 'lower_better'
 

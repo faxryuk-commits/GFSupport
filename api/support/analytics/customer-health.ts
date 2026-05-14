@@ -58,6 +58,27 @@ export default async function handler(req: Request): Promise<Response> {
       {} as Record<HealthBand, number>,
     )
 
+    // Breakdown: для критических и at_risk — какие компоненты тянут вниз.
+    // Считаем: сколько из проблемных каналов имеют activity_score < 40 / sentiment_score < 50 /
+    // resolution_score < 50 / churn_score < 100. Эти пороги — то, что заметно
+    // снижает composite Health: при весах 0.35/0.30/0.20/0.15 каждый -50 даёт
+    // -15...-17 очков, что вытаскивает канал из healthy.
+    const problemRows = rows.filter((r) => r.band === 'critical' || r.band === 'at_risk')
+    const breakdown = {
+      lowActivity: problemRows.filter(
+        (r) => r.activityScore !== null && r.activityScore < 40,
+      ).length,
+      lowSentiment: problemRows.filter(
+        (r) => r.sentimentScore !== null && r.sentimentScore < 50,
+      ).length,
+      poorResolution: problemRows.filter(
+        (r) => r.resolutionScore !== null && r.resolutionScore < 50,
+      ).length,
+      churnSignals: problemRows.filter((r) => r.churnMatches > 0).length,
+      // Дополнительно: каналы с open кейсами в проблемной зоне
+      openCases: problemRows.filter((r) => r.openCases > 0).length,
+    }
+
     return json(
       {
         period: {
@@ -73,6 +94,7 @@ export default async function handler(req: Request): Promise<Response> {
           unknown: summary.unknown ?? 0,
           total: rows.length,
         },
+        breakdown,
         rows: rows.slice(0, limit) as CustomerHealthRow[],
       },
       200,

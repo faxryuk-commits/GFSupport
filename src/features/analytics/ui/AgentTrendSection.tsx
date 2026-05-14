@@ -258,9 +258,10 @@ const TREND_INFO: Record<TrendDirection, { chip: string; label: string; icon: Re
 }
 
 const STATUS_DOT: Record<MetricStatus, string> = {
-  good: 'bg-emerald-500',
-  borderline: 'bg-amber-500',
-  bad: 'bg-rose-500',
+  gold: 'bg-emerald-500',
+  silver: 'bg-amber-500',
+  bronze: 'bg-orange-500',
+  below_bronze: 'bg-rose-500',
   unknown: 'bg-slate-300',
 }
 

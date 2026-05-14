@@ -686,19 +686,23 @@ function BenchmarkStrip({ benchmark }: { benchmark: MetricResult }) {
     )
   }
   const statusBg =
-    benchmark.status === 'good'
+    benchmark.status === 'gold'
       ? 'bg-emerald-50 text-emerald-700'
-      : benchmark.status === 'borderline'
+      : benchmark.status === 'silver'
       ? 'bg-amber-50 text-amber-700'
-      : benchmark.status === 'bad'
+      : benchmark.status === 'bronze'
+      ? 'bg-orange-50 text-orange-700'
+      : benchmark.status === 'below_bronze'
       ? 'bg-rose-50 text-rose-700'
       : 'bg-slate-50 text-slate-500'
   const statusLabel =
-    benchmark.status === 'good'
+    benchmark.status === 'gold'
       ? 'Gold'
-      : benchmark.status === 'borderline'
+      : benchmark.status === 'silver'
       ? 'Silver'
-      : benchmark.status === 'bad'
+      : benchmark.status === 'bronze'
+      ? 'Bronze'
+      : benchmark.status === 'below_bronze'
       ? 'ниже Bronze'
       : '—'
   const fmt = (n: number) => `${n.toFixed(1)}м`

@@ -10,6 +10,11 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  MessageSquareOff,
+  Frown,
+  Briefcase,
+  AlertOctagon,
+  Inbox,
 } from 'lucide-react'
 import {
   fetchCustomerHealth,
@@ -150,6 +155,57 @@ export function CustomerHealthSection({ period, source }: Props) {
           tone="rose"
         />
       </div>
+
+      {/* Breakdown: из критических + в зоне риска — какие компоненты их тянут вниз */}
+      {data.breakdown &&
+        (data.summary.critical > 0 || data.summary.atRisk > 0) && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+              <h4 className="text-sm font-semibold text-slate-800">
+                Что тянет вниз{' '}
+                <span className="text-slate-400 font-normal">
+                  (из {data.summary.critical + data.summary.atRisk} проблемных)
+                </span>
+              </h4>
+              <span className="text-[10px] text-slate-400">
+                Канал может попадать сразу в несколько причин
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <BreakdownCard
+                icon={<MessageSquareOff className="w-4 h-4" />}
+                label="Низкая активность"
+                hint="Канал давно не писал (≥18 дней назад)"
+                count={data.breakdown.lowActivity}
+              />
+              <BreakdownCard
+                icon={<Frown className="w-4 h-4" />}
+                label="Негативный sentiment"
+                hint="<50% positive из оценённых сообщений"
+                count={data.breakdown.lowSentiment}
+              />
+              <BreakdownCard
+                icon={<Briefcase className="w-4 h-4" />}
+                label="Плохо закрываются кейсы"
+                hint="<50% кейсов канала закрыты"
+                count={data.breakdown.poorResolution}
+              />
+              <BreakdownCard
+                icon={<AlertOctagon className="w-4 h-4" />}
+                label="Churn-сигналы"
+                hint="Прямые фразы вроде «расторгаем», «uzamiz»"
+                count={data.breakdown.churnSignals}
+                isAlarm
+              />
+              <BreakdownCard
+                icon={<Inbox className="w-4 h-4" />}
+                label="Есть открытые кейсы"
+                hint="≥1 кейс канала в статусе не resolved/closed"
+                count={data.breakdown.openCases}
+              />
+            </div>
+          </div>
+        )}
 
       {/* Контролы */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -301,6 +357,37 @@ export function CustomerHealthSection({ period, source }: Props) {
         channelName={churnModal?.channelName ?? null}
         period={period}
       />
+    </div>
+  )
+}
+
+function BreakdownCard({
+  icon,
+  label,
+  hint,
+  count,
+  isAlarm,
+}: {
+  icon: React.ReactNode
+  label: string
+  hint: string
+  count: number
+  isAlarm?: boolean
+}) {
+  const tone = count === 0
+    ? 'border-slate-100 bg-slate-50 text-slate-400'
+    : isAlarm
+    ? 'border-rose-200 bg-rose-50 text-rose-900'
+    : count > 10
+    ? 'border-amber-200 bg-amber-50 text-amber-900'
+    : 'border-slate-200 bg-white text-slate-800'
+  return (
+    <div className={`border rounded-lg p-3 ${tone}`} title={hint}>
+      <div className="flex items-center gap-1.5 text-xs font-medium opacity-80 mb-1">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      <p className="text-xl font-bold tabular-nums">{count}</p>
     </div>
   )
 }

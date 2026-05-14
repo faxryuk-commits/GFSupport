@@ -36,8 +36,20 @@ export type Tier = 'bronze' | 'silver' | 'gold'
 /** Источник целевого значения. */
 export type BenchmarkSource = 'percentile_internal' | 'manual' | 'industry_default'
 
-/** Статус значения относительно бенчмарка. Считается на фронте по value + targets. */
-export type MetricStatus = 'good' | 'borderline' | 'bad' | 'unknown'
+/**
+ * Статус значения относительно бенчмарка — 4 зоны:
+ *   gold        — value достигло целевого уровня Gold (отлично)
+ *   silver      — value между Silver и Gold (хорошо)
+ *   bronze      — value между Bronze и Silver (минимально приемлемо)
+ *   below_bronze — value хуже Bronze (требует внимания)
+ *   unknown     — нет бенчмарков или нет значения
+ *
+ * Раньше было 3 зоны (good/borderline/bad), и любое значение хуже Silver
+ * показывалось как «ниже Bronze», даже если value фактически в Bronze-зоне.
+ * Это вводило в заблуждение: FRT 16 мин при bronze=20/silver=14/gold=10
+ * показывался «ниже Bronze», хотя 16 ≤ 20 = реально в Bronze.
+ */
+export type MetricStatus = 'gold' | 'silver' | 'bronze' | 'below_bronze' | 'unknown'
 
 /** Скоуп — на каком срезе считаем (для бенчмарков и для агрегации). */
 export interface MetricScope {

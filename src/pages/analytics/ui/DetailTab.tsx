@@ -27,15 +27,17 @@ interface MergedRow {
 }
 
 const STATUS_CHIP: Record<MetricStatus, string> = {
-  good: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-  borderline: 'bg-amber-50 text-amber-800 border-amber-200',
-  bad: 'bg-rose-50 text-rose-800 border-rose-200',
+  gold: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  silver: 'bg-amber-50 text-amber-800 border-amber-200',
+  bronze: 'bg-orange-50 text-orange-800 border-orange-200',
+  below_bronze: 'bg-rose-50 text-rose-800 border-rose-200',
   unknown: 'bg-slate-50 text-slate-500 border-slate-200',
 }
 const STATUS_LABEL: Record<MetricStatus, string> = {
-  good: 'Gold',
-  borderline: 'Silver',
-  bad: 'ниже Bronze',
+  gold: 'Gold',
+  silver: 'Silver',
+  bronze: 'Bronze',
+  below_bronze: 'ниже Bronze',
   unknown: '—',
 }
 
@@ -73,6 +75,10 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
   const [sortKey, setSortKey] = useState<SortKey>('frt')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [selectedAgent, setSelectedAgent] = useState<{ id: string; name: string | null } | null>(null)
+  // По умолчанию скрываем агентов с малой выборкой — их статистика не значима
+  const [hideLowSample, setHideLowSample] = useState(true)
+  /** Минимум сессий для «уверенной» статистики. ~10% от 30 дней при 1 сессии в день. */
+  const MIN_SAMPLE = period === '7d' ? 5 : period === '30d' ? 20 : 30
 
   useEffect(() => {
     let cancelled = false
@@ -149,11 +155,15 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
   }, [frtData, slaData])
 
   const sorted = useMemo(() => {
-    const filtered = search
-      ? merged.filter((r) =>
-          (r.agentName || r.agentId).toLowerCase().includes(search.toLowerCase()),
-        )
-      : merged
+    let filtered = merged
+    if (search) {
+      filtered = filtered.filter((r) =>
+        (r.agentName || r.agentId).toLowerCase().includes(search.toLowerCase()),
+      )
+    }
+    if (hideLowSample) {
+      filtered = filtered.filter((r) => r.sessions >= MIN_SAMPLE)
+    }
     const dir = sortDir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
       switch (sortKey) {
@@ -175,7 +185,9 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
           return (b.sessions - a.sessions) * dir
       }
     })
-  }, [merged, search, sortKey, sortDir])
+  }, [merged, search, sortKey, sortDir, hideLowSample, MIN_SAMPLE])
+
+  const hiddenCount = merged.filter((r) => r.sessions < MIN_SAMPLE).length
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -207,17 +219,36 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <header className="flex items-center justify-between gap-3 p-4 border-b border-slate-200">
+        <header className="flex items-center justify-between gap-3 p-4 border-b border-slate-200 flex-wrap">
           <h3 className="text-sm font-semibold text-slate-900">Per-agent breakdown</h3>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Поиск агента..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-sm border border-slate-300 rounded-md w-56"
-            />
+          <div className="flex items-center gap-3 flex-wrap">
+            <label
+              className="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none"
+              title={`Скрывает агентов с менее ${MIN_SAMPLE} сессий за период. Их статистика статистически незначима.`}
+            >
+              <input
+                type="checkbox"
+                checked={hideLowSample}
+                onChange={(e) => setHideLowSample(e.target.checked)}
+                className="w-3.5 h-3.5"
+              />
+              Скрыть малую выборку
+              {hiddenCount > 0 && (
+                <span className="text-slate-400">
+                  · скрыто {hiddenCount}
+                </span>
+              )}
+            </label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Поиск агента..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm border border-slate-300 rounded-md w-56"
+              />
+            </div>
           </div>
         </header>
 
@@ -309,7 +340,9 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
                     </td>
                   </tr>
                 )}
-                {sorted.map((row) => (
+                {sorted.map((row) => {
+                  const lowSample = row.sessions < MIN_SAMPLE
+                  return (
                   <tr key={row.agentId} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-2 text-slate-900">
                       <button
@@ -321,6 +354,14 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
                           <span className="text-slate-400 font-mono text-xs">{row.agentId}</span>
                         )}
                       </button>
+                      {lowSample && (
+                        <span
+                          className="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-600 border border-slate-200"
+                          title={`Всего ${row.sessions} сессий — мало для надёжной статистики (минимум ${MIN_SAMPLE})`}
+                        >
+                          мало данных
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <MetricCell row={row.frt} formatter={formatMinutes} />
@@ -332,7 +373,8 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
                       {row.sessions}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </>
