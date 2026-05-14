@@ -39,7 +39,12 @@ export default async function handler(req: Request): Promise<Response> {
   const period = resolvePeriod(parsePeriodParam(url.searchParams.get('period')))
   const market = url.searchParams.get('market')
   const source = url.searchParams.get('source')
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10), 500)
+  // По умолчанию возвращаем ВСЕ строки (количество ограничено числом активных
+  // каналов, обычно < 1k даже для крупного клиента). Раньше был limit=100,
+  // и при сортировке critical→at_risk→healthy здоровые отрезались, хотя в
+  // summary они учитывались — пользователь видел «88 здоровых», а в табе
+  // «Здоровы» 0 строк. Пагинация теперь на фронте.
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '2000', 10), 5000)
 
   try {
     const rows = await computeCustomerHealth({ orgId, market, source }, period)

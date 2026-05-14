@@ -8,6 +8,8 @@ import {
   Activity,
   TrendingDown,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import {
   fetchCustomerHealth,
@@ -53,6 +55,13 @@ export function CustomerHealthSection({ period, source }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [bandFilter, setBandFilter] = useState<HealthBand | 'all'>('all')
+  const [page, setPage] = useState(0)
+  const ROWS_PER_PAGE = 25
+
+  // При смене фильтра/поиска возвращаемся на первую страницу
+  useEffect(() => {
+    setPage(0)
+  }, [bandFilter, search, period, source])
 
   useEffect(() => {
     let cancelled = false
@@ -61,7 +70,6 @@ export function CustomerHealthSection({ period, source }: Props) {
     fetchCustomerHealth({
       period,
       source: source === 'all' ? undefined : source,
-      limit: 100,
     })
       .then((r) => {
         if (!cancelled) setData(r)
@@ -87,6 +95,10 @@ export function CustomerHealthSection({ period, source }: Props) {
       return true
     })
   }, [data, bandFilter, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE))
+  const pageStart = page * ROWS_PER_PAGE
+  const pageRows = filtered.slice(pageStart, pageStart + ROWS_PER_PAGE)
 
   if (loading) {
     return (
@@ -177,31 +189,66 @@ export function CustomerHealthSection({ period, source }: Props) {
           </div>
         </header>
 
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wider">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium">Покупатель</th>
-              <th className="text-left px-4 py-2 font-medium">Health</th>
-              <th className="text-right px-4 py-2 font-medium">Активность</th>
-              <th className="text-right px-4 py-2 font-medium">Sentiment</th>
-              <th className="text-right px-4 py-2 font-medium">Кейсы</th>
-              <th className="text-right px-4 py-2 font-medium">Churn-сигналы</th>
-              <th className="text-right px-4 py-2 font-medium">Последнее</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
+        <div className="max-h-[560px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wider sticky top-0 z-10">
               <tr>
-                <td colSpan={7} className="text-center py-8 text-slate-500">
-                  Нет покупателей в этой выборке
-                </td>
+                <th className="text-left px-4 py-2 font-medium">Покупатель</th>
+                <th className="text-left px-4 py-2 font-medium">Health</th>
+                <th className="text-right px-4 py-2 font-medium">Активность</th>
+                <th className="text-right px-4 py-2 font-medium">Sentiment</th>
+                <th className="text-right px-4 py-2 font-medium">Кейсы</th>
+                <th className="text-right px-4 py-2 font-medium">Churn-сигналы</th>
+                <th className="text-right px-4 py-2 font-medium">Последнее</th>
               </tr>
-            )}
-            {filtered.map((row) => (
-              <CustomerRow key={row.channelId} row={row} />
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-slate-500">
+                    Нет покупателей в этой выборке
+                  </td>
+                </tr>
+              )}
+              {pageRows.map((row) => (
+                <CustomerRow key={row.channelId} row={row} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {filtered.length > ROWS_PER_PAGE && (
+          <footer className="flex items-center justify-between gap-3 p-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+            <div>
+              Показано <span className="font-medium">{pageStart + 1}–{Math.min(pageStart + ROWS_PER_PAGE, filtered.length)}</span>{' '}
+              из <span className="font-medium">{filtered.length}</span>
+              {filtered.length !== data.rows.length && (
+                <span className="text-slate-400"> · отфильтровано из {data.rows.length}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Назад
+              </button>
+              <span className="px-2 tabular-nums">
+                {page + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+              >
+                Вперёд
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </footer>
+        )}
       </div>
     </div>
   )
