@@ -10,6 +10,7 @@ import {
   type FlowStatus,
 } from '../../../shared/api/support-health'
 import { PlatformBadge } from './PlatformBadge'
+import { ProblemDrillModal } from '../../analytics/ui/ProblemDrillModal'
 
 interface Props {
   period: HealthPeriod
@@ -29,6 +30,12 @@ export function CategoryFlowSection({ period, source = 'all' }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeDomain, setActiveDomain] = useState<string | null>(null)
+  const [drilldown, setDrilldown] = useState<{
+    domain: string
+    domainLabel: string
+    subcategory: string | null
+    subcategoryLabel: string | null
+  } | null>(null)
 
   const load = async () => {
     try {
@@ -175,11 +182,36 @@ export function CategoryFlowSection({ period, source = 'all' }: Props) {
 
           <div className="space-y-2.5">
             {selectedDomain.subcategories.map((sub) => (
-              <SubcategoryBar key={sub.subcategory} sub={sub} />
+              <SubcategoryBar
+                key={sub.subcategory}
+                sub={sub}
+                onClick={() =>
+                  setDrilldown({
+                    domain: selectedDomain.domain,
+                    domainLabel: selectedDomain.label,
+                    subcategory: sub.subcategory === '_unknown' ? null : sub.subcategory,
+                    subcategoryLabel: sub.label,
+                  })
+                }
+              />
             ))}
           </div>
+          <p className="text-xs text-slate-500 mt-3">
+            Клик по строке → детализация: топ тем, кто жалуется чаще всего, последние сообщения.
+          </p>
         </div>
       )}
+
+      <ProblemDrillModal
+        isOpen={drilldown !== null}
+        onClose={() => setDrilldown(null)}
+        domain={drilldown?.domain ?? null}
+        domainLabel={drilldown?.domainLabel ?? null}
+        subcategory={drilldown?.subcategory ?? null}
+        subcategoryLabel={drilldown?.subcategoryLabel ?? null}
+        period={period}
+        source={source as 'all' | 'telegram' | 'whatsapp'}
+      />
 
       {/* === Таблицы: игнор и недовольные === */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -274,7 +306,13 @@ function DomainTreemap({
   )
 }
 
-function SubcategoryBar({ sub }: { sub: CategoryFlowDomain['subcategories'][number] }) {
+function SubcategoryBar({
+  sub,
+  onClick,
+}: {
+  sub: CategoryFlowDomain['subcategories'][number]
+  onClick: () => void
+}) {
   const total = Math.max(1, sub.total)
   const segments: Array<{ status: FlowStatus; value: number }> = [
     { status: 'resolved', value: sub.resolved },
@@ -284,9 +322,16 @@ function SubcategoryBar({ sub }: { sub: CategoryFlowDomain['subcategories'][numb
     { status: 'blocked', value: sub.blocked },
   ]
   return (
-    <div>
+    <button
+      onClick={onClick}
+      className="w-full text-left hover:bg-slate-50 rounded-md px-2 py-1.5 -mx-2 transition-colors"
+      title="Открыть детализацию: топ тем, покупатели, последние сообщения"
+    >
       <div className="flex items-center justify-between text-sm mb-1">
-        <span className="text-slate-700 truncate">{sub.label}</span>
+        <span className="text-slate-700 truncate flex items-center gap-1">
+          {sub.label}
+          <ChevronRight className="w-3 h-3 text-slate-400" />
+        </span>
         <span className="text-slate-500 flex items-center gap-2 flex-shrink-0">
           {sub.unhappy > 0 && <span className="text-rose-600">😠 {sub.unhappy}</span>}
           {sub.churnRisk > 0 && <span className="text-purple-600">⚠ {sub.churnRisk}</span>}
@@ -309,7 +354,7 @@ function SubcategoryBar({ sub }: { sub: CategoryFlowDomain['subcategories'][numb
           )
         })}
       </div>
-    </div>
+    </button>
   )
 }
 
