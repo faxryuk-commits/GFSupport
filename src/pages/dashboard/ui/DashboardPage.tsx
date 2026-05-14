@@ -6,7 +6,12 @@ import { fetchChannels } from '@/shared/api'
 import { fetchAgents } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
-import { ResponseTimeDetailsModal, WeeklyScoreWidget, PulseStrip } from '@/features/analytics'
+import {
+  ResponseTimeDetailsModal,
+  WeeklyScoreWidget,
+  PulseStrip,
+  CustomerHealthBanner,
+} from '@/features/analytics'
 import type { FetchMetricParams } from '@/shared/api'
 import { CommitmentsPanel } from '@/features/commitments/ui'
 import { generateAIRecommendations } from '../model/recommendations'
@@ -199,6 +204,11 @@ export function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <AIRecommendationsPanel recommendations={aiRecommendations} />
+
+        <CustomerHealthBanner
+          period={mapDashboardPeriod(dateRange)}
+          source={sourceFilter === 'all' ? undefined : sourceFilter}
+        />
 
         <PulseStrip
           period={mapDashboardPeriod(dateRange)}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Clock, Target, Smile, Repeat } from 'lucide-react'
-import { BenchmarkCard } from '@/features/analytics'
+import { BenchmarkCard, CustomerHealthBanner } from '@/features/analytics'
 import { fetchMetric, type MetricResult, type FetchMetricParams } from '@/shared/api'
 
 const PULSE_METRICS: Array<{
@@ -92,9 +92,19 @@ export function PulseTab({ period, source }: PulseTabProps) {
     <div className="space-y-6">
       <section>
         <h3 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">
+          Бизнес-результат
+          <span className="ml-2 text-[10px] text-slate-400 normal-case font-normal">
+            — состояние покупателей Delever (L1 Driver)
+          </span>
+        </h3>
+        <CustomerHealthBanner period={period} source={source} />
+      </section>
+
+      <section>
+        <h3 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">
           Клиентский опыт
           <span className="ml-2 text-[10px] text-slate-400 normal-case font-normal">
-            — что чувствуют покупатели
+            — что чувствуют покупатели (L2 Indicators)
           </span>
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -115,7 +125,7 @@ export function PulseTab({ period, source }: PulseTabProps) {
         <h3 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">
           Скорость поддержки
           <span className="ml-2 text-[10px] text-slate-400 normal-case font-normal">
-            — что делает команда
+            — что делает команда (L3 Activity)
           </span>
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
