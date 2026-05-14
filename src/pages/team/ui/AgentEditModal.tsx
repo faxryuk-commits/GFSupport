@@ -14,10 +14,62 @@ const PERMISSION_MODULES = [
   { id: 'settings', label: 'Настройки' },
 ]
 
-const ROLE_OPTIONS = [
-  { value: 'agent', label: 'Агент' },
-  { value: 'manager', label: 'Менеджер' },
-  { value: 'admin', label: 'Администратор' },
+// Группированный список ролей. Старые agent/manager/admin сохранены
+// для обратной совместимости — их используют permissions/auth.
+const ROLE_OPTIONS: Array<{ group: string; options: Array<{ value: string; label: string }> }> = [
+  {
+    group: 'Системные',
+    options: [
+      { value: 'agent', label: 'Агент' },
+      { value: 'manager', label: 'Менеджер' },
+      { value: 'admin', label: 'Администратор' },
+    ],
+  },
+  {
+    group: 'Тех. поддержка',
+    options: [
+      { value: 'support', label: 'Support' },
+      { value: 'team_lead', label: 'Team Lead' },
+      { value: 'support_agent', label: 'Support Agent' },
+    ],
+  },
+  {
+    group: 'Продажи',
+    options: [
+      { value: 'kam', label: 'KAM (Key Account Manager)' },
+      { value: 'sales', label: 'Sales' },
+      { value: 'sdr', label: 'SDR' },
+    ],
+  },
+  {
+    group: 'Продукт / Разработка',
+    options: [
+      { value: 'pm', label: 'PM (Product Manager)' },
+      { value: 'developer', label: 'Developer' },
+      { value: 'designer', label: 'Designer' },
+    ],
+  },
+  {
+    group: 'Руководство (C-Level)',
+    options: [
+      { value: 'ceo', label: 'CEO' },
+      { value: 'cto', label: 'CTO' },
+      { value: 'cmo', label: 'CMO' },
+      { value: 'cfo', label: 'CFO' },
+      { value: 'coo', label: 'COO' },
+      { value: 'cco', label: 'CCO' },
+    ],
+  },
+]
+
+const DEPARTMENT_OPTIONS = [
+  { value: 'support', label: 'Тех. поддержка' },
+  { value: 'sales', label: 'Продажи' },
+  { value: 'product', label: 'Продукт / Разработка' },
+  { value: 'admin', label: 'Администрация' },
+  { value: 'marketing', label: 'Маркетинг' },
+  { value: 'finance', label: 'Финансы' },
+  { value: 'other', label: 'Другое' },
 ]
 
 function buildForm(agent: Agent | null) {
@@ -26,6 +78,8 @@ function buildForm(agent: Agent | null) {
     username: agent?.username || '',
     email: agent?.email || '',
     role: (agent?.role || 'agent') as AgentRole,
+    department: agent?.department || '',
+    position: agent?.position || '',
     password: '',
     phone: agent?.phone || '',
     permissions: ((agent as any)?.permissions || []) as string[],
@@ -54,7 +108,10 @@ export function AgentEditModal({
       await updateAgent(agent.id, {
         name: form.name, username: form.username, email: form.email,
         role: form.role, password: form.password || undefined,
-        phone: form.phone, permissions: form.permissions,
+        phone: form.phone,
+        position: form.position || null,
+        department: form.department || null,
+        permissions: form.permissions,
       })
       onSaved()
       onClose()
@@ -169,18 +226,58 @@ export function AgentEditModal({
           />
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
+            <select
+              name="agent-edit-role"
+              value={form.role}
+              onChange={e => setForm(prev => ({ ...prev, role: e.target.value as AgentRole }))}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+            >
+              {ROLE_OPTIONS.map(group => (
+                <optgroup key={group.group} label={group.group}>
+                  {group.options.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Влияет на аналитику: метрики FRT/SLA считаются по сотрудникам с ролью «Тех. поддержка».
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Отдел</label>
+            <select
+              name="agent-edit-department"
+              value={form.department}
+              onChange={e => setForm(prev => ({ ...prev, department: e.target.value }))}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+            >
+              <option value="">— не указан —</option>
+              {DEPARTMENT_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
-          <select
-            name="agent-edit-role"
-            value={form.role}
-            onChange={e => setForm(prev => ({ ...prev, role: e.target.value as AgentRole }))}
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-          >
-            {ROLE_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Должность</label>
+          <input
+            type="text"
+            name="agent-edit-position"
+            autoComplete="off"
+            value={form.position}
+            onChange={e => setForm(prev => ({ ...prev, position: e.target.value }))}
+            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Старший специалист поддержки, Account Manager и т.п."
+          />
+          <p className="text-[10px] text-slate-400 mt-1">
+            Свободный текст. Показывается в 360°-профиле и таблицах. Не влияет на расчёт метрик.
+          </p>
         </div>
 
         <div>

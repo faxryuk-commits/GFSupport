@@ -20,6 +20,8 @@ export async function updateAgent(id: string, data: {
   role?: string
   password?: string
   phone?: string
+  position?: string | null
+  department?: string | null
   permissions?: string[]
 }): Promise<void> {
   await apiPut('/agents', { id, ...data })
@@ -32,6 +34,8 @@ export async function createAgent(data: {
   role?: string
   password?: string
   phone?: string
+  position?: string | null
+  department?: string | null
   permissions?: string[]
 }): Promise<{ agentId: string }> {
   return apiPost('/agents', data)

@@ -15,7 +15,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Users, ChevronDown } from 'lucide-react'
+import { Users, ChevronDown, Settings } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { fetchAgentRoles, type AgentRolesResponse } from '@/shared/api'
 
 export type RoleSelection =
@@ -143,6 +144,17 @@ export function RoleFilter({ value, onChange }: RoleFilterProps) {
                 Список ролей загружается…
               </div>
             )}
+
+            <div className="border-t border-slate-100 p-2">
+              <Link
+                to="/settings"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-slate-500 hover:text-slate-800"
+              >
+                <Settings className="w-3 h-3" />
+                Управлять ролями — Settings → Команда
+              </Link>
+            </div>
           </div>
         </>
       )}

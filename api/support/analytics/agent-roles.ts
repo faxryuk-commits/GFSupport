@@ -21,7 +21,14 @@ export const config = {
 
 // Роли, которые мы по умолчанию считаем «командой поддержки» — клиентоориентированные,
 // отвечают на сообщения покупателей. Все варианты в lower-case.
+//
+// Сюда входят как «чистая» Tech Support, так и KAM/SDR/Sales — они тоже
+// часто переписываются с клиентами и их ответы засчитываются как «ответ
+// команды» в FRT/SLA. CEO/CTO/Developer/PM СЮДА НЕ ВКЛЮЧЕНЫ — они отвечают
+// эпизодически, и их ответы должны идти как «эскалации сверху», а не
+// в средний FRT поддержки.
 const SUPPORT_ROLE_KEYWORDS = [
+  // Tech Support
   'support',
   'support_agent',
   'agent',
@@ -30,6 +37,12 @@ const SUPPORT_ROLE_KEYWORDS = [
   'team_leader',
   'helpdesk',
   'agent_support',
+  // Customer-facing sales (тоже общаются с клиентами через те же каналы)
+  'kam',
+  'sales',
+  'sdr',
+  // Generic admin/manager — обычно тоже отвечают
+  'manager',
 ]
 
 interface RoleRow {
