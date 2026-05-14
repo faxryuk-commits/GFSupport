@@ -259,7 +259,7 @@ export function BroadcastPage() {
             <p className="text-slate-500 mt-1">Массовая отправка сообщений клиентам</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={loadData} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" title="Обновить">
+            <button onClick={() => loadData()} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" title="Обновить">
               <RefreshCw className="w-5 h-5" />
             </button>
             {pendingCount > 0 && (
@@ -574,7 +574,7 @@ export function BroadcastPage() {
             setError(e instanceof Error ? e.message : 'Ошибка отмены')
           }
         }}
-        onChanged={loadData}
+        onChanged={() => loadData()}
         formatDate={formatDate}
       />
 
