@@ -49,6 +49,10 @@
     {
       "path": "/api/support/analytics/benchmarks-cron",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/support/analytics/daily-report",
+      "schedule": "0 13 * * 1-5"
     }
   ]
 }
