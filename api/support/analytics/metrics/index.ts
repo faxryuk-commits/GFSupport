@@ -28,7 +28,12 @@ export { loadBenchmarks, classifyStatus } from './benchmarks.js'
 // Конкретные метрики
 export { frtAvgDescriptor, computeFrtAvg, computeFrtAvgPerAgent } from './frtAvg.js'
 export type { FrtPerAgentRow, FrtPerAgentResult } from './frtAvg.js'
-export { slaComplianceDescriptor, computeSlaCompliance } from './slaCompliance.js'
+export {
+  slaComplianceDescriptor,
+  computeSlaCompliance,
+  computeSlaCompliancePerAgent,
+} from './slaCompliance.js'
+export type { SlaPerAgentRow, SlaPerAgentResult } from './slaCompliance.js'
 export { sentimentPositiveDescriptor, computeSentimentPositive } from './sentimentPositive.js'
 export { repeatContactRateDescriptor, computeRepeatContactRate } from './repeatContactRate.js'
 

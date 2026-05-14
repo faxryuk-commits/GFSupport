@@ -3,10 +3,9 @@
  *
  * GET /api/support/analytics/metric-per-agent?key=<metric_key>&period=<period>[&source=][&market=]
  *
- * На сейчас поддерживается ТОЛЬКО `frt_avg_minutes`. Другие метрики имеют
- * perAgent=true (sla_compliance_rate) или perAgent=false (sentiment, repeat).
- * Расширение списка — отдельный шаг: каждая perAgent-метрика должна
- * экспортировать computeXPerAgent(scope, period).
+ * Поддерживается: `frt_avg_minutes`, `sla_compliance_rate`.
+ * Другие метрики (sentiment, repeat) имеют perAgent=false — для них
+ * per-agent не имеет смысла (они per-channel/per-team).
  *
  * Ответ:
  *   {
@@ -24,13 +23,45 @@ import { getRequestOrgId } from '../lib/org.js'
 import { json } from '../lib/db.js'
 import {
   computeFrtAvgPerAgent,
+  computeSlaCompliancePerAgent,
   frtAvgDescriptor,
+  slaComplianceDescriptor,
   parsePeriodParam,
   resolvePeriod,
 } from './metrics/index.js'
+import type { MetricDescriptor } from './metrics/index.js'
 
 export const config = {
   runtime: 'edge',
+}
+
+const SUPPORTED: Record<
+  string,
+  {
+    descriptor: MetricDescriptor
+    compute: (
+      scope: { orgId: string; market: string | null; source: string | null },
+      period: ReturnType<typeof resolvePeriod>,
+    ) => Promise<{
+      rows: Array<{
+        agentId: string
+        agentName: string | null
+        value: number
+        sampleSize: number
+        status: string
+      }>
+      benchmarks: unknown
+    }>
+  }
+> = {
+  [frtAvgDescriptor.key]: {
+    descriptor: frtAvgDescriptor,
+    compute: computeFrtAvgPerAgent,
+  },
+  [slaComplianceDescriptor.key]: {
+    descriptor: slaComplianceDescriptor,
+    compute: computeSlaCompliancePerAgent,
+  },
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -53,11 +84,12 @@ export default async function handler(req: Request): Promise<Response> {
   const key = url.searchParams.get('key')
   if (!key) return json({ error: 'Missing query param "key"' }, 400)
 
-  if (key !== frtAvgDescriptor.key) {
+  const entry = SUPPORTED[key]
+  if (!entry) {
     return json(
       {
         error: `Per-agent breakdown not supported for metric: ${key}`,
-        supported: [frtAvgDescriptor.key],
+        supported: Object.keys(SUPPORTED),
       },
       400,
     )
@@ -69,10 +101,10 @@ export default async function handler(req: Request): Promise<Response> {
   const source = url.searchParams.get('source')
 
   try {
-    const result = await computeFrtAvgPerAgent({ orgId, market, source }, period)
+    const result = await entry.compute({ orgId, market, source }, period)
     return json(
       {
-        descriptor: frtAvgDescriptor,
+        descriptor: entry.descriptor,
         period: {
           from: period.from.toISOString(),
           to: period.to.toISOString(),

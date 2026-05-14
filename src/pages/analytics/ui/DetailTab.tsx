@@ -4,6 +4,7 @@ import { Loader2, Search, AlertCircle, ChevronUp, ChevronDown, ExternalLink } fr
 import {
   fetchMetricPerAgent,
   type MetricPerAgentResponse,
+  type MetricPerAgentRow,
   type MetricStatus,
 } from '@/shared/api'
 
@@ -12,14 +13,28 @@ interface DetailTabProps {
   source?: 'all' | 'telegram' | 'whatsapp'
 }
 
-type SortKey = 'agentName' | 'value' | 'sampleSize'
+type SortKey = 'agentName' | 'frt' | 'sla' | 'sessions'
 type SortDir = 'asc' | 'desc'
 
-const STATUS_STYLES: Record<MetricStatus, { chip: string; label: string }> = {
-  good: { chip: 'bg-emerald-50 text-emerald-800 border-emerald-200', label: 'Gold' },
-  borderline: { chip: 'bg-amber-50 text-amber-800 border-amber-200', label: 'Silver' },
-  bad: { chip: 'bg-rose-50 text-rose-800 border-rose-200', label: 'ниже Bronze' },
-  unknown: { chip: 'bg-slate-50 text-slate-500 border-slate-200', label: '—' },
+interface MergedRow {
+  agentId: string
+  agentName: string | null
+  frt: MetricPerAgentRow | null
+  sla: MetricPerAgentRow | null
+  sessions: number
+}
+
+const STATUS_CHIP: Record<MetricStatus, string> = {
+  good: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  borderline: 'bg-amber-50 text-amber-800 border-amber-200',
+  bad: 'bg-rose-50 text-rose-800 border-rose-200',
+  unknown: 'bg-slate-50 text-slate-500 border-slate-200',
+}
+const STATUS_LABEL: Record<MetricStatus, string> = {
+  good: 'Gold',
+  borderline: 'Silver',
+  bad: 'ниже Bronze',
+  unknown: '—',
 }
 
 function formatMinutes(v: number): string {
@@ -27,63 +42,141 @@ function formatMinutes(v: number): string {
   return `${v.toFixed(1)} мин`
 }
 
+function MetricCell({
+  row,
+  formatter,
+}: {
+  row: MetricPerAgentRow | null
+  formatter: (v: number) => string
+}) {
+  if (!row) return <span className="text-slate-300">—</span>
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <span className="tabular-nums">{formatter(row.value)}</span>
+      <span
+        className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border ${STATUS_CHIP[row.status]}`}
+      >
+        {STATUS_LABEL[row.status]}
+      </span>
+    </div>
+  )
+}
+
 export function DetailTab({ period, source }: DetailTabProps) {
-  const [data, setData] = useState<MetricPerAgentResponse | null>(null)
+  const [frtData, setFrtData] = useState<MetricPerAgentResponse | null>(null)
+  const [slaData, setSlaData] = useState<MetricPerAgentResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('value')
+  const [sortKey, setSortKey] = useState<SortKey>('frt')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchMetricPerAgent({
-      key: 'frt_avg_minutes',
-      period,
-      source: source === 'all' ? undefined : source,
-    })
-      .then((r) => {
-        if (!cancelled) setData(r)
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка загрузки')
+    setFrtData(null)
+    setSlaData(null)
+
+    Promise.all([
+      fetchMetricPerAgent({
+        key: 'frt_avg_minutes',
+        period,
+        source: source === 'all' ? undefined : source,
+      }).catch(() => null),
+      fetchMetricPerAgent({
+        key: 'sla_compliance_rate',
+        period,
+        source: source === 'all' ? undefined : source,
+      }).catch(() => null),
+    ])
+      .then(([frt, sla]) => {
+        if (cancelled) return
+        if (!frt && !sla) {
+          setError('Не удалось загрузить ни одну из метрик')
+        }
+        setFrtData(frt)
+        setSlaData(sla)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
+
     return () => {
       cancelled = true
     }
   }, [period, source])
 
+  const merged: MergedRow[] = useMemo(() => {
+    const map = new Map<string, MergedRow>()
+    if (frtData) {
+      for (const r of frtData.rows) {
+        map.set(r.agentId, {
+          agentId: r.agentId,
+          agentName: r.agentName,
+          frt: r,
+          sla: null,
+          sessions: r.sampleSize,
+        })
+      }
+    }
+    if (slaData) {
+      for (const r of slaData.rows) {
+        const existing = map.get(r.agentId)
+        if (existing) {
+          existing.sla = r
+          // sessions: max(FRT.sampleSize, SLA.sampleSize) — они должны быть равны,
+          // но если SLA не запросилась, sessions из FRT, и наоборот.
+          existing.sessions = Math.max(existing.sessions, r.sampleSize)
+        } else {
+          map.set(r.agentId, {
+            agentId: r.agentId,
+            agentName: r.agentName,
+            frt: null,
+            sla: r,
+            sessions: r.sampleSize,
+          })
+        }
+      }
+    }
+    return Array.from(map.values())
+  }, [frtData, slaData])
+
   const sorted = useMemo(() => {
-    if (!data) return []
     const filtered = search
-      ? data.rows.filter((r) =>
+      ? merged.filter((r) =>
           (r.agentName || r.agentId).toLowerCase().includes(search.toLowerCase()),
         )
-      : data.rows
+      : merged
     const dir = sortDir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
       switch (sortKey) {
         case 'agentName':
           return (a.agentName || '').localeCompare(b.agentName || '') * dir
-        case 'value':
-          return (a.value - b.value) * dir
-        case 'sampleSize':
-          return (a.sampleSize - b.sampleSize) * dir
+        case 'frt':
+          // null FRT в конец
+          if (!a.frt && !b.frt) return 0
+          if (!a.frt) return 1
+          if (!b.frt) return -1
+          return (a.frt.value - b.frt.value) * dir
+        case 'sla':
+          // null SLA в конец, для higher_better инвертируем
+          if (!a.sla && !b.sla) return 0
+          if (!a.sla) return 1
+          if (!b.sla) return -1
+          return (b.sla.value - a.sla.value) * dir // higher_better: desc по умолчанию
+        case 'sessions':
+          return (b.sessions - a.sessions) * dir
       }
     })
-  }, [data, search, sortKey, sortDir])
+  }, [merged, search, sortKey, sortDir])
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
     } else {
       setSortKey(key)
-      setSortDir(key === 'agentName' ? 'asc' : 'asc')
+      setSortDir('asc')
     }
   }
 
@@ -96,18 +189,20 @@ export function DetailTab({ period, source }: DetailTabProps) {
       <ChevronDown className="w-3 h-3" />
     )
 
+  const frtBenchmarks = frtData?.benchmarks
+  const slaBenchmarks = slaData?.benchmarks
+
   return (
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-900">
-        <strong>Detail</strong> — построчные данные. Per-agent FRT с цветным статусом
-        относительно бенчмарков. Поиск по имени, сортировка по любой колонке.
+        <strong>Detail</strong> — построчные данные. Каждая строка — агент с FRT и SLA
+        compliance, цветной chip показывает уровень относительно бенчмарка. Поиск и сортировка
+        по любой колонке.
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <header className="flex items-center justify-between gap-3 p-4 border-b border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-900">
-            Среднее время первого ответа — по агентам
-          </h3>
+          <h3 className="text-sm font-semibold text-slate-900">Per-agent breakdown</h3>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
@@ -126,37 +221,42 @@ export function DetailTab({ period, source }: DetailTabProps) {
           </div>
         )}
 
-        {error && (
+        {error && !loading && (
           <div className="m-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-red-900">{error}</div>
           </div>
         )}
 
-        {!loading && !error && data && (
+        {!loading && !error && (
           <>
-            {data.benchmarks.bronze || data.benchmarks.silver || data.benchmarks.gold ? (
-              <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600 flex items-center gap-4">
-                <span className="font-medium">Целевые уровни:</span>
-                {data.benchmarks.bronze && (
-                  <span>🥉 Bronze {formatMinutes(data.benchmarks.bronze.value)}</span>
-                )}
-                {data.benchmarks.silver && (
-                  <span>🥈 Silver {formatMinutes(data.benchmarks.silver.value)}</span>
-                )}
-                {data.benchmarks.gold && (
-                  <span>🥇 Gold {formatMinutes(data.benchmarks.gold.value)}</span>
-                )}
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
+              <div className="flex flex-wrap items-center gap-4">
+                <div>
+                  <span className="font-medium">FRT цели: </span>
+                  {frtBenchmarks?.bronze ? `🥉 ${formatMinutes(frtBenchmarks.bronze.value)}` : '—'}
+                  {' · '}
+                  {frtBenchmarks?.silver ? `🥈 ${formatMinutes(frtBenchmarks.silver.value)}` : '—'}
+                  {' · '}
+                  {frtBenchmarks?.gold ? `🥇 ${formatMinutes(frtBenchmarks.gold.value)}` : '—'}
+                </div>
+                <div>
+                  <span className="font-medium">SLA цели: </span>
+                  {slaBenchmarks?.bronze ? `🥉 ${slaBenchmarks.bronze.value.toFixed(1)}%` : '—'}
+                  {' · '}
+                  {slaBenchmarks?.silver ? `🥈 ${slaBenchmarks.silver.value.toFixed(1)}%` : '—'}
+                  {' · '}
+                  {slaBenchmarks?.gold ? `🥇 ${slaBenchmarks.gold.value.toFixed(1)}%` : '—'}
+                </div>
               </div>
-            ) : (
-              <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
-                Бенчмарки не посчитаны.{' '}
-                <Link to="/benchmarks" className="underline font-medium">
-                  Запустить пересчёт
-                </Link>{' '}
-                — после этого статусы агентов появятся.
-              </div>
-            )}
+              {!frtBenchmarks?.bronze && !slaBenchmarks?.bronze && (
+                <div className="mt-1">
+                  <Link to="/benchmarks" className="underline text-blue-600 hover:text-blue-700">
+                    Запустить пересчёт бенчмарков
+                  </Link>
+                </div>
+              )}
+            </div>
 
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wider">
@@ -171,21 +271,28 @@ export function DetailTab({ period, source }: DetailTabProps) {
                   </th>
                   <th className="text-right px-4 py-2 font-medium">
                     <button
-                      onClick={() => toggleSort('value')}
+                      onClick={() => toggleSort('frt')}
                       className="inline-flex items-center gap-1 hover:text-slate-900"
                     >
-                      Среднее FRT <SortIcon active={sortKey === 'value'} />
+                      FRT <SortIcon active={sortKey === 'frt'} />
                     </button>
                   </th>
                   <th className="text-right px-4 py-2 font-medium">
                     <button
-                      onClick={() => toggleSort('sampleSize')}
+                      onClick={() => toggleSort('sla')}
                       className="inline-flex items-center gap-1 hover:text-slate-900"
                     >
-                      Сессий <SortIcon active={sortKey === 'sampleSize'} />
+                      SLA Compliance <SortIcon active={sortKey === 'sla'} />
                     </button>
                   </th>
-                  <th className="text-center px-4 py-2 font-medium">Статус</th>
+                  <th className="text-right px-4 py-2 font-medium">
+                    <button
+                      onClick={() => toggleSort('sessions')}
+                      className="inline-flex items-center gap-1 hover:text-slate-900"
+                    >
+                      Сессий <SortIcon active={sortKey === 'sessions'} />
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -196,31 +303,24 @@ export function DetailTab({ period, source }: DetailTabProps) {
                     </td>
                   </tr>
                 )}
-                {sorted.map((row) => {
-                  const style = STATUS_STYLES[row.status]
-                  return (
-                    <tr key={row.agentId} className="border-t border-slate-100 hover:bg-slate-50">
-                      <td className="px-4 py-2 text-slate-900">
-                        {row.agentName || (
-                          <span className="text-slate-400 font-mono text-xs">{row.agentId}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {formatMinutes(row.value)}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums text-slate-500">
-                        {row.sampleSize}
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded border ${style.chip}`}
-                        >
-                          {style.label}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {sorted.map((row) => (
+                  <tr key={row.agentId} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-2 text-slate-900">
+                      {row.agentName || (
+                        <span className="text-slate-400 font-mono text-xs">{row.agentId}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <MetricCell row={row.frt} formatter={formatMinutes} />
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <MetricCell row={row.sla} formatter={(v) => `${v.toFixed(1)}%`} />
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-slate-500">
+                      {row.sessions}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </>
@@ -228,8 +328,8 @@ export function DetailTab({ period, source }: DetailTabProps) {
       </div>
 
       <div className="text-xs text-slate-500 px-3">
-        Расширенные таблицы (SLA-violations, expertise по категориям, экспорт в xlsx) пока живут
-        на старом{' '}
+        Расширенные таблицы (SLA-violations, expertise по категориям, weekly heatmap, экспорт в
+        xlsx) пока живут на старом{' '}
         <Link
           to="/sla-report-legacy"
           className="underline text-blue-600 hover:text-blue-700"
@@ -237,7 +337,7 @@ export function DetailTab({ period, source }: DetailTabProps) {
           legacy SLA-отчёте
           <ExternalLink className="inline w-3 h-3 ml-0.5" />
         </Link>
-        . Постепенно мигрируем.
+        . Мигрируем постепенно.
       </div>
     </div>
   )
