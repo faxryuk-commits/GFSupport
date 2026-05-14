@@ -20,10 +20,8 @@ import type { AttentionItem, RecentActivity, ResponseTimeModalData } from '../mo
 import { DashboardHeader } from './DashboardHeader'
 import { AIRecommendationsPanel } from './AIRecommendationsPanel'
 import { ChannelSourceSummary, type SourceFilter } from './ChannelSourceSummary'
-import { MetricsSection } from './MetricsSection'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
-import { SLACategoryModal } from './SLACategoryModal'
 
 function mapDashboardPeriod(range: string): FetchMetricParams['period'] {
   switch (range) {
@@ -59,9 +57,6 @@ export function DashboardPage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
-  const [slaCategoryModal, setSlaCategoryModal] = useState<{ category: string; label: string } | null>(null)
-  const [slaCategoryMessages, setSlaCategoryMessages] = useState<any[]>([])
-  const [slaCategoryLoading, setSlaCategoryLoading] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -142,29 +137,6 @@ export function DashboardPage() {
     loadData()
   }
 
-  const loadSlaCategoryDetails = async (category: string, label: string) => {
-    setSlaCategoryModal({ category, label })
-    setSlaCategoryLoading(true)
-    try {
-      const token = localStorage.getItem('support_agent_token')
-      const periodParam = dateRange.startsWith('custom:')
-        ? `from=${dateRange.split(':')[1]}&to=${dateRange.split(':')[2]}`
-        : `period=${dateRange}`
-      const res = await fetch(
-        `/api/support/analytics/response-time-details?bucket=all&${periodParam}&sla_category=${encodeURIComponent(category)}&limit=100`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      if (res.ok) {
-        const data = await res.json()
-        setSlaCategoryMessages(data.messages || [])
-      }
-    } catch (e) {
-      console.error('Failed to load SLA category details:', e)
-    } finally {
-      setSlaCategoryLoading(false)
-    }
-  }
-
   const aiRecommendations = useMemo(() =>
     generateAIRecommendations(analytics, metrics, agents),
     [analytics, metrics, agents]
@@ -221,12 +193,6 @@ export function DashboardPage() {
           onChange={setSourceFilter}
         />
 
-        <MetricsSection
-          metrics={metrics}
-          analytics={analytics}
-          onSlaCategoryClick={loadSlaCategoryDetails}
-        />
-
         <OperationsSection
           needsAttention={filteredAttention}
           agents={agents}
@@ -264,24 +230,15 @@ export function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-slate-800">Детальная аналитика</h3>
-              <p className="text-sm text-slate-500 mt-1">Время ответа, агенты, кейсы, инсайты</p>
+              <p className="text-sm text-slate-500 mt-1">
+                Pulse / Diagnosis / Detail · per-agent FRT и SLA, состояние покупателей, категории проблем
+              </p>
             </div>
-            <a href="/sla-report" className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              SLA Отчёт <span className="text-xs">→</span>
+            <a href="/analytics" className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
+              Открыть Аналитику <span className="text-xs">→</span>
             </a>
           </div>
         </div>
-
-        {/* SLA Category Modal */}
-        {slaCategoryModal && (
-          <SLACategoryModal
-            category={slaCategoryModal.category}
-            label={slaCategoryModal.label}
-            messages={slaCategoryMessages}
-            loading={slaCategoryLoading}
-            onClose={() => setSlaCategoryModal(null)}
-          />
-        )}
       </div>
     </div>
   )
