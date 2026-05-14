@@ -80,9 +80,11 @@ export default function App() {
           <Route path="/chats/:id" element={<ChatsPage />} />
           <Route path="/channels" element={<ChannelsListPage />} />
           <Route path="/cases" element={<CasesPage />} />
-          <Route path="/health" element={<HealthPage />} />
+          <Route path="/health" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
+          <Route path="/health-legacy" element={<HealthPage />} />
           <Route path="/commitments" element={<CommitmentsPage />} />
-          <Route path="/sla-report" element={<SLAReportPage />} />
+          <Route path="/sla-report" element={<Navigate to="/analytics?tab=detail" replace />} />
+          <Route path="/sla-report-legacy" element={<SLAReportPage />} />
           <Route path="/benchmarks" element={<BenchmarksPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
