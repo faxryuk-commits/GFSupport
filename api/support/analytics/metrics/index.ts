@@ -24,3 +24,6 @@ export {
   type MessageQueryFilters,
 } from './agentJoin.js'
 export { loadBenchmarks, classifyStatus } from './benchmarks.js'
+
+// Конкретные метрики
+export { frtAvgDescriptor, computeFrtAvg } from './frtAvg.js'
