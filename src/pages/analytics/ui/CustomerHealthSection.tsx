@@ -17,6 +17,7 @@ import {
   type CustomerHealthRow,
   type HealthBand,
 } from '@/shared/api'
+import { ChurnDetailsModal } from './ChurnDetailsModal'
 
 interface Props {
   period: '7d' | '30d' | '90d'
@@ -56,6 +57,7 @@ export function CustomerHealthSection({ period, source }: Props) {
   const [search, setSearch] = useState('')
   const [bandFilter, setBandFilter] = useState<HealthBand | 'all'>('all')
   const [page, setPage] = useState(0)
+  const [churnModal, setChurnModal] = useState<{ channelId: string; channelName: string | null } | null>(null)
   const ROWS_PER_PAGE = 25
 
   // При смене фильтра/поиска возвращаемся на первую страницу
@@ -193,13 +195,48 @@ export function CustomerHealthSection({ period, source }: Props) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600 uppercase tracking-wider sticky top-0 z-10">
               <tr>
-                <th className="text-left px-4 py-2 font-medium">Покупатель</th>
-                <th className="text-left px-4 py-2 font-medium">Health</th>
-                <th className="text-right px-4 py-2 font-medium">Активность</th>
-                <th className="text-right px-4 py-2 font-medium">Sentiment</th>
-                <th className="text-right px-4 py-2 font-medium">Кейсы</th>
-                <th className="text-right px-4 py-2 font-medium">Churn-сигналы</th>
-                <th className="text-right px-4 py-2 font-medium">Последнее</th>
+                <th
+                  className="text-left px-4 py-2 font-medium"
+                  title="Канал в Telegram или WhatsApp = один покупатель Delever. Клик откроет чат."
+                >
+                  Покупатель
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium"
+                  title="Composite 0..100. Формула: activity 35% + sentiment 30% + resolution 20% + churn 15%."
+                >
+                  Health
+                </th>
+                <th
+                  className="text-right px-4 py-2 font-medium"
+                  title="Активность: 100 если ≤2 дней без сообщений, 0 при ≥30 дней."
+                >
+                  Активность
+                </th>
+                <th
+                  className="text-right px-4 py-2 font-medium"
+                  title="% сообщений клиента с positive sentiment из всех оценённых ИИ. В скобках — positive/scored."
+                >
+                  Sentiment
+                </th>
+                <th
+                  className="text-right px-4 py-2 font-medium"
+                  title="Решённых кейсов / всего созданных за период. «+N откр.» — ещё открытые."
+                >
+                  Кейсы
+                </th>
+                <th
+                  className="text-right px-4 py-2 font-medium"
+                  title="Сколько сообщений клиента содержат прямые сигналы оттока: «отключаемся», «расторгаем», «uzamiz», «cancel subscription» и т.п. Клик откроет список."
+                >
+                  Churn-сигналы
+                </th>
+                <th
+                  className="text-right px-4 py-2 font-medium"
+                  title="Время с момента последнего сообщения от клиента или агента в этом канале."
+                >
+                  Последнее
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -211,7 +248,13 @@ export function CustomerHealthSection({ period, source }: Props) {
                 </tr>
               )}
               {pageRows.map((row) => (
-                <CustomerRow key={row.channelId} row={row} />
+                <CustomerRow
+                  key={row.channelId}
+                  row={row}
+                  onChurnClick={(channelId, channelName) =>
+                    setChurnModal({ channelId, channelName })
+                  }
+                />
               ))}
             </tbody>
           </table>
@@ -250,6 +293,14 @@ export function CustomerHealthSection({ period, source }: Props) {
           </footer>
         )}
       </div>
+
+      <ChurnDetailsModal
+        isOpen={churnModal !== null}
+        onClose={() => setChurnModal(null)}
+        channelId={churnModal?.channelId ?? null}
+        channelName={churnModal?.channelName ?? null}
+        period={period}
+      />
     </div>
   )
 }
@@ -282,22 +333,39 @@ function SummaryCard({
   )
 }
 
-function CustomerRow({ row }: { row: CustomerHealthRow }) {
+function CustomerRow({
+  row,
+  onChurnClick,
+}: {
+  row: CustomerHealthRow
+  onChurnClick: (channelId: string, channelName: string | null) => void
+}) {
   const style = BAND_STYLES[row.band]
+  const healthTooltip =
+    `Health ${row.healthScore ?? '—'}/100. Формула: ` +
+    `activity (35%) · sentiment (30%) · resolution (20%) · churn (15%). ` +
+    `Текущие компоненты: activity ${row.activityScore ?? '—'}, ` +
+    `sentiment ${row.sentimentScore ?? '—'}, ` +
+    `resolution ${row.resolutionScore ?? '—'}, ` +
+    `churn ${row.churnScore}.`
+
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50">
       <td className="px-4 py-2">
         <Link
-          to={`/channels?id=${row.channelId}`}
+          to={`/chats/${row.channelId}`}
           className="text-slate-900 hover:text-blue-600"
+          title={`Открыть чат · ${row.totalMessages} сообщений за период`}
         >
           {row.channelName || (
             <span className="font-mono text-xs text-slate-500">{row.channelId}</span>
           )}
         </Link>
-        <div className="text-[10px] text-slate-400">{row.source}</div>
+        <div className="text-[10px] text-slate-400">
+          {row.source === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+        </div>
       </td>
-      <td className="px-4 py-2">
+      <td className="px-4 py-2" title={healthTooltip}>
         <div className="flex items-center gap-2">
           <div className="w-20 h-1.5 bg-slate-100 rounded overflow-hidden">
             <div
@@ -315,10 +383,24 @@ function CustomerRow({ row }: { row: CustomerHealthRow }) {
           </span>
         </div>
       </td>
-      <td className="px-4 py-2 text-right tabular-nums text-slate-600">
+      <td
+        className="px-4 py-2 text-right tabular-nums text-slate-600"
+        title={
+          row.daysSinceLastMessage === null
+            ? 'Нет сообщений за период'
+            : `${row.daysSinceLastMessage} дн без сообщений. 100 баллов при ≤2 дн, 0 при ≥30 дн.`
+        }
+      >
         {row.activityScore !== null ? row.activityScore : '—'}
       </td>
-      <td className="px-4 py-2 text-right tabular-nums text-slate-600">
+      <td
+        className="px-4 py-2 text-right tabular-nums text-slate-600"
+        title={
+          row.scoredMessages === 0
+            ? 'Нет сообщений с оценённым ИИ-настроением'
+            : `${row.positiveMessages} позитивных из ${row.scoredMessages} оценённых ИИ`
+        }
+      >
         {row.sentimentScore !== null ? (
           <>
             {row.sentimentScore}
@@ -330,7 +412,16 @@ function CustomerRow({ row }: { row: CustomerHealthRow }) {
           '—'
         )}
       </td>
-      <td className="px-4 py-2 text-right tabular-nums text-slate-600">
+      <td
+        className="px-4 py-2 text-right tabular-nums text-slate-600"
+        title={
+          row.totalCases === 0
+            ? 'Нет кейсов за период'
+            : `${row.resolvedCases} решённых из ${row.totalCases} созданных${
+                row.openCases > 0 ? `, ${row.openCases} ещё открыты` : ''
+              }`
+        }
+      >
         {row.totalCases > 0 ? (
           <>
             {row.resolvedCases}/{row.totalCases}
@@ -344,23 +435,27 @@ function CustomerRow({ row }: { row: CustomerHealthRow }) {
       </td>
       <td className="px-4 py-2 text-right tabular-nums">
         {row.churnMatches === 0 ? (
-          <span className="text-slate-300">—</span>
+          <span className="text-slate-300" title="Нет сообщений с фразами оттока">
+            —
+          </span>
         ) : (
-          <span
-            className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+          <button
+            onClick={() => onChurnClick(row.channelId, row.channelName)}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded hover:opacity-80 ${
               row.churnMatches >= 3
                 ? 'bg-rose-100 text-rose-800'
-                : row.churnMatches >= 1
-                ? 'bg-amber-100 text-amber-800'
-                : 'bg-slate-100 text-slate-700'
+                : 'bg-amber-100 text-amber-800'
             }`}
-            title="Сообщения с фразами вроде «отключаемся», «расторгаем», «uzamiz»"
+            title={`${row.churnMatches} сообщений со словами «отключаемся», «расторгаем», «uzamiz» и т.п. Нажмите, чтобы увидеть.`}
           >
             ⚠ {row.churnMatches}
-          </span>
+          </button>
         )}
       </td>
-      <td className="px-4 py-2 text-right text-xs text-slate-500">
+      <td
+        className="px-4 py-2 text-right text-xs text-slate-500"
+        title={row.lastMessageAt ? new Date(row.lastMessageAt).toLocaleString('ru-RU') : 'Нет сообщений'}
+      >
         {formatDays(row.daysSinceLastMessage)}
       </td>
     </tr>
