@@ -17,9 +17,11 @@ export interface CustomerHealthRow {
   totalCases: number
   resolvedCases: number
   openCases: number
+  churnMatches: number
   activityScore: number | null
   sentimentScore: number | null
   resolutionScore: number | null
+  churnScore: number
   healthScore: number | null
   band: HealthBand
 }

@@ -8,7 +8,7 @@
  *
  * Формула (значения каждого sub-score в шкале 0..100):
  *
- *   health = activity * 0.40 + sentiment * 0.35 + resolution * 0.25
+ *   health = activity * 0.35 + sentiment * 0.30 + resolution * 0.20 + churn * 0.15
  *
  *   activity:    100 если ≤2 дней без сообщений, 0 если ≥30 дней
  *                (линейно между ними)
@@ -16,6 +16,10 @@
  *                ИИ за период (positive / scored * 100)
  *   resolution:  % решённых кейсов канала из всех созданных
  *                за период (resolved / total * 100)
+ *   churn:       100 если нет churn-сигналов в текстах клиента;
+ *                штрафуется по 25 за каждый матч из CHURN_SQL_KEYWORDS,
+ *                до нуля при 4+ срабатываниях. Это прямая угроза ухода
+ *                («отключаемся», «расторгаем», «uzamiz» и т.п.).
  *
  * Категории:
  *   healthy   — 75..100 (зелёный)
@@ -29,6 +33,7 @@
  */
 
 import { getSQL } from '../../lib/db.js'
+import { CHURN_SQL_KEYWORDS } from '../../lib/churn-signals.js'
 import type { ResolvedPeriod } from './types.js'
 
 export type HealthBand = 'healthy' | 'at_risk' | 'critical' | 'unknown'
@@ -51,9 +56,12 @@ export interface CustomerHealthRow {
   totalCases: number
   resolvedCases: number
   openCases: number
+  /** Сколько клиентских сообщений матчат CHURN_SQL_KEYWORDS в этом периоде. */
+  churnMatches: number
   activityScore: number | null
   sentimentScore: number | null
   resolutionScore: number | null
+  churnScore: number
   healthScore: number | null
   band: HealthBand
 }
@@ -73,6 +81,7 @@ interface RawRow {
   total_cases: string | number | null
   resolved_cases: string | number | null
   open_cases: string | number | null
+  churn_matches: string | number | null
 }
 
 function num(v: unknown): number {
@@ -87,6 +96,12 @@ function computeActivity(daysSilent: number): number {
   if (daysSilent <= 2) return 100
   if (daysSilent >= 30) return 0
   return Math.round(((30 - daysSilent) / (30 - 2)) * 100)
+}
+
+function computeChurnScore(matches: number): number {
+  if (matches <= 0) return 100
+  // Каждое срабатывание -25, до 0. 4+ срабатываний = 0.
+  return Math.max(0, 100 - matches * 25)
 }
 
 function computeBand(score: number | null): HealthBand {
@@ -121,7 +136,12 @@ export async function computeCustomerHealth(
         )::int AS positive,
         COUNT(*) FILTER (
           WHERE m.is_from_client = true AND LOWER(m.ai_sentiment) IN ('negative', 'frustrated')
-        )::int AS negative
+        )::int AS negative,
+        COUNT(*) FILTER (
+          WHERE m.is_from_client = true
+            AND m.text_content IS NOT NULL
+            AND m.text_content ~* ANY(${CHURN_SQL_KEYWORDS}::text[])
+        )::int AS churn_matches
       FROM support_messages m
       WHERE m.org_id = ${scope.orgId}
         AND m.created_at >= ${fromISO}::timestamptz
@@ -154,6 +174,7 @@ export async function computeCustomerHealth(
       COALESCE(ma.scored, 0) AS scored,
       COALESCE(ma.positive, 0) AS positive,
       COALESCE(ma.negative, 0) AS negative,
+      COALESCE(ma.churn_matches, 0) AS churn_matches,
       COALESCE(ca.total_cases, 0) AS total_cases,
       COALESCE(ca.resolved_cases, 0) AS resolved_cases,
       COALESCE(ca.open_cases, 0) AS open_cases
@@ -181,20 +202,24 @@ export async function computeCustomerHealth(
       const totalCases = num(r.total_cases)
       const resolvedCases = num(r.resolved_cases)
       const openCases = num(r.open_cases)
+      const churnMatches = num(r.churn_matches)
 
       const activityScore = daysSilent !== null ? computeActivity(daysSilent) : null
       const sentimentScore = scored > 0 ? Math.round((positive / scored) * 100) : null
       const resolutionScore =
         totalCases > 0 ? Math.round((resolvedCases / totalCases) * 100) : null
+      const churnScoreVal = computeChurnScore(churnMatches)
 
       // Взвешенное среднее по доступным компонентам.
-      const weights = { activity: 0.4, sentiment: 0.35, resolution: 0.25 }
+      // churn — всегда учитывается (отсутствие сигналов = 100, это валидное наблюдение).
+      const weights = { activity: 0.35, sentiment: 0.30, resolution: 0.20, churn: 0.15 }
       const components: Array<{ score: number; weight: number }> = []
       if (activityScore !== null) components.push({ score: activityScore, weight: weights.activity })
       if (sentimentScore !== null)
         components.push({ score: sentimentScore, weight: weights.sentiment })
       if (resolutionScore !== null)
         components.push({ score: resolutionScore, weight: weights.resolution })
+      components.push({ score: churnScoreVal, weight: weights.churn })
 
       let healthScore: number | null = null
       if (components.length > 0) {
@@ -218,9 +243,11 @@ export async function computeCustomerHealth(
         totalCases,
         resolvedCases,
         openCases,
+        churnMatches,
         activityScore,
         sentimentScore,
         resolutionScore,
+        churnScore: churnScoreVal,
         healthScore,
         band: computeBand(healthScore),
       }

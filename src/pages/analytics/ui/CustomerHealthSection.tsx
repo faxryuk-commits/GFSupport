@@ -185,13 +185,14 @@ export function CustomerHealthSection({ period, source }: Props) {
               <th className="text-right px-4 py-2 font-medium">Активность</th>
               <th className="text-right px-4 py-2 font-medium">Sentiment</th>
               <th className="text-right px-4 py-2 font-medium">Кейсы</th>
+              <th className="text-right px-4 py-2 font-medium">Churn-сигналы</th>
               <th className="text-right px-4 py-2 font-medium">Последнее</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-slate-500">
+                <td colSpan={7} className="text-center py-8 text-slate-500">
                   Нет покупателей в этой выборке
                 </td>
               </tr>
@@ -292,6 +293,24 @@ function CustomerRow({ row }: { row: CustomerHealthRow }) {
           </>
         ) : (
           '—'
+        )}
+      </td>
+      <td className="px-4 py-2 text-right tabular-nums">
+        {row.churnMatches === 0 ? (
+          <span className="text-slate-300">—</span>
+        ) : (
+          <span
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+              row.churnMatches >= 3
+                ? 'bg-rose-100 text-rose-800'
+                : row.churnMatches >= 1
+                ? 'bg-amber-100 text-amber-800'
+                : 'bg-slate-100 text-slate-700'
+            }`}
+            title="Сообщения с фразами вроде «отключаемся», «расторгаем», «uzamiz»"
+          >
+            ⚠ {row.churnMatches}
+          </span>
         )}
       </td>
       <td className="px-4 py-2 text-right text-xs text-slate-500">
