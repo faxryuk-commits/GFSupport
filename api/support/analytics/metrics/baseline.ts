@@ -17,7 +17,7 @@
  */
 
 import { getSQL } from '../../lib/db.js'
-import type { MetricDescriptor, MetricScope, ResolvedPeriod } from './types.js'
+import type { MetricDescriptor, MetricResult, MetricScope, ResolvedPeriod } from './types.js'
 
 const MIN_SAMPLE_PER_OBSERVATION = 5
 const MIN_OBSERVATIONS = 3
@@ -140,6 +140,90 @@ async function computeFrtPerAgent(
   `) as AgentFrtRow[]
 
   return rows
+}
+
+/**
+ * Generic weekly-percentile baseline для метрик, у которых нет своей
+ * per-agent SQL (perAgent=false или просто нет computeBaseline в registry).
+ *
+ * Семантика: «в P% недель значение метрики было лучше или равно X».
+ * Для lower_better: gold = p25 (только в 25% недель было хуже).
+ * Для higher_better: gold = p75 (только в 25% недель было лучше — амбициозно).
+ *
+ * Реализация: бьём period на недели, запускаем metric.compute(scope, week_period)
+ * для каждой недели, собираем value (отбрасывая null), считаем перцентили.
+ */
+export async function computeWeeklyPercentileBaseline(
+  descriptor: MetricDescriptor,
+  scope: Pick<MetricScope, 'orgId' | 'market' | 'source' | 'role'>,
+  period: ResolvedPeriod,
+  compute: (s: MetricScope, p: ResolvedPeriod) => Promise<MetricResult>,
+): Promise<BaselineResult> {
+  const baseScope = {
+    market: scope.market ?? null,
+    source: scope.source ?? null,
+    role: scope.role ?? null,
+  }
+
+  // Бьём period на недельные окна (последняя может быть короче).
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
+  const weeks: { from: Date; to: Date }[] = []
+  let cursor = new Date(period.from.getTime())
+  while (cursor < period.to) {
+    const next = new Date(Math.min(cursor.getTime() + ONE_WEEK_MS, period.to.getTime()))
+    weeks.push({ from: new Date(cursor.getTime()), to: next })
+    cursor = next
+  }
+
+  // Параллельно считаем метрику по каждой неделе — но осторожно с лимитами
+  // neon: запускаем последовательно, чтобы не упереться в connection pool.
+  const values: number[] = []
+  for (const w of weeks) {
+    try {
+      const weekPeriod: ResolvedPeriod = {
+        from: w.from,
+        to: w.to,
+        granularity: 'weekly',
+        label: `${w.from.toISOString().slice(0, 10)}..${w.to.toISOString().slice(0, 10)}`,
+      }
+      const result = await compute({ orgId: scope.orgId, ...baseScope }, weekPeriod)
+      if (result.value !== null && Number.isFinite(result.value)) {
+        values.push(result.value)
+      }
+    } catch (e) {
+      // Игнорируем сбой одной недели — продолжаем сбор статистики.
+      console.error('[baseline/weekly]', descriptor.key, e instanceof Error ? e.message : e)
+    }
+  }
+
+  if (values.length === 0) {
+    return { metricKey: descriptor.key, scope: baseScope, observations: 0, reason: 'no_data' }
+  }
+  if (values.length < MIN_OBSERVATIONS) {
+    return {
+      metricKey: descriptor.key,
+      scope: baseScope,
+      observations: values.length,
+      reason: 'insufficient_data',
+    }
+  }
+
+  values.sort((a, b) => a - b)
+  const p25 = percentile(values, 0.25)
+  const p50 = percentile(values, 0.5)
+  const p75 = percentile(values, 0.75)
+
+  const isLower = descriptor.direction === 'lower_better'
+  return {
+    metricKey: descriptor.key,
+    scope: baseScope,
+    observations: values.length,
+    reason: 'ok',
+    bronze: isLower ? p75 : p25,
+    silver: p50,
+    gold: isLower ? p25 : p75,
+    rawValues: values,
+  }
 }
 
 /** Перцентиль массива чисел (значения должны быть отсортированы по возрастанию). */

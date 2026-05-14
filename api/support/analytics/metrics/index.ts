@@ -27,3 +27,16 @@ export { loadBenchmarks, classifyStatus } from './benchmarks.js'
 
 // Конкретные метрики
 export { frtAvgDescriptor, computeFrtAvg } from './frtAvg.js'
+export { slaComplianceDescriptor, computeSlaCompliance } from './slaCompliance.js'
+export { sentimentPositiveDescriptor, computeSentimentPositive } from './sentimentPositive.js'
+export { repeatContactRateDescriptor, computeRepeatContactRate } from './repeatContactRate.js'
+
+// Реестр + baseline-helpers
+export { METRIC_REGISTRY, ALL_METRIC_KEYS } from './registry.js'
+export type { MetricEntry } from './registry.js'
+export {
+  computeFrtBaseline,
+  computeWeeklyPercentileBaseline,
+  upsertBaselines,
+} from './baseline.js'
+export type { BaselineResult } from './baseline.js'

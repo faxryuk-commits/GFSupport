@@ -20,27 +20,11 @@
 
 import { getRequestOrgId } from '../lib/org.js'
 import { json } from '../lib/db.js'
-import {
-  computeFrtAvg,
-  frtAvgDescriptor,
-  parsePeriodParam,
-  resolvePeriod,
-} from './metrics/index.js'
-import type {
-  MetricDescriptor,
-  MetricResult,
-  MetricScope,
-  ResolvedPeriod,
-} from './metrics/index.js'
+import { METRIC_REGISTRY, parsePeriodParam, resolvePeriod } from './metrics/index.js'
+import type { MetricScope } from './metrics/index.js'
 
 export const config = {
   runtime: 'edge',
-}
-
-type MetricCompute = (scope: MetricScope, period: ResolvedPeriod) => Promise<MetricResult>
-
-const REGISTRY: Record<string, { descriptor: MetricDescriptor; compute: MetricCompute }> = {
-  [frtAvgDescriptor.key]: { descriptor: frtAvgDescriptor, compute: computeFrtAvg },
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -63,12 +47,12 @@ export default async function handler(req: Request): Promise<Response> {
   const key = url.searchParams.get('key')
   if (!key) return json({ error: 'Missing query param "key"' }, 400)
 
-  const entry = REGISTRY[key]
+  const entry = METRIC_REGISTRY[key]
   if (!entry) {
     return json(
       {
         error: `Unknown metric: ${key}`,
-        available: Object.keys(REGISTRY),
+        available: Object.keys(METRIC_REGISTRY),
       },
       404,
     )

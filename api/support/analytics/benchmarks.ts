@@ -16,15 +16,10 @@
 
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
-import { frtAvgDescriptor } from './metrics/index.js'
-import type { MetricDescriptor } from './metrics/index.js'
+import { METRIC_REGISTRY } from './metrics/index.js'
 
 export const config = {
   runtime: 'edge',
-}
-
-const REGISTRY: Record<string, MetricDescriptor> = {
-  [frtAvgDescriptor.key]: frtAvgDescriptor,
 }
 
 interface BenchmarkRow {
@@ -62,7 +57,7 @@ export default async function handler(req: Request): Promise<Response> {
     `) as BenchmarkRow[]
 
     return json({
-      metrics: Object.values(REGISTRY).map((d) => ({
+      metrics: Object.values(METRIC_REGISTRY).map((e) => e.descriptor).map((d) => ({
         key: d.key,
         labelRu: d.labelRu,
         unit: d.unit,
@@ -111,7 +106,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (!metric_key || !tier || target_value === undefined || target_value === null) {
       return json({ error: 'metric_key, tier, target_value are required' }, 400)
     }
-    if (!REGISTRY[metric_key]) return json({ error: `Unknown metric: ${metric_key}` }, 400)
+    if (!METRIC_REGISTRY[metric_key]) return json({ error: `Unknown metric: ${metric_key}` }, 400)
     if (!['bronze', 'silver', 'gold'].includes(tier)) {
       return json({ error: `Invalid tier: ${tier}` }, 400)
     }

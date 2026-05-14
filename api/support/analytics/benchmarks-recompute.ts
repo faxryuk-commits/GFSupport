@@ -22,24 +22,16 @@
 
 import { json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
-import { computeFrtBaseline, upsertBaselines } from './metrics/baseline.js'
-import { frtAvgDescriptor, resolvePeriod } from './metrics/index.js'
-import type { BaselineResult } from './metrics/baseline.js'
-import type { MetricDescriptor } from './metrics/index.js'
+import {
+  METRIC_REGISTRY,
+  computeWeeklyPercentileBaseline,
+  resolvePeriod,
+  upsertBaselines,
+} from './metrics/index.js'
 
 export const config = {
   runtime: 'edge',
   maxDuration: 60,
-}
-
-type BaselineCompute = (
-  descriptor: MetricDescriptor,
-  scope: { orgId: string; market: string | null; source: string | null; role: string | null },
-  period: ReturnType<typeof resolvePeriod>,
-) => Promise<BaselineResult>
-
-const REGISTRY: Record<string, { descriptor: MetricDescriptor; compute: BaselineCompute }> = {
-  [frtAvgDescriptor.key]: { descriptor: frtAvgDescriptor, compute: computeFrtBaseline },
 }
 
 const SCOPE_VARIANTS: Array<{ source: string | null; label: string }> = [
@@ -64,9 +56,9 @@ export default async function handler(req: Request): Promise<Response> {
   const periodType: 'daily' | 'weekly' | 'monthly' =
     periodTypeParam === 'daily' ? 'daily' : periodTypeParam === 'weekly' ? 'weekly' : 'monthly'
 
-  const metrics = metricParam === 'all' ? Object.keys(REGISTRY) : [metricParam]
+  const metrics = metricParam === 'all' ? Object.keys(METRIC_REGISTRY) : [metricParam]
   for (const key of metrics) {
-    if (!REGISTRY[key]) return json({ error: `Unknown metric: ${key}` }, 400)
+    if (!METRIC_REGISTRY[key]) return json({ error: `Unknown metric: ${key}` }, 400)
   }
 
   // Исторический период — последние N дней (произвольный, не календарный).
@@ -85,14 +77,20 @@ export default async function handler(req: Request): Promise<Response> {
   }> = []
 
   for (const key of metrics) {
-    const entry = REGISTRY[key]
+    const entry = METRIC_REGISTRY[key]
     for (const variant of SCOPE_VARIANTS) {
       try {
-        const baseline = await entry.compute(
-          entry.descriptor,
-          { orgId: ctx.orgId, market: null, source: variant.source, role: null },
-          period,
-        )
+        const scope = {
+          orgId: ctx.orgId,
+          market: null,
+          source: variant.source,
+          role: null,
+        }
+        // Если у метрики есть собственный per-agent baseline — используем его.
+        // Иначе — generic weekly-percentile.
+        const baseline = entry.computeBaseline
+          ? await entry.computeBaseline(entry.descriptor, scope, period)
+          : await computeWeeklyPercentileBaseline(entry.descriptor, scope, period, entry.compute)
         await upsertBaselines(ctx.orgId, baseline, periodType, now)
         summary.push({
           metric: key,
