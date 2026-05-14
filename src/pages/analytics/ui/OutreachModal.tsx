@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Loader2, Send, AlertCircle, Check, Users } from 'lucide-react'
+import { Loader2, Send, AlertCircle, Check, Users, MessageSquare } from 'lucide-react'
 import { Modal } from '@/shared/ui'
 import { createBroadcast } from '@/shared/api'
 import type { CustomerHealthRow } from '@/shared/api'
+import { BroadcastResponsesModal } from './BroadcastResponsesModal'
 
 interface OutreachModalProps {
   isOpen: boolean
@@ -47,6 +48,7 @@ export function OutreachModal({ isOpen, onClose, selectedChannels }: OutreachMod
   const [text, setText] = useState(TEMPLATES[0].text)
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string; id?: string } | null>(null)
+  const [responsesModalOpen, setResponsesModalOpen] = useState(false)
 
   const channelIds = useMemo(() => selectedChannels.map((c) => c.channelId), [selectedChannels])
 
@@ -166,20 +168,37 @@ export function OutreachModal({ isOpen, onClose, selectedChannels }: OutreachMod
         {/* Результат */}
         {result && (
           <div
-            className={`p-3 rounded-md flex items-start gap-2 text-sm ${
+            className={`p-3 rounded-md ${
               result.ok
                 ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
                 : 'bg-rose-50 border border-rose-200 text-rose-900'
             }`}
           >
-            {result.ok ? (
-              <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 text-sm">
+              {result.ok ? (
+                <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              )}
+              <div>{result.message}</div>
+            </div>
+            {result.ok && result.id && (
+              <button
+                onClick={() => setResponsesModalOpen(true)}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 hover:text-emerald-900 underline"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Посмотреть, кто ответит (можно вернуться позже)
+              </button>
             )}
-            <div>{result.message}</div>
           </div>
         )}
+
+        <BroadcastResponsesModal
+          isOpen={responsesModalOpen}
+          onClose={() => setResponsesModalOpen(false)}
+          broadcastId={result?.id ?? null}
+        />
 
         {/* Actions */}
         <div className="flex gap-2 pt-2 border-t border-slate-200">
