@@ -199,6 +199,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_messages
           WHERE is_from_client = true AND org_id = ${orgId}
             AND created_at > NOW() - INTERVAL '30 days'
+            AND COALESCE(sender_role, 'client') = 'client'
         ),
         agent_responses AS (
           SELECT
