@@ -139,7 +139,83 @@ export default async function handler(req: Request): Promise<Response> {
       ORDER BY message_at DESC
       LIMIT 500
     `
-    
+
+    // =============================================
+    // 1b. ВРЕМЯ ПЕРВОГО ОТВЕТА - агрегаты на ПОЛНОЙ выборке (без LIMIT)
+    // Считаем независимо от LIMIT 500 выше, чтобы summary не врал на большом периоде.
+    // =============================================
+    const firstResponseSummaryRows = await sql`
+      WITH all_msgs AS (
+        SELECT
+          m.id,
+          m.channel_id,
+          m.created_at,
+          m.sender_role,
+          m.is_from_client,
+          m.text_content,
+          LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
+          LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
+        FROM support_messages m
+        JOIN support_channels c ON c.id = m.channel_id
+        WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${fromDateTime}::timestamptz - INTERVAL '24 hours'
+          AND m.created_at <= ${toDateTime}::timestamptz
+          AND (${market}::text IS NULL OR c.market_id = ${market})
+          AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
+      ),
+      client_messages AS (
+        SELECT id, channel_id, created_at as message_at
+        FROM all_msgs
+        WHERE sender_role = 'client' AND is_from_client = true
+          AND created_at >= ${fromDateTime}::timestamptz
+          AND (
+            prev_sender_role IS NULL
+            OR prev_sender_role IN ('support', 'team', 'agent')
+            OR prev_is_from_client = false
+          )
+          AND NOT (
+            COALESCE(LENGTH(text_content), 0) <= 50
+            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+          )
+      ),
+      with_resp AS (
+        SELECT
+          cm.id,
+          cm.message_at,
+          (
+            SELECT EXTRACT(EPOCH FROM (m2.created_at - cm.message_at)) / 60.0
+            FROM support_messages m2
+            WHERE m2.channel_id = cm.channel_id
+              AND m2.org_id = ${orgId}
+              AND m2.is_from_client = false
+              AND m2.sender_role IN ('support', 'team', 'agent')
+              AND m2.created_at > cm.message_at
+              AND m2.created_at <= cm.message_at + INTERVAL '4 hours'
+            ORDER BY m2.created_at ASC
+            LIMIT 1
+          ) as response_minutes
+        FROM client_messages cm
+      )
+      SELECT
+        COUNT(*)::int as total,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL)::int as responded,
+        COUNT(*) FILTER (WHERE response_minutes IS NULL)::int as no_response,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes <= ${slaMinutes})::int as within_sla,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes > ${slaMinutes})::int as violated_sla,
+        ROUND(AVG(response_minutes) FILTER (WHERE response_minutes IS NOT NULL)::numeric, 1) as avg_minutes,
+        ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY response_minutes) FILTER (WHERE response_minutes IS NOT NULL))::numeric, 1) as median_minutes,
+        ROUND(MIN(response_minutes) FILTER (WHERE response_minutes IS NOT NULL)::numeric, 1) as min_minutes,
+        ROUND(MAX(response_minutes) FILTER (WHERE response_minutes IS NOT NULL)::numeric, 1) as max_minutes,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes <= 1)::int as bucket_within_1,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes > 1 AND response_minutes <= 5)::int as bucket_within_5,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes > 5 AND response_minutes <= 10)::int as bucket_within_10,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes > 10 AND response_minutes <= 30)::int as bucket_within_30,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes > 30 AND response_minutes <= 60)::int as bucket_within_60,
+        COUNT(*) FILTER (WHERE response_minutes IS NOT NULL AND response_minutes > 60)::int as bucket_over_60
+      FROM with_resp
+    `
+    const frSummary = firstResponseSummaryRows[0] || {}
+
     // =============================================
     // 2. ВРЕМЯ РЕШЕНИЯ ТИКЕТОВ - детальный список
     // =============================================
@@ -182,7 +258,27 @@ export default async function handler(req: Request): Promise<Response> {
       ORDER BY c.created_at DESC
       LIMIT 200
     `
-    
+
+    // 2b. Агрегаты по кейсам на ПОЛНОЙ выборке (без LIMIT 200)
+    const caseSummaryRows = await sql`
+      SELECT
+        COUNT(*)::int as total,
+        COUNT(*) FILTER (WHERE c.status IN ('resolved', 'closed'))::int as resolved,
+        COUNT(*) FILTER (WHERE c.status NOT IN ('resolved', 'closed'))::int as open,
+        ROUND(
+          AVG(EXTRACT(EPOCH FROM (c.resolved_at - c.created_at)) / 60.0)
+          FILTER (WHERE c.resolved_at IS NOT NULL)::numeric,
+          1
+        ) as avg_resolution_minutes
+      FROM support_cases c
+      LEFT JOIN support_channels ch ON ch.id = c.channel_id
+      WHERE c.org_id = ${orgId}
+        AND c.created_at >= ${fromDateTime}::timestamptz
+        AND c.created_at <= ${toDateTime}::timestamptz
+        AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
+    `
+    const caseSummary = caseSummaryRows[0] || {}
+
     // =============================================
     // 3. СТАТИСТИКА ПО СОТРУДНИКАМ (сообщения + символы + роль)
     // =============================================
@@ -408,37 +504,39 @@ export default async function handler(req: Request): Promise<Response> {
     
     // =============================================
     // 4. РАСЧЁТ МЕТРИК
+    // Сводные числа берём из SUMMARY-запросов (полная выборка).
+    // Списки (violations/unanswered/pending) — из обрезанных LIMIT 500/200.
     // =============================================
-    const totalClientMessages = firstResponseData.length
+    const totalClientMessages = parseInt(frSummary.total) || 0
+    const respondedCount = parseInt(frSummary.responded) || 0
+    const withinSLACount = parseInt(frSummary.within_sla) || 0
+    const violatedSLACount = parseInt(frSummary.violated_sla) || 0
+    const noResponseCount = parseInt(frSummary.no_response) || 0
+    const avgResponseMinutes = frSummary.avg_minutes !== null && frSummary.avg_minutes !== undefined
+      ? parseFloat(frSummary.avg_minutes) : 0
+    const medianResponseMinutes = frSummary.median_minutes !== null && frSummary.median_minutes !== undefined
+      ? parseFloat(frSummary.median_minutes) : 0
+    const minResponseMinutes = frSummary.min_minutes !== null && frSummary.min_minutes !== undefined
+      ? parseFloat(frSummary.min_minutes) : 0
+    const maxResponseMinutes = frSummary.max_minutes !== null && frSummary.max_minutes !== undefined
+      ? parseFloat(frSummary.max_minutes) : 0
+
+    // Списки для UI — обрезанные. Используются только для slice(), не для агрегатов.
     const respondedMessages = firstResponseData.filter((r: any) => r.response_at !== null)
-    const withinSLA = respondedMessages.filter((r: any) => parseFloat(r.response_minutes) <= slaMinutes)
     const violatedSLA = respondedMessages.filter((r: any) => parseFloat(r.response_minutes) > slaMinutes)
     const noResponse = firstResponseData.filter((r: any) => r.response_at === null)
-    
-    const allResponseMinutes = respondedMessages.map((r: any) => parseFloat(r.response_minutes))
-    const avgResponseMinutes = allResponseMinutes.length > 0
-      ? Math.round((allResponseMinutes.reduce((a: number, b: number) => a + b, 0) / allResponseMinutes.length) * 10) / 10
-      : 0
-    
-    const sortedTimes = [...allResponseMinutes].sort((a, b) => a - b)
-    const medianResponseMinutes = sortedTimes.length > 0 
-      ? sortedTimes[Math.floor(sortedTimes.length / 2)] 
-      : 0
-    
-    // Метрики по кейсам
-    const totalCases = caseResolutionData.length
+
+    // Метрики по кейсам — из SUMMARY
+    const totalCases = parseInt(caseSummary.total) || 0
+    const resolvedCount = parseInt(caseSummary.resolved) || 0
+    const openCount = parseInt(caseSummary.open) || 0
+    const avgResolutionMinutes = caseSummary.avg_resolution_minutes !== null && caseSummary.avg_resolution_minutes !== undefined
+      ? parseFloat(caseSummary.avg_resolution_minutes) : 0
+    const avgResolutionHours = avgResolutionMinutes > 0 ? Math.round((avgResolutionMinutes / 60) * 10) / 10 : 0
+
+    // Списки для UI — обрезанные
     const resolvedCases = caseResolutionData.filter((c: any) => c.status === 'resolved' || c.status === 'closed')
     const openCases = caseResolutionData.filter((c: any) => c.status !== 'resolved' && c.status !== 'closed')
-    
-    const resolutionTimes = resolvedCases
-      .filter((c: any) => c.resolution_minutes !== null)
-      .map((c: any) => parseFloat(c.resolution_minutes))
-    
-    const avgResolutionMinutes = resolutionTimes.length > 0
-      ? Math.round((resolutionTimes.reduce((a: number, b: number) => a + b, 0) / resolutionTimes.length) * 10) / 10
-      : 0
-    
-    const avgResolutionHours = Math.round((avgResolutionMinutes / 60) * 10) / 10
     
     // =============================================
     // 5. ПОСЛЕДНИЕ СООБЩЕНИЯ БЕЗ ОТВЕТА
@@ -486,13 +584,13 @@ export default async function handler(req: Request): Promise<Response> {
     // 8. РАСПРЕДЕЛЕНИЕ ВРЕМЕНИ ОТВЕТА
     // =============================================
     const distribution = {
-      within1min: respondedMessages.filter((r: any) => parseFloat(r.response_minutes) <= 1).length,
-      within5min: respondedMessages.filter((r: any) => parseFloat(r.response_minutes) > 1 && parseFloat(r.response_minutes) <= 5).length,
-      within10min: respondedMessages.filter((r: any) => parseFloat(r.response_minutes) > 5 && parseFloat(r.response_minutes) <= 10).length,
-      within30min: respondedMessages.filter((r: any) => parseFloat(r.response_minutes) > 10 && parseFloat(r.response_minutes) <= 30).length,
-      within60min: respondedMessages.filter((r: any) => parseFloat(r.response_minutes) > 30 && parseFloat(r.response_minutes) <= 60).length,
-      over60min: respondedMessages.filter((r: any) => parseFloat(r.response_minutes) > 60).length,
-      noResponse: noResponse.length,
+      within1min: parseInt(frSummary.bucket_within_1) || 0,
+      within5min: parseInt(frSummary.bucket_within_5) || 0,
+      within10min: parseInt(frSummary.bucket_within_10) || 0,
+      within30min: parseInt(frSummary.bucket_within_30) || 0,
+      within60min: parseInt(frSummary.bucket_within_60) || 0,
+      over60min: parseInt(frSummary.bucket_over_60) || 0,
+      noResponse: noResponseCount,
     }
 
     // =============================================
@@ -864,33 +962,33 @@ export default async function handler(req: Request): Promise<Response> {
         timezone: 'Asia/Tashkent (UTC+5)',
       },
       
-      // Сводка по времени ответа
+      // Сводка по времени ответа (на полной выборке за период)
       responseTimeSummary: {
         totalClientMessages,
-        responded: respondedMessages.length,
-        withinSLA: withinSLA.length,
-        violatedSLA: violatedSLA.length,
-        noResponse: noResponse.length,
-        slaCompliancePercent: respondedMessages.length > 0
-          ? Math.round((withinSLA.length / respondedMessages.length) * 1000) / 10
-          : 100,
+        responded: respondedCount,
+        withinSLA: withinSLACount,
+        violatedSLA: violatedSLACount,
+        noResponse: noResponseCount,
+        slaCompliancePercent: respondedCount > 0
+          ? Math.round((withinSLACount / respondedCount) * 1000) / 10
+          : null,
         responseRatePercent: totalClientMessages > 0
-          ? Math.round((respondedMessages.length / totalClientMessages) * 1000) / 10
-          : 100,
+          ? Math.round((respondedCount / totalClientMessages) * 1000) / 10
+          : null,
         avgResponseMinutes,
-        medianResponseMinutes: Math.round(medianResponseMinutes * 10) / 10,
-        minResponseMinutes: sortedTimes[0] ? Math.round(sortedTimes[0] * 10) / 10 : 0,
-        maxResponseMinutes: sortedTimes[sortedTimes.length - 1] ? Math.round(sortedTimes[sortedTimes.length - 1] * 10) / 10 : 0,
+        medianResponseMinutes,
+        minResponseMinutes,
+        maxResponseMinutes,
       },
-      
-      // Сводка по решению кейсов
+
+      // Сводка по решению кейсов (на полной выборке за период)
       caseResolutionSummary: {
         totalCases,
-        resolved: resolvedCases.length,
-        open: openCases.length,
-        resolutionRatePercent: totalCases > 0 
-          ? Math.round((resolvedCases.length / totalCases) * 1000) / 10
-          : 100,
+        resolved: resolvedCount,
+        open: openCount,
+        resolutionRatePercent: totalCases > 0
+          ? Math.round((resolvedCount / totalCases) * 1000) / 10
+          : null,
         avgResolutionMinutes,
         avgResolutionHours,
       },
