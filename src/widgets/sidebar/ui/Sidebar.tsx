@@ -19,6 +19,7 @@ import {
   Sparkles,
   Trophy,
 } from 'lucide-react'
+import { BarChart3 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
 // CSS for coin flip and shine animations
@@ -207,9 +208,8 @@ const mainNavItems = [
   { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
   { path: '/channels', label: 'Каналы', icon: Hash },
   { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
-  { path: '/health', label: 'Где болит', icon: Activity },
+  { path: '/analytics', label: 'Аналитика', icon: BarChart3 },
   { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
-  { path: '/sla-report', label: 'SLA Отчёт', icon: Target },
   { path: '/benchmarks', label: 'Бенчмарки', icon: Trophy },
   { path: '/insights-chat', label: 'ИИ-чат', icon: Sparkles },
   { path: '/broadcast', label: 'Рассылки', icon: Megaphone },

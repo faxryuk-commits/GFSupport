@@ -33,6 +33,7 @@ const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
 const HealthPage = lazy(() => import('@/pages/health/ui/HealthPage').then(m => ({ default: m.HealthPage })))
 const InsightsChatPage = lazy(() => import('@/pages/insights-chat/ui/InsightsChatPage').then(m => ({ default: m.InsightsChatPage })))
 const BenchmarksPage = lazy(() => import('@/pages/benchmarks/ui/BenchmarksPage').then(m => ({ default: m.BenchmarksPage })))
+const AnalyticsPage = lazy(() => import('@/pages/analytics/ui/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
 
 const SALoginPage = lazy(() => import('@/pages/sa-login/ui/SALoginPage'))
 const SADashboardPage = lazy(() => import('@/pages/sa-dashboard/ui/SADashboardPage'))
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="/commitments" element={<CommitmentsPage />} />
           <Route path="/sla-report" element={<SLAReportPage />} />
           <Route path="/benchmarks" element={<BenchmarksPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
           <Route path="/docs" element={<DocsPage />} />
           <Route path="/learning/problems" element={<ProblemAnalysisPage />} />
