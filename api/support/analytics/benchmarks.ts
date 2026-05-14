@@ -16,6 +16,7 @@
 
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
+import { ensureBenchmarkTable } from '../lib/ensure-taxonomy.js'
 import { METRIC_REGISTRY } from './metrics/index.js'
 
 export const config = {
@@ -46,8 +47,10 @@ export default async function handler(req: Request): Promise<Response> {
   const ctx = await extractAgentContext(req)
   if (!ctx.orgId) return json({ error: 'Unauthorized' }, 401)
 
+  await ensureBenchmarkTable()
   const sql = getSQL()
 
+  try {
   if (req.method === 'GET') {
     const rows = (await sql`
       SELECT * FROM benchmark_targets
@@ -161,4 +164,9 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   return json({ error: 'Method not allowed' }, 405)
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Unknown error'
+    console.error('[benchmarks]', req.method, msg, e instanceof Error ? e.stack : undefined)
+    return json({ error: msg, where: 'benchmarks' }, 500)
+  }
 }

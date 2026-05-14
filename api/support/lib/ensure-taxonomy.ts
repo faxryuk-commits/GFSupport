@@ -43,3 +43,43 @@ export async function ensureChannelSourceColumn(): Promise<void> {
     console.error('[ensureChannelSourceColumn]', e)
   }
 }
+
+let benchmarkTableEnsured = false
+
+/**
+ * Идемпотентно создаёт таблицу benchmark_targets + индексы.
+ * Нужна для семантического слоя метрик и страницы /benchmarks.
+ * На warm invocations — дешёвый no-op.
+ */
+export async function ensureBenchmarkTable(): Promise<void> {
+  if (benchmarkTableEnsured) return
+  const sql = getSQL()
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS benchmark_targets (
+        id VARCHAR(50) PRIMARY KEY,
+        org_id VARCHAR(50) NOT NULL,
+        metric_key VARCHAR(80) NOT NULL,
+        scope_role VARCHAR(20),
+        scope_market VARCHAR(20),
+        scope_source VARCHAR(20),
+        period_type VARCHAR(20) NOT NULL DEFAULT 'monthly',
+        tier VARCHAR(20) NOT NULL,
+        target_value DOUBLE PRECISION NOT NULL,
+        source_type VARCHAR(30) NOT NULL DEFAULT 'manual',
+        sample_size INTEGER,
+        computed_at TIMESTAMP,
+        set_by VARCHAR(50),
+        set_at TIMESTAMP DEFAULT NOW(),
+        notes TEXT
+      )
+    `
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_benchmark_scope ON benchmark_targets(
+      org_id, metric_key, COALESCE(scope_role,''), COALESCE(scope_market,''), COALESCE(scope_source,''), period_type, tier
+    )`
+    await sql`CREATE INDEX IF NOT EXISTS idx_benchmark_org_metric ON benchmark_targets(org_id, metric_key)`
+    benchmarkTableEnsured = true
+  } catch (e) {
+    console.error('[ensureBenchmarkTable]', e)
+  }
+}

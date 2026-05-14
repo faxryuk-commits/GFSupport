@@ -13,6 +13,7 @@
  */
 
 import { getSQL, json, corsHeaders } from '../lib/db.js'
+import { ensureBenchmarkTable } from '../lib/ensure-taxonomy.js'
 import {
   METRIC_REGISTRY,
   computeWeeklyPercentileBaseline,
@@ -49,6 +50,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'Unauthorized: cron secret mismatch' }, 401)
   }
 
+  await ensureBenchmarkTable()
   const sql = getSQL()
   const now = new Date()
   const period = resolvePeriod({

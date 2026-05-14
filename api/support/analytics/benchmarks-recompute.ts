@@ -22,6 +22,7 @@
 
 import { json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
+import { ensureBenchmarkTable } from '../lib/ensure-taxonomy.js'
 import {
   METRIC_REGISTRY,
   computeWeeklyPercentileBaseline,
@@ -48,6 +49,8 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.orgId || !ctx.isOrgAdmin) {
     return json({ error: 'Org admin required' }, 403)
   }
+
+  await ensureBenchmarkTable()
 
   const url = new URL(req.url)
   const metricParam = url.searchParams.get('metric') || 'all'
