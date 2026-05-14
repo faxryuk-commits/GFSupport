@@ -73,9 +73,9 @@ export function BroadcastPage() {
     mediaUrl: '',
   })
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     try {
-      setIsLoading(true)
+      if (!silent) setIsLoading(true)
       setError(null)
       const [broadcastsData, channelsData, agentsData] = await Promise.all([
         fetchBroadcasts(),
@@ -86,7 +86,7 @@ export function BroadcastPage() {
       setChannels(channelsData)
       setAgents(agentsData)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки данных')
+      if (!silent) setError(e instanceof Error ? e.message : 'Ошибка загрузки данных')
     } finally {
       setIsLoading(false)
     }
@@ -108,7 +108,7 @@ export function BroadcastPage() {
   // Авто-обновление списка пока есть активные кампании.
   useEffect(() => {
     if (pendingCount === 0) return
-    const t = setInterval(() => loadData(), 5000)
+    const t = setInterval(() => loadData(true), 5000)
     return () => clearInterval(t)
   }, [pendingCount, loadData])
 
