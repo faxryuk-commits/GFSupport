@@ -2,15 +2,6 @@ import type { AnalyticsData, DashboardMetrics } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 
-export interface AIRecommendation {
-  id: string
-  type: 'warning' | 'success' | 'info' | 'action'
-  title: string
-  description: string
-  priority: 'high' | 'medium' | 'low'
-  action?: { label: string; link: string }
-}
-
 export interface ResponseTimeModalData {
   bucket: string
   bucketLabel: string

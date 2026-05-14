@@ -28,6 +28,7 @@ import { computeFrtBaseline } from './baseline.js'
 import { slaComplianceDescriptor, computeSlaCompliance } from './slaCompliance.js'
 import { sentimentPositiveDescriptor, computeSentimentPositive } from './sentimentPositive.js'
 import { repeatContactRateDescriptor, computeRepeatContactRate } from './repeatContactRate.js'
+import { escalationRateDescriptor, computeEscalationRate } from './escalationRate.js'
 
 export type MetricComputeFn = (
   scope: MetricScope,
@@ -69,6 +70,10 @@ export const METRIC_REGISTRY: Record<string, MetricEntry> = {
   [repeatContactRateDescriptor.key]: {
     descriptor: repeatContactRateDescriptor,
     compute: computeRepeatContactRate,
+  },
+  [escalationRateDescriptor.key]: {
+    descriptor: escalationRateDescriptor,
+    compute: computeEscalationRate,
   },
 }
 

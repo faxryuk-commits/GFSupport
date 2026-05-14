@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Clock, Target, Smile, Repeat } from 'lucide-react'
+import { Clock, Target, Smile, Repeat, Bot } from 'lucide-react'
 import { BenchmarkCard, CustomerHealthBanner } from '@/features/analytics'
 import { fetchMetric, type MetricResult, type FetchMetricParams } from '@/shared/api'
 
@@ -39,6 +39,14 @@ const PULSE_METRICS: Array<{
     formula:
       '% каналов, обратившихся 2+ раза за период. Proxy первоконтактного решения (FCR).',
     icon: <Repeat className="w-4 h-4 text-amber-500" />,
+  },
+  {
+    key: 'escalation_rate',
+    label: 'Эскалации AI',
+    unit: 'percent',
+    formula:
+      'Доля решений AI с action=escalate из всех решений. Меньше = AI чаще справляется сам.',
+    icon: <Bot className="w-4 h-4 text-slate-500" />,
   },
 ]
 
@@ -85,7 +93,10 @@ export function PulseTab({ period, source }: PulseTabProps) {
     (m) => m.key === 'sentiment_positive_rate' || m.key === 'repeat_contact_rate',
   )
   const activity = PULSE_METRICS.filter(
-    (m) => m.key === 'frt_avg_minutes' || m.key === 'sla_compliance_rate',
+    (m) =>
+      m.key === 'frt_avg_minutes' ||
+      m.key === 'sla_compliance_rate' ||
+      m.key === 'escalation_rate',
   )
 
   return (
@@ -128,7 +139,7 @@ export function PulseTab({ period, source }: PulseTabProps) {
             — что делает команда (L3 Activity)
           </span>
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {activity.map((m) => (
             <BenchmarkCard
               key={m.key}

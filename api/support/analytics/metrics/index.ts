@@ -36,6 +36,7 @@ export {
 export type { SlaPerAgentRow, SlaPerAgentResult } from './slaCompliance.js'
 export { sentimentPositiveDescriptor, computeSentimentPositive } from './sentimentPositive.js'
 export { repeatContactRateDescriptor, computeRepeatContactRate } from './repeatContactRate.js'
+export { escalationRateDescriptor, computeEscalationRate } from './escalationRate.js'
 export { computeCustomerHealth } from './customerHealth.js'
 export type { CustomerHealthRow, HealthBand } from './customerHealth.js'
 

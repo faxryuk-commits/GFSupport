@@ -14,11 +14,9 @@ import {
 } from '@/features/analytics'
 import type { FetchMetricParams } from '@/shared/api'
 import { CommitmentsPanel } from '@/features/commitments/ui'
-import { generateAIRecommendations } from '../model/recommendations'
 import { formatWaitTime } from '../model/types'
 import type { AttentionItem, RecentActivity, ResponseTimeModalData } from '../model/types'
 import { DashboardHeader } from './DashboardHeader'
-import { AIRecommendationsPanel } from './AIRecommendationsPanel'
 import { ChannelSourceSummary, type SourceFilter } from './ChannelSourceSummary'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
@@ -137,11 +135,6 @@ export function DashboardPage() {
     loadData()
   }
 
-  const aiRecommendations = useMemo(() =>
-    generateAIRecommendations(analytics, metrics, agents),
-    [analytics, metrics, agents]
-  )
-
   // Применяем фильтр по платформе к списку "Требует внимания" на клиенте
   const filteredAttention = useMemo(() => {
     if (sourceFilter === 'all') return needsAttention.slice(0, 15)
@@ -175,8 +168,6 @@ export function DashboardPage() {
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        <AIRecommendationsPanel recommendations={aiRecommendations} />
-
         <CustomerHealthBanner
           period={mapDashboardPeriod(dateRange)}
           source={sourceFilter === 'all' ? undefined : sourceFilter}
