@@ -79,28 +79,31 @@ export default async function handler(req: Request): Promise<Response> {
       LIMIT ${limit}
     `) as MessageRow[]
 
-    // Прогоняем через полный detectChurnSignals() для разметки. Если для какого-то
-    // сообщения JS-детектор ничего не нашёл (SQL keyword был слишком широк),
-    // мы его не включаем — иначе пользователь увидит ложноположительные совпадения.
-    const enriched = rows
-      .map((r) => {
-        const matches = detectChurnSignals(r.text_content)
-        if (matches.length === 0) return null
-        return {
-          messageId: r.id,
-          channelId: r.channel_id,
-          createdAt: r.created_at,
-          senderName: r.sender_name,
-          text: r.text_content?.slice(0, 1000) ?? '',
-          matches,
-          maxSeverity: matches.reduce<ChurnSignalMatch['severity']>((acc, m) => {
-            if (m.severity === 'high') return 'high'
-            if (m.severity === 'medium' && acc !== 'high') return 'medium'
-            return acc
-          }, 'low'),
-        }
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null)
+    // Прогоняем через полный detectChurnSignals() для разметки фраз и severity.
+    // Раньше тут был filter() который выкидывал сообщения без JS-матча — но это
+    // ломало консистентность: customerHealth count и drill-down count расходились,
+    // если SQL-паттерны были шире JS-паттернов. Теперь показываем ВСЕ SQL-матчи
+    // (даже если JS не классифицировал конкретную фразу) — пользователь увидит
+    // тот же набор сообщений, что был посчитан в bagde на /analytics?tab=diagnosis.
+    const enriched = rows.map((r) => {
+      const matches = detectChurnSignals(r.text_content)
+      return {
+        messageId: r.id,
+        channelId: r.channel_id,
+        createdAt: r.created_at,
+        senderName: r.sender_name,
+        text: r.text_content?.slice(0, 1000) ?? '',
+        matches,
+        maxSeverity:
+          matches.length === 0
+            ? ('low' as ChurnSignalMatch['severity'])
+            : matches.reduce<ChurnSignalMatch['severity']>((acc, m) => {
+                if (m.severity === 'high') return 'high'
+                if (m.severity === 'medium' && acc !== 'high') return 'medium'
+                return acc
+              }, 'low'),
+      }
+    })
 
     return json(
       {

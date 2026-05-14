@@ -180,15 +180,24 @@ function ChurnRow({ row, channelId }: { row: ChurnSignalRow; channelId: string |
 
       <footer className="flex items-center justify-between gap-3 mt-2 flex-wrap">
         <div className="flex flex-wrap gap-1.5">
-          {row.matches.map((m, i) => (
+          {row.matches.length === 0 ? (
             <span
-              key={i}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded ${SEVERITY_STYLES[m.severity].chip}`}
-              title={`Категория: ${CATEGORY_LABELS[m.category]}`}
+              className="text-[10px] text-slate-500 italic"
+              title="SQL-предфильтр счёл слово относящимся к оттоку, но точный паттерн не сработал. Проверьте контекст."
             >
-              {m.phrase}
+              ключевое слово найдено · точный паттерн не сработал
             </span>
-          ))}
+          ) : (
+            row.matches.map((m, i) => (
+              <span
+                key={i}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded ${SEVERITY_STYLES[m.severity].chip}`}
+                title={`Категория: ${CATEGORY_LABELS[m.category]}`}
+              >
+                {m.phrase}
+              </span>
+            ))
+          )}
         </div>
         {channelId && (
           <Link

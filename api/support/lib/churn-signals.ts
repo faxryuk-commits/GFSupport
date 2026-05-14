@@ -111,15 +111,58 @@ export function churnScore(matches: ChurnSignalMatch[]): number {
 }
 
 /**
- * Компактный SQL-friendly regex-паттерн для pre-фильтрации на уровне БД (ILIKE ANY).
- * Возвращаем массив паттернов, чтобы использовать в WHERE ... ~* ANY(...).
- * Тут только самые "чёрные" слова — чтобы не гонять весь массив регексов по БД.
+ * SQL-friendly regex-паттерны для pre-фильтрации на уровне БД (PG `~*`).
+ * Используются в WHERE ... ~* ANY(...).
+ *
+ * Семантика: эти паттерны ДОЛЖНЫ мэтчиться так же, как соответствующие
+ * CHURN_PATTERNS в JS. Если SQL ловит больше, чем JS — счётчик в
+ * customerHealth (использует эти паттерны) разойдётся с drill-down модалкой
+ * (использует detectChurnSignals JS).
+ *
+ * PG ERE regex отличается от JS:
+ *   - \y вместо \b для word-boundary
+ *   - PG не любит lookahead (?=...) — обходимся без него
+ *   - ~* делает case-insensitive (i-флаг не нужен)
  */
 export const CHURN_SQL_KEYWORDS: string[] = [
-  'отключ', 'уходим', 'уйдём', 'уйдем', 'расторг', 'отмен.*договор',
-  'конкурент', 'перейд.*на', 'верн.*деньг', 'возврат.*средств',
-  'uzamiz', 'boshqa\\s+kompaniya', 'hamkorlik.*tugat', 'raqobat',
-  'узамиз', 'бошқа\\s+компания', 'рахкобат',
-  'cancel.*(subscription|contract|partnership)',
-  'leaving.*(service|platform)',
+  // RU LEAVING
+  '\\y(отключ(им(ся)?|аемся))\\y',
+  '\\y(уход(им|ить|ят)|уйд(ём|ем|у)|ухожу)\\y',
+  '\\yрасторг(нуть|нем|аем|ать)?\\s*(договор|контракт|сотруднич)',
+  '\\yотмен(ить|яем)\\s+(договор|контракт|подписк|сотруднич)',
+  '\\yбольше\\s+не\\s+работае(м|т)\\y',
+  '\\yне\\s+хотим\\s+работать\\y',
+  '\\yоткаж(ем(ся)?|усь)\\y',
+
+  // UZ LATIN
+  '\\yuz(amiz|ib\\s+qo[''’]yamiz|ib\\s+ketamiz|maymiz)\\y',
+  '\\yboshqa\\s+(kompaniya|xizmat|servis)(ga|da)?\\y',
+  '\\yhamkorlik(ni)?\\s+(tugat|bekor|to[''’]xta)',
+  '\\yraqobat(chi)?\\y',
+
+  // UZ CYR
+  '\\yуз(амиз|иб\\s+(қўямиз|кетамиз))\\y',
+  '\\yбошқа\\s+(компания|хизмат|сервис)\\y',
+
+  // EN
+  '\\y(cancel|terminate|end)\\s+(our|the)\\s+(subscription|contract|partnership)\\y',
+  '\\y(leaving|quit|stop\\s+using)\\s+(your|this|the)\\s+(service|platform|system)\\y',
+
+  // COMPETITOR
+  '\\yконкурент(ы|ов|а)?\\y',
+  '\\yперейд(ём|ем|у|ут)\\s+(на|к)\\s',
+  '\\yу\\s+(них|конкурент)\\s+(лучше|дешевле|удобне)',
+
+  // DISAPPOINTED
+  '\\yустал(и|а)\\s+(от|ждать|терпеть)\\y',
+  '\\yтерпени(е|я)\\s+(кончил|закончил|лопнул)',
+  '\\yв\\s+последний\\s+раз\\s+(говорю|прош|повтор)',
+  '\\yникто\\s+не\\s+(реша|отвеча|помога)',
+  '\\yсколько\\s+можно\\y',
+
+  // REFUND
+  '\\yверн(уть|ите|ём|ем)\\s+(деньг|средств|платёж)',
+  '\\yвозврат\\s+(денег|средств|оплат)',
+  '\\ypulni\\s+qaytar\\y',
+  '\\yto[''’]lovni\\s+qaytar\\y',
 ]
