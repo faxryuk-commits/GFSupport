@@ -57,7 +57,19 @@ function rowToTarget(row: BenchmarkRow): BenchmarkTarget {
   }
 }
 
-/** Загрузить полный набор бенчмарков (bronze/silver/gold) для одной метрики в данном scope. */
+/**
+ * Загрузить полный набор бенчмарков (bronze/silver/gold) для одной метрики в данном scope.
+ *
+ * Тянем ВСЕ строки этой метрики для org (без фильтра по period_type), а потом
+ * для каждого tier выбираем наиболее подходящую — сначала по точному period_type,
+ * затем по убыванию приоритета scope, затем по приоритету period_type.
+ *
+ * Зачем не фильтруем period_type в SQL: иначе ловушка — рекомпьют пишет
+ * 'monthly', а Pulse запрашивает '30d' → resolvePeriod даёт 'weekly' → 0
+ * совпадений. Семантически бенчмарк должен применяться независимо от
+ * выбранного периода отображения; period_type — это просто справочное
+ * поле, в каком окне был посчитан baseline.
+ */
 export async function loadBenchmarks(
   metricKey: string,
   scope: MetricScope,
@@ -71,16 +83,26 @@ export async function loadBenchmarks(
     FROM benchmark_targets
     WHERE org_id = ${scope.orgId}
       AND metric_key = ${metricKey}
-      AND period_type = ${periodType}
   `.catch(() => [])) as BenchmarkRow[]
+
+  // Приоритет period_type: запрошенный → monthly → weekly → daily
+  const periodPriority: Record<string, number> = { [periodType]: 100, monthly: 50, weekly: 30, daily: 10 }
 
   const byTier: BenchmarkSet = { bronze: null, silver: null, gold: null }
   for (const tier of ['bronze', 'silver', 'gold'] as const) {
     const candidates = rows
       .filter((r) => r.tier === tier)
-      .map((r) => ({ row: r, score: scopeScore(r, scope) }))
+      .map((r) => ({
+        row: r,
+        score: scopeScore(r, scope),
+        periodScore: periodPriority[r.period_type] ?? 0,
+      }))
       .filter((c) => c.score >= 0)
-      .sort((a, b) => b.score - a.score)
+      // Сортируем: сперва по совпадению period_type (выше = точнее), затем по scope
+      .sort((a, b) => {
+        if (b.periodScore !== a.periodScore) return b.periodScore - a.periodScore
+        return b.score - a.score
+      })
     if (candidates.length > 0) {
       byTier[tier] = rowToTarget(candidates[0].row)
     }

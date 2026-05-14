@@ -20,7 +20,12 @@ import { getSQL } from '../../lib/db.js'
 import type { MetricDescriptor, MetricResult, MetricScope, ResolvedPeriod } from './types.js'
 
 const MIN_SAMPLE_PER_OBSERVATION = 5
+// Для perAgent-метрик: минимум 3 агента для значимых перцентилей.
+// Для weekly-percentile (perAgent=false): минимум 2 недели, потому что
+// период 60 дней даёт 8-9 недель, но первая и последняя могут быть
+// частичными. 2 — это перцентили на 2 точках, грубо, но лучше чем «нет цели».
 const MIN_OBSERVATIONS = 3
+const MIN_WEEKS_FOR_BASELINE = 2
 
 export interface BaselineResult {
   metricKey: string
@@ -175,31 +180,32 @@ export async function computeWeeklyPercentileBaseline(
     cursor = next
   }
 
-  // Параллельно считаем метрику по каждой неделе — но осторожно с лимитами
-  // neon: запускаем последовательно, чтобы не упереться в connection pool.
-  const values: number[] = []
-  for (const w of weeks) {
-    try {
-      const weekPeriod: ResolvedPeriod = {
-        from: w.from,
-        to: w.to,
-        granularity: 'weekly',
-        label: `${w.from.toISOString().slice(0, 10)}..${w.to.toISOString().slice(0, 10)}`,
+  // Параллелим все недельные вычисления — иначе 60-дневный период (~9 недель) ×
+  // 4 метрики × 3 scope = 100+ последовательных SQL → таймаут endpoint'а.
+  // Neon обычно ОК с 10-20 параллельными запросами одной serverless function.
+  const results = await Promise.all(
+    weeks.map(async (w) => {
+      try {
+        const weekPeriod: ResolvedPeriod = {
+          from: w.from,
+          to: w.to,
+          granularity: 'weekly',
+          label: `${w.from.toISOString().slice(0, 10)}..${w.to.toISOString().slice(0, 10)}`,
+        }
+        const result = await compute({ orgId: scope.orgId, ...baseScope }, weekPeriod)
+        return result.value !== null && Number.isFinite(result.value) ? result.value : null
+      } catch (e) {
+        console.error('[baseline/weekly]', descriptor.key, e instanceof Error ? e.message : e)
+        return null
       }
-      const result = await compute({ orgId: scope.orgId, ...baseScope }, weekPeriod)
-      if (result.value !== null && Number.isFinite(result.value)) {
-        values.push(result.value)
-      }
-    } catch (e) {
-      // Игнорируем сбой одной недели — продолжаем сбор статистики.
-      console.error('[baseline/weekly]', descriptor.key, e instanceof Error ? e.message : e)
-    }
-  }
+    }),
+  )
+  const values = results.filter((v): v is number => v !== null)
 
   if (values.length === 0) {
     return { metricKey: descriptor.key, scope: baseScope, observations: 0, reason: 'no_data' }
   }
-  if (values.length < MIN_OBSERVATIONS) {
+  if (values.length < MIN_WEEKS_FOR_BASELINE) {
     return {
       metricKey: descriptor.key,
       scope: baseScope,
