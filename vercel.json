@@ -45,6 +45,10 @@
     {
       "path": "/api/support/commitments/scan",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/support/analytics/benchmarks-cron",
+      "schedule": "0 3 * * 0"
     }
   ]
 }
