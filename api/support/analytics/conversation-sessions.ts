@@ -78,10 +78,16 @@ export default async function handler(req: Request): Promise<Response> {
         ROUND(AVG(LENGTH(COALESCE(m.text_content, ''))) FILTER (WHERE m.text_content IS NOT NULL AND LENGTH(m.text_content) > 0))::int as avg_msg_len
       FROM support_messages m
       JOIN support_channels c ON m.channel_id = c.id
-      JOIN support_agents a ON LOWER(a.name) = LOWER(m.sender_name) AND a.org_id = ${orgId}
+      JOIN support_agents a ON (
+          a.telegram_id::text = m.sender_id::text
+          OR a.id = m.sender_id::text
+          OR (m.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(m.sender_username))
+          OR (m.sender_name IS NOT NULL AND LOWER(a.name) = LOWER(m.sender_name))
+        ) AND a.org_id = ${orgId}
       WHERE m.org_id = ${orgId}
         AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
         AND m.is_from_client = false
+        AND COALESCE(m.sender_role, '') <> 'broadcast'
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       GROUP BY a.name, a.position
