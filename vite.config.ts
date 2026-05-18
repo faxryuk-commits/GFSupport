@@ -46,4 +46,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      // /api проксируется на прод — vercel dev не запускается из-за 171 endpoint > 128 builds limit
+      '/api': {
+        target: 'https://www.gfsupport.uz',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
 })

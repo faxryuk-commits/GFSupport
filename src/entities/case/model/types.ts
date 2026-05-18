@@ -27,18 +27,20 @@ export const CASE_PRIORITY_CONFIG: Record<import('@/shared/types').CasePriority,
 // Legacy канбан (5 колонок) — оставлен для совместимости, новый UI использует UI_COLUMNS
 export const KANBAN_STATUSES: CaseStatus[] = ['detected', 'in_progress', 'waiting', 'blocked', 'resolved']
 
-// ===== Упрощённые UI-колонки (4 штуки) =====
-// recurring / blocked перенесены в флаги на карточке, а не колонки.
+// ===== UI-колонки канбана =====
+// Blocked — отдельная колонка (важно, чтобы блокеры не терялись).
+// Recurring — флаг на карточке (см. isRecurring).
 
-export type UiColumn = 'new' | 'in_progress' | 'waiting' | 'done'
+export type UiColumn = 'new' | 'in_progress' | 'waiting' | 'blocked' | 'done'
 
-export const UI_ACTIVE_COLUMNS: UiColumn[] = ['new', 'in_progress', 'waiting']
-export const UI_ALL_COLUMNS: UiColumn[] = ['new', 'in_progress', 'waiting', 'done']
+export const UI_ACTIVE_COLUMNS: UiColumn[] = ['new', 'in_progress', 'waiting', 'blocked']
+export const UI_ALL_COLUMNS: UiColumn[] = ['new', 'in_progress', 'waiting', 'blocked', 'done']
 
 export const UI_COLUMN_CONFIG: Record<UiColumn, { label: string; hint: string; color: string; bgColor: string }> = {
-  new:         { label: 'Новые',    hint: 'Ещё никто не взял',        color: 'text-slate-700', bgColor: 'bg-slate-100' },
-  in_progress: { label: 'В работе', hint: 'Агент занимается',         color: 'text-white',     bgColor: 'bg-blue-500' },
-  waiting:     { label: 'Ожидание', hint: 'Ждём клиента/третью сторону', color: 'text-white',  bgColor: 'bg-yellow-500' },
+  new:         { label: 'Новые',    hint: 'Ещё никто не взял',           color: 'text-slate-700', bgColor: 'bg-slate-100' },
+  in_progress: { label: 'В работе', hint: 'Агент занимается',            color: 'text-white',     bgColor: 'bg-blue-500' },
+  waiting:     { label: 'Ожидание', hint: 'Ждём клиента/третью сторону', color: 'text-white',     bgColor: 'bg-yellow-500' },
+  blocked:     { label: 'Блокеры',  hint: 'Требуется эскалация',         color: 'text-white',     bgColor: 'bg-red-500' },
   done:        { label: 'Закрыто',  hint: 'Решено / закрыто / отменено', color: 'text-green-800', bgColor: 'bg-green-100' },
 }
 
@@ -46,8 +48,8 @@ export const UI_COLUMN_CONFIG: Record<UiColumn, { label: string; hint: string; c
 const STATUS_TO_UI: Record<CaseStatus, UiColumn> = {
   detected:    'new',
   in_progress: 'in_progress',
-  recurring:   'in_progress', // показываем флагом
-  blocked:     'in_progress', // показываем флагом
+  recurring:   'in_progress', // показываем флагом «Повтор» на карточке
+  blocked:     'blocked',
   waiting:     'waiting',
   resolved:    'done',
   closed:      'done',
@@ -64,6 +66,7 @@ export function uiColumnToDefaultStatus(col: UiColumn): CaseStatus {
     case 'new': return 'detected'
     case 'in_progress': return 'in_progress'
     case 'waiting': return 'waiting'
+    case 'blocked': return 'blocked'
     case 'done': return 'resolved'
   }
 }

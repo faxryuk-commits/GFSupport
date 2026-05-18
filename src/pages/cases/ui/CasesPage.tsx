@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CasesNowSection } from './CasesNowSection'
@@ -14,7 +14,7 @@ import {
   type CaseStatus,
   type Case,
 } from '@/entities/case'
-import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCaseComment, fetchCaseComments, fetchChannels, fetchAgents, type CaseComment } from '@/shared/api'
+import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCaseComment, fetchCaseComments, fetchChannels, fetchAgents, type CaseComment, type CaseResolutionMetrics } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
@@ -38,11 +38,25 @@ function mapCaseToCardData(c: Case): CaseCardData {
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     reporterName: c.reporterName,
     commentsCount: c.messagesCount,
+    isShadow: c.isShadow,
     isRecurring: Boolean(c.isRecurring) || c.status === 'recurring',
     isBlocked: c.status === 'blocked',
     lastStatusChangeAt: c.lastStatusChangeAt ?? null,
     lastActivityAt: c.lastActivityAt ?? null,
+    isOverdue: c.isOverdue,
+    slaThresholdHours: c.slaThresholdHours,
+    ageHours: c.ageHours,
   }
+}
+
+// Формат времени: часы → "Xч" или "Xд Yч"
+function formatHours(hours: number | null | undefined): string {
+  if (hours == null) return '—'
+  if (hours < 1) return '< 1 ч'
+  if (hours < 24) return `${Math.round(hours)} ч`
+  const days = Math.floor(hours / 24)
+  const remHours = Math.round(hours % 24)
+  return remHours > 0 ? `${days} д ${remHours} ч` : `${days} д`
 }
 
 // Маппинг Case в CaseDetail для модального окна
@@ -98,21 +112,25 @@ export function CasesPage() {
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+  const [metrics, setMetrics] = useState<CaseResolutionMetrics | null>(null)
+  const [statusStats, setStatusStats] = useState<Record<string, number>>({})
+  const [overdueCount, setOverdueCount] = useState(0)
+
   // Режим просмотра: активные или архив
   const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
-  
+
   // Базовые фильтры
-  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned'>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  
+  const [searchDebounced, setSearchDebounced] = useState('')
+
   // Расширенные фильтры
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
   const [showFilters, setShowFilters] = useState(false)
-  
+
   const [selectedCase, setSelectedCase] = useState<Case | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
@@ -120,106 +138,117 @@ export function CasesPage() {
   const [draggedCase, setDraggedCase] = useState<string | null>(null)
   const [_updatingStatus, setUpdatingStatus] = useState<string | null>(null)
 
-  // Загрузка кейсов, каналов и агентов при монтировании
-  const loadData = useCallback(async () => {
+  // Массовые действия: режим выбора + множество выбранных id
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkPending, setBulkPending] = useState(false)
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
+
+  const toggleSelectCase = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+  }, [])
+
+  // Debounce поиска (350мс)
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchQuery.trim()), 350)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
+  // Преобразование dateFilter → dateFrom (ISO)
+  const dateFromIso = useMemo<string | undefined>(() => {
+    if (dateFilter === 'all') return undefined
+    const now = new Date()
+    if (dateFilter === 'today') {
+      const d = new Date(now)
+      d.setHours(0, 0, 0, 0)
+      return d.toISOString()
+    }
+    if (dateFilter === 'week') return new Date(now.getTime() - 7 * 86400000).toISOString()
+    if (dateFilter === 'month') return new Date(now.getTime() - 30 * 86400000).toISOString()
+    return undefined
+  }, [dateFilter])
+
+  // Серверные параметры фильтрации (зависят от UI-фильтров)
+  const serverFilters = useMemo(() => {
+    const priorities = quickFilter === 'urgent' ? ['high', 'urgent', 'critical'] : undefined
+    return {
+      // viewMode сам по себе не отправляем — запрос делаем для активных и архивных раздельно
+      assignedTo: quickFilter === 'my' && currentUser?.id ? currentUser.id : undefined,
+      unassigned: quickFilter === 'unassigned',
+      overdue: quickFilter === 'overdue',
+      priorities,
+      channelId: channelFilter === 'all' ? undefined : channelFilter,
+      category: categoryFilter === 'all' ? undefined : categoryFilter,
+      source: sourceFilter === 'all' ? undefined : sourceFilter,
+      search: searchDebounced || undefined,
+      dateFrom: dateFromIso,
+    }
+  }, [quickFilter, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso])
+
+  // Загрузка справочников один раз
+  useEffect(() => {
+    Promise.all([fetchChannels().catch(() => []), fetchAgents().catch(() => [])])
+      .then(([channelsData, agentsData]) => {
+        setChannels(channelsData)
+        setAgents(agentsData.map((a: Agent) => ({ id: a.id, name: a.name })))
+      })
+  }, [])
+
+  // Загрузка кейсов: один запрос охватывает и активные и архив (status filter не передаём),
+  // клиент разделит по ACTIVE_STATUSES/ARCHIVE_STATUSES. Server-side применяет остальные фильтры.
+  const loadCases = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      
-      // Загружаем все кейсы (включая архивные), каналы и агентов параллельно
-      const [casesResponse, channelsData, agentsData] = await Promise.all([
-        fetchCases({ limit: 1000 }), // Загружаем все кейсы
-        fetchChannels().catch(() => []),
-        fetchAgents().catch(() => [])
-      ])
-      
-      setCases(casesResponse.cases)
-      setChannels(channelsData)
-      // Мапим агентов в формат {id, name}
-      setAgents(agentsData.map((a: Agent) => ({ id: a.id, name: a.name })))
+      const res = await fetchCases({
+        ...serverFilters,
+        limit: 500,
+        sortBy: 'priority',
+        metricsPeriodDays: 30,
+      })
+      setCases(res.cases)
+      setMetrics(res.metrics)
+      setStatusStats(res.stats || {})
+      setOverdueCount(res.overdueCount ?? 0)
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [serverFilters])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    loadCases()
+  }, [loadCases])
 
-  // Фильтрация по дате
-  const filterByDate = useCallback((caseItem: Case) => {
-    if (dateFilter === 'all') return true
-    
-    const caseDate = new Date(caseItem.createdAt)
-    const now = new Date()
-    
-    switch (dateFilter) {
-      case 'today':
-        return caseDate.toDateString() === now.toDateString()
-      case 'week': {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        return caseDate >= weekAgo
-      }
-      case 'month': {
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        return caseDate >= monthAgo
-      }
-      default:
-        return true
-    }
-  }, [dateFilter])
-
-  // Разделение на активные и архивные
-  const activeCases = useMemo(() => 
+  // Активные / архив — клиентское разделение возвращённой выборки
+  const activeCases = useMemo(() =>
     cases.filter(c => ACTIVE_STATUSES.includes(c.status as any) || c.status === 'recurring'),
     [cases]
   )
-  
-  const archivedCases = useMemo(() => 
+
+  const archivedCases = useMemo(() =>
     cases.filter(c => ARCHIVE_STATUSES.includes(c.status as any)),
     [cases]
   )
 
-  // Отфильтрованные кейсы (в зависимости от режима)
+  // На сервере уже отфильтровано — поэтому это просто разделение по viewMode
   const filteredCases = useMemo(() => {
-    const baseCases = viewMode === 'active' ? activeCases : archivedCases
-    
-    return baseCases.filter(c => {
-      // Поиск
-      const matchesSearch = searchQuery === '' || 
-        c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (c.ticketNumber?.toString() || '').includes(searchQuery)
-      
-      const matchesQuickFilter = quickFilter === 'all' || 
-        (quickFilter === 'my' && currentUser?.id && c.assignedTo === currentUser.id) ||
-        (quickFilter === 'urgent' && (c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent'))
-      
-      // Фильтр по дате
-      const matchesDate = filterByDate(c)
-      
-      // Фильтр по категории
-      const matchesCategory = categoryFilter === 'all' || c.category === categoryFilter
-      
-      // Фильтр по группе/каналу
-      const matchesChannel = channelFilter === 'all' || c.channelId === channelFilter
+    return viewMode === 'active' ? activeCases : archivedCases
+  }, [viewMode, activeCases, archivedCases])
 
-      // Фильтр по платформе (Telegram/WhatsApp) — через канал кейса
-      let matchesSource = true
-      if (sourceFilter !== 'all') {
-        const channel = channels.find((ch) => ch.id === c.channelId)
-        const channelSource = (channel?.source as string | undefined) || 'telegram'
-        matchesSource = channelSource === sourceFilter
-      }
-
-      return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel && matchesSource
-    })
-  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter, sourceFilter, channels, currentUser?.id])
-
-  // Количество активных фильтров
+  // Количество активных расширенных фильтров (для UI-бейджа)
   const activeFiltersCount = useMemo(() => {
     let count = 0
     if (dateFilter !== 'all') count++
@@ -352,9 +381,35 @@ export function CasesPage() {
       showNotification({ type: 'alert', title: 'Кейс удалён', message: `Кейс ${selectedCase.ticketNumber ? '#' + selectedCase.ticketNumber : caseId.slice(0, 8)} удалён` })
     } catch (err) {
       console.error('Ошибка удаления кейса:', err)
-      loadData()
+      loadCases()
     }
   }
+
+  // Массовые операции — оптимистичное обновление + последовательные API-вызовы
+  const runBulk = async (fn: (id: string) => Promise<unknown>, successTitle: string) => {
+    if (selectedIds.size === 0) return
+    const ids = Array.from(selectedIds)
+    setBulkPending(true)
+    try {
+      await Promise.allSettled(ids.map(fn))
+      showNotification({ type: 'ticket', title: successTitle, message: `Кейсов: ${ids.length}` })
+      await loadCases()
+    } catch (err) {
+      console.error('Bulk action error:', err)
+    } finally {
+      setBulkPending(false)
+      clearSelection()
+    }
+  }
+
+  const handleBulkStatus = (status: CaseStatus) =>
+    runBulk((id) => updateCaseStatus(id, status), `Статус → ${status}`)
+
+  const handleBulkAssign = (agentId: string) =>
+    runBulk((id) => assignCase(id, agentId), agentId ? 'Назначены агенту' : 'Сняты с назначения')
+
+  const handleBulkDelete = () =>
+    runBulk((id) => deleteCase(id), 'Кейсы удалены')
 
   const handleCreateCase = async (data: { title: string; description?: string; category?: string; priority?: string; company?: string }) => {
     try {
@@ -403,8 +458,8 @@ export function CasesPage() {
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <p className="text-slate-700 font-medium">Ошибка загрузки</p>
           <p className="text-slate-500 text-sm">{error}</p>
-          <button 
-            onClick={loadData}
+          <button
+            onClick={loadCases}
             className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
             Попробовать снова
@@ -417,15 +472,38 @@ export function CasesPage() {
   return (
     <>
       <div className="h-full flex flex-col p-6 overflow-y-auto">
-        {/* Stats Summary */}
-        <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
+        {/* Stats Summary: 4 счётчика + 1 крупный блок метрик времени решения */}
+        <div className="grid grid-cols-12 gap-3 mb-4 flex-shrink-0">
           {[
-            { label: 'Всего активных', value: activeCases.length, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-            { label: 'Срочные', value: activeCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length, icon: Zap, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
-            { label: 'Без назначения', value: activeCases.filter(c => !c.assignedTo).length, icon: User, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
-            { label: 'Решено за 7д', value: archivedCases.filter(c => { const ts = c.resolvedAt || c.updatedAt || c.createdAt; return ts ? new Date(ts).getTime() > Date.now() - 7 * 86400000 : false }).length, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
+            {
+              label: 'Всего активных',
+              value: (statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) + (statusStats.blocked || 0) + (statusStats.recurring || 0),
+              icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100',
+            },
+            {
+              label: 'Просрочены SLA',
+              value: overdueCount,
+              icon: Timer, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100',
+              onClick: () => setQuickFilter('overdue'),
+            },
+            {
+              label: 'Без назначения',
+              value: activeCases.filter(c => !c.assignedTo).length,
+              icon: User, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100',
+              onClick: () => setQuickFilter('unassigned'),
+            },
+            {
+              label: `Решено за ${metrics?.periodDays ?? 30} дн`,
+              value: metrics?.resolvedCount ?? 0,
+              icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100',
+            },
           ].map((s, i) => (
-            <div key={i} className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 flex items-center gap-3`}>
+            <button
+              key={i}
+              onClick={s.onClick}
+              disabled={!s.onClick}
+              className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 flex items-center gap-3 col-span-3 text-left ${s.onClick ? 'hover:shadow-sm hover:scale-[1.01] transition-all' : ''}`}
+            >
               <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center`}>
                 <s.icon className={`w-5 h-5 ${s.color}`} />
               </div>
@@ -433,8 +511,48 @@ export function CasesPage() {
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-xs text-slate-500">{s.label}</p>
               </div>
-            </div>
+            </button>
           ))}
+        </div>
+
+        {/* Время решения: avg / max / median / p95 за период (исключая shadow-кейсы) */}
+        <div className="grid grid-cols-12 gap-3 mb-4 flex-shrink-0">
+          <div className="col-span-12 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-violet-600" />
+                <h3 className="text-sm font-semibold text-slate-700">
+                  Время решения за {metrics?.periodDays ?? 30} дн
+                </h3>
+                {metrics?.shadowCount ? (
+                  <span className="text-[11px] text-slate-500" title="Кейсы, авто-решённые в чате (<5 мин). В метрики не включены.">
+                    исключено {metrics.shadowCount} auto-resolved
+                  </span>
+                ) : null}
+              </div>
+              <span className="text-xs text-slate-500">
+                база: {metrics?.resolvedCount ?? 0} кейсов
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wide">Среднее</p>
+                <p className="text-xl font-bold text-violet-700">{formatHours(metrics?.avgHours ?? null)}</p>
+              </div>
+              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wide">Максимум</p>
+                <p className="text-xl font-bold text-red-600">{formatHours(metrics?.maxHours ?? null)}</p>
+              </div>
+              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wide">Медиана</p>
+                <p className="text-xl font-bold text-blue-600">{formatHours(metrics?.medianHours ?? null)}</p>
+              </div>
+              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wide">P95</p>
+                <p className="text-xl font-bold text-amber-600">{formatHours(metrics?.p95Hours ?? null)}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Header */}
@@ -505,8 +623,20 @@ export function CasesPage() {
                 className="pl-10 pr-4 py-2 w-64 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
+            <button
+              onClick={() => { setSelectionMode(s => !s); if (selectionMode) setSelectedIds(new Set()) }}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectionMode
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+              }`}
+              title="Включить режим выбора нескольких кейсов"
+            >
+              <CheckCircle className="w-4 h-4" />
+              {selectionMode ? `Выбрано: ${selectedIds.size}` : 'Выбрать'}
+            </button>
             {viewMode === 'active' && (
-              <button 
+              <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
               >
@@ -518,22 +648,26 @@ export function CasesPage() {
         </div>
 
         {/* Quick Filters */}
-        <div className="flex items-center gap-2 mb-4 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-4 flex-shrink-0 flex-wrap">
           {[
-            { key: 'all', label: 'Все', icon: Filter, count: filteredCases.length },
-            { key: 'my', label: 'Мои', icon: User, count: filteredCases.filter(c => currentUser?.id && c.assignedTo === currentUser.id).length },
-            { key: 'urgent', label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
+            { key: 'all' as const, label: 'Все', icon: Filter, count: filteredCases.length },
+            { key: 'my' as const, label: 'Мои', icon: User, count: filteredCases.filter(c => currentUser?.id && c.assignedTo === currentUser.id).length },
+            { key: 'urgent' as const, label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
+            { key: 'overdue' as const, label: 'Просрочка', icon: Timer, count: overdueCount, danger: true },
+            { key: 'unassigned' as const, label: 'Без агента', icon: User, count: filteredCases.filter(c => !c.assignedTo).length },
           ].map(f => (
             <button
               key={f.key}
-              onClick={() => setQuickFilter(f.key as 'all' | 'my' | 'urgent')}
+              onClick={() => setQuickFilter(f.key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                quickFilter === f.key ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                quickFilter === f.key
+                  ? f.danger ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
               }`}
             >
               <f.icon className="w-4 h-4" />
               {f.label}
-              <span className={`px-1.5 py-0.5 rounded text-xs ${quickFilter === f.key ? 'bg-white/20' : 'bg-slate-100'}`}>
+              <span className={`px-1.5 py-0.5 rounded text-xs ${quickFilter === f.key ? 'bg-white/20' : f.danger && f.count > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>
                 {f.count}
               </span>
             </button>
@@ -722,6 +856,9 @@ export function CasesPage() {
                           onView={() => handleViewCase(caseItem.id)}
                           onDragStart={() => handleDragStart(caseItem.id)}
                           isDragging={draggedCase === caseItem.id}
+                          selectable={selectionMode}
+                          selected={selectedIds.has(caseItem.id)}
+                          onToggleSelect={() => toggleSelectCase(caseItem.id)}
                         />
                       ))
                     )}
@@ -751,6 +888,9 @@ export function CasesPage() {
                       onView={() => handleViewCase(caseItem.id)}
                       onDragStart={() => {}}
                       isDragging={false}
+                      selectable={selectionMode}
+                      selected={selectedIds.has(caseItem.id)}
+                      onToggleSelect={() => toggleSelectCase(caseItem.id)}
                     />
                   ))}
                 </div>
@@ -785,6 +925,73 @@ export function CasesPage() {
         title="Удалить кейс"
         message={`Вы уверены, что хотите удалить кейс ${selectedCase?.ticketNumber ? `#${selectedCase.ticketNumber}` : selectedCase?.id}?`}
         confirmText="Удалить"
+        variant="danger"
+      />
+
+      {/* Bulk Action Bar — снизу страницы при выборе кейсов */}
+      {selectionMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl rounded-2xl border border-slate-200 px-4 py-2 flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-700">
+            Выбрано: <span className="text-blue-600">{selectedIds.size}</span>
+          </span>
+          <div className="h-6 w-px bg-slate-200" />
+
+          <select
+            disabled={bulkPending}
+            onChange={(e) => { if (e.target.value) handleBulkStatus(e.target.value as CaseStatus); e.target.value = '' }}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="">Сменить статус…</option>
+            <option value="detected">Обнаружен</option>
+            <option value="in_progress">В работе</option>
+            <option value="waiting">Ожидание</option>
+            <option value="blocked">Блокер</option>
+            <option value="resolved">Решён</option>
+            <option value="closed">Закрыт</option>
+            <option value="cancelled">Отменён</option>
+          </select>
+
+          <select
+            disabled={bulkPending}
+            onChange={(e) => { if (e.target.value !== undefined) handleBulkAssign(e.target.value); e.target.value = '' }}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="">Назначить…</option>
+            <option value="">— Снять назначение —</option>
+            {agents.map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setIsBulkDeleteDialogOpen(true)}
+            disabled={bulkPending}
+            className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium disabled:opacity-50"
+          >
+            Удалить
+          </button>
+
+          <div className="h-6 w-px bg-slate-200" />
+
+          <button
+            onClick={clearSelection}
+            className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-sm"
+          >
+            Отмена
+          </button>
+
+          {bulkPending && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+        </div>
+      )}
+
+      {/* Bulk Delete Dialog */}
+      <ConfirmDialog
+        isOpen={isBulkDeleteDialogOpen}
+        onClose={() => setIsBulkDeleteDialogOpen(false)}
+        onConfirm={() => { setIsBulkDeleteDialogOpen(false); handleBulkDelete() }}
+        title="Удалить выбранные кейсы"
+        message={`Удалить ${selectedIds.size} кейс(ов)? Действие нельзя отменить.`}
+        confirmText="Удалить все"
         variant="danger"
       />
     </>

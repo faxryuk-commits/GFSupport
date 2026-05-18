@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
-import { fetchCaseComments, fetchCaseActivities, type CaseComment, type CaseActivity } from '@/shared/api'
+import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, type CaseComment, type CaseActivity } from '@/shared/api'
+import type { Message } from '@/shared/types'
 
 function formatDate(dateStr: string | undefined | null): string {
   if (!dateStr) return 'Не указано'
@@ -179,13 +180,21 @@ export function CaseDetailModal({
   isOpen, onClose, caseData, agents, onStatusChange, onAssign, onAddComment, onDelete,
 }: CaseDetailModalProps) {
   const navigate = useNavigate()
-  const [detailTab, setDetailTab] = useState('details')
+  const [detailTab, setDetailTab] = useState('chat')
   const [newComment, setNewComment] = useState('')
   const [isInternalComment, setIsInternalComment] = useState(false)
   const [comments, setComments] = useState<CaseComment[]>([])
   const [loadingComments, setLoadingComments] = useState(false)
   const [activities, setActivities] = useState<CaseActivity[]>([])
   const [loadingActivities, setLoadingActivities] = useState(false)
+
+  // Inline-чат: сообщения канала
+  const [chatMessages, setChatMessages] = useState<Message[]>([])
+  const [loadingChat, setLoadingChat] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [sending, setSending] = useState(false)
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
 
   const loadComments = useCallback(async () => {
     if (!caseData?.id) return
@@ -213,12 +222,64 @@ export function CaseDetailModal({
     }
   }, [caseData?.id])
 
+  const loadChat = useCallback(async () => {
+    if (!caseData?.channelId) {
+      setChatMessages([])
+      return
+    }
+    setLoadingChat(true)
+    setChatError(null)
+    try {
+      const res = await fetchMessages(caseData.channelId, 80)
+      // API возвращает по убыванию created_at — переворачиваем в хронологический порядок
+      const ordered = [...(res.messages || [])].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      )
+      setChatMessages(ordered)
+      // Скроллим к низу после рендера
+      requestAnimationFrame(() => {
+        chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight })
+      })
+    } catch (e: any) {
+      setChatError(e?.message || 'Не удалось загрузить переписку')
+      setChatMessages([])
+    } finally {
+      setLoadingChat(false)
+    }
+  }, [caseData?.channelId])
+
   useEffect(() => {
     if (isOpen && caseData?.id) {
       loadComments()
       loadActivities()
+      loadChat()
     }
-  }, [isOpen, caseData?.id, loadComments, loadActivities])
+  }, [isOpen, caseData?.id, loadComments, loadActivities, loadChat])
+
+  // Перезагружаем чат при возврате на вкладку
+  useEffect(() => {
+    if (isOpen && detailTab === 'chat' && caseData?.channelId) {
+      loadChat()
+    }
+  }, [detailTab, isOpen, caseData?.channelId, loadChat])
+
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !caseData?.channelId) return
+    const text = replyText.trim()
+    setSending(true)
+    try {
+      const sent = await sendMessage(caseData.channelId, text)
+      setChatMessages(prev => [...prev, sent])
+      setReplyText('')
+      requestAnimationFrame(() => {
+        chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' })
+      })
+    } catch (e: any) {
+      setChatError(e?.message || 'Не удалось отправить сообщение')
+    } finally {
+      setSending(false)
+    }
+  }
 
   if (!caseData) return null
 
@@ -289,6 +350,7 @@ export function CaseDetailModal({
 
           <Tabs
             tabs={[
+              { id: 'chat', label: 'Чат с клиентом', badge: chatMessages.length || undefined },
               { id: 'details', label: 'Детали' },
               { id: 'comments', label: 'Комментарии', badge: comments.length },
               { id: 'history', label: 'История' },
@@ -298,6 +360,93 @@ export function CaseDetailModal({
             variant="underline"
             className="mb-4"
           />
+
+          <TabPanel tabId="chat" activeTab={detailTab}>
+            {!caseData.channelId ? (
+              <EmptyState
+                title="Канал не привязан"
+                description="К этому кейсу не привязан чат — переписку посмотреть нельзя."
+                size="sm"
+              />
+            ) : (
+              <div className="flex flex-col" style={{ height: 420 }}>
+                <div
+                  ref={chatScrollRef}
+                  className="flex-1 overflow-y-auto border border-slate-200 rounded-lg bg-slate-50 p-3 space-y-2"
+                >
+                  {loadingChat ? (
+                    <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Загрузка переписки…
+                    </div>
+                  ) : chatError ? (
+                    <div className="text-sm text-red-600 py-4 text-center">{chatError}</div>
+                  ) : chatMessages.length === 0 ? (
+                    <div className="text-sm text-slate-400 py-8 text-center">
+                      В этом канале пока нет сообщений.
+                    </div>
+                  ) : (
+                    chatMessages.map((m) => {
+                      const isTeam = m.isFromTeam || m.senderRole === 'support' || m.senderRole === 'team'
+                      return (
+                        <div
+                          key={m.id}
+                          className={`flex ${isTeam ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
+                              isTeam
+                                ? 'bg-blue-500 text-white rounded-br-sm'
+                                : 'bg-white text-slate-800 border border-slate-200 rounded-bl-sm'
+                            }`}
+                          >
+                            {!isTeam && (
+                              <p className={`text-[11px] font-medium mb-0.5 ${isTeam ? 'text-blue-100' : 'text-slate-500'}`}>
+                                {m.senderName || 'Клиент'}
+                              </p>
+                            )}
+                            <p className="whitespace-pre-wrap break-words">{m.text || m.textContent || ''}</p>
+                            {m.mediaUrl && (
+                              <p className={`text-[11px] mt-1 italic ${isTeam ? 'text-blue-100' : 'text-slate-400'}`}>
+                                📎 {m.mediaType || 'media'}
+                              </p>
+                            )}
+                            <p className={`text-[10px] mt-0.5 text-right ${isTeam ? 'text-blue-100' : 'text-slate-400'}`}>
+                              {formatRelativeTime(m.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <textarea
+                    rows={2}
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault()
+                        handleSendReply()
+                      }
+                    }}
+                    placeholder="Ответить клиенту (Ctrl/⌘ + Enter)"
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
+                  />
+                  <button
+                    onClick={handleSendReply}
+                    disabled={!replyText.trim() || sending}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Отправить
+                  </button>
+                </div>
+              </div>
+            )}
+          </TabPanel>
 
           <TabPanel tabId="details" activeTab={detailTab}>
             <div className="space-y-4">

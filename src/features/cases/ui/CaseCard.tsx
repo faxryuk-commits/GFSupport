@@ -27,6 +27,10 @@ export interface CaseCardData {
   // Динамика кейса
   lastStatusChangeAt?: string | null
   lastActivityAt?: string | null
+  // SLA (приходит с бэкенда)
+  isOverdue?: boolean
+  slaThresholdHours?: number
+  ageHours?: number
 }
 
 interface CaseCardProps {
@@ -34,6 +38,9 @@ interface CaseCardProps {
   onView: () => void
   onDragStart: () => void
   isDragging: boolean
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -87,11 +94,12 @@ const STATUS_AGE_TONE: Record<'ok' | 'warn' | 'danger', string> = {
   danger: 'text-red-700 bg-red-50',
 }
 
-export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, isDragging }: CaseCardProps) {
+export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, isDragging, selectable, selected, onToggleSelect }: CaseCardProps) {
   const priority = CASE_PRIORITY_CONFIG[caseItem.priority]
   const aging = getAgingInfo(caseItem.createdAt)
   const statusAge = getStatusAge(caseItem.lastStatusChangeAt, caseItem.createdAt)
   const lastActivityLabel = formatLastActivity(caseItem.lastActivityAt)
+  const isOverdue = Boolean(caseItem.isOverdue)
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -103,18 +111,36 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
     e.stopPropagation()
   }
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (selectable) {
+      e.preventDefault()
+      onToggleSelect?.()
+    } else {
+      onView()
+    }
+  }
+
   return (
-    <div 
-      draggable={true}
+    <div
+      draggable={!selectable}
       onDragStart={handleDragStart}
-      onClick={onView}
-      className={`bg-white rounded-xl p-3 shadow-sm border transition-all cursor-grab active:cursor-grabbing select-none ${
+      onClick={handleCardClick}
+      className={`bg-white rounded-xl p-3 shadow-sm border transition-all ${selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} select-none ${
         isDragging ? 'opacity-50 rotate-2 scale-105' : ''
-      } ${aging.level === 'danger' ? 'border-red-200' : aging.level === 'warn' ? 'border-amber-200' : 'border-slate-200'} hover:shadow-md`}
+      } ${selected ? 'border-blue-400 ring-2 ring-blue-200' : isOverdue ? 'border-red-300 ring-1 ring-red-200' : aging.level === 'danger' ? 'border-red-200' : aging.level === 'warn' ? 'border-amber-200' : 'border-slate-200'} hover:shadow-md`}
     >
-      {/* Header: номер тикета + приоритет + aging */}
+      {/* Header: чекбокс (в режиме выбора) + номер тикета + приоритет + aging */}
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-1.5 flex-wrap">
+          {selectable && (
+            <input
+              type="checkbox"
+              checked={Boolean(selected)}
+              onChange={(e) => { e.stopPropagation(); onToggleSelect?.() }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-4 h-4 mr-1 rounded border-slate-300 text-blue-500 focus:ring-blue-500/30"
+            />
+          )}
           <span className="text-xs font-mono text-blue-600 font-semibold">{caseItem.number}</span>
           {caseItem.isShadow && (
             <span className="px-1 py-0.5 text-[9px] bg-slate-100 text-slate-500 rounded">чат</span>
@@ -129,6 +155,15 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
             <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-50 text-purple-700" title="Проблема повторяется">
               <Repeat className="w-2.5 h-2.5" />
               Повтор
+            </span>
+          )}
+          {isOverdue && (
+            <span
+              className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-red-500 text-white"
+              title={caseItem.slaThresholdHours ? `SLA: ${caseItem.slaThresholdHours} ч` : 'SLA нарушено'}
+            >
+              <AlertTriangle className="w-2.5 h-2.5" />
+              SLA
             </span>
           )}
         </div>
