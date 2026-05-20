@@ -82,6 +82,13 @@ export interface Case {
   ageHours?: number
   slaThresholdHours?: number
   isOverdue?: boolean
+  // Точная метрика «от первого сообщения клиента»
+  firstMessageAt?: string | null
+  // Snooze
+  snoozedUntil?: string | null
+  snoozedBy?: string | null
+  snoozeReason?: string | null
+  isSnoozed?: boolean
 }
 
 export interface Channel {

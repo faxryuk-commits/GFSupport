@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer } from 'lucide-react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CasesNowSection } from './CasesNowSection'
@@ -46,6 +46,8 @@ function mapCaseToCardData(c: Case): CaseCardData {
     isOverdue: c.isOverdue,
     slaThresholdHours: c.slaThresholdHours,
     ageHours: c.ageHours,
+    snoozedUntil: c.snoozedUntil ?? null,
+    isSnoozed: c.isSnoozed,
   }
 }
 
@@ -83,6 +85,7 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
     linkedChats: c.channelId ? [c.channelId] : [],
     attachments: [],
     history: [],
+    snoozedUntil: c.snoozedUntil ?? null,
   }
 }
 
@@ -124,7 +127,8 @@ export function CasesPage() {
   const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
 
   // Базовые фильтры
-  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned' | 'snoozed'>('all')
+  const [snoozedCount, setSnoozedCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
 
@@ -205,6 +209,7 @@ export function CasesPage() {
       search: searchDebounced || undefined,
       dateFrom: dateFromIso,
       dateTo: dateToIso,
+      snoozed: (quickFilter === 'snoozed' ? 'only' : 'hide') as 'hide' | 'only',
     }
   }, [quickFilter, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso, dateToIso])
 
@@ -248,6 +253,7 @@ export function CasesPage() {
       setMetrics(res.metrics)
       setStatusStats(res.stats || {})
       setOverdueCount(res.overdueCount ?? 0)
+      setSnoozedCount(res.snoozedCount ?? 0)
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
@@ -686,6 +692,7 @@ export function CasesPage() {
             { key: 'urgent' as const, label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
             { key: 'overdue' as const, label: 'Просрочка', icon: Timer, count: overdueCount, danger: true },
             { key: 'unassigned' as const, label: 'Без агента', icon: User, count: filteredCases.filter(c => !c.assignedTo).length },
+            { key: 'snoozed' as const, label: 'Отложенные', icon: Bell, count: snoozedCount },
           ].map(f => (
             <button
               key={f.key}
@@ -965,9 +972,18 @@ export function CasesPage() {
         onClose={() => setIsDetailModalOpen(false)}
         caseData={selectedCase ? mapCaseToCaseDetail(selectedCase) : null}
         agents={agents}
+        currentUserName={currentUser?.name}
         onStatusChange={handleStatusChange}
         onAssign={handleAssign}
         onAddComment={handleAddComment}
+        onSnoozeChange={(caseId, snoozedUntil) => {
+          setCases(prev => prev.map(c => c.id === caseId ? { ...c, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : c))
+          if (selectedCase?.id === caseId) {
+            setSelectedCase(prev => prev ? { ...prev, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : null)
+          }
+          // Освежим counters
+          loadCases()
+        }}
         onDelete={() => setIsDeleteDialogOpen(true)}
       />
 

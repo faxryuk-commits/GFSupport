@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2 } from 'lucide-react'
+import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
-import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, type CaseComment, type CaseActivity } from '@/shared/api'
+import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, type CaseComment, type CaseActivity, type CustomerContext } from '@/shared/api'
 import type { Message } from '@/shared/types'
 
 function formatDate(dateStr: string | undefined | null): string {
@@ -163,6 +163,155 @@ export interface CaseDetail {
   linkedChats: string[]
   attachments: { name: string; size: string }[]
   history: { id: string; action: string; user: string; time: string }[]
+  snoozedUntil?: string | null
+}
+
+// ===== Customer 360 баннер =====
+
+const HEALTH_BANDS: Record<string, { label: string; bg: string; color: string; emoji: string }> = {
+  critical: { label: 'Критическая зона', bg: 'bg-red-50 border-red-200',     color: 'text-red-700',     emoji: '🔴' },
+  at_risk:  { label: 'В зоне риска',     bg: 'bg-amber-50 border-amber-200', color: 'text-amber-700',   emoji: '🟡' },
+  healthy:  { label: 'Здоров',            bg: 'bg-green-50 border-green-200', color: 'text-green-700',   emoji: '🟢' },
+  loyal:    { label: 'Лояльный',          bg: 'bg-emerald-50 border-emerald-200', color: 'text-emerald-700', emoji: '💚' },
+}
+
+function formatMinutesShort(mins: number | null | undefined): string {
+  if (mins == null) return '—'
+  const hours = mins / 60
+  if (hours < 1) return `${Math.round(mins)} мин`
+  if (hours < 24) return `${Math.round(hours)} ч`
+  return `${Math.round(hours / 24)} д`
+}
+
+function Customer360Banner({
+  ctx, expanded, onToggle,
+}: { ctx: CustomerContext; expanded: boolean; onToggle: () => void }) {
+  const navigate = useNavigate()
+  const health = ctx.health && HEALTH_BANDS[ctx.health.band]
+  const hasRiskSignals = ctx.stats.recurring > 0 || ctx.stats.active > 1 || (ctx.health?.band === 'critical' || ctx.health?.band === 'at_risk')
+
+  return (
+    <div
+      className={`mb-4 rounded-lg border ${
+        hasRiskSignals ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-slate-50/40'
+      }`}
+    >
+      <button
+        onClick={onToggle}
+        className="w-full px-3 py-2 flex items-center gap-3 text-left hover:bg-white/40 rounded-lg"
+      >
+        <Avatar name={ctx.channel.name} size="sm" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-slate-800 text-sm truncate">{ctx.channel.name}</p>
+          <p className="text-xs text-slate-500">
+            {ctx.stats.total} кейс{ctx.stats.total === 1 ? '' : ctx.stats.total < 5 ? 'а' : 'ов'} всего •{' '}
+            {ctx.stats.active > 0 ? <span className="text-orange-600 font-medium">{ctx.stats.active} активн.</span> : 'все закрыты'}
+            {ctx.stats.recurring > 0 && <span className="text-purple-600 font-medium"> • повторяется {ctx.stats.recurring}×</span>}
+            {ctx.stats.last7d > 0 && <span className="text-slate-500"> • {ctx.stats.last7d} за 7д</span>}
+          </p>
+        </div>
+
+        {health && (
+          <span className={`px-2 py-1 text-xs font-medium rounded-md border ${health.bg} ${health.color} flex-shrink-0`} title={`Customer Health Score: ${ctx.health?.score ?? '—'}`}>
+            {health.emoji} {health.label}
+          </span>
+        )}
+
+        {ctx.stats.avgResolutionHours != null && (
+          <span className="text-xs text-slate-500 flex-shrink-0" title="Среднее время решения по этому клиенту">
+            ⏱ {ctx.stats.avgResolutionHours < 24 ? `${ctx.stats.avgResolutionHours}ч` : `${Math.round(ctx.stats.avgResolutionHours / 24)}д`} в среднем
+          </span>
+        )}
+
+        <ChevronDownIcon expanded={expanded} />
+      </button>
+
+      {expanded && (
+        <div className="border-t border-slate-200 px-3 py-2 space-y-3 bg-white/60">
+          {/* Активные другие кейсы клиента */}
+          {ctx.activeCases.length > 0 && (
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-1">
+                Ещё активных кейсов у этого клиента ({ctx.activeCases.length})
+              </p>
+              <div className="space-y-1">
+                {ctx.activeCases.map(ac => (
+                  <div key={ac.id} className="text-xs flex items-center gap-2 px-2 py-1 bg-slate-50 rounded">
+                    <span className="font-mono text-blue-600">#{ac.ticketNumber || ac.id.slice(0, 6)}</span>
+                    <span className="text-slate-700 truncate flex-1">{ac.title}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-500">
+                      {ac.priority}
+                    </span>
+                    <span className="text-[10px] text-slate-400">{ac.ageHours != null ? formatMinutesShort(ac.ageHours * 60) : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Последние решённые — как раньше решали */}
+          {ctx.recentResolved.length > 0 && (
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-1">
+                Как решали раньше у этого клиента
+              </p>
+              <div className="space-y-1">
+                {ctx.recentResolved.map(rr => (
+                  <div key={rr.id} className="text-xs px-2 py-1.5 bg-green-50/60 border border-green-100 rounded">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-green-700">#{rr.ticketNumber || rr.id.slice(0, 6)}</span>
+                      <span className="text-slate-700 truncate flex-1">{rr.title}</span>
+                      <span className="text-[10px] text-slate-500">
+                        решили за {formatMinutesShort(rr.resolvedInMinutes)}
+                      </span>
+                    </div>
+                    {rr.resolutionNotes && (
+                      <p className="text-[11px] text-slate-600 mt-0.5 italic line-clamp-2">→ {rr.resolutionNotes}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Метрики */}
+          <div className="grid grid-cols-4 gap-2 text-center pt-1">
+            <Stat label="Всего" value={ctx.stats.total} />
+            <Stat label="Решено" value={ctx.stats.resolved} />
+            <Stat label="Активных" value={ctx.stats.active} color={ctx.stats.active > 0 ? 'text-orange-600' : undefined} />
+            <Stat label="Повторов" value={ctx.stats.recurring} color={ctx.stats.recurring > 0 ? 'text-purple-600' : undefined} />
+          </div>
+
+          <button
+            onClick={() => navigate(`/chats?channel=${ctx.channel.id}`)}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            Открыть все сообщения клиента в чате →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChevronDownIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  )
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div className="bg-white border border-slate-100 rounded px-2 py-1">
+      <p className={`text-base font-bold ${color || 'text-slate-700'}`}>{value}</p>
+      <p className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</p>
+    </div>
+  )
 }
 
 interface CaseDetailModalProps {
@@ -170,14 +319,16 @@ interface CaseDetailModalProps {
   onClose: () => void
   caseData: CaseDetail | null
   agents: Agent[]
+  currentUserName?: string
   onStatusChange: (caseId: string, status: CaseStatus) => void
   onAssign: (caseId: string, agent: Agent | null) => void
   onAddComment: (caseId: string, text: string, isInternal: boolean) => void
+  onSnoozeChange?: (caseId: string, snoozedUntil: string | null) => void
   onDelete: () => void
 }
 
 export function CaseDetailModal({
-  isOpen, onClose, caseData, agents, onStatusChange, onAssign, onAddComment, onDelete,
+  isOpen, onClose, caseData, agents, currentUserName, onStatusChange, onAssign, onAddComment, onSnoozeChange, onDelete,
 }: CaseDetailModalProps) {
   const navigate = useNavigate()
   const [detailTab, setDetailTab] = useState('chat')
@@ -195,6 +346,53 @@ export function CaseDetailModal({
   const [replyText, setReplyText] = useState('')
   const [sending, setSending] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
+
+  // Snooze UI
+  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
+  const [snoozePending, setSnoozePending] = useState(false)
+
+  // Customer 360 context
+  const [customerCtx, setCustomerCtx] = useState<CustomerContext | null>(null)
+  const [customer360Expanded, setCustomer360Expanded] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen || !caseData?.channelId) {
+      setCustomerCtx(null)
+      return
+    }
+    fetchCustomerContext(caseData.channelId, caseData.id)
+      .then(setCustomerCtx)
+      .catch(() => setCustomerCtx(null))
+  }, [isOpen, caseData?.channelId, caseData?.id])
+
+  const applySnooze = async (until: Date | null, reason?: string) => {
+    if (!caseData) return
+    setSnoozePending(true)
+    setSnoozeMenuOpen(false)
+    try {
+      await snoozeCase(caseData.id, until ? until.toISOString() : null, reason, currentUserName)
+      onSnoozeChange?.(caseData.id, until ? until.toISOString() : null)
+    } catch (e) {
+      console.error('Snooze error', e)
+    } finally {
+      setSnoozePending(false)
+    }
+  }
+
+  const snoozePresets = (() => {
+    const now = new Date()
+    const inHours = (h: number) => { const d = new Date(now); d.setHours(d.getHours() + h, 0, 0, 0); return d }
+    const tomorrowMorning = () => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d }
+    const nextMonday = () => { const d = new Date(now); const day = d.getDay() || 7; d.setDate(d.getDate() + (8 - day)); d.setHours(9, 0, 0, 0); return d }
+    const nextWeek = () => { const d = new Date(now); d.setDate(d.getDate() + 7); d.setHours(9, 0, 0, 0); return d }
+    return [
+      { label: 'на 1 час',    until: inHours(1) },
+      { label: 'на 4 часа',   until: inHours(4) },
+      { label: 'завтра 09:00', until: tomorrowMorning() },
+      { label: 'в понедельник 09:00', until: nextMonday() },
+      { label: 'через неделю', until: nextWeek() },
+    ]
+  })()
 
   const loadComments = useCallback(async () => {
     if (!caseData?.id) return
@@ -332,7 +530,7 @@ export function CaseDetailModal({
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 relative">
               <select
                 value={caseData.status}
                 onChange={(e) => onStatusChange(caseData.id, e.target.value as CaseStatus)}
@@ -342,11 +540,72 @@ export function CaseDetailModal({
                   <option key={s} value={s}>{CASE_STATUS_CONFIG[s].label}</option>
                 ))}
               </select>
+
+              {/* Snooze */}
+              {caseData.snoozedUntil && new Date(caseData.snoozedUntil) > new Date() ? (
+                <button
+                  onClick={() => applySnooze(null)}
+                  disabled={snoozePending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100"
+                  title={`Отложен до ${new Date(caseData.snoozedUntil).toLocaleString('ru-RU')}. Нажмите чтобы снять.`}
+                >
+                  <Bell className="w-4 h-4" />
+                  до {new Date(caseData.snoozedUntil).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setSnoozeMenuOpen(v => !v)}
+                  disabled={snoozePending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50"
+                  title="Отложить кейс на потом"
+                >
+                  <BellOff className="w-4 h-4" />
+                  Отложить
+                </button>
+              )}
+
+              {snoozeMenuOpen && (
+                <div className="absolute top-full right-0 mt-1 w-56 bg-white shadow-lg border border-slate-200 rounded-lg z-50 py-1">
+                  {snoozePresets.map(p => (
+                    <button
+                      key={p.label}
+                      onClick={() => applySnooze(p.until)}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50 flex items-center justify-between"
+                    >
+                      <span>Отложить {p.label}</span>
+                      <span className="text-xs text-slate-400">
+                        {p.until.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </button>
+                  ))}
+                  <div className="border-t border-slate-100 my-1" />
+                  <label className="px-3 py-2 text-xs text-slate-500 block">Своя дата:</label>
+                  <input
+                    type="datetime-local"
+                    onChange={(e) => {
+                      if (!e.target.value) return
+                      const d = new Date(e.target.value)
+                      if (!isNaN(d.getTime()) && d > new Date()) applySnooze(d)
+                    }}
+                    className="mx-3 mb-2 px-2 py-1 text-sm border border-slate-200 rounded w-[calc(100%-1.5rem)]"
+                  />
+                </div>
+              )}
+
               <button onClick={onDelete} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>
+
+          {/* Customer 360 — компактная сводка по клиенту, раскрывается по клику */}
+          {customerCtx && (
+            <Customer360Banner
+              ctx={customerCtx}
+              expanded={customer360Expanded}
+              onToggle={() => setCustomer360Expanded(v => !v)}
+            />
+          )}
 
           <Tabs
             tabs={[

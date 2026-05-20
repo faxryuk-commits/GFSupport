@@ -640,6 +640,15 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Created/updated support_commitments table')
     } catch (e) { /* table exists */ }
 
+    // Migration 38: Snooze для кейсов (отложить до даты)
+    try {
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMP NULL`
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS snoozed_by VARCHAR(255) NULL`
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS snooze_reason TEXT NULL`
+      await sql`CREATE INDEX IF NOT EXISTS idx_cases_snoozed ON support_cases(snoozed_until) WHERE snoozed_until IS NOT NULL`
+      migrations.push('Added snooze fields to support_cases')
+    } catch (e) { /* exists */ }
+
     return json({
       success: true,
       migrations,

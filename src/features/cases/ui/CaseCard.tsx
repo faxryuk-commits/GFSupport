@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer, Repeat, Ban } from 'lucide-react'
+import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer, Repeat, Ban, Bell } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '@/shared/ui'
 import { CASE_PRIORITY_CONFIG, type CasePriority } from '@/entities/case'
@@ -31,6 +31,9 @@ export interface CaseCardData {
   isOverdue?: boolean
   slaThresholdHours?: number
   ageHours?: number
+  // Snooze
+  snoozedUntil?: string | null
+  isSnoozed?: boolean
 }
 
 interface CaseCardProps {
@@ -164,6 +167,15 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
             >
               <AlertTriangle className="w-2.5 h-2.5" />
               SLA
+            </span>
+          )}
+          {caseItem.isSnoozed && caseItem.snoozedUntil && (
+            <span
+              className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700"
+              title={`Отложен до ${new Date(caseItem.snoozedUntil).toLocaleString('ru-RU')}`}
+            >
+              <Bell className="w-2.5 h-2.5" />
+              до {new Date(caseItem.snoozedUntil).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>

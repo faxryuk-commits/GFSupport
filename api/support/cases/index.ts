@@ -86,6 +86,8 @@ export default async function handler(req: Request): Promise<Response> {
       const overdueHoursParam = parseInt(url.searchParams.get('overdueHours') || '0')
       const overdueHours = overdueHoursParam > 0 ? overdueHoursParam : null
       const onlyOverdue = url.searchParams.get('overdue') === 'true'
+      // Snooze: по умолчанию скрываем отложенные. `snoozed=only` показывает только их, `snoozed=include` — все.
+      const snoozedMode = url.searchParams.get('snoozed') || 'hide'
 
       const sortBy = url.searchParams.get('sortBy') || 'priority'
       const sortValid = VALID_SORTS.has(sortBy) ? sortBy : 'priority'
@@ -166,6 +168,11 @@ export default async function handler(req: Request): Promise<Response> {
             )
           )
           AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= ${overdueHours}::int)
+          AND (
+            ${snoozedMode} = 'include'
+            OR (${snoozedMode} = 'only' AND c.snoozed_until IS NOT NULL AND c.snoozed_until > NOW())
+            OR (${snoozedMode} = 'hide' AND (c.snoozed_until IS NULL OR c.snoozed_until <= NOW()))
+          )
         ORDER BY
           CASE WHEN ${sortValid} = 'priority' THEN
             CASE c.priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
@@ -218,6 +225,11 @@ export default async function handler(req: Request): Promise<Response> {
             )
           )
           AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= ${overdueHours}::int)
+          AND (
+            ${snoozedMode} = 'include'
+            OR (${snoozedMode} = 'only' AND c.snoozed_until IS NOT NULL AND c.snoozed_until > NOW())
+            OR (${snoozedMode} = 'hide' AND (c.snoozed_until IS NULL OR c.snoozed_until <= NOW()))
+          )
       `
       const total = totalResult[0]?.total ?? 0
 
@@ -300,6 +312,18 @@ export default async function handler(req: Request): Promise<Response> {
       `
       const overdueCount = overdueRow[0]?.overdue ?? 0
 
+      // Snooze counter (активные отложенные кейсы)
+      const snoozedRow = await sql`
+        SELECT COUNT(*)::int AS snoozed
+        FROM support_cases
+        WHERE org_id = ${orgId}
+          AND status NOT IN ('resolved','closed','cancelled')
+          AND snoozed_until IS NOT NULL
+          AND snoozed_until > NOW()
+          AND (${market}::text IS NULL OR market_id = ${market})
+      `.catch(() => [{ snoozed: 0 }])
+      const snoozedCount = snoozedRow[0]?.snoozed ?? 0
+
       return json({
         cases: rows.map((c: any) => {
           const ageHours = c.age_hours != null ? Number(c.age_hours) : null
@@ -349,6 +373,10 @@ export default async function handler(req: Request): Promise<Response> {
             ageHours,
             slaThresholdHours: slaThreshold,
             isOverdue,
+            snoozedUntil: c.snoozed_until,
+            snoozedBy: c.snoozed_by,
+            snoozeReason: c.snooze_reason,
+            isSnoozed: c.snoozed_until && new Date(c.snoozed_until) > new Date(),
           }
         }),
         total,
@@ -358,6 +386,7 @@ export default async function handler(req: Request): Promise<Response> {
         stats,
         metrics: resolutionMetrics,
         overdueCount,
+        snoozedCount,
       })
 
     } catch (e: any) {

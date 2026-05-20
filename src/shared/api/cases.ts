@@ -28,6 +28,7 @@ export interface CasesResponse {
   stats: CaseStats
   metrics: CaseResolutionMetrics
   overdueCount: number
+  snoozedCount: number
 }
 
 export interface CaseComment {
@@ -65,6 +66,7 @@ export interface CasesFilters {
   dateFrom?: string
   dateTo?: string
   overdue?: boolean
+  snoozed?: 'hide' | 'only' | 'include'
   sortBy?: 'priority' | 'created_desc' | 'created_asc' | 'last_activity'
   limit?: number
   offset?: number
@@ -85,6 +87,7 @@ export async function fetchCases(filters?: CasesFilters): Promise<CasesResponse>
   if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom)
   if (filters?.dateTo) params.set('dateTo', filters.dateTo)
   if (filters?.overdue) params.set('overdue', 'true')
+  if (filters?.snoozed) params.set('snoozed', filters.snoozed)
   if (filters?.sortBy) params.set('sortBy', filters.sortBy)
   if (filters?.metricsPeriodDays) params.set('metricsPeriodDays', String(filters.metricsPeriodDays))
   params.set('limit', String(filters?.limit ?? 100))
@@ -137,6 +140,24 @@ export async function deleteCase(id: string): Promise<void> {
   await apiDelete(`/cases?id=${id}`)
 }
 
+/**
+ * Отложить кейс до указанной даты (или снять snooze, передав null).
+ * После snoozedUntil кейс сам вернётся в активную выдачу.
+ */
+export async function snoozeCase(
+  id: string,
+  snoozedUntil: string | null,
+  reason?: string,
+  by?: string,
+): Promise<{ success: boolean; snoozedUntil: string | null }> {
+  return apiPut<{ success: boolean; snoozedUntil: string | null }>(`/cases/${id}`, {
+    action: 'snooze',
+    snoozedUntil,
+    reason,
+    by,
+  })
+}
+
 export async function addCaseComment(
   caseId: string,
   text: string,
@@ -168,4 +189,65 @@ export async function createCaseFromMessage(
 ): Promise<Case> {
   return apiPost<{ case: Case }>('/cases/from-message', { messageId, ...options })
     .then(r => r.case)
+}
+
+export interface CustomerContext {
+  channel: {
+    id: string
+    name: string
+    source: string
+    type: string
+    companyId?: string
+    telegramChatId?: number
+    market?: string
+    createdAt: string
+  }
+  stats: {
+    total: number
+    active: number
+    resolved: number
+    cancelled: number
+    recurring: number
+    shadow: number
+    last7d: number
+    last30d: number
+    avgResolutionMinutes: number | null
+    avgResolutionHours: number | null
+    lastResolvedAt: string | null
+  }
+  recentResolved: Array<{
+    id: string
+    ticketNumber?: number
+    title: string
+    description?: string
+    resolutionNotes?: string | null
+    category?: string
+    priority: string
+    resolvedAt: string
+    resolvedInMinutes: number | null
+  }>
+  activeCases: Array<{
+    id: string
+    ticketNumber?: number
+    title: string
+    status: string
+    priority: string
+    createdAt: string
+    ageHours: number | null
+  }>
+  health: {
+    band: 'critical' | 'at_risk' | 'healthy' | 'loyal' | string
+    score: number | null
+    openCases: number
+    churnSignals: number
+  } | null
+}
+
+export async function fetchCustomerContext(
+  channelId: string,
+  excludeCaseId?: string,
+): Promise<CustomerContext> {
+  const params = new URLSearchParams({ channelId })
+  if (excludeCaseId) params.set('excludeCaseId', excludeCaseId)
+  return apiGet<CustomerContext>(`/cases/customer-context?${params}`)
 }
