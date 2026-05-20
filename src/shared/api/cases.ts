@@ -251,3 +251,45 @@ export async function fetchCustomerContext(
   if (excludeCaseId) params.set('excludeCaseId', excludeCaseId)
   return apiGet<CustomerContext>(`/cases/customer-context?${params}`)
 }
+
+export interface RelatedCase {
+  id: string
+  ticketNumber?: number
+  title: string
+  description?: string
+  resolutionNotes?: string | null
+  category?: string
+  priority: string
+  resolvedAt: string
+  resolvedInMinutes: number | null
+  score?: number
+  matchedKeywords?: string[]
+  channelName?: string
+  isRecurring?: boolean
+}
+
+export async function fetchRelatedCases(caseId: string, limit = 5): Promise<{
+  related: RelatedCase[]
+  method?: string
+  tokens?: string[]
+}> {
+  const params = new URLSearchParams({ caseId, limit: String(limit) })
+  return apiGet<{ related: RelatedCase[]; method?: string; tokens?: string[] }>(`/cases/related?${params}`)
+}
+
+export interface TakeNextResult {
+  case: Case | null
+  reason?: 'urgent_overdue' | 'mine_overdue' | 'overdue' | 'urgent' | 'mine' | 'unassigned_new' | 'normal' | 'queue_empty'
+  updated?: boolean
+}
+
+export async function takeNextCase(agentId: string, options?: {
+  autoAssign?: boolean
+  autoStart?: boolean
+}): Promise<TakeNextResult> {
+  return apiPost<TakeNextResult>('/cases/next', {
+    agentId,
+    autoAssign: options?.autoAssign ?? true,
+    autoStart: options?.autoStart ?? true,
+  })
+}

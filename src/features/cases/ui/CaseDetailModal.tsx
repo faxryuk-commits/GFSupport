@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
-import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, type CaseComment, type CaseActivity, type CustomerContext } from '@/shared/api'
+import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, fetchRelatedCases, type CaseComment, type CaseActivity, type CustomerContext, type RelatedCase } from '@/shared/api'
 import type { Message } from '@/shared/types'
 
 function formatDate(dateStr: string | undefined | null): string {
@@ -320,6 +320,8 @@ interface CaseDetailModalProps {
   caseData: CaseDetail | null
   agents: Agent[]
   currentUserName?: string
+  /** 'modal' (default) — оборачиваем в Modal; 'inline' — рендерим без обёртки для split-view Inbox. */
+  mode?: 'modal' | 'inline'
   onStatusChange: (caseId: string, status: CaseStatus) => void
   onAssign: (caseId: string, agent: Agent | null) => void
   onAddComment: (caseId: string, text: string, isInternal: boolean) => void
@@ -328,7 +330,7 @@ interface CaseDetailModalProps {
 }
 
 export function CaseDetailModal({
-  isOpen, onClose, caseData, agents, currentUserName, onStatusChange, onAssign, onAddComment, onSnoozeChange, onDelete,
+  isOpen, onClose, caseData, agents, currentUserName, mode = 'modal', onStatusChange, onAssign, onAddComment, onSnoozeChange, onDelete,
 }: CaseDetailModalProps) {
   const navigate = useNavigate()
   const [detailTab, setDetailTab] = useState('chat')
@@ -355,15 +357,34 @@ export function CaseDetailModal({
   const [customerCtx, setCustomerCtx] = useState<CustomerContext | null>(null)
   const [customer360Expanded, setCustomer360Expanded] = useState(false)
 
+  // Related cases
+  const [relatedCases, setRelatedCases] = useState<RelatedCase[]>([])
+  const [loadingRelated, setLoadingRelated] = useState(false)
+
+  const isVisible = mode === 'inline' || isOpen
+
   useEffect(() => {
-    if (!isOpen || !caseData?.channelId) {
+    if (!isVisible || !caseData?.channelId) {
       setCustomerCtx(null)
       return
     }
     fetchCustomerContext(caseData.channelId, caseData.id)
       .then(setCustomerCtx)
       .catch(() => setCustomerCtx(null))
-  }, [isOpen, caseData?.channelId, caseData?.id])
+  }, [isVisible, caseData?.channelId, caseData?.id])
+
+  // Related cases: похожие решённые из всей базы (не только этого клиента)
+  useEffect(() => {
+    if (!isVisible || !caseData?.id) {
+      setRelatedCases([])
+      return
+    }
+    setLoadingRelated(true)
+    fetchRelatedCases(caseData.id, 5)
+      .then(r => setRelatedCases(r.related || []))
+      .catch(() => setRelatedCases([]))
+      .finally(() => setLoadingRelated(false))
+  }, [isVisible, caseData?.id])
 
   const applySnooze = async (until: Date | null, reason?: string) => {
     if (!caseData) return
@@ -447,19 +468,19 @@ export function CaseDetailModal({
   }, [caseData?.channelId])
 
   useEffect(() => {
-    if (isOpen && caseData?.id) {
+    if (isVisible && caseData?.id) {
       loadComments()
       loadActivities()
       loadChat()
     }
-  }, [isOpen, caseData?.id, loadComments, loadActivities, loadChat])
+  }, [isVisible, caseData?.id, loadComments, loadActivities, loadChat])
 
   // Перезагружаем чат при возврате на вкладку
   useEffect(() => {
-    if (isOpen && detailTab === 'chat' && caseData?.channelId) {
+    if (isVisible && detailTab === 'chat' && caseData?.channelId) {
       loadChat()
     }
-  }, [detailTab, isOpen, caseData?.channelId, loadChat])
+  }, [detailTab, isVisible, caseData?.channelId, loadChat])
 
   const handleSendReply = async () => {
     if (!replyText.trim() || !caseData?.channelId) return
@@ -507,10 +528,9 @@ export function CaseDetailModal({
   const agingText = agingHours < 1 ? 'Менее часа' : agingHours < 24 ? `${Math.floor(agingHours)} ч` : `${Math.floor(agingHours / 24)} д ${Math.floor(agingHours % 24)} ч`
   const agingColor = agingHours < 4 ? 'text-green-600' : agingHours < 24 ? 'text-amber-600' : 'text-red-600'
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Тикет ${displayNumber}`} size="xl">
-      <div className="flex gap-6 -mx-6 -mb-6">
-        <div className="flex-1 pl-6 pb-6">
+  const content = (
+    <div className={`flex gap-6 ${mode === 'modal' ? '-mx-6 -mb-6' : ''}`}>
+        <div className={`flex-1 ${mode === 'modal' ? 'pl-6 pb-6' : 'p-4'}`}>
           <div className="flex items-start justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-slate-800">{caseData.title}</h3>
@@ -610,6 +630,7 @@ export function CaseDetailModal({
           <Tabs
             tabs={[
               { id: 'chat', label: 'Чат с клиентом', badge: chatMessages.length || undefined },
+              { id: 'related', label: 'Похожие', badge: relatedCases.length || undefined },
               { id: 'details', label: 'Детали' },
               { id: 'comments', label: 'Комментарии', badge: comments.length },
               { id: 'history', label: 'История' },
@@ -703,6 +724,72 @@ export function CaseDetailModal({
                     Отправить
                   </button>
                 </div>
+              </div>
+            )}
+          </TabPanel>
+
+          <TabPanel tabId="related" activeTab={detailTab}>
+            {loadingRelated ? (
+              <div className="flex items-center justify-center py-8 text-slate-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Ищем похожие кейсы…
+              </div>
+            ) : relatedCases.length === 0 ? (
+              <EmptyState
+                title="Похожих кейсов не найдено"
+                description="В архиве нет решённых кейсов с похожей проблемой или категорией. Возможно, эта проблема уникальна."
+                size="sm"
+              />
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">
+                  Найдено {relatedCases.length} похожих кейс{relatedCases.length === 1 ? '' : 'а'} с записями о решении.
+                  Используйте как подсказку.
+                </p>
+                {relatedCases.map(rc => (
+                  <div key={rc.id} className="border border-slate-200 rounded-lg p-3 bg-gradient-to-br from-green-50/40 to-blue-50/40">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="font-mono text-xs text-green-700 font-semibold">
+                        #{rc.ticketNumber || rc.id.slice(0, 6)}
+                      </span>
+                      <span className="text-sm font-medium text-slate-800 flex-1 truncate">{rc.title}</span>
+                      {rc.score != null && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded" title="Композитный score по совпадениям">
+                          {rc.score} pts
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500 mb-2">
+                      {rc.category && <span>{rc.category}</span>}
+                      {rc.channelName && <span>· {rc.channelName}</span>}
+                      <span>· решили за {rc.resolvedInMinutes != null
+                        ? rc.resolvedInMinutes < 60 ? `${Math.round(rc.resolvedInMinutes)} мин`
+                        : rc.resolvedInMinutes < 1440 ? `${Math.round(rc.resolvedInMinutes / 60)} ч`
+                        : `${Math.round(rc.resolvedInMinutes / 1440)} д` : '—'}</span>
+                      {rc.isRecurring && (
+                        <span className="text-purple-600">· повторялся</span>
+                      )}
+                    </div>
+
+                    {rc.resolutionNotes && (
+                      <div className="bg-white border border-green-200 rounded p-2 text-sm text-slate-700">
+                        <p className="text-[10px] text-green-600 uppercase tracking-wide font-semibold mb-1">Как решили</p>
+                        <p className="whitespace-pre-wrap text-xs">{rc.resolutionNotes}</p>
+                      </div>
+                    )}
+
+                    {rc.matchedKeywords && rc.matchedKeywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {rc.matchedKeywords.slice(0, 5).map(k => (
+                          <span key={k} className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                            {k}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </TabPanel>
@@ -855,6 +942,15 @@ export function CaseDetailModal({
           )}
         </div>
       </div>
+  )
+
+  if (mode === 'inline') {
+    return content
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Тикет ${displayNumber}`} size="xl">
+      {content}
     </Modal>
   )
 }

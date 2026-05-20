@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell } from 'lucide-react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell, Inbox, LayoutGrid } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CasesNowSection } from './CasesNowSection'
+import { CasesInboxView } from './CasesInboxView'
+import { takeNextCase } from '@/shared/api'
 import {
   ACTIVE_STATUSES,
   ARCHIVE_STATUSES,
@@ -125,6 +127,19 @@ export function CasesPage() {
 
   // Режим просмотра: активные или архив
   const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
+  // Layout активных: inbox (default) или kanban. Сохраняется в localStorage.
+  const [activeLayout, setActiveLayout] = useState<'inbox' | 'kanban'>(() => {
+    try {
+      const saved = localStorage.getItem('cases.activeLayout')
+      return saved === 'kanban' ? 'kanban' : 'inbox'
+    } catch { return 'inbox' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('cases.activeLayout', activeLayout) } catch {}
+  }, [activeLayout])
+
+  // Take Next
+  const [takeNextPending, setTakeNextPending] = useState(false)
 
   // Базовые фильтры
   const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned' | 'snoozed'>('all')
@@ -419,6 +434,34 @@ export function CasesPage() {
     }
   }
 
+  // Take Next: берёт следующий по приоритету, назначает на меня, открывает в превью / модале
+  const handleTakeNext = useCallback(async () => {
+    if (!currentUser?.id) {
+      showNotification({ type: 'alert', title: 'Не авторизован', message: 'Нужен ID агента' })
+      return
+    }
+    setTakeNextPending(true)
+    try {
+      const res = await takeNextCase(currentUser.id)
+      if (!res.case) {
+        showNotification({ type: 'alert', title: 'Очередь пуста', message: 'Нет кейсов для разбора. 🎉' })
+        return
+      }
+      // Освежим список и откроем кейс
+      await loadCases()
+      // Найдём в обновлённом списке (или используем то что вернул API)
+      const fullCase = { ...res.case } as Case
+      setSelectedCase(fullCase)
+      // В режиме inbox оставляем split-view, в kanban — открываем модал
+      if (activeLayout === 'kanban') setIsDetailModalOpen(true)
+    } catch (e) {
+      console.error('Take next error', e)
+      showNotification({ type: 'alert', title: 'Ошибка', message: 'Не удалось взять следующий кейс' })
+    } finally {
+      setTakeNextPending(false)
+    }
+  }, [currentUser?.id, showNotification, loadCases, activeLayout])
+
   // Массовые операции — оптимистичное обновление + последовательные API-вызовы
   const runBulk = async (fn: (id: string) => Promise<unknown>, successTitle: string) => {
     if (selectedIds.size === 0) return
@@ -633,8 +676,8 @@ export function CasesPage() {
               <button
                 onClick={() => setViewMode('archive')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'archive' 
-                    ? 'bg-white text-slate-800 shadow-sm' 
+                  viewMode === 'archive'
+                    ? 'bg-white text-slate-800 shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -647,6 +690,32 @@ export function CasesPage() {
                 </span>
               </button>
             </div>
+
+            {/* Layout toggle для активных: Inbox / Канбан */}
+            {viewMode === 'active' && (
+              <div className="flex bg-slate-100 rounded-lg p-1" title="Способ отображения активных кейсов">
+                <button
+                  onClick={() => setActiveLayout('inbox')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    activeLayout === 'inbox' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  title="Inbox-режим: список приоритизирован + превью кейса. Главный режим работы агента."
+                >
+                  <Inbox className="w-4 h-4" />
+                  Inbox
+                </button>
+                <button
+                  onClick={() => setActiveLayout('kanban')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    activeLayout === 'kanban' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  title="Канбан-доска по статусам — для обзора процесса"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Канбан
+                </button>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center gap-3">
@@ -872,6 +941,38 @@ export function CasesPage() {
               label: 'Создать кейс вручную',
               onClick: () => setIsCreateModalOpen(true),
             }}
+          />
+        ) : viewMode === 'active' && activeLayout === 'inbox' ? (
+          <CasesInboxView
+            cases={activeCases}
+            selectedCaseId={selectedCase?.id || null}
+            onSelectCase={(id) => {
+              const c = cases.find(x => x.id === id)
+              if (c) setSelectedCase(c)
+            }}
+            onTakeNext={handleTakeNext}
+            takeNextPending={takeNextPending}
+            renderDetail={() => (
+              <CaseDetailModal
+                isOpen={true}
+                onClose={() => setSelectedCase(null)}
+                caseData={selectedCase ? mapCaseToCaseDetail(selectedCase) : null}
+                agents={agents}
+                currentUserName={currentUser?.name}
+                mode="inline"
+                onStatusChange={handleStatusChange}
+                onAssign={handleAssign}
+                onAddComment={handleAddComment}
+                onSnoozeChange={(caseId, snoozedUntil) => {
+                  setCases(prev => prev.map(c => c.id === caseId ? { ...c, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : c))
+                  if (selectedCase?.id === caseId) {
+                    setSelectedCase(prev => prev ? { ...prev, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : null)
+                  }
+                  loadCases()
+                }}
+                onDelete={() => setIsDeleteDialogOpen(true)}
+              />
+            )}
           />
         ) : viewMode === 'active' ? (
           <div className="flex gap-4 overflow-x-auto pb-4">

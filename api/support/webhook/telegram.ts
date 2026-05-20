@@ -585,22 +585,23 @@ async function updateCasesOnStaffReply(
         WHERE id = ${caseItem.id} AND org_id = ${orgId}
       `
       
-      // Add activity log
+      // Add activity log (unified в support_case_activities — plural)
       await sql`
-        INSERT INTO support_case_activity (
-          id, case_id, activity_type, actor_name, actor_id, details, created_at
+        INSERT INTO support_case_activities (
+          id, case_id, type, title, from_status, to_status, manager_id, metadata, org_id, created_at
         ) VALUES (
           ${`act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`},
           ${caseItem.id},
-          ${newStatus === 'resolved' ? 'resolved' : 'replied'},
-          ${agentName},
-          ${systemAgentId || agentTelegramId},
-          ${JSON.stringify({ via: 'telegram', previousStatus: caseItem.status, newStatus })},
+          ${newStatus === 'resolved' ? 'resolved' : 'status_change'},
+          ${newStatus === 'resolved' ? 'Решено через Telegram' : `Ответ через Telegram: ${caseItem.status} → ${newStatus}`},
+          ${caseItem.status},
+          ${newStatus},
+          ${systemAgentId || null},
+          ${JSON.stringify({ via: 'telegram', actorName: agentName, telegramId: agentTelegramId })},
+          ${orgId},
           NOW()
         )
-      `.catch(() => {
-        // Activity table may not exist
-      })
+      `.catch(() => { /* table issue */ })
       
       updatedCount++
       console.log(`[Webhook] Updated case ${caseItem.id}: ${caseItem.status} -> ${newStatus}`)
@@ -1197,13 +1198,14 @@ async function createTicketFromReply(
     // Link message to case
     await sql`UPDATE support_messages SET case_id = ${caseId} WHERE id = ${messageId}`
     
-    // Log activity
+    // Log activity (unified в support_case_activities — plural)
     await sql`
-      INSERT INTO support_case_activity (id, case_id, activity_type, actor_name, details, created_at)
+      INSERT INTO support_case_activities (id, case_id, type, title, metadata, org_id, created_at)
       VALUES (
-        ${generateId('act')}, ${caseId}, 'created_via_command',
-        ${requestedBy.name},
-        ${JSON.stringify({ via: 'telegram_command', chatId, originalMessageId })},
+        ${generateId('act')}, ${caseId}, 'created',
+        ${`Создан через /case командой в Telegram (${requestedBy.name})`},
+        ${JSON.stringify({ via: 'telegram_command', chatId, originalMessageId, actorName: requestedBy.name })},
+        ${orgId},
         NOW()
       )
     `.catch(() => {})
