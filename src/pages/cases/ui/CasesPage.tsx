@@ -89,10 +89,14 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
 // Периоды для фильтра по дате
 const DATE_FILTERS = [
   { key: 'today', label: 'Сегодня' },
-  { key: 'week', label: 'Неделя' },
-  { key: 'month', label: 'Месяц' },
-  { key: 'all', label: 'Все время' },
+  { key: 'week', label: '7 дней' },
+  { key: 'month', label: '30 дней' },
+  { key: 'quarter', label: '90 дней' },
+  { key: 'custom', label: 'Свой период…' },
+  { key: 'all', label: 'Всё время' },
 ] as const
+
+type DateFilterKey = (typeof DATE_FILTERS)[number]['key']
 
 // Категории кейсов
 const CATEGORIES = [
@@ -125,7 +129,9 @@ export function CasesPage() {
   const [searchDebounced, setSearchDebounced] = useState('')
 
   // Расширенные фильтры
-  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
+  const [dateFilter, setDateFilter] = useState<DateFilterKey>('all')
+  const [customDateFrom, setCustomDateFrom] = useState<string>('')
+  const [customDateTo, setCustomDateTo] = useState<string>('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
@@ -164,19 +170,25 @@ export function CasesPage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  // Преобразование dateFilter → dateFrom (ISO)
-  const dateFromIso = useMemo<string | undefined>(() => {
-    if (dateFilter === 'all') return undefined
+  // Преобразование dateFilter → {dateFrom, dateTo} (ISO)
+  const { dateFromIso, dateToIso } = useMemo<{ dateFromIso?: string; dateToIso?: string }>(() => {
+    if (dateFilter === 'all') return {}
     const now = new Date()
     if (dateFilter === 'today') {
       const d = new Date(now)
       d.setHours(0, 0, 0, 0)
-      return d.toISOString()
+      return { dateFromIso: d.toISOString() }
     }
-    if (dateFilter === 'week') return new Date(now.getTime() - 7 * 86400000).toISOString()
-    if (dateFilter === 'month') return new Date(now.getTime() - 30 * 86400000).toISOString()
-    return undefined
-  }, [dateFilter])
+    if (dateFilter === 'week') return { dateFromIso: new Date(now.getTime() - 7 * 86400000).toISOString() }
+    if (dateFilter === 'month') return { dateFromIso: new Date(now.getTime() - 30 * 86400000).toISOString() }
+    if (dateFilter === 'quarter') return { dateFromIso: new Date(now.getTime() - 90 * 86400000).toISOString() }
+    if (dateFilter === 'custom') {
+      const from = customDateFrom ? new Date(customDateFrom + 'T00:00:00').toISOString() : undefined
+      const to = customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : undefined
+      return { dateFromIso: from, dateToIso: to }
+    }
+    return {}
+  }, [dateFilter, customDateFrom, customDateTo])
 
   // Серверные параметры фильтрации (зависят от UI-фильтров)
   const serverFilters = useMemo(() => {
@@ -192,8 +204,9 @@ export function CasesPage() {
       source: sourceFilter === 'all' ? undefined : sourceFilter,
       search: searchDebounced || undefined,
       dateFrom: dateFromIso,
+      dateTo: dateToIso,
     }
-  }, [quickFilter, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso])
+  }, [quickFilter, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso, dateToIso])
 
   // Загрузка справочников один раз
   useEffect(() => {
@@ -203,6 +216,21 @@ export function CasesPage() {
         setAgents(agentsData.map((a: Agent) => ({ id: a.id, name: a.name })))
       })
   }, [])
+
+  // Метрика времени решения считается за тот же период что и фильтр.
+  const metricsPeriodDays = useMemo(() => {
+    if (dateFilter === 'today') return 1
+    if (dateFilter === 'week') return 7
+    if (dateFilter === 'month') return 30
+    if (dateFilter === 'quarter') return 90
+    if (dateFilter === 'custom' && customDateFrom) {
+      const from = new Date(customDateFrom)
+      const to = customDateTo ? new Date(customDateTo) : new Date()
+      const days = Math.ceil((to.getTime() - from.getTime()) / 86400000)
+      return Math.max(1, Math.min(365, days))
+    }
+    return 30
+  }, [dateFilter, customDateFrom, customDateTo])
 
   // Загрузка кейсов: один запрос охватывает и активные и архив (status filter не передаём),
   // клиент разделит по ACTIVE_STATUSES/ARCHIVE_STATUSES. Server-side применяет остальные фильтры.
@@ -214,7 +242,7 @@ export function CasesPage() {
         ...serverFilters,
         limit: 500,
         sortBy: 'priority',
-        metricsPeriodDays: 30,
+        metricsPeriodDays,
       })
       setCases(res.cases)
       setMetrics(res.metrics)
@@ -226,7 +254,7 @@ export function CasesPage() {
     } finally {
       setLoading(false)
     }
-  }, [serverFilters])
+  }, [serverFilters, metricsPeriodDays])
 
   useEffect(() => {
     loadCases()
@@ -472,87 +500,90 @@ export function CasesPage() {
   return (
     <>
       <div className="h-full flex flex-col p-6 overflow-y-auto">
-        {/* Stats Summary: 4 счётчика + 1 крупный блок метрик времени решения */}
-        <div className="grid grid-cols-12 gap-3 mb-4 flex-shrink-0">
-          {[
-            {
-              label: 'Всего активных',
-              value: (statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) + (statusStats.blocked || 0) + (statusStats.recurring || 0),
-              icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100',
-            },
-            {
-              label: 'Просрочены SLA',
-              value: overdueCount,
-              icon: Timer, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100',
-              onClick: () => setQuickFilter('overdue'),
-            },
-            {
-              label: 'Без назначения',
-              value: activeCases.filter(c => !c.assignedTo).length,
-              icon: User, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100',
-              onClick: () => setQuickFilter('unassigned'),
-            },
-            {
-              label: `Решено за ${metrics?.periodDays ?? 30} дн`,
-              value: metrics?.resolvedCount ?? 0,
-              icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100',
-            },
-          ].map((s, i) => (
-            <button
-              key={i}
-              onClick={s.onClick}
-              disabled={!s.onClick}
-              className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 flex items-center gap-3 col-span-3 text-left ${s.onClick ? 'hover:shadow-sm hover:scale-[1.01] transition-all' : ''}`}
-            >
-              <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center`}>
-                <s.icon className={`w-5 h-5 ${s.color}`} />
-              </div>
-              <div>
-                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-slate-500">{s.label}</p>
-              </div>
-            </button>
-          ))}
-        </div>
+        {/* Компактная панель метрик: счётчики кейсов + время решения в одну строку */}
+        <div className="flex flex-wrap items-stretch gap-2 mb-4 flex-shrink-0">
+          {/* Счётчики кейсов (кликабельные → фильтр) */}
+          <button
+            disabled
+            className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg"
+            title="Все активные кейсы (не решённые)"
+          >
+            <Briefcase className="w-4 h-4 text-blue-600" />
+            <span className="text-lg font-bold text-blue-700 leading-none">
+              {(statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) + (statusStats.blocked || 0) + (statusStats.recurring || 0)}
+            </span>
+            <span className="text-xs text-slate-600">активных</span>
+          </button>
 
-        {/* Время решения: avg / max / median / p95 за период (исключая shadow-кейсы) */}
-        <div className="grid grid-cols-12 gap-3 mb-4 flex-shrink-0">
-          <div className="col-span-12 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-100 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-violet-600" />
-                <h3 className="text-sm font-semibold text-slate-700">
-                  Время решения за {metrics?.periodDays ?? 30} дн
-                </h3>
-                {metrics?.shadowCount ? (
-                  <span className="text-[11px] text-slate-500" title="Кейсы, авто-решённые в чате (<5 мин). В метрики не включены.">
-                    исключено {metrics.shadowCount} auto-resolved
-                  </span>
-                ) : null}
-              </div>
-              <span className="text-xs text-slate-500">
-                база: {metrics?.resolvedCount ?? 0} кейсов
-              </span>
+          <button
+            onClick={() => setQuickFilter('overdue')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+              quickFilter === 'overdue'
+                ? 'bg-red-500 border-red-500 text-white'
+                : 'bg-red-50 border-red-100 hover:bg-red-100'
+            }`}
+            title="Активные кейсы старше SLA-порога по приоритету (4 ч / 24 ч / 72 ч / 168 ч)"
+          >
+            <Timer className={`w-4 h-4 ${quickFilter === 'overdue' ? 'text-white' : 'text-red-600'}`} />
+            <span className={`text-lg font-bold leading-none ${quickFilter === 'overdue' ? 'text-white' : 'text-red-700'}`}>
+              {overdueCount}
+            </span>
+            <span className={`text-xs ${quickFilter === 'overdue' ? 'text-red-50' : 'text-slate-600'}`}>просрочка</span>
+          </button>
+
+          <button
+            onClick={() => setQuickFilter('unassigned')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+              quickFilter === 'unassigned'
+                ? 'bg-amber-500 border-amber-500 text-white'
+                : 'bg-amber-50 border-amber-100 hover:bg-amber-100'
+            }`}
+            title="Активные кейсы без назначенного агента"
+          >
+            <User className={`w-4 h-4 ${quickFilter === 'unassigned' ? 'text-white' : 'text-amber-600'}`} />
+            <span className={`text-lg font-bold leading-none ${quickFilter === 'unassigned' ? 'text-white' : 'text-amber-700'}`}>
+              {activeCases.filter(c => !c.assignedTo).length}
+            </span>
+            <span className={`text-xs ${quickFilter === 'unassigned' ? 'text-amber-50' : 'text-slate-600'}`}>без агента</span>
+          </button>
+
+          <button
+            disabled
+            className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-lg"
+            title={`Resolved + closed за ${metrics?.periodDays ?? 30} дн (без shadow auto-resolved)`}
+          >
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span className="text-lg font-bold text-green-700 leading-none">{metrics?.resolvedCount ?? 0}</span>
+            <span className="text-xs text-slate-600">решено / {metrics?.periodDays ?? 30}д</span>
+          </button>
+
+          {/* Разделитель + метрики времени */}
+          <div className="w-px bg-slate-200 mx-1" />
+
+          {[
+            { key: 'avg', label: 'Среднее', value: metrics?.avgHours, color: 'text-violet-700', tip: 'Среднее время от первого сообщения клиента до закрытия кейса. Может перекошиться одним длинным кейсом.' },
+            { key: 'med', label: 'Медиана', value: metrics?.medianHours, color: 'text-blue-700', tip: 'Половина кейсов решается быстрее, половина — медленнее. Устойчиво к выбросам.' },
+            { key: 'p95', label: 'P95', value: metrics?.p95Hours, color: 'text-amber-700', tip: '95% кейсов решаются за это время или быстрее. Только 5% хуже — это «верхний предел нормы».' },
+            { key: 'max', label: 'Максимум', value: metrics?.maxHours, color: 'text-red-700', tip: 'Самый долгий кейс за период. Если резко отличается от P95 — отдельный аутлайер.' },
+          ].map(m => (
+            <div
+              key={m.key}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
+              title={m.tip}
+            >
+              <span className="text-[11px] text-slate-500 uppercase tracking-wide">{m.label}</span>
+              <span className={`text-base font-bold leading-none ${m.color}`}>{formatHours(m.value ?? null)}</span>
             </div>
-            <div className="grid grid-cols-4 gap-3">
-              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wide">Среднее</p>
-                <p className="text-xl font-bold text-violet-700">{formatHours(metrics?.avgHours ?? null)}</p>
-              </div>
-              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wide">Максимум</p>
-                <p className="text-xl font-bold text-red-600">{formatHours(metrics?.maxHours ?? null)}</p>
-              </div>
-              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wide">Медиана</p>
-                <p className="text-xl font-bold text-blue-600">{formatHours(metrics?.medianHours ?? null)}</p>
-              </div>
-              <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wide">P95</p>
-                <p className="text-xl font-bold text-amber-600">{formatHours(metrics?.p95Hours ?? null)}</p>
-              </div>
-            </div>
-          </div>
+          ))}
+
+          {metrics?.shadowCount ? (
+            <span
+              className="text-[11px] text-slate-400 self-center ml-1"
+              title="Auto-resolved в чате за <5 мин — не включены в среднее, иначе искажают вниз"
+            >
+              ({metrics.shadowCount} auto-resolved)
+            </span>
+          ) : null}
         </div>
 
         {/* Header */}
@@ -708,7 +739,7 @@ export function CasesPage() {
         {/* Advanced Filters Panel */}
         {showFilters && (
           <div className="flex flex-wrap gap-3 mb-4 p-4 bg-slate-50 rounded-lg flex-shrink-0">
-            {/* Date Filter */}
+            {/* Date Filter — пресеты + произвольный диапазон */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-slate-500 flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
@@ -716,7 +747,7 @@ export function CasesPage() {
               </label>
               <select
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
+                onChange={(e) => setDateFilter(e.target.value as DateFilterKey)}
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 {DATE_FILTERS.map(f => (
@@ -724,6 +755,29 @@ export function CasesPage() {
                 ))}
               </select>
             </div>
+
+            {dateFilter === 'custom' && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-slate-500">От</label>
+                  <input
+                    type="date"
+                    value={customDateFrom}
+                    onChange={(e) => setCustomDateFrom(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-slate-500">До</label>
+                  <input
+                    type="date"
+                    value={customDateTo}
+                    onChange={(e) => setCustomDateTo(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </>
+            )}
             
             {/* Category Filter */}
             <div className="flex flex-col gap-1">

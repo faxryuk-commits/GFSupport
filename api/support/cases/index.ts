@@ -100,6 +100,7 @@ export default async function handler(req: Request): Promise<Response> {
         WITH msg_stats AS (
           SELECT case_id,
                  COUNT(*) AS messages_count,
+                 MIN(created_at) AS first_message_at,
                  (ARRAY_AGG(sender_name ORDER BY created_at ASC))[1] AS reporter_name
           FROM support_messages
           WHERE org_id = ${orgId} AND case_id IS NOT NULL
@@ -117,10 +118,18 @@ export default async function handler(req: Request): Promise<Response> {
           a.name AS assignee_name,
           COALESCE(m.messages_count, 0) AS messages_count,
           m.reporter_name,
+          m.first_message_at,
           act.last_activity_at,
           act.last_status_change_at,
           act.last_activity_type,
-          EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600.0 AS age_hours
+          -- age считается от первого сообщения клиента (точнее), fallback на created_at кейса
+          EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 AS age_hours,
+          -- точное время решения "от сообщения": если есть first_message_at и resolved_at, считаем заново
+          CASE
+            WHEN c.resolved_at IS NOT NULL AND m.first_message_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (c.resolved_at - m.first_message_at)) / 60.0
+            ELSE c.resolution_time_minutes
+          END AS resolution_time_minutes_from_msg
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
         LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -150,13 +159,13 @@ export default async function handler(req: Request): Promise<Response> {
             NOT ${onlyOverdue}
             OR (
               c.status NOT IN ('resolved','closed','cancelled')
-              AND EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600.0 >= CASE c.priority
+              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= CASE c.priority
                 WHEN 'critical' THEN 4 WHEN 'urgent' THEN 4
                 WHEN 'high' THEN 24 WHEN 'medium' THEN 72
                 ELSE 168 END
             )
           )
-          AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600.0 >= ${overdueHours}::int)
+          AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= ${overdueHours}::int)
         ORDER BY
           CASE WHEN ${sortValid} = 'priority' THEN
             CASE c.priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
@@ -172,6 +181,12 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT COUNT(*)::int AS total
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+        LEFT JOIN (
+          SELECT case_id, MIN(created_at) AS first_message_at
+          FROM support_messages
+          WHERE org_id = ${orgId} AND case_id IS NOT NULL
+          GROUP BY case_id
+        ) m ON m.case_id = c.id
         WHERE c.org_id = ${orgId}
           AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
           AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
@@ -196,13 +211,13 @@ export default async function handler(req: Request): Promise<Response> {
             NOT ${onlyOverdue}
             OR (
               c.status NOT IN ('resolved','closed','cancelled')
-              AND EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600.0 >= CASE c.priority
+              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= CASE c.priority
                 WHEN 'critical' THEN 4 WHEN 'urgent' THEN 4
                 WHEN 'high' THEN 24 WHEN 'medium' THEN 72
                 ELSE 168 END
             )
           )
-          AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 3600.0 >= ${overdueHours}::int)
+          AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= ${overdueHours}::int)
       `
       const total = totalResult[0]?.total ?? 0
 
@@ -216,23 +231,35 @@ export default async function handler(req: Request): Promise<Response> {
       `
       const stats = Object.fromEntries(statsResult.map((s: any) => [s.status, s.count]))
 
-      // Метрики времени решения за период (по умолчанию 30 дней)
-      // Shadow-кейсы (авто-резолв из чата за <5 мин) исключаем из avg/max — иначе среднее искажается вниз.
+      // Метрики времени решения за период (по умолчанию 30 дней).
+      // Считается от ПЕРВОГО СООБЩЕНИЯ КЛИЕНТА (а не от created_at кейса) — fallback на cases.created_at для кейсов без привязанных сообщений.
+      // Shadow-кейсы исключаем (искажают среднее вниз).
       const metricsPeriodDays = Math.min(Math.max(parseInt(url.searchParams.get('metricsPeriodDays') || '30'), 1), 365)
       const metricsRow = await sql`
+        WITH resolved_cases AS (
+          SELECT c.id, c.is_shadow,
+                 EXTRACT(EPOCH FROM (c.resolved_at - COALESCE(m.first_message_at, c.created_at))) / 60.0 AS res_minutes
+          FROM support_cases c
+          LEFT JOIN (
+            SELECT case_id, MIN(created_at) AS first_message_at
+            FROM support_messages
+            WHERE org_id = ${orgId} AND case_id IS NOT NULL
+            GROUP BY case_id
+          ) m ON m.case_id = c.id
+          WHERE c.org_id = ${orgId}
+            AND c.status IN ('resolved','closed')
+            AND c.resolved_at IS NOT NULL
+            AND c.resolved_at >= NOW() - (${metricsPeriodDays} || ' days')::interval
+            AND (${market}::text IS NULL OR c.market_id = ${market})
+        )
         SELECT
-          COUNT(*) FILTER (WHERE resolution_time_minutes IS NOT NULL AND resolution_time_minutes > 0 AND COALESCE(is_shadow, false) = false)::int AS resolved_count,
-          AVG(resolution_time_minutes) FILTER (WHERE resolution_time_minutes IS NOT NULL AND resolution_time_minutes > 0 AND COALESCE(is_shadow, false) = false) AS avg_minutes,
-          MAX(resolution_time_minutes) FILTER (WHERE COALESCE(is_shadow, false) = false) AS max_minutes,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY resolution_time_minutes) FILTER (WHERE resolution_time_minutes IS NOT NULL AND resolution_time_minutes > 0 AND COALESCE(is_shadow, false) = false) AS median_minutes,
-          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY resolution_time_minutes) FILTER (WHERE resolution_time_minutes IS NOT NULL AND resolution_time_minutes > 0 AND COALESCE(is_shadow, false) = false) AS p95_minutes,
+          COUNT(*) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false)::int AS resolved_count,
+          AVG(res_minutes) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false) AS avg_minutes,
+          MAX(res_minutes) FILTER (WHERE COALESCE(is_shadow, false) = false) AS max_minutes,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY res_minutes) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false) AS median_minutes,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY res_minutes) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false) AS p95_minutes,
           COUNT(*) FILTER (WHERE COALESCE(is_shadow, false) = true)::int AS shadow_count
-        FROM support_cases
-        WHERE org_id = ${orgId}
-          AND status IN ('resolved','closed')
-          AND resolved_at IS NOT NULL
-          AND resolved_at >= NOW() - (${metricsPeriodDays} || ' days')::interval
-          AND (${market}::text IS NULL OR market_id = ${market})
+        FROM resolved_cases
       `
       const m = metricsRow[0] || {}
       const avgMin = m.avg_minutes != null ? Number(m.avg_minutes) : null
@@ -253,17 +280,23 @@ export default async function handler(req: Request): Promise<Response> {
         p95Hours: p95Min != null ? +(p95Min / 60).toFixed(2) : null,
       }
 
-      // Overdue counter (по активным кейсам) — для бейджа в QuickFilters
+      // Overdue counter (по активным кейсам) — возраст от первого сообщения клиента
       const overdueRow = await sql`
         SELECT COUNT(*)::int AS overdue
-        FROM support_cases
-        WHERE org_id = ${orgId}
-          AND status NOT IN ('resolved','closed','cancelled')
-          AND EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600.0 >= CASE priority
+        FROM support_cases c
+        LEFT JOIN (
+          SELECT case_id, MIN(created_at) AS first_message_at
+          FROM support_messages
+          WHERE org_id = ${orgId} AND case_id IS NOT NULL
+          GROUP BY case_id
+        ) m ON m.case_id = c.id
+        WHERE c.org_id = ${orgId}
+          AND c.status NOT IN ('resolved','closed','cancelled')
+          AND EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= CASE c.priority
             WHEN 'critical' THEN 4 WHEN 'urgent' THEN 4
             WHEN 'high' THEN 24 WHEN 'medium' THEN 72
             ELSE 168 END
-          AND (${market}::text IS NULL OR market_id = ${market})
+          AND (${market}::text IS NULL OR c.market_id = ${market})
       `
       const overdueCount = overdueRow[0]?.overdue ?? 0
 
@@ -295,8 +328,9 @@ export default async function handler(req: Request): Promise<Response> {
             assigneeName: c.assignee_name || null,
             reporterName: c.reporter_name,
             firstResponseAt: c.first_response_at,
+            firstMessageAt: c.first_message_at,
             resolvedAt: c.resolved_at,
-            resolutionTimeMinutes: c.resolution_time_minutes,
+            resolutionTimeMinutes: c.resolution_time_minutes_from_msg != null ? Number(c.resolution_time_minutes_from_msg) : c.resolution_time_minutes,
             resolutionNotes: c.resolution_notes,
             impactMrr: parseFloat(c.impact_mrr || 0),
             churnRiskScore: c.churn_risk_score,
