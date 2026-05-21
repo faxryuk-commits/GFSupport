@@ -4,7 +4,7 @@
  * resolved-in-chat scenarios as shadow cases.
  */
 
-const problemPatterns = /ishlamay|ишламай|не\s*работает|not\s*working|kelmay|келмай|не\s*приходит|xato|хато|ошибк|error|muammo|муаммо|проблем|buzil|бузил|сломал|broken|qotib|завис|stuck|сбой|failure|fail|crash|bajaril|бажарил|bog'lan|боглан|ulana|улана|yoqol|йокол|помогите|help|yordam/i
+const problemPatterns = /ishlamay|ишламай|ishlavotma|ишлавотма|ishlavoti?[ym]|ишлавоти?[йм]|ishlavyu?mi|ишлавю?ми|ishlamiyap|ишламияп|ishlamayapti|ишламаяпти|ishlamaydi|ишламайди|не\s*работа(ет|ют)?|not\s*working|doesn'?t\s*work|kelmay|келмай|kelmadi|келмади|не\s*приходит|не\s*пришл|xato|хато|hato|hatolik|хатолик|ошибк|error|muammo|муаммо|проблем|buzil|бузил|buzuq|бузук|сломал|сломан|broken|qotib|qotdi|завис|зависает|stuck|сбой|failure|fail|crash|bajaril|бажарил|bajarilma|бажарилма|bog['']?lan|боглан|ulana|улана|yoqol|йокол|y[oo]'qol|помогите|help|yordam|yordam\s*kerak|тушунмадим|tushunmadim/i
 const urgentPatterns = /срочно|urgent|tez|тез|shoshilinch|asap|критич|critical|авария|emergency|зависло|down|offline|не\s*доступен|недоступен/i
 
 export interface DetectionResult {
