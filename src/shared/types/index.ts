@@ -76,6 +76,19 @@ export interface Case {
   lastActivityAt?: string | null
   lastStatusChangeAt?: string | null
   lastActivityType?: string | null
+  // Источник канала + SLA (вычисляется на бэкенде)
+  channelSource?: 'telegram' | 'whatsapp'
+  isShadow?: boolean
+  ageHours?: number
+  slaThresholdHours?: number
+  isOverdue?: boolean
+  // Точная метрика «от первого сообщения клиента»
+  firstMessageAt?: string | null
+  // Snooze
+  snoozedUntil?: string | null
+  snoozedBy?: string | null
+  snoozeReason?: string | null
+  isSnoozed?: boolean
 }
 
 export interface Channel {

@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell, Inbox, LayoutGrid } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CasesNowSection } from './CasesNowSection'
+import { CasesInboxView } from './CasesInboxView'
+import { takeNextCase } from '@/shared/api'
 import {
   ACTIVE_STATUSES,
   ARCHIVE_STATUSES,
@@ -14,7 +16,7 @@ import {
   type CaseStatus,
   type Case,
 } from '@/entities/case'
-import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCaseComment, fetchCaseComments, fetchChannels, fetchAgents, type CaseComment } from '@/shared/api'
+import { fetchCases, createCase, updateCaseStatus, assignCase, deleteCase, addCaseComment, fetchCaseComments, fetchChannels, fetchAgents, type CaseComment, type CaseResolutionMetrics } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
@@ -38,11 +40,27 @@ function mapCaseToCardData(c: Case): CaseCardData {
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     reporterName: c.reporterName,
     commentsCount: c.messagesCount,
+    isShadow: c.isShadow,
     isRecurring: Boolean(c.isRecurring) || c.status === 'recurring',
     isBlocked: c.status === 'blocked',
     lastStatusChangeAt: c.lastStatusChangeAt ?? null,
     lastActivityAt: c.lastActivityAt ?? null,
+    isOverdue: c.isOverdue,
+    slaThresholdHours: c.slaThresholdHours,
+    ageHours: c.ageHours,
+    snoozedUntil: c.snoozedUntil ?? null,
+    isSnoozed: c.isSnoozed,
   }
+}
+
+// Формат времени: часы → "Xч" или "Xд Yч"
+function formatHours(hours: number | null | undefined): string {
+  if (hours == null) return '—'
+  if (hours < 1) return '< 1 ч'
+  if (hours < 24) return `${Math.round(hours)} ч`
+  const days = Math.floor(hours / 24)
+  const remHours = Math.round(hours % 24)
+  return remHours > 0 ? `${days} д ${remHours} ч` : `${days} д`
 }
 
 // Маппинг Case в CaseDetail для модального окна
@@ -69,16 +87,21 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
     linkedChats: c.channelId ? [c.channelId] : [],
     attachments: [],
     history: [],
+    snoozedUntil: c.snoozedUntil ?? null,
   }
 }
 
 // Периоды для фильтра по дате
 const DATE_FILTERS = [
   { key: 'today', label: 'Сегодня' },
-  { key: 'week', label: 'Неделя' },
-  { key: 'month', label: 'Месяц' },
-  { key: 'all', label: 'Все время' },
+  { key: 'week', label: '7 дней' },
+  { key: 'month', label: '30 дней' },
+  { key: 'quarter', label: '90 дней' },
+  { key: 'custom', label: 'Свой период…' },
+  { key: 'all', label: 'Всё время' },
 ] as const
+
+type DateFilterKey = (typeof DATE_FILTERS)[number]['key']
 
 // Категории кейсов
 const CATEGORIES = [
@@ -98,21 +121,41 @@ export function CasesPage() {
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+  const [metrics, setMetrics] = useState<CaseResolutionMetrics | null>(null)
+  const [statusStats, setStatusStats] = useState<Record<string, number>>({})
+  const [overdueCount, setOverdueCount] = useState(0)
+
   // Режим просмотра: активные или архив
   const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
-  
+  // Layout активных: inbox (default) или kanban. Сохраняется в localStorage.
+  const [activeLayout, setActiveLayout] = useState<'inbox' | 'kanban'>(() => {
+    try {
+      const saved = localStorage.getItem('cases.activeLayout')
+      return saved === 'kanban' ? 'kanban' : 'inbox'
+    } catch { return 'inbox' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('cases.activeLayout', activeLayout) } catch {}
+  }, [activeLayout])
+
+  // Take Next
+  const [takeNextPending, setTakeNextPending] = useState(false)
+
   // Базовые фильтры
-  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned' | 'snoozed'>('all')
+  const [snoozedCount, setSnoozedCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
-  
+  const [searchDebounced, setSearchDebounced] = useState('')
+
   // Расширенные фильтры
-  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('all')
+  const [dateFilter, setDateFilter] = useState<DateFilterKey>('all')
+  const [customDateFrom, setCustomDateFrom] = useState<string>('')
+  const [customDateTo, setCustomDateTo] = useState<string>('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
   const [showFilters, setShowFilters] = useState(false)
-  
+
   const [selectedCase, setSelectedCase] = useState<Case | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
@@ -120,106 +163,141 @@ export function CasesPage() {
   const [draggedCase, setDraggedCase] = useState<string | null>(null)
   const [_updatingStatus, setUpdatingStatus] = useState<string | null>(null)
 
-  // Загрузка кейсов, каналов и агентов при монтировании
-  const loadData = useCallback(async () => {
+  // Массовые действия: режим выбора + множество выбранных id
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkPending, setBulkPending] = useState(false)
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false)
+
+  const toggleSelectCase = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+  }, [])
+
+  // Debounce поиска (350мс)
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchQuery.trim()), 350)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
+  // Преобразование dateFilter → {dateFrom, dateTo} (ISO)
+  const { dateFromIso, dateToIso } = useMemo<{ dateFromIso?: string; dateToIso?: string }>(() => {
+    if (dateFilter === 'all') return {}
+    const now = new Date()
+    if (dateFilter === 'today') {
+      const d = new Date(now)
+      d.setHours(0, 0, 0, 0)
+      return { dateFromIso: d.toISOString() }
+    }
+    if (dateFilter === 'week') return { dateFromIso: new Date(now.getTime() - 7 * 86400000).toISOString() }
+    if (dateFilter === 'month') return { dateFromIso: new Date(now.getTime() - 30 * 86400000).toISOString() }
+    if (dateFilter === 'quarter') return { dateFromIso: new Date(now.getTime() - 90 * 86400000).toISOString() }
+    if (dateFilter === 'custom') {
+      const from = customDateFrom ? new Date(customDateFrom + 'T00:00:00').toISOString() : undefined
+      const to = customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : undefined
+      return { dateFromIso: from, dateToIso: to }
+    }
+    return {}
+  }, [dateFilter, customDateFrom, customDateTo])
+
+  // Серверные параметры фильтрации (зависят от UI-фильтров)
+  const serverFilters = useMemo(() => {
+    const priorities = quickFilter === 'urgent' ? ['high', 'urgent', 'critical'] : undefined
+    return {
+      // viewMode сам по себе не отправляем — запрос делаем для активных и архивных раздельно
+      assignedTo: quickFilter === 'my' && currentUser?.id ? currentUser.id : undefined,
+      unassigned: quickFilter === 'unassigned',
+      overdue: quickFilter === 'overdue',
+      priorities,
+      channelId: channelFilter === 'all' ? undefined : channelFilter,
+      category: categoryFilter === 'all' ? undefined : categoryFilter,
+      source: sourceFilter === 'all' ? undefined : sourceFilter,
+      search: searchDebounced || undefined,
+      dateFrom: dateFromIso,
+      dateTo: dateToIso,
+      snoozed: (quickFilter === 'snoozed' ? 'only' : 'hide') as 'hide' | 'only',
+    }
+  }, [quickFilter, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso, dateToIso])
+
+  // Загрузка справочников один раз
+  useEffect(() => {
+    Promise.all([fetchChannels().catch(() => []), fetchAgents().catch(() => [])])
+      .then(([channelsData, agentsData]) => {
+        setChannels(channelsData)
+        setAgents(agentsData.map((a: Agent) => ({ id: a.id, name: a.name })))
+      })
+  }, [])
+
+  // Метрика времени решения считается за тот же период что и фильтр.
+  const metricsPeriodDays = useMemo(() => {
+    if (dateFilter === 'today') return 1
+    if (dateFilter === 'week') return 7
+    if (dateFilter === 'month') return 30
+    if (dateFilter === 'quarter') return 90
+    if (dateFilter === 'custom' && customDateFrom) {
+      const from = new Date(customDateFrom)
+      const to = customDateTo ? new Date(customDateTo) : new Date()
+      const days = Math.ceil((to.getTime() - from.getTime()) / 86400000)
+      return Math.max(1, Math.min(365, days))
+    }
+    return 30
+  }, [dateFilter, customDateFrom, customDateTo])
+
+  // Загрузка кейсов: один запрос охватывает и активные и архив (status filter не передаём),
+  // клиент разделит по ACTIVE_STATUSES/ARCHIVE_STATUSES. Server-side применяет остальные фильтры.
+  const loadCases = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      
-      // Загружаем все кейсы (включая архивные), каналы и агентов параллельно
-      const [casesResponse, channelsData, agentsData] = await Promise.all([
-        fetchCases({ limit: 1000 }), // Загружаем все кейсы
-        fetchChannels().catch(() => []),
-        fetchAgents().catch(() => [])
-      ])
-      
-      setCases(casesResponse.cases)
-      setChannels(channelsData)
-      // Мапим агентов в формат {id, name}
-      setAgents(agentsData.map((a: Agent) => ({ id: a.id, name: a.name })))
+      const res = await fetchCases({
+        ...serverFilters,
+        limit: 500,
+        sortBy: 'priority',
+        metricsPeriodDays,
+      })
+      setCases(res.cases)
+      setMetrics(res.metrics)
+      setStatusStats(res.stats || {})
+      setOverdueCount(res.overdueCount ?? 0)
+      setSnoozedCount(res.snoozedCount ?? 0)
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [serverFilters, metricsPeriodDays])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    loadCases()
+  }, [loadCases])
 
-  // Фильтрация по дате
-  const filterByDate = useCallback((caseItem: Case) => {
-    if (dateFilter === 'all') return true
-    
-    const caseDate = new Date(caseItem.createdAt)
-    const now = new Date()
-    
-    switch (dateFilter) {
-      case 'today':
-        return caseDate.toDateString() === now.toDateString()
-      case 'week': {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        return caseDate >= weekAgo
-      }
-      case 'month': {
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        return caseDate >= monthAgo
-      }
-      default:
-        return true
-    }
-  }, [dateFilter])
-
-  // Разделение на активные и архивные
-  const activeCases = useMemo(() => 
+  // Активные / архив — клиентское разделение возвращённой выборки
+  const activeCases = useMemo(() =>
     cases.filter(c => ACTIVE_STATUSES.includes(c.status as any) || c.status === 'recurring'),
     [cases]
   )
-  
-  const archivedCases = useMemo(() => 
+
+  const archivedCases = useMemo(() =>
     cases.filter(c => ARCHIVE_STATUSES.includes(c.status as any)),
     [cases]
   )
 
-  // Отфильтрованные кейсы (в зависимости от режима)
+  // На сервере уже отфильтровано — поэтому это просто разделение по viewMode
   const filteredCases = useMemo(() => {
-    const baseCases = viewMode === 'active' ? activeCases : archivedCases
-    
-    return baseCases.filter(c => {
-      // Поиск
-      const matchesSearch = searchQuery === '' || 
-        c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (c.ticketNumber?.toString() || '').includes(searchQuery)
-      
-      const matchesQuickFilter = quickFilter === 'all' || 
-        (quickFilter === 'my' && currentUser?.id && c.assignedTo === currentUser.id) ||
-        (quickFilter === 'urgent' && (c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent'))
-      
-      // Фильтр по дате
-      const matchesDate = filterByDate(c)
-      
-      // Фильтр по категории
-      const matchesCategory = categoryFilter === 'all' || c.category === categoryFilter
-      
-      // Фильтр по группе/каналу
-      const matchesChannel = channelFilter === 'all' || c.channelId === channelFilter
+    return viewMode === 'active' ? activeCases : archivedCases
+  }, [viewMode, activeCases, archivedCases])
 
-      // Фильтр по платформе (Telegram/WhatsApp) — через канал кейса
-      let matchesSource = true
-      if (sourceFilter !== 'all') {
-        const channel = channels.find((ch) => ch.id === c.channelId)
-        const channelSource = (channel?.source as string | undefined) || 'telegram'
-        matchesSource = channelSource === sourceFilter
-      }
-
-      return matchesSearch && matchesQuickFilter && matchesDate && matchesCategory && matchesChannel && matchesSource
-    })
-  }, [viewMode, activeCases, archivedCases, searchQuery, quickFilter, filterByDate, categoryFilter, channelFilter, sourceFilter, channels, currentUser?.id])
-
-  // Количество активных фильтров
+  // Количество активных расширенных фильтров (для UI-бейджа)
   const activeFiltersCount = useMemo(() => {
     let count = 0
     if (dateFilter !== 'all') count++
@@ -352,9 +430,63 @@ export function CasesPage() {
       showNotification({ type: 'alert', title: 'Кейс удалён', message: `Кейс ${selectedCase.ticketNumber ? '#' + selectedCase.ticketNumber : caseId.slice(0, 8)} удалён` })
     } catch (err) {
       console.error('Ошибка удаления кейса:', err)
-      loadData()
+      loadCases()
     }
   }
+
+  // Take Next: берёт следующий по приоритету, назначает на меня, открывает в превью / модале
+  const handleTakeNext = useCallback(async () => {
+    if (!currentUser?.id) {
+      showNotification({ type: 'alert', title: 'Не авторизован', message: 'Нужен ID агента' })
+      return
+    }
+    setTakeNextPending(true)
+    try {
+      const res = await takeNextCase(currentUser.id)
+      if (!res.case) {
+        showNotification({ type: 'alert', title: 'Очередь пуста', message: 'Нет кейсов для разбора. 🎉' })
+        return
+      }
+      // Освежим список и откроем кейс
+      await loadCases()
+      // Найдём в обновлённом списке (или используем то что вернул API)
+      const fullCase = { ...res.case } as Case
+      setSelectedCase(fullCase)
+      // В режиме inbox оставляем split-view, в kanban — открываем модал
+      if (activeLayout === 'kanban') setIsDetailModalOpen(true)
+    } catch (e) {
+      console.error('Take next error', e)
+      showNotification({ type: 'alert', title: 'Ошибка', message: 'Не удалось взять следующий кейс' })
+    } finally {
+      setTakeNextPending(false)
+    }
+  }, [currentUser?.id, showNotification, loadCases, activeLayout])
+
+  // Массовые операции — оптимистичное обновление + последовательные API-вызовы
+  const runBulk = async (fn: (id: string) => Promise<unknown>, successTitle: string) => {
+    if (selectedIds.size === 0) return
+    const ids = Array.from(selectedIds)
+    setBulkPending(true)
+    try {
+      await Promise.allSettled(ids.map(fn))
+      showNotification({ type: 'ticket', title: successTitle, message: `Кейсов: ${ids.length}` })
+      await loadCases()
+    } catch (err) {
+      console.error('Bulk action error:', err)
+    } finally {
+      setBulkPending(false)
+      clearSelection()
+    }
+  }
+
+  const handleBulkStatus = (status: CaseStatus) =>
+    runBulk((id) => updateCaseStatus(id, status), `Статус → ${status}`)
+
+  const handleBulkAssign = (agentId: string) =>
+    runBulk((id) => assignCase(id, agentId), agentId ? 'Назначены агенту' : 'Сняты с назначения')
+
+  const handleBulkDelete = () =>
+    runBulk((id) => deleteCase(id), 'Кейсы удалены')
 
   const handleCreateCase = async (data: { title: string; description?: string; category?: string; priority?: string; company?: string }) => {
     try {
@@ -403,8 +535,8 @@ export function CasesPage() {
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <p className="text-slate-700 font-medium">Ошибка загрузки</p>
           <p className="text-slate-500 text-sm">{error}</p>
-          <button 
-            onClick={loadData}
+          <button
+            onClick={loadCases}
             className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
             Попробовать снова
@@ -417,24 +549,90 @@ export function CasesPage() {
   return (
     <>
       <div className="h-full flex flex-col p-6 overflow-y-auto">
-        {/* Stats Summary */}
-        <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
+        {/* Компактная панель метрик: счётчики кейсов + время решения в одну строку */}
+        <div className="flex flex-wrap items-stretch gap-2 mb-4 flex-shrink-0">
+          {/* Счётчики кейсов (кликабельные → фильтр) */}
+          <button
+            disabled
+            className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg"
+            title="Все активные кейсы (не решённые)"
+          >
+            <Briefcase className="w-4 h-4 text-blue-600" />
+            <span className="text-lg font-bold text-blue-700 leading-none">
+              {(statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) + (statusStats.blocked || 0) + (statusStats.recurring || 0)}
+            </span>
+            <span className="text-xs text-slate-600">активных</span>
+          </button>
+
+          <button
+            onClick={() => setQuickFilter('overdue')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+              quickFilter === 'overdue'
+                ? 'bg-red-500 border-red-500 text-white'
+                : 'bg-red-50 border-red-100 hover:bg-red-100'
+            }`}
+            title="Активные кейсы старше SLA-порога по приоритету (4 ч / 24 ч / 72 ч / 168 ч)"
+          >
+            <Timer className={`w-4 h-4 ${quickFilter === 'overdue' ? 'text-white' : 'text-red-600'}`} />
+            <span className={`text-lg font-bold leading-none ${quickFilter === 'overdue' ? 'text-white' : 'text-red-700'}`}>
+              {overdueCount}
+            </span>
+            <span className={`text-xs ${quickFilter === 'overdue' ? 'text-red-50' : 'text-slate-600'}`}>просрочка</span>
+          </button>
+
+          <button
+            onClick={() => setQuickFilter('unassigned')}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+              quickFilter === 'unassigned'
+                ? 'bg-amber-500 border-amber-500 text-white'
+                : 'bg-amber-50 border-amber-100 hover:bg-amber-100'
+            }`}
+            title="Активные кейсы без назначенного агента"
+          >
+            <User className={`w-4 h-4 ${quickFilter === 'unassigned' ? 'text-white' : 'text-amber-600'}`} />
+            <span className={`text-lg font-bold leading-none ${quickFilter === 'unassigned' ? 'text-white' : 'text-amber-700'}`}>
+              {activeCases.filter(c => !c.assignedTo).length}
+            </span>
+            <span className={`text-xs ${quickFilter === 'unassigned' ? 'text-amber-50' : 'text-slate-600'}`}>без агента</span>
+          </button>
+
+          <button
+            disabled
+            className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-lg"
+            title={`Resolved + closed за ${metrics?.periodDays ?? 30} дн (без shadow auto-resolved)`}
+          >
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span className="text-lg font-bold text-green-700 leading-none">{metrics?.resolvedCount ?? 0}</span>
+            <span className="text-xs text-slate-600">решено / {metrics?.periodDays ?? 30}д</span>
+          </button>
+
+          {/* Разделитель + метрики времени */}
+          <div className="w-px bg-slate-200 mx-1" />
+
           {[
-            { label: 'Всего активных', value: activeCases.length, icon: Briefcase, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-            { label: 'Срочные', value: activeCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length, icon: Zap, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
-            { label: 'Без назначения', value: activeCases.filter(c => !c.assignedTo).length, icon: User, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
-            { label: 'Решено за 7д', value: archivedCases.filter(c => { const ts = c.resolvedAt || c.updatedAt || c.createdAt; return ts ? new Date(ts).getTime() > Date.now() - 7 * 86400000 : false }).length, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-          ].map((s, i) => (
-            <div key={i} className={`${s.bg} border ${s.border} rounded-xl px-4 py-3 flex items-center gap-3`}>
-              <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center`}>
-                <s.icon className={`w-5 h-5 ${s.color}`} />
-              </div>
-              <div>
-                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-slate-500">{s.label}</p>
-              </div>
+            { key: 'avg', label: 'Среднее', value: metrics?.avgHours, color: 'text-violet-700', tip: 'Среднее время от первого сообщения клиента до закрытия кейса. Может перекошиться одним длинным кейсом.' },
+            { key: 'med', label: 'Медиана', value: metrics?.medianHours, color: 'text-blue-700', tip: 'Половина кейсов решается быстрее, половина — медленнее. Устойчиво к выбросам.' },
+            { key: 'p95', label: 'P95', value: metrics?.p95Hours, color: 'text-amber-700', tip: '95% кейсов решаются за это время или быстрее. Только 5% хуже — это «верхний предел нормы».' },
+            { key: 'max', label: 'Максимум', value: metrics?.maxHours, color: 'text-red-700', tip: 'Самый долгий кейс за период. Если резко отличается от P95 — отдельный аутлайер.' },
+          ].map(m => (
+            <div
+              key={m.key}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
+              title={m.tip}
+            >
+              <span className="text-[11px] text-slate-500 uppercase tracking-wide">{m.label}</span>
+              <span className={`text-base font-bold leading-none ${m.color}`}>{formatHours(m.value ?? null)}</span>
             </div>
           ))}
+
+          {metrics?.shadowCount ? (
+            <span
+              className="text-[11px] text-slate-400 self-center ml-1"
+              title="Auto-resolved в чате за <5 мин — не включены в среднее, иначе искажают вниз"
+            >
+              ({metrics.shadowCount} auto-resolved)
+            </span>
+          ) : null}
         </div>
 
         {/* Header */}
@@ -478,8 +676,8 @@ export function CasesPage() {
               <button
                 onClick={() => setViewMode('archive')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'archive' 
-                    ? 'bg-white text-slate-800 shadow-sm' 
+                  viewMode === 'archive'
+                    ? 'bg-white text-slate-800 shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -492,6 +690,32 @@ export function CasesPage() {
                 </span>
               </button>
             </div>
+
+            {/* Layout toggle для активных: Inbox / Канбан */}
+            {viewMode === 'active' && (
+              <div className="flex bg-slate-100 rounded-lg p-1" title="Способ отображения активных кейсов">
+                <button
+                  onClick={() => setActiveLayout('inbox')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    activeLayout === 'inbox' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  title="Inbox-режим: список приоритизирован + превью кейса. Главный режим работы агента."
+                >
+                  <Inbox className="w-4 h-4" />
+                  Inbox
+                </button>
+                <button
+                  onClick={() => setActiveLayout('kanban')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    activeLayout === 'kanban' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  title="Канбан-доска по статусам — для обзора процесса"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Канбан
+                </button>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center gap-3">
@@ -505,8 +729,20 @@ export function CasesPage() {
                 className="pl-10 pr-4 py-2 w-64 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
+            <button
+              onClick={() => { setSelectionMode(s => !s); if (selectionMode) setSelectedIds(new Set()) }}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectionMode
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+              }`}
+              title="Включить режим выбора нескольких кейсов"
+            >
+              <CheckCircle className="w-4 h-4" />
+              {selectionMode ? `Выбрано: ${selectedIds.size}` : 'Выбрать'}
+            </button>
             {viewMode === 'active' && (
-              <button 
+              <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
               >
@@ -518,22 +754,27 @@ export function CasesPage() {
         </div>
 
         {/* Quick Filters */}
-        <div className="flex items-center gap-2 mb-4 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-4 flex-shrink-0 flex-wrap">
           {[
-            { key: 'all', label: 'Все', icon: Filter, count: filteredCases.length },
-            { key: 'my', label: 'Мои', icon: User, count: filteredCases.filter(c => currentUser?.id && c.assignedTo === currentUser.id).length },
-            { key: 'urgent', label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
+            { key: 'all' as const, label: 'Все', icon: Filter, count: filteredCases.length },
+            { key: 'my' as const, label: 'Мои', icon: User, count: filteredCases.filter(c => currentUser?.id && c.assignedTo === currentUser.id).length },
+            { key: 'urgent' as const, label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
+            { key: 'overdue' as const, label: 'Просрочка', icon: Timer, count: overdueCount, danger: true },
+            { key: 'unassigned' as const, label: 'Без агента', icon: User, count: filteredCases.filter(c => !c.assignedTo).length },
+            { key: 'snoozed' as const, label: 'Отложенные', icon: Bell, count: snoozedCount },
           ].map(f => (
             <button
               key={f.key}
-              onClick={() => setQuickFilter(f.key as 'all' | 'my' | 'urgent')}
+              onClick={() => setQuickFilter(f.key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                quickFilter === f.key ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                quickFilter === f.key
+                  ? f.danger ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
               }`}
             >
               <f.icon className="w-4 h-4" />
               {f.label}
-              <span className={`px-1.5 py-0.5 rounded text-xs ${quickFilter === f.key ? 'bg-white/20' : 'bg-slate-100'}`}>
+              <span className={`px-1.5 py-0.5 rounded text-xs ${quickFilter === f.key ? 'bg-white/20' : f.danger && f.count > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>
                 {f.count}
               </span>
             </button>
@@ -574,7 +815,7 @@ export function CasesPage() {
         {/* Advanced Filters Panel */}
         {showFilters && (
           <div className="flex flex-wrap gap-3 mb-4 p-4 bg-slate-50 rounded-lg flex-shrink-0">
-            {/* Date Filter */}
+            {/* Date Filter — пресеты + произвольный диапазон */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-slate-500 flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
@@ -582,7 +823,7 @@ export function CasesPage() {
               </label>
               <select
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value as typeof dateFilter)}
+                onChange={(e) => setDateFilter(e.target.value as DateFilterKey)}
                 className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 {DATE_FILTERS.map(f => (
@@ -590,6 +831,29 @@ export function CasesPage() {
                 ))}
               </select>
             </div>
+
+            {dateFilter === 'custom' && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-slate-500">От</label>
+                  <input
+                    type="date"
+                    value={customDateFrom}
+                    onChange={(e) => setCustomDateFrom(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-slate-500">До</label>
+                  <input
+                    type="date"
+                    value={customDateTo}
+                    onChange={(e) => setCustomDateTo(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </>
+            )}
             
             {/* Category Filter */}
             <div className="flex flex-col gap-1">
@@ -678,6 +942,38 @@ export function CasesPage() {
               onClick: () => setIsCreateModalOpen(true),
             }}
           />
+        ) : viewMode === 'active' && activeLayout === 'inbox' ? (
+          <CasesInboxView
+            cases={activeCases}
+            selectedCaseId={selectedCase?.id || null}
+            onSelectCase={(id) => {
+              const c = cases.find(x => x.id === id)
+              if (c) setSelectedCase(c)
+            }}
+            onTakeNext={handleTakeNext}
+            takeNextPending={takeNextPending}
+            renderDetail={() => (
+              <CaseDetailModal
+                isOpen={true}
+                onClose={() => setSelectedCase(null)}
+                caseData={selectedCase ? mapCaseToCaseDetail(selectedCase) : null}
+                agents={agents}
+                currentUserName={currentUser?.name}
+                mode="inline"
+                onStatusChange={handleStatusChange}
+                onAssign={handleAssign}
+                onAddComment={handleAddComment}
+                onSnoozeChange={(caseId, snoozedUntil) => {
+                  setCases(prev => prev.map(c => c.id === caseId ? { ...c, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : c))
+                  if (selectedCase?.id === caseId) {
+                    setSelectedCase(prev => prev ? { ...prev, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : null)
+                  }
+                  loadCases()
+                }}
+                onDelete={() => setIsDeleteDialogOpen(true)}
+              />
+            )}
+          />
         ) : viewMode === 'active' ? (
           <div className="flex gap-4 overflow-x-auto pb-4">
             {UI_ACTIVE_COLUMNS.map(col => {
@@ -722,6 +1018,9 @@ export function CasesPage() {
                           onView={() => handleViewCase(caseItem.id)}
                           onDragStart={() => handleDragStart(caseItem.id)}
                           isDragging={draggedCase === caseItem.id}
+                          selectable={selectionMode}
+                          selected={selectedIds.has(caseItem.id)}
+                          onToggleSelect={() => toggleSelectCase(caseItem.id)}
                         />
                       ))
                     )}
@@ -751,6 +1050,9 @@ export function CasesPage() {
                       onView={() => handleViewCase(caseItem.id)}
                       onDragStart={() => {}}
                       isDragging={false}
+                      selectable={selectionMode}
+                      selected={selectedIds.has(caseItem.id)}
+                      onToggleSelect={() => toggleSelectCase(caseItem.id)}
                     />
                   ))}
                 </div>
@@ -771,9 +1073,18 @@ export function CasesPage() {
         onClose={() => setIsDetailModalOpen(false)}
         caseData={selectedCase ? mapCaseToCaseDetail(selectedCase) : null}
         agents={agents}
+        currentUserName={currentUser?.name}
         onStatusChange={handleStatusChange}
         onAssign={handleAssign}
         onAddComment={handleAddComment}
+        onSnoozeChange={(caseId, snoozedUntil) => {
+          setCases(prev => prev.map(c => c.id === caseId ? { ...c, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : c))
+          if (selectedCase?.id === caseId) {
+            setSelectedCase(prev => prev ? { ...prev, snoozedUntil, isSnoozed: !!snoozedUntil && new Date(snoozedUntil) > new Date() } : null)
+          }
+          // Освежим counters
+          loadCases()
+        }}
         onDelete={() => setIsDeleteDialogOpen(true)}
       />
 
@@ -785,6 +1096,73 @@ export function CasesPage() {
         title="Удалить кейс"
         message={`Вы уверены, что хотите удалить кейс ${selectedCase?.ticketNumber ? `#${selectedCase.ticketNumber}` : selectedCase?.id}?`}
         confirmText="Удалить"
+        variant="danger"
+      />
+
+      {/* Bulk Action Bar — снизу страницы при выборе кейсов */}
+      {selectionMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl rounded-2xl border border-slate-200 px-4 py-2 flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-700">
+            Выбрано: <span className="text-blue-600">{selectedIds.size}</span>
+          </span>
+          <div className="h-6 w-px bg-slate-200" />
+
+          <select
+            disabled={bulkPending}
+            onChange={(e) => { if (e.target.value) handleBulkStatus(e.target.value as CaseStatus); e.target.value = '' }}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="">Сменить статус…</option>
+            <option value="detected">Обнаружен</option>
+            <option value="in_progress">В работе</option>
+            <option value="waiting">Ожидание</option>
+            <option value="blocked">Блокер</option>
+            <option value="resolved">Решён</option>
+            <option value="closed">Закрыт</option>
+            <option value="cancelled">Отменён</option>
+          </select>
+
+          <select
+            disabled={bulkPending}
+            onChange={(e) => { if (e.target.value !== undefined) handleBulkAssign(e.target.value); e.target.value = '' }}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="">Назначить…</option>
+            <option value="">— Снять назначение —</option>
+            {agents.map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setIsBulkDeleteDialogOpen(true)}
+            disabled={bulkPending}
+            className="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium disabled:opacity-50"
+          >
+            Удалить
+          </button>
+
+          <div className="h-6 w-px bg-slate-200" />
+
+          <button
+            onClick={clearSelection}
+            className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-sm"
+          >
+            Отмена
+          </button>
+
+          {bulkPending && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
+        </div>
+      )}
+
+      {/* Bulk Delete Dialog */}
+      <ConfirmDialog
+        isOpen={isBulkDeleteDialogOpen}
+        onClose={() => setIsBulkDeleteDialogOpen(false)}
+        onConfirm={() => { setIsBulkDeleteDialogOpen(false); handleBulkDelete() }}
+        title="Удалить выбранные кейсы"
+        message={`Удалить ${selectedIds.size} кейс(ов)? Действие нельзя отменить.`}
+        confirmText="Удалить все"
         variant="danger"
       />
     </>

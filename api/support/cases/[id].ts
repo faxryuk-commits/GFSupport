@@ -271,6 +271,34 @@ export default async function handler(req: Request): Promise<Response> {
         })
       }
 
+      // Snooze: отложить кейс до даты (или снять snooze если snoozedUntil=null)
+      if (action === 'snooze') {
+        const { snoozedUntil, reason, by } = body
+        const ts = snoozedUntil ? new Date(snoozedUntil) : null
+        if (ts && isNaN(ts.getTime())) return json({ error: 'Invalid snoozedUntil' }, 400)
+
+        await sql`
+          UPDATE support_cases
+          SET snoozed_until = ${ts ? ts.toISOString() : null},
+              snoozed_by = ${ts ? (by || null) : null},
+              snooze_reason = ${ts ? (reason || null) : null},
+              updated_at = NOW()
+          WHERE id = ${caseId} AND org_id = ${orgId}
+        `
+        await sql`
+          INSERT INTO support_case_activities (id, case_id, type, title, description)
+          VALUES (
+            ${'act_' + Date.now()},
+            ${caseId},
+            ${ts ? 'snoozed' : 'unsnoozed'},
+            ${ts ? `Отложен до ${ts.toLocaleString('ru-RU')}` : 'Snooze снят'},
+            ${reason || null}
+          )
+        `.catch(() => {})
+
+        return json({ success: true, snoozedUntil: ts?.toISOString() || null })
+      }
+
       // Получение комментариев
       if (action === 'get_comments') {
         const comments = await sql`

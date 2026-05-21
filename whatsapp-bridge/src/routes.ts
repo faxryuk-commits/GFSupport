@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
-import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp, requestPairCode } from './baileys.js'
+import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp, requestPairCode, getConnectionMetrics } from './baileys.js'
 import { getFilterMode, setFilterMode, getMessageStats, type FilterMode } from './index.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
@@ -68,9 +68,20 @@ export function createRouter(bridgeSecret: string, authDir: string): Router {
 
   router.get('/health', (_req: Request, res: Response) => {
     const status = getStatus()
+    const metrics = getConnectionMetrics()
+    const stats = getMessageStats()
     res.json({
       ok: status.connected,
       uptime: process.uptime(),
+      phone: status.phone,
+      lastError: status.lastError,
+      reconnectAttempts: metrics.reconnectAttempts,
+      totalDisconnects: metrics.totalDisconnects,
+      uptimeMs: metrics.uptimeMs,
+      downtimeMs: metrics.downtimeMs,
+      lastConnectedAt: metrics.lastConnectedAt ? new Date(metrics.lastConnectedAt).toISOString() : null,
+      lastDisconnectedAt: metrics.lastDisconnectedAt ? new Date(metrics.lastDisconnectedAt).toISOString() : null,
+      messageStats: stats,
     })
   })
 

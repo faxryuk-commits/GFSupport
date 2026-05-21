@@ -26,6 +26,54 @@ let pairCodeExpiresAt: number | null = null
 let pairCodePhone: string | null = null
 let pairCodeExpireTimer: ReturnType<typeof setTimeout> | null = null
 
+// Reconnect bookkeeping — exponential backoff чтобы не DDoS'ить WA серверы.
+let reconnectAttempts = 0
+let lastConnectedAt: number | null = null
+let lastDisconnectedAt: number | null = null
+let totalDisconnects = 0
+
+function calcBackoffMs(attempt: number): number {
+  // 2^attempt * 1000 (1s, 2s, 4s, 8s, 16s, 32s) max 60s + jitter ±20%
+  const base = Math.min(1000 * Math.pow(2, attempt), 60_000)
+  const jitter = base * (0.8 + Math.random() * 0.4)
+  return Math.round(jitter)
+}
+
+function getDisconnectReasonName(code: number | undefined): string {
+  if (code == null) return 'unknown'
+  // Baileys DisconnectReason значения совпадают с HTTP statusCode'ами WA сервера.
+  // Используем switch чтобы избежать дубликатов ключей в литерале.
+  switch (code) {
+    case DisconnectReason.loggedOut: return 'logged_out'
+    case DisconnectReason.connectionClosed: return 'connection_closed'
+    case DisconnectReason.connectionLost: return 'connection_lost'
+    case DisconnectReason.connectionReplaced: return 'connection_replaced'
+    case DisconnectReason.timedOut: return 'timed_out'
+    case DisconnectReason.restartRequired: return 'restart_required'
+    case DisconnectReason.badSession: return 'bad_session'
+    case DisconnectReason.multideviceMismatch: return 'multidevice_mismatch'
+    case 401: return 'unauthorized'
+    case 403: return 'forbidden'
+    case 405: return 'method_not_allowed'
+    case 408: return 'timed_out_http'
+    case 500: return 'internal_error'
+    case 515: return 'restart_required_post_pair'
+    default: return `code_${code}`
+  }
+}
+
+export function getConnectionMetrics() {
+  return {
+    isConnected,
+    reconnectAttempts,
+    lastConnectedAt,
+    lastDisconnectedAt,
+    totalDisconnects,
+    downtimeMs: isConnected ? 0 : (lastDisconnectedAt ? Date.now() - lastDisconnectedAt : null),
+    uptimeMs: isConnected && lastConnectedAt ? Date.now() - lastConnectedAt : null,
+  }
+}
+
 export function onMessage(cb: (msg: proto.IWebMessageInfo) => void) {
   onMessageCallback = cb
 }
@@ -133,6 +181,13 @@ export async function startBaileys(
       logger,
       printQRInTerminal: false,
       browser: Browsers.ubuntu('Chrome'),
+      // Heartbeat: WA сбрасывает соединение если нет активности.
+      // keepAliveIntervalMs по умолчанию 30s, явно ставим 25s для надёжности.
+      keepAliveIntervalMs: 25_000,
+      // Connect timeout — короче дефолтного, чтобы быстрее уходить в backoff.
+      connectTimeoutMs: 60_000,
+      // Retry счётчик от Baileys для отдельных запросов
+      retryRequestDelayMs: 250,
       ...(version ? { version } : {}),
     })
     console.log('[Baileys] Socket created, waiting for connection events...')
@@ -183,33 +238,69 @@ export async function startBaileys(
         clearPairCode()
         lastError = null
         phoneNumber = sock?.user?.id?.split(':')[0] || ''
-        console.log(`[Baileys] Connected as ${phoneNumber}`)
+        lastConnectedAt = Date.now()
+        reconnectAttempts = 0 // успех — сбрасываем backoff
+        console.log(`[Baileys] Connected as ${phoneNumber} (reconnect counter reset)`)
       }
 
       if (connection === 'close') {
         isConnected = false
+        lastDisconnectedAt = Date.now()
+        totalDisconnects++
+
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut
         const errMsg = (lastDisconnect?.error as any)?.message || 'unknown'
         lastError = `Disconnected: ${errMsg} (status ${statusCode})`
 
-        console.log(`[Baileys] Disconnected. Status: ${statusCode}. Error: ${errMsg}. Reconnect: ${shouldReconnect}`)
+        // Классифицируем причину disconnect для правильной стратегии:
+        //   loggedOut         — пользователь отключил с телефона. НЕ реконнектим без QR.
+        //   401/403/405/500   — bad session (сервер не принимает credentials). Wipe + QR.
+        //   connectionReplaced — кто-то ещё подключился с тем же аккаунтом. НЕ реконнектим.
+        //   timedOut, lost, restartRequired, badSession — временно, реконнектим с backoff.
+        //   408               — connection timed out — реконнектим с backoff.
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut
+        const isReplaced = statusCode === DisconnectReason.connectionReplaced
+        const isBadSession = statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500 || statusCode === DisconnectReason.badSession
 
-        // После disconnect любой текущий pair-code становится невалидным
+        console.log(`[Baileys] Disconnected #${totalDisconnects}. Status=${statusCode} (${getDisconnectReasonName(statusCode)}). Error: ${errMsg}`)
+
+        // Любой текущий pair-code невалиден после disconnect
         clearPairCode()
 
-        if (statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500) {
-          console.log(`[Baileys] Bad session (${statusCode}), clearing auth and retrying in QR mode...`)
+        if (isLoggedOut) {
+          console.log('[Baileys] Logged out by user. Manual QR re-scan required (POST /disconnect to wipe).')
+          // НЕ реконнектим — сессии нет
+          return
+        }
+
+        if (isReplaced) {
+          console.log('[Baileys] Connection replaced (another device logged in). Stopping reconnect to avoid fight.')
+          // Если запустить сейчас — отберём сессию у того кто только что зашёл, ping-pong
+          // Подождём 30 сек и попробуем — может тот пользователь уже ушёл
+          setTimeout(() => {
+            reconnectAttempts = 0
+            startBaileys(authDir, { mode: activeMode, phoneNumber: pairCodePhone || undefined })
+          }, 30_000)
+          return
+        }
+
+        if (isBadSession) {
+          console.log(`[Baileys] Bad session (${statusCode}), wiping auth and re-issuing QR...`)
           const fs = await import('fs')
           try { fs.rmSync(authDir, { recursive: true, force: true }) } catch {}
-          // При восстановлении после ошибки всегда возвращаемся в QR-режим —
-          // pair-code одноразовый, повторно использовать тот же phone нельзя.
+          reconnectAttempts = 0
           setTimeout(() => startBaileys(authDir, { mode: 'qr' }), 2000)
-        } else if (shouldReconnect) {
-          setTimeout(() => startBaileys(authDir, { mode: activeMode, phoneNumber: pairCodePhone || undefined }), 3000)
-        } else {
-          console.log('[Baileys] Logged out. Delete auth_info/ and restart to re-scan QR.')
+          return
         }
+
+        // Временный disconnect — exponential backoff
+        reconnectAttempts++
+        const delay = calcBackoffMs(reconnectAttempts)
+        console.log(`[Baileys] Will reconnect in ${delay}ms (attempt #${reconnectAttempts})`)
+        setTimeout(
+          () => startBaileys(authDir, { mode: activeMode, phoneNumber: pairCodePhone || undefined }),
+          delay
+        )
       }
     })
 

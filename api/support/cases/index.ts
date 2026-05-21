@@ -6,6 +6,35 @@ export const config = {
   runtime: 'edge',
 }
 
+const VALID_STATUSES = new Set([
+  'detected', 'in_progress', 'waiting', 'blocked',
+  'resolved', 'closed', 'cancelled', 'recurring',
+])
+const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent', 'critical'])
+const VALID_SOURCES = new Set(['telegram', 'whatsapp'])
+const VALID_SORTS = new Set(['priority', 'created_desc', 'created_asc', 'last_activity'])
+
+// SLA пороги (часы от created_at) — overdue считается до появления собственных полей sla_*
+const SLA_HOURS_BY_PRIORITY: Record<string, number> = {
+  critical: 4,
+  urgent: 4,
+  high: 24,
+  medium: 72,
+  low: 168,
+}
+
+function parseList(raw: string | null, allowed: Set<string>): string[] | null {
+  if (!raw || raw === 'all') return null
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean).filter(s => allowed.has(s))
+  return parts.length ? parts : null
+}
+
+function parseIsoDate(raw: string | null): string | null {
+  if (!raw) return null
+  const d = new Date(raw)
+  return isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -29,197 +58,349 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const url = new URL(req.url)
 
-  // GET - список кейсов
+  // GET — список кейсов
   if (req.method === 'GET') {
     try {
+      // --- Фильтры ---
+      // statuses: comma-separated whitelist, либо preset 'active' / 'archive'
       const statusParam = url.searchParams.get('status')
-      const priority = url.searchParams.get('priority')
-      const channelId = url.searchParams.get('channelId')
-      const assignedTo = url.searchParams.get('assignedTo')
-      const search = url.searchParams.get('search')
-      const market = url.searchParams.get('market') || null
-      const limitParam = parseInt(url.searchParams.get('limit') || '50')
-      const offsetParam = parseInt(url.searchParams.get('offset') || '0')
-
-      // Парсим статусы
-      const statuses = statusParam && statusParam !== 'all' 
-        ? statusParam.split(',').map(s => s.trim())
-        : null
-
-      // Простые запросы без вложенных sql``
-      let cases
-      
-      // Base query with JOINs for assignee name and company
-      if (statuses && statuses.length > 0) {
-        cases = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
-            a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
-            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
-          FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-          LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.org_id = ${orgId} AND c.status = ANY(${statuses}) AND (${market}::text IS NULL OR c.market_id = ${market})
-          ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (priority) {
-        cases = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
-            a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
-            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
-          FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-          LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.org_id = ${orgId} AND c.priority = ${priority} AND (${market}::text IS NULL OR c.market_id = ${market})
-          ORDER BY c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (channelId) {
-        cases = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
-            a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
-            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
-          FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-          LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.org_id = ${orgId} AND c.channel_id = ${channelId}
-          ORDER BY c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (assignedTo) {
-        cases = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
-            a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
-            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
-          FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-          LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.org_id = ${orgId} AND c.assigned_to = ${assignedTo} AND (${market}::text IS NULL OR c.market_id = ${market})
-          ORDER BY c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
-      } else if (search) {
-        cases = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
-            a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
-            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
-          FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-          LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.org_id = ${orgId} AND (c.title ILIKE ${'%' + search + '%'} OR c.description ILIKE ${'%' + search + '%'})
-            AND (${market}::text IS NULL OR c.market_id = ${market})
-          ORDER BY c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
+      let statuses: string[] | null = null
+      if (statusParam === 'active') {
+        statuses = ['detected', 'in_progress', 'waiting', 'blocked', 'recurring']
+      } else if (statusParam === 'archive') {
+        statuses = ['resolved', 'closed', 'cancelled']
       } else {
-        cases = await sql`
-          SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.company_id as ch_company_id,
-            a.name as assignee_name,
-            (SELECT COUNT(*) FROM support_messages WHERE case_id = c.id AND org_id = ${orgId}) as messages_count,
-            (SELECT sender_name FROM support_messages WHERE case_id = c.id AND org_id = ${orgId} ORDER BY created_at ASC LIMIT 1) as reporter_name,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id) as last_activity_at,
-            (SELECT MAX(created_at) FROM support_case_activities WHERE case_id = c.id AND type = 'status_change') as last_status_change_at,
-            (SELECT type FROM support_case_activities WHERE case_id = c.id ORDER BY created_at DESC LIMIT 1) as last_activity_type
-          FROM support_cases c
-          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-          LEFT JOIN support_agents a ON c.assigned_to = a.id
-          WHERE c.org_id = ${orgId} AND (${market}::text IS NULL OR c.market_id = ${market})
-          ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, c.created_at DESC
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `
+        statuses = parseList(statusParam, VALID_STATUSES)
       }
 
-      const countResult = await sql`SELECT COUNT(*) as total FROM support_cases WHERE org_id = ${orgId} AND (${market}::text IS NULL OR market_id = ${market})`
-      const total = parseInt(countResult[0]?.total || '0')
+      const priorities = parseList(url.searchParams.get('priority'), VALID_PRIORITIES)
+      const channelId = url.searchParams.get('channelId') || null
+      const assignedTo = url.searchParams.get('assignedTo') || null
+      const unassigned = url.searchParams.get('unassigned') === 'true'
+      const search = url.searchParams.get('search')?.trim() || null
+      const market = url.searchParams.get('market') || null
+      const dateFrom = parseIsoDate(url.searchParams.get('dateFrom'))
+      const dateTo = parseIsoDate(url.searchParams.get('dateTo'))
+      const source = (url.searchParams.get('source') || '').toLowerCase()
+      const sourceFilter = VALID_SOURCES.has(source) ? source : null
+      const overdueHoursParam = parseInt(url.searchParams.get('overdueHours') || '0')
+      const overdueHours = overdueHoursParam > 0 ? overdueHoursParam : null
+      const onlyOverdue = url.searchParams.get('overdue') === 'true'
+      // Snooze: по умолчанию скрываем отложенные. `snoozed=only` показывает только их, `snoozed=include` — все.
+      const snoozedMode = url.searchParams.get('snoozed') || 'hide'
 
-      // Статистика по статусам
+      const sortBy = url.searchParams.get('sortBy') || 'priority'
+      const sortValid = VALID_SORTS.has(sortBy) ? sortBy : 'priority'
+
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50'), 1), 500)
+      const offset = Math.max(parseInt(url.searchParams.get('offset') || '0'), 0)
+
+      // --- Единый SELECT с условным WHERE ---
+      // Используем NULL-coalescing pattern: `${param} IS NULL OR column = ${param}`.
+      // Подзапросы заменены на LEFT JOIN-LATERAL для уменьшения cost.
+      const rows = await sql`
+        WITH msg_stats AS (
+          SELECT case_id,
+                 COUNT(*) AS messages_count,
+                 MIN(created_at) AS first_message_at,
+                 (ARRAY_AGG(sender_name ORDER BY created_at ASC))[1] AS reporter_name
+          FROM support_messages
+          WHERE org_id = ${orgId} AND case_id IS NOT NULL
+          GROUP BY case_id
+        ),
+        act_stats AS (
+          SELECT case_id,
+                 MAX(created_at) AS last_activity_at,
+                 MAX(CASE WHEN type IN ('status_change','status_changed') THEN created_at END) AS last_status_change_at,
+                 (ARRAY_AGG(type ORDER BY created_at DESC))[1] AS last_activity_type
+          FROM support_case_activities
+          GROUP BY case_id
+        )
+        SELECT c.*, ch.name AS channel_name, ch.telegram_chat_id, ch.company_id AS ch_company_id, ch.source AS channel_source,
+          a.name AS assignee_name,
+          COALESCE(m.messages_count, 0) AS messages_count,
+          m.reporter_name,
+          m.first_message_at,
+          act.last_activity_at,
+          act.last_status_change_at,
+          act.last_activity_type,
+          -- age считается от первого сообщения клиента (точнее), fallback на created_at кейса
+          EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 AS age_hours,
+          -- точное время решения "от сообщения": если есть first_message_at и resolved_at, считаем заново
+          CASE
+            WHEN c.resolved_at IS NOT NULL AND m.first_message_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (c.resolved_at - m.first_message_at)) / 60.0
+            ELSE c.resolution_time_minutes
+          END AS resolution_time_minutes_from_msg
+        FROM support_cases c
+        LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+        LEFT JOIN support_agents a ON c.assigned_to = a.id
+        LEFT JOIN msg_stats m ON m.case_id = c.id
+        LEFT JOIN act_stats act ON act.case_id = c.id
+        WHERE c.org_id = ${orgId}
+          AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
+          AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
+          AND (${channelId}::text IS NULL OR c.channel_id = ${channelId})
+          AND (
+            ${assignedTo}::text IS NULL
+            OR (${assignedTo} = '__none__' AND c.assigned_to IS NULL)
+            OR c.assigned_to = ${assignedTo}
+          )
+          AND (NOT ${unassigned} OR c.assigned_to IS NULL)
+          AND (${market}::text IS NULL OR c.market_id = ${market})
+          AND (${sourceFilter}::text IS NULL OR ch.source = ${sourceFilter})
+          AND (${dateFrom}::timestamptz IS NULL OR c.created_at >= ${dateFrom}::timestamptz)
+          AND (${dateTo}::timestamptz IS NULL OR c.created_at <= ${dateTo}::timestamptz)
+          AND (
+            ${search}::text IS NULL
+            OR c.title ILIKE '%' || ${search} || '%'
+            OR c.description ILIKE '%' || ${search} || '%'
+            OR CAST(c.ticket_number AS text) = ${search}
+          )
+          AND (
+            NOT ${onlyOverdue}
+            OR (
+              c.status NOT IN ('resolved','closed','cancelled')
+              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= CASE c.priority
+                WHEN 'critical' THEN 4 WHEN 'urgent' THEN 4
+                WHEN 'high' THEN 24 WHEN 'medium' THEN 72
+                ELSE 168 END
+            )
+          )
+          AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= ${overdueHours}::int)
+          AND (
+            ${snoozedMode} = 'include'
+            OR (${snoozedMode} = 'only' AND c.snoozed_until IS NOT NULL AND c.snoozed_until > NOW())
+            OR (${snoozedMode} = 'hide' AND (c.snoozed_until IS NULL OR c.snoozed_until <= NOW()))
+          )
+        ORDER BY
+          CASE WHEN ${sortValid} = 'priority' THEN
+            CASE c.priority WHEN 'critical' THEN 0 WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
+          END ASC NULLS LAST,
+          CASE WHEN ${sortValid} = 'last_activity' THEN COALESCE(act.last_activity_at, c.updated_at, c.created_at) END DESC NULLS LAST,
+          CASE WHEN ${sortValid} = 'created_asc' THEN c.created_at END ASC NULLS LAST,
+          c.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `
+
+      // Total count (для пагинации) — отдельный запрос с теми же фильтрами
+      const totalResult = await sql`
+        SELECT COUNT(*)::int AS total
+        FROM support_cases c
+        LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+        LEFT JOIN (
+          SELECT case_id, MIN(created_at) AS first_message_at
+          FROM support_messages
+          WHERE org_id = ${orgId} AND case_id IS NOT NULL
+          GROUP BY case_id
+        ) m ON m.case_id = c.id
+        WHERE c.org_id = ${orgId}
+          AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
+          AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
+          AND (${channelId}::text IS NULL OR c.channel_id = ${channelId})
+          AND (
+            ${assignedTo}::text IS NULL
+            OR (${assignedTo} = '__none__' AND c.assigned_to IS NULL)
+            OR c.assigned_to = ${assignedTo}
+          )
+          AND (NOT ${unassigned} OR c.assigned_to IS NULL)
+          AND (${market}::text IS NULL OR c.market_id = ${market})
+          AND (${sourceFilter}::text IS NULL OR ch.source = ${sourceFilter})
+          AND (${dateFrom}::timestamptz IS NULL OR c.created_at >= ${dateFrom}::timestamptz)
+          AND (${dateTo}::timestamptz IS NULL OR c.created_at <= ${dateTo}::timestamptz)
+          AND (
+            ${search}::text IS NULL
+            OR c.title ILIKE '%' || ${search} || '%'
+            OR c.description ILIKE '%' || ${search} || '%'
+            OR CAST(c.ticket_number AS text) = ${search}
+          )
+          AND (
+            NOT ${onlyOverdue}
+            OR (
+              c.status NOT IN ('resolved','closed','cancelled')
+              AND EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= CASE c.priority
+                WHEN 'critical' THEN 4 WHEN 'urgent' THEN 4
+                WHEN 'high' THEN 24 WHEN 'medium' THEN 72
+                ELSE 168 END
+            )
+          )
+          AND (${overdueHours}::int IS NULL OR EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= ${overdueHours}::int)
+          AND (
+            ${snoozedMode} = 'include'
+            OR (${snoozedMode} = 'only' AND c.snoozed_until IS NOT NULL AND c.snoozed_until > NOW())
+            OR (${snoozedMode} = 'hide' AND (c.snoozed_until IS NULL OR c.snoozed_until <= NOW()))
+          )
+      `
+      const total = totalResult[0]?.total ?? 0
+
+      // Статистика по статусам (вне фильтров — для бейджей "Активные" / "Архив")
       const statsResult = await sql`
-        SELECT status, COUNT(*) as count 
-        FROM support_cases 
+        SELECT status, COUNT(*)::int AS count
+        FROM support_cases
         WHERE org_id = ${orgId}
+          AND (${market}::text IS NULL OR market_id = ${market})
         GROUP BY status
       `
-      const stats = Object.fromEntries(statsResult.map((s: any) => [s.status, parseInt(s.count)]))
+      const stats = Object.fromEntries(statsResult.map((s: any) => [s.status, s.count]))
+
+      // Метрики времени решения за период (по умолчанию 30 дней).
+      // Считается от ПЕРВОГО СООБЩЕНИЯ КЛИЕНТА (а не от created_at кейса) — fallback на cases.created_at для кейсов без привязанных сообщений.
+      // Shadow-кейсы исключаем (искажают среднее вниз).
+      const metricsPeriodDays = Math.min(Math.max(parseInt(url.searchParams.get('metricsPeriodDays') || '30'), 1), 365)
+      const metricsRow = await sql`
+        WITH resolved_cases AS (
+          SELECT c.id, c.is_shadow,
+                 EXTRACT(EPOCH FROM (c.resolved_at - COALESCE(m.first_message_at, c.created_at))) / 60.0 AS res_minutes
+          FROM support_cases c
+          LEFT JOIN (
+            SELECT case_id, MIN(created_at) AS first_message_at
+            FROM support_messages
+            WHERE org_id = ${orgId} AND case_id IS NOT NULL
+            GROUP BY case_id
+          ) m ON m.case_id = c.id
+          WHERE c.org_id = ${orgId}
+            AND c.status IN ('resolved','closed')
+            AND c.resolved_at IS NOT NULL
+            AND c.resolved_at >= NOW() - (${metricsPeriodDays} || ' days')::interval
+            AND (${market}::text IS NULL OR c.market_id = ${market})
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false)::int AS resolved_count,
+          AVG(res_minutes) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false) AS avg_minutes,
+          MAX(res_minutes) FILTER (WHERE COALESCE(is_shadow, false) = false) AS max_minutes,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY res_minutes) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false) AS median_minutes,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY res_minutes) FILTER (WHERE res_minutes > 0 AND COALESCE(is_shadow, false) = false) AS p95_minutes,
+          COUNT(*) FILTER (WHERE COALESCE(is_shadow, false) = true)::int AS shadow_count
+        FROM resolved_cases
+      `
+      const m = metricsRow[0] || {}
+      const avgMin = m.avg_minutes != null ? Number(m.avg_minutes) : null
+      const maxMin = m.max_minutes != null ? Number(m.max_minutes) : null
+      const medMin = m.median_minutes != null ? Number(m.median_minutes) : null
+      const p95Min = m.p95_minutes != null ? Number(m.p95_minutes) : null
+      const resolutionMetrics = {
+        periodDays: metricsPeriodDays,
+        resolvedCount: m.resolved_count ?? 0,
+        shadowCount: m.shadow_count ?? 0,
+        avgMinutes: avgMin,
+        maxMinutes: maxMin,
+        medianMinutes: medMin,
+        p95Minutes: p95Min,
+        avgHours: avgMin != null ? +(avgMin / 60).toFixed(2) : null,
+        maxHours: maxMin != null ? +(maxMin / 60).toFixed(2) : null,
+        medianHours: medMin != null ? +(medMin / 60).toFixed(2) : null,
+        p95Hours: p95Min != null ? +(p95Min / 60).toFixed(2) : null,
+      }
+
+      // Overdue counter (по активным кейсам) — возраст от первого сообщения клиента
+      const overdueRow = await sql`
+        SELECT COUNT(*)::int AS overdue
+        FROM support_cases c
+        LEFT JOIN (
+          SELECT case_id, MIN(created_at) AS first_message_at
+          FROM support_messages
+          WHERE org_id = ${orgId} AND case_id IS NOT NULL
+          GROUP BY case_id
+        ) m ON m.case_id = c.id
+        WHERE c.org_id = ${orgId}
+          AND c.status NOT IN ('resolved','closed','cancelled')
+          AND EXTRACT(EPOCH FROM (NOW() - COALESCE(m.first_message_at, c.created_at))) / 3600.0 >= CASE c.priority
+            WHEN 'critical' THEN 4 WHEN 'urgent' THEN 4
+            WHEN 'high' THEN 24 WHEN 'medium' THEN 72
+            ELSE 168 END
+          AND (${market}::text IS NULL OR c.market_id = ${market})
+      `
+      const overdueCount = overdueRow[0]?.overdue ?? 0
+
+      // Snooze counter (активные отложенные кейсы)
+      const snoozedRow = await sql`
+        SELECT COUNT(*)::int AS snoozed
+        FROM support_cases
+        WHERE org_id = ${orgId}
+          AND status NOT IN ('resolved','closed','cancelled')
+          AND snoozed_until IS NOT NULL
+          AND snoozed_until > NOW()
+          AND (${market}::text IS NULL OR market_id = ${market})
+      `.catch(() => [{ snoozed: 0 }])
+      const snoozedCount = snoozedRow[0]?.snoozed ?? 0
 
       return json({
-        cases: cases.map((c: any) => ({
-          id: c.id,
-          ticketNumber: c.ticket_number,
-          channelId: c.channel_id,
-          channelName: c.channel_name || 'Без канала',
-          telegramChatId: c.telegram_chat_id,
-          companyId: c.company_id || c.ch_company_id,
-          companyName: c.channel_name || 'Без компании', // TODO: JOIN with crm_companies when available
-          leadId: c.lead_id,
-          title: c.title || 'Без названия',
-          description: c.description || '',
-          status: c.status || 'detected',
-          category: c.category || 'general',
-          subcategory: c.subcategory,
-          rootCause: c.root_cause,
-          priority: c.priority || 'medium',
-          severity: c.severity,
-          assignedTo: c.assigned_to,
-          assigneeName: c.assignee_name || null, // From JOIN with support_agents
-          reporterName: c.reporter_name, // Кто инициировал тикет
-          firstResponseAt: c.first_response_at,
-          resolvedAt: c.resolved_at,
-          resolutionTimeMinutes: c.resolution_time_minutes,
-          resolutionNotes: c.resolution_notes,
-          impactMrr: parseFloat(c.impact_mrr || 0),
-          churnRiskScore: c.churn_risk_score,
-          isRecurring: c.is_recurring,
-          relatedCaseId: c.related_case_id,
-          tags: c.tags || [],
-          messagesCount: parseInt(c.messages_count || 0),
-          sourceMessageId: c.source_message_id, // Fixed: was 'messageId'
-          createdAt: c.created_at,
-          updatedAt: c.updated_at,
-          updatedBy: c.updated_by,
-          lastActivityAt: c.last_activity_at,
-          lastStatusChangeAt: c.last_status_change_at,
-          lastActivityType: c.last_activity_type,
-        })),
+        cases: rows.map((c: any) => {
+          const ageHours = c.age_hours != null ? Number(c.age_hours) : null
+          const slaThreshold = SLA_HOURS_BY_PRIORITY[c.priority] ?? 72
+          const isActive = !['resolved', 'closed', 'cancelled'].includes(c.status)
+          const isOverdue = isActive && ageHours != null && ageHours >= slaThreshold
+          return {
+            id: c.id,
+            ticketNumber: c.ticket_number,
+            channelId: c.channel_id,
+            channelName: c.channel_name || 'Без канала',
+            channelSource: c.channel_source || 'telegram',
+            telegramChatId: c.telegram_chat_id,
+            companyId: c.company_id || c.ch_company_id,
+            companyName: c.channel_name || 'Без компании',
+            leadId: c.lead_id,
+            title: c.title || 'Без названия',
+            description: c.description || '',
+            status: c.status || 'detected',
+            category: c.category || 'general',
+            subcategory: c.subcategory,
+            rootCause: c.root_cause,
+            priority: c.priority || 'medium',
+            severity: c.severity,
+            assignedTo: c.assigned_to,
+            assigneeName: c.assignee_name || null,
+            reporterName: c.reporter_name,
+            firstResponseAt: c.first_response_at,
+            firstMessageAt: c.first_message_at,
+            resolvedAt: c.resolved_at,
+            resolutionTimeMinutes: c.resolution_time_minutes_from_msg != null ? Number(c.resolution_time_minutes_from_msg) : c.resolution_time_minutes,
+            resolutionNotes: c.resolution_notes,
+            impactMrr: parseFloat(c.impact_mrr || 0),
+            churnRiskScore: c.churn_risk_score,
+            isRecurring: c.is_recurring,
+            isShadow: c.is_shadow ?? false,
+            relatedCaseId: c.related_case_id,
+            tags: c.tags || [],
+            messagesCount: parseInt(c.messages_count || 0),
+            sourceMessageId: c.source_message_id,
+            createdAt: c.created_at,
+            updatedAt: c.updated_at,
+            updatedBy: c.updated_by,
+            lastActivityAt: c.last_activity_at,
+            lastStatusChangeAt: c.last_status_change_at,
+            lastActivityType: c.last_activity_type,
+            ageHours,
+            slaThresholdHours: slaThreshold,
+            isOverdue,
+            snoozedUntil: c.snoozed_until,
+            snoozedBy: c.snoozed_by,
+            snoozeReason: c.snooze_reason,
+            isSnoozed: c.snoozed_until && new Date(c.snoozed_until) > new Date(),
+          }
+        }),
         total,
-        limit: limitParam,
-        offset: offsetParam,
-        hasMore: offsetParam + limitParam < total,
-        stats
+        limit,
+        offset,
+        hasMore: offset + limit < total,
+        stats,
+        metrics: resolutionMetrics,
+        overdueCount,
+        snoozedCount,
       })
 
     } catch (e: any) {
       console.error('Cases fetch error:', e)
-      return json({ error: 'Failed to fetch cases' }, 500)
+      return json({ error: 'Failed to fetch cases', detail: e?.message }, 500)
     }
   }
 
-  // POST - создать кейс
+  // POST — создать кейс
   if (req.method === 'POST') {
     try {
       const body = await req.json()
-      console.log('Create case request body:', JSON.stringify(body))
-      
-      const { 
+
+      const {
         channelId, companyId, companyName, leadId, title, description,
         category, subcategory, priority, severity, assignedTo, tags
       } = body
@@ -227,23 +408,12 @@ export default async function handler(req: Request): Promise<Response> {
       if (!title) {
         return json({ error: 'Title is required' }, 400)
       }
-      
-      // Log what we're inserting
-      console.log('Creating case with:', { 
-        channelId: channelId || null, 
-        companyId: companyId || null,
-        companyName,
-        title, 
-        category, 
-        priority 
-      })
 
       const caseId = `case_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      
+
       // Получаем следующий номер тикета
       let ticketNumber: number
       try {
-        // Ensure sequence exists and synced with max ticket_number
         await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
         const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases WHERE org_id = ${orgId}`
         const maxNum = parseInt(maxResult[0]?.max_num || '1000')
@@ -251,11 +421,10 @@ export default async function handler(req: Request): Promise<Response> {
         const seqResult = await sql`SELECT nextval('support_case_ticket_seq') as num`
         ticketNumber = parseInt(seqResult[0]?.num || '1001')
       } catch {
-        // Fallback: use max + 1
         const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 1000) as max_num FROM support_cases WHERE org_id = ${orgId}`
         ticketNumber = parseInt(maxResult[0]?.max_num || '1000') + 1
       }
-      
+
       await sql`
         INSERT INTO support_cases (
           id, org_id, ticket_number, channel_id, company_id, lead_id, title, description,
@@ -278,16 +447,21 @@ export default async function handler(req: Request): Promise<Response> {
         )
       `
 
-      // Fetch created case with channel info for full response
+      await sql`
+        INSERT INTO support_case_activities (id, case_id, type, title)
+        VALUES (${'act_' + Date.now()}, ${caseId}, 'created', 'Кейс создан')
+      `.catch(() => {})
+
       const createdCase = await sql`
-        SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, a.name as assignee_name
+        SELECT c.*, ch.name as channel_name, ch.telegram_chat_id, ch.source as channel_source, a.name as assignee_name
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
         LEFT JOIN support_agents a ON c.assigned_to = a.id
         WHERE c.id = ${caseId} AND c.org_id = ${orgId}
       `
-      
+
       const c = createdCase[0]
+      const slaThreshold = SLA_HOURS_BY_PRIORITY[c.priority] ?? 72
 
       return json({
         success: true,
@@ -299,6 +473,7 @@ export default async function handler(req: Request): Promise<Response> {
           ticketNumber: c.ticket_number,
           channelId: c.channel_id,
           channelName: c.channel_name || 'Без канала',
+          channelSource: c.channel_source || 'telegram',
           telegramChatId: c.telegram_chat_id,
           companyId: c.company_id,
           companyName: c.channel_name || 'Без компании',
@@ -313,120 +488,22 @@ export default async function handler(req: Request): Promise<Response> {
           assignedTo: c.assigned_to,
           assigneeName: c.assignee_name,
           tags: c.tags || [],
+          messagesCount: 0,
           createdAt: c.created_at,
           updatedAt: c.updated_at,
+          ageHours: 0,
+          slaThresholdHours: slaThreshold,
+          isOverdue: false,
         }
       })
 
     } catch (e: any) {
       console.error('Case create error:', e)
-      return json({ error: 'Failed to create case' }, 500)
+      return json({ error: 'Failed to create case', detail: e?.message }, 500)
     }
   }
 
-  // PUT - обновить кейс
-  if (req.method === 'PUT') {
-    try {
-      const body = await req.json()
-      const { id, status, priority, assignedTo, title, description, action } = body
-
-      if (!id) {
-        return json({ error: 'Case ID required' }, 400)
-      }
-
-      // Добавление комментария
-      if (action === 'add_comment') {
-        const { text, isInternal, authorName, authorId } = body
-        if (!text) return json({ error: 'Comment text required' }, 400)
-
-        try {
-          await sql`CREATE TABLE IF NOT EXISTS support_case_comments (
-            id VARCHAR(50) PRIMARY KEY,
-            case_id VARCHAR(50) NOT NULL,
-            author_id VARCHAR(50),
-            author_name VARCHAR(255),
-            text TEXT NOT NULL,
-            is_internal BOOLEAN DEFAULT false,
-            created_at TIMESTAMP DEFAULT NOW()
-          )`
-        } catch { /* exists */ }
-
-        const commentId = `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-        await sql`
-          INSERT INTO support_case_comments (id, case_id, author_id, author_name, text, is_internal)
-          VALUES (${commentId}, ${id}, ${authorId || null}, ${authorName || 'Система'}, ${text}, ${isInternal || false})
-        `
-        await sql`UPDATE support_cases SET updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`
-
-        const comments = await sql`
-          SELECT id, author_id, author_name, text, is_internal, created_at
-          FROM support_case_comments WHERE case_id = ${id} ORDER BY created_at ASC
-        `
-
-        return json({
-          success: true,
-          commentId,
-          comments: comments.map((c: any) => ({
-            id: c.id,
-            author: c.author_name || 'Система',
-            authorId: c.author_id,
-            text: c.text,
-            isInternal: c.is_internal,
-            time: c.created_at,
-          })),
-        })
-      }
-
-      // Получение комментариев
-      if (action === 'get_comments') {
-        try {
-          await sql`CREATE TABLE IF NOT EXISTS support_case_comments (
-            id VARCHAR(50) PRIMARY KEY,
-            case_id VARCHAR(50) NOT NULL,
-            author_id VARCHAR(50),
-            author_name VARCHAR(255),
-            text TEXT NOT NULL,
-            is_internal BOOLEAN DEFAULT false,
-            created_at TIMESTAMP DEFAULT NOW()
-          )`
-        } catch { /* exists */ }
-
-        const comments = await sql`
-          SELECT id, author_id, author_name, text, is_internal, created_at
-          FROM support_case_comments WHERE case_id = ${id} ORDER BY created_at ASC
-        `
-
-        return json({
-          comments: comments.map((c: any) => ({
-            id: c.id,
-            author: c.author_name || 'Система',
-            authorId: c.author_id,
-            text: c.text,
-            isInternal: c.is_internal,
-            time: c.created_at,
-          })),
-        })
-      }
-
-      await sql`
-        UPDATE support_cases SET
-          status = COALESCE(${status}, status),
-          priority = COALESCE(${priority}, priority),
-          assigned_to = COALESCE(${assignedTo}, assigned_to),
-          title = COALESCE(${title}, title),
-          description = COALESCE(${description}, description),
-          updated_at = NOW()
-        WHERE id = ${id} AND org_id = ${orgId}
-      `
-
-      return json({ success: true, caseId: id })
-
-    } catch (e: any) {
-      return json({ error: 'Failed to update case' }, 500)
-    }
-  }
-
-  // DELETE - удалить кейс
+  // DELETE — удалить кейс
   if (req.method === 'DELETE') {
     try {
       const caseId = url.searchParams.get('id')
@@ -439,6 +516,7 @@ export default async function handler(req: Request): Promise<Response> {
 
       return json({ success: true, deleted: caseId })
     } catch (e: any) {
+      console.error('Case delete error:', e)
       return json({ error: 'Failed to delete case' }, 500)
     }
   }

@@ -640,6 +640,48 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push('Created/updated support_commitments table')
     } catch (e) { /* table exists */ }
 
+    // Migration 38: Snooze для кейсов (отложить до даты)
+    try {
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS snoozed_until TIMESTAMP NULL`
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS snoozed_by VARCHAR(255) NULL`
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS snooze_reason TEXT NULL`
+      await sql`CREATE INDEX IF NOT EXISTS idx_cases_snoozed ON support_cases(snoozed_until) WHERE snoozed_until IS NOT NULL`
+      migrations.push('Added snooze fields to support_cases')
+    } catch (e) { /* exists */ }
+
+    // Migration 39: Унификация support_case_activity (singular) → support_case_activities (plural)
+    // Telegram-webhook раньше писал в singular, остальной код — в plural. Переносим данные.
+    try {
+      // Существует ли вообще таблица singular?
+      const exists = await sql`
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'support_case_activity' LIMIT 1
+      `
+      if (exists.length > 0) {
+        const moved = await sql`
+          INSERT INTO support_case_activities (id, case_id, type, title, description, manager_id, metadata, created_at)
+          SELECT
+            sca.id,
+            sca.case_id,
+            COALESCE(sca.activity_type, 'unknown'),
+            COALESCE(sca.actor_name, '') || ' • ' || COALESCE(sca.activity_type, ''),
+            CASE WHEN sca.details::text <> '{}' THEN sca.details::text ELSE NULL END,
+            sca.actor_id,
+            sca.details,
+            sca.created_at
+          FROM support_case_activity sca
+          WHERE NOT EXISTS (
+            SELECT 1 FROM support_case_activities WHERE id = sca.id
+          )
+          RETURNING id
+        `
+        migrations.push(`Migrated ${moved.length} rows from support_case_activity to support_case_activities`)
+        // Не дропаем старую таблицу — оставляем для безопасности на 1-2 деплоя.
+      }
+    } catch (e: any) {
+      migrations.push(`Activity unify error: ${e.message}`)
+    }
+
     return json({
       success: true,
       migrations,
