@@ -53,6 +53,10 @@
     {
       "path": "/api/support/analytics/daily-report",
       "schedule": "0 13 * * 1-5"
+    },
+    {
+      "path": "/api/support/cron/wa-health",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

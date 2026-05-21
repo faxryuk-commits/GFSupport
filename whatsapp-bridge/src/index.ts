@@ -1,5 +1,5 @@
 import express from 'express'
-import { startBaileys, onMessage, downloadMediaMessage, getGroupName } from './baileys.js'
+import { startBaileys, onMessage, downloadMediaMessage, getGroupName, getStatus, getConnectionMetrics } from './baileys.js'
 import { createRouter } from './routes.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -262,4 +262,35 @@ app.listen(PORT, async () => {
   startBaileys(AUTH_DIR).catch((e) => {
     console.error('[Bridge] startBaileys crashed:', e)
   })
+
+  // Watchdog: каждые 60 сек проверяем что мы connected.
+  // Если down дольше 5 мин — форсим reconnect (вдруг event-handler застрял).
+  // Если down дольше 30 мин — кричим в логи "manual intervention required".
+  const WATCHDOG_INTERVAL_MS = 60_000
+  const FORCE_RECONNECT_AFTER_MS = 5 * 60_000
+  const SHOUT_AFTER_MS = 30 * 60_000
+
+  let lastForceReconnectAt = 0
+  setInterval(async () => {
+    const status = getStatus()
+    const metrics = getConnectionMetrics()
+    if (status.connected) return
+
+    const downtime = metrics.downtimeMs ?? Infinity
+    const sinceLastForce = Date.now() - lastForceReconnectAt
+
+    if (downtime >= SHOUT_AFTER_MS && sinceLastForce > 5 * 60_000) {
+      console.error(`[Watchdog] 🚨 WA bridge DOWN for ${Math.round(downtime / 60000)} min. Manual QR re-scan or restart likely needed. lastError=${status.lastError}`)
+    }
+
+    if (downtime >= FORCE_RECONNECT_AFTER_MS && sinceLastForce > 5 * 60_000) {
+      console.warn(`[Watchdog] Force-reconnecting (down ${Math.round(downtime / 1000)}s, attempts=${metrics.reconnectAttempts})`)
+      lastForceReconnectAt = Date.now()
+      try {
+        await startBaileys(AUTH_DIR, { mode: 'qr' })
+      } catch (e: any) {
+        console.error('[Watchdog] Force-reconnect failed:', e.message)
+      }
+    }
+  }, WATCHDOG_INTERVAL_MS)
 })

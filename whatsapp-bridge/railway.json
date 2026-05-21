@@ -6,7 +6,10 @@
   },
   "deploy": {
     "healthcheckPath": "/health",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  }
+    "healthcheckTimeout": 30,
+    "restartPolicyType": "ALWAYS",
+    "numReplicas": 1,
+    "sleepApplication": false
+  },
+  "_volume_setup_required": "Создать Railway Volume и mount → /data через Railway dashboard (Service → Settings → Volumes). Без этого auth_info стирается при каждом redeploy и нужен новый QR-скан. Это главная причина отвалов сессии."
 }
