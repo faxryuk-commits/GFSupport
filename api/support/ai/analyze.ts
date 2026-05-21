@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { getOpenAIKey, getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
+import { detectProblem, detectUrgent } from '../lib/case-detector.js'
 import {
   TAXONOMY,
   isValidDomain,
@@ -597,13 +598,41 @@ export default async function handler(req: Request): Promise<Response> {
       const autoReplyResult = null
       // if (analysis.autoReplyAllowed && channelId && telegramChatId && isFromClient) { ... }
 
-      // Auto-create ticket for problems (urgent: >= 2, or isProblem with needsResponse)
-      // ВАЖНО: Тикеты создаются ТОЛЬКО для сообщений от КЛИЕНТОВ, не от сотрудников!
+      // Auto-create ticket. Условия (ИЛИ):
+      //   1. isProblem + urgency >= 1 — явная проблема с любой не-нулевой срочностью
+      //   2. intent IN ('report_problem','complaint') — AI прямо назвал жалобой/проблемой
+      //   3. isProblem + urgency = 0 + needsResponse — проблема без срочности но требует ответа
+      // Раньше требовалось urgency >= 2 И needsResponse одновременно — отсекало ~85% реальных
+      // проблем (см. диагностику 21.05: 79 problems, 12 кейсов = 15% конверсия).
       let ticketResult = null
-      console.log(`[AI Analyze] Ticket check: isProblem=${analysis.isProblem}, needsResponse=${analysis.needsResponse}, urgency=${analysis.urgency}, isFromClient=${isFromClient}, messageId=${!!messageId}, channelId=${!!channelId}`)
-      
-      // Добавлена проверка isFromClient чтобы не создавать дубликаты тикетов когда сотрудник отвечает
-      if (analysis.isProblem && analysis.needsResponse && analysis.urgency >= 2 && messageId && channelId && isFromClient) {
+      const intent = (analysis as any).intent || ''
+      const isExplicitProblemIntent = intent === 'report_problem' || intent === 'complaint'
+
+      // Safety-net: если GPT не разглядел проблему, проверяем regex-детектор.
+      // detectProblem ловит явные «не работает / ошибка / muammo / xato / ишламай» на ru/uz/en.
+      const regexHasProblem = detectProblem(text || '')
+      const regexUrgent = detectUrgent(text || '')
+
+      const shouldCreateCase =
+        isFromClient && messageId && channelId &&
+        (
+          (analysis.isProblem && analysis.urgency >= 1) ||
+          isExplicitProblemIntent ||
+          (analysis.isProblem && analysis.needsResponse) ||
+          // Safety-net: regex видит проблему, даже если AI пропустил
+          regexHasProblem
+        )
+
+      console.log(`[AI Analyze] Ticket check: isProblem=${analysis.isProblem}, intent=${intent}, urgency=${analysis.urgency}, needsResponse=${analysis.needsResponse}, regexProblem=${regexHasProblem}, regexUrgent=${regexUrgent}, isFromClient=${isFromClient}, decision=${shouldCreateCase ? 'CREATE' : 'SKIP'}`)
+
+      // Если AI пропустил, но regex поймал — подкрутим urgency для записи
+      if (shouldCreateCase && !analysis.isProblem && regexHasProblem) {
+        analysis.urgency = Math.max(analysis.urgency, regexUrgent ? 4 : 2)
+        analysis.isProblem = true
+        console.log(`[AI Analyze] Safety-net triggered: regex detected problem, AI missed it (urgency bumped to ${analysis.urgency})`)
+      }
+
+      if (shouldCreateCase) {
         console.log(`[AI Analyze] Auto-creating ticket for problem message (urgency=${analysis.urgency})`)
         
         try {
