@@ -272,21 +272,25 @@ export async function startBaileys(
         const errMsg = (lastDisconnect?.error as any)?.message || 'unknown'
 
         // Классифицируем причину disconnect:
-        //   loggedOut          — пользователь отключил с телефона. НЕ реконнектим.
         //   connectionReplaced — кто-то ещё подключился. 30s wait.
         //   401/403/405/500    — reject. Дискриминатор — state.creds.registered:
         //       а) registered=true  → в authDir лежит сессия, а сервер её отвергает →
-        //          сессия отозвана/протухла. Wipe authDir + QR (один раз). После wipe
-        //          сокет становится незарегистрированным, и повторный 401 уйдёт в ветку (б).
+        //          сессия отозвана/протухла/logout с телефона. Wipe authDir + QR (один раз).
+        //          После wipe сокет становится незарегистрированным, повторный 401 уйдёт в (б).
         //       б) registered=false → отвергают свежий QR/pair handshake → клиент/IP в
         //          anti-abuse у WA. НЕ wipe (нечего), длинный backoff 30мин-6ч, чтобы IP остыл.
         //   timedOut, lost, restartRequired, badSession — временно, exp backoff.
         //
-        // ВАЖНО: дискриминатор — именно registered, НЕ lastConnectedAt. Иначе протухшая
+        // ВАЖНО #1: дискриминатор — именно registered, НЕ lastConnectedAt. Иначе протухшая
         // сессия в volume (registered=true, но процесс ещё ни разу не коннектился)
         // зациклит длинный backoff без wipe и QR никогда не появится.
+        //
+        // ВАЖНО #2: в Baileys DisconnectReason.loggedOut === 401, т.е. «logout с телефона»
+        // и «handshake reject» приходят ОДНИМ кодом 401. Поэтому отдельной ветки isLoggedOut
+        // нет — 401 разводится через registered (выше). Старый код ловил isLoggedOut первым
+        // и делал return без реконнекта, а watchdog потом форсил рестарт раз в 5 мин —
+        // отсюда и брались 3128 disconnect'ов с пустой сессией.
         const registered = !!state.creds?.registered
-        const isLoggedOut = statusCode === DisconnectReason.loggedOut
         const isReplaced = statusCode === DisconnectReason.connectionReplaced
         const isRejectCode = statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500 || statusCode === DisconnectReason.badSession
         const isBadSession = isRejectCode && registered
@@ -296,12 +300,6 @@ export async function startBaileys(
 
         // Любой текущий pair-code невалиден после disconnect
         clearPairCode()
-
-        if (isLoggedOut) {
-          lastError = 'Аккаунт WhatsApp отключён с телефона. Нужен повторный QR-скан.'
-          console.log('[Baileys] Logged out by user. Manual QR re-scan required (POST /disconnect to wipe).')
-          return
-        }
 
         if (isReplaced) {
           lastError = 'Сессию заняло другое устройство. Жду 30 сек.'
