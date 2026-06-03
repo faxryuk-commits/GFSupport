@@ -35,6 +35,28 @@ app.use('/', createRouter(BRIDGE_SECRET, AUTH_DIR))
 
 const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || ''
 
+// Baileys заворачивает реальный контент в обёртки (ephemeral/view-once/edited/
+// device-sent/document-with-caption). Без разворота extractText/getContentType
+// видят пустую оболочку и текст теряется → в UI приходит «[text]».
+// Разворачиваем рекурсивно до настоящего message-узла.
+function unwrapMessage(message: any): any {
+  let m = message
+  for (let i = 0; i < 5 && m; i++) {
+    const inner =
+      m.ephemeralMessage?.message ||
+      m.viewOnceMessage?.message ||
+      m.viewOnceMessageV2?.message ||
+      m.viewOnceMessageV2Extension?.message ||
+      m.documentWithCaptionMessage?.message ||
+      m.editedMessage?.message ||
+      m.protocolMessage?.editedMessage?.message ||
+      m.deviceSentMessage?.message
+    if (!inner) break
+    m = inner
+  }
+  return m
+}
+
 function extractText(msg: any): string | null {
   return msg.message?.conversation
     || msg.message?.extendedTextMessage?.text
@@ -137,11 +159,20 @@ onMessage(async (msg) => {
       return
     }
 
-    const text = extractText(msg)
-    const contentType = getContentType(msg)
+    // Разворачиваем обёртки ОДИН раз и дальше работаем с нормализованным m:
+    // key/pushName берём из оригинала, message — развёрнутый внутренний узел.
+    const m = { ...msg, message: unwrapMessage(msg.message) }
+
+    const text = extractText(m)
+    const contentType = getContentType(m)
+
+    if (contentType === 'text' && !text) {
+      // Диагностика: текст не извлёкся даже после разворота — покажет реальную структуру.
+      console.warn(`[MSG] empty text. innerKeys=${JSON.stringify(Object.keys(m.message || {}))} rawKeys=${JSON.stringify(Object.keys(msg.message || {}))}`)
+    }
 
     if (contentType === 'reaction') {
-      const reaction = msg.message?.reactionMessage
+      const reaction = m.message?.reactionMessage
       const payload = {
         type: 'reaction',
         chatId: jid,
@@ -158,20 +189,20 @@ onMessage(async (msg) => {
 
     let mediaUrl: string | null = null
     let thumbnailUrl: string | null = null
-    if (contentType !== 'text' && msg.message) {
+    if (contentType !== 'text' && m.message) {
       try {
-        const buffer = await downloadMediaMessage(msg, 'buffer', {})
+        const buffer = await downloadMediaMessage(m, 'buffer', {})
         if (buffer && buffer.length > 0) {
-          const ext = (getMimeType(msg) || '').split('/')[1] || 'bin'
+          const ext = (getMimeType(m) || '').split('/')[1] || 'bin'
           const fname = `wa/${Date.now()}_${msg.key.id}.${ext}`
           mediaUrl = await uploadToBlob(buffer as Buffer, fname)
         }
       } catch (e: any) {
         console.error('[Media] Download failed:', e.message)
       }
-      const thumb = msg.message?.imageMessage?.jpegThumbnail
-        || msg.message?.videoMessage?.jpegThumbnail
-        || msg.message?.stickerMessage?.pngThumbnail
+      const thumb = m.message?.imageMessage?.jpegThumbnail
+        || m.message?.videoMessage?.jpegThumbnail
+        || m.message?.stickerMessage?.pngThumbnail
       if (thumb) {
         try {
           const thumbBuf = Buffer.isBuffer(thumb) ? thumb : Buffer.from(thumb)
@@ -180,7 +211,7 @@ onMessage(async (msg) => {
       }
     }
 
-    const reply = getReplyContext(msg)
+    const reply = getReplyContext(m)
     const payload: Record<string, any> = {
       chatId: jid,
       messageId: msg.key.id,
@@ -190,8 +221,8 @@ onMessage(async (msg) => {
       mediaUrl,
       thumbnailUrl,
       contentType,
-      mimeType: getMimeType(msg),
-      fileName: getFileName(msg),
+      mimeType: getMimeType(m),
+      fileName: getFileName(m),
       timestamp: msg.messageTimestamp,
       isGroup,
       fromMe,
