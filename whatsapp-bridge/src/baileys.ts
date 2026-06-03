@@ -31,11 +31,22 @@ let reconnectAttempts = 0
 let lastConnectedAt: number | null = null
 let lastDisconnectedAt: number | null = null
 let totalDisconnects = 0
+// Серия 401/403/405/500 на handshake до первого успеха = WA отверг клиент/IP (anti-abuse).
+// Считаем отдельно — выходим в очень длинный backoff и не wipe'аем пустой authDir.
+let initialRejectStreak = 0
 
 function calcBackoffMs(attempt: number): number {
   // 2^attempt * 1000 (1s, 2s, 4s, 8s, 16s, 32s) max 60s + jitter ±20%
   const base = Math.min(1000 * Math.pow(2, attempt), 60_000)
   const jitter = base * (0.8 + Math.random() * 0.4)
+  return Math.round(jitter)
+}
+
+// Для initial-rejection (401/403/etc до первого успеха): минимум 30 мин,
+// потом удваивается до 6 часов. Цель — дать IP «остыть» в anti-abuse списке WA.
+function calcInitialRejectBackoffMs(streak: number): number {
+  const base = Math.min(30 * 60_000 * Math.pow(2, Math.max(0, streak - 1)), 6 * 60 * 60_000)
+  const jitter = base * (0.9 + Math.random() * 0.2)
   return Math.round(jitter)
 }
 
@@ -69,6 +80,8 @@ export function getConnectionMetrics() {
     lastConnectedAt,
     lastDisconnectedAt,
     totalDisconnects,
+    initialRejectStreak,
+    everConnected: lastConnectedAt !== null,
     downtimeMs: isConnected ? 0 : (lastDisconnectedAt ? Date.now() - lastDisconnectedAt : null),
     uptimeMs: isConnected && lastConnectedAt ? Date.now() - lastConnectedAt : null,
   }
@@ -192,6 +205,12 @@ export async function startBaileys(
     })
     console.log('[Baileys] Socket created, waiting for connection events...')
 
+    // Если creds.registered=false и мы в initialRejectStreak — не пытаемся даже коннектиться
+    // в ближайшие N минут. Защита от ситуации когда watchdog или внешний триггер форсит рестарт
+    // в окно длинного backoff'а, и мы сами себе ломаем «остывание» IP.
+    // NB: проверка здесь, после makeWASocket — потому что состояние state.creds.registered
+    // доступно только после useMultiFileAuthState.
+
     sock.ev.on('creds.update', saveCreds)
 
     // Pair-code flow: запрашиваем 8-значный код СРАЗУ после создания сокета,
@@ -240,6 +259,7 @@ export async function startBaileys(
         phoneNumber = sock?.user?.id?.split(':')[0] || ''
         lastConnectedAt = Date.now()
         reconnectAttempts = 0 // успех — сбрасываем backoff
+        initialRejectStreak = 0 // успех — сбрасываем счётчик anti-abuse
         console.log(`[Baileys] Connected as ${phoneNumber} (reconnect counter reset)`)
       }
 
@@ -250,33 +270,42 @@ export async function startBaileys(
 
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode
         const errMsg = (lastDisconnect?.error as any)?.message || 'unknown'
-        lastError = `Disconnected: ${errMsg} (status ${statusCode})`
 
-        // Классифицируем причину disconnect для правильной стратегии:
-        //   loggedOut         — пользователь отключил с телефона. НЕ реконнектим без QR.
-        //   401/403/405/500   — bad session (сервер не принимает credentials). Wipe + QR.
-        //   connectionReplaced — кто-то ещё подключился с тем же аккаунтом. НЕ реконнектим.
-        //   timedOut, lost, restartRequired, badSession — временно, реконнектим с backoff.
-        //   408               — connection timed out — реконнектим с backoff.
+        // Классифицируем причину disconnect:
+        //   loggedOut          — пользователь отключил с телефона. НЕ реконнектим.
+        //   connectionReplaced — кто-то ещё подключился. 30s wait.
+        //   401/403/405/500    — reject. Дискриминатор — state.creds.registered:
+        //       а) registered=true  → в authDir лежит сессия, а сервер её отвергает →
+        //          сессия отозвана/протухла. Wipe authDir + QR (один раз). После wipe
+        //          сокет становится незарегистрированным, и повторный 401 уйдёт в ветку (б).
+        //       б) registered=false → отвергают свежий QR/pair handshake → клиент/IP в
+        //          anti-abuse у WA. НЕ wipe (нечего), длинный backoff 30мин-6ч, чтобы IP остыл.
+        //   timedOut, lost, restartRequired, badSession — временно, exp backoff.
+        //
+        // ВАЖНО: дискриминатор — именно registered, НЕ lastConnectedAt. Иначе протухшая
+        // сессия в volume (registered=true, но процесс ещё ни разу не коннектился)
+        // зациклит длинный backoff без wipe и QR никогда не появится.
+        const registered = !!state.creds?.registered
         const isLoggedOut = statusCode === DisconnectReason.loggedOut
         const isReplaced = statusCode === DisconnectReason.connectionReplaced
-        const isBadSession = statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500 || statusCode === DisconnectReason.badSession
+        const isRejectCode = statusCode === 401 || statusCode === 403 || statusCode === 405 || statusCode === 500 || statusCode === DisconnectReason.badSession
+        const isBadSession = isRejectCode && registered
+        const isInitialReject = isRejectCode && !registered
 
-        console.log(`[Baileys] Disconnected #${totalDisconnects}. Status=${statusCode} (${getDisconnectReasonName(statusCode)}). Error: ${errMsg}`)
+        console.log(`[Baileys] Disconnected #${totalDisconnects}. Status=${statusCode} (${getDisconnectReasonName(statusCode)}). Error: ${errMsg}. registered=${registered}`)
 
         // Любой текущий pair-code невалиден после disconnect
         clearPairCode()
 
         if (isLoggedOut) {
+          lastError = 'Аккаунт WhatsApp отключён с телефона. Нужен повторный QR-скан.'
           console.log('[Baileys] Logged out by user. Manual QR re-scan required (POST /disconnect to wipe).')
-          // НЕ реконнектим — сессии нет
           return
         }
 
         if (isReplaced) {
+          lastError = 'Сессию заняло другое устройство. Жду 30 сек.'
           console.log('[Baileys] Connection replaced (another device logged in). Stopping reconnect to avoid fight.')
-          // Если запустить сейчас — отберём сессию у того кто только что зашёл, ping-pong
-          // Подождём 30 сек и попробуем — может тот пользователь уже ушёл
           setTimeout(() => {
             reconnectAttempts = 0
             startBaileys(authDir, { mode: activeMode, phoneNumber: pairCodePhone || undefined })
@@ -284,8 +313,34 @@ export async function startBaileys(
           return
         }
 
+        if (isInitialReject) {
+          // Ключевая ветка для нашей проблемы (3128 disconnect'ов). Отвергают незарегистрированный
+          // handshake (свежий QR/pair) — частая причина: IP в anti-abuse, устаревший Baileys,
+          // блокированный browser fingerprint. Wiping authDir тут бесполезен (сессии и так нет)
+          // и только усугубляет ban на IP. Длинный backoff даёт IP остыть.
+          initialRejectStreak++
+          const delay = calcInitialRejectBackoffMs(initialRejectStreak)
+          const delayMin = Math.round(delay / 60_000)
+          lastError = `WhatsApp отверг подключение (status ${statusCode}). ` +
+            `Возможные причины: IP-адрес в anti-abuse списке WA, устаревший протокол. ` +
+            `Следующая попытка через ~${delayMin} мин. ` +
+            `Если повторяется > 1 часа — пересоздайте Railway service для смены IP.`
+          console.warn(`[Baileys] Initial reject #${initialRejectStreak} (status ${statusCode}). Long backoff ${delayMin} min. NOT wiping authDir.`)
+          setTimeout(
+            () => startBaileys(authDir, { mode: activeMode, phoneNumber: pairCodePhone || undefined }),
+            delay
+          )
+          return
+        }
+
         if (isBadSession) {
-          console.log(`[Baileys] Bad session (${statusCode}), wiping auth and re-issuing QR...`)
+          // Зарегистрированная сессия отвергнута сервером → она протухла/отозвана.
+          // Wipe + QR. После wipe следующий старт будет registered=false: если WA
+          // продолжит отвергать (теперь уже свежий handshake) — попадём в isInitialReject
+          // с длинным backoff. Т.е. максимум ОДИН wipe+быстрый рестарт, дальше — остывание IP.
+          // Это и убивает старый цикл из 3128 disconnect'ов.
+          lastError = `Сессия отозвана сервером (status ${statusCode}). Очищаю и жду новый QR.`
+          console.log(`[Baileys] Bad session (${statusCode}), registered creds rejected, wiping auth and re-issuing QR...`)
           const fs = await import('fs')
           try { fs.rmSync(authDir, { recursive: true, force: true }) } catch {}
           reconnectAttempts = 0
@@ -294,6 +349,7 @@ export async function startBaileys(
         }
 
         // Временный disconnect — exponential backoff
+        lastError = `Временный сбой соединения: ${errMsg} (status ${statusCode}).`
         reconnectAttempts++
         const delay = calcBackoffMs(reconnectAttempts)
         console.log(`[Baileys] Will reconnect in ${delay}ms (attempt #${reconnectAttempts})`)

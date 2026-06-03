@@ -341,15 +341,43 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center py-10">
-                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
-                    <p className="text-sm font-medium text-slate-700">Генерация QR-кода...</p>
-                    {waStatus?.lastError && (
-                      <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">{waStatus.lastError}</p>
-                    )}
-                    <p className="text-xs text-slate-400 mt-3 text-center max-w-xs">
-                      Если QR не появляется или WhatsApp пишет «Can't link new devices» — попробуйте «Код по номеру».
-                    </p>
+                  <div className="flex flex-col items-center py-10 w-full">
+                    {(() => {
+                      const err = waStatus?.lastError || ''
+                      // bridge формирует «WhatsApp отверг подключение …» когда
+                      // initialRejectStreak > 0 (см. whatsapp-bridge/src/baileys.ts).
+                      // Это не «секунду подожди» — это требует действия (пересоздание
+                      // Railway service / wait ≥ 30 мин). Показываем заметный warning.
+                      const isReject = err.includes('отверг подключение') || err.includes('anti-abuse')
+                      if (isReject) {
+                        return (
+                          <div className="w-full max-w-md bg-amber-50 border border-amber-200 rounded-lg p-4 text-left">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-amber-900 mb-1">WhatsApp не пускает мост</p>
+                                <p className="text-xs text-amber-800 leading-relaxed">{err}</p>
+                                <p className="text-xs text-amber-700 mt-2 leading-relaxed">
+                                  Способ «Код по номеру» идёт по тому же соединению — он сейчас тоже не сработает.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+                          <p className="text-sm font-medium text-slate-700">Генерация QR-кода...</p>
+                          {err && (
+                            <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">{err}</p>
+                          )}
+                          <p className="text-xs text-slate-400 mt-3 text-center max-w-xs">
+                            Если QR не появляется или WhatsApp пишет «Can't link new devices» — попробуйте «Код по номеру».
+                          </p>
+                        </>
+                      )
+                    })()}
                   </div>
                 )}
               </div>

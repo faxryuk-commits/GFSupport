@@ -279,6 +279,17 @@ app.listen(PORT, async () => {
     const downtime = metrics.downtimeMs ?? Infinity
     const sinceLastForce = Date.now() - lastForceReconnectAt
 
+    // Если бридж в initial-reject (WA отвергает незарегистрированный handshake) — watchdog
+    // НЕ должен форсить рестарт. Это сломает длинный backoff из baileys.ts и продолжит долбить
+    // в WA, удерживая IP в anti-abuse списке. Дальше работает только основной retry-loop.
+    if (metrics.initialRejectStreak > 0) {
+      if (downtime >= SHOUT_AFTER_MS && sinceLastForce > 30 * 60_000) {
+        console.error(`[Watchdog] 🚨 WA bridge in initial-reject loop (streak=${metrics.initialRejectStreak}, down ${Math.round(downtime / 60000)} min). Action needed: recreate Railway service for fresh IP, or wait for anti-abuse cooldown. lastError=${status.lastError}`)
+        lastForceReconnectAt = Date.now()
+      }
+      return
+    }
+
     if (downtime >= SHOUT_AFTER_MS && sinceLastForce > 5 * 60_000) {
       console.error(`[Watchdog] 🚨 WA bridge DOWN for ${Math.round(downtime / 60000)} min. Manual QR re-scan or restart likely needed. lastError=${status.lastError}`)
     }
