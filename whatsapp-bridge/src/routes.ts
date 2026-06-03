@@ -77,6 +77,8 @@ export function createRouter(bridgeSecret: string, authDir: string): Router {
       lastError: status.lastError,
       reconnectAttempts: metrics.reconnectAttempts,
       totalDisconnects: metrics.totalDisconnects,
+      initialRejectStreak: metrics.initialRejectStreak,
+      everConnected: metrics.everConnected,
       uptimeMs: metrics.uptimeMs,
       downtimeMs: metrics.downtimeMs,
       lastConnectedAt: metrics.lastConnectedAt ? new Date(metrics.lastConnectedAt).toISOString() : null,
