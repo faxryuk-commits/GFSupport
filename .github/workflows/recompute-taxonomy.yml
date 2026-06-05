@@ -1,0 +1,27 @@
+name: Recompute support taxonomy
+
+# Пересчитывает таксономию обращений + статусы каналов и сидит снимок в БД
+# (таблицы support_issue_taxonomy + support_analytics_snapshot), которые читает
+# вкладка Аналитика → «Структура». LLM-майнинг ~10-15 мин, поэтому это GitHub
+# Actions, а не Vercel cron (там лимит времени).
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # каждый понедельник 03:00 UTC
+  workflow_dispatch: {}    # ручной запуск из вкладки Actions
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Recompute taxonomy snapshot
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: node scripts/recompute-taxonomy.mjs
