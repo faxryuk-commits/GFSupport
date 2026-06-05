@@ -38,3 +38,9 @@ whatsapp-bridge/dist/
 *.sw?
 .vercel
 .env*.local
+
+# support analytics scratch artifacts (regenerated, not source)
+/scripts/*.json
+/scripts/media-cache.json
+/support-analytics-dashboard.html
+/chat-analysis-333.csv
