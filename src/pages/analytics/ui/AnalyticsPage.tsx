@@ -11,13 +11,14 @@
 
 import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, Heart, FileSpreadsheet } from 'lucide-react'
+import { Activity, Heart, FileSpreadsheet, LayoutGrid } from 'lucide-react'
 import { RoleFilter, defaultRoleFilter, type RoleFilterValue } from '@/features/analytics'
 import { PulseTab } from './PulseTab'
 import { DiagnosisTab } from './DiagnosisTab'
 import { DetailTab } from './DetailTab'
+import { IssueStructureTab } from './IssueStructureTab'
 
-type Tab = 'pulse' | 'diagnosis' | 'detail'
+type Tab = 'pulse' | 'diagnosis' | 'structure' | 'detail'
 type Period = '7d' | '30d' | '90d'
 type Source = 'all' | 'telegram' | 'whatsapp'
 
@@ -33,6 +34,12 @@ const TABS: Array<{ key: Tab; label: string; icon: React.ReactNode; hint: string
     label: 'Diagnosis',
     icon: <Activity className="w-4 h-4" />,
     hint: 'Где болит: категории обращений, корневые причины, ignored / stuck.',
+  },
+  {
+    key: 'structure',
+    label: 'Структура',
+    icon: <LayoutGrid className="w-4 h-4" />,
+    hint: 'Таксономия обращений снизу-вверх (текст + медиа): домены, подтипы, автоматизируемость.',
   },
   {
     key: 'detail',
@@ -58,7 +65,7 @@ export function AnalyticsPage() {
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab')
   const tab: Tab = useMemo(() => {
-    if (rawTab === 'pulse' || rawTab === 'diagnosis' || rawTab === 'detail') return rawTab
+    if (rawTab === 'pulse' || rawTab === 'diagnosis' || rawTab === 'structure' || rawTab === 'detail') return rawTab
     return 'pulse'
   }, [rawTab])
   const [period, setPeriod] = useState<Period>(() => {
@@ -141,6 +148,7 @@ export function AnalyticsPage() {
         <PulseTab period={period} source={sourceFilter} roles={roleFilter.roles} />
       )}
       {tab === 'diagnosis' && <DiagnosisTab period={period} source={sourceFilter} />}
+      {tab === 'structure' && <IssueStructureTab />}
       {tab === 'detail' && (
         <DetailTab period={period} source={sourceFilter} roles={roleFilter.roles} />
       )}
