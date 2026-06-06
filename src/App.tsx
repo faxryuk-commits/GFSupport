@@ -24,11 +24,9 @@ const LoginPage = lazy(() => import('@/pages/login/ui/LoginPage').then(m => ({ d
 const RegisterPage = lazy(() => import('@/pages/register/ui/RegisterPage').then(m => ({ default: m.RegisterPage })))
 const KnowledgePage = lazy(() => import('@/pages/knowledge/ui/KnowledgePage').then(m => ({ default: m.KnowledgePage })))
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
-const SLAReportPage = lazy(() => import('@/pages/sla-report/ui/SLAReportPage').then(m => ({ default: m.SLAReportPage })))
 const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
 const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
-const HealthPage = lazy(() => import('@/pages/health/ui/HealthPage').then(m => ({ default: m.HealthPage })))
 const InsightsChatPage = lazy(() => import('@/pages/insights-chat/ui/InsightsChatPage').then(m => ({ default: m.InsightsChatPage })))
 const BenchmarksPage = lazy(() => import('@/pages/benchmarks/ui/BenchmarksPage').then(m => ({ default: m.BenchmarksPage })))
 const AnalyticsPage = lazy(() => import('@/pages/analytics/ui/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
@@ -79,10 +77,10 @@ export default function App() {
           <Route path="/channels" element={<ChannelsListPage />} />
           <Route path="/cases" element={<CasesPage />} />
           <Route path="/health" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
-          <Route path="/health-legacy" element={<HealthPage />} />
+          <Route path="/health-legacy" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
           <Route path="/commitments" element={<CommitmentsPage />} />
           <Route path="/sla-report" element={<Navigate to="/analytics?tab=detail" replace />} />
-          <Route path="/sla-report-legacy" element={<SLAReportPage />} />
+          <Route path="/sla-report-legacy" element={<Navigate to="/analytics?tab=detail" replace />} />
           <Route path="/benchmarks" element={<BenchmarksPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
