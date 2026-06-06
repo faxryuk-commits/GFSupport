@@ -11,15 +11,16 @@
 
 import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, Heart, FileSpreadsheet, LayoutGrid, ScrollText } from 'lucide-react'
+import { Activity, Heart, FileSpreadsheet, LayoutGrid, ScrollText, Cpu } from 'lucide-react'
 import { RoleFilter, defaultRoleFilter, type RoleFilterValue } from '@/features/analytics'
 import { PulseTab } from './PulseTab'
 import { DiagnosisTab } from './DiagnosisTab'
 import { DetailTab } from './DetailTab'
 import { IssueStructureTab } from './IssueStructureTab'
 import { AIJournalTab } from './AIJournalTab'
+import { ModulesStatusTab } from './ModulesStatusTab'
 
-type Tab = 'pulse' | 'diagnosis' | 'structure' | 'journal' | 'detail'
+type Tab = 'pulse' | 'diagnosis' | 'structure' | 'journal' | 'modules' | 'detail'
 type Period = '7d' | '30d' | '90d'
 type Source = 'all' | 'telegram' | 'whatsapp'
 
@@ -49,6 +50,12 @@ const TABS: Array<{ key: Tab; label: string; icon: React.ReactNode; hint: string
     hint: 'Что решают AI-агент и SLA-страж: что подумали, что сделали, сработало ли.',
   },
   {
+    key: 'modules',
+    label: 'Модули',
+    icon: <Cpu className="w-4 h-4" />,
+    hint: 'Реал-тайм статус модулей: WhatsApp-мост, SLA-страж, самообучение, таксономия, AI-агент.',
+  },
+  {
     key: 'detail',
     label: 'Detail',
     icon: <FileSpreadsheet className="w-4 h-4" />,
@@ -72,7 +79,7 @@ export function AnalyticsPage() {
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab')
   const tab: Tab = useMemo(() => {
-    if (rawTab === 'pulse' || rawTab === 'diagnosis' || rawTab === 'structure' || rawTab === 'journal' || rawTab === 'detail') return rawTab
+    if (rawTab === 'pulse' || rawTab === 'diagnosis' || rawTab === 'structure' || rawTab === 'journal' || rawTab === 'modules' || rawTab === 'detail') return rawTab
     return 'pulse'
   }, [rawTab])
   const [period, setPeriod] = useState<Period>(() => {
@@ -157,6 +164,7 @@ export function AnalyticsPage() {
       {tab === 'diagnosis' && <DiagnosisTab period={period} source={sourceFilter} />}
       {tab === 'structure' && <IssueStructureTab />}
       {tab === 'journal' && <AIJournalTab />}
+      {tab === 'modules' && <ModulesStatusTab />}
       {tab === 'detail' && (
         <DetailTab period={period} source={sourceFilter} roles={roleFilter.roles} />
       )}

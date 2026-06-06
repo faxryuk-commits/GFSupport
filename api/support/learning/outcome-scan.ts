@@ -80,6 +80,13 @@ export default async function handler(req: Request): Promise<Response> {
     } catch {}
   }
 
+  // heartbeat в ledger — чтобы пульт «Модули» видел, когда модуль работал
+  try {
+    await sql`CREATE TABLE IF NOT EXISTS support_ai_events (id BIGSERIAL PRIMARY KEY, org_id VARCHAR(50), actor VARCHAR(30), kind VARCHAR(30), channel_id VARCHAR(60), channel_name VARCHAR(255), tier VARCHAR(20), reasoning TEXT, payload JSONB, mode VARCHAR(10), created_at TIMESTAMPTZ DEFAULT NOW())`
+    await sql`INSERT INTO support_ai_events (org_id, actor, kind, reasoning, payload)
+      VALUES (${ORG}, 'learning', 'cycle', ${`Исходы: ${stat.correct} ✅ / ${stat.wrong} ❌, ${stat.pending} ждут`}, ${JSON.stringify(stat)}::jsonb)`
+  } catch {}
+
   console.log(`[outcome-scan] ${JSON.stringify(stat)}`)
   return json({ ok: true, ...stat })
 }
