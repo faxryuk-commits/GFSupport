@@ -193,18 +193,23 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { id, name, type, slaCategory, companyId, leadId, isActive, settings } = body
+      const { id, name, type, slaCategory, companyId, leadId, isActive, settings, awaitingReply, awaiting_reply, assignedTo, tags } = body
 
       if (!id) {
         return json({ error: 'Channel ID required' }, 400)
       }
 
+      const awaiting = awaitingReply ?? awaiting_reply // принимаем оба варианта именования
+      const tagsArr = Array.isArray(tags) ? tags : null
       await sql`
         UPDATE support_channels SET
           name = COALESCE(${name}, name),
           type = COALESCE(${type}, type),
           sla_category = COALESCE(${slaCategory}, sla_category),
           is_active = COALESCE(${isActive}, is_active),
+          awaiting_reply = COALESCE(${awaiting}, awaiting_reply),
+          assigned_to = COALESCE(${assignedTo ?? null}, assigned_to),
+          tags = COALESCE(${tagsArr}, tags),
           updated_at = NOW()
         WHERE id = ${id} AND org_id = ${orgId}
       `

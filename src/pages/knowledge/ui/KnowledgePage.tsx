@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Brain, Search, Lightbulb, History, Plus, Settings } from 'lucide-react'
 import { SolutionSearch, AIContextPanel } from '@/features/ai-assistant'
 import { SOLUTION_CATEGORY_CONFIG, type SolutionCategory } from '@/entities/solution'
@@ -6,6 +7,7 @@ import { SOLUTION_CATEGORY_CONFIG, type SolutionCategory } from '@/entities/solu
 type Tab = 'search' | 'solutions' | 'patterns'
 
 export function KnowledgePage() {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('search')
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>()
 
@@ -121,7 +123,7 @@ export function KnowledgePage() {
               <p className="text-slate-500 mb-4">
                 Автоматически выявленные паттерны проблем и успешных решений на основе истории обращений
               </p>
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+              <button onClick={() => navigate('/learning/problems')} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
                 Запустить анализ
               </button>
             </div>
