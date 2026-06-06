@@ -12,7 +12,7 @@ export default async function handler(req: Request) {
       status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
@@ -40,7 +40,47 @@ export default async function handler(req: Request) {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `
-    
+    await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+    await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`.catch(() => {})
+
+    // CREATE — добавить документ
+    if (req.method === 'POST') {
+      const body = await req.json()
+      const { title, content, category } = body
+      if (!title) return json({ success: false, error: 'title required' }, 400)
+      const kw = body.tags ?? body.keywords ?? []
+      const url = body.url || `manual_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const rows = await sql`
+        INSERT INTO support_docs (title, content, url, category, keywords, org_id, created_at, updated_at, synced_at)
+        VALUES (${title}, ${content || ''}, ${url}, ${category || 'general'}, ${kw}, ${orgId}, NOW(), NOW(), NOW())
+        RETURNING id`
+      return json({ success: true, id: rows[0]?.id })
+    }
+
+    // UPDATE — обновить документ
+    if (req.method === 'PUT') {
+      if (!id) return json({ success: false, error: 'id required' }, 400)
+      const body = await req.json()
+      const { title, content, category } = body
+      const kw = body.tags ?? body.keywords ?? null
+      await sql`
+        UPDATE support_docs SET
+          title = COALESCE(${title ?? null}, title),
+          content = COALESCE(${content ?? null}, content),
+          category = COALESCE(${category ?? null}, category),
+          keywords = COALESCE(${kw}, keywords),
+          updated_at = NOW()
+        WHERE id = ${id} AND org_id = ${orgId}`
+      return json({ success: true })
+    }
+
+    // DELETE — удалить документ
+    if (req.method === 'DELETE') {
+      if (!id) return json({ success: false, error: 'id required' }, 400)
+      await sql`DELETE FROM support_docs WHERE id = ${id} AND org_id = ${orgId}`
+      return json({ success: true })
+    }
+
     // Get single document by ID
     if (id) {
       const doc = await sql`
