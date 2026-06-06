@@ -53,16 +53,25 @@ export function isWorkingHours(start: number, end: number): boolean {
 export async function fetchRecentMessages(orgId: string, channelId: string, limit = 30) {
   const sql = getSQL()
   const msgs = await sql`
-    SELECT sender_name, sender_role, is_from_client, text_content, transcript, content_type, created_at
+    SELECT sender_name, sender_role, is_from_client, text_content, transcript, ai_summary, content_type, created_at
     FROM support_messages WHERE channel_id = ${channelId} AND org_id = ${orgId}
     ORDER BY created_at DESC LIMIT ${limit}
   `
-  return msgs.reverse().map((m: any) => ({
-    sender: m.sender_name,
-    role: m.is_from_client ? 'client' : 'support',
-    text: (m.text_content || m.transcript || `[${m.content_type}]`).slice(0, 400),
-    time: m.created_at,
-  }))
+  return msgs.reverse().map((m: any) => {
+    // ВАЖНО: для фото/голоса берём разбор медиа (ai_summary/transcript), иначе агент
+    // видит только [photo] и теряет контекст. Медиа-скриншоты — большая доля диалогов.
+    let text = m.text_content
+    if (!text && (m.ai_summary || m.transcript)) {
+      const tag = m.content_type === 'photo' ? 'ФОТО' : m.content_type === 'voice' ? 'ГОЛОС' : (m.content_type || 'медиа').toUpperCase()
+      text = `[${tag}: ${m.ai_summary || m.transcript}]`
+    }
+    return {
+      sender: m.sender_name,
+      role: m.is_from_client ? 'client' : 'support',
+      text: (text || `[${m.content_type}]`).slice(0, 400),
+      time: m.created_at,
+    }
+  })
 }
 
 export async function fetchAvailableAgents(orgId: string, channelId?: string) {
