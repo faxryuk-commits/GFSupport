@@ -73,6 +73,13 @@ export default async function handler(req: Request): Promise<Response> {
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_state VARCHAR(20)` } catch {}
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_alert_level INT DEFAULT 0` } catch {}
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_last_alert_at TIMESTAMPTZ` } catch {}
+  // ledger событий ИИ-решателей (общий журнал: страж, агент, ...)
+  try {
+    await sql`CREATE TABLE IF NOT EXISTS support_ai_events (
+      id BIGSERIAL PRIMARY KEY, org_id VARCHAR(50), actor VARCHAR(30), kind VARCHAR(30),
+      channel_id VARCHAR(60), channel_name VARCHAR(255), tier VARCHAR(20),
+      reasoning TEXT, payload JSONB, mode VARCHAR(10), created_at TIMESTAMPTZ DEFAULT NOW()
+    )` } catch {}
 
   // 1) сброс resolved: команда ответила последней → чистим состояние
   try {
@@ -177,8 +184,20 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       await sql`UPDATE support_channels SET sla_state=${tier.toLowerCase()}, sla_alert_level=${level}, sla_last_alert_at=NOW() WHERE id=${ch.id}`
     } catch {}
+    // событие в ledger (видно в Журнале даже в shadow)
+    try {
+      await sql`INSERT INTO support_ai_events (org_id, actor, kind, channel_id, channel_name, tier, reasoning, payload, mode)
+        VALUES (${ORG}, 'sla_guard', 'alert', ${ch.id}, ${ch.name}, ${tier},
+        ${`Клиент ждёт ~${waitH} раб.ч${neg ? ' (негатив)' : ''}`}, ${JSON.stringify({ waitH, ask, neg })}::jsonb, ${LIVE ? 'live' : 'shadow'})`
+    } catch {}
     stat.alerts[tier as 'WARNING' | 'BREACH' | 'CRITICAL']++
   }
+
+  // сводка цикла в ledger
+  try {
+    await sql`INSERT INTO support_ai_events (org_id, actor, kind, reasoning, payload, mode)
+      VALUES (${ORG}, 'sla_guard', 'cycle', ${`Цикл: ${stat.scanned} скан, ${stat.alerts.WARNING + stat.alerts.BREACH + stat.alerts.CRITICAL} алертов, ${stat.suppressed} подавлено`}, ${JSON.stringify(stat)}::jsonb, ${LIVE ? 'live' : 'shadow'})`
+  } catch {}
 
   console.log(`[sla-guard:${LIVE ? 'LIVE' : 'SHADOW'}] ${JSON.stringify(stat)}`)
   return json({ ok: true, mode: LIVE ? 'live' : 'shadow', ...stat })
