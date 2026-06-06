@@ -601,10 +601,14 @@ export function SettingsPage() {
                     'Шаблоны — готовые ответы, которые агент может отправить в один клик',
                   ]}
                 />
-                <AutoReplySettings
-                  settings={autoReplySettings}
-                  onSettingsChange={setAutoReplySettings}
-                />
+                <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 text-center">
+                  <p className="text-sm text-slate-600 mb-3">
+                    Управление автоответами переехало в единый AI-хаб — там же Журнал решений, Правила, Настройки и Тестирование агента.
+                  </p>
+                  <Link to="/ai-agent?tab=autoreply" className="inline-flex items-center gap-2 px-4 py-2 bg-violet-500 text-white rounded-lg hover:bg-violet-600 transition-colors text-sm font-medium">
+                    Открыть «AI Агент → Автоответы»
+                  </Link>
+                </div>
                 </>
               )}
 
