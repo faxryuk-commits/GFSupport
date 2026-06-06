@@ -23,8 +23,6 @@ const SettingsPage = lazy(() => import('@/pages/settings/ui/SettingsPage').then(
 const LoginPage = lazy(() => import('@/pages/login/ui/LoginPage').then(m => ({ default: m.LoginPage })))
 const RegisterPage = lazy(() => import('@/pages/register/ui/RegisterPage').then(m => ({ default: m.RegisterPage })))
 const KnowledgePage = lazy(() => import('@/pages/knowledge/ui/KnowledgePage').then(m => ({ default: m.KnowledgePage })))
-const DocsPage = lazy(() => import('@/pages/docs/ui/DocsPage').then(m => ({ default: m.DocsPage })))
-const ProblemAnalysisPage = lazy(() => import('@/pages/learning/ui/ProblemAnalysisPage'))
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
 const SLAReportPage = lazy(() => import('@/pages/sla-report/ui/SLAReportPage').then(m => ({ default: m.SLAReportPage })))
 const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
@@ -88,8 +86,9 @@ export default function App() {
           <Route path="/benchmarks" element={<BenchmarksPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />
-          <Route path="/docs" element={<DocsPage />} />
-          <Route path="/learning/problems" element={<ProblemAnalysisPage />} />
+          {/* Консолидация в Knowledge Hub: документы и анализ проблем — вкладки */}
+          <Route path="/docs" element={<Navigate to="/knowledge?tab=docs" replace />} />
+          <Route path="/learning/problems" element={<Navigate to="/knowledge?tab=patterns" replace />} />
           <Route path="/broadcast" element={<BroadcastPage />} />
           <Route path="/ai-agent" element={<AIAgentPage />} />
           <Route path="/insights-chat" element={<InsightsChatPage />} />

@@ -1,14 +1,18 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Brain, Search, Lightbulb, History, Plus, Settings } from 'lucide-react'
-import { SolutionSearch, AIContextPanel } from '@/features/ai-assistant'
-import { SOLUTION_CATEGORY_CONFIG, type SolutionCategory } from '@/entities/solution'
+import { useSearchParams } from 'react-router-dom'
+import { Brain, Search, FileText, History } from 'lucide-react'
+import { SolutionSearch } from '@/features/ai-assistant'
+import { SOLUTION_CATEGORY_CONFIG } from '@/entities/solution'
+import { DocsPage } from '@/pages/docs/ui/DocsPage'
+import ProblemAnalysisPage from '@/pages/learning/ui/ProblemAnalysisPage'
 
-type Tab = 'search' | 'solutions' | 'patterns'
+type Tab = 'search' | 'docs' | 'patterns'
 
 export function KnowledgePage() {
-  const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<Tab>('search')
+  const [params, setParams] = useSearchParams()
+  const rawTab = params.get('tab')
+  const activeTab: Tab = (rawTab === 'docs' || rawTab === 'patterns' || rawTab === 'search') ? rawTab : 'search'
+  const setActiveTab = (t: Tab) => { const m = new URLSearchParams(params); m.set('tab', t); setParams(m, { replace: true }) }
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>()
 
   return (
@@ -22,21 +26,16 @@ export function KnowledgePage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900">База знаний</h1>
-              <p className="text-sm text-slate-500">AI-поиск решений и паттернов</p>
+              <p className="text-sm text-slate-500">Поиск решений · документы · паттерны проблем</p>
             </div>
           </div>
-          
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-            <Plus className="w-4 h-4" />
-            Добавить решение
-          </button>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
           {[
-            { id: 'search', label: 'Поиск', icon: Search },
-            { id: 'solutions', label: 'Решения', icon: Lightbulb },
+            { id: 'search', label: 'Поиск решений', icon: Search },
+            { id: 'docs', label: 'Документы', icon: FileText },
             { id: 'patterns', label: 'Паттерны', icon: History },
           ].map(({ id, label, icon: Icon }) => (
             <button
@@ -56,8 +55,8 @@ export function KnowledgePage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
-        {activeTab === 'search' && (
+      {activeTab === 'search' && (
+        <div className="flex-1 overflow-auto p-6">
           <div className="max-w-4xl mx-auto">
             {/* Category Filter */}
             <div className="mb-6">
@@ -98,38 +97,20 @@ export function KnowledgePage() {
               }}
             />
           </div>
-        )}
+        </div>
+      )}
 
-        {activeTab === 'solutions' && (
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-              <Lightbulb className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-              <h3 className="text-lg font-medium text-slate-900 mb-2">Каталог решений</h3>
-              <p className="text-slate-500 mb-4">
-                Здесь будет каталог всех решений с возможностью редактирования и добавления новых
-              </p>
-              <button className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                Добавить решение
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'patterns' && (
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-              <History className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-              <h3 className="text-lg font-medium text-slate-900 mb-2">AI Паттерны</h3>
-              <p className="text-slate-500 mb-4">
-                Автоматически выявленные паттерны проблем и успешных решений на основе истории обращений
-              </p>
-              <button onClick={() => navigate('/learning/problems')} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                Запустить анализ
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Документы и Паттерны — встроенные модули (full-bleed, без доп. паддинга) */}
+      {activeTab === 'docs' && (
+        <div className="flex-1 overflow-hidden">
+          <DocsPage embedded />
+        </div>
+      )}
+      {activeTab === 'patterns' && (
+        <div className="flex-1 overflow-auto">
+          <ProblemAnalysisPage />
+        </div>
+      )}
     </div>
   )
 }
