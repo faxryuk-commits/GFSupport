@@ -15,6 +15,7 @@ interface FeedItem {
   tier?: string | null
   mode?: string | null
   kind?: string
+  outcome?: 'correct' | 'wrong' | null
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -24,11 +25,17 @@ export default async function handler(req: Request): Promise<Response> {
   let agentRows: any[] = []
   try {
     agentRows = await sql`
-      SELECT channel_name, incoming_message, action, reply_text, reasoning, confidence, created_at
+      SELECT channel_name, incoming_message, action, reply_text, reasoning, confidence, feedback, created_at
       FROM support_agent_decisions
       WHERE org_id = ${orgId}
       ORDER BY created_at DESC LIMIT 60` as any[]
-  } catch { agentRows = [] }
+  } catch {
+    try {
+      agentRows = await sql`
+        SELECT channel_name, incoming_message, action, reply_text, reasoning, confidence, created_at
+        FROM support_agent_decisions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 60` as any[]
+    } catch { agentRows = [] }
+  }
 
   let guardRows: any[] = []
   try {
@@ -47,6 +54,7 @@ export default async function handler(req: Request): Promise<Response> {
       title: (r.incoming_message || '').slice(0, 120),
       reasoning: r.reasoning, action: r.action, confidence: r.confidence,
       reply: r.reply_text ? String(r.reply_text).slice(0, 200) : null,
+      outcome: r.feedback === 'correct' ? 'correct' : r.feedback === 'wrong' ? 'wrong' : null,
     })
   }
   for (const r of guardRows) {
@@ -65,10 +73,14 @@ export default async function handler(req: Request): Promise<Response> {
     byAction[r.action] = (byAction[r.action] || 0) + 1
     if (typeof r.confidence === 'number') { confSum += r.confidence; confN++ }
   }
+  const labeled = agentRows.filter((r) => r.feedback === 'correct' || r.feedback === 'wrong')
+  const correct = agentRows.filter((r) => r.feedback === 'correct').length
   const agent = {
     total: agentRows.length,
     avgConfidence: confN ? +(confSum / confN).toFixed(2) : null,
     byAction: Object.entries(byAction).map(([action, n]) => ({ action, n })).sort((a, b) => b.n - a.n),
+    successRate: labeled.length ? Math.round((100 * correct) / labeled.length) : null,
+    labeled: labeled.length,
   }
 
   // aggregates: guard — последний cycle + последние алерты

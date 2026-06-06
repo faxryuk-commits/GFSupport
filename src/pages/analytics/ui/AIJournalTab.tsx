@@ -13,11 +13,12 @@ interface FeedItem {
   tier?: string | null
   mode?: string | null
   kind?: string
+  outcome?: 'correct' | 'wrong' | null
 }
 interface Resp {
   available: boolean
   feed: FeedItem[]
-  agent: { total: number; avgConfidence: number | null; byAction: Array<{ action: string; n: number }> }
+  agent: { total: number; avgConfidence: number | null; byAction: Array<{ action: string; n: number }>; successRate: number | null; labeled: number }
   guard: {
     lastCycle: any | null
     recentAlerts: Array<{ channel: string; tier: string; reasoning: string; mode: string; ts: string; ask: string | null }>
@@ -67,10 +68,14 @@ export function AIJournalTab() {
         что сделали. Заходи в любой момент — видно текущее и прошлое.
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card big={data.agent.total} label="решений агента (последние)" />
-        <Card big={data.agent.avgConfidence ?? '—'} label="средняя уверенность" />
-        <Card big={alertsCount} label="алертов стража (цикл)" tone="text-red-600" />
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Card big={data.agent.total} label="решений агента" />
+        <Card big={data.agent.avgConfidence ?? '—'} label="ср. уверенность" />
+        <Card
+          big={data.agent.successRate != null ? <span className="text-green-600">{data.agent.successRate}%</span> : '—'}
+          label={`успех (по ${data.agent.labeled} с исходом)`}
+        />
+        <Card big={alertsCount} label="алертов стража" tone="text-red-600" />
         <Card
           big={<span className={cycle?.mode === 'live' ? 'text-green-600' : 'text-amber-600'}>{cycle?.mode === 'live' ? 'LIVE' : 'SHADOW'}</span>}
           label="режим стража"
@@ -113,6 +118,8 @@ export function AIJournalTab() {
                   {f.actor === 'ai_agent' ? '🤖 Агент' : '🛡 Страж'}
                 </span>
                 {f.channel && <span className="truncate">{f.channel}</span>}
+                {f.outcome === 'correct' && <span className="text-green-600">✅ помог</span>}
+                {f.outcome === 'wrong' && <span className="text-red-600">❌ не помог</span>}
                 <span className="ml-auto">{fmt(f.ts)}</span>
               </div>
               {f.title && <div className="text-sm text-slate-800">{f.actor === 'ai_agent' ? <>📩 {f.title}</> : f.title}</div>}
