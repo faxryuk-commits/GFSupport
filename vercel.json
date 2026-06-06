@@ -65,6 +65,10 @@
     {
       "path": "/api/support/learning/outcome-scan",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/support/cron/agent-scan",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
