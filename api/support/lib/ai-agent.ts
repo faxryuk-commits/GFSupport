@@ -213,7 +213,7 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     fetchOpenCases(ctx.orgId, ctx.channelId),
     fetchRelevantDocs(ctx.orgId, ctx.incomingMessage, apiKey),
     fetchChannelProfile(ctx.orgId, ctx.channelId),
-    fetchFeedbackExamples(ctx.orgId),
+    fetchFeedbackExamples(ctx.orgId, ctx.incomingMessage),
     fetchTeamStyleExamples(ctx.orgId),
     fetchTopCategories(ctx.orgId),
     fetchOverdueCommitments(ctx.orgId, ctx.channelId),

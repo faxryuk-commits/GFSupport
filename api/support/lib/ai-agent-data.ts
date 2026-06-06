@@ -212,14 +212,31 @@ export async function fetchRelevantDocs(orgId: string, query: string, apiKey: st
   } catch { return [] }
 }
 
-export async function fetchFeedbackExamples(orgId: string) {
+export async function fetchFeedbackExamples(orgId: string, query?: string) {
   const sql = getSQL()
   try {
-    const good = await sql`
-      SELECT incoming_message, action, reply_text, reasoning
-      FROM support_agent_decisions WHERE org_id = ${orgId} AND feedback = 'correct'
-      ORDER BY created_at DESC LIMIT 3
-    `
+    // good = РЕШЁННЫЕ случаи (feedback='correct'). Если есть query — сначала похожие
+    // по ключевым словам (ретрив базы знаний), добиваем свежими. Так агент видит
+    // именно те ответы, что СРАБОТАЛИ на похожих вопросах.
+    let good: any[] = []
+    const words = (query || '').toLowerCase().replace(/[^\wа-яёўқғҳ\s]/gi, '').split(/\s+/).filter((w) => w.length > 3).slice(0, 5)
+    if (words.length) {
+      const p = words.map((w) => `%${w}%`)
+      good = await sql`
+        SELECT incoming_message, action, reply_text
+        FROM support_agent_decisions
+        WHERE org_id = ${orgId} AND feedback = 'correct' AND reply_text IS NOT NULL
+          AND (incoming_message ILIKE ${p[0]} OR incoming_message ILIKE ${p.length > 1 ? p[1] : p[0]})
+        ORDER BY created_at DESC LIMIT 3`
+    }
+    if (good.length < 3) {
+      const fill = await sql`
+        SELECT incoming_message, action, reply_text FROM support_agent_decisions
+        WHERE org_id = ${orgId} AND feedback = 'correct' AND reply_text IS NOT NULL
+        ORDER BY created_at DESC LIMIT ${3 - good.length}`
+      const seen = new Set(good.map((g: any) => g.reply_text))
+      for (const f of fill) if (!seen.has(f.reply_text)) good.push(f)
+    }
     const bad = await sql`
       SELECT incoming_message, action, reply_text, reasoning, feedback_note
       FROM support_agent_decisions WHERE org_id = ${orgId} AND feedback = 'wrong'
