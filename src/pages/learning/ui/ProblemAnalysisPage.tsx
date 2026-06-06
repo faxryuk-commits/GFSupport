@@ -123,10 +123,19 @@ export default function ProblemAnalysisPage() {
   }
 
   const savePatternsToDb = async () => {
+    if (!data) { alert('Сначала запустите анализ'); return }
     setSaving(true)
     try {
-      await apiPost('/patterns', { patterns: {} })
-      alert('Паттерны успешно сохранены в базу данных')
+      // строим объект паттернов в формате эндпоинта { [id]: { category, name, ... } }
+      const patterns: Record<string, any> = {}
+      for (const p of data.patterns) {
+        patterns[p.key] = { category: p.category, name: p.description, patternCount: p.patternCount }
+      }
+      for (const pr of data.topProblems) {
+        patterns[pr.key] = { category: pr.category, name: pr.description, count: pr.count }
+      }
+      await apiPost('/patterns', { patterns })
+      alert(`Сохранено паттернов: ${Object.keys(patterns).length}`)
     } catch (e: any) {
       alert('Ошибка: ' + e.message)
     } finally {

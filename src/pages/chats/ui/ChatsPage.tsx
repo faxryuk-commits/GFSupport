@@ -222,6 +222,7 @@ export function ChatsPage() {
   const [showCommitmentsPanel, setShowCommitmentsPanel] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
+  const [tagSel, setTagSel] = useState<string[]>([])
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
   const [createCaseMessage, setCreateCaseMessage] = useState<MessageData | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: ChannelItemData } | null>(null)
@@ -725,10 +726,10 @@ export function ChatsPage() {
     setContextMenu(null)
     try {
       const token = localStorage.getItem('support_agent_token')
-      await fetch(`/api/support/channels?id=${channel.id}`, {
-        method: 'PATCH',
+      await fetch(`/api/support/channels`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ awaiting_reply: false }),
+        body: JSON.stringify({ id: channel.id, awaitingReply: false }),
       })
       setChannels(prev => prev.map(ch =>
         ch.id === channel.id ? { ...ch, status: 'resolved' as const } : ch
@@ -737,6 +738,34 @@ export function ChatsPage() {
       console.error('Ошибка отметки как отвеченное:', e)
     }
   }, [])
+
+  const putChannel = useCallback(async (id: string, patch: Record<string, unknown>) => {
+    const token = localStorage.getItem('support_agent_token')
+    await fetch('/api/support/channels', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id, ...patch }),
+    })
+  }, [])
+
+  const handleAssign = useCallback(async (agent: string) => {
+    if (!selectedChannel) return
+    const assignedTo = agent === 'Без назначения' ? '' : agent
+    setIsAssignModalOpen(false)
+    try {
+      await putChannel(selectedChannel.id, { assignedTo })
+      setChannels(prev => prev.map(ch => ch.id === selectedChannel.id ? { ...ch, assignee: assignedTo } : ch))
+    } catch (e) { console.error('Ошибка назначения:', e) }
+  }, [selectedChannel, putChannel])
+
+  const handleSaveTags = useCallback(async () => {
+    if (!selectedChannel) return
+    setIsTagModalOpen(false)
+    try {
+      await putChannel(selectedChannel.id, { tags: tagSel })
+      setChannels(prev => prev.map(ch => ch.id === selectedChannel.id ? { ...ch, tags: tagSel } : ch))
+    } catch (e) { console.error('Ошибка сохранения тегов:', e) }
+  }, [selectedChannel, tagSel, putChannel])
 
   const openPreviewAsChat = useCallback((channel: ChannelItemData) => {
     setPreviewChannel(null)
@@ -997,7 +1026,7 @@ export function ChatsPage() {
                       <button onClick={() => setIsAssignModalOpen(true)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                         <User className="w-4 h-4" /> Назначить
                       </button>
-                      <button onClick={() => setIsTagModalOpen(true)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <button onClick={() => { setTagSel(selectedChannel?.tags || []); setIsTagModalOpen(true) }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                         <Tag className="w-4 h-4" /> Теги
                       </button>
                       <hr className="my-1" />
@@ -1207,7 +1236,7 @@ export function ChatsPage() {
       <Modal isOpen={isAssignModalOpen} onClose={() => setIsAssignModalOpen(false)} title="Назначить" size="sm">
         <div className="space-y-3">
           {['Sarah Jenkins', 'Mike Chen', 'Emily Patel', 'Без назначения'].map(agent => (
-            <button key={agent} onClick={() => setIsAssignModalOpen(false)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 rounded-lg">
+            <button key={agent} onClick={() => handleAssign(agent)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 rounded-lg">
               {agent !== 'Без назначения' && <Avatar name={agent} size="sm" />}
               {agent === 'Без назначения' && <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center"><User className="w-4 h-4 text-slate-400" /></div>}
               <span className="font-medium text-slate-700">{agent}</span>
@@ -1220,11 +1249,16 @@ export function ChatsPage() {
         <div className="space-y-3">
           {['VIP', 'Заказы', 'Технические', 'Биллинг', 'Срочно'].map(tag => (
             <label key={tag} className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50 rounded-lg cursor-pointer">
-              <input type="checkbox" defaultChecked={selectedChannel?.tags?.includes(tag)} className="w-4 h-4 text-blue-500 rounded" />
+              <input
+                type="checkbox"
+                checked={tagSel.includes(tag)}
+                onChange={() => setTagSel(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+                className="w-4 h-4 text-blue-500 rounded"
+              />
               <span className="text-sm text-slate-700">{tag}</span>
             </label>
           ))}
-          <button onClick={() => setIsTagModalOpen(false)} className="w-full py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600">
+          <button onClick={handleSaveTags} className="w-full py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600">
             Сохранить
           </button>
         </div>
