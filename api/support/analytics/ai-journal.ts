@@ -16,23 +16,36 @@ interface FeedItem {
   mode?: string | null
   kind?: string
   outcome?: 'correct' | 'wrong' | null
+  id?: string
 }
 
 export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const sql = getSQL()
 
+  // POST — ручная оценка решения оператором (👍/👎)
+  if (req.method === 'POST') {
+    try {
+      const body = await req.json()
+      const decisionId = body.decisionId
+      const feedback = body.feedback
+      if (!decisionId || (feedback !== 'correct' && feedback !== 'wrong')) return json({ error: 'bad request' }, 400)
+      await sql`UPDATE support_agent_decisions SET feedback = ${feedback}, feedback_note = 'manual: оператор', outcome_at = NOW() WHERE id = ${decisionId} AND org_id = ${orgId}`
+      return json({ ok: true })
+    } catch (e: any) { return json({ error: e.message }, 500) }
+  }
+
   let agentRows: any[] = []
   try {
     agentRows = await sql`
-      SELECT channel_name, incoming_message, action, reply_text, reasoning, confidence, feedback, created_at
+      SELECT id, channel_name, incoming_message, action, reply_text, reasoning, confidence, feedback, created_at
       FROM support_agent_decisions
       WHERE org_id = ${orgId}
       ORDER BY created_at DESC LIMIT 60` as any[]
   } catch {
     try {
       agentRows = await sql`
-        SELECT channel_name, incoming_message, action, reply_text, reasoning, confidence, created_at
+        SELECT id, channel_name, incoming_message, action, reply_text, reasoning, confidence, created_at
         FROM support_agent_decisions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 60` as any[]
     } catch { agentRows = [] }
   }
@@ -55,6 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
       reasoning: r.reasoning, action: r.action, confidence: r.confidence,
       reply: r.reply_text ? String(r.reply_text).slice(0, 200) : null,
       outcome: r.feedback === 'correct' ? 'correct' : r.feedback === 'wrong' ? 'wrong' : null,
+      id: r.id,
     })
   }
   for (const r of guardRows) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiGet } from '@/shared/services/api.service'
+import { apiGet, apiPost } from '@/shared/services/api.service'
 
 interface FeedItem {
   actor: 'ai_agent' | 'sla_guard'
@@ -14,6 +14,7 @@ interface FeedItem {
   mode?: string | null
   kind?: string
   outcome?: 'correct' | 'wrong' | null
+  id?: string
 }
 interface Resp {
   available: boolean
@@ -42,10 +43,16 @@ export function AIJournalTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'ai_agent' | 'sla_guard'>('all')
+  const [rated, setRated] = useState<Record<string, 'correct' | 'wrong'>>({})
 
   useEffect(() => {
     apiGet<Resp>('/analytics/ai-journal', false).then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false))
   }, [])
+
+  const rate = (id: string, feedback: 'correct' | 'wrong') => {
+    setRated((p) => ({ ...p, [id]: feedback }))
+    apiPost('/analytics/ai-journal', { decisionId: id, feedback }).catch(() => setRated((p) => { const n = { ...p }; delete n[id]; return n }))
+  }
 
   if (loading) return <div className="text-sm text-slate-400 py-8">Загрузка журнала…</div>
   if (error) return <div className="text-sm text-red-600 py-8">Ошибка: {error}</div>
@@ -118,8 +125,8 @@ export function AIJournalTab() {
                   {f.actor === 'ai_agent' ? '🤖 Агент' : '🛡 Страж'}
                 </span>
                 {f.channel && <span className="truncate">{f.channel}</span>}
-                {f.outcome === 'correct' && <span className="text-green-600">✅ помог</span>}
-                {f.outcome === 'wrong' && <span className="text-red-600">❌ не помог</span>}
+                {(rated[f.id || ''] || f.outcome) === 'correct' && <span className="text-green-600">✅ помог</span>}
+                {(rated[f.id || ''] || f.outcome) === 'wrong' && <span className="text-red-600">❌ не помог</span>}
                 <span className="ml-auto">{fmt(f.ts)}</span>
               </div>
               {f.title && <div className="text-sm text-slate-800">{f.actor === 'ai_agent' ? <>📩 {f.title}</> : f.title}</div>}
@@ -131,6 +138,12 @@ export function AIJournalTab() {
                 )}
                 {f.tier && <span className={`font-medium ${TIER_COLOR[f.tier] || ''}`}>{f.tier}</span>}
                 {f.mode && <span className="text-slate-400">{f.mode}</span>}
+                {f.actor === 'ai_agent' && f.id && !(rated[f.id] || f.outcome) && (
+                  <span className="ml-auto flex gap-1">
+                    <button onClick={() => rate(f.id!, 'correct')} className="px-2 py-0.5 rounded bg-slate-100 hover:bg-green-100" title="Хороший ответ">👍</button>
+                    <button onClick={() => rate(f.id!, 'wrong')} className="px-2 py-0.5 rounded bg-slate-100 hover:bg-red-100" title="Плохой ответ">👎</button>
+                  </span>
+                )}
               </div>
               {f.reply && <div className="text-sm text-slate-600 mt-1 pl-3 border-l-2 border-slate-200">💬 {f.reply}</div>}
             </div>
