@@ -9,7 +9,10 @@ import {
 } from './ai-agent-data.js'
 
 const TOGETHER_API = 'https://api.together.xyz/v1/chat/completions'
-const DEFAULT_MODEL = 'Qwen/Qwen3-235B-A22B-Instruct'
+// Llama-3.3-70B-Turbo — единственная сильная serverless-модель, доступная на нашем
+// ключе Together (Llama-4 Maverick/Scout FP8/FP4 и Qwen2.5-72B стали non-serverless
+// → 400 "Unable to access non-serverless model", из-за чего агент молчал).
+const DEFAULT_MODEL = 'meta-llama/Llama-3.3-70B-Instruct-Turbo'
 
 export interface AgentDecision {
   action: 'reply' | 'tag_agent' | 'escalate' | 'create_case' | 'wait' | 'reply_and_tag'
