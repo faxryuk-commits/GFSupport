@@ -294,16 +294,27 @@ export async function executeDecision(
 ): Promise<{ executed: string[] }> {
   const executed: string[] = []
 
+  // SHADOW-режим: если ai_agent_auto_reply != true — НЕ пишем клиенту (reply/tag/escalate
+  // в канал), только внутренние уведомления команде + кейсы. Безопасное наблюдение в Журнале.
+  let autoReply = false
+  try {
+    const sqlA = getSQL()
+    const r = await sqlA`SELECT value FROM support_settings WHERE org_id=${ctx.orgId} AND key='ai_agent_auto_reply' LIMIT 1`
+    autoReply = String(r[0]?.value) === 'true'
+  } catch {}
+  const clientSend = autoReply ? sendMessage : (async () => {})
+  if (!autoReply) executed.push('shadow_no_client_msg')
+
   if ((decision.action === 'reply' || decision.action === 'reply_and_tag') && decision.replyText) {
     try {
-      await sendMessage(ctx.channelId, decision.replyText)
+      await clientSend(ctx.channelId, decision.replyText)
       executed.push('reply_sent')
     } catch (e: any) { console.error('[AI Agent] Reply failed:', e.message) }
   }
 
   if ((decision.action === 'tag_agent' || decision.action === 'reply_and_tag') && decision.tagAgentName) {
     try {
-      await sendMessage(ctx.channelId, `⚡ @${decision.tagAgentName}, обратите внимание на сообщение от ${ctx.senderName}`)
+      await clientSend(ctx.channelId, `⚡ @${decision.tagAgentName}, обратите внимание на сообщение от ${ctx.senderName}`)
       executed.push('agent_tagged')
     } catch (e: any) { console.error('[AI Agent] Tag failed:', e.message) }
 
@@ -331,7 +342,7 @@ export async function executeDecision(
 
   if (decision.action === 'escalate') {
     try {
-      await sendMessage(ctx.channelId, `🔴 Эскалация: ${decision.reasoning}`)
+      await clientSend(ctx.channelId, `🔴 Эскалация: ${decision.reasoning}`)
       executed.push('escalated')
     } catch {}
 
