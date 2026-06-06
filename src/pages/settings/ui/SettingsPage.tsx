@@ -15,6 +15,7 @@ import {
   AppearanceSettings,
   AutoReplySettings,
   MarketsSettings,
+  SlaGuardSettings,
   type GeneralSettingsData,
   type ResponseSettingsData,
   type NotificationSetting,
@@ -582,6 +583,7 @@ export function SettingsPage() {
                     'Действие — что нужно сделать (назначить агента, сменить статус, отправить сообщение)',
                   ]}
                 />
+                <SlaGuardSettings />
                 <div className="-mt-6">
                   <AutomationsPage embedded />
                 </div>

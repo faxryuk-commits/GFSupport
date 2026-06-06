@@ -26,8 +26,16 @@ export const config = { runtime: 'edge' }
 
 const ORG = process.env.SLA_GUARD_ORG || 'org_delever'
 // Безопасный rollout: по умолчанию SHADOW (считает + пишет sla_state, НЕ шлёт алерты).
-// Реальные уведомления включаются явно: SLA_GUARD_LIVE=1.
-const LIVE = process.env.SLA_GUARD_LIVE === '1'
+// Боевой режим (LIVE) включается из настроек системы (support_settings.sla_guard_live)
+// или env SLA_GUARD_LIVE=1. Настройка позволяет включать/выключать без редеплоя.
+async function isLive(sql: any): Promise<boolean> {
+  if (process.env.SLA_GUARD_LIVE === '1') return true
+  try {
+    const r = await sql`SELECT value FROM support_settings WHERE org_id=${ORG} AND key='sla_guard_live' LIMIT 1`
+    const v = String(r[0]?.value ?? '').toLowerCase()
+    return v === 'true' || v === '1'
+  } catch { return false }
+}
 const WA_RECONNECT = new Date('2026-06-03T00:00:00Z')
 const MAX_AGE_DAYS = 5
 const T_WARN = 30, T_BREACH = 60, T_CRIT = 240 // рабочие минуты
@@ -89,6 +97,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND (last_client_message_at IS NULL OR last_team_message_at > last_client_message_at)`
   } catch {}
 
+  const LIVE = await isLive(sql)
   const cfg = await loadSla(ORG)
   const apiKey = await getOpenAIKey(ORG)
   const now = new Date()
