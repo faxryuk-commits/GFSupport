@@ -1,4 +1,4 @@
-import { getSQL } from './db.js'
+import { getSQL, getOpenAIKey } from './db.js'
 import {
   getTogetherKey, getAgentSettings, isWorkingHours,
   fetchRecentMessages, fetchAvailableAgents, fetchSimilarHistory,
@@ -9,6 +9,9 @@ import {
 } from './ai-agent-data.js'
 
 const TOGETHER_API = 'https://api.together.xyz/v1/chat/completions'
+const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
+// Провайдер выбирается по имени модели: gpt-*/o* → OpenAI, иначе Together.
+const isOpenAIModel = (m: string) => /^(gpt-|o[0-9]|chatgpt)/i.test(m)
 // Llama-3.3-70B-Turbo — единственная сильная serverless-модель, доступная на нашем
 // ключе Together (Llama-4 Maverick/Scout FP8/FP4 и Qwen2.5-72B стали non-serverless
 // → 400 "Unable to access non-serverless model", из-за чего агент молчал).
@@ -223,15 +226,20 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const skipCheck = await shouldSkipChannel(ctx.orgId, ctx.channelId)
   if (skipCheck.skip) return { decision: null as any, skipped: true, reason: skipCheck.reason }
 
-  const apiKey = await getTogetherKey(ctx.orgId)
-  if (!apiKey) return { decision: null as any, skipped: true, reason: 'no_api_key' }
+  // Чат-модель и её провайдер. Together-ключ нужен ОТДЕЛЬНО для эмбеддингов
+  // (fetchRelevantDocs ходит в Together /embeddings вне зависимости от чат-модели).
+  const model = settings.model || DEFAULT_MODEL
+  const useOpenAI = isOpenAIModel(model)
+  const togetherKey = await getTogetherKey(ctx.orgId)
+  const chatKey = useOpenAI ? await getOpenAIKey(ctx.orgId) : togetherKey
+  if (!chatKey) return { decision: null as any, skipped: true, reason: useOpenAI ? 'no_openai_key' : 'no_api_key' }
 
   const [messages, agents, history, cases, docs, profile, feedback, teamExamples, topCategories, overdueCommitments] = await Promise.all([
     fetchRecentMessages(ctx.orgId, ctx.channelId),
     fetchAvailableAgents(ctx.orgId, ctx.channelId),
     fetchSimilarHistory(ctx.orgId, ctx.incomingMessage),
     fetchOpenCases(ctx.orgId, ctx.channelId),
-    fetchRelevantDocs(ctx.orgId, ctx.incomingMessage, apiKey),
+    fetchRelevantDocs(ctx.orgId, ctx.incomingMessage, togetherKey),
     fetchChannelProfile(ctx.orgId, ctx.channelId),
     fetchFeedbackExamples(ctx.orgId, ctx.incomingMessage),
     fetchTeamStyleExamples(ctx.orgId),
@@ -243,11 +251,11 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile, feedback, overdueCommitments)
 
   try {
-    const res = await fetch(TOGETHER_API, {
+    const res = await fetch(useOpenAI ? OPENAI_API : TOGETHER_API, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${chatKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: settings.model || DEFAULT_MODEL,
+        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -261,8 +269,9 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'unknown')
-      console.error(`[AI Agent] Together API error: ${res.status} ${err}`)
-      return { decision: null as any, skipped: true, reason: `Together API: ${res.status} — ${err.slice(0, 200)}` }
+      const prov = useOpenAI ? 'OpenAI' : 'Together'
+      console.error(`[AI Agent] ${prov} API error: ${res.status} ${err}`)
+      return { decision: null as any, skipped: true, reason: `${prov} API: ${res.status} — ${err.slice(0, 200)}` }
     }
 
     const data = await res.json() as any
