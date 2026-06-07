@@ -28,7 +28,8 @@ export const config = { runtime: 'edge', maxDuration: 60 }
 const ORG = process.env.AGENT_SCAN_ORG || 'org_delever'
 const WA_RECONNECT = new Date('2026-06-03T00:00:00Z')
 const MAX_AGE_DAYS = 3          // старше — уже не «горячий» диалог, не наблюдаем
-const MAX_PER_RUN = 25          // лимит вызовов модели за цикл (стоимость/время)
+const MAX_PER_RUN = 6           // лимит вызовов модели за цикл (edge-таймаут ~25-30с)
+const TIME_BUDGET_MS = 22000    // мягкий бюджет по времени: выходим до edge-таймаута
 
 const render = (m: any) => {
   const t = (m.text_content || m.ai_summary || '').replace(/\s+/g, ' ')
@@ -60,7 +61,7 @@ export default async function handler(req: Request): Promise<Response> {
     )` } catch {}
 
   const enabled = await agentEnabled(sql)
-  const stat = { enabled, scanned: 0, ran: 0, decided: 0, skipped: 0, already: 0, hold: 0, errors: 0, actions: {} as Record<string, number> }
+  const stat = { enabled, scanned: 0, ran: 0, decided: 0, skipped: 0, already: 0, hold: 0, errors: 0, timeup: false, actions: {} as Record<string, number> }
 
   if (!enabled) {
     try {
@@ -83,9 +84,11 @@ export default async function handler(req: Request): Promise<Response> {
     LIMIT 200` as any[]
 
   const now = Date.now()
+  const started = Date.now()
 
   for (const ch of channels) {
     if (stat.ran >= MAX_PER_RUN) break
+    if (Date.now() - started > TIME_BUDGET_MS) { stat.timeup = true; break }
     stat.scanned++
 
     // WA до реконнекта моста → HOLD (дыра простоя, данные недостоверны)
