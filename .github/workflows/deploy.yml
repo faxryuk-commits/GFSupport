@@ -7,17 +7,21 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Deploy to Vercel Production
-        uses: amondnet/vercel-action@v25
+
+      - uses: actions/setup-node@v4
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          # Проект под командой delever — без scope пост-шаг `vercel inspect` ищет
-          # деплой в личном скоупе токена и падает (сам деплой при этом проходит).
-          scope: delever
-          github-comment: false
+          node-version: 20
+
+      # Официальный путь: свежий Vercel CLI + прямой deploy.
+      # Старый amondnet/vercel-action@v25 прибит к vercel@25.1.0, который
+      # Vercel API уже отвергает («requires version 47.2.2 or later»).
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Deploy to Vercel Production
+        run: vercel deploy --prod --yes --token="${{ secrets.VERCEL_TOKEN }}" --scope=delever
