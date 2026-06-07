@@ -47,8 +47,71 @@ async function getFileUrl(fileId: string, botToken?: string | null): Promise<str
   } catch (e) {
     console.error('[Webhook] Failed to get file URL:', e)
   }
-  
+
   return null
+}
+
+// Extract Telegram file_id from a stored tg://type/file_id pseudo-URL.
+// Media is persisted as tg://photo/<file_id> etc. (нескачиваемо) — нужно
+// резолвить настоящий download-URL через getFileUrl перед разбором.
+function tgFileIdFromUrl(url?: string | null): string | null {
+  if (!url || !url.startsWith('tg://')) return null
+  const parts = url.replace('tg://', '').split('/')
+  return parts.length >= 2 ? parts.slice(1).join('/') : (parts[0] || null)
+}
+
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || ''
+
+// Скачивает файл из Telegram по file_id и заливает в Vercel Blob — постоянная ссылка,
+// в отличие от https://api.telegram.org/file/... которая протухает за ~1 час, и от
+// tg://type/file_id (нескачиваемо напрямую). Возвращает null при любой неудаче
+// (нет блоб-токена / файл >20MB getFile-лимита / сеть) — вызывающий код тогда падает
+// на tg://-фолбэк, а file_id всё равно сохраняется в колонке media_file_id.
+// Зеркалит whatsapp-bridge/src/index.ts → uploadToBlob (raw PUT, без SDK, edge-friendly).
+async function uploadTelegramFileToBlob(
+  fileId: string,
+  fallbackExt: string,
+  botToken?: string | null
+): Promise<string | null> {
+  if (!BLOB_TOKEN) return null
+  if (!botToken) botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) return null
+
+  try {
+    // getFile работает только для файлов <= 20MB (лимит Bot API) — большие отвалятся здесь.
+    const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
+    const fileData = await fileRes.json()
+    if (!fileData.ok || !fileData.result?.file_path) return null
+    const filePath: string = fileData.result.file_path
+
+    const dlRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`)
+    if (!dlRes.ok) return null
+    const buffer = await dlRes.arrayBuffer()
+    if (!buffer.byteLength) return null
+
+    const ext = filePath.includes('.') ? filePath.split('.').pop() : fallbackExt
+    const filename = `tg/${Date.now()}_${fileId.slice(-12)}.${ext}`
+    const contentType = dlRes.headers.get('Content-Type') || 'application/octet-stream'
+
+    const putRes = await fetch(`https://blob.vercel-storage.com/${filename}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${BLOB_TOKEN}`,
+        'x-api-version': '7',
+        'x-content-type': contentType,
+      },
+      body: new Uint8Array(buffer),
+    })
+    if (!putRes.ok) {
+      console.error(`[Webhook] Blob upload failed: ${putRes.status}`)
+      return null
+    }
+    const data = await putRes.json() as any
+    return data.url || null
+  } catch (e: any) {
+    console.error('[Webhook] Telegram→Blob upload error:', e.message)
+    return null
+  }
 }
 
 // Transcribe audio/voice message using OpenAI Whisper
@@ -346,6 +409,7 @@ async function saveMessage(
     text?: string
     contentType: string
     mediaUrl?: string
+    mediaFileId?: string
     thumbnailUrl?: string
     fileName?: string
     fileSize?: number
@@ -371,13 +435,14 @@ async function saveMessage(
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT`
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT`
     await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT`
+    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS media_file_id VARCHAR(255)`
   } catch { /* columns exist */ }
-  
+
   await sql`
     INSERT INTO support_messages (
       id, channel_id, org_id, telegram_message_id,
       sender_id, sender_name, sender_username, sender_role,
-      is_from_client, content_type, text_content, media_url,
+      is_from_client, content_type, text_content, media_url, media_file_id,
       thumbnail_url, file_name, file_size, mime_type,
       reply_to_message_id, reply_to_text, reply_to_sender,
       thread_id, forwarded_from,
@@ -385,7 +450,7 @@ async function saveMessage(
     ) VALUES (
       ${messageId}, ${channelId}, ${orgId}, ${telegramMessageId},
       ${String(user.id)}, ${user.fullName}, ${user.username}, ${role},
-      ${isFromClient}, ${content.contentType}, ${content.text || null}, ${content.mediaUrl || null},
+      ${isFromClient}, ${content.contentType}, ${content.text || null}, ${content.mediaUrl || null}, ${content.mediaFileId || null},
       ${content.thumbnailUrl || null}, ${content.fileName || null}, ${content.fileSize || null}, ${content.mimeType || null},
       ${content.replyToId ? String(content.replyToId) : null}, ${content.replyToText || null}, ${content.replyToSender || null},
       ${content.threadId ? String(content.threadId) : null}, ${content.forwardedFrom || null},
@@ -1420,8 +1485,27 @@ export default async function handler(req: Request): Promise<Response> {
       }
       text = sticker.emoji || '🎭'
     }
-    
+
     console.log(`[Webhook] Media: type=${contentType}, file=${fileName}, thumb=${thumbnailUrl ? 'yes' : 'no'}`)
+
+    // file_id — постоянный идентификатор файла в Telegram. В отличие от media_url
+    // (tg:// либо протухающий https://api.telegram.org/file/...) его всегда можно
+    // ре-резолвить через getFile, поэтому сохраняем ВСЕГДА в media_file_id —
+    // тогда медиа можно перекачать/разобрать ретроспективно даже если ссылка умерла.
+    const mediaFileId: string | undefined = tgFileIdFromUrl(mediaUrl) ?? undefined
+
+    // Сразу заливаем медиа в Vercel Blob → постоянная media_url, пригодная для
+    // Vision/Whisper и фронта (без прокси с bot-token). tg:// остаётся фолбэком,
+    // если блоб недоступен. Стикеры не льём — их «контент» это эмодзи (text), не файл.
+    if (mediaFileId && contentType !== 'sticker') {
+      const fallbackExt = mimeType?.split('/')[1]
+        || (contentType === 'photo' ? 'jpg' : contentType === 'voice' ? 'oga' : 'bin')
+      const blobUrl = await uploadTelegramFileToBlob(mediaFileId, fallbackExt, botToken)
+      if (blobUrl) {
+        mediaUrl = blobUrl
+        console.log(`[Webhook] Media uploaded to Blob: ${blobUrl.slice(0, 80)}`)
+      }
+    }
 
     // Extract forwarded_from
     let forwardedFrom: string | undefined
@@ -1486,6 +1570,7 @@ export default async function handler(req: Request): Promise<Response> {
       text,
       contentType,
       mediaUrl,
+      mediaFileId,
       thumbnailUrl,
       fileName,
       fileSize,
@@ -1614,39 +1699,56 @@ export default async function handler(req: Request): Promise<Response> {
     
     let analysisText = text
     let transcribedText: string | null = null
-    
-    if ((contentType === 'voice' || contentType === 'audio') && mediaUrl) {
-      transcribedText = await transcribeAudio(mediaUrl)
-      if (transcribedText) {
-        analysisText = transcribedText
-        await sql`
-          UPDATE support_messages 
-          SET text_content = ${transcribedText}, transcript = ${transcribedText}
-          WHERE id = ${messageId} AND org_id = ${orgId}
-        `.catch(() => {})
-        console.log(`[Webhook] Transcribed voice: ${transcribedText.slice(0, 100)}`)
+
+    // ========================================
+    // РАЗБОР МЕДИА — для КАЖДОГО входящего медиа (не только без подписи)
+    // фото → Vision (gpt-4o-mini), голос/видео/аудио → Whisper.
+    // Telegram отдаёт media как tg://type/file_id (нескачиваемо), поэтому
+    // сначала резолвим настоящий download-URL через getFile, иначе OpenAI
+    // не получит файл и разбор молча вернёт null (текущий баг: голос 75/1818).
+    // Результат: ai_summary (фото) / transcript (аудио) + бэкфилл text_content
+    // через COALESCE, чтобы поиск и категоризация видели содержимое.
+    // ========================================
+    let photoSummary: string | null = null
+
+    const isAudioMedia = contentType === 'voice' || contentType === 'audio' ||
+                         contentType === 'video' || contentType === 'video_note'
+    const isPhotoMedia = contentType === 'photo' ||
+                         (contentType === 'document' && (mimeType?.startsWith('image/') ?? false))
+
+    if (mediaUrl && (isAudioMedia || isPhotoMedia)) {
+      // Если media_url уже постоянный http(s) (Blob) — отдаём его напрямую; иначе
+      // резолвим настоящий download-URL по сохранённому file_id (на случай, когда
+      // блоб не зашёл и осталась tg://-ссылка).
+      const downloadUrl = mediaUrl.startsWith('http')
+        ? mediaUrl
+        : (mediaFileId ? await getFileUrl(mediaFileId, botToken) : null)
+      if (!downloadUrl) {
+        console.log(`[Webhook] Media not resolvable for analysis: type=${contentType}, fileId=${mediaFileId ? 'yes' : 'no'}`)
+      } else if (isAudioMedia) {
+        transcribedText = await transcribeAudio(downloadUrl)
+        if (transcribedText) console.log(`[Webhook] Transcribed ${contentType}: ${transcribedText.slice(0, 100)}`)
+      } else if (isPhotoMedia) {
+        photoSummary = await analyzePhoto(downloadUrl)
+        if (photoSummary) console.log(`[Webhook] Photo analyzed: ${photoSummary.slice(0, 100)}`)
       }
     }
 
-    if (contentType === 'photo' && mediaUrl && !analysisText) {
-      const photoDesc = await analyzePhoto(mediaUrl)
-      if (photoDesc) {
-        analysisText = `[Фото] ${photoDesc}`
-        await sql`
-          UPDATE support_messages SET ai_summary = ${photoDesc} WHERE id = ${messageId} AND org_id = ${orgId}
-        `.catch(() => {})
-      }
+    if (transcribedText || photoSummary) {
+      await sql`
+        UPDATE support_messages SET
+          transcript = COALESCE(${transcribedText}, transcript),
+          ai_summary = COALESCE(${photoSummary}, ai_summary),
+          text_content = COALESCE(text_content, ${transcribedText || photoSummary})
+        WHERE id = ${messageId} AND org_id = ${orgId}
+      `.catch(() => {})
     }
 
-    if ((contentType === 'video' || contentType === 'video_note') && mediaUrl && !analysisText) {
-      transcribedText = await transcribeAudio(mediaUrl)
-      if (transcribedText) {
-        analysisText = transcribedText
-        await sql`
-          UPDATE support_messages SET transcript = ${transcribedText} WHERE id = ${messageId} AND org_id = ${orgId}
-        `.catch(() => {})
-        console.log(`[Webhook] Transcribed video audio: ${transcribedText.slice(0, 100)}`)
-      }
+    // Для downstream-анализа склеиваем подпись и содержимое медиа,
+    // чтобы AI видел и то и другое (а не только подпись).
+    const mediaContent = transcribedText || photoSummary
+    if (mediaContent) {
+      analysisText = text ? `${text}\n\n[${contentType}] ${mediaContent}` : mediaContent
     }
 
     if (!analysisText && contentType !== 'text') {

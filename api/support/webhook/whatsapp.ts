@@ -328,8 +328,10 @@ export default async function handler(req: Request): Promise<Response> {
       upsertWhatsAppUser(sql, senderPhone, senderName || '', channelId, senderRole, orgId).catch(() => {})
     }
 
-    // Транскрипция и анализ медиа
-    if (mediaUrl && !text) {
+    // Транскрипция и анализ медиа — для КАЖДОГО входящего медиа,
+    // а не только когда нет подписи. Подпись не заменяет содержимое
+    // скриншота/голосового — категоризация и поиск должны видеть и то и другое.
+    if (mediaUrl) {
       try {
         let transcript: string | null = null
         let summary: string | null = null

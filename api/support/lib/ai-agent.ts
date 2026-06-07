@@ -313,11 +313,20 @@ export async function executeDecision(
       if (row.key === 'ai_agent_min_confidence') { const n = parseFloat(row.value); if (!isNaN(n)) minConf = n }
     }
   } catch {}
+  // SHADOW (auto_reply != true): чистое наблюдение. executeDecision НЕ делает ничего —
+  // ни сообщения клиенту, ни внутренних пингов команде («AI тегнул …»), ни кейсов.
+  // Решение уже записано в Журнал (logDecision в runAgent), там видно, КОГО агент
+  // хотел бы тегнуть. Так команду не спамит, пока мы оцениваем качество.
+  if (!autoReply) {
+    executed.push('shadow_observe_only')
+    return { executed }
+  }
+
+  // LIVE: клиенту шлём только при достаточной уверенности; уведомления команде и
+  // кейсы создаются всегда (низкая уверенность — это как раз повод привлечь человека).
   const confOk = typeof decision.confidence === 'number' ? decision.confidence >= minConf : false
-  const canSend = autoReply && confOk
-  const clientSend = canSend ? sendMessage : (async () => {})
-  if (!autoReply) executed.push('shadow_no_client_msg')
-  else if (!confOk) executed.push(`low_confidence_no_send_${decision.confidence}`)
+  const clientSend = confOk ? sendMessage : (async () => {})
+  if (!confOk) executed.push(`low_confidence_no_send_${decision.confidence}`)
 
   if ((decision.action === 'reply' || decision.action === 'reply_and_tag') && decision.replyText) {
     try {
