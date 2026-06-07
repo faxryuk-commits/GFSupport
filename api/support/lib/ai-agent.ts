@@ -297,16 +297,27 @@ export async function executeDecision(
 ): Promise<{ executed: string[] }> {
   const executed: string[] = []
 
-  // SHADOW-режим: если ai_agent_auto_reply != true — НЕ пишем клиенту (reply/tag/escalate
-  // в канал), только внутренние уведомления команде + кейсы. Безопасное наблюдение в Журнале.
+  // Единый гейт клиентских отправок (источник правды для ВСЕХ вызовов: webhook, cron, тест).
+  // Клиенту уходит сообщение ТОЛЬКО если: (1) ai_agent_auto_reply=true (LIVE, не shadow)
+  // И (2) уверенность решения >= ai_agent_min_confidence. Иначе clientSend = no-op:
+  //   • SHADOW (auto_reply!=true) → решение пишется в Журнал, клиенту/каналу НЕ уходит ничего;
+  //   • LIVE, но низкая уверенность → тоже не шлём (не спамим клиента сомнительным).
+  // Внутренние уведомления команде + кейсы создаются всегда (это не сообщения клиенту).
   let autoReply = false
+  let minConf = 0.95
   try {
     const sqlA = getSQL()
-    const r = await sqlA`SELECT value FROM support_settings WHERE org_id=${ctx.orgId} AND key='ai_agent_auto_reply' LIMIT 1`
-    autoReply = String(r[0]?.value) === 'true'
+    const r = await sqlA`SELECT key, value FROM support_settings WHERE org_id=${ctx.orgId} AND key IN ('ai_agent_auto_reply','ai_agent_min_confidence')`
+    for (const row of r) {
+      if (row.key === 'ai_agent_auto_reply') autoReply = String(row.value) === 'true'
+      if (row.key === 'ai_agent_min_confidence') { const n = parseFloat(row.value); if (!isNaN(n)) minConf = n }
+    }
   } catch {}
-  const clientSend = autoReply ? sendMessage : (async () => {})
+  const confOk = typeof decision.confidence === 'number' ? decision.confidence >= minConf : false
+  const canSend = autoReply && confOk
+  const clientSend = canSend ? sendMessage : (async () => {})
   if (!autoReply) executed.push('shadow_no_client_msg')
+  else if (!confOk) executed.push(`low_confidence_no_send_${decision.confidence}`)
 
   if ((decision.action === 'reply' || decision.action === 'reply_and_tag') && decision.replyText) {
     try {
