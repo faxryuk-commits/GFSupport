@@ -17,3 +17,7 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
+          # Проект под командой delever — без scope пост-шаг `vercel inspect` ищет
+          # деплой в личном скоупе токена и падает (сам деплой при этом проходит).
+          scope: delever
+          github-comment: false
