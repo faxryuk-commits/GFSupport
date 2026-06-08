@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Clock, Target, Smile, Repeat, Bot } from 'lucide-react'
+import { Clock, Target, Smile, Repeat, Bot, CheckCircle2 } from 'lucide-react'
 import { BenchmarkCard, CustomerHealthBanner, TeamTrendStrip } from '@/features/analytics'
 import { fetchMetric, type MetricResult, type FetchMetricParams } from '@/shared/api'
 
 const PULSE_METRICS: Array<{
   key: string
   label: string
-  unit: 'minutes' | 'percent'
+  unit: 'minutes' | 'hours' | 'percent'
   formula: string
   icon: React.ReactNode
 }> = [
@@ -17,6 +17,14 @@ const PULSE_METRICS: Array<{
     formula:
       'Время от нового запроса клиента до первого ответа агента (4-часовое окно, фильтр коротких «спасибо/ок»).',
     icon: <Clock className="w-4 h-4 text-violet-500" />,
+  },
+  {
+    key: 'resolution_time_hours',
+    label: 'Время решения',
+    unit: 'hours',
+    formula:
+      'Среднее время от создания кейса до его закрытия (resolved/closed). Считается по кейсам, закрытым в периоде.',
+    icon: <CheckCircle2 className="w-4 h-4 text-teal-500" />,
   },
   {
     key: 'sla_compliance_rate',
@@ -97,6 +105,7 @@ export function PulseTab({ period, source, roles }: PulseTabProps) {
   const activity = PULSE_METRICS.filter(
     (m) =>
       m.key === 'frt_avg_minutes' ||
+      m.key === 'resolution_time_hours' ||
       m.key === 'sla_compliance_rate' ||
       m.key === 'escalation_rate',
   )

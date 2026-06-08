@@ -29,6 +29,7 @@ import { slaComplianceDescriptor, computeSlaCompliance } from './slaCompliance.j
 import { sentimentPositiveDescriptor, computeSentimentPositive } from './sentimentPositive.js'
 import { repeatContactRateDescriptor, computeRepeatContactRate } from './repeatContactRate.js'
 import { escalationRateDescriptor, computeEscalationRate } from './escalationRate.js'
+import { resolutionTimeDescriptor, computeResolutionTime } from './resolutionTime.js'
 
 export type MetricComputeFn = (
   scope: MetricScope,
@@ -74,6 +75,11 @@ export const METRIC_REGISTRY: Record<string, MetricEntry> = {
   [escalationRateDescriptor.key]: {
     descriptor: escalationRateDescriptor,
     compute: computeEscalationRate,
+  },
+  [resolutionTimeDescriptor.key]: {
+    descriptor: resolutionTimeDescriptor,
+    compute: computeResolutionTime,
+    // baseline через weekly-percentile (по умолчанию)
   },
 }
 

@@ -8,14 +8,14 @@
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Clock, Target, Smile, Repeat, ArrowRight } from 'lucide-react'
+import { Clock, Target, Smile, Repeat, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { BenchmarkCard } from './BenchmarkCard'
 import { fetchMetric, type MetricResult, type FetchMetricParams } from '@/shared/api'
 
 const STRIP_METRICS: Array<{
   key: string
   label: string
-  unit: 'minutes' | 'percent'
+  unit: 'minutes' | 'hours' | 'percent'
   icon: React.ReactNode
   formula: string
 }> = [
@@ -25,6 +25,13 @@ const STRIP_METRICS: Array<{
     unit: 'minutes',
     icon: <Clock className="w-4 h-4 text-violet-500" />,
     formula: 'Среднее время от нового запроса клиента до первого ответа агента.',
+  },
+  {
+    key: 'resolution_time_hours',
+    label: 'Время решения',
+    unit: 'hours',
+    icon: <CheckCircle2 className="w-4 h-4 text-teal-500" />,
+    formula: 'Среднее время от создания кейса до его закрытия (resolved/closed). По кейсам, закрытым в периоде.',
   },
   {
     key: 'sla_compliance_rate',
@@ -104,7 +111,7 @@ export function PulseStrip({
           <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {STRIP_METRICS.map((m) => (
           <BenchmarkCard
             key={m.key}
