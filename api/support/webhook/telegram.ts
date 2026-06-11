@@ -1318,7 +1318,41 @@ export default async function handler(req: Request): Promise<Response> {
 
     const chat = message.chat
     const from = message.from
-    
+
+    // Посты из BROADCAST-каналов (channel_post) приходят БЕЗ поля `from` и обычным
+    // guard'ом ниже отбрасывались. Это фиды (например, канал ошибок заказов): ингестим
+    // их отдельно — сохраняем как сообщение канала (is_from_client=false, role='channel'),
+    // помечаем канал type='feed' и НЕ запускаем по ним ни ИИ-агента, ни SLA-стража
+    // (агент стартует только при role==='client'; SLA смотрит last_client_message_at).
+    if (update.channel_post && chat) {
+      try {
+        const feedUser = { id: chat.id, fullName: chat.title || `Channel ${chat.id}`, username: chat.username || null }
+        const { channelId, orgId } = await getOrCreateChannel(sql, chat, feedUser, orgParam || undefined)
+        await sql`UPDATE support_channels SET type = 'feed', last_message_at = NOW() WHERE id = ${channelId}`.catch(() => {})
+        const dup = await sql`SELECT 1 FROM support_messages WHERE channel_id = ${channelId} AND telegram_message_id = ${message.message_id} LIMIT 1`
+        if (!dup[0]) {
+          const text = message.text || message.caption || ''
+          let contentType = 'text'
+          if (message.photo) contentType = 'photo'
+          else if (message.video) contentType = 'video'
+          else if (message.document) contentType = 'document'
+          await sql`
+            INSERT INTO support_messages (
+              id, channel_id, org_id, telegram_message_id, sender_id, sender_name, sender_role,
+              is_from_client, content_type, text_content, is_read, created_at
+            ) VALUES (
+              ${generateId('msg')}, ${channelId}, ${orgId}, ${message.message_id},
+              ${String(chat.id)}, ${chat.title || 'Channel'}, 'channel',
+              false, ${contentType}, ${text || null}, true, NOW()
+            )`
+        }
+        return json({ ok: true, channelPost: true, channelId })
+      } catch (e: any) {
+        console.log('[Webhook] channel_post ingest failed:', e.message)
+        return json({ ok: true })
+      }
+    }
+
     if (!chat || !from) {
       console.log('[Webhook] Missing chat or from')
       return json({ ok: true })
