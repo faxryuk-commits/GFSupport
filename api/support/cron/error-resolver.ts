@@ -95,7 +95,15 @@ export default async function handler(req: Request): Promise<Response> {
     )` } catch {}
 
   const isOn = await enabled(sql)
-  const stat = { enabled: isOn, errors: 0, clusters: 0, cases_created: 0, incidents: 0, resolved: 0 }
+  // По умолчанию резолвер НЕ создаёт тикеты — он КАТЕГОРИЗИРУЕТ и ПРИОРИТИЗИРУЕТ
+  // (триаж в Журнале). Тикет — дорогое человеческое внимание, поэтому авто-кейсы
+  // включаются отдельно и только для action=fix_restaurant: error_resolver_create_cases='true'.
+  let createCases = false
+  try {
+    const r = await sql`SELECT value FROM support_settings WHERE org_id=${ORG} AND key='error_resolver_create_cases' LIMIT 1`
+    createCases = String(r[0]?.value ?? '').toLowerCase() === 'true'
+  } catch {}
+  const stat = { enabled: isOn, createCases, errors: 0, clusters: 0, triaged: 0, action_needed: 0, incidents: 0, cases_created: 0, resolved: 0 }
 
   // фид-канал
   const [feed] = await sql`SELECT id FROM support_channels WHERE org_id=${ORG} AND type='feed' ORDER BY last_message_at DESC NULLS LAST LIMIT 1` as any[]
@@ -129,44 +137,49 @@ export default async function handler(req: Request): Promise<Response> {
     const mode = pb ? (concentrated ? pb.concentrated : pb.spread) : null
     const name = pb?.name || `Новый тип: ${cl}`
 
-    // карточка решения в Журнал (всегда — полная прозрачность)
-    const cardReason = pb
-      ? `${name}: ${d.n} ошибок, ${concentrated ? `сконцентрировано на ${topRest[0]} (${Math.round(share * 100)}%)` : `размазано по ${restE.length} ресторанам`}. ${mode!.cause}`
-      : `${name}: ${d.n} ошибок — нет playbook, нужен ручной разбор`
+    // ТРИАЖ: что эта категория РЕАЛЬНО требует. Не каждый кластер — задача.
+    //   fix_restaurant      — сконцентрировано на 1 ресторане, чинибельный конфиг → действие (кандидат в кейс)
+    //   platform_incident   — размазано + объём → один инцидент в инженерку (НЕ N тикетов)
+    //   customer_side_noise — «вне зоны» россыпью = поведение клиентов, действия не нужно
+    //   monitor             — мало/нестабильно, просто следим
+    //   manual_review       — новый тип без playbook
+    let action: string, priority: string
+    if (!pb) { action = 'manual_review'; priority = 'low' }
+    else if (concentrated && d.n >= MIN_CASE) { action = 'fix_restaurant'; priority = d.n >= 30 ? 'high' : 'medium' }
+    else if (!concentrated && d.n >= MIN_INCIDENT) { action = 'platform_incident'; priority = d.n >= 150 ? 'critical' : 'high' }
+    else if (cl === 'out_of_zone') { action = 'customer_side_noise'; priority = 'low' }
+    else { action = 'monitor'; priority = 'low' }
+    stat.triaged++
+    if (action === 'fix_restaurant' || action === 'platform_incident') stat.action_needed++
+    if (action === 'platform_incident') stat.incidents++
+
+    const where = concentrated ? `сконцентрировано на ${topRest[0]} (${Math.round(share * 100)}%)` : `размазано по ${restE.length} ресторанам`
+    const reason = `[${priority} · ${action}] ${name}: ${d.n} ошибок, ${where}.${mode ? ' ' + mode.cause : ' нет playbook — ручной разбор'}`
     try {
-      await sql`INSERT INTO support_ai_events (org_id, actor, kind, channel_id, reasoning, payload, mode)
-        VALUES (${ORG}, 'error_resolver', 'solution_card', ${feed.id}, ${cardReason},
-        ${JSON.stringify({ type: cl, count: d.n, concentrated, topRestaurant: topRest?.[0], share: Math.round(share * 100), fix: mode?.fix, owner: mode?.owner })}::jsonb, ${isOn ? 'live' : 'shadow'})`
+      await sql`INSERT INTO support_ai_events (org_id, actor, kind, channel_id, tier, reasoning, payload, mode)
+        VALUES (${ORG}, 'error_resolver', 'triage', ${feed.id}, ${priority}, ${reason},
+        ${JSON.stringify({ type: cl, count: d.n, concentrated, topRestaurant: topRest?.[0], share: Math.round(share * 100), restaurants: restE.length, action, priority, fix: mode?.fix, owner: mode?.owner, sources: d.src })}::jsonb, ${isOn ? 'live' : 'shadow'})`
     } catch {}
 
     if (!isOn || !pb) continue
 
-    // СКОНЦЕНТРИРОВАНО → кейс на ресторан (дедуп идемпотентным маркером)
-    if (concentrated && d.n >= MIN_CASE) {
+    // ТИКЕТ — только если ЯВНО включено и категория требует адресного исполнения по ресторану.
+    // По умолчанию резолвер тикеты НЕ плодит: команда фильтрует триаж в Журнале и решает сама.
+    if (createCases && action === 'fix_restaurant') {
       const marker = `error_resolver~${cl}~${topRest[0]}`.slice(0, 80)
       const [open] = await sql`SELECT id FROM support_cases WHERE org_id=${ORG} AND source_message_id=${marker} AND status NOT IN ('resolved','closed') LIMIT 1` as any[]
       if (!open) {
         const caseId = `case_err_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-        const priority = d.n >= 30 ? 'urgent' : d.n >= 15 ? 'high' : 'medium'
+        const casePri = d.n >= 30 ? 'urgent' : 'high'
         const desc = `Авто-резолвер: ${name} — ${d.n} ошибок за ${WINDOW_HOURS}ч, ${Math.round(share * 100)}% у «${topRest[0]}».\n\n` +
           `ДИАГНОЗ: ${mode!.cause}\n\nРЕШЕНИЕ:\n${mode!.fix.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n` +
           `ОТВЕТСТВЕННЫЙ: ${mode!.owner}\n\nЧЕРНОВИК КАСАНИЯ МЕРЧАНТУ (отправляет человек): «Здравствуйте! Заметили, что у вас часть заказов отклоняется (${name.toLowerCase()}). Уже разбираемся — проверим настройки с вашей стороны.»`
         try {
           await sql`INSERT INTO support_cases (id, channel_id, org_id, title, description, category, priority, status, source_message_id, created_at)
-            VALUES (${caseId}, ${feed.id}, ${ORG}, ${`${topRest[0]}: ${name} (${d.n})`}, ${desc}, ${'order_error'}, ${priority}, 'detected', ${marker}, NOW())`
+            VALUES (${caseId}, ${feed.id}, ${ORG}, ${`${topRest[0]}: ${name} (${d.n})`}, ${desc}, ${'order_error'}, ${casePri}, 'detected', ${marker}, NOW())`
           stat.cases_created++
         } catch (e: any) { console.error('[error-resolver] case fail', e?.message) }
       }
-    }
-
-    // РАЗМАЗАНО + много → инцидент (событие в Журнал; рассылку в инженерку оставляем человеку)
-    if (!concentrated && d.n >= MIN_INCIDENT) {
-      try {
-        await sql`INSERT INTO support_ai_events (org_id, actor, kind, channel_id, tier, reasoning, payload, mode)
-          VALUES (${ORG}, 'error_resolver', 'incident', ${feed.id}, 'high', ${`ИНЦИДЕНТ: ${name} — ${d.n} ошибок по ${restE.length} ресторанам за ${WINDOW_HOURS}ч → эскалация (${mode!.owner})`},
-          ${JSON.stringify({ type: cl, count: d.n, restaurants: restE.length, sources: d.src })}::jsonb, ${isOn ? 'live' : 'shadow'})`
-        stat.incidents++
-      } catch {}
     }
   }
 
