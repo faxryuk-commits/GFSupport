@@ -69,6 +69,10 @@
     {
       "path": "/api/support/cron/agent-scan",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/support/cron/error-resolver",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
