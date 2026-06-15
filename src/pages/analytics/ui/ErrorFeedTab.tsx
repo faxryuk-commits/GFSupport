@@ -121,25 +121,75 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
 }
 
 function SubRow({ s }: { s: ErrorSubcategory }) {
+  const [exp, setExp] = useState(false)
   return (
     <div className="px-5 py-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-medium text-slate-800">{s.label}</span>
-          <span className={`text-[11px] px-1.5 py-0.5 rounded border ${FAULT_BADGE[s.fault] || FAULT_BADGE.unknown}`}>{s.faultLabel}</span>
-          {s.concentrated && s.topRestaurant && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-              <AlertTriangle className="w-3 h-3" /> {s.topRestaurant} {s.topRestaurantShare}%
-            </span>
+      <button onClick={() => setExp(v => !v)} className="w-full text-left">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${exp ? 'rotate-90' : ''}`} />
+            <span className="text-sm font-medium text-slate-800">{s.label}</span>
+            <span className={`text-[11px] px-1.5 py-0.5 rounded border ${FAULT_BADGE[s.fault] || FAULT_BADGE.unknown}`}>{s.faultLabel}</span>
+            {s.concentrated && s.topRestaurant && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                <AlertTriangle className="w-3 h-3" /> {s.topRestaurant} {s.topRestaurantShare}%
+              </span>
+            )}
+          </div>
+          <span className="text-sm font-bold text-slate-900 tabular-nums">{s.count.toLocaleString('ru-RU')} <span className="text-slate-400 font-normal">({s.pct}%)</span></span>
+        </div>
+      </button>
+
+      {exp && (
+        <div className="mt-3 pl-5 space-y-3">
+          {/* Проблема */}
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Проблема</div>
+            <p className="text-sm text-slate-700 leading-relaxed">{s.decode}</p>
+          </div>
+
+          {/* Решение */}
+          <div>
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+              <Wrench className="w-3.5 h-3.5 text-blue-500" /> Решение · ответственный: {s.owner}
+            </div>
+            <ol className="space-y-1">
+              {s.fixSteps.map((step, i) => (
+                <li key={i} className="flex gap-2 text-sm text-slate-700">
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-blue-50 text-blue-600 text-xs font-semibold flex items-center justify-center">{i + 1}</span>
+                  <span className="leading-relaxed">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* Задетые рестораны */}
+          {s.restaurants?.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+                Задетые рестораны {s.restaurantsAffected > s.restaurants.length ? `(топ ${s.restaurants.length} из ${s.restaurantsAffected})` : ''}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {s.restaurants.map(r => (
+                  <span key={r.name} className="text-xs bg-slate-100 text-slate-700 rounded px-2 py-0.5">{r.name} <b>{r.count}</b></span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Реальные примеры */}
+          {s.examples?.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Примеры из фида</div>
+              <div className="space-y-1">
+                {s.examples.map((ex, i) => (
+                  <div key={i} className="text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded px-2 py-1 break-words">{ex}</div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
-        <span className="text-sm font-bold text-slate-900 tabular-nums">{s.count.toLocaleString('ru-RU')} <span className="text-slate-400 font-normal">({s.pct}%)</span></span>
-      </div>
-      <p className="text-xs text-slate-500 mt-1.5">{s.decode}</p>
-      <div className="flex items-start gap-1.5 mt-1.5 text-xs text-slate-700">
-        <Wrench className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
-        <span><b className="text-slate-600">Решение:</b> {s.fix} <span className="text-slate-400">· {s.owner}</span></span>
-      </div>
+      )}
     </div>
   )
 }
