@@ -10,12 +10,14 @@ export interface ErrorSubcategory {
   fault: ErrorFault
   faultLabel: string
   decode: string
-  fix: string
+  fixSteps: string[]
   owner: string
   topRestaurant: string | null
   topRestaurantShare: number
   concentrated: boolean
   restaurantsAffected: number
+  restaurants: Array<{ name: string; count: number }>
+  examples: string[]
 }
 
 export interface ErrorCategory {
