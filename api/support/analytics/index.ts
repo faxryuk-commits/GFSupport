@@ -141,12 +141,14 @@ export default async function handler(req: Request): Promise<Response> {
         JOIN support_channels ch ON ch.id = m.channel_id
         WHERE m.org_id = ${orgId}
           AND m.created_at >= ${startDate.toISOString()}
+          AND ch.type <> 'feed'
           AND (${market}::text IS NULL OR ch.market_id = ${market})
       `,
       sql`
         SELECT COUNT(*) as total_channels, COUNT(*) FILTER (WHERE is_active = true) as active_channels
         FROM support_channels
         WHERE org_id = ${orgId}
+          AND type <> 'feed'
           AND (${market}::text IS NULL OR market_id = ${market})
       `,
       sql`

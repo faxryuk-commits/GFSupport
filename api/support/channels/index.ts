@@ -59,6 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN ch_msgs m ON m.channel_id = c.id
           LEFT JOIN ch_cases cs ON cs.channel_id = c.id
           WHERE c.org_id = ${orgId}
+            AND (c.type <> 'feed' OR ${type || 'all'}::text = 'feed')
             AND (${market} = '__ALL__' OR c.market_id = ${market})
             AND (${search || ''}::text = '' OR c.name ILIKE ${'%' + (search || '') + '%'})
             AND (${source || ''}::text = '' OR COALESCE(c.source, 'telegram') = ${source || ''})
@@ -67,11 +68,11 @@ export default async function handler(req: Request): Promise<Response> {
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `,
-        sql`SELECT COUNT(*) as total FROM support_channels WHERE org_id = ${orgId} AND (${market} = '__ALL__' OR market_id = ${market})`,
+        sql`SELECT COUNT(*) as total FROM support_channels WHERE org_id = ${orgId} AND type <> 'feed' AND (${market} = '__ALL__' OR market_id = ${market})`,
         sql`SELECT type, COUNT(*) as count, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) as active_count
-            FROM support_channels WHERE org_id = ${orgId} AND (${market} = '__ALL__' OR market_id = ${market}) GROUP BY type`,
+            FROM support_channels WHERE org_id = ${orgId} AND type <> 'feed' AND (${market} = '__ALL__' OR market_id = ${market}) GROUP BY type`,
         sql`SELECT COALESCE(source, 'telegram') as source, COUNT(*)::int as count
-            FROM support_channels WHERE org_id = ${orgId} GROUP BY COALESCE(source, 'telegram')`,
+            FROM support_channels WHERE org_id = ${orgId} AND type <> 'feed' GROUP BY COALESCE(source, 'telegram')`,
       ])
 
       const total = parseInt(countResult[0]?.total || '0')
