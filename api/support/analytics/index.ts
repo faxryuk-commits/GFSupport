@@ -260,11 +260,13 @@ export default async function handler(req: Request): Promise<Response> {
           MAX(m.created_at) as last_message_at
         FROM support_messages m
         LEFT JOIN support_agents a ON (
-          a.telegram_id::text = m.sender_id::text 
+          a.telegram_id::text = m.sender_id::text
           OR LOWER(a.username) = LOWER(m.sender_username)
           OR LOWER(a.name) = LOWER(m.sender_name)
         )
         WHERE m.org_id = ${orgId}
+          AND m.created_at >= ${startDate.toISOString()}
+          AND m.sender_role <> 'channel'
           AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
           AND m.sender_id IS NOT NULL
           AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
