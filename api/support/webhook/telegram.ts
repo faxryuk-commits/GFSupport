@@ -1410,15 +1410,10 @@ export default async function handler(req: Request): Promise<Response> {
         message.message_id
       )
       
-      // Send confirmation message
-      if (result.success) {
-        const confirmText = `✅ <b>Тикет создан!</b>\n\n` +
-          `📋 Номер: <code>${result.ticketNumber}</code>\n` +
-          `👤 Создал: ${user.fullName}\n\n` +
-          `Тикет будет обработан в ближайшее время.`
-        
-        await sendTelegramMessage(String(chat.id), confirmText, message.message_id, botToken)
-      } else {
+      // Публичное подтверждение «Тикет создан» в группе УБРАНО — засоряло чат.
+      // Тикет создаётся молча, создатель видит его в системе. На ошибке оставляем
+      // короткий ответ, чтобы неудачная команда не выглядела как «ничего не произошло».
+      if (!result.success) {
         const errorText = `⚠️ ${result.error || 'Не удалось создать тикет'}`
         await sendTelegramMessage(String(chat.id), errorText, message.message_id, botToken)
       }
