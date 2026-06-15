@@ -180,7 +180,7 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE m.is_from_client = false
             AND m.created_at > NOW() - INTERVAL '30 days'
             AND m.org_id = ${orgId}
-            AND COALESCE(m.sender_role, '') <> 'broadcast'
+            AND COALESCE(m.sender_role, '') NOT IN ('broadcast', 'channel')
         )
         SELECT
           agent_id,
@@ -194,30 +194,35 @@ export default async function handler(req: Request): Promise<Response> {
       `.catch(() => []),
 
       sql`
-        WITH client_msgs AS (
-          SELECT channel_id, created_at as client_at
-          FROM support_messages
-          WHERE is_from_client = true AND org_id = ${orgId}
-            AND created_at > NOW() - INTERVAL '30 days'
-            AND COALESCE(sender_role, 'client') = 'client'
+        -- prev_client_at через ОКОННУЮ функцию (running max времени клиентского
+        -- сообщения), а не коррелированный подзапрос на каждую строку. Семантика
+        -- идентична, но один проход вместо O(n²): было ~15с, стало ~0.4с.
+        -- Фид (sender_role='channel') исключён — он раздувал 30-дневное окно.
+        WITH timeline AS (
+          SELECT
+            m.created_at, m.is_from_client, m.sender_id, m.sender_username,
+            MAX(CASE WHEN m.is_from_client AND COALESCE(m.sender_role, 'client') = 'client'
+                     THEN m.created_at END)
+              OVER (PARTITION BY m.channel_id ORDER BY m.created_at
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as prev_client_at
+          FROM support_messages m
+          WHERE m.org_id = ${orgId}
+            AND m.created_at > NOW() - INTERVAL '30 days'
+            AND COALESCE(m.sender_role, '') NOT IN ('broadcast', 'channel')
         ),
         agent_responses AS (
           SELECT
-            COALESCE(a.id, m.sender_id::text) as agent_id,
-            m.channel_id,
-            m.created_at as agent_at,
-            (SELECT MAX(cm.client_at) FROM client_msgs cm
-             WHERE cm.channel_id = m.channel_id AND cm.client_at < m.created_at) as prev_client_at
-          FROM support_messages m
+            COALESCE(a.id, t.sender_id::text) as agent_id,
+            t.created_at as agent_at,
+            t.prev_client_at
+          FROM timeline t
           LEFT JOIN support_agents a ON (
-              a.telegram_id::text = m.sender_id::text
-              OR a.id = m.sender_id::text
-              OR (m.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(m.sender_username))
+              a.telegram_id::text = t.sender_id::text
+              OR a.id = t.sender_id::text
+              OR (t.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(t.sender_username))
             )
             AND a.org_id = ${orgId}
-          WHERE m.is_from_client = false AND m.org_id = ${orgId}
-            AND m.created_at > NOW() - INTERVAL '30 days'
-            AND COALESCE(m.sender_role, '') <> 'broadcast'
+          WHERE t.is_from_client = false
         )
         SELECT agent_id,
           ROUND(AVG(EXTRACT(EPOCH FROM (agent_at - prev_client_at)) / 60))::int as avg_resp_min
