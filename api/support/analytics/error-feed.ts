@@ -225,7 +225,26 @@ const field = (t: string, label: string): string | null => {
   const m = t.match(new RegExp(label + '\\s*:?\\s*([^\\n]+?)(?=\\s*(?:Ресторан|Сервис|Источник|Текст ошибки|$))', 'i'))
   return m ? m[1].trim() : null
 }
+// Ресторан/филиал: метка «Ресторан:», иначе из 2-го формата «…Create err: <филиал> : rpc»
+// или «…error: filial:<X>».
+function getRestaurant(t: string): string | null {
+  return field(t, 'Ресторан')
+    || t.match(/Create err:\s*([^:]{1,60}?)\s*:\s*rpc error/i)?.[1]?.trim()
+    || t.match(/filial\s*:\s*([^\n,;]{1,60})/i)?.[1]?.trim()
+    || null
+}
+// Источник: метка «Источник:», иначе client_name из JSON «Запрос».
+function getSource(t: string): string | null {
+  return field(t, 'Источник') || t.match(/"client_name"\s*:\s*"([^"]+)"/i)?.[1]?.trim() || null
+}
+// Сервис: метка «Сервис:», иначе «Get Iiko/OrderServiceV2» = integrator-api.
+function getService(t: string): string | null {
+  return field(t, 'Сервис') || (/Get ?Iiko|GetIIko|OrderServiceV2/i.test(t) ? 'integrator-api' : null)
+}
 function classify(errText: string): { cat: Cat; sub: Sub } | null {
+  // СНАЧАЛА «ожидаемые отклонения» (стоп-лист, вне зоны) — они точнее rpc-кода:
+  // 🛑 «недоступны» приходит с code=InvalidArgument и иначе попал бы в create_invalid.
+  for (const cat of TAXONOMY) for (const sub of cat.subs) if ((sub.nature === 'rejection') && sub.match.test(errText)) return { cat, sub }
   for (const cat of TAXONOMY) for (const sub of cat.subs) if (sub.match.test(errText)) return { cat, sub }
   return null
 }
@@ -259,9 +278,9 @@ export default async function handler(req: Request): Promise<Response> {
   for (const r of rows) {
     const t = String(r.t).replace(/\s+/g, ' ')
     const errText = field(t, 'Текст ошибки') || t
-    const service = field(t, 'Сервис') || 'unknown'
-    const source = field(t, 'Источник') || 'unknown'
-    const restaurant = field(t, 'Ресторан') || 'unknown'
+    const service = getService(t) || 'unknown'
+    const source = getSource(t) || 'unknown'
+    const restaurant = getRestaurant(t) || 'unknown'
     serviceAgg[service] = (serviceAgg[service] || 0) + 1
     sourceAgg[source] = (sourceAgg[source] || 0) + 1
     restaurantAgg[restaurant] = (restaurantAgg[restaurant] || 0) + 1
