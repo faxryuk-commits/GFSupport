@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react'
 import { AlertTriangle, ChevronRight, Wrench } from 'lucide-react'
-import { fetchErrorFeed, type ErrorFeedResponse, type ErrorFault, type ErrorSubcategory } from '@/shared/api'
+import { fetchErrorFeed, type ErrorFeedResponse, type ErrorFault, type ErrorSubcategory, type UniqueSignature } from '@/shared/api'
 
 const FAULT_COLOR: Record<ErrorFault, string> = {
   delever: 'bg-rose-500',
@@ -92,6 +92,24 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
           ))}
         </div>
       </section>
+
+      {/* Уникальные проблемы (дедуп) */}
+      {data.topSignatures && data.topSignatures.length > 0 && (
+        <section className="bg-white border border-slate-200 rounded-xl p-5">
+          <div className="flex items-baseline justify-between mb-1">
+            <h3 className="text-sm font-semibold text-slate-800">Уникальные проблемы</h3>
+            <span className="text-xs text-slate-500">
+              {data.uniqueCount?.toLocaleString('ru-RU')} уникальных из {data.total.toLocaleString('ru-RU')} ({data.dedupPct}% — повторы)
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Топ-10 = {data.coverageTop10}% потока · топ-20 = {data.coverageTop20}% · топ-50 = {data.coverageTop50}%. Чините сверху — снимаете больше всего.
+          </p>
+          <div className="border border-slate-100 rounded-lg divide-y divide-slate-100">
+            {data.topSignatures.map((sg, i) => <SigRow key={i} sg={sg} rank={i + 1} />)}
+          </div>
+        </section>
+      )}
 
       {/* Категории → подкатегории */}
       <section className="space-y-3">
@@ -199,6 +217,41 @@ function SubRow({ s }: { s: ErrorSubcategory }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SigRow({ sg, rank }: { sg: UniqueSignature; rank: number }) {
+  const [exp, setExp] = useState(false)
+  return (
+    <div className="px-3 py-2">
+      <button onClick={() => setExp(v => !v)} className="w-full text-left flex items-center gap-3">
+        <span className="shrink-0 text-xs text-slate-400 w-5 text-right">{rank}</span>
+        <span className="shrink-0 text-sm font-bold text-slate-900 tabular-nums w-16">{sg.count.toLocaleString('ru-RU')}×</span>
+        <span className="shrink-0 text-xs text-slate-700 font-medium truncate max-w-[140px]" title={sg.restaurant}>{sg.restaurant}</span>
+        <span className="shrink-0 text-[11px] text-slate-400">{sg.source}</span>
+        {sg.nature === 'rejection'
+          ? <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">не баг</span>
+          : <span className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded border ${FAULT_BADGE[sg.fault] || FAULT_BADGE.unknown}`}>{sg.faultLabel}</span>}
+        <span className="text-xs text-slate-500 truncate flex-1" title={sg.label}>{sg.label}</span>
+        <ChevronRight className={`shrink-0 w-3.5 h-3.5 text-slate-400 transition-transform ${exp ? 'rotate-90' : ''}`} />
+      </button>
+      {exp && (
+        <div className="mt-2 ml-[6.5rem] space-y-2 pb-1">
+          {sg.decode && <p className="text-xs text-slate-600 leading-relaxed">{sg.decode}</p>}
+          {sg.fixSteps?.length > 0 && (
+            <ol className="space-y-1">
+              {sg.fixSteps.map((step, i) => (
+                <li key={i} className="flex gap-2 text-xs text-slate-700">
+                  <span className="shrink-0 w-4 h-4 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold flex items-center justify-center">{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <div className="text-[11px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded px-2 py-1 break-words">{sg.sample}</div>
         </div>
       )}
     </div>

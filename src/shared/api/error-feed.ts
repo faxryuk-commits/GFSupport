@@ -31,6 +31,24 @@ export interface ErrorCategory {
   subcategories: ErrorSubcategory[]
 }
 
+export interface UniqueSignature {
+  signature: string
+  count: number
+  pct: number
+  restaurant: string
+  source: string
+  service: string
+  category: string
+  label: string
+  nature: ErrorNature
+  fault: ErrorFault
+  faultLabel: string
+  decode: string
+  fixSteps: string[]
+  owner: string
+  sample: string
+}
+
 export interface ErrorFeedResponse {
   ok: boolean
   hasFeed: boolean
@@ -39,6 +57,12 @@ export interface ErrorFeedResponse {
   total: number
   errorsTotal?: number
   rejectionsTotal?: number
+  uniqueCount?: number
+  dedupPct?: number
+  coverageTop10?: number
+  coverageTop20?: number
+  coverageTop50?: number
+  topSignatures?: UniqueSignature[]
   classifiedPct?: number
   unmatched?: number
   ourFault?: number
