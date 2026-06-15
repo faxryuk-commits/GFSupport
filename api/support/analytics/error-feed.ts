@@ -15,11 +15,16 @@ export const config = { runtime: 'edge', regions: ['iad1'] }
 
 type Fault = 'delever' | 'integration' | 'pos' | 'merchant' | 'customer' | 'aggregator' | 'unknown'
 
+// nature: системная ошибка или ОЖИДАЕМОЕ бизнес-отклонение (система отработала
+// верно — стоп-лист, вне зоны). Отклонения не считаются «ошибкой/нашей виной».
+type Nature = 'error' | 'rejection'
+
 interface Sub {
   key: string
   label: string
   match: RegExp
   fault: Fault
+  nature?: Nature        // по умолчанию 'error'
   decode: string        // развёрнутое описание проблемы
   fixSteps: string[]     // пошаговое решение
   owner: string
@@ -147,7 +152,7 @@ const TAXONOMY: Cat[] = [
   {
     cat: 'menu', label: 'Меню / товары', subs: [
       {
-        key: 'product_unavailable', label: 'Товар недоступен (стоп-лист)', match: /недоступны|стоп.?лист/i, fault: 'merchant',
+        key: 'product_unavailable', label: 'Товар недоступен (стоп-лист)', match: /недоступны|стоп.?лист/i, fault: 'merchant', nature: 'rejection',
         decode: 'Заказанные товары помечены недоступными — наличие в кассе и в Delever разошлось. Ресторан поставил стоп-лист или убрал товар в кассе, но в Delever он остался доступен (или наоборот).',
         fixSteps: [
           'Сверить наличие позиций касса↔Delever по этому ресторану.',
@@ -179,7 +184,7 @@ const TAXONOMY: Cat[] = [
         ], owner: 'engineering',
       },
       {
-        key: 'out_of_zone', label: 'Адрес вне зоны', match: /за пределами|зоны достав|местополож/i, fault: 'customer',
+        key: 'out_of_zone', label: 'Адрес вне зоны', match: /за пределами|зоны достав|местополож/i, fault: 'customer', nature: 'rejection',
         decode: 'Клиент оформляет заказ по адресу за пределами зоны доставки ресторана. Если массово у одного ресторана — скорее неверно настроен полигон зоны (реальные адреса отлетают). Если единично у разных — это нормальное поведение клиентов.',
         fixSteps: [
           'Проверить концентрацию: один ресторан или россыпь.',
@@ -249,7 +254,7 @@ export default async function handler(req: Request): Promise<Response> {
   const serviceAgg: Record<string, number> = {}
   const sourceAgg: Record<string, number> = {}
   const restaurantAgg: Record<string, number> = {}
-  let classified = 0, unmatched = 0
+  let classified = 0, unmatched = 0, rejections = 0
 
   for (const r of rows) {
     const t = String(r.t).replace(/\s+/g, ' ')
@@ -264,6 +269,7 @@ export default async function handler(req: Request): Promise<Response> {
     const c = classify(errText)
     if (!c) { unmatched++; faultAgg['unknown'] = (faultAgg['unknown'] || 0) + 1; continue }
     classified++
+    if ((c.sub.nature || 'error') === 'rejection') rejections++
     faultAgg[c.sub.fault] = (faultAgg[c.sub.fault] || 0) + 1
     if (!catAgg[c.cat.cat]) catAgg[c.cat.cat] = { label: c.cat.label, count: 0, subs: {} }
     catAgg[c.cat.cat].count++
@@ -278,6 +284,8 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const total = rows.length
+  // Настоящие ошибки vs ожидаемые отклонения (стоп-лист/вне зоны — система отработала верно).
+  const errorsTotal = total - rejections
   const ourFault = OUR_FAULT.reduce((s, f) => s + (faultAgg[f] || 0), 0)
   const topList = (o: Record<string, number>, n = 10) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ name: k, count: v }))
 
@@ -289,6 +297,7 @@ export default async function handler(req: Request): Promise<Response> {
       const concentrated = !!top && top[1] / s.count >= 0.6 && s.count >= 5
       return {
         key: s.sub.key, label: s.sub.label, count: s.count, pct: Math.round((s.count / total) * 100),
+        nature: s.sub.nature || 'error',
         fault: s.sub.fault, faultLabel: FAULT_LABEL[s.sub.fault], decode: s.sub.decode, fixSteps: s.sub.fixSteps, owner: s.sub.owner,
         topRestaurant: top ? top[0] : null, topRestaurantShare: top ? Math.round((top[1] / s.count) * 100) : 0,
         concentrated, restaurantsAffected: restE.length,
@@ -300,8 +309,9 @@ export default async function handler(req: Request): Promise<Response> {
 
   return json({
     ok: true, hasFeed: true, feedName: feed.name, period, total,
+    errorsTotal, rejectionsTotal: rejections,
     classifiedPct: total ? Math.round((classified / total) * 100) : 0, unmatched,
-    ourFault, ourFaultPct: total ? Math.round((ourFault / total) * 100) : 0,
+    ourFault, ourFaultPct: errorsTotal ? Math.round((ourFault / errorsTotal) * 100) : 0,
     byFault: Object.entries(faultAgg).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ fault: k, label: FAULT_LABEL[k as Fault] || k, count: v, pct: Math.round((v / total) * 100) })),
     byService: topList(serviceAgg), bySource: topList(sourceAgg), topRestaurants: topList(restaurantAgg, 12),
     categories,

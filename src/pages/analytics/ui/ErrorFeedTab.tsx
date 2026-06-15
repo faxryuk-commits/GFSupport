@@ -56,14 +56,23 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
     <div className="space-y-6">
       {/* Сводка */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Stat label="Всего ошибок" value={data.total.toLocaleString('ru-RU')} sub={`${data.feedName || 'фид'} · ${period}`} />
+        <Stat
+          label="Настоящих ошибок"
+          value={(data.errorsTotal ?? data.total).toLocaleString('ru-RU')}
+          sub={`${data.feedName || 'фид'} · ${period} · классиф. ${data.classifiedPct ?? 0}%`}
+        />
+        <Stat
+          label="Ожидаемых отклонений"
+          value={(data.rejectionsTotal ?? 0).toLocaleString('ru-RU')}
+          sub="стоп-лист, вне зоны — не баг"
+          valueClass="text-slate-500"
+        />
         <Stat
           label="Наша зона ответственности"
           value={`${ourPct}%`}
-          sub="Delever + интеграция"
+          sub="от настоящих ошибок (Delever + интеграция)"
           valueClass={ourPct >= 60 ? 'text-rose-600' : ourPct >= 30 ? 'text-orange-500' : 'text-emerald-600'}
         />
-        <Stat label="Классифицировано" value={`${data.classifiedPct ?? 0}%`} sub={`${data.unmatched ?? 0} без разбора`} />
       </div>
 
       {/* Чья вина */}
@@ -129,7 +138,9 @@ function SubRow({ s }: { s: ErrorSubcategory }) {
           <div className="flex items-center gap-2 min-w-0">
             <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${exp ? 'rotate-90' : ''}`} />
             <span className="text-sm font-medium text-slate-800">{s.label}</span>
-            <span className={`text-[11px] px-1.5 py-0.5 rounded border ${FAULT_BADGE[s.fault] || FAULT_BADGE.unknown}`}>{s.faultLabel}</span>
+            {s.nature === 'rejection'
+              ? <span className="text-[11px] px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">ожидаемое — не баг</span>
+              : <span className={`text-[11px] px-1.5 py-0.5 rounded border ${FAULT_BADGE[s.fault] || FAULT_BADGE.unknown}`}>{s.faultLabel}</span>}
             {s.concentrated && s.topRestaurant && (
               <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                 <AlertTriangle className="w-3 h-3" /> {s.topRestaurant} {s.topRestaurantShare}%

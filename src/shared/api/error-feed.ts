@@ -2,11 +2,14 @@ import { apiGet } from '../services/api.service'
 
 export type ErrorFault = 'delever' | 'integration' | 'pos' | 'merchant' | 'customer' | 'aggregator' | 'unknown'
 
+export type ErrorNature = 'error' | 'rejection'
+
 export interface ErrorSubcategory {
   key: string
   label: string
   count: number
   pct: number
+  nature: ErrorNature
   fault: ErrorFault
   faultLabel: string
   decode: string
@@ -34,6 +37,8 @@ export interface ErrorFeedResponse {
   feedName?: string
   period?: string
   total: number
+  errorsTotal?: number
+  rejectionsTotal?: number
   classifiedPct?: number
   unmatched?: number
   ourFault?: number
