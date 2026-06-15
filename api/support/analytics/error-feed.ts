@@ -286,7 +286,12 @@ export default async function handler(req: Request): Promise<Response> {
   const serviceAgg: Record<string, number> = {}
   const sourceAgg: Record<string, number> = {}
   const restaurantAgg: Record<string, number> = {}
-  const sigAgg: Record<string, { count: number; restaurant: string; source: string; service: string; sample: string; sub: Sub | null; catLabel: string }> = {}
+  // Три группировки уникальности: отпечаток (fingerprint), ресторан+тип, класс.
+  type SigEntry = { count: number; display: string; restaurant: string; source: string; service: string; sample: string; sub: Sub | null; catLabel: string }
+  const aggFP: Record<string, SigEntry> = {}, aggRT: Record<string, SigEntry> = {}, aggCL: Record<string, SigEntry> = {}
+  const bump = (agg: Record<string, SigEntry>, key: string, e: Omit<SigEntry, 'count'>) => {
+    const a = agg[key] || (agg[key] = { count: 0, ...e }); a.count++
+  }
   let classified = 0, unmatched = 0, rejections = 0
 
   for (const r of rows) {
@@ -300,10 +305,13 @@ export default async function handler(req: Request): Promise<Response> {
     restaurantAgg[restaurant] = (restaurantAgg[restaurant] || 0) + 1
 
     const c = classify(errText)
-    // уникальная сигнатура (дедуп) — считаем для всех, включая неклассифицированные
-    const sig = normSig(t)
-    const sa = sigAgg[sig] || (sigAgg[sig] = { count: 0, restaurant, source, service, sample: errText.slice(0, 220), sub: c?.sub || null, catLabel: c?.cat.label || 'Не определено' })
-    sa.count++
+    // дедуп по трём критериям — считаем для всех, включая неклассифицированные
+    const subKey = c?.sub.key || 'unknown'
+    const subLabel = c?.sub.label || 'Не классифицировано'
+    const base = { restaurant, source, service, sample: errText.slice(0, 220), sub: c?.sub || null, catLabel: c?.cat.label || 'Не определено' }
+    bump(aggFP, normSig(t), { ...base, display: normSig(t).slice(0, 200) })
+    bump(aggRT, restaurant + '|' + subKey, { ...base, display: `${restaurant} — ${subLabel}` })
+    bump(aggCL, subLabel, { ...base, display: subLabel })
     if (!c) { unmatched++; faultAgg['unknown'] = (faultAgg['unknown'] || 0) + 1; continue }
     classified++
     if ((c.sub.nature || 'error') === 'rejection') rejections++
@@ -326,18 +334,24 @@ export default async function handler(req: Request): Promise<Response> {
   const ourFault = OUR_FAULT.reduce((s, f) => s + (faultAgg[f] || 0), 0)
   const topList = (o: Record<string, number>, n = 10) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ name: k, count: v }))
 
-  // Уникальность: сколько РАЗНЫХ проблем за повторами + покрытие топ-N.
-  const sigEntries = Object.entries(sigAgg).sort((a, b) => b[1].count - a[1].count)
-  const uniqueCount = sigEntries.length
-  const dedupPct = total ? Math.round((1 - uniqueCount / total) * 100) : 0
-  const cover = (n: number) => total ? Math.round(sigEntries.slice(0, n).reduce((s, [, v]) => s + v.count, 0) / total * 100) : 0
-  const topSignatures = sigEntries.slice(0, 30).map(([sig, v]) => ({
-    signature: sig.slice(0, 200), count: v.count, pct: Math.round((v.count / total) * 100),
-    restaurant: v.restaurant, source: v.source, service: v.service, category: v.catLabel,
-    label: v.sub?.label || 'Не классифицировано', nature: v.sub?.nature || 'error',
-    fault: v.sub?.fault || 'unknown', faultLabel: v.sub ? FAULT_LABEL[v.sub.fault] : FAULT_LABEL.unknown,
-    decode: v.sub?.decode || '', fixSteps: v.sub?.fixSteps || [], owner: v.sub?.owner || '', sample: v.sample,
-  }))
+  // Уникальность: считаем по трём критериям (гранулярность выбирает фронт).
+  const buildGrouping = (agg: Record<string, SigEntry>) => {
+    const entries = Object.entries(agg).sort((a, b) => b[1].count - a[1].count)
+    const uniqueCount = entries.length
+    const cov = (n: number) => total ? Math.round(entries.slice(0, n).reduce((s, [, v]) => s + v.count, 0) / total * 100) : 0
+    return {
+      uniqueCount, dedupPct: total ? Math.round((1 - uniqueCount / total) * 100) : 0,
+      coverageTop10: cov(10), coverageTop20: cov(20), coverageTop50: cov(50),
+      topSignatures: entries.slice(0, 30).map(([, v]) => ({
+        signature: v.display, count: v.count, pct: Math.round((v.count / total) * 100),
+        restaurant: v.restaurant, source: v.source, service: v.service, category: v.catLabel,
+        label: v.sub?.label || 'Не классифицировано', nature: v.sub?.nature || 'error',
+        fault: v.sub?.fault || 'unknown', faultLabel: v.sub ? FAULT_LABEL[v.sub.fault] : FAULT_LABEL.unknown,
+        decode: v.sub?.decode || '', fixSteps: v.sub?.fixSteps || [], owner: v.sub?.owner || '', sample: v.sample,
+      })),
+    }
+  }
+  const groupings = { fingerprint: buildGrouping(aggFP), restaurant_type: buildGrouping(aggRT), class: buildGrouping(aggCL) }
 
   const categories = Object.entries(catAgg).map(([key, c]) => ({
     key, label: c.label, count: c.count, pct: Math.round((c.count / total) * 100),
@@ -360,7 +374,7 @@ export default async function handler(req: Request): Promise<Response> {
   return json({
     ok: true, hasFeed: true, feedName: feed.name, period, total,
     errorsTotal, rejectionsTotal: rejections,
-    uniqueCount, dedupPct, coverageTop10: cover(10), coverageTop20: cover(20), coverageTop50: cover(50), topSignatures,
+    groupings,
     classifiedPct: total ? Math.round((classified / total) * 100) : 0, unmatched,
     ourFault, ourFaultPct: errorsTotal ? Math.round((ourFault / errorsTotal) * 100) : 0,
     byFault: Object.entries(faultAgg).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ fault: k, label: FAULT_LABEL[k as Fault] || k, count: v, pct: Math.round((v / total) * 100) })),
