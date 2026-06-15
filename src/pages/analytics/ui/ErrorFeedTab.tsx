@@ -31,6 +31,7 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
   const [data, setData] = useState<ErrorFeedResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [groupMode, setGroupMode] = useState<'restaurant_type' | 'fingerprint' | 'class'>('restaurant_type')
 
   useEffect(() => {
     let cancelled = false
@@ -94,22 +95,39 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
       </section>
 
       {/* Уникальные проблемы (дедуп) */}
-      {data.topSignatures && data.topSignatures.length > 0 && (
-        <section className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-baseline justify-between mb-1">
-            <h3 className="text-sm font-semibold text-slate-800">Уникальные проблемы</h3>
-            <span className="text-xs text-slate-500">
-              {data.uniqueCount?.toLocaleString('ru-RU')} уникальных из {data.total.toLocaleString('ru-RU')} ({data.dedupPct}% — повторы)
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mb-3">
-            Топ-10 = {data.coverageTop10}% потока · топ-20 = {data.coverageTop20}% · топ-50 = {data.coverageTop50}%. Чините сверху — снимаете больше всего.
-          </p>
-          <div className="border border-slate-100 rounded-lg divide-y divide-slate-100">
-            {data.topSignatures.map((sg, i) => <SigRow key={i} sg={sg} rank={i + 1} />)}
-          </div>
-        </section>
-      )}
+      {(() => {
+        const g = data.groupings?.[groupMode]
+        if (!g || g.topSignatures.length === 0) return null
+        const MODES: Array<{ key: typeof groupMode; label: string }> = [
+          { key: 'restaurant_type', label: 'Ресторан + тип' },
+          { key: 'fingerprint', label: 'Точные отпечатки' },
+          { key: 'class', label: 'Классы' },
+        ]
+        return (
+          <section className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">Уникальные проблемы</h3>
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+                {MODES.map(m => (
+                  <button
+                    key={m.key}
+                    onClick={() => setGroupMode(m.key)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${groupMode === m.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              {g.uniqueCount.toLocaleString('ru-RU')} уникальных из {data.total.toLocaleString('ru-RU')} ({g.dedupPct}% — повторы) · топ-10 = {g.coverageTop10}% потока · топ-20 = {g.coverageTop20}% · топ-50 = {g.coverageTop50}%. Чините сверху.
+            </p>
+            <div className="border border-slate-100 rounded-lg divide-y divide-slate-100">
+              {g.topSignatures.map((sg, i) => <SigRow key={groupMode + i} sg={sg} rank={i + 1} />)}
+            </div>
+          </section>
+        )
+      })()}
 
       {/* Категории → подкатегории */}
       <section className="space-y-3">

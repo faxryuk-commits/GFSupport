@@ -49,6 +49,15 @@ export interface UniqueSignature {
   sample: string
 }
 
+export interface UniqueGrouping {
+  uniqueCount: number
+  dedupPct: number
+  coverageTop10: number
+  coverageTop20: number
+  coverageTop50: number
+  topSignatures: UniqueSignature[]
+}
+
 export interface ErrorFeedResponse {
   ok: boolean
   hasFeed: boolean
@@ -57,12 +66,7 @@ export interface ErrorFeedResponse {
   total: number
   errorsTotal?: number
   rejectionsTotal?: number
-  uniqueCount?: number
-  dedupPct?: number
-  coverageTop10?: number
-  coverageTop20?: number
-  coverageTop50?: number
-  topSignatures?: UniqueSignature[]
+  groupings?: Record<'fingerprint' | 'restaurant_type' | 'class', UniqueGrouping>
   classifiedPct?: number
   unmatched?: number
   ourFault?: number
