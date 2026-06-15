@@ -233,9 +233,12 @@ function getRestaurant(t: string): string | null {
     || t.match(/filial\s*:\s*([^\n,;]{1,60})/i)?.[1]?.trim()
     || null
 }
-// Источник: метка «Источник:», иначе client_name из JSON «Запрос».
+// Источник: метка «Источник:», иначе client_name из JSON «Запрос», иначе для
+// прямых iiko-постов (стоп-лист без агрегатора) — 'iiko' вместо «unknown».
 function getSource(t: string): string | null {
-  return field(t, 'Источник') || t.match(/"client_name"\s*:\s*"([^"]+)"/i)?.[1]?.trim() || null
+  return field(t, 'Источник')
+    || t.match(/"client_name"\s*:\s*"([^"]+)"/i)?.[1]?.trim()
+    || (/Get ?Iiko|GetIIko|OrderServiceV2/i.test(t) ? 'iiko' : null)
 }
 // Сервис: метка «Сервис:», иначе «Get Iiko/OrderServiceV2» = integrator-api.
 function getService(t: string): string | null {
