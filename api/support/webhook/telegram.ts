@@ -1328,10 +1328,12 @@ export default async function handler(req: Request): Promise<Response> {
       try {
         const feedUser = { id: chat.id, fullName: chat.title || `Channel ${chat.id}`, username: chat.username || null }
         const { channelId, orgId } = await getOrCreateChannel(sql, chat, feedUser, orgParam || undefined)
-        // Помечаем type='feed' ОДИН раз (фид исключён из дашбордов/аналитики). last_message_at
-        // на каждый пост НЕ пишем — firehose иначе долбит строку канала 80+/час. photo_url
+        // Помечаем type='feed' ОДИН раз (фид исключён из дашбордов/аналитики). photo_url
         // ставим непустым, чтобы getOrCreateChannel не дёргал Telegram getChat на каждый пост.
         await sql`UPDATE support_channels SET type = 'feed', photo_url = COALESCE(NULLIF(photo_url, ''), 'feed') WHERE id = ${channelId} AND type IS DISTINCT FROM 'feed'`.catch(() => {})
+        // last_message_at обновляем С ТРОТТЛИНГОМ: не чаще раза в 5 мин (иначе firehose
+        // 80+/час долбит строку канала). Так поле остаётся свежим — видно, что фид живой.
+        await sql`UPDATE support_channels SET last_message_at = NOW() WHERE id = ${channelId} AND (last_message_at IS NULL OR last_message_at < NOW() - INTERVAL '5 minutes')`.catch(() => {})
         const dup = await sql`SELECT 1 FROM support_messages WHERE channel_id = ${channelId} AND telegram_message_id = ${message.message_id} LIMIT 1`
         if (!dup[0]) {
           const text = message.text || message.caption || ''
