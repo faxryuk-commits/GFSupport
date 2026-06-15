@@ -183,6 +183,7 @@ export async function computeCustomerHealth(
     LEFT JOIN case_agg ca ON ca.channel_id = c.id
     WHERE c.org_id = ${scope.orgId}
       AND COALESCE(c.is_active, true) = true
+      AND c.type <> 'feed'
       AND (${market}::text IS NULL OR c.market_id = ${market})
       AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
       AND (ma.total_messages > 0 OR ca.total_cases > 0)
