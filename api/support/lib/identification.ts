@@ -105,6 +105,19 @@ export async function identifySender(
         console.error('Error checking support_agents by phone:', e)
       }
     }
+
+    // База клиентов: если админ ПОМЕТИЛ пользователя как сотрудника (support_users.role
+    // != client) — определяем как support. Матч по ТОЧНОМУ id (так работает и для WA-LID,
+    // который мост шлёт вместо телефона; именно так помечается «Amina from Delever»).
+    try {
+      const u = await sql`SELECT role FROM support_users WHERE phone = ${String(phone)} LIMIT 1`
+      const r = (u[0]?.role || '').toLowerCase()
+      if (r && r !== 'client') {
+        return { role: ['team', 'manager', 'pm', 'lead'].includes(r) ? 'team' : 'support', agentId: null, source: 'phone' }
+      }
+    } catch (e) {
+      console.error('Error checking support_users by phone:', e)
+    }
   }
 
   // 3. Check by username
