@@ -77,13 +77,22 @@ function getContentType(msg: any): string {
 }
 
 function getSenderInfo(msg: any) {
-  const jid = msg.key.remoteJid || ''
+  const k = msg.key || {}
+  const jid = k.remoteJid || ''
   const isGroup = jid.endsWith('@g.us')
-  const fromMe = !!msg.key.fromMe
-  const senderJid = fromMe ? '' : (isGroup ? (msg.key.participant || '') : jid)
-  const phone = senderJid.split('@')[0] || ''
+  const fromMe = !!k.fromMe
+  // Когда основной адрес отправителя — это LID (@lid), Baileys кладёт РЕАЛЬНЫЙ
+  // телефонный JID в *Pn-поля (senderPn для лички, participantPn для группы).
+  // Приоритет телефонному JID → senderPhone = настоящий номер, а не LID.
+  const pnJid = isGroup ? (k.participantPn || '') : (k.senderPn || '')
+  const lidJid = isGroup ? (k.participantLid || (String(k.participant || '').endsWith('@lid') ? k.participant : '')) : (k.senderLid || (jid.endsWith('@lid') ? jid : ''))
+  const baseJid = isGroup ? (k.participant || '') : jid
+  const senderJid = fromMe ? '' : (pnJid || baseJid)
+  const num = (j: string) => (String(j).split('@')[0] || '').split(':')[0]
+  const phone = num(senderJid)                    // реальный номер, если мост его дал
+  const lid = lidJid ? num(lidJid) : null          // LID отдельно (на случай матча по LID)
   const pushName = msg.pushName || phone
-  return { jid, isGroup, senderJid, phone, pushName, fromMe }
+  return { jid, isGroup, senderJid, phone, lid, pushName, fromMe }
 }
 
 function getReplyContext(msg: any): { replyToMessageId?: string; replyToText?: string } | null {
@@ -143,11 +152,11 @@ async function uploadToBlob(buffer: Buffer, filename: string): Promise<string | 
 
 onMessage(async (msg) => {
   try {
-    const { jid, isGroup, phone, pushName, fromMe } = getSenderInfo(msg)
+    const { jid, isGroup, phone, lid, pushName, fromMe } = getSenderInfo(msg)
     messageStats.received++
     messageStats.lastAt = new Date().toISOString()
 
-    console.log(`[MSG] From: ${pushName} (${phone}), Group: ${isGroup}, FromMe: ${fromMe}, JID: ${jid.slice(0, 30)}, MsgID: ${msg.key.id?.slice(0, 15)}`)
+    console.log(`[MSG] From: ${pushName} (phone=${phone}${lid ? `, lid=${lid}` : ''}), Group: ${isGroup}, FromMe: ${fromMe}, JID: ${jid.slice(0, 30)}, MsgID: ${msg.key.id?.slice(0, 15)}`)
 
     if (jid.endsWith('@broadcast') || jid === 'status@broadcast') {
       console.log(`[MSG] Skipped: broadcast message`)
@@ -180,6 +189,7 @@ onMessage(async (msg) => {
         targetMessageId: reaction?.key?.id || '',
         senderName: fromMe ? 'Support' : pushName,
         senderPhone: phone,
+        senderLid: lid || undefined,
         fromMe,
         isGroup,
       }
@@ -217,6 +227,7 @@ onMessage(async (msg) => {
       messageId: msg.key.id,
       senderName: fromMe ? 'Support' : pushName,
       senderPhone: phone,
+      senderLid: lid || undefined,
       text,
       mediaUrl,
       thumbnailUrl,
