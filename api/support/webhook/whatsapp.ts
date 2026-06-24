@@ -262,7 +262,8 @@ export default async function handler(req: Request): Promise<Response> {
     } else {
       const identification = await identifySender(sql, {
         username: null,
-        telegramId: senderPhone || null,
+        telegramId: null,
+        phone: senderPhone || null,
         senderName: senderName || null,
       })
       isFromClient = identification.role === 'client'
@@ -319,9 +320,16 @@ export default async function handler(req: Request): Promise<Response> {
           last_message_at = NOW(), last_team_message_at = NOW(),
           last_sender_name = ${senderName || 'Support'},
           last_message_preview = ${preview},
-          awaiting_reply = false
+          awaiting_reply = false,
+          unread_count = 0
         WHERE id = ${channelId} AND org_id = ${orgId}
       `
+      // Команда ответила (в т.ч. прямо из WhatsApp) → клиентские сообщения прочитаны.
+      // Раньше unread_count/is_read не сбрасывались — канал висел в «Непрочитанных».
+      await sql`
+        UPDATE support_messages SET is_read = true
+        WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_from_client = true AND is_read = false
+      `.catch(() => {})
     }
 
     if (!fromMe && senderPhone) {

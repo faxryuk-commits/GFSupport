@@ -11,12 +11,14 @@
 export interface SenderIdentification {
   role: 'client' | 'support' | 'team'
   agentId: string | null
-  source: 'telegram_id' | 'username' | 'name_pattern' | 'default'
+  source: 'telegram_id' | 'phone' | 'username' | 'name_pattern' | 'default'
 }
 
 export interface IdentifyParams {
   username: string | null
   telegramId: number | string | null
+  /** Телефон отправителя (WhatsApp) — для матчинга сотрудников по support_agents.phone. */
+  phone?: string | null
   senderName?: string
 }
 
@@ -27,7 +29,7 @@ export async function identifySender(
   sql: any,
   params: IdentifyParams
 ): Promise<SenderIdentification> {
-  const { username, telegramId, senderName } = params
+  const { username, telegramId, phone, senderName } = params
   
   // 1. Check by name patterns first (quick check)
   const nameLower = (senderName || '').toLowerCase()
@@ -81,6 +83,27 @@ export async function identifySender(
       }
     } catch (e) {
       console.error('Error checking crm_managers by telegram_id:', e)
+    }
+  }
+
+  // 2.5 Check by phone (WhatsApp) — сотрудники компании в support_agents.phone.
+  // Нормализуем до цифр и матчим по последним 9 (Узбекистан), чтобы +998/998/без
+  // префикса сходились. Без этого WhatsApp-сотрудники всегда определялись как client.
+  if (phone) {
+    const last9 = String(phone).replace(/\D/g, '').slice(-9)
+    if (last9.length >= 7) {
+      try {
+        const agentByPhone = await sql`
+          SELECT id FROM support_agents
+          WHERE phone IS NOT NULL AND regexp_replace(phone, '\\D', '', 'g') LIKE ${'%' + last9}
+          LIMIT 1
+        `
+        if (agentByPhone[0]) {
+          return { role: 'support', agentId: agentByPhone[0].id, source: 'phone' }
+        }
+      } catch (e) {
+        console.error('Error checking support_agents by phone:', e)
+      }
     }
   }
 
