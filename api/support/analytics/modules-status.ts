@@ -97,5 +97,48 @@ export default async function handler(req: Request): Promise<Response> {
     })
   } catch { modules.push({ key: 'ai_agent', name: 'AI-агент', status: 'idle', lastRunAt: null, schedule: 'по сообщениям', summary: 'Нет данных' }) }
 
+  // 6. Резолвер ошибок заказов (cron)
+  const erC = await lastCycle('error_resolver')
+  modules.push({
+    key: 'error_resolver', name: 'Резолвер ошибок',
+    status: erC ? staleAfterMin(erC.created_at, 30) : 'idle',
+    lastRunAt: erC?.created_at || null, schedule: 'каждые 30 мин',
+    summary: erC?.reasoning || 'Ещё не запускался', mode: erC?.mode || null,
+  })
+
+  // 7. Скан агента (cron)
+  const asC = await lastCycle('agent_scan')
+  modules.push({
+    key: 'agent_scan', name: 'Скан агента',
+    status: asC ? staleAfterMin(asC.created_at, 10) : 'idle',
+    lastRunAt: asC?.created_at || null, schedule: 'каждые 10 мин',
+    summary: asC?.reasoning || 'Ещё не запускался', mode: asC?.mode || null,
+  })
+
+  // 8. Приём сообщений (Telegram/WhatsApp webhooks) — по последнему входящему
+  try {
+    const r = await sql`SELECT MAX(created_at) last, COUNT(*) FILTER (WHERE created_at > NOW()-INTERVAL '1 hour')::int h1 FROM support_messages WHERE org_id=${orgId} AND is_from_client=true` as any[]
+    const x = r[0]
+    modules.push({
+      key: 'ingest', name: 'Приём сообщений',
+      status: x?.last ? staleAfterMin(x.last, 120) : 'idle',
+      lastRunAt: x?.last || null, schedule: 'постоянно (webhooks)',
+      summary: x?.last ? `За час входящих: ${x.h1}` : 'Нет сообщений',
+    })
+  } catch { modules.push({ key: 'ingest', name: 'Приём сообщений', status: 'idle', lastRunAt: null, schedule: 'постоянно', summary: 'Нет данных' }) }
+
+  // 9. Фид ошибок заказов (ingest broadcast-канала)
+  try {
+    const r = await sql`SELECT MAX(m.created_at) last, COUNT(*) FILTER (WHERE m.created_at > NOW()-INTERVAL '1 hour')::int h1
+      FROM support_messages m WHERE m.org_id=${orgId} AND m.channel_id IN (SELECT id FROM support_channels WHERE org_id=${orgId} AND type='feed')` as any[]
+    const x = r[0]
+    modules.push({
+      key: 'error_feed', name: 'Фид ошибок заказов',
+      status: x?.last ? staleAfterMin(x.last, 60) : 'idle',
+      lastRunAt: x?.last || null, schedule: 'постоянно (канал)',
+      summary: x?.last ? `За час ошибок: ${x.h1}` : 'Нет фида',
+    })
+  } catch { modules.push({ key: 'error_feed', name: 'Фид ошибок заказов', status: 'idle', lastRunAt: null, schedule: 'постоянно', summary: 'Нет данных' }) }
+
   return json({ modules, fetchedAt: new Date().toISOString() })
 }
