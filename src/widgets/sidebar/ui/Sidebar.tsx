@@ -363,16 +363,17 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       <Link
         to={path}
         title={isCollapsed ? label : undefined}
-        className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all group ${
+        style={active ? { background: 'linear-gradient(135deg,#3b82f6,#2563eb)', boxShadow: '0 6px 16px rgba(37,99,235,.35)' } : undefined}
+        className={`flex items-center gap-3 px-4 py-2.5 rounded-[10px] transition-all group ${
           active
-            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
-            : 'text-slate-300 hover:bg-white/10'
+            ? 'text-white'
+            : 'text-[#aab8d4] hover:bg-white/10 hover:text-white'
         } ${isCollapsed ? 'justify-center px-3 relative' : ''}`}
       >
         <span className="relative flex-shrink-0">
           <Icon className="w-5 h-5" />
           {isCollapsed && showDot && (
-            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #1a2b4b' }} />
+            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #13213d' }} />
           )}
         </span>
         {!isCollapsed && (
@@ -412,7 +413,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       {/* Inject animation styles */}
       <style>{badgeAnimationStyles}</style>
       <aside 
-        className={`bg-[#1a2b4b] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
+        className={`bg-[#13213d] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
           isCollapsed ? 'w-[72px]' : 'w-[240px]'
         }`}
       >
@@ -420,23 +421,26 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       <div className={`p-4 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
         <Link to="/overview" className="flex items-center gap-2 min-w-0">
           {orgLogo ? (
-            <img src={orgLogo} alt={orgName || 'Org'} className="w-9 h-9 rounded-xl flex-shrink-0 object-cover" />
+            <img src={orgLogo} alt={orgName || 'Org'} className="w-[38px] h-[38px] rounded-xl flex-shrink-0 object-cover" />
           ) : (
-            <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+            <div
+              className="w-[38px] h-[38px] rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)', boxShadow: '0 4px 14px rgba(37,99,235,.4)' }}
+            >
               <MessageSquare className="w-5 h-5 text-white" />
             </div>
           )}
           {!isCollapsed && (
             <div className="min-w-0">
-              <span className="text-white font-bold text-lg block truncate">{orgName || 'SUPPORT'}</span>
-              {orgPlan && <span className="text-[10px] text-slate-400 uppercase tracking-wider">{orgPlan}</span>}
+              <span className="text-white font-extrabold text-[17px] block truncate" style={{ fontFamily: 'Manrope, system-ui, sans-serif' }}>{orgName || 'SUPPORT'}</span>
+              <span className="text-[10px] text-[#7e8db0] uppercase tracking-wider">{orgPlan ? `${orgPlan} · OMNICHANNEL` : 'OMNICHANNEL'}</span>
             </div>
           )}
         </Link>
         <button
           onClick={toggleCollapse}
           className={`p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${
-            isCollapsed ? 'absolute left-[72px] top-4 -translate-x-1/2 bg-[#1a2b4b] border border-white/10 shadow-lg z-10' : ''
+            isCollapsed ? 'absolute left-[72px] top-4 -translate-x-1/2 bg-[#13213d] border border-white/10 shadow-lg z-10' : ''
           }`}
           title={isCollapsed ? 'Развернуть' : 'Свернуть'}
         >
@@ -466,9 +470,9 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                 onChange={(e) => onMarketChange?.(e.target.value || null)}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white appearance-none cursor-pointer hover:bg-white/10 transition-colors focus:outline-none focus:border-blue-400"
               >
-                <option value="" className="bg-[#1a2b4b]">Все рынки</option>
+                <option value="" className="bg-[#13213d]">Все рынки</option>
                 {markets.map(m => (
-                  <option key={m.id} value={m.id} className="bg-[#1a2b4b]">
+                  <option key={m.id} value={m.id} className="bg-[#13213d]">
                     {m.code.toUpperCase()} — {m.name}
                   </option>
                 ))}
