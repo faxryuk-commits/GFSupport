@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Brain, Search, FileText, History } from 'lucide-react'
+import { Brain, Search, FileText, History, Recycle } from 'lucide-react'
 import { SolutionSearch } from '@/features/ai-assistant'
 import { SOLUTION_CATEGORY_CONFIG } from '@/entities/solution'
 import { DocsPage } from '@/pages/docs/ui/DocsPage'
 import ProblemAnalysisPage from '@/pages/learning/ui/ProblemAnalysisPage'
+import { KnowledgeCycleTab } from './KnowledgeCycleTab'
 
-type Tab = 'search' | 'docs' | 'patterns'
+type Tab = 'search' | 'docs' | 'patterns' | 'cycle'
 
 export function KnowledgePage() {
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab')
-  const activeTab: Tab = (rawTab === 'docs' || rawTab === 'patterns' || rawTab === 'search') ? rawTab : 'search'
+  const activeTab: Tab = (rawTab === 'docs' || rawTab === 'patterns' || rawTab === 'search' || rawTab === 'cycle') ? rawTab : 'search'
   const setActiveTab = (t: Tab) => { const m = new URLSearchParams(params); m.set('tab', t); setParams(m, { replace: true }) }
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>()
 
@@ -37,6 +38,7 @@ export function KnowledgePage() {
             { id: 'search', label: 'Поиск решений', icon: Search },
             { id: 'docs', label: 'Документы', icon: FileText },
             { id: 'patterns', label: 'Паттерны', icon: History },
+            { id: 'cycle', label: 'Цикл знаний', icon: Recycle },
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -111,6 +113,7 @@ export function KnowledgePage() {
           <ProblemAnalysisPage />
         </div>
       )}
+      {activeTab === 'cycle' && <KnowledgeCycleTab />}
     </div>
   )
 }
