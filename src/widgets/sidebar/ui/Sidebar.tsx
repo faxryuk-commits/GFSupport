@@ -18,6 +18,10 @@ import {
   Activity,
   Sparkles,
   Trophy,
+  Bot,
+  Waypoints,
+  BookOpen,
+  Map,
 } from 'lucide-react'
 import { BarChart3 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
@@ -198,30 +202,64 @@ interface SidebarProps {
   orgName?: string
   orgLogo?: string
   orgPlan?: string
+  /** Активен ли AI-агент — зелёная точка-индикатор у пункта «AI Агент». */
+  aiAgentActive?: boolean
 }
 
-// AI-разделы (AI Агент / База знаний / Документы / AI Обучение) перенесены
-// в Настройки → "AI и контент". Их роуты остались живыми, но из главного
-// меню убраны, чтобы освободить место под единый ИИ-чат.
-const mainNavItems = [
-  { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
-  { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
-  { path: '/channels', label: 'Каналы', icon: Hash },
-  { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
-  { path: '/analytics', label: 'Аналитика', icon: BarChart3 },
-  { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
-  { path: '/benchmarks', label: 'Бенчмарки', icon: Trophy },
-  { path: '/insights-chat', label: 'ИИ-чат', icon: Sparkles },
-  { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
-]
+// Редизайн (спецификация GFSupport): меню сгруппировано в 4 секции.
+// statusDot — индикатор активности (AI Агент).
+interface NavItemDef {
+  path: string
+  label: string
+  icon: typeof LayoutDashboard
+  badgeKey?: string
+  statusDot?: boolean
+}
+interface NavGroup {
+  label: string
+  items: NavItemDef[]
+}
 
-const bottomItems = [
-  { path: '/settings', label: 'Настройки', icon: Settings },
+const navGroups: NavGroup[] = [
+  {
+    label: 'Операции',
+    items: [
+      { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
+      { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
+      { path: '/channels', label: 'Каналы', icon: Hash },
+      { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
+      { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
+    ],
+  },
+  {
+    label: 'Аналитика',
+    items: [
+      { path: '/analytics', label: 'Аналитика', icon: BarChart3 },
+      { path: '/benchmarks', label: 'Бенчмарки', icon: Trophy },
+      { path: '/insights-chat', label: 'ИИ-чат', icon: Sparkles },
+    ],
+  },
+  {
+    label: 'Автоматизация',
+    items: [
+      { path: '/ai-agent', label: 'AI Агент', icon: Bot, statusDot: true },
+      { path: '/routing', label: 'Маршрутизация', icon: Waypoints },
+      { path: '/knowledge', label: 'База знаний', icon: BookOpen },
+      { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
+    ],
+  },
+  {
+    label: 'Система',
+    items: [
+      { path: '/settings', label: 'Настройки', icon: Settings },
+      { path: '/system-map', label: 'Карта системы', icon: Map },
+    ],
+  },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout, markets = [], selectedMarket, onMarketChange, orgName, orgLogo, orgPlan }: SidebarProps) {
+export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0, onlineAgentsCount = 0, lastUpdated = 0, currentUser, onLogout, markets = [], selectedMarket, onMarketChange, orgName, orgLogo, orgPlan, aiAgentActive = true }: SidebarProps) {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
@@ -306,36 +344,43 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
   }, [isCollapsed])
 
   const planConfig = getPlanConfig(orgPlan)
-  const filteredNavItems = mainNavItems.filter(item => planConfig.navPaths.includes(item.path))
+  // Фильтруем пункты по плану, оставляем только непустые группы.
+  const visibleGroups = navGroups
+    .map(g => ({ ...g, items: g.items.filter(item => planConfig.navPaths.includes(item.path)) }))
+    .filter(g => g.items.length > 0)
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/')
 
   const toggleCollapse = () => setIsCollapsed(!isCollapsed)
 
-  const NavItem = ({ path, label, icon: Icon, badgeKey }: { 
-    path: string
-    label: string
-    icon: typeof LayoutDashboard
-    badgeKey?: string 
-  }) => {
+  const NavItem = ({ path, label, icon: Icon, badgeKey, statusDot }: NavItemDef) => {
     const active = isActive(path)
     const badgeCount = badgeKey ? badges[badgeKey] : 0
     const isAnimating = badgeKey && animatingBadges.has(badgeKey)
+    const showDot = statusDot && aiAgentActive
 
     return (
       <Link
         to={path}
         title={isCollapsed ? label : undefined}
         className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all group ${
-          active 
-            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' 
+          active
+            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
             : 'text-slate-300 hover:bg-white/10'
         } ${isCollapsed ? 'justify-center px-3 relative' : ''}`}
       >
-        <Icon className="w-5 h-5 flex-shrink-0" />
+        <span className="relative flex-shrink-0">
+          <Icon className="w-5 h-5" />
+          {isCollapsed && showDot && (
+            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #1a2b4b' }} />
+          )}
+        </span>
         {!isCollapsed && (
           <>
             <span className="flex-1 font-medium">{label}</span>
+            {showDot && (
+              <span className="w-[7px] h-[7px] rounded-full bg-green-500 flex-shrink-0" style={{ boxShadow: '0 0 0 3px rgba(34,197,94,.18)' }} title="Агент активен" />
+            )}
             {badgeCount > 0 && (
               <span 
                 className={`min-w-[22px] h-5 px-1.5 flex items-center justify-center text-xs font-semibold rounded-full overflow-hidden ${
@@ -434,24 +479,27 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
         </div>
       )}
 
-      {/* Main Navigation */}
-      <nav className="flex-1 px-3 overflow-y-auto">
-        <div className="space-y-0.5">
-          {filteredNavItems.map(item => (
-            <NavItem key={item.path} {...item} />
-          ))}
-        </div>
+      {/* Main Navigation — 4 группы (Операции / Аналитика / Автоматизация / Система) */}
+      <nav className="flex-1 px-3 overflow-y-auto py-2">
+        {visibleGroups.map((group, gi) => (
+          <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+            {!isCollapsed && (
+              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-[#5d6f96]">
+                {group.label}
+              </div>
+            )}
+            {isCollapsed && gi > 0 && <div className="my-2 mx-3 border-t border-white/10" />}
+            <div className="space-y-0.5">
+              {group.items.map(item => (
+                <NavItem key={item.path} {...item} />
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
 
-      {/* Bottom Navigation */}
+      {/* Bottom — пользователь */}
       <div className="px-3 pb-4">
-        {/* Settings */}
-        <div className="space-y-1 mb-4">
-          {bottomItems.map(item => (
-            <NavItem key={item.path} {...item} />
-          ))}
-        </div>
-
         {/* User */}
         {currentUser && (
           <div className="border-t border-white/10 pt-4">
