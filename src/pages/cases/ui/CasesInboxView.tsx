@@ -95,7 +95,29 @@ function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
         )}
         {selected && <ChevronRight className="w-3 h-3 text-blue-500" />}
       </div>
+
+      {/* Resolution-SLA бар: % прошедшего времени до дедлайна по приоритету */}
+      <ResolutionSlaBar caseItem={caseItem} />
     </button>
+  )
+}
+
+// Полоса времени до дедлайна решения. Ширина = % прошедшего; цвет: решён/в норме —
+// зелёный, >55% прошло — янтарь, просрочен — красный.
+function ResolutionSlaBar({ caseItem }: { caseItem: Case }) {
+  const thr = caseItem.slaThresholdHours
+  if (!thr || !caseItem.createdAt) return null
+  const resolved = caseItem.status === 'resolved' || caseItem.status === 'closed'
+  const elapsedH = (Date.now() - new Date(caseItem.createdAt).getTime()) / 3600000
+  let pct = Math.min(100, Math.max(0, Math.round((elapsedH / thr) * 100)))
+  let color = '#16a34a'
+  if (resolved) { pct = 100; color = '#16a34a' }
+  else if (caseItem.isOverdue || pct >= 100) { pct = 100; color = '#dc2626' }
+  else if (pct >= 55) color = '#d97706'
+  return (
+    <div className="mt-1.5 h-1 rounded-full bg-slate-100 overflow-hidden" title={`${pct}% времени до дедлайна (${thr}ч)`}>
+      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+    </div>
   )
 }
 
