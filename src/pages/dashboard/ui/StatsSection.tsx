@@ -50,13 +50,23 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
             <span className="text-xs text-slate-400 ml-2">Основные показатели работы</span>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-2xl font-bold text-blue-600">{analytics?.messages?.total || 0}</p>
-              <p className="text-sm text-blue-600/70">Сообщений</p>
+            <div className="flex items-center gap-3 p-4 rounded-xl border border-[#e8edf3] bg-white">
+              <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#eff6ff', color: '#2563eb' }}>
+                <MessageSquare className="w-[18px] h-[18px]" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-display text-[25px] font-extrabold text-slate-900 tabular-nums leading-none">{analytics?.messages?.total || 0}</p>
+                <p className="text-xs text-slate-500 mt-1">Сообщений</p>
+              </div>
             </div>
-            <div className="p-4 bg-green-50 rounded-lg">
-              <p className="text-2xl font-bold text-green-600">{resolvedToday}</p>
-              <p className="text-sm text-green-600/70">Решено кейсов</p>
+            <div className="flex items-center gap-3 p-4 rounded-xl border border-[#e8edf3] bg-white">
+              <div className="w-[34px] h-[34px] rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#ecfdf5', color: '#059669' }}>
+                <CheckCircle className="w-[18px] h-[18px]" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-display text-[25px] font-extrabold text-slate-900 tabular-nums leading-none">{resolvedToday}</p>
+                <p className="text-xs text-slate-500 mt-1">Решено кейсов</p>
+              </div>
             </div>
             <CasesPriorityChart analytics={analytics} />
           </div>
