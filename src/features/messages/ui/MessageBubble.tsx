@@ -34,7 +34,7 @@ export interface MessageData {
   date: string
   isClient: boolean
   status?: 'sent' | 'delivered' | 'read'
-  replyTo?: { id: string; telegramMessageId?: number; text: string; sender: string }
+  replyTo?: { id: string; telegramMessageId?: number; text: string; sender: string; attachment?: { type: string; thumbnail?: string } }
   attachments?: MediaAttachment[]
   reactions?: MessageReaction[]
   forwardedFrom?: string
@@ -329,6 +329,20 @@ function MediaRenderer({ attachment, isClient }: { attachment: MediaAttachment; 
   }
 }
 
+// Подпись для реплая на медиа без текста (когда нет миниатюры/подписи)
+function replyMediaLabel(type?: string): string {
+  switch (type) {
+    case 'image': case 'photo': return '📷 Фото'
+    case 'video': case 'video_note': return '🎥 Видео'
+    case 'animation': return '🎞 GIF'
+    case 'voice': return '🎤 Голосовое'
+    case 'audio': return '🎵 Аудио'
+    case 'document': return '📎 Документ'
+    case 'sticker': return '🎭 Стикер'
+    default: return '[медиа]'
+  }
+}
+
 export const MessageBubble = memo(function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage, onCreateCase }: MessageBubbleProps) {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
@@ -441,6 +455,15 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
               <div className={`w-1 rounded-full flex-shrink-0 ${
                 message.isClient ? 'bg-green-500' : 'bg-white'
               }`} />
+              {/* Миниатюра оригинала (фото/видео) — чтобы было видно, на что реплай */}
+              {message.replyTo.attachment?.thumbnail && (
+                <img
+                  src={message.replyTo.attachment.thumbnail}
+                  alt=""
+                  className="w-9 h-9 rounded-md object-cover flex-shrink-0"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <span className={`text-sm font-semibold block mb-0.5 ${
                   message.isClient ? 'text-green-700' : 'text-white'
@@ -450,7 +473,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
                 <p className={`text-sm line-clamp-2 ${
                   message.isClient ? 'text-slate-700' : 'text-white/90'
                 }`}>
-                  {message.replyTo.text || '[медиа]'}
+                  {message.replyTo.text?.trim() || replyMediaLabel(message.replyTo.attachment?.type)}
                 </p>
               </div>
               {/* Иконка перехода */}
