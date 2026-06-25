@@ -146,10 +146,10 @@ function mapMessageToUI(message: Message): MessageData {
     isClient: message.senderRole === 'client',
     status: message.isRead ? 'read' : 'delivered',
     // Reply/цитирование
-    replyTo: message.replyToMessageId && message.replyToText ? {
+    replyTo: message.replyToMessageId ? {
       id: String(message.replyToMessageId),
       telegramMessageId: message.replyToMessageId,
-      text: message.replyToText,
+      text: message.replyToText || '',
       sender: message.replyToSender || 'Пользователь'
     } : undefined,
     attachments: message.mediaUrl ? [{
@@ -1092,12 +1092,33 @@ export function ChatsPage() {
                     // Показываем разделитель если это первое сообщение или дата изменилась
                     const prevMsg = index > 0 ? messages[index - 1] : null
                     const showDateDivider = !prevMsg || (msg.date && prevMsg.date && getDateKey(msg.date) !== getDateKey(prevMsg.date))
-                    
+
+                    // Реплай на медиа: подтягиваем миниатюру/тип из оригинала (если он загружен),
+                    // чтобы в цитате было видно, на что отвечают, а не только «[медиа]».
+                    let bubbleMsg = msg
+                    if (msg.replyTo && !msg.replyTo.attachment) {
+                      const rid = String(msg.replyTo.id)
+                      const orig = messages.find(m => m.id === rid || String(m.telegramMessageId) === rid)
+                      if (orig) {
+                        const att = orig.attachments?.[0]
+                        bubbleMsg = {
+                          ...msg,
+                          replyTo: {
+                            ...msg.replyTo,
+                            text: msg.replyTo.text?.trim() || orig.text || '',
+                            attachment: att
+                              ? { type: att.type, thumbnail: att.thumbnail || (att.type === 'image' ? att.url : undefined) }
+                              : undefined,
+                          },
+                        }
+                      }
+                    }
+
                     return (
                       <div key={msg.id} id={`message-${msg.id}`} className="transition-all duration-300 rounded-lg">
                         {showDateDivider && msg.date && <DateDivider date={msg.date} />}
                         <MessageBubble
-                          message={msg}
+                          message={bubbleMsg}
                           onReply={() => setReplyingTo({ 
                             id: msg.id, 
                             telegramMessageId: msg.telegramMessageId,
@@ -1166,9 +1187,12 @@ export function ChatsPage() {
                         }
                       }}
                       onScrollToMessage={(targetId) => {
-                        const targetMsg = messages.find(m => m.id === targetId)
+                        // targetId = id оригинала из реплая (часто telegram_message_id),
+                        // а DOM-id = наш msg.id → ищем по обоим полям.
+                        const tid = String(targetId)
+                        const targetMsg = messages.find(m => m.id === tid || String(m.telegramMessageId) === tid)
                         if (targetMsg) {
-                          const element = document.getElementById(`message-${targetId}`)
+                          const element = document.getElementById(`message-${targetMsg.id}`)
                           if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' })
                             element.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2')

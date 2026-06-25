@@ -26,10 +26,9 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: 10,
     maxChannels: 20,
     maxMessagesPerMonth: 20000,
-    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'insights-chat', 'settings'],
-    // /knowledge, /docs, /ai-agent — остались доступны по прямой ссылке
-    // (теперь живут в Настройках → AI и контент), но из главного меню убраны.
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/health', '/commitments', '/sla-report', '/knowledge', '/docs', '/broadcast', '/ai-agent', '/insights-chat', '/settings'],
+    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'settings'],
+    // Редизайн (4 группы): Аналитика/Бенчмарки/Маршрутизация/Карта системы добавлены в меню.
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
   },
   enterprise: {
     name: 'Enterprise',
@@ -37,8 +36,8 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: -1,
     maxChannels: -1,
     maxMessagesPerMonth: -1,
-    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'insights-chat', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/health', '/commitments', '/sla-report', '/knowledge', '/learning/problems', '/docs', '/broadcast', '/ai-agent', '/insights-chat', '/settings'],
+    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'settings'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
   },
 }
 
