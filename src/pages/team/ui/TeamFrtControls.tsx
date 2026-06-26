@@ -32,20 +32,20 @@ export function TeamFrtControls({
         type="date"
         value={frtFrom}
         onChange={e => onFrtFromChange(e.target.value)}
-        className="px-2 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+        className="px-2 py-1.5 text-sm border border-[#e8edf3] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
       />
       <span className="text-slate-400">—</span>
       <input
         type="date"
         value={frtTo}
         onChange={e => onFrtToChange(e.target.value)}
-        className="px-2 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+        className="px-2 py-1.5 text-sm border border-[#e8edf3] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
       />
       <div className="relative">
         <select
           value={frtSource}
           onChange={e => onFrtSourceChange(e.target.value as 'all' | 'telegram' | 'whatsapp')}
-          className="appearance-none pl-3 pr-8 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 cursor-pointer"
+          className="appearance-none pl-3 pr-8 py-1.5 text-sm bg-white border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 cursor-pointer"
         >
           {SOURCE_FILTERS.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>

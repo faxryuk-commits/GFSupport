@@ -142,7 +142,7 @@ export function RegisterPage() {
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
           <XCircle className="w-16 h-16 text-red-500 mx-auto" />
-          <h1 className="text-2xl font-bold text-slate-800 mt-4">Приглашение недействительно</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight mt-4">Приглашение недействительно</h1>
           <p className="text-slate-600 mt-2">{error}</p>
           <p className="text-sm text-slate-500 mt-4">
             Возможно, ссылка уже была использована или срок её действия истёк.
@@ -158,7 +158,7 @@ export function RegisterPage() {
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
           <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
-          <h1 className="text-2xl font-bold text-slate-800 mt-4">Регистрация успешна!</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight mt-4">Регистрация успешна!</h1>
           <p className="text-slate-600 mt-2">Добро пожаловать в команду, {name}!</p>
           <p className="text-sm text-slate-500 mt-4">
             Вы будете перенаправлены в систему...
@@ -182,7 +182,7 @@ export function RegisterPage() {
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
             <User className="w-8 h-8 text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 mt-4">Присоединяйтесь к команде</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight mt-4">Присоединяйтесь к команде</h1>
           <p className="text-slate-600 mt-1">
             Роль: <span className="font-medium text-blue-600">{roleLabels[invite.role] || invite.role}</span>
           </p>

@@ -20,7 +20,7 @@ const SEV_STYLES: Record<string, { badge: string; border: string; icon: string }
   critical: { badge: 'bg-red-100 text-red-800', border: 'border-red-300', icon: 'text-red-600 bg-red-50' },
   high: { badge: 'bg-red-50 text-red-700', border: 'border-red-200', icon: 'text-red-500 bg-red-50' },
   medium: { badge: 'bg-amber-50 text-amber-700', border: 'border-amber-200', icon: 'text-amber-600 bg-amber-50' },
-  low: { badge: 'bg-slate-100 text-slate-600', border: 'border-slate-200', icon: 'text-slate-500 bg-slate-100' },
+  low: { badge: 'bg-slate-100 text-slate-600', border: 'border-[#e8edf3]', icon: 'text-slate-500 bg-slate-100' },
 }
 
 const SEV_LABELS: Record<string, string> = {
@@ -302,7 +302,7 @@ function RootCauseItem({ r, expanded, onToggle, onOpenChannel }: ItemProps) {
                       e.stopPropagation()
                       onOpenChannel(ch.id)
                     }}
-                    className="px-2 py-0.5 text-xs bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 rounded flex items-center gap-1 transition-colors"
+                    className="px-2 py-0.5 text-xs bg-white border border-[#e8edf3] hover:border-blue-400 hover:bg-blue-50 rounded flex items-center gap-1 transition-colors"
                   >
                     <span>{ch.name}</span>
                     <span className="text-slate-400">×{ch.count}</span>

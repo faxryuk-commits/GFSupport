@@ -23,7 +23,7 @@ export function MessageItem({ message, showSender = true, onReply: _onReply, onR
         className={`max-w-[70%] rounded-2xl overflow-hidden ${
           isFromTeam 
             ? 'bg-blue-500 text-white rounded-br-md' 
-            : 'bg-white border border-slate-200 rounded-bl-md'
+            : 'bg-white border border-[#e8edf3] rounded-bl-md'
         }`}
       >
         {/* Sender name */}

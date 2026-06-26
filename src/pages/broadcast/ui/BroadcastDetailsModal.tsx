@@ -346,7 +346,7 @@ export function BroadcastDetailsModal({ isOpen, broadcast, onClose, onCancel, on
           </div>
 
           {/* Tabs */}
-          <div className="border-b border-slate-200 flex gap-4">
+          <div className="border-b border-[#e8edf3] flex gap-4">
             <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
               Обзор
             </TabButton>
@@ -515,7 +515,7 @@ function RecipientsTab({
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               status === f.key
                 ? f.color + ' ring-2 ring-offset-1 ring-blue-300'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                : 'bg-white border border-[#e8edf3] text-slate-600 hover:bg-slate-50'
             }`}
           >
             {f.label} {f.count > 0 && <span className="opacity-70">· {f.count}</span>}
@@ -531,7 +531,7 @@ function RecipientsTab({
           placeholder="Поиск канала по имени..."
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          className="w-full pl-10 pr-4 py-2 border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
       </div>
 

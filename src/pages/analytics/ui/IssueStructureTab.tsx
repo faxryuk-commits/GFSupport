@@ -25,7 +25,7 @@ const STATUS_RU: Record<string, string> = {
 }
 const STATUS_COLOR: Record<string, string> = {
   awaiting_team: 'border-red-400', resolved: 'border-green-400', awaiting_client: 'border-amber-400',
-  stalled: 'border-orange-400', informational: 'border-slate-300', abandoned: 'border-purple-400', empty: 'border-slate-200',
+  stalled: 'border-orange-400', informational: 'border-slate-300', abandoned: 'border-purple-400', empty: 'border-[#e8edf3]',
 }
 
 function Bar({ pct, className = 'bg-blue-500' }: { pct: number; className?: string }) {
@@ -165,7 +165,7 @@ export function IssueStructureTab() {
 
 function Card({ big, label, tone = 'text-slate-900' }: { big: number; label: string; tone?: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
+    <div className="bg-white border border-[#e8edf3] rounded-xl px-4 py-3">
       <div className={`text-2xl font-bold ${tone}`}>{big}</div>
       <div className="text-xs text-slate-500">{label}</div>
     </div>

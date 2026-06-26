@@ -193,7 +193,7 @@ export function CasesInboxView({
   return (
     <div className="flex gap-4 flex-1 min-h-0">
       {/* Левая панель: список */}
-      <div className="w-[340px] flex-shrink-0 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden">
+      <div className="w-[340px] flex-shrink-0 bg-white border border-[#e8edf3] rounded-xl flex flex-col overflow-hidden">
         <div ref={listRef} className="flex-1 overflow-y-auto">
           {grouped.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-400">
@@ -202,7 +202,7 @@ export function CasesInboxView({
           ) : (
             grouped.map(group => (
               <div key={group.key}>
-                <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                <div className="px-3 py-1.5 bg-slate-50 border-b border-[#e8edf3] sticky top-0 z-10">
                   <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
                     {group.label} <span className="text-slate-400 font-normal">({group.cases.length})</span>
                   </span>
@@ -222,7 +222,7 @@ export function CasesInboxView({
         </div>
 
         {/* Footer: Take Next */}
-        <div className="border-t border-slate-200 p-2 bg-slate-50">
+        <div className="border-t border-[#e8edf3] p-2 bg-slate-50">
           <button
             onClick={onTakeNext}
             disabled={takeNextPending}
@@ -239,7 +239,7 @@ export function CasesInboxView({
       </div>
 
       {/* Правая панель: превью кейса */}
-      <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col min-w-0">
+      <div className="flex-1 bg-white border border-[#e8edf3] rounded-xl overflow-hidden flex flex-col min-w-0">
         {selectedCaseId ? (
           <div className="flex-1 overflow-y-auto">{renderDetail()}</div>
         ) : (

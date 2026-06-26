@@ -12,7 +12,7 @@ export function SLACategoryModal({ label, messages, loading, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8edf3]">
           <div>
             <h3 className="font-semibold text-lg text-slate-900">{label} — Время ответа</h3>
             <p className="text-sm text-slate-500">Сообщения клиентов и время ответа сотрудников</p>
@@ -31,7 +31,7 @@ export function SLACategoryModal({ label, messages, loading, onClose }: Props) {
           ) : (
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-slate-50">
-                <tr className="border-b border-slate-200">
+                <tr className="border-b border-[#e8edf3]">
                   <th className="text-left py-2 px-4 font-medium text-slate-600">Канал</th>
                   <th className="text-left py-2 px-4 font-medium text-slate-600">Клиент</th>
                   <th className="text-left py-2 px-4 font-medium text-slate-600">Сообщение</th>

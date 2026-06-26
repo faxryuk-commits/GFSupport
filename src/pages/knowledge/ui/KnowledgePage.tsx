@@ -19,7 +19,7 @@ export function KnowledgePage() {
   return (
     <div className="h-full flex flex-col bg-slate-50">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
+      <div className="bg-white border-b border-[#e8edf3] px-6 py-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">

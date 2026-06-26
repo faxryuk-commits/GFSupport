@@ -144,7 +144,7 @@ function ShadowAgentCard({
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-medium text-sm flex-shrink-0">
           {(shadow.senderName || '?').charAt(0).toUpperCase()}

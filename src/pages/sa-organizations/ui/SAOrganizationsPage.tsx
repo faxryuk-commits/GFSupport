@@ -195,7 +195,7 @@ export function SAOrganizationsPage() {
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Организации</h1>
+            <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Организации</h1>
             <p className="text-sm text-slate-500 mt-1">Управление клиентскими аккаунтами</p>
           </div>
           <button
@@ -221,14 +221,14 @@ export function SAOrganizationsPage() {
 
         {/* New org form */}
         {showNewForm && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="bg-white rounded-2xl border border-[#e8edf3] p-6 shadow-sm">
             <h3 className="font-semibold text-slate-900 mb-4">Создать организацию</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="Название" value={newForm.name} onChange={v => setNewForm(f => ({ ...f, name: v, slug: slugify(v) }))} placeholder="Компания ООО" />
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1">Slug (URL)</label>
                 <div className="flex items-center gap-1">
-                  <input className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm" value={newForm.slug} onChange={e => setNewForm(f => ({ ...f, slug: e.target.value }))} placeholder="company" />
+                  <input className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm" value={newForm.slug} onChange={e => setNewForm(f => ({ ...f, slug: e.target.value }))} placeholder="company" />
                   <span className="text-xs text-slate-400 whitespace-nowrap">.gfsupport.uz</span>
                 </div>
               </div>
@@ -251,7 +251,7 @@ export function SAOrganizationsPage() {
             const isExpanded = expandedOrg === org.id
 
             return (
-              <div key={org.id} className={`bg-white rounded-2xl border ${org.isActive ? 'border-slate-200' : 'border-red-200 bg-red-50/30'} shadow-sm overflow-hidden`}>
+              <div key={org.id} className={`bg-white rounded-2xl border ${org.isActive ? 'border-[#e8edf3]' : 'border-red-200 bg-red-50/30'} shadow-sm overflow-hidden`}>
                 {/* Header row */}
                 <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-slate-50/50 transition-colors" onClick={() => { if (!isEditing) setExpandedOrg(isExpanded ? null : org.id) }}>
                   <div className="flex items-center gap-4 min-w-0">
@@ -430,7 +430,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
   return (
     <div>
       <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
-      <input className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+      <input className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
     </div>
   )
 }
@@ -439,7 +439,7 @@ function NumField({ label, value, onChange }: { label: string; value: number; on
   return (
     <div>
       <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
-      <input type="number" className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm" value={value} onChange={e => onChange(+e.target.value)} />
+      <input type="number" className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm" value={value} onChange={e => onChange(+e.target.value)} />
     </div>
   )
 }
@@ -448,7 +448,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
   return (
     <div>
       <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
-      <select className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm bg-white" value={value} onChange={e => onChange(e.target.value)}>
+      <select className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm bg-white" value={value} onChange={e => onChange(e.target.value)}>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
@@ -463,7 +463,7 @@ function SecretField({ label, value, onChange, isSet, placeholder }: { label: st
         {isSet && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">настроен</span>}
       </label>
       <input
-        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm font-mono"
+        className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm font-mono"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={isSet ? '••••••• (оставьте пустым чтобы не менять)' : placeholder}

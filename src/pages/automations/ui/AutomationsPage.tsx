@@ -166,7 +166,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
         {!embedded ? (
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">Автоматизации</h1>
+              <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Автоматизации</h1>
               <p className="text-slate-500 mt-1">Автоматизация рутинных задач и процессов</p>
             </div>
             <div className="flex items-center gap-3">
@@ -205,46 +205,46 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                 <Zap className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-slate-800">{automations.length}</p>
+                <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{automations.length}</p>
                 <p className="text-sm text-slate-500">Всего</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                 <Play className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-slate-800">{activeCount}</p>
+                <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{activeCount}</p>
                 <p className="text-sm text-slate-500">Активных</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
                 <Pause className="w-5 h-5 text-slate-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-slate-800">{automations.length - activeCount}</p>
+                <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{automations.length - activeCount}</p>
                 <p className="text-sm text-slate-500">Приостановлено</p>
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-xl p-5 border border-slate-200">
+          <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
                 <Clock className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-slate-800">{totalRuns.toLocaleString()}</p>
+                <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{totalRuns.toLocaleString()}</p>
                 <p className="text-sm text-slate-500">Выполнений</p>
               </div>
             </div>
@@ -267,7 +267,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
                 <div 
                   key={automation.id}
                   className={`bg-white rounded-xl p-5 border-2 transition-colors ${
-                    automation.isActive ? 'border-green-200' : 'border-slate-200'
+                    automation.isActive ? 'border-green-200' : 'border-[#e8edf3]'
                   }`}
                 >
                   <div className="flex items-start justify-between">
@@ -353,7 +353,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           <div>
@@ -363,7 +363,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -373,7 +373,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
                 value={formData.triggerType}
                 onChange={(e) => setFormData(prev => ({ ...prev, triggerType: e.target.value }))}
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="">Выберите триггер...</option>
                 <option value="new_message">Новое сообщение</option>
@@ -389,7 +389,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
                 value={formData.actionType}
                 onChange={(e) => setFormData(prev => ({ ...prev, actionType: e.target.value }))}
                 required
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="">Выберите действие...</option>
                 <option value="create_task">Создать задачу</option>

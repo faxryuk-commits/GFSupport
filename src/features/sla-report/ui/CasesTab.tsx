@@ -61,7 +61,7 @@ export function CasesTab({ pending, resolved }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-orange-50">
+                <tr className="border-b border-[#e8edf3] bg-orange-50">
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Номер</th>
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Тема</th>
                   <th className="text-center py-2 px-3 font-medium text-slate-600">Приоритет</th>
@@ -110,7 +110,7 @@ export function CasesTab({ pending, resolved }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-green-50">
+                <tr className="border-b border-[#e8edf3] bg-green-50">
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Номер</th>
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Тема</th>
                   <th className="text-center py-2 px-3 font-medium text-slate-600">Приоритет</th>

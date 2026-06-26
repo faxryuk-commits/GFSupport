@@ -19,7 +19,7 @@ export function DetailedAnalyticsSection({ analytics, onProblemClick }: Props) {
   return (
     <>
       <button onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 py-4 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+        className="w-full flex items-center justify-between px-5 py-4 bg-white border border-[#e8edf3] rounded-xl hover:bg-slate-50 transition-colors">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-blue-500" />
           <div className="text-left">
@@ -50,7 +50,7 @@ function OverviewCards({ analytics }: { analytics: AnalyticsData }) {
     <div className="grid grid-cols-4 gap-4">
       <StatCard icon={Users} iconBg="bg-blue-100" iconColor="text-blue-600" label="Всего каналов"
         value={analytics.channels?.total || 0} sub={`${analytics.channels?.active || 0} активных`} subColor="text-green-600" />
-      <div className="bg-white rounded-xl p-5 border border-slate-200">
+      <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
             <MessageSquare className="w-5 h-5 text-purple-600" />
@@ -83,7 +83,7 @@ function StatCard({ icon: Icon, iconBg, iconColor, label, value, sub, subColor }
   value: string | number; sub: string; subColor: string
 }) {
   return (
-    <div className="bg-white rounded-xl p-5 border border-slate-200">
+    <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
       <div className="flex items-center gap-3 mb-3">
         <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center`}>
           <Icon className={`w-5 h-5 ${iconColor}`} />
@@ -102,12 +102,12 @@ function MetricsRow({ analytics }: { analytics: AnalyticsData }) {
 
   return (
     <div className="grid grid-cols-5 gap-4">
-      <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+      <div className="bg-white rounded-xl p-4 border border-[#e8edf3] text-center">
         <Briefcase className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-        <p className="text-2xl font-bold text-slate-800">{analytics.cases?.open || 0}</p>
+        <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{analytics.cases?.open || 0}</p>
         <p className="text-xs text-slate-500">Открытых кейсов</p>
       </div>
-      <div className="bg-white rounded-xl p-4 border border-slate-200">
+      <div className="bg-white rounded-xl p-4 border border-[#e8edf3]">
         <div className="flex items-center gap-2 mb-2">
           <AlertTriangle className="w-5 h-5 text-slate-400" />
           <span className="text-xs text-slate-500">По приоритету</span>
@@ -122,19 +122,19 @@ function MetricsRow({ analytics }: { analytics: AnalyticsData }) {
         )}
         <p className="text-lg font-bold text-slate-800 mt-1">{total}</p>
       </div>
-      <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+      <div className="bg-white rounded-xl p-4 border border-[#e8edf3] text-center">
         <TrendingUp className="w-6 h-6 text-amber-500 mx-auto mb-2" />
-        <p className="text-2xl font-bold text-slate-800">{analytics.cases?.recurring || 0}</p>
+        <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{analytics.cases?.recurring || 0}</p>
         <p className="text-xs text-slate-500">Повторяющихся</p>
       </div>
-      <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+      <div className="bg-white rounded-xl p-4 border border-[#e8edf3] text-center">
         <Clock className="w-6 h-6 text-green-500 mx-auto mb-2" />
-        <p className="text-2xl font-bold text-slate-800">{analytics.channels?.avgFirstResponse || '—'}м</p>
+        <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{analytics.channels?.avgFirstResponse || '—'}м</p>
         <p className="text-xs text-slate-500">Сред. время ответа</p>
       </div>
-      <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
+      <div className="bg-white rounded-xl p-4 border border-[#e8edf3] text-center">
         <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
-        <p className="text-2xl font-bold text-slate-800">{analytics.cases?.avgResolutionHours || '—'}ч</p>
+        <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{analytics.cases?.avgResolutionHours || '—'}ч</p>
         <p className="text-xs text-slate-500">Сред. решение</p>
       </div>
     </div>
@@ -144,7 +144,7 @@ function MetricsRow({ analytics }: { analytics: AnalyticsData }) {
 function ChartsRow({ analytics }: { analytics: AnalyticsData }) {
   return (
     <div className="grid grid-cols-2 gap-6">
-      <div className="bg-white rounded-xl p-5 border border-slate-200">
+      <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
         <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-blue-500" />Обращения по дням
         </h2>
@@ -182,7 +182,7 @@ function ChartsRow({ analytics }: { analytics: AnalyticsData }) {
         )}
       </div>
 
-      <div className="bg-white rounded-xl p-5 border border-slate-200">
+      <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
         <h2 className="font-semibold text-slate-800 mb-4">По категориям</h2>
         {!analytics.patterns?.byCategory || analytics.patterns.byCategory.length === 0 ? (
           <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Нет данных</div>
@@ -216,7 +216,7 @@ function DemandingChannelsTable({ analytics }: { analytics: AnalyticsData }) {
   if (!analytics.topDemandingChannels || analytics.topDemandingChannels.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200">
+    <div className="bg-white rounded-xl border border-[#e8edf3]">
       <div className="px-5 py-4 border-b border-slate-100">
         <h2 className="font-semibold text-slate-800 flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -275,7 +275,7 @@ function SlowestClientsTable({ analytics }: { analytics: AnalyticsData }) {
   if (!analytics.slowestClients || analytics.slowestClients.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200">
+    <div className="bg-white rounded-xl border border-[#e8edf3]">
       <div className="px-5 py-4 border-b border-slate-100">
         <h2 className="font-semibold text-slate-800 flex items-center gap-2">
           <Clock className="w-5 h-5 text-amber-500" />
@@ -331,7 +331,7 @@ function TeamMetricsTable({ analytics }: { analytics: AnalyticsData }) {
   if (!analytics.team?.byManager || analytics.team.byManager.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200">
+    <div className="bg-white rounded-xl border border-[#e8edf3]">
       <div className="px-5 py-4 border-b border-slate-100">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-800 flex items-center gap-2">
@@ -397,7 +397,7 @@ function TeamMetricsTable({ analytics }: { analytics: AnalyticsData }) {
 function ProblemsAndSentiment({ analytics, onProblemClick }: { analytics: AnalyticsData; onProblemClick: (cat: string, label: string) => void }) {
   return (
     <div className="grid grid-cols-2 gap-6">
-      <div className="bg-white rounded-xl p-5 border border-slate-200">
+      <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
         <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-orange-500" />
           Повторяющиеся проблемы
@@ -423,7 +423,7 @@ function ProblemsAndSentiment({ analytics, onProblemClick }: { analytics: Analyt
         )}
       </div>
 
-      <div className="bg-white rounded-xl p-5 border border-slate-200">
+      <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
         <h2 className="font-semibold text-slate-800 mb-4">Настроение клиентов</h2>
         {!analytics.patterns?.bySentiment || analytics.patterns.bySentiment.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-sm">Нет данных</div>

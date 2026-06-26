@@ -80,14 +80,14 @@ export function AgentTable({ agents, frtByAgentId, selectedId, onSelect, onEdit,
 
   if (agents.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+      <div className="bg-white rounded-xl border border-[#e8edf3] p-12 text-center">
         <p className="text-slate-500">Нет агентов по выбранным фильтрам</p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="border-b border-slate-100">

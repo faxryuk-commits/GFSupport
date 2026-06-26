@@ -98,9 +98,9 @@ function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void }) {
       </button>
       
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden">
+        <div className="absolute bottom-full right-0 mb-2 w-80 bg-white border border-[#e8edf3] rounded-xl shadow-xl z-20 overflow-hidden">
           {/* Category tabs */}
-          <div className="flex border-b border-slate-200 overflow-x-auto">
+          <div className="flex border-b border-[#e8edf3] overflow-x-auto">
             {EMOJI_CATEGORIES.map((cat, i) => (
               <button
                 key={cat.name}
@@ -432,7 +432,7 @@ export function ChatInput({
 
   return (
     <div 
-      className={`border-t border-slate-200 ${isDragging ? 'bg-blue-50' : ''}`}
+      className={`border-t border-[#e8edf3] ${isDragging ? 'bg-blue-50' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -455,7 +455,7 @@ export function ChatInput({
 
       {/* Attached files preview */}
       {attachedFiles.length > 0 && (
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+        <div className="px-4 py-3 bg-slate-50 border-b border-[#e8edf3]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-slate-500">
               Прикреплено: {attachedFiles.length}
@@ -496,7 +496,7 @@ export function ChatInput({
           <div className="flex items-end gap-3">
             <div className="flex-1 relative">
               {showMentions && filteredMentionUsers.length > 0 && (
-                <div className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-20 max-h-72 overflow-y-auto">
+                <div className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-[#e8edf3] rounded-xl shadow-lg py-1 z-20 max-h-72 overflow-y-auto">
                   <div className="px-3 py-1.5 text-xs text-slate-500 border-b border-slate-100 flex items-center gap-1">
                     <AtSign className="w-3 h-3" />
                     Участники группы
@@ -551,7 +551,7 @@ export function ChatInput({
                 placeholder="Введите сообщение... Используйте @ для упоминания"
                 rows={1}
                 disabled={disabled}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none min-h-[48px] max-h-32 disabled:opacity-50"
+                className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none min-h-[48px] max-h-32 disabled:opacity-50"
               />
             </div>
             <div className="flex items-center gap-1">
@@ -566,7 +566,7 @@ export function ChatInput({
                     <Sparkles className={`w-5 h-5 ${showQuickReplies ? 'text-purple-600' : 'text-purple-500'}`} />
                   </button>
                   {showQuickReplies && onUseQuickReply && (
-                    <div className="absolute bottom-full right-0 mb-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg py-2 z-10 max-h-80 overflow-y-auto">
+                    <div className="absolute bottom-full right-0 mb-2 w-80 bg-white border border-[#e8edf3] rounded-xl shadow-lg py-2 z-10 max-h-80 overflow-y-auto">
                       <div className="px-4 py-1 flex items-center justify-between">
                         <span className="text-xs font-medium text-slate-500">AI подсказки</span>
                         {isLoadingAI && (

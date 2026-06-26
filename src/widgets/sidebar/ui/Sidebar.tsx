@@ -149,7 +149,7 @@ function NotificationBellSidebar() {
         )}
       </button>
       {open && (
-        <div className="absolute left-full bottom-0 ml-2 w-[340px] bg-white rounded-xl shadow-2xl border border-slate-200 z-50 max-h-[400px] overflow-hidden">
+        <div className="absolute left-full bottom-0 ml-2 w-[340px] bg-white rounded-xl shadow-2xl border border-[#e8edf3] z-50 max-h-[400px] overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-900">Уведомления</span>
             {count > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{count} новых</span>}

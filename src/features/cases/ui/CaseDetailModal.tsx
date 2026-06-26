@@ -193,7 +193,7 @@ function Customer360Banner({
   return (
     <div
       className={`mb-4 rounded-lg border ${
-        hasRiskSignals ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-slate-50/40'
+        hasRiskSignals ? 'border-amber-200 bg-amber-50/40' : 'border-[#e8edf3] bg-slate-50/40'
       }`}
     >
       <button
@@ -227,7 +227,7 @@ function Customer360Banner({
       </button>
 
       {expanded && (
-        <div className="border-t border-slate-200 px-3 py-2 space-y-3 bg-white/60">
+        <div className="border-t border-[#e8edf3] px-3 py-2 space-y-3 bg-white/60">
           {/* Активные другие кейсы клиента */}
           {ctx.activeCases.length > 0 && (
             <div>
@@ -239,7 +239,7 @@ function Customer360Banner({
                   <div key={ac.id} className="text-xs flex items-center gap-2 px-2 py-1 bg-slate-50 rounded">
                     <span className="font-mono text-blue-600">#{ac.ticketNumber || ac.id.slice(0, 6)}</span>
                     <span className="text-slate-700 truncate flex-1">{ac.title}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-500">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-white border border-[#e8edf3] rounded text-slate-500">
                       {ac.priority}
                     </span>
                     <span className="text-[10px] text-slate-400">{ac.ageHours != null ? formatMinutesShort(ac.ageHours * 60) : ''}</span>
@@ -554,7 +554,7 @@ export function CaseDetailModal({
               <select
                 value={caseData.status}
                 onChange={(e) => onStatusChange(caseData.id, e.target.value as CaseStatus)}
-                className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="px-3 py-1.5 text-sm border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 {KANBAN_STATUSES.map(s => (
                   <option key={s} value={s}>{CASE_STATUS_CONFIG[s].label}</option>
@@ -576,7 +576,7 @@ export function CaseDetailModal({
                 <button
                   onClick={() => setSnoozeMenuOpen(v => !v)}
                   disabled={snoozePending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-[#e8edf3] rounded-lg hover:bg-slate-50"
                   title="Отложить кейс на потом"
                 >
                   <BellOff className="w-4 h-4" />
@@ -585,7 +585,7 @@ export function CaseDetailModal({
               )}
 
               {snoozeMenuOpen && (
-                <div className="absolute top-full right-0 mt-1 w-56 bg-white shadow-lg border border-slate-200 rounded-lg z-50 py-1">
+                <div className="absolute top-full right-0 mt-1 w-56 bg-white shadow-lg border border-[#e8edf3] rounded-lg z-50 py-1">
                   {snoozePresets.map(p => (
                     <button
                       key={p.label}
@@ -607,7 +607,7 @@ export function CaseDetailModal({
                       const d = new Date(e.target.value)
                       if (!isNaN(d.getTime()) && d > new Date()) applySnooze(d)
                     }}
-                    className="mx-3 mb-2 px-2 py-1 text-sm border border-slate-200 rounded w-[calc(100%-1.5rem)]"
+                    className="mx-3 mb-2 px-2 py-1 text-sm border border-[#e8edf3] rounded w-[calc(100%-1.5rem)]"
                   />
                 </div>
               )}
@@ -652,7 +652,7 @@ export function CaseDetailModal({
               <div className="flex flex-col" style={{ height: 420 }}>
                 <div
                   ref={chatScrollRef}
-                  className="flex-1 overflow-y-auto border border-slate-200 rounded-lg bg-slate-50 p-3 space-y-2"
+                  className="flex-1 overflow-y-auto border border-[#e8edf3] rounded-lg bg-slate-50 p-3 space-y-2"
                 >
                   {loadingChat ? (
                     <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
@@ -677,7 +677,7 @@ export function CaseDetailModal({
                             className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                               isTeam
                                 ? 'bg-blue-500 text-white rounded-br-sm'
-                                : 'bg-white text-slate-800 border border-slate-200 rounded-bl-sm'
+                                : 'bg-white text-slate-800 border border-[#e8edf3] rounded-bl-sm'
                             }`}
                           >
                             {!isTeam && (
@@ -713,7 +713,7 @@ export function CaseDetailModal({
                       }
                     }}
                     placeholder="Ответить клиенту (Ctrl/⌘ + Enter)"
-                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
+                    className="flex-1 px-3 py-2 border border-[#e8edf3] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm"
                   />
                   <button
                     onClick={handleSendReply}
@@ -747,7 +747,7 @@ export function CaseDetailModal({
                   Используйте как подсказку.
                 </p>
                 {relatedCases.map(rc => (
-                  <div key={rc.id} className="border border-slate-200 rounded-lg p-3 bg-gradient-to-br from-green-50/40 to-blue-50/40">
+                  <div key={rc.id} className="border border-[#e8edf3] rounded-lg p-3 bg-gradient-to-br from-green-50/40 to-blue-50/40">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="font-mono text-xs text-green-700 font-semibold">
                         #{rc.ticketNumber || rc.id.slice(0, 6)}
@@ -852,7 +852,7 @@ export function CaseDetailModal({
                 ))
               )}
               
-              <div className="border-t border-slate-200 pt-4 mt-4">
+              <div className="border-t border-[#e8edf3] pt-4 mt-4">
                 <div className="flex items-center gap-2 mb-2">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input
@@ -870,7 +870,7 @@ export function CaseDetailModal({
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     placeholder="Добавить комментарий..."
-                    className="flex-1 px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="flex-1 px-4 py-2 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                   />
                   <button
@@ -895,7 +895,7 @@ export function CaseDetailModal({
         </div>
 
         {/* Sidebar */}
-        <div className="w-64 bg-slate-50 p-4 border-l border-slate-200">
+        <div className="w-64 bg-slate-50 p-4 border-l border-[#e8edf3]">
           <h4 className="font-medium text-slate-700 mb-3">Канал / Клиент</h4>
           <div className="flex items-center gap-3 mb-4">
             <Avatar name={caseData.channelName || caseData.company} size="md" />
@@ -912,7 +912,7 @@ export function CaseDetailModal({
               const agent = agents.find(a => a.id === e.target.value)
               onAssign(caseData.id, agent || null)
             }}
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 mb-4"
+            className="w-full px-3 py-2 text-sm border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 mb-4"
           >
             <option value="">Не назначен</option>
             {agents.map(agent => (

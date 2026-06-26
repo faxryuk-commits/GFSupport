@@ -205,7 +205,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
 
       {/* Agent Performance Table */}
       {agentStats.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-500" />
@@ -264,7 +264,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
       {/* Hourly + Weekday side-by-side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Hourly Activity */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-5">
           <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2 text-sm">
             <Zap className="w-4 h-4 text-amber-500" />
             Нагрузка по часам
@@ -304,7 +304,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
         </div>
 
         {/* Weekday Activity */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-5">
           <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2 text-sm">
             <BarChart3 className="w-4 h-4 text-purple-500" />
             По дням недели
@@ -353,7 +353,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
 
       {/* Daily Trend */}
       {dailyTrend.length > 1 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-5">
           <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2 text-sm">
             <TrendingUp className="w-4 h-4 text-green-500" />
             Динамика по дням
@@ -391,7 +391,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
 
       {/* Top Channels */}
       {topChannels.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2 text-sm">
               <Hash className="w-4 h-4 text-slate-500" />
@@ -448,7 +448,7 @@ function KpiCard({ icon, label, value, sub, iconColor, bgColor }: {
   iconColor: string; bgColor: string
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
       <div className="flex items-center gap-2 mb-2">
         <div className={`w-8 h-8 ${bgColor} rounded-lg flex items-center justify-center ${iconColor}`}>
           {icon}

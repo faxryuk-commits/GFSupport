@@ -57,7 +57,7 @@ export function ApiKeysSettings({ apiKeys, onDelete, onAdd }: ApiKeysSettingsPro
 
   return (
     <>
-      <div className="bg-white rounded-xl p-6 border border-slate-200">
+      <div className="bg-white rounded-xl p-6 border border-[#e8edf3]">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-800">API Ключи</h2>
           <button
@@ -136,7 +136,7 @@ export function ApiKeysSettings({ apiKeys, onDelete, onAdd }: ApiKeysSettingsPro
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder="Production API, Development..."
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           <div>
@@ -161,7 +161,7 @@ export function ApiKeysSettings({ apiKeys, onDelete, onAdd }: ApiKeysSettingsPro
               ))}
             </div>
           </div>
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+          <div className="flex justify-end gap-3 pt-4 border-t border-[#e8edf3]">
             <button onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 text-slate-700 font-medium rounded-lg hover:bg-slate-100">
               Отмена
             </button>

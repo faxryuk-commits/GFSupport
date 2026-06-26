@@ -66,7 +66,7 @@ export function CustomerHealthBanner({
     ? 'bg-gradient-to-r from-rose-50 to-white border-rose-200'
     : atRisk > 0
     ? 'bg-gradient-to-r from-amber-50 to-white border-amber-200'
-    : 'bg-white border-slate-200'
+    : 'bg-white border-[#e8edf3]'
 
   return (
     <Link

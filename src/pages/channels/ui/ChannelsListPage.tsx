@@ -188,7 +188,7 @@ export function ChannelsListPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="px-6 py-5 border-b border-slate-200 bg-white">
+      <div className="px-6 py-5 border-b border-[#e8edf3] bg-white">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
@@ -263,7 +263,7 @@ export function ChannelsListPage() {
       </div>
 
       {/* Filters Bar */}
-      <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-4">
+      <div className="px-6 py-3 bg-slate-50 border-b border-[#e8edf3] flex items-center gap-4">
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -272,12 +272,12 @@ export function ChannelsListPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск..."
-            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
 
         {/* Status Filter */}
-        <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 p-1">
+        <div className="flex items-center gap-1 bg-white rounded-lg border border-[#e8edf3] p-1">
           {(['all', 'active', 'inactive', 'awaiting'] as FilterStatus[]).map(status => {
             const labels: Record<FilterStatus, string> = {
               all: 'Все',
@@ -305,14 +305,14 @@ export function ChannelsListPage() {
         <div className="relative" ref={sortMenuRef}>
           <button 
             onClick={() => setShowSortMenu(!showSortMenu)}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm hover:bg-slate-50 transition-colors"
           >
             <Filter className="w-4 h-4 text-slate-400" />
             {sortLabels[sortBy]}
             <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showSortMenu ? 'rotate-180' : ''}`} />
           </button>
           {showSortMenu && (
-            <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
+            <div className="absolute right-0 mt-2 w-44 bg-white border border-[#e8edf3] rounded-lg shadow-lg z-10 overflow-hidden">
               {(Object.keys(sortLabels) as SortBy[]).map(key => (
                 <button
                   key={key}
@@ -363,7 +363,7 @@ export function ChannelsListPage() {
           </div>
         ) : (
           <table className="w-full">
-            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+            <thead className="sticky top-0 bg-slate-50 border-b border-[#e8edf3]">
               <tr>
                 <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
                   Канал
@@ -455,7 +455,7 @@ export function ChannelsListPage() {
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)}
               placeholder="Введите название..."
               autoFocus
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
           </div>
           <div className="flex justify-end gap-3">
@@ -513,7 +513,7 @@ export function ChannelsListPage() {
                       className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
                         newType === type
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-slate-200 hover:border-slate-300'
+                          : 'border-[#e8edf3] hover:border-slate-300'
                       }`}
                     >
                       {info.label}
@@ -538,7 +538,7 @@ export function ChannelsListPage() {
                       className={`px-3 py-2 text-sm rounded-lg border transition-colors text-left ${
                         newSlaCategory === cat
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-slate-200 hover:border-slate-300'
+                          : 'border-[#e8edf3] hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -605,7 +605,7 @@ function StatCard({
     purple: 'bg-purple-50 text-purple-600',
   }
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colors[color]}`}>
           {icon}
@@ -764,7 +764,7 @@ function ChannelRow({ channel, onSettings, onRename, onDisconnect }: ChannelRowP
               <MoreHorizontal className="w-4 h-4" />
             </button>
             {showMenu && (
-              <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-10 overflow-hidden">
+              <div className="absolute right-0 mt-1 w-44 bg-white border border-[#e8edf3] rounded-lg shadow-lg z-10 overflow-hidden">
                 <Link
                   to={`/chats/${channel.id}`}
                   className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50"

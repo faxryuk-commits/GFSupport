@@ -29,7 +29,7 @@ function StatCards({ stats }: { stats: AgentStats }) {
 
 function StatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
       <p className="text-xs text-slate-500">{label}</p>
       <p className={`text-xl font-bold mt-1 ${color || 'text-slate-800'}`}>{value}</p>
     </div>
@@ -46,7 +46,7 @@ function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id:
   const confPct = Math.round(d.confidence * 100)
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
+    <div className="bg-white rounded-lg border border-[#e8edf3] hover:border-slate-300 transition-colors">
       <button onClick={() => setExpanded(!expanded)} className="w-full px-4 py-3 flex items-center gap-3 text-left">
         <span className={`flex items-center justify-center w-8 h-8 rounded-lg ${config.color}`}>
           <Icon className="w-4 h-4" />
@@ -114,7 +114,7 @@ function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id:
                     }
                   }}
                   placeholder="Что не так? Агент учтёт это в будущем..."
-                  className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded-lg"
+                  className="flex-1 px-2 py-1 text-xs border border-[#e8edf3] rounded-lg"
                   onClick={e => e.stopPropagation()}
                 />
                 {feedbackNote.trim() && (

@@ -45,7 +45,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
       <div className={`relative bg-white rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}>
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8edf3]">
             <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
             <button 
               onClick={onClose}

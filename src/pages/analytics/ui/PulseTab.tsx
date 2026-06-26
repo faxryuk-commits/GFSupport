@@ -172,7 +172,7 @@ export function PulseTab({ period, source, roles }: PulseTabProps) {
         periods={8}
       />
 
-      <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-4 py-3">
+      <div className="text-xs text-slate-500 bg-slate-50 border border-[#e8edf3] rounded-md px-4 py-3">
         <strong>Pulse</strong> — сводка по 4 ключевым метрикам с целевыми уровнями Bronze (минимум) /
         Silver (медиана) / Gold (отлично). Цели считаются по перцентилям команды за 60 дней истории
         и автоматически пересчитываются раз в неделю. Управление целями —{' '}

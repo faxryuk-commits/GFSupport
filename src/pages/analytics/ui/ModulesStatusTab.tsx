@@ -58,7 +58,7 @@ export function ModulesStatusTab() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {data.modules.map((m) => (
-          <div key={m.key} className="bg-white border border-slate-200 rounded-xl p-4">
+          <div key={m.key} className="bg-white border border-[#e8edf3] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-2.5 h-2.5 rounded-full ${DOT[m.status]} ${m.status === 'ok' ? 'animate-pulse' : ''}`} />
               <span className="font-semibold text-slate-800">{m.name}</span>

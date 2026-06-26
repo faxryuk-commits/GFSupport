@@ -18,7 +18,7 @@ export function CaseCard({ caseItem, onClick, onDragStart, isDragging }: CaseCar
       onClick={onClick}
       onDragStart={onDragStart}
       draggable={!!onDragStart}
-      className={`bg-white rounded-lg p-3 shadow-sm border border-slate-200 cursor-pointer 
+      className={`bg-white rounded-lg p-3 shadow-sm border border-[#e8edf3] cursor-pointer 
         hover:shadow-md hover:border-slate-300 transition-all
         ${isDragging ? 'opacity-50 rotate-2' : ''}`}
     >

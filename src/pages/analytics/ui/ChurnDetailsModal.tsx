@@ -21,7 +21,7 @@ interface ChurnDetailsModalProps {
 const SEVERITY_STYLES: Record<ChurnSeverity, { chip: string; label: string }> = {
   high: { chip: 'bg-rose-100 text-rose-800 border-rose-200', label: 'высокая' },
   medium: { chip: 'bg-amber-100 text-amber-800 border-amber-200', label: 'средняя' },
-  low: { chip: 'bg-slate-100 text-slate-700 border-slate-200', label: 'низкая' },
+  low: { chip: 'bg-slate-100 text-slate-700 border-[#e8edf3]', label: 'низкая' },
 }
 
 const CATEGORY_LABELS: Record<ChurnCategory, string> = {
@@ -158,7 +158,7 @@ function ChurnRow({ row, channelId }: { row: ChurnSignalRow; channelId: string |
   const date = new Date(row.createdAt)
 
   return (
-    <li className="border border-slate-200 rounded-lg p-3 hover:border-slate-300">
+    <li className="border border-[#e8edf3] rounded-lg p-3 hover:border-slate-300">
       <header className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <MessageSquare className="w-3.5 h-3.5" />

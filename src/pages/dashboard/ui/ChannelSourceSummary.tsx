@@ -21,7 +21,7 @@ export function ChannelSourceSummary({ channels, value, onChange }: Props) {
   if (tg.length === 0 && wa.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3 flex-wrap">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4 flex items-center gap-3 flex-wrap">
       <div>
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
           Каналы по платформам

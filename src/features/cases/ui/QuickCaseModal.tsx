@@ -55,7 +55,7 @@ export function QuickCaseModal({
     <Modal isOpen={isOpen} onClose={onClose} title="Создать кейс из сообщения" size="md">
       <div className="space-y-4">
         {/* Context */}
-        <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+        <div className="bg-slate-50 rounded-lg p-3 border border-[#e8edf3]">
           <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
             <span className="font-medium">{senderName}</span>
             <span>в</span>
@@ -81,7 +81,7 @@ export function QuickCaseModal({
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             placeholder="Опишите проблему..."
           />
         </div>
@@ -92,7 +92,7 @@ export function QuickCaseModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+            className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             placeholder="Детали проблемы..."
           />
         </div>

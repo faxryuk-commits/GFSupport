@@ -51,7 +51,7 @@ export function MessageBubble({ message }: { message: InsightsMessage }) {
                 ? 'bg-slate-900 text-white rounded-tr-sm'
                 : message.error
                 ? 'bg-rose-50 border border-rose-200 text-rose-700 rounded-tl-sm'
-                : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
+                : 'bg-white border border-[#e8edf3] text-slate-800 rounded-tl-sm'
             }`}
           >
             {message.error ? (

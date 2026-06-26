@@ -31,7 +31,7 @@ const STATUS_CHIP: Record<MetricStatus, string> = {
   silver: 'bg-amber-50 text-amber-800 border-amber-200',
   bronze: 'bg-orange-50 text-orange-800 border-orange-200',
   below_bronze: 'bg-rose-50 text-rose-800 border-rose-200',
-  unknown: 'bg-slate-50 text-slate-500 border-slate-200',
+  unknown: 'bg-slate-50 text-slate-500 border-[#e8edf3]',
 }
 const STATUS_LABEL: Record<MetricStatus, string> = {
   gold: 'Gold',
@@ -218,8 +218,8 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
         по любой колонке.
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <header className="flex items-center justify-between gap-3 p-4 border-b border-slate-200 flex-wrap">
+      <div className="bg-white border border-[#e8edf3] rounded-xl overflow-hidden">
+        <header className="flex items-center justify-between gap-3 p-4 border-b border-[#e8edf3] flex-wrap">
           <h3 className="text-sm font-semibold text-slate-900">Per-agent breakdown</h3>
           <div className="flex items-center gap-3 flex-wrap">
             <label
@@ -267,7 +267,7 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
 
         {!loading && !error && (
           <>
-            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
+            <div className="px-4 py-2 bg-slate-50 border-b border-[#e8edf3] text-xs text-slate-600">
               <div className="flex flex-wrap items-center gap-4">
                 <div>
                   <span className="font-medium">FRT цели: </span>
@@ -356,7 +356,7 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
                       </button>
                       {lowSample && (
                         <span
-                          className="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-600 border border-slate-200"
+                          className="ml-2 inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-600 border border-[#e8edf3]"
                           title={`Всего ${row.sessions} сессий — мало для надёжной статистики (минимум ${MIN_SAMPLE})`}
                         >
                           мало данных

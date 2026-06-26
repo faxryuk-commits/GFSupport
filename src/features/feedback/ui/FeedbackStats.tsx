@@ -35,7 +35,7 @@ export function FeedbackStats({ agentId, from, to, className = '' }: FeedbackSta
 
   if (loading) {
     return (
-      <div className={`bg-white rounded-xl border border-slate-200 p-6 flex items-center justify-center ${className}`}>
+      <div className={`bg-white rounded-xl border border-[#e8edf3] p-6 flex items-center justify-center ${className}`}>
         <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
       </div>
     )
@@ -43,7 +43,7 @@ export function FeedbackStats({ agentId, from, to, className = '' }: FeedbackSta
 
   if (error || !stats) {
     return (
-      <div className={`bg-white rounded-xl border border-slate-200 p-6 text-center text-red-500 ${className}`}>
+      <div className={`bg-white rounded-xl border border-[#e8edf3] p-6 text-center text-red-500 ${className}`}>
         {error || 'Нет данных'}
       </div>
     )
@@ -54,7 +54,7 @@ export function FeedbackStats({ agentId, from, to, className = '' }: FeedbackSta
   return (
     <div className={`space-y-6 ${className}`}>
       {/* Main Rating */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div className="bg-white rounded-xl border border-[#e8edf3] p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-semibold text-slate-900">Отзывы клиентов</h3>
           <span className="text-sm text-slate-500">{stats.totalFeedback} отзывов</span>
@@ -113,7 +113,7 @@ export function FeedbackStats({ agentId, from, to, className = '' }: FeedbackSta
 
       {/* Common Tags */}
       {stats.commonTags.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-6">
           <h4 className="font-medium text-slate-700 mb-4">Частые отзывы</h4>
           <div className="flex flex-wrap gap-2">
             {stats.commonTags.map(({ tag, count }) => {
@@ -138,7 +138,7 @@ export function FeedbackStats({ agentId, from, to, className = '' }: FeedbackSta
 
       {/* By Agent */}
       {stats.byAgent.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-6">
           <h4 className="font-medium text-slate-700 mb-4 flex items-center gap-2">
             <Users className="w-4 h-4" />
             По сотрудникам
@@ -177,7 +177,7 @@ export function FeedbackStats({ agentId, from, to, className = '' }: FeedbackSta
 
       {/* Trend */}
       {stats.trend.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-6">
           <h4 className="font-medium text-slate-700 mb-4 flex items-center gap-2">
             <TrendingUp className="w-4 h-4" />
             Тренд

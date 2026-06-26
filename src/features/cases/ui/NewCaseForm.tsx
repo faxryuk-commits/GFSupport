@@ -46,7 +46,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
           value={formData.title}
           onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
           placeholder="Краткое описание проблемы"
-          className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           required
         />
       </div>
@@ -58,7 +58,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
           onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
           placeholder="Подробное описание проблемы..."
           rows={3}
-          className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+          className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
         />
       </div>
 
@@ -70,7 +70,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
             value={formData.company}
             onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
             placeholder="Название компании"
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             required
           />
         </div>
@@ -79,7 +79,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
           <select
             value={formData.category}
             onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             required
           >
             <option value="">Выберите категорию</option>
@@ -98,7 +98,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
             value={formData.contactName}
             onChange={(e) => setFormData(prev => ({ ...prev, contactName: e.target.value }))}
             placeholder="Имя контакта"
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
         <div>
@@ -108,7 +108,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
             value={formData.contactEmail}
             onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
             placeholder="email@company.com"
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
       </div>
@@ -133,7 +133,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
         </div>
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+      <div className="flex justify-end gap-3 pt-4 border-t border-[#e8edf3]">
         <button 
           type="button" 
           onClick={onClose} 

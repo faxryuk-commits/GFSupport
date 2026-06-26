@@ -62,7 +62,7 @@ export function ResponseTimeTab({ distribution, violations, unanswered }: Props)
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
         <h3 className="font-semibold text-slate-900 mb-4">Распределение времени ответа</h3>
         <div className="grid grid-cols-7 gap-2 text-center">
           {bars.map((item) => (
@@ -77,7 +77,7 @@ export function ResponseTimeTab({ distribution, violations, unanswered }: Props)
       </div>
 
       {violations.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
           <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-red-500" />
             Нарушения SLA ({violations.length})
@@ -85,7 +85,7 @@ export function ResponseTimeTab({ distribution, violations, unanswered }: Props)
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
+                <tr className="border-b border-[#e8edf3] bg-slate-50">
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Клиент</th>
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Сообщение</th>
@@ -124,7 +124,7 @@ export function ResponseTimeTab({ distribution, violations, unanswered }: Props)
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-red-50">
+                <tr className="border-b border-[#e8edf3] bg-red-50">
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Канал</th>
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Клиент</th>
                   <th className="text-left py-2 px-3 font-medium text-slate-600">Сообщение</th>

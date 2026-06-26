@@ -81,7 +81,7 @@ function EngagementRing({ score, level, breakdown }: {
         <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{score}</span>
       </div>
       {showBreakdown && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-white border border-slate-200 shadow-lg rounded-lg p-3 w-44 text-xs">
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-white border border-[#e8edf3] shadow-lg rounded-lg p-3 w-44 text-xs">
           {[
             { label: 'Активность', val: breakdown.activity, max: 25, color: 'bg-blue-400' },
             { label: 'Скорость', val: breakdown.speed, max: 25, color: 'bg-green-400' },
@@ -216,7 +216,7 @@ export function AgentPerformanceTable({ agents, onOpen360 }: Props) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50">
+            <tr className="border-b border-[#e8edf3] bg-slate-50">
               <th className="text-left py-3 px-3 font-medium text-slate-600">Сотрудник</th>
               <SortableHeader label="Вовлеч." field="engagementScore" current={sortField} asc={sortAsc} onClick={handleSort} />
               <SortableHeader label="Ответов" field="totalResponses" current={sortField} asc={sortAsc} onClick={handleSort} />
@@ -280,7 +280,7 @@ function AgentRowWithRecs({ agent, maxResponses, maxChars, teamAvg, isExpanded, 
       {isExpanded && (
         <tr>
           <td colSpan={10} className="p-0">
-            <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-200">
+            <div className="px-4 py-3 bg-slate-50/80 border-b border-[#e8edf3]">
               <div className="flex items-center gap-2 mb-2">
                 <Lightbulb className="w-4 h-4 text-amber-500" />
                 <span className="text-xs font-semibold text-slate-700">Рекомендации для {agent.name}</span>

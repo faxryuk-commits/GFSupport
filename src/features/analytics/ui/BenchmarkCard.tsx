@@ -20,7 +20,7 @@ const STATUS_TONE: Record<string, { bar: string; chip: string; chipText: string;
   silver: { bar: 'bg-amber-500', chip: 'bg-amber-50 text-amber-800 border-amber-200', chipText: 'Silver', barWidth: '75%' },
   bronze: { bar: 'bg-orange-500', chip: 'bg-orange-50 text-orange-800 border-orange-200', chipText: 'Bronze', barWidth: '50%' },
   below_bronze: { bar: 'bg-rose-500', chip: 'bg-rose-50 text-rose-800 border-rose-200', chipText: 'ниже Bronze', barWidth: '25%' },
-  unknown: { bar: 'bg-slate-300', chip: 'bg-slate-50 text-slate-500 border-slate-200', chipText: 'нет цели', barWidth: '0%' },
+  unknown: { bar: 'bg-slate-300', chip: 'bg-slate-50 text-slate-500 border-[#e8edf3]', chipText: 'нет цели', barWidth: '0%' },
 }
 
 function formatValue(v: number, unit: MetricUnit): string {
@@ -58,7 +58,7 @@ export function BenchmarkCard({
     <Wrapper
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`bg-white border border-slate-200 rounded-xl p-4 text-left flex flex-col gap-2 ${
+      className={`bg-white border border-[#e8edf3] rounded-xl p-4 text-left flex flex-col gap-2 ${
         onClick ? 'hover:border-slate-300 hover:shadow-sm transition cursor-pointer' : ''
       } ${isLoading ? 'opacity-60' : ''}`}
       title={formula}

@@ -58,7 +58,7 @@ const TIER_LABEL: Record<Tier, string> = {
 }
 const TIER_COLOR: Record<Tier, string> = {
   bronze: 'bg-amber-50 border-amber-200 text-amber-900',
-  silver: 'bg-slate-50 border-slate-200 text-slate-900',
+  silver: 'bg-slate-50 border-[#e8edf3] text-slate-900',
   gold: 'bg-yellow-50 border-yellow-300 text-yellow-900',
 }
 const TIER_HELP: Record<Tier, string> = {
@@ -181,7 +181,7 @@ export function BenchmarksPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Бенчмарки</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Бенчмарки</h1>
           <p className="text-sm text-slate-600 mt-1">
             Целевые значения метрик команды. Bronze / Silver / Gold — три уровня соответствия,
             от минимально приемлемого до отличного.
@@ -246,8 +246,8 @@ export function BenchmarksPage() {
               : scopes
 
           return (
-            <section key={m.key} className="bg-white rounded-lg border border-slate-200">
-              <header className="px-5 py-4 border-b border-slate-200">
+            <section key={m.key} className="bg-white rounded-lg border border-[#e8edf3]">
+              <header className="px-5 py-4 border-b border-[#e8edf3]">
                 <div className="flex items-center gap-3">
                   <span
                     className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
@@ -273,7 +273,7 @@ export function BenchmarksPage() {
 
               <div className="p-5 space-y-3">
                 {visibleScopes.map((sc) => (
-                  <div key={scopeKey(sc.scope)} className="border border-slate-200 rounded-md p-4">
+                  <div key={scopeKey(sc.scope)} className="border border-[#e8edf3] rounded-md p-4">
                     <div className="text-sm font-medium text-slate-700 mb-3">
                       Scope: {scopeLabel(sc.scope)}
                     </div>

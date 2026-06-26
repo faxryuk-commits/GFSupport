@@ -100,7 +100,7 @@ export function PulseStrip({
   }, [period, source])
 
   return (
-    <section className="bg-white border border-slate-200 rounded-xl p-4">
+    <section className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
         <Link

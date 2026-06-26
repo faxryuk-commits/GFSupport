@@ -98,7 +98,7 @@ export function HealthDrilldownModal({ kind, value, title, period, onClose }: Pr
                 <button
                   key={ch.id}
                   onClick={() => goToChannel(ch.id)}
-                  className="px-2.5 py-1 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-sm text-slate-700 rounded-md flex items-center gap-1.5 transition-colors"
+                  className="px-2.5 py-1 bg-white border border-[#e8edf3] hover:border-blue-400 hover:bg-blue-50 text-sm text-slate-700 rounded-md flex items-center gap-1.5 transition-colors"
                 >
                   <span className="font-medium truncate max-w-[180px]">{ch.name}</span>
                   <span className="text-xs text-slate-400">×{ch.count}</span>

@@ -76,7 +76,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
   if (loading || !settings) return <div className="p-6 text-center text-slate-400">Загрузка настроек...</div>
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-6 space-y-6">
       <div className="flex items-center gap-3">
         <Settings className="w-5 h-5 text-blue-600" />
         <h2 className="text-lg font-semibold text-slate-900">Настройки AI Агента</h2>
@@ -101,7 +101,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
             key={m.id}
             onClick={() => setSettings({ ...settings, mode: m.id as AgentSettings['mode'] })}
             className={`p-3 rounded-lg border-2 text-left transition-colors ${
-              settings.mode === m.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+              settings.mode === m.id ? 'border-blue-500 bg-blue-50' : 'border-[#e8edf3] hover:border-slate-300'
             }`}
           >
             <p className="font-medium text-slate-800 text-sm">{m.label}</p>
@@ -116,7 +116,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
           <select
             value={settings.model}
             onChange={e => setSettings({ ...settings, model: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
           >
             {MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
@@ -145,7 +145,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
             type="number" min="0" max="23"
             value={settings.workStart}
             onChange={e => setSettings({ ...settings, workStart: parseInt(e.target.value) || 9 })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
           />
         </div>
 
@@ -155,12 +155,12 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
             type="number" min="0" max="23"
             value={settings.workEnd}
             onChange={e => setSettings({ ...settings, workEnd: parseInt(e.target.value) || 22 })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
           />
         </div>
       </div>
 
-      <div className="border-t border-slate-200 pt-6">
+      <div className="border-t border-[#e8edf3] pt-6">
         <div className="flex items-center gap-2 mb-2">
           <Sparkles className="w-4 h-4 text-amber-500" />
           <h3 className="text-sm font-semibold text-slate-800">Инструкции для агента</h3>
@@ -173,7 +173,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
           onChange={e => setSettings({ ...settings, customInstructions: e.target.value })}
           placeholder={`Примеры:\n• Всегда обращайся на "вы" и по имени\n• На узбекском отвечай мягко и уважительно\n• Не используй эмодзи\n• Если вопрос про оплату — всегда тегай @Финансы\n• При жалобах — сразу извиняйся и проси детали`}
           rows={5}
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm resize-y placeholder:text-slate-400"
+          className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm resize-y placeholder:text-slate-400"
         />
         <p className="text-xs text-slate-400 mt-1">
           {settings.customInstructions.length}/1000 символов
@@ -192,7 +192,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
         {msg && <span className={`text-sm ${msg === 'Сохранено' ? 'text-green-600' : 'text-red-500'}`}>{msg}</span>}
       </div>
 
-      <div className="border-t border-slate-200 pt-6">
+      <div className="border-t border-[#e8edf3] pt-6">
         <div className="flex items-center gap-2 mb-3">
           <Key className="w-4 h-4 text-slate-600" />
           <h3 className="text-sm font-semibold text-slate-800">Together API Key</h3>
@@ -209,7 +209,7 @@ export function AgentSettingsPanel({ onSaved }: { onSaved?: () => void }) {
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
               placeholder={settings.hasApiKey ? '••••••• (введите новый чтобы заменить)' : 'Введите Together API Key'}
-              className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg text-sm"
+              className="w-full px-3 py-2 pr-10 border border-[#e8edf3] rounded-lg text-sm"
               autoComplete="off"
             />
             <button

@@ -62,7 +62,7 @@ export function TeamTrendStrip({
   }, [metricKeys, source, roles, granularity, periods])
 
   return (
-    <section className="bg-white border border-slate-200 rounded-xl p-4">
+    <section className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <header className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-xs uppercase tracking-wider text-slate-500 font-semibold">

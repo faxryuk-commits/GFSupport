@@ -112,14 +112,14 @@ export function OutreachModal({ isOpen, onClose, selectedChannels }: OutreachMod
     >
       <div className="space-y-4">
         {/* Получатели */}
-        <section className="bg-slate-50 border border-slate-200 rounded-md p-3">
+        <section className="bg-slate-50 border border-[#e8edf3] rounded-md p-3">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
             <Users className="w-3.5 h-3.5" />
             Получатели
           </div>
           <div className="text-xs text-slate-600 flex flex-wrap gap-1.5">
             {previewNames.map((n, i) => (
-              <span key={i} className="inline-block bg-white border border-slate-200 px-2 py-0.5 rounded">
+              <span key={i} className="inline-block bg-white border border-[#e8edf3] px-2 py-0.5 rounded">
                 {n}
               </span>
             ))}
@@ -201,7 +201,7 @@ export function OutreachModal({ isOpen, onClose, selectedChannels }: OutreachMod
         />
 
         {/* Actions */}
-        <div className="flex gap-2 pt-2 border-t border-slate-200">
+        <div className="flex gap-2 pt-2 border-t border-[#e8edf3]">
           <button
             onClick={() => {
               if (sending) return

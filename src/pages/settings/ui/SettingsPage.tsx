@@ -350,7 +350,7 @@ export function SettingsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/60 sticky top-0 z-10">
+      <div className="bg-white/80 backdrop-blur-sm border-b border-[#e8edf3]/60 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-8 py-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -359,7 +359,7 @@ export function SettingsPage() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold text-slate-800">Настройки</h1>
+                  <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Настройки</h1>
                   <PageHint
                     title="Настройки системы"
                     description="Здесь вы управляете интеграциями, командой, автоматизацией и внешним видом системы."
@@ -378,7 +378,7 @@ export function SettingsPage() {
               <button
                 onClick={loadSettings}
                 disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm"
+                className="flex items-center gap-2 px-4 py-2.5 text-slate-600 bg-white border border-[#e8edf3] rounded-xl hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 Обновить
@@ -426,7 +426,7 @@ export function SettingsPage() {
         <div className="flex gap-8">
           {/* Sidebar */}
           <div className="w-72 flex-shrink-0">
-            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Разделы настроек</p>
               </div>
@@ -466,7 +466,7 @@ export function SettingsPage() {
 
             {/* Environment Status */}
             {envStatus && (
-              <div className="mt-4 bg-white rounded-2xl border border-slate-200/60 shadow-sm p-4">
+              <div className="mt-4 bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm p-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Переменные окружения</p>
                 <div className="space-y-2">
                   {[
@@ -601,7 +601,7 @@ export function SettingsPage() {
                     'Шаблоны — готовые ответы, которые агент может отправить в один клик',
                   ]}
                 />
-                <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 text-center">
+                <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm p-6 text-center">
                   <p className="text-sm text-slate-600 mb-3">
                     Управление автоответами переехало в единый AI-хаб — там же Журнал решений, Правила, Настройки и Тестирование агента.
                   </p>
@@ -659,7 +659,7 @@ export function SettingsPage() {
                         <Link
                           key={item.to}
                           to={item.to}
-                          className="group flex items-start gap-3 p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition-all"
+                          className="group flex items-start gap-3 p-4 rounded-xl border border-[#e8edf3] bg-white hover:border-slate-300 hover:shadow-sm transition-all"
                         >
                           <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${item.color} flex items-center justify-center flex-shrink-0`}>
                             <Icon className="w-5 h-5 text-white" />

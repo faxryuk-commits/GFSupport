@@ -255,7 +255,7 @@ export function BroadcastPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Рассылки</h1>
+            <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Рассылки</h1>
             <p className="text-slate-500 mt-1">Массовая отправка сообщений клиентам</p>
           </div>
           <div className="flex items-center gap-3">
@@ -298,7 +298,7 @@ export function BroadcastPage() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 statusFilter === status 
                   ? 'bg-blue-500 text-white' 
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
               }`}
             >
               {status === 'all' ? 'Все' : statusConfig[status]?.label}
@@ -339,7 +339,7 @@ export function BroadcastPage() {
               rows={4}
               value={formData.messageText}
               onChange={(e) => setFormData(prev => ({ ...prev, messageText: e.target.value }))}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             />
           </div>
 
@@ -353,7 +353,7 @@ export function BroadcastPage() {
                 placeholder="https://example.com/image.jpg"
                 value={formData.mediaUrl}
                 onChange={(e) => setFormData(prev => ({ ...prev, mediaUrl: e.target.value }))}
-                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full pl-10 pr-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
           </div>
@@ -370,7 +370,7 @@ export function BroadcastPage() {
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
                     formData.notificationType === type.id
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-slate-200 hover:bg-slate-50'
+                      : 'border-[#e8edf3] hover:bg-slate-50'
                   }`}
                 >
                   <type.icon className={`w-4 h-4 ${type.color}`} />
@@ -392,7 +392,7 @@ export function BroadcastPage() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
                     formData.filterType === filter
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-slate-200 hover:bg-slate-50'
+                      : 'border-[#e8edf3] hover:bg-slate-50'
                   }`}
                 >
                   {filterLabels[filter]}
@@ -405,7 +405,7 @@ export function BroadcastPage() {
 
             {/* Channel Selection */}
             {formData.filterType === 'selected' && (
-              <div className="border border-slate-200 rounded-lg p-4 space-y-3">
+              <div className="border border-[#e8edf3] rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -414,7 +414,7 @@ export function BroadcastPage() {
                       placeholder="Поиск каналов..."
                       value={channelSearch}
                       onChange={(e) => setChannelSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm"
+                      className="w-full pl-10 pr-4 py-2 border border-[#e8edf3] rounded-lg text-sm"
                     />
                   </div>
                   <button
@@ -484,7 +484,7 @@ export function BroadcastPage() {
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-colors ${
                   formData.senderType === 'ai'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 hover:bg-slate-50'
+                    : 'border-[#e8edf3] hover:bg-slate-50'
                 }`}
               >
                 <Bot className="w-4 h-4" />
@@ -496,7 +496,7 @@ export function BroadcastPage() {
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-colors ${
                   formData.senderType === 'agent'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 hover:bg-slate-50'
+                    : 'border-[#e8edf3] hover:bg-slate-50'
                 }`}
               >
                 <User className="w-4 h-4" />
@@ -508,7 +508,7 @@ export function BroadcastPage() {
               <select
                 value={formData.senderId}
                 onChange={(e) => setFormData(prev => ({ ...prev, senderId: e.target.value }))}
-                className="mt-2 w-full px-4 py-2.5 border border-slate-200 rounded-lg"
+                className="mt-2 w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg"
               >
                 <option value="">Выберите сотрудника</option>
                 {agents.map(agent => (
@@ -525,7 +525,7 @@ export function BroadcastPage() {
               type="datetime-local"
               value={formData.scheduledAt}
               onChange={(e) => setFormData(prev => ({ ...prev, scheduledAt: e.target.value }))}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
@@ -610,13 +610,13 @@ function StatCard({ icon: Icon, color, value, label }: { icon: typeof Send; colo
     purple: 'bg-purple-100 text-purple-600',
   }
   return (
-    <div className="bg-white rounded-xl p-5 border border-slate-200">
+    <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colors[color]}`}>
           <Icon className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-2xl font-bold text-slate-800">{value}</p>
+          <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{value}</p>
           <p className="text-sm text-slate-500">{label}</p>
         </div>
       </div>
@@ -634,7 +634,7 @@ function BroadcastCard({ broadcast, onView, onCancel, formatDate }: {
   const StatusIcon = config.icon
 
   return (
-    <div className="bg-white rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-xl p-5 border border-[#e8edf3] hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">

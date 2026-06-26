@@ -60,7 +60,7 @@ export function SADashboardPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Дашборд платформы</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Дашборд платформы</h1>
           <p className="text-sm text-slate-500 mt-1">Общая статистика GFSupport</p>
         </div>
 
@@ -79,7 +79,7 @@ export function SADashboardPage() {
         )}
 
         {trend.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="bg-white rounded-2xl border border-[#e8edf3] p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="w-5 h-5 text-indigo-500" />
               <h2 className="font-semibold text-slate-900">Сообщения за 14 дней</h2>
@@ -100,7 +100,7 @@ export function SADashboardPage() {
         )}
 
         {perOrg.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-[#e8edf3] shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100">
               <h2 className="font-semibold text-slate-900">По организациям</h2>
             </div>
@@ -154,7 +154,7 @@ export function SADashboardPage() {
 
 function Card({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4 shadow-sm">
       <div className="flex items-center gap-2 mb-2">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${color}`}>
           <Icon className="w-4 h-4" />

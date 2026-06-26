@@ -149,7 +149,7 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         )}
 
         {invites.length > 0 && (
-          <div className="pt-4 border-t border-slate-200">
+          <div className="pt-4 border-t border-[#e8edf3]">
             <h4 className="text-sm font-medium text-slate-700 mb-2">
               Активные приглашения ({invites.length})
             </h4>

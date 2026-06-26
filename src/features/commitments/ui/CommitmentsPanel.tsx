@@ -73,9 +73,9 @@ export function CommitmentsPanel({
   }
 
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 ${className}`}>
+    <div className={`bg-white rounded-xl border border-[#e8edf3] ${className}`}>
       {/* Header */}
-      <div className="p-4 border-b border-slate-200">
+      <div className="p-4 border-b border-[#e8edf3]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold text-slate-900 flex items-center gap-2">
             <Clock className="w-5 h-5 text-blue-500" />
@@ -134,7 +134,7 @@ export function CommitmentsPanel({
                       ? 'border-red-200 bg-red-50'
                       : commitment.status === 'completed'
                       ? 'border-green-200 bg-green-50'
-                      : 'border-slate-200 hover:border-slate-300'
+                      : 'border-[#e8edf3] hover:border-slate-300'
                   }`}
                 >
                   <div className="flex items-start gap-3">

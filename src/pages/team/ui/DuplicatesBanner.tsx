@@ -176,7 +176,7 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 flex-wrap">
         <Users className="w-3.5 h-3.5" />
         <span>
@@ -200,7 +200,7 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
               className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${
                 isKeep
                   ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-200'
-                  : 'border-slate-200 hover:border-slate-300 bg-white'
+                  : 'border-[#e8edf3] hover:border-slate-300 bg-white'
               }`}
             >
               <input

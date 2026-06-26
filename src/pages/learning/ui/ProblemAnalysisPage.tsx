@@ -172,7 +172,7 @@ export default function ProblemAnalysisPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Brain className="w-7 h-7 text-purple-600" />
             Анализ проблем клиентов
           </h1>
@@ -243,13 +243,13 @@ export default function ProblemAnalysisPage() {
       {data && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
                   <MessageSquare className="w-5 h-5 text-slate-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-800">
+                  <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">
                     {data.summary.totalMessages.toLocaleString()}
                   </p>
                   <p className="text-sm text-slate-500">Всего сообщений</p>
@@ -257,13 +257,13 @@ export default function ProblemAnalysisPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-orange-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-800">
+                  <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">
                     {data.summary.matchedByPatterns.toLocaleString()}
                   </p>
                   <p className="text-sm text-slate-500">Найдено проблем</p>
@@ -271,13 +271,13 @@ export default function ProblemAnalysisPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
                   <Tag className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-800">
+                  <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">
                     {data.summary.uniqueProblemTypes}
                   </p>
                   <p className="text-sm text-slate-500">Типов проблем</p>
@@ -285,13 +285,13 @@ export default function ProblemAnalysisPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                   <TrendingUp className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-800">
+                  <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">
                     {data.summary.totalMessages > 0 
                       ? Math.round((data.summary.matchedByPatterns / data.summary.totalMessages) * 100)
                       : 0}%
@@ -303,8 +303,8 @@ export default function ProblemAnalysisPage() {
           </div>
 
           {/* Top Problems */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#e8edf3] bg-slate-50">
               <h2 className="font-semibold text-slate-800">
                 ТОП-20 наиболее частых проблем
               </h2>
@@ -351,8 +351,8 @@ export default function ProblemAnalysisPage() {
           </div>
 
           {/* By Category */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#e8edf3] bg-slate-50">
               <h2 className="font-semibold text-slate-800">
                 Проблемы по категориям
               </h2>
@@ -405,13 +405,13 @@ export default function ProblemAnalysisPage() {
           </div>
 
           {/* Patterns Reference */}
-          <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+          <div className="bg-slate-50 rounded-xl border border-[#e8edf3] p-6">
             <h3 className="font-semibold text-slate-800 mb-4">
               Справка по паттернам для AI
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {data.patterns.slice(0, 16).map(p => (
-                <div key={p.key} className="bg-white rounded-lg p-3 border border-slate-200">
+                <div key={p.key} className="bg-white rounded-lg p-3 border border-[#e8edf3]">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge size="sm" className={CATEGORY_COLORS[p.category] || 'bg-slate-100'}>
                       {p.category}
@@ -452,7 +452,7 @@ export default function ProblemAnalysisPage() {
               </h4>
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {selectedProblem.examples.map((ex, idx) => (
-                  <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-[#e8edf3]">
                     <p className="text-slate-700">{ex.text}</p>
                     <p className="text-xs text-slate-400 mt-1">
                       {new Date(ex.date).toLocaleString('ru-RU')}
@@ -462,7 +462,7 @@ export default function ProblemAnalysisPage() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
+            <div className="pt-4 border-t border-[#e8edf3]">
               <h4 className="font-medium text-slate-700 mb-2">
                 Regex паттерн (ID: {selectedProblem.key})
               </h4>

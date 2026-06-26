@@ -23,7 +23,7 @@ export function ToolCallCard({ call }: { call: InsightsToolCall }) {
       className={`rounded-lg border text-xs ${
         errorObj
           ? 'border-rose-200 bg-rose-50/60'
-          : 'border-slate-200 bg-slate-50/60'
+          : 'border-[#e8edf3] bg-slate-50/60'
       }`}
     >
       <button
@@ -68,13 +68,13 @@ export function ToolCallCard({ call }: { call: InsightsToolCall }) {
         <div className="px-3 pb-3 pt-1 space-y-2">
           <div>
             <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Параметры</div>
-            <pre className="bg-white border border-slate-200 rounded-md p-2 text-[11px] text-slate-700 overflow-x-auto">
+            <pre className="bg-white border border-[#e8edf3] rounded-md p-2 text-[11px] text-slate-700 overflow-x-auto">
               {JSON.stringify(call.args, null, 2)}
             </pre>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Сырой результат</div>
-            <pre className="bg-white border border-slate-200 rounded-md p-2 text-[11px] text-slate-700 overflow-x-auto max-h-72">
+            <pre className="bg-white border border-[#e8edf3] rounded-md p-2 text-[11px] text-slate-700 overflow-x-auto max-h-72">
               {JSON.stringify(call.result, null, 2)}
             </pre>
           </div>

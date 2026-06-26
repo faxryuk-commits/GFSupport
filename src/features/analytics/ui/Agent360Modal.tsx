@@ -294,7 +294,7 @@ function Agent360Body({ data, frtMetric }: { data: Agent360Payload; frtMetric: M
   return (
     <>
       {/* Profile header */}
-      <div className="bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-xl p-4">
+      <div className="bg-gradient-to-r from-slate-50 to-white border border-[#e8edf3] rounded-xl p-4">
         <div className="flex flex-wrap items-start gap-4 justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">{profile.name}</h3>
@@ -371,7 +371,7 @@ function Agent360Body({ data, frtMetric }: { data: Agent360Payload; frtMetric: M
 
       {/* vs Team */}
       {(vsTeam.responses != null || vsTeam.resolved != null) && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Activity className="w-4 h-4 text-slate-500" />
             <h4 className="text-sm font-semibold text-slate-700">Сравнение с командой</h4>
@@ -661,7 +661,7 @@ function KpiCard({ icon, label, value, sub, accent, title, benchmark }: {
   }
   return (
     <div
-      className="bg-white border border-slate-200 rounded-xl p-3"
+      className="bg-white border border-[#e8edf3] rounded-xl p-3"
       title={title}
     >
       <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border ${colors[accent]}`}>
@@ -774,7 +774,7 @@ function DailyActivityChart({
   const [hover, setHover] = useState<number | null>(null)
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-semibold text-slate-700">Активность по дням</h4>
@@ -887,7 +887,7 @@ function DailyActivityChart({
 
 function SectionBox({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <div className="flex items-center gap-2 mb-2.5">
         {icon}
         <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
@@ -1127,7 +1127,7 @@ function AgentAiSummary({ data }: { data: Agent360Payload }) {
               return (
                 <div
                   key={item.id}
-                  className="bg-white border border-slate-200 rounded-lg text-xs"
+                  className="bg-white border border-[#e8edf3] rounded-lg text-xs"
                 >
                   <button
                     type="button"
@@ -1207,7 +1207,7 @@ function SummaryColumn({
   }[tone]
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3">
+    <div className="bg-white border border-[#e8edf3] rounded-lg p-3">
       <div className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${toneClass} mb-2`}>
         {icon}
         {title}

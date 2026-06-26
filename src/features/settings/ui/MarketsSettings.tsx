@@ -163,7 +163,7 @@ export function MarketsSettings() {
       )}
 
       {showForm && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="bg-white border border-[#e8edf3] rounded-xl p-5 space-y-4">
           <h4 className="font-medium text-slate-900">{editingId ? 'Редактировать рынок' : 'Новый рынок'}</h4>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -204,7 +204,7 @@ export function MarketsSettings() {
         {markets.map(m => (
           <div key={m.id} onClick={() => setSelectedMarket(m.id)}
             className={`bg-white border rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
-              selectedMarket === m.id ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'
+              selectedMarket === m.id ? 'border-blue-500 ring-2 ring-blue-100' : 'border-[#e8edf3]'
             }`}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -235,7 +235,7 @@ export function MarketsSettings() {
       </div>
 
       {selectedMarket && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="bg-white border border-[#e8edf3] rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-slate-900">
               Сотрудники рынка: {markets.find(m => m.id === selectedMarket)?.name}
@@ -273,7 +273,7 @@ export function MarketsSettings() {
           )}
 
           {showAgentPicker && (
-            <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50">
+            <div className="border border-[#e8edf3] rounded-lg p-3 space-y-2 bg-slate-50">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input value={agentSearch} onChange={e => setAgentSearch(e.target.value)}
@@ -295,7 +295,7 @@ export function MarketsSettings() {
           )}
 
           {showChannelPicker && (
-            <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50">
+            <div className="border border-[#e8edf3] rounded-lg p-3 space-y-2 bg-slate-50">
               <p className="text-sm font-medium text-slate-700">Непривязанные каналы ({unassignedChannels.length})</p>
               <div className="max-h-48 overflow-y-auto space-y-1">
                 {unassignedChannels.slice(0, 30).map(ch => (

@@ -53,7 +53,7 @@ export function SAAuditPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Аудит логи</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Аудит логи</h1>
           <p className="text-sm text-slate-500 mt-1">Журнал действий на платформе</p>
         </div>
 
@@ -65,14 +65,14 @@ export function SAAuditPage() {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-slate-400" />
             <input
-              className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-40"
+              className="px-3 py-1.5 border border-[#e8edf3] rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-40"
               placeholder="Действие..."
               value={actionFilter}
               onChange={e => { setActionFilter(e.target.value); setOffset(0) }}
             />
           </div>
           <input
-            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-40"
+            className="px-3 py-1.5 border border-[#e8edf3] rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-40"
             placeholder="org_id..."
             value={orgFilter}
             onChange={e => { setOrgFilter(e.target.value); setOffset(0) }}
@@ -87,7 +87,7 @@ export function SAAuditPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-[#e8edf3] shadow-sm overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />

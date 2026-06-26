@@ -27,7 +27,7 @@ export function QuickPrompts({ onPick }: { onPick: (text: string) => void }) {
             key={p}
             type="button"
             onClick={() => onPick(p)}
-            className="text-left text-sm text-slate-700 px-3 py-2.5 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors"
+            className="text-left text-sm text-slate-700 px-3 py-2.5 rounded-lg border border-[#e8edf3] hover:border-slate-300 hover:bg-slate-50 transition-colors"
           >
             {p}
           </button>

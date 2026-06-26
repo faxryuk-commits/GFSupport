@@ -67,7 +67,7 @@ export function CategoryFlowSection({ period, source = 'all' }: Props) {
 
   if (loading && !data) {
     return (
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+      <div className="bg-white rounded-2xl p-6 border border-[#e8edf3] shadow-sm">
         <div className="h-5 bg-slate-100 rounded w-48 mb-4 animate-pulse" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
@@ -98,7 +98,7 @@ export function CategoryFlowSection({ period, source = 'all' }: Props) {
   return (
     <div className="space-y-6">
       {/* === KPI строка === */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+      <div className="bg-white rounded-2xl p-6 border border-[#e8edf3] shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
@@ -144,7 +144,7 @@ export function CategoryFlowSection({ period, source = 'all' }: Props) {
       </div>
 
       {/* === Treemap по доменам === */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+      <div className="bg-white rounded-2xl p-6 border border-[#e8edf3] shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Карта проблем по доменам</h3>
@@ -167,7 +167,7 @@ export function CategoryFlowSection({ period, source = 'all' }: Props) {
 
       {/* === Stacked-bar по подкатегориям внутри выбранного домена === */}
       {selectedDomain && selectedDomain.subcategories.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-2xl p-6 border border-[#e8edf3] shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">
@@ -272,7 +272,7 @@ function DomainTreemap({
                 ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50'
                 : isDanger
                   ? 'border-rose-200 bg-rose-50 hover:bg-rose-100'
-                  : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                  : 'border-[#e8edf3] bg-slate-50 hover:bg-slate-100'
             }`}
             style={{ minHeight: `${Math.max(100, Math.min(220, 80 + scale * 140))}px` }}
           >

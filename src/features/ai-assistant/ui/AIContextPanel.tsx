@@ -59,9 +59,9 @@ export function AIContextPanel({ channelId, isOpen, onClose, className = '' }: A
   if (!isOpen) return null
 
   return (
-    <div className={`bg-white border-l border-slate-200 h-full overflow-y-auto ${className}`}>
+    <div className={`bg-white border-l border-[#e8edf3] h-full overflow-y-auto ${className}`}>
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-slate-200 p-4 z-10">
+      <div className="sticky top-0 bg-white border-b border-[#e8edf3] p-4 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Brain className="w-5 h-5 text-blue-500" />

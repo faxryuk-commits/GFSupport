@@ -95,7 +95,7 @@ export function ResponseTimeComparison({ stats, compact = false, className = '' 
 
         {/* Comparison bar */}
         {hasClientData && hasAgentData && (
-          <div className="pt-2 border-t border-slate-200">
+          <div className="pt-2 border-t border-[#e8edf3]">
             <div className="flex items-center gap-2 mb-2">
               <TrendIcon className={`w-4 h-4 ${trendColor}`} />
               <span className="text-xs text-slate-500">

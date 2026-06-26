@@ -31,7 +31,7 @@ const fmt = (ts: string) => { try { return new Date(ts).toLocaleString('ru-RU', 
 
 function Card({ big, label, tone = 'text-slate-900' }: { big: React.ReactNode; label: string; tone?: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
+    <div className="bg-white border border-[#e8edf3] rounded-xl px-4 py-3">
       <div className={`text-2xl font-bold ${tone}`}>{big}</div>
       <div className="text-xs text-slate-500">{label}</div>
     </div>
@@ -94,7 +94,7 @@ export function AIJournalTab() {
           <h3 className="text-sm font-semibold text-slate-700 mb-2">🛡 SLA-страж — последние срабатывания</h3>
           <div className="space-y-1">
             {data.guard.recentAlerts.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm">
+              <div key={i} className="flex items-center gap-3 px-3 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm">
                 <span className={`font-bold w-20 ${TIER_COLOR[a.tier] || 'text-slate-600'}`}>{a.tier}</span>
                 <span className="w-44 shrink-0 truncate text-slate-700">{a.channel}</span>
                 <span className="flex-1 text-slate-500 truncate">{a.ask || a.reasoning}</span>
@@ -119,7 +119,7 @@ export function AIJournalTab() {
         </div>
         <div className="space-y-2">
           {feed.map((f, i) => (
-            <div key={i} className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
+            <div key={i} className="bg-white border border-[#e8edf3] rounded-lg px-3 py-2.5">
               <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
                 <span className={`px-1.5 py-0.5 rounded ${f.actor === 'ai_agent' ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'}`}>
                   {f.actor === 'ai_agent' ? '🤖 Агент' : '🛡 Страж'}
@@ -145,7 +145,7 @@ export function AIJournalTab() {
                   </span>
                 )}
               </div>
-              {f.reply && <div className="text-sm text-slate-600 mt-1 pl-3 border-l-2 border-slate-200">💬 {f.reply}</div>}
+              {f.reply && <div className="text-sm text-slate-600 mt-1 pl-3 border-l-2 border-[#e8edf3]">💬 {f.reply}</div>}
             </div>
           ))}
         </div>

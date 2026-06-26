@@ -82,7 +82,7 @@ export function RoleFilter({ value, onChange }: RoleFilterProps) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-md shadow-lg z-20 max-h-[400px] overflow-y-auto">
+          <div className="absolute right-0 mt-1 w-72 bg-white border border-[#e8edf3] rounded-md shadow-lg z-20 max-h-[400px] overflow-y-auto">
             <button
               onClick={() => {
                 onChange({ selection: { kind: 'support' }, roles: supportRoles })

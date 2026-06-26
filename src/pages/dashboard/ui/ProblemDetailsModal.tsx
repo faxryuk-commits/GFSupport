@@ -127,7 +127,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
             {/* Summary Cards */}
             <div className="grid grid-cols-4 gap-4">
               <div className="bg-slate-50 rounded-lg p-4">
-                <div className="text-2xl font-bold text-slate-800">{data.summary?.totalCases ?? 0}</div>
+                <div className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{data.summary?.totalCases ?? 0}</div>
                 <div className="text-sm text-slate-500">Всего кейсов</div>
               </div>
               <div className="bg-green-50 rounded-lg p-4">
@@ -145,7 +145,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
             </div>
 
             {/* Root Causes */}
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="bg-white border border-[#e8edf3] rounded-xl p-5">
               <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-orange-500" />
                 Корневые причины
@@ -179,7 +179,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
             </div>
 
             {/* Top Channels */}
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="bg-white border border-[#e8edf3] rounded-xl p-5">
               <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-blue-500" />
                 Топ каналов с этой проблемой
@@ -216,7 +216,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
 
             {/* Priority & Status Distribution */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <div className="bg-white border border-[#e8edf3] rounded-xl p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-purple-500" />
                   По приоритету
@@ -237,7 +237,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <div className="bg-white border border-[#e8edf3] rounded-xl p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <CheckCircle className="w-5 h-5 text-green-500" />
                   По статусу
@@ -268,7 +268,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
 
             {/* Daily Trend */}
             {(data.dailyTrend || []).length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <div className="bg-white border border-[#e8edf3] rounded-xl p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <TrendingUp className="w-5 h-5 text-orange-500" />
                   Динамика по дням
@@ -296,7 +296,7 @@ export function ProblemDetailsModal({ isOpen, onClose, category, categoryLabel }
 
             {/* Sample Messages */}
             {(data.sampleMessages || []).length > 0 && (
-              <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <div className="bg-white border border-[#e8edf3] rounded-xl p-5">
                 <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                   <MessageSquare className="w-5 h-5 text-slate-500" />
                   Примеры обращений

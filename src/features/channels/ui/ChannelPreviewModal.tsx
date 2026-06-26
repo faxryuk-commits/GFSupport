@@ -19,7 +19,7 @@ export function ChannelPreviewModal({ channel, messages, isLoading, onClose, onO
         className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#e8edf3]">
           <div className="flex items-center gap-3">
             <Avatar name={channel.name} src={channel.avatar} size="sm" />
             <div>

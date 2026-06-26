@@ -30,7 +30,7 @@ const colors = [
 
 export function AppearanceSettings({ settings, onChange }: AppearanceSettingsProps) {
   return (
-    <div className="bg-white rounded-xl p-6 border border-slate-200">
+    <div className="bg-white rounded-xl p-6 border border-[#e8edf3]">
       <h2 className="text-lg font-semibold text-slate-800 mb-4">Внешний вид</h2>
       
       <div className="space-y-6">
@@ -46,7 +46,7 @@ export function AppearanceSettings({ settings, onChange }: AppearanceSettingsPro
                   className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors ${
                     settings.theme === theme.id
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-slate-200 hover:border-slate-300'
+                      : 'border-[#e8edf3] hover:border-slate-300'
                   }`}
                 >
                   <Icon className={`w-6 h-6 ${settings.theme === theme.id ? 'text-blue-500' : 'text-slate-400'}`} />
