@@ -172,7 +172,7 @@ export function OrgRegisterPage() {
               <button
                 onClick={requestOtp}
                 disabled={loading || regCode.length < 6}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-xl hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 font-medium transition-all"
               >
                 {loading ? 'Проверка...' : <><span>Получить код подтверждения</span><ArrowRight className="w-4 h-4" /></>}
               </button>
@@ -213,7 +213,7 @@ export function OrgRegisterPage() {
               <button
                 onClick={verifyAndCreate}
                 disabled={loading || otp.length < 6}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-xl hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 font-medium transition-all"
               >
                 {loading ? 'Создание...' : <><span>Создать организацию</span><ArrowRight className="w-4 h-4" /></>}
               </button>
@@ -237,7 +237,7 @@ export function OrgRegisterPage() {
               </div>
               <button
                 onClick={() => navigate('/overview')}
-                className="w-full py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium transition-colors"
+                className="w-full py-3 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-xl hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] font-medium transition-all"
               >
                 Перейти в панель управления
               </button>

@@ -131,7 +131,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
         <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
         <p className="text-slate-600 mb-2">Не удалось загрузить данные</p>
         <p className="text-sm text-slate-400 mb-4">{error}</p>
-        <button onClick={loadData} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">
+        <button onClick={loadData} className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg text-sm hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]">
           Повторить
         </button>
       </div>

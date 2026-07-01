@@ -217,7 +217,7 @@ export function OutreachModal({ isOpen, onClose, selectedChannels }: OutreachMod
             <button
               onClick={send}
               disabled={sending || !text.trim() || channelIds.length === 0}
-              className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2 text-sm bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-md hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               Отправить {channelIds.length}{' '}

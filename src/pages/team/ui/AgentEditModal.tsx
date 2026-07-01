@@ -341,7 +341,7 @@ export function AgentEditModal({
           <button
             type="submit"
             disabled={saving || !form.name.trim()}
-            className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Сохранение...' : 'Сохранить'}
           </button>

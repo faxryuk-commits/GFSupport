@@ -151,7 +151,7 @@ export function MarketsSettings() {
           <p className="text-sm text-slate-500">Управление рынками, привязка сотрудников и каналов</p>
         </div>
         <button onClick={() => { setShowForm(true); setEditingId(null); setForm({ name: '', code: '', country: '', timezone: 'Asia/Tashkent' }) }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] text-sm">
           <Plus className="w-4 h-4" /> Добавить рынок
         </button>
       </div>
@@ -194,7 +194,7 @@ export function MarketsSettings() {
             </div>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Сохранить</button>
+            <button onClick={handleSave} className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] text-sm">Сохранить</button>
             <button onClick={() => { setShowForm(false); setEditingId(null) }} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm">Отмена</button>
           </div>
         </div>

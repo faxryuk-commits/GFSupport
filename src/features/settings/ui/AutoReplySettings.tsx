@@ -263,7 +263,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
             </button>
             <button
               onClick={addNewTemplate}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
               Добавить

@@ -143,7 +143,7 @@ export function NewCaseForm({ onClose, onSubmit }: NewCaseFormProps) {
         </button>
         <button 
           type="submit" 
-          className="px-6 py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600"
+          className="px-6 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] font-medium rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]"
         >
           Создать кейс
         </button>

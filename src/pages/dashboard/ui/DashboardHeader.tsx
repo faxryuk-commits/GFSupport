@@ -89,7 +89,7 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
                       Отмена
                     </button>
                     <button onClick={handleCustomDateApply} disabled={!customDateFrom || !customDateTo}
-                      className="flex-1 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50">
+                      className="flex-1 px-3 py-2 text-sm bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all disabled:opacity-50">
                       Применить
                     </button>
                   </div>

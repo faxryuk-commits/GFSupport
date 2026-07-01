@@ -190,7 +190,7 @@ export function BenchmarksPage() {
         <button
           onClick={handleRecompute}
           disabled={recomputing}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-md hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {recomputing ? (
             <Loader2 className="w-4 h-4 animate-spin" />

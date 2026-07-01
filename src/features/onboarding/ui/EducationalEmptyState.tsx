@@ -72,7 +72,7 @@ export function EducationalEmptyState({
         {action && (
           <button
             onClick={action.onClick}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] text-sm font-medium rounded-xl hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all"
           >
             {action.label}
             <ArrowRight className="w-4 h-4" />

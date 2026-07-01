@@ -302,7 +302,7 @@ export function CustomerHealthSection({ period, source }: Props) {
               </button>
               <button
                 onClick={() => setOutreachOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-md hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]"
               >
                 <Send className="w-3.5 h-3.5" />
                 Отправить check-in
