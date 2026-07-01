@@ -254,7 +254,7 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
           type="button"
           onClick={handleMerge}
           disabled={merging || group.members.length < 2}
-          className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-1"
+          className="px-3 py-1.5 text-sm font-medium bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 inline-flex items-center gap-1"
         >
           {merging ? (
             <>

@@ -273,7 +273,7 @@ export function BroadcastPage() {
             )}
             <button 
               onClick={() => setIsCreateModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]"
             >
               <Plus className="w-4 h-4" />
               Новая рассылка
@@ -551,7 +551,7 @@ export function BroadcastPage() {
             <button 
               type="button"
               onClick={() => handleCreate(false)}
-              className="px-6 py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+              className="px-6 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] font-medium rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 flex items-center gap-2"
               disabled={isSaving || !formData.messageText.trim() || !formData.scheduledAt}
             >
               <Calendar className="w-4 h-4" />

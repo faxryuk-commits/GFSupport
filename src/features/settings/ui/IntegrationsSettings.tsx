@@ -583,7 +583,7 @@ export function IntegrationsSettings({
                 className={`px-4 py-2 rounded-lg text-sm font-medium ${
                   ai?.status === 'active'
                     ? 'text-slate-600 bg-white border border-[#e8edf3] hover:bg-slate-50'
-                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                    : 'bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]'
                 }`}
               >
                 {ai?.status === 'active' ? 'Настройки' : 'Настроить'}
@@ -682,7 +682,7 @@ export function IntegrationsSettings({
               </button>
               <button
                 onClick={() => onConnect(selectedIntegration)}
-                className="px-6 py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600"
+                className="px-6 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] font-medium rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]"
               >
                 Подключить
               </button>

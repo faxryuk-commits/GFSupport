@@ -718,7 +718,7 @@ export function CaseDetailModal({
                   <button
                     onClick={handleSendReply}
                     disabled={!replyText.trim() || sending}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+                    className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 flex items-center gap-2"
                   >
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     Отправить
@@ -876,7 +876,7 @@ export function CaseDetailModal({
                   <button
                     onClick={handleAddComment}
                     disabled={!newComment.trim()}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                    className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
                   </button>
@@ -935,7 +935,7 @@ export function CaseDetailModal({
           )}
 
           {caseData.channelId && (
-            <button onClick={handleOpenChat} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600">
+            <button onClick={handleOpenChat} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] text-sm font-medium rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]">
               <ExternalLink className="w-4 h-4" />
               Открыть чат
             </button>

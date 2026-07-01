@@ -153,7 +153,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       <div className="flex flex-col items-center justify-center h-64 text-red-500">
         <AlertCircle className="w-12 h-12 mb-3" />
         <p className="text-lg font-medium">{error}</p>
-        <button onClick={loadAgents} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+        <button onClick={loadAgents} className="mt-4 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all">
           Повторить
         </button>
       </div>

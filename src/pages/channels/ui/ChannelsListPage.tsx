@@ -219,7 +219,7 @@ export function ChannelsListPage() {
             </button>
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
               Добавить
@@ -430,7 +430,7 @@ export function ChannelsListPage() {
           <div className="flex justify-end pt-2">
             <button
               onClick={() => setShowAddModal(false)}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all text-sm font-medium"
             >
               Понятно
             </button>
@@ -468,7 +468,7 @@ export function ChannelsListPage() {
             <button
               onClick={handleRename}
               disabled={!newName.trim() || actionLoading}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
+              className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all text-sm font-medium disabled:opacity-50"
             >
               {actionLoading ? 'Сохранение...' : 'Сохранить'}
             </button>
@@ -563,7 +563,7 @@ export function ChannelsListPage() {
               <button
                 onClick={handleUpdateType}
                 disabled={(newType === settingsChannel.type && newSlaCategory === ((settingsChannel as any).slaCategory || 'client')) || actionLoading}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
+                className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all text-sm font-medium disabled:opacity-50"
               >
                 {actionLoading ? 'Сохранение...' : 'Сохранить'}
               </button>

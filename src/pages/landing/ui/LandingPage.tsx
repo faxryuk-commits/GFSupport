@@ -161,7 +161,7 @@ export default function LandingPage() {
             <Link to="/login" className="text-sm text-gray-600 hover:text-gray-900 font-medium px-4 py-2">
               Войти
             </Link>
-            <Link to="/signup" className="text-sm bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 font-medium transition-colors">
+            <Link to="/signup" className="text-sm bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] px-5 py-2 rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] font-medium transition-all">
               Попробовать
             </Link>
           </div>
@@ -185,7 +185,7 @@ export default function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
               to="/signup"
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-8 py-3.5 rounded-xl hover:bg-blue-700 font-semibold text-lg transition-colors shadow-lg shadow-blue-600/25"
+              className="inline-flex items-center gap-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] px-8 py-3.5 rounded-xl hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] font-semibold text-lg transition-all shadow-lg shadow-blue-600/25"
             >
               Попробовать бесплатно <ArrowRight className="w-5 h-5" />
             </Link>
@@ -297,7 +297,7 @@ export default function LandingPage() {
           <div className="text-center mt-12">
             <Link
               to="/signup"
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 font-semibold transition-colors shadow-lg shadow-blue-600/20"
+              className="inline-flex items-center gap-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] px-8 py-3 rounded-xl hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] font-semibold transition-all shadow-lg shadow-blue-600/20"
             >
               Начать сейчас <ArrowRight className="w-5 h-5" />
             </Link>
@@ -402,7 +402,7 @@ export default function LandingPage() {
                   className={`block text-center py-3 rounded-xl font-semibold transition-colors ${
                     plan.highlight
                       ? 'bg-white text-blue-600 hover:bg-blue-50'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]'
                   }`}
                 >
                   {plan.cta}

@@ -105,7 +105,7 @@ export function HealthPage() {
         <div className="flex flex-col items-center gap-3 text-center">
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <p className="text-slate-700 font-medium">{error}</p>
-          <button onClick={load} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          <button onClick={load} className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all">
             Попробовать снова
           </button>
         </div>

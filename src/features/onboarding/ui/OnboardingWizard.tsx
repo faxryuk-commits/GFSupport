@@ -256,7 +256,7 @@ export function OnboardingWizard() {
             )}
             <button
               onClick={() => setCurrent(current + 1)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-xl text-sm font-medium hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all"
             >
               Далее
               <ArrowRight className="w-4 h-4" />
