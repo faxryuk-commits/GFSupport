@@ -130,7 +130,7 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
       onClick={handleCardClick}
       className={`bg-white rounded-xl p-3 shadow-sm border transition-all ${selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} select-none ${
         isDragging ? 'opacity-50 rotate-2 scale-105' : ''
-      } ${selected ? 'border-blue-400 ring-2 ring-blue-200' : isOverdue ? 'border-red-300 ring-1 ring-red-200' : aging.level === 'danger' ? 'border-red-200' : aging.level === 'warn' ? 'border-amber-200' : 'border-slate-200'} hover:shadow-md`}
+      } ${selected ? 'border-blue-400 ring-2 ring-blue-200' : isOverdue ? 'border-red-300 ring-1 ring-red-200' : aging.level === 'danger' ? 'border-red-200' : aging.level === 'warn' ? 'border-amber-200' : 'border-[#e8edf3]'} hover:shadow-md`}
     >
       {/* Header: чекбокс (в режиме выбора) + номер тикета + приоритет + aging */}
       <div className="flex items-start justify-between mb-2">

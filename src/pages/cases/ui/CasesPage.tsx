@@ -640,7 +640,7 @@ export function CasesPage() {
           <div className="flex items-center gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-slate-800">Кейсы</h1>
+                <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Кейсы</h1>
                 <PageHint
                   title="Управление кейсами"
                   description="Кейсы — это обращения клиентов, которые AI создаёт автоматически из сообщений в группах."
@@ -726,7 +726,7 @@ export function CasesPage() {
                 placeholder="Поиск кейсов..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-64 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="pl-10 pr-4 py-2 w-64 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
             <button
@@ -734,7 +734,7 @@ export function CasesPage() {
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 selectionMode
                   ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
               }`}
               title="Включить режим выбора нескольких кейсов"
             >
@@ -769,7 +769,7 @@ export function CasesPage() {
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 quickFilter === f.key
                   ? f.danger ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
               }`}
             >
               <f.icon className="w-4 h-4" />
@@ -788,7 +788,7 @@ export function CasesPage() {
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
               showFilters || activeFiltersCount > 0 
                 ? 'bg-blue-50 text-blue-600 border border-blue-200' 
-                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -824,7 +824,7 @@ export function CasesPage() {
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value as DateFilterKey)}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 {DATE_FILTERS.map(f => (
                   <option key={f.key} value={f.key}>{f.label}</option>
@@ -840,7 +840,7 @@ export function CasesPage() {
                     type="date"
                     value={customDateFrom}
                     onChange={(e) => setCustomDateFrom(e.target.value)}
-                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -849,7 +849,7 @@ export function CasesPage() {
                     type="date"
                     value={customDateTo}
                     onChange={(e) => setCustomDateTo(e.target.value)}
-                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
               </>
@@ -864,7 +864,7 @@ export function CasesPage() {
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="all">Все категории</option>
                 {uniqueCategories.map(cat => (
@@ -882,7 +882,7 @@ export function CasesPage() {
               <select
                 value={channelFilter}
                 onChange={(e) => setChannelFilter(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[200px]"
+                className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[200px]"
               >
                 <option value="all">Все группы</option>
                 {channels.map(ch => (
@@ -894,7 +894,7 @@ export function CasesPage() {
             {/* Source Filter (Telegram / WhatsApp) */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-slate-500">Платформа</label>
-              <div className="inline-flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
+              <div className="inline-flex items-center bg-white border border-[#e8edf3] rounded-lg p-0.5">
                 {(['all', 'telegram', 'whatsapp'] as const).map((s) => {
                   const active = sourceFilter === s
                   const label = s === 'all' ? 'Все' : s === 'telegram' ? 'TG' : 'WA'
@@ -1002,7 +1002,7 @@ export function CasesPage() {
                     </div>
                   </div>
 
-                  <div className="flex-1 bg-slate-50 border border-slate-200 border-t-0 rounded-b-xl p-2 space-y-2 min-h-[260px]">
+                  <div className="flex-1 bg-slate-50 border border-[#e8edf3] border-t-0 rounded-b-xl p-2 space-y-2 min-h-[260px]">
                     {colCases.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-slate-300 text-sm py-8">
                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-2">
@@ -1101,7 +1101,7 @@ export function CasesPage() {
 
       {/* Bulk Action Bar — снизу страницы при выборе кейсов */}
       {selectionMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl rounded-2xl border border-slate-200 px-4 py-2 flex items-center gap-3">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl rounded-2xl border border-[#e8edf3] px-4 py-2 flex items-center gap-3">
           <span className="text-sm font-medium text-slate-700">
             Выбрано: <span className="text-blue-600">{selectedIds.size}</span>
           </span>
@@ -1110,7 +1110,7 @@ export function CasesPage() {
           <select
             disabled={bulkPending}
             onChange={(e) => { if (e.target.value) handleBulkStatus(e.target.value as CaseStatus); e.target.value = '' }}
-            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">Сменить статус…</option>
             <option value="detected">Обнаружен</option>
@@ -1125,7 +1125,7 @@ export function CasesPage() {
           <select
             disabled={bulkPending}
             onChange={(e) => { if (e.target.value !== undefined) handleBulkAssign(e.target.value); e.target.value = '' }}
-            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="">Назначить…</option>
             <option value="">— Снять назначение —</option>

@@ -72,7 +72,7 @@ export function KnowledgeCycleTab() {
             {STEPS.map((s, i) => (
               <div key={s.title} className="flex items-center">
                 <div className="flex flex-col items-center text-center w-[120px]">
-                  <div className="w-[54px] h-[54px] rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-2xl">
+                  <div className="w-[54px] h-[54px] rounded-full bg-slate-50 border border-[#e8edf3] flex items-center justify-center text-2xl">
                     {s.emoji}
                   </div>
                   <div className="text-sm font-semibold text-slate-800 mt-2">{s.title}</div>

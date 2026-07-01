@@ -103,7 +103,7 @@ export function LoginPage() {
             <span className="font-bold text-xl text-slate-800">SUPPORT</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Добро пожаловать</h2>
+          <h2 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight mb-2">Добро пожаловать</h2>
           <p className="text-slate-500 mb-8">Введите данные для входа в систему</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -120,7 +120,7 @@ export function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Введите логин или email"
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full px-4 py-3 bg-white border border-[#e8edf3] rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               />
             </div>
 
@@ -132,7 +132,7 @@ export function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Введите пароль"
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  className="w-full px-4 py-3 bg-white border border-[#e8edf3] rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
                 <button
                   type="button"

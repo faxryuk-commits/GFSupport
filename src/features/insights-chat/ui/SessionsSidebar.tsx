@@ -34,8 +34,8 @@ export function SessionsSidebar({
   }
 
   return (
-    <aside className="w-72 flex-shrink-0 border-r border-slate-200 bg-slate-50/40 flex flex-col">
-      <div className="p-3 border-b border-slate-200">
+    <aside className="w-72 flex-shrink-0 border-r border-[#e8edf3] bg-slate-50/40 flex flex-col">
+      <div className="p-3 border-b border-[#e8edf3]">
         <button
           type="button"
           onClick={onNew}
@@ -61,7 +61,7 @@ export function SessionsSidebar({
             <div
               key={s.id}
               className={`group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm cursor-pointer ${
-                active ? 'bg-white border border-slate-200 shadow-sm' : 'hover:bg-white/70'
+                active ? 'bg-white border border-[#e8edf3] shadow-sm' : 'hover:bg-white/70'
               }`}
               onClick={() => !isEditing && onSelect(s.id)}
             >
@@ -77,7 +77,7 @@ export function SessionsSidebar({
                       if (e.key === 'Enter') commitEdit()
                       if (e.key === 'Escape') setEditingId(null)
                     }}
-                    className="flex-1 min-w-0 text-sm bg-white border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                    className="flex-1 min-w-0 text-sm bg-white border border-[#e8edf3] rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
                   />
                   <button
                     type="button"

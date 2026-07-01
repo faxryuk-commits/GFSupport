@@ -40,7 +40,7 @@ export function WeeklyHeatmap({ agents, teamWeekly }: Props) {
   if (agents.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
       <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
         <CalendarDays className="w-5 h-5 text-blue-500" />
         Загруженность по дням недели
@@ -83,7 +83,7 @@ export function WeeklyHeatmap({ agents, teamWeekly }: Props) {
           </thead>
           <tbody>
             {/* Team total row */}
-            <tr className="border-b-2 border-slate-200 bg-slate-50 font-bold">
+            <tr className="border-b-2 border-[#e8edf3] bg-slate-50 font-bold">
               <td className="py-2 px-2 text-slate-700">Команда</td>
               {teamWeekly.map((val, i) => (
                 <td key={i} className="py-1.5 px-1 text-center">

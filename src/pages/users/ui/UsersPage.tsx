@@ -194,7 +194,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
         {!embedded ? (
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">Пользователи</h1>
+              <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Пользователи</h1>
               <p className="text-slate-500 mt-1">Управление базой клиентов и сотрудников</p>
             </div>
             <div className="flex items-center gap-3">
@@ -264,14 +264,14 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               placeholder="Поиск пользователей..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-4 py-2.5 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="all">Все роли</option>
             <option value="client">Клиенты</option>
@@ -281,7 +281,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
         </div>
 
         {/* Table with fixed height and scroll */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 380px)', minHeight: '400px' }}>
+        <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 380px)', minHeight: '400px' }}>
           {isLoading && users.length === 0 ? (
             <div className="flex items-center justify-center py-20 flex-1">
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -295,7 +295,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
           ) : (
             <>
               {/* Fixed Header */}
-              <div className="bg-slate-50 border-b border-slate-200 flex-shrink-0">
+              <div className="bg-slate-50 border-b border-[#e8edf3] flex-shrink-0">
                 <table className="w-full">
                   <thead>
                     <tr>
@@ -412,7 +412,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                 </table>
               </div>
               {/* Footer with count */}
-              <div className="bg-slate-50 border-t border-slate-200 px-6 py-3 flex-shrink-0">
+              <div className="bg-slate-50 border-t border-[#e8edf3] px-6 py-3 flex-shrink-0">
                 <p className="text-sm text-slate-500">
                   Показано: <span className="font-medium text-slate-700">{filteredUsers.length}</span> из {stats?.total || 0} пользователей
                 </p>
@@ -452,14 +452,14 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
             </div>
 
             {selectedUser.notes && (
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-[#e8edf3]">
                 <p className="text-xs text-slate-500 mb-2">Заметки</p>
                 <p className="text-sm text-slate-700">{selectedUser.notes}</p>
               </div>
             )}
 
             {selectedUser.channels && Array.isArray(selectedUser.channels) && selectedUser.channels.length > 0 && (
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-[#e8edf3]">
                 <p className="text-xs text-slate-500 mb-2">Каналы и группы ({selectedUser.channels.length})</p>
                 <div className="max-h-[200px] overflow-y-auto space-y-2 pr-2">
                   {selectedUser.channels.map((channel, idx) => channel && (
@@ -487,7 +487,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
             )}
 
             {selectedUser.calculatedMetrics && (
-              <div className="pt-4 border-t border-slate-200">
+              <div className="pt-4 border-t border-[#e8edf3]">
                 <p className="text-xs text-slate-500 mb-2">Метрики (за 30 дней)</p>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-3 bg-slate-50 rounded-lg">
@@ -511,7 +511,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               </div>
             )}
 
-            <div className="flex gap-3 pt-4 border-t border-slate-200">
+            <div className="flex gap-3 pt-4 border-t border-[#e8edf3]">
               <button 
                 onClick={() => { setIsViewModalOpen(false); openEditModal(selectedUser) }}
                 className="flex-1 py-2.5 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors"
@@ -540,7 +540,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               onChange={(e) => setFormData(prev => ({ ...prev, telegramId: e.target.value }))}
               placeholder="Например: 123456789"
               required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           <div>
@@ -551,7 +551,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               placeholder="Имя пользователя"
               required
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           <div>
@@ -561,7 +561,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               value={formData.telegramUsername}
               onChange={(e) => setFormData(prev => ({ ...prev, telegramUsername: e.target.value }))}
               placeholder="@username"
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           <div className="flex justify-end gap-3 pt-4">
@@ -588,7 +588,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
       <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Редактировать пользователя" size="md">
         {selectedUser && (
           <form onSubmit={handleUpdateUser} className="space-y-4">
-            <div className="flex items-center gap-4 pb-4 border-b border-slate-200">
+            <div className="flex items-center gap-4 pb-4 border-b border-[#e8edf3]">
               {selectedUser.photoUrl ? (
                 <img 
                   src={selectedUser.photoUrl} 
@@ -613,7 +613,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
               <select
                 value={formData.role}
                 onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value as 'client' | 'employee' | 'partner' }))}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="client">Клиент</option>
                 <option value="employee">Сотрудник</option>
@@ -628,7 +628,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                   value={formData.department}
                   onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
                   placeholder="Название отдела"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
               <div>
@@ -638,7 +638,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                   value={formData.position}
                   onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
                   placeholder="Должность"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -649,7 +649,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                 onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
                 placeholder="Дополнительная информация о пользователе"
                 rows={3}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
               />
             </div>
             <div className="flex justify-end gap-3 pt-4">
@@ -689,7 +689,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
 
 function StatCard({ label, value, color = 'text-slate-800', isLoading = false }: { label: string; value: number; color?: string; isLoading?: boolean }) {
   return (
-    <div className="bg-white rounded-xl p-5 border border-slate-200">
+    <div className="bg-white rounded-xl p-5 border border-[#e8edf3]">
       <p className="text-sm text-slate-500">{label}</p>
       {isLoading ? (
         <div className="h-9 mt-1 bg-slate-100 rounded animate-pulse" />

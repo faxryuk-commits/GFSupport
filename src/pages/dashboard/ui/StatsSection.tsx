@@ -43,7 +43,7 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
 
       <div className="grid grid-cols-3 gap-6">
         {/* Stats Overview */}
-        <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
+        <div className="col-span-2 bg-white rounded-xl border border-[#e8edf3] p-5">
           <div className="flex items-center gap-2 mb-4">
             <Activity className="w-5 h-5 text-blue-500" />
             <h2 className="font-semibold text-slate-800">Статистика за период</h2>
@@ -86,7 +86,7 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
         </div>
 
         {/* Recent Activity */}
-        <div className="bg-white rounded-xl border border-slate-200">
+        <div className="bg-white rounded-xl border border-[#e8edf3]">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <Bell className="w-5 h-5 text-purple-500" />
@@ -119,7 +119,7 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
 
       {/* Response Time Distribution */}
       {analytics?.team?.responseTimeDistribution && analytics.team.responseTimeDistribution.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200">
+        <div className="bg-white rounded-xl border border-[#e8edf3]">
           <div className="px-5 py-4 border-b border-slate-100">
             <h2 className="font-semibold text-slate-800 flex items-center gap-2">
               <Clock className="w-5 h-5 text-green-500" />
@@ -160,7 +160,7 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
                     })}
                     className="text-center p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer group">
                     <div className="mb-2">
-                      <div className="text-3xl font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{item.count}</div>
+                      <div className="font-display text-3xl font-extrabold text-slate-900 tabular-nums group-hover:text-blue-600 transition-colors">{item.count}</div>
                       <div className="text-xs text-slate-500">{percent}%</div>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
@@ -208,7 +208,7 @@ function CasesPriorityChart({ analytics }: { analytics: AnalyticsData | null }) 
     <div className="p-4 bg-slate-50 rounded-lg">
       <p className="text-xs text-slate-500 mb-2">Кейсы за период</p>
       <div className="flex gap-3">
-        <div className="flex flex-col w-10 h-28 rounded-lg overflow-hidden border border-slate-200">
+        <div className="flex flex-col w-10 h-28 rounded-lg overflow-hidden border border-[#e8edf3]">
           {priorities.map(p => {
             if (p.value === 0) return null
             const height = Math.max((p.value / total) * 100, 10)
@@ -229,7 +229,7 @@ function CasesPriorityChart({ analytics }: { analytics: AnalyticsData | null }) 
               <span className="text-slate-400">{p.label}</span>
             </div>
           ))}
-          <div className="border-t border-slate-200 pt-1 mt-1 font-medium text-slate-700">{total} всего</div>
+          <div className="border-t border-[#e8edf3] pt-1 mt-1 font-medium text-slate-700">{total} всего</div>
         </div>
       </div>
     </div>

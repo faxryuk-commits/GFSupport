@@ -101,7 +101,7 @@ export function BroadcastResponsesModal({
         {!loading && !error && data && (
           <>
             {/* Сводка */}
-            <section className="bg-slate-50 border border-slate-200 rounded-md p-3">
+            <section className="bg-slate-50 border border-[#e8edf3] rounded-md p-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <SummaryStat
                   label="Доставлено"
@@ -126,7 +126,7 @@ export function BroadcastResponsesModal({
               </div>
               {/* Sentiment ответов */}
               {data.summary.responded > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap gap-2 text-xs">
+                <div className="mt-3 pt-3 border-t border-[#e8edf3] flex flex-wrap gap-2 text-xs">
                   <span className="text-slate-500 font-medium">Sentiment ответов:</span>
                   {(['positive', 'neutral', 'negative', 'frustrated', 'unscored'] as const).map(
                     (k) =>
@@ -151,7 +151,7 @@ export function BroadcastResponsesModal({
             </section>
 
             {/* Текст самой кампании */}
-            <details className="bg-white border border-slate-200 rounded-md">
+            <details className="bg-white border border-[#e8edf3] rounded-md">
               <summary className="cursor-pointer px-3 py-2 text-xs text-slate-600 font-medium hover:bg-slate-50">
                 Текст рассылки
               </summary>
@@ -202,7 +202,7 @@ export function BroadcastResponsesModal({
                 </li>
               )}
               {filtered.map((r) => (
-                <li key={r.channelId} className="border border-slate-200 rounded-md p-3">
+                <li key={r.channelId} className="border border-[#e8edf3] rounded-md p-3">
                   <header className="flex items-center justify-between gap-2 mb-1 flex-wrap">
                     <Link
                       to={`/chats/${r.channelId}`}

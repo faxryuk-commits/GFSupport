@@ -15,7 +15,7 @@ interface SecuritySettingsProps {
 
 export function SecuritySettings({ settings, onChange }: SecuritySettingsProps) {
   return (
-    <div className="bg-white rounded-xl p-6 border border-slate-200">
+    <div className="bg-white rounded-xl p-6 border border-[#e8edf3]">
       <h2 className="text-lg font-semibold text-slate-800 mb-4">Безопасность</h2>
       
       <div className="space-y-6">
@@ -33,7 +33,7 @@ export function SecuritySettings({ settings, onChange }: SecuritySettingsProps) 
               type="number"
               value={settings.sessionTimeout}
               onChange={(e) => onChange({ ...settings, sessionTimeout: Number(e.target.value) })}
-              className="w-32 px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-32 px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
             <span className="text-slate-500 text-sm">минут бездействия</span>
           </div>
@@ -46,7 +46,7 @@ export function SecuritySettings({ settings, onChange }: SecuritySettingsProps) 
               type="number"
               value={settings.passwordExpiry}
               onChange={(e) => onChange({ ...settings, passwordExpiry: Number(e.target.value) })}
-              className="w-32 px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-32 px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
             <span className="text-slate-500 text-sm">дней (0 = без ограничений)</span>
           </div>
@@ -59,7 +59,7 @@ export function SecuritySettings({ settings, onChange }: SecuritySettingsProps) 
             onChange={(e) => onChange({ ...settings, ipWhitelist: e.target.value })}
             placeholder="Введите IP-адреса через запятую или по одному на строку"
             rows={3}
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+            className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
           />
           <p className="text-xs text-slate-500 mt-1">Оставьте пустым для доступа с любого IP</p>
         </div>

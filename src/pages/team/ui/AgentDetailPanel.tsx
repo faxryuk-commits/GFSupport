@@ -59,7 +59,7 @@ export function AgentDetailPanel({
 
       {/* Panel */}
       <div
-        className={`fixed top-0 right-0 h-full w-[380px] bg-white border-l border-slate-200 shadow-xl z-50 transform transition-transform duration-200 ease-out ${
+        className={`fixed top-0 right-0 h-full w-[380px] bg-white border-l border-[#e8edf3] shadow-xl z-50 transform transition-transform duration-200 ease-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -287,7 +287,7 @@ function DailyReportActions({ agent }: { agent: Agent }) {
                 : '⚠ У сотрудника не задан telegram_id — отправка невозможна'}
             </div>
             <div
-              className="bg-slate-50 border border-slate-200 rounded-md p-3 text-sm leading-relaxed whitespace-pre-wrap font-[ui-sans-serif]"
+              className="bg-slate-50 border border-[#e8edf3] rounded-md p-3 text-sm leading-relaxed whitespace-pre-wrap font-[ui-sans-serif]"
               dangerouslySetInnerHTML={{
                 __html: preview.text
                   .replace(/&/g, '&amp;')

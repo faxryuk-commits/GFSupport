@@ -87,7 +87,7 @@ export function WeeklyScoreWidget() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-5 flex items-center justify-center h-[200px]">
+      <div className="bg-white rounded-xl border border-[#e8edf3] p-5 flex items-center justify-center h-[200px]">
         <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
       </div>
     )
@@ -95,7 +95,7 @@ export function WeeklyScoreWidget() {
 
   if (!data || data.weeks.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="bg-white rounded-xl border border-[#e8edf3] p-5">
         <p className="text-sm text-slate-400 text-center">Недостаточно данных</p>
       </div>
     )
@@ -107,7 +107,7 @@ export function WeeklyScoreWidget() {
   const TrendIcon = trendCfg.icon
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">

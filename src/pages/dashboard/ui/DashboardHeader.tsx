@@ -31,11 +31,11 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
   }
 
   return (
-    <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex-shrink-0">
+    <div className="sticky top-0 z-10 bg-white border-b border-[#e8edf3] px-6 py-4 flex-shrink-0">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-800">Обзор</h1>
+            <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Обзор</h1>
             <PageHint
               title="Панель обзора"
               description="Здесь отображаются ключевые метрики: активные кейсы, время ответа, нагрузка агентов и AI-рекомендации."
@@ -60,7 +60,7 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
                   setShowDatePicker(false)
                 }
               }}
-              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[140px]"
+              className="px-4 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[140px]"
             >
               <option value="today">Сегодня</option>
               <option value="yesterday">Вчера</option>
@@ -70,18 +70,18 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
             </select>
 
             {showDatePicker && (
-              <div className="absolute right-0 top-full mt-2 bg-white border border-slate-200 rounded-xl shadow-lg p-4 z-20 min-w-[280px]">
+              <div className="absolute right-0 top-full mt-2 bg-white border border-[#e8edf3] rounded-xl shadow-lg p-4 z-20 min-w-[280px]">
                 <div className="text-sm font-medium text-slate-700 mb-3">Выберите период</div>
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs text-slate-500 mb-1 block">От</label>
                     <input type="date" value={customDateFrom} onChange={(e) => setCustomDateFrom(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                      className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 mb-1 block">До</label>
                     <input type="date" value={customDateTo} onChange={(e) => setCustomDateTo(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                      className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
                   </div>
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => setShowDatePicker(false)}
@@ -105,7 +105,7 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
           )}
 
           <button onClick={onRefresh} disabled={isRefreshing}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm hover:bg-slate-50 transition-colors disabled:opacity-50">
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm hover:bg-slate-50 transition-colors disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             Обновить
           </button>

@@ -48,7 +48,7 @@ export function ChatPanel({
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-[#e8edf3]">
         {onBack && (
           <button
             onClick={onBack}

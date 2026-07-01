@@ -315,7 +315,7 @@ export function AgentEditModal({
                 className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${
                   form.permissions.includes(mod.id)
                     ? 'bg-blue-50 border-blue-200 text-blue-700'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    : 'bg-slate-50 border-[#e8edf3] text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <input
@@ -330,7 +330,7 @@ export function AgentEditModal({
           </div>
         </div>
 
-        <div className="flex gap-3 pt-4 border-t border-slate-200">
+        <div className="flex gap-3 pt-4 border-t border-[#e8edf3]">
           <button
             type="button"
             onClick={onClose}

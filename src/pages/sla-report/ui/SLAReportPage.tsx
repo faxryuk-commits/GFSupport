@@ -202,7 +202,7 @@ export function SLAReportPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
             <Target className="w-7 h-7 text-blue-500" />
             Отчёт по SLA
           </h1>
@@ -213,7 +213,7 @@ export function SLAReportPage() {
       </div>
       
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+      <div className="bg-white rounded-xl border border-[#e8edf3] p-4 mb-6">
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">
@@ -224,7 +224,7 @@ export function SLAReportPage() {
               type="date"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              className="px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
             />
           </div>
           <div>
@@ -235,7 +235,7 @@ export function SLAReportPage() {
               type="date"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              className="px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
             />
           </div>
           <div>
@@ -246,7 +246,7 @@ export function SLAReportPage() {
             <select
               value={slaMinutes}
               onChange={(e) => setSlaMinutes(parseInt(e.target.value))}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              className="px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
             >
               <option value={5}>5 минут</option>
               <option value={10}>10 минут</option>
@@ -260,7 +260,7 @@ export function SLAReportPage() {
               <MessageCircle className="w-4 h-4 inline mr-1" />
               Источник
             </label>
-            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            <div className="flex rounded-lg border border-[#e8edf3] overflow-hidden">
               {([
                 { value: 'all', label: 'Все' },
                 { value: 'telegram', label: 'Telegram' },
@@ -369,7 +369,7 @@ export function SLAReportPage() {
             const tgPct = tg ? Math.round((tg.totalMessages / total) * 100) : 0
             const waPct = wa ? Math.round((wa.totalMessages / total) * 100) : 0
             return (
-              <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+              <div className="bg-white rounded-xl border border-[#e8edf3] p-4 mb-6">
                 <div className="flex items-center gap-2 mb-3">
                   <BarChart3 className="w-4 h-4 text-slate-500" />
                   <span className="text-sm font-medium text-slate-700">Разбивка по источнику</span>
@@ -425,7 +425,7 @@ export function SLAReportPage() {
               </div>
             </button>
             
-            <button onClick={() => setDrilldownMetric('avgTime')} className="bg-white rounded-xl border border-slate-200 p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
+            <button onClick={() => setDrilldownMetric('avgTime')} className="bg-white rounded-xl border border-[#e8edf3] p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
                   <Clock className="w-6 h-6 text-blue-600" />
@@ -452,7 +452,7 @@ export function SLAReportPage() {
               </div>
             </button>
             
-            <button onClick={() => setDrilldownMetric('avgResolution')} className="bg-white rounded-xl border border-slate-200 p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
+            <button onClick={() => setDrilldownMetric('avgResolution')} className="bg-white rounded-xl border border-[#e8edf3] p-4 text-left cursor-pointer hover:ring-2 hover:ring-blue-300 transition-all">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center">
                   <Timer className="w-6 h-6 text-purple-600" />
@@ -476,7 +476,7 @@ export function SLAReportPage() {
               { metric: 'totalCases' as const, value: report.caseResolutionSummary.totalCases, label: 'Кейсов создано', color: 'text-slate-900' },
               { metric: 'openCases' as const, value: report.caseResolutionSummary.open, label: 'Кейсов открыто', color: 'text-orange-600' },
             ]).map(card => (
-              <button key={card.metric} onClick={() => setDrilldownMetric(card.metric)} className="bg-white rounded-lg border border-slate-200 p-3 text-center cursor-pointer hover:ring-2 hover:ring-blue-300 hover:shadow-sm transition-all">
+              <button key={card.metric} onClick={() => setDrilldownMetric(card.metric)} className="bg-white rounded-lg border border-[#e8edf3] p-3 text-center cursor-pointer hover:ring-2 hover:ring-blue-300 hover:shadow-sm transition-all">
                 <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
                 <p className="text-xs text-slate-500">{card.label}</p>
               </button>
@@ -490,7 +490,7 @@ export function SLAReportPage() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'response' 
                   ? 'bg-blue-500 text-white' 
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border border-[#e8edf3] text-slate-600 hover:bg-slate-50'
               }`}
             >
               <MessageSquare className="w-4 h-4 inline mr-2" />
@@ -501,7 +501,7 @@ export function SLAReportPage() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'cases' 
                   ? 'bg-blue-500 text-white' 
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border border-[#e8edf3] text-slate-600 hover:bg-slate-50'
               }`}
             >
               <FileText className="w-4 h-4 inline mr-2" />
@@ -512,7 +512,7 @@ export function SLAReportPage() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'agents' 
                   ? 'bg-blue-500 text-white' 
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border border-[#e8edf3] text-slate-600 hover:bg-slate-50'
               }`}
             >
               <Users className="w-4 h-4 inline mr-2" />
@@ -523,7 +523,7 @@ export function SLAReportPage() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'insights' 
                   ? 'bg-blue-500 text-white' 
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border border-[#e8edf3] text-slate-600 hover:bg-slate-50'
               }`}
             >
               <BarChart3 className="w-4 h-4 inline mr-2" />
@@ -534,7 +534,7 @@ export function SLAReportPage() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'communications'
                   ? 'bg-blue-500 text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border border-[#e8edf3] text-slate-600 hover:bg-slate-50'
               }`}
             >
               <MessageSquare className="w-4 h-4 inline mr-2" />
@@ -558,7 +558,7 @@ export function SLAReportPage() {
           
           {/* Tab Content: Agents */}
           {activeTab === 'agents' && (
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
               <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-500" />
                 Производительность сотрудников

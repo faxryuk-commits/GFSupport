@@ -263,7 +263,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     waStatus.filterMode !== 'groups_only'
                       ? 'bg-blue-500 text-white shadow-sm'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      : 'bg-white text-slate-600 border border-[#e8edf3] hover:bg-slate-100'
                   }`}
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -275,7 +275,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     waStatus.filterMode === 'groups_only'
                       ? 'bg-blue-500 text-white shadow-sm'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      : 'bg-white text-slate-600 border border-[#e8edf3] hover:bg-slate-100'
                   }`}
                 >
                   <Users2 className="w-4 h-4" />
@@ -331,7 +331,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
               <div className="flex flex-col items-center">
                 {waStatus?.qr ? (
                   <>
-                    <img src={waStatus.qr} alt="WhatsApp QR Code" className="w-64 h-64 rounded-lg border border-slate-200" />
+                    <img src={waStatus.qr} alt="WhatsApp QR Code" className="w-64 h-64 rounded-lg border border-[#e8edf3]" />
                     <p className="text-sm text-slate-500 mt-3 text-center">
                       Откройте WhatsApp → Настройки → Связанные устройства → Привязать устройство
                     </p>
@@ -394,7 +394,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                       </span>
                       <button
                         onClick={() => handleCopyCode(waStatus.pairCode!)}
-                        className="p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+                        className="p-2 rounded-lg bg-white border border-[#e8edf3] hover:bg-slate-50 transition-colors"
                         title="Скопировать код"
                       >
                         {copiedCode ? <CheckIcon className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-slate-600" />}
@@ -426,7 +426,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
                         value={phoneInput}
                         onChange={(e) => { setPhoneInput(e.target.value); setCodeError(null) }}
                         placeholder="+998 90 123 45 67"
-                        className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
+                        className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
                       />
                       <p className="text-xs text-slate-400 mt-1">
                         В международном формате, пробелы и скобки можно.
@@ -470,7 +470,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
           </div>
         )}
 
-        <div className="flex justify-end pt-4 border-t border-slate-200">
+        <div className="flex justify-end pt-4 border-t border-[#e8edf3]">
           <button onClick={onClose} className="px-6 py-2.5 text-slate-700 font-medium rounded-lg hover:bg-slate-100">
             Закрыть
           </button>
@@ -502,7 +502,7 @@ export function IntegrationsSettings({
 
   return (
     <>
-      <div className="bg-white rounded-xl p-6 border border-slate-200">
+      <div className="bg-white rounded-xl p-6 border border-[#e8edf3]">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-slate-800">Интеграции</h2>
           <button
@@ -548,7 +548,7 @@ export function IntegrationsSettings({
                   const fakeIntegration: Integration = { id: '1', name: 'Telegram Bot', description: '', icon: '📱', status: 'disconnected' }
                   onOpenModal(fakeIntegration)
                 }}
-                className="px-3 py-1.5 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                className="px-3 py-1.5 text-sm text-slate-600 bg-white border border-[#e8edf3] rounded-lg hover:bg-slate-50"
               >
                 <Settings2 className="w-4 h-4" />
               </button>
@@ -582,7 +582,7 @@ export function IntegrationsSettings({
                 onClick={() => setAiModalOpen(true)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium ${
                   ai?.status === 'active'
-                    ? 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
+                    ? 'text-slate-600 bg-white border border-[#e8edf3] hover:bg-slate-50'
                     : 'bg-blue-500 text-white hover:bg-blue-600'
                 }`}
               >
@@ -645,7 +645,7 @@ export function IntegrationsSettings({
                 onClick={() => setWaModalOpen(true)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium ${
                   wa?.status === 'active'
-                    ? 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50'
+                    ? 'text-slate-600 bg-white border border-[#e8edf3] hover:bg-slate-50'
                     : 'bg-green-500 text-white hover:bg-green-600'
                 }`}
               >
@@ -673,10 +673,10 @@ export function IntegrationsSettings({
             {selectedIntegration.name === 'Telegram Bot' && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Bot Token</label>
-                <input type="text" placeholder="123456789:ABCdefGHI..." className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                <input type="text" placeholder="123456789:ABCdefGHI..." className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
               </div>
             )}
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#e8edf3]">
               <button onClick={onCloseModal} className="px-6 py-2.5 text-slate-700 font-medium rounded-lg hover:bg-slate-100">
                 Отмена
               </button>

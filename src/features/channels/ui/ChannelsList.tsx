@@ -71,7 +71,7 @@ export function ChannelsList({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="p-4 border-b border-slate-200">
+      <div className="p-4 border-b border-[#e8edf3]">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800">
             Каналы
@@ -100,7 +100,7 @@ export function ChannelsList({
             placeholder="Поиск каналов..."
             value={filters.search}
             onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-[#e8edf3] rounded-lg text-sm
               focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
@@ -110,7 +110,7 @@ export function ChannelsList({
           <select
             value={filters.type}
             onChange={(e) => setFilters(f => ({ ...f, type: e.target.value as any }))}
-            className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+            className="px-2 py-1 text-xs bg-slate-50 border border-[#e8edf3] rounded-lg"
           >
             <option value="all">Все типы</option>
             <option value="client">Клиенты</option>
@@ -121,7 +121,7 @@ export function ChannelsList({
           <select
             value={filters.status}
             onChange={(e) => setFilters(f => ({ ...f, status: e.target.value as any }))}
-            className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+            className="px-2 py-1 text-xs bg-slate-50 border border-[#e8edf3] rounded-lg"
           >
             <option value="all">Все</option>
             <option value="awaiting">Ждут ответа</option>
@@ -131,7 +131,7 @@ export function ChannelsList({
           <select
             value={filters.sortBy}
             onChange={(e) => setFilters(f => ({ ...f, sortBy: e.target.value as any }))}
-            className="px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg"
+            className="px-2 py-1 text-xs bg-slate-50 border border-[#e8edf3] rounded-lg"
           >
             <option value="lastMessage">По дате</option>
             <option value="unread">По непрочитанным</option>

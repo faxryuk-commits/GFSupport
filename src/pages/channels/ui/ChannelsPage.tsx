@@ -36,7 +36,7 @@ export function ChannelsPage() {
   return (
     <div className="flex h-full">
       {/* Channels list */}
-      <div className={`w-80 border-r border-slate-200 bg-white flex-shrink-0 
+      <div className={`w-80 border-r border-[#e8edf3] bg-white flex-shrink-0 
         ${selectedChannel ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'}`}
       >
         <ChannelsList

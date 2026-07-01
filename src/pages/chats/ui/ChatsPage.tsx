@@ -847,7 +847,7 @@ export function ChatsPage() {
     <>
       <div className="flex h-full overflow-hidden bg-slate-50">
         {/* Список каналов */}
-        <div className="w-[360px] bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+        <div className="w-[360px] bg-white border-r border-[#e8edf3] flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-slate-100">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -874,7 +874,7 @@ export function ChatsPage() {
                 placeholder="Поиск..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-[#e8edf3] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               />
             </div>
           </div>
@@ -982,7 +982,7 @@ export function ChatsPage() {
           <>
           <div className="flex-1 flex flex-col bg-white min-w-0">
             {/* Заголовок */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 flex-shrink-0">
+            <div className="flex items-center justify-between px-6 py-3 border-b border-[#e8edf3] flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar src={selectedChannel.avatar} name={selectedChannel.name} size="md" />
                 <div className="min-w-0">
@@ -1022,7 +1022,7 @@ export function ChatsPage() {
                     <MoreHorizontal className="w-4 h-4 text-slate-500" />
                   </button>
                   {showChannelActions && (
-                    <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-10">
+                    <div className="absolute right-0 mt-1 w-48 bg-white border border-[#e8edf3] rounded-xl shadow-lg py-1 z-10">
                       <button onClick={() => setIsAssignModalOpen(true)} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                         <User className="w-4 h-4" /> Назначить
                       </button>
@@ -1231,7 +1231,7 @@ export function ChatsPage() {
 
           {/* Боковые панели AI и Обязательства */}
           {(showAIPanel || showCommitmentsPanel) && (
-            <div className="w-80 flex-shrink-0 flex flex-col border-l border-slate-200 bg-white overflow-hidden">
+            <div className="w-80 flex-shrink-0 flex flex-col border-l border-[#e8edf3] bg-white overflow-hidden">
               {showAIPanel && (
                 <AIContextPanel
                   channelId={selectedChannel.id}
@@ -1315,7 +1315,7 @@ export function ChatsPage() {
         <>
           <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
           <div
-            className="fixed z-50 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 w-56 animate-in fade-in zoom-in-95 duration-100"
+            className="fixed z-50 bg-white rounded-xl shadow-xl border border-[#e8edf3] py-1.5 w-56 animate-in fade-in zoom-in-95 duration-100"
             style={{
               left: Math.min(contextMenu.x, window.innerWidth - 240),
               top: Math.min(contextMenu.y, window.innerHeight - 200),

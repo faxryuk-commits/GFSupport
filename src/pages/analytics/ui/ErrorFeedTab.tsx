@@ -20,9 +20,9 @@ const FAULT_BADGE: Record<ErrorFault, string> = {
   integration: 'bg-orange-50 text-orange-700 border-orange-200',
   pos: 'bg-amber-50 text-amber-700 border-amber-200',
   merchant: 'bg-blue-50 text-blue-700 border-blue-200',
-  customer: 'bg-slate-50 text-slate-600 border-slate-200',
+  customer: 'bg-slate-50 text-slate-600 border-[#e8edf3]',
   aggregator: 'bg-violet-50 text-violet-700 border-violet-200',
-  unknown: 'bg-slate-50 text-slate-500 border-slate-200',
+  unknown: 'bg-slate-50 text-slate-500 border-[#e8edf3]',
 }
 
 type Period = 'today' | '7d' | '30d' | '90d'
@@ -77,7 +77,7 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
       </div>
 
       {/* Чья вина */}
-      <section className="bg-white border border-slate-200 rounded-xl p-5">
+      <section className="bg-white border border-[#e8edf3] rounded-xl p-5">
         <h3 className="text-sm font-semibold text-slate-800 mb-3">Чья вина</h3>
         <div className="flex h-3 w-full overflow-hidden rounded-full mb-3">
           {(data.byFault || []).map(f => (
@@ -104,7 +104,7 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
           { key: 'class', label: 'Классы' },
         ]
         return (
-          <section className="bg-white border border-slate-200 rounded-xl p-5">
+          <section className="bg-white border border-[#e8edf3] rounded-xl p-5">
             <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
               <h3 className="text-sm font-semibold text-slate-800">Уникальные проблемы</h3>
               <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
@@ -132,7 +132,7 @@ export function ErrorFeedTab({ period = '7d' }: { period?: Period }) {
       {/* Категории → подкатегории */}
       <section className="space-y-3">
         {(data.categories || []).map(cat => (
-          <div key={cat.key} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div key={cat.key} className="bg-white border border-[#e8edf3] rounded-xl overflow-hidden">
             <button
               onClick={() => setOpen(o => ({ ...o, [cat.key]: !o[cat.key] }))}
               className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50"
@@ -278,7 +278,7 @@ function SigRow({ sg, rank }: { sg: UniqueSignature; rank: number }) {
 
 function Stat({ label, value, sub, valueClass }: { label: string; value: string; sub?: string; valueClass?: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <div className="text-xs text-slate-500">{label}</div>
       <div className={`text-2xl font-bold mt-1 ${valueClass || 'text-slate-900'}`}>{value}</div>
       {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
@@ -289,7 +289,7 @@ function Stat({ label, value, sub, valueClass }: { label: string; value: string;
 function MiniList({ title, items }: { title: string; items: Array<{ name: string; count: number }> }) {
   const max = items[0]?.count || 1
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
+    <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{title}</h4>
       <div className="space-y-1.5">
         {items.slice(0, 8).map(it => (

@@ -49,7 +49,7 @@ const BAND_STYLES: Record<HealthBand, { bar: string; chip: string; label: string
     chip: 'bg-rose-50 text-rose-800 border-rose-200',
     label: 'Критично',
   },
-  unknown: { bar: 'bg-slate-300', chip: 'bg-slate-50 text-slate-500 border-slate-200', label: '—' },
+  unknown: { bar: 'bg-slate-300', chip: 'bg-slate-50 text-slate-500 border-[#e8edf3]', label: '—' },
 }
 
 function formatDays(days: number | null): string {
@@ -148,7 +148,7 @@ export function CustomerHealthSection({ period, source }: Props) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 bg-white border border-slate-200 rounded-xl">
+      <div className="flex items-center justify-center py-12 bg-white border border-[#e8edf3] rounded-xl">
         <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
       </div>
     )
@@ -198,7 +198,7 @@ export function CustomerHealthSection({ period, source }: Props) {
       {/* Breakdown: из критических + в зоне риска — какие компоненты их тянут вниз */}
       {data.breakdown &&
         (data.summary.critical > 0 || data.summary.atRisk > 0) && (
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <div className="bg-white border border-[#e8edf3] rounded-xl p-4">
             <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
               <h4 className="text-sm font-semibold text-slate-800">
                 Что тянет вниз{' '}
@@ -247,8 +247,8 @@ export function CustomerHealthSection({ period, source }: Props) {
         )}
 
       {/* Контролы */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <header className="flex items-center justify-between gap-3 p-3 border-b border-slate-200 flex-wrap">
+      <div className="bg-white border border-[#e8edf3] rounded-xl overflow-hidden">
+        <header className="flex items-center justify-between gap-3 p-3 border-b border-[#e8edf3] flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setBandFilter('all')}
@@ -313,7 +313,7 @@ export function CustomerHealthSection({ period, source }: Props) {
 
         {/* Bulk-select preset buttons (когда ничего не выбрано) */}
         {selectedIds.size === 0 && data && (data.summary.critical > 0 || data.summary.atRisk > 0) && (
-          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 text-xs text-slate-600 flex-wrap">
+          <div className="px-3 py-2 bg-slate-50 border-b border-[#e8edf3] flex items-center gap-2 text-xs text-slate-600 flex-wrap">
             <span>Выбрать всех:</span>
             {data.summary.critical > 0 && (
               <button
@@ -407,7 +407,7 @@ export function CustomerHealthSection({ period, source }: Props) {
         </div>
 
         {filtered.length > ROWS_PER_PAGE && (
-          <footer className="flex items-center justify-between gap-3 p-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+          <footer className="flex items-center justify-between gap-3 p-3 border-t border-[#e8edf3] bg-slate-50 text-xs text-slate-600">
             <div>
               Показано <span className="font-medium">{pageStart + 1}–{Math.min(pageStart + ROWS_PER_PAGE, filtered.length)}</span>{' '}
               из <span className="font-medium">{filtered.length}</span>
@@ -476,7 +476,7 @@ function BreakdownCard({
     ? 'border-rose-200 bg-rose-50 text-rose-900'
     : count > 10
     ? 'border-amber-200 bg-amber-50 text-amber-900'
-    : 'border-slate-200 bg-white text-slate-800'
+    : 'border-[#e8edf3] bg-white text-slate-800'
   return (
     <div className={`border rounded-lg p-3 ${tone}`} title={hint}>
       <div className="flex items-center gap-1.5 text-xs font-medium opacity-80 mb-1">
@@ -500,7 +500,7 @@ function SummaryCard({
   tone: 'slate' | 'emerald' | 'amber' | 'rose'
 }) {
   const toneClass: Record<typeof tone, string> = {
-    slate: 'bg-slate-50 text-slate-700 border-slate-200',
+    slate: 'bg-slate-50 text-slate-700 border-[#e8edf3]',
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     amber: 'bg-amber-50 text-amber-700 border-amber-200',
     rose: 'bg-rose-50 text-rose-700 border-rose-200',

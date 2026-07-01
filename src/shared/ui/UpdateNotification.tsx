@@ -66,7 +66,7 @@ export function UpdateNotification() {
             <div className="flex gap-3">
               <button
                 onClick={dismiss}
-                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors font-medium text-sm"
+                className="flex-1 px-4 py-3 border border-[#e8edf3] rounded-xl text-slate-600 hover:bg-slate-50 transition-colors font-medium text-sm"
               >
                 Позже
               </button>

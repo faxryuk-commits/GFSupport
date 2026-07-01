@@ -74,7 +74,7 @@ export function NotificationBell({ agentId }: { agentId?: string }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-[380px] bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-[480px] overflow-hidden flex flex-col">
+        <div className="absolute right-0 top-full mt-2 w-[380px] bg-white rounded-xl shadow-xl border border-[#e8edf3] z-50 max-h-[480px] overflow-hidden flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
             <h3 className="text-sm font-semibold text-slate-900">Уведомления</h3>
             <div className="flex items-center gap-2">

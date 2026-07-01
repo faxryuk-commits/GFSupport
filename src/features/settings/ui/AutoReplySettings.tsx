@@ -167,7 +167,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
   return (
     <div className="space-y-6">
       {/* Основные настройки автоответов */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center">
@@ -231,7 +231,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                     max="30"
                     value={settings.delaySeconds}
                     onChange={(e) => handleSettingsChange({ ...settings, delaySeconds: Number(e.target.value) })}
-                    className="w-20 px-3 py-2 bg-white border border-slate-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300"
+                    className="w-20 px-3 py-2 bg-white border border-[#e8edf3] rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300"
                   />
                   <span className="text-sm text-slate-500">сек</span>
                 </div>
@@ -242,7 +242,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
       </div>
 
       {/* Шаблоны ответов */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -298,7 +298,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                     key={template.id}
                     className={`p-4 rounded-xl border transition-all ${
                       template.is_active 
-                        ? 'bg-white border-slate-200 hover:border-slate-300' 
+                        ? 'bg-white border-[#e8edf3] hover:border-slate-300' 
                         : 'bg-slate-50 border-slate-100 opacity-60'
                     }`}
                   >
@@ -363,7 +363,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                 <select
                   value={editingTemplate.intent}
                   onChange={(e) => setEditingTemplate({ ...editingTemplate, intent: e.target.value })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all"
                 >
                   {Object.entries(INTENT_LABELS).map(([key, info]) => (
                     <option key={key} value={key}>{info.icon} {info.label}</option>
@@ -378,7 +378,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                   onChange={(e) => setEditingTemplate({ ...editingTemplate, template_text: e.target.value })}
                   rows={4}
                   placeholder="Используйте {client_name} для имени клиента"
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all resize-none"
+                  className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all resize-none"
                 />
                 <p className="mt-1 text-xs text-slate-500">
                   Переменные: {'{client_name}'} — имя клиента, {'{name}'} — имя или "клиент"
@@ -391,7 +391,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                   <select
                     value={editingTemplate.tone}
                     onChange={(e) => setEditingTemplate({ ...editingTemplate, tone: e.target.value })}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all"
+                    className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all"
                   >
                     {TONE_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -404,7 +404,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
                     type="number"
                     value={editingTemplate.priority}
                     onChange={(e) => setEditingTemplate({ ...editingTemplate, priority: Number(e.target.value) })}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all"
+                    className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-300 focus:bg-white transition-all"
                   />
                 </div>
               </div>

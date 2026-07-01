@@ -538,7 +538,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all ${
                       reaction.isOwn
                         ? 'bg-blue-100 border border-blue-300 text-blue-700'
-                        : 'bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200'
+                        : 'bg-slate-100 border border-[#e8edf3] text-slate-700 hover:bg-slate-200'
                     }`}
                     title={reaction.users?.join(', ')}
                   >
@@ -559,7 +559,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
 
             {/* Hover actions */}
             <div className={`absolute top-0 ${message.isClient ? 'right-0 translate-x-full' : 'left-0 -translate-x-full'} px-2 opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
-              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg shadow-sm p-1">
+              <div className="flex items-center gap-1 bg-white border border-[#e8edf3] rounded-lg shadow-sm p-1">
                 {/* Quick reaction button */}
                 {onReaction && (
                   <div className="relative" ref={reactionRef}>
@@ -572,7 +572,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
                     </button>
                     {/* Reaction picker popup */}
                     {showReactionPicker && (
-                      <div className={`absolute ${message.isClient ? 'left-0' : 'right-0'} top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2 z-20`}>
+                      <div className={`absolute ${message.isClient ? 'left-0' : 'right-0'} top-full mt-1 bg-white border border-[#e8edf3] rounded-xl shadow-lg p-2 z-20`}>
                         <div className="flex gap-1">
                           {QUICK_REACTIONS.map(emoji => (
                             <button
@@ -625,7 +625,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
       {showContextMenu && (
         <div 
           ref={contextMenuRef}
-          className="fixed bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2 min-w-[220px] overflow-hidden"
+          className="fixed bg-white border border-[#e8edf3] rounded-xl shadow-xl z-50 py-2 min-w-[220px] overflow-hidden"
           style={{ 
             left: Math.min(contextMenuPos.x, window.innerWidth - 240),
             top: Math.min(contextMenuPos.y, window.innerHeight - 350)

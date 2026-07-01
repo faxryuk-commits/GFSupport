@@ -46,7 +46,7 @@ export function AgentExpertise({ data }: Props) {
   if (data.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
       <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
         <BookOpen className="w-5 h-5 text-violet-500" />
         Экспертиза по категориям

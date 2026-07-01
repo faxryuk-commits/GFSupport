@@ -109,7 +109,7 @@ export function AnalyticsPage() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Аналитика</h1>
+          <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Аналитика</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Pulse → Diagnosis → Detail — от сводки к причинам и построчным данным.
           </p>
@@ -142,7 +142,7 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="border-b border-slate-200 mb-6">
+      <div className="border-b border-[#e8edf3] mb-6">
         <nav className="flex gap-1">
           {TABS.map((t) => {
             const active = t.key === tab
@@ -150,10 +150,10 @@ export function AnalyticsPage() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition ${
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 transition ${
                   active
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+                    ? 'border-[#2563eb] text-[#2563eb] font-semibold'
+                    : 'border-transparent text-slate-600 font-medium hover:text-slate-900 hover:border-slate-300'
                 }`}
                 title={t.hint}
               >

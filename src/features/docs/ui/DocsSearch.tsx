@@ -50,7 +50,7 @@ export function DocsSearch({ onSelectDoc, category, className = '' }: DocsSearch
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Поиск в документации..."
-          className="w-full pl-10 pr-24 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full pl-10 pr-24 py-3 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
         <button
           onClick={handleSearch}

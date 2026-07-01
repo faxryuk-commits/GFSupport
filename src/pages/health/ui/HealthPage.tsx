@@ -129,12 +129,12 @@ export function HealthPage() {
         <div>
           <div className="flex items-center gap-2">
             <Activity className="w-6 h-6 text-blue-600" />
-            <h1 className="text-2xl font-bold text-slate-800">Где у нас болит</h1>
+            <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Где у нас болит</h1>
           </div>
           <p className="text-sm text-slate-500 mt-1">Сводка сигналов, на которые стоит реагировать сегодня</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
+          <div className="flex items-center bg-white border border-[#e8edf3] rounded-lg p-0.5">
             {SOURCE_OPTIONS.map((opt) => {
               const active = source === opt.value
               const counts = opt.value !== 'all' ? data?.bySource?.[opt.value] : null
@@ -165,7 +165,7 @@ export function HealthPage() {
           <select
             value={period}
             onChange={e => setPeriod(e.target.value as HealthPeriod)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-3 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           >
             {PERIOD_OPTIONS.map(p => (
               <option key={p.value} value={p.value}>{p.label}</option>
@@ -174,7 +174,7 @@ export function HealthPage() {
           <button
             onClick={load}
             disabled={loading}
-            className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+            className="p-2 bg-white border border-[#e8edf3] rounded-lg hover:bg-slate-50 disabled:opacity-50"
             title="Обновить"
           >
             <RefreshCw className={`w-4 h-4 text-slate-500 ${loading ? 'animate-spin' : ''}`} />
@@ -577,7 +577,7 @@ export function HealthPage() {
 
       {/* Sentiment bar */}
       {data.sentiment.total > 0 && (
-        <div className="mt-5 bg-white border border-slate-200 rounded-xl p-4">
+        <div className="mt-5 bg-white border border-[#e8edf3] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-semibold text-slate-800">Настроение клиентов</div>
             <div className="text-xs text-slate-500">{data.sentiment.total} оценённых сообщений</div>
@@ -890,7 +890,7 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, hint, split, icon: Icon, color, warn }: KpiCardProps) {
   return (
-    <div className={`bg-white border ${warn ? 'border-red-200' : 'border-slate-200'} rounded-xl p-3`}>
+    <div className={`bg-white border ${warn ? 'border-red-200' : 'border-[#e8edf3]'} rounded-xl p-3`}>
       <div className="flex items-center gap-2 mb-1">
         <div className={`w-7 h-7 rounded-lg ${color} flex items-center justify-center`}>
           <Icon className="w-4 h-4" />
@@ -898,7 +898,7 @@ function KpiCard({ label, value, hint, split, icon: Icon, color, warn }: KpiCard
         <span className="text-xs text-slate-500 uppercase tracking-wide">{label}</span>
       </div>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <div className="text-2xl font-bold text-slate-800">{value}</div>
+        <div className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{value}</div>
         {split && (split.tg > 0 || split.wa > 0) && (
           <div className="flex items-center gap-1 text-[11px] font-semibold">
             <span className="inline-flex items-center gap-0.5 text-sky-700" title="Telegram">
@@ -936,7 +936,7 @@ interface SectionCardProps {
 
 function SectionCard({ title, hint, icon: Icon, empty, accent, children }: SectionCardProps) {
   return (
-    <div className={`bg-white border ${accent || 'border-slate-200'} rounded-xl overflow-hidden`}>
+    <div className={`bg-white border ${accent || 'border-[#e8edf3]'} rounded-xl overflow-hidden`}>
       <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
         <Icon className="w-4 h-4 text-slate-500" />
         <div className="flex-1 min-w-0">

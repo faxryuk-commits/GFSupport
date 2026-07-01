@@ -84,7 +84,7 @@ export function CommitmentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-4">
+    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-[#e8edf3] p-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-slate-900 flex items-center gap-2">
@@ -126,7 +126,7 @@ export function CommitmentForm({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Например: Перезвонить клиенту по вопросу интеграции..."
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           rows={3}
         />
       </div>
@@ -162,7 +162,7 @@ export function CommitmentForm({
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-3 py-2 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -171,7 +171,7 @@ export function CommitmentForm({
               type="time"
               value={dueTime}
               onChange={(e) => setDueTime(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
@@ -208,7 +208,7 @@ export function CommitmentForm({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50"
+            className="flex-1 px-4 py-2 border border-[#e8edf3] text-slate-700 rounded-lg hover:bg-slate-50"
           >
             Отмена
           </button>

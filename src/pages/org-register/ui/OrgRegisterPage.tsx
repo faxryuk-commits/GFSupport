@@ -127,7 +127,7 @@ export function OrgRegisterPage() {
           {step === 'info' && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Создайте аккаунт</h2>
+                <h2 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Создайте аккаунт</h2>
                 <p className="text-slate-500 mt-1">Зарегистрируйте компанию за 2 минуты</p>
               </div>
 
@@ -157,7 +157,7 @@ export function OrgRegisterPage() {
                     <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
                     <input
                       type="text"
-                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-center text-lg font-mono tracking-[0.3em] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      className="w-full pl-10 pr-4 py-2.5 border border-[#e8edf3] rounded-xl text-center text-lg font-mono tracking-[0.3em] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                       value={regCode}
                       onChange={e => setRegCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="000000"
@@ -189,7 +189,7 @@ export function OrgRegisterPage() {
                 <ArrowLeft className="w-4 h-4" /> Назад
               </button>
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Введите код подтверждения</h2>
+                <h2 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Введите код подтверждения</h2>
                 <p className="text-slate-500 mt-1">Код отправлен в Telegram</p>
               </div>
 
@@ -199,7 +199,7 @@ export function OrgRegisterPage() {
                 <div>
                   <label className="text-sm font-medium text-slate-700 block mb-1">Код подтверждения</label>
                   <input
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-center text-2xl font-mono tracking-[0.5em] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className="w-full px-4 py-3 border border-[#e8edf3] rounded-xl text-center text-2xl font-mono tracking-[0.5em] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     value={otp}
                     onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="000000"
@@ -226,7 +226,7 @@ export function OrgRegisterPage() {
                 <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Готово!</h2>
+                <h2 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Готово!</h2>
                 <p className="text-slate-500 mt-2">Организация <strong>{companyName}</strong> успешно создана.</p>
               </div>
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-left">
@@ -259,7 +259,7 @@ function InputField({ icon: Icon, label, value, onChange, placeholder, type = 't
         <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400" />
         <input
           type={type}
-          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          className="w-full pl-10 pr-4 py-2.5 border border-[#e8edf3] rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
           value={value}
           onChange={e => onChange(e.target.value)}
           placeholder={placeholder}

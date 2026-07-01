@@ -39,7 +39,7 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    <div className="bg-white rounded-xl border border-[#e8edf3] p-6 space-y-4">
       <div className="flex items-center gap-3">
         <FlaskConical className="w-5 h-5 text-purple-600" />
         <h2 className="text-lg font-semibold text-slate-900">Тестирование агента</h2>
@@ -52,7 +52,7 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
           <select
             value={channelId}
             onChange={e => setChannelId(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            className="w-full px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
           >
             {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             {channels.length === 0 && <option value="">Нет каналов</option>}
@@ -67,7 +67,7 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
               onChange={e => setMessage(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleTest()}
               placeholder="Напишите тестовое сообщение..."
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+              className="flex-1 px-3 py-2 border border-[#e8edf3] rounded-lg text-sm"
             />
             <button
               onClick={handleTest}
@@ -90,7 +90,7 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
               <p className="text-sm text-yellow-800">Агент пропустил: {result.reason}</p>
             </div>
           ) : result.decision ? (
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <div className="p-4 bg-slate-50 border border-[#e8edf3] rounded-lg space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-slate-700">Действие:</span>
                 <span className="text-sm font-bold text-blue-700">{result.decision.action}</span>
@@ -114,7 +114,7 @@ export function AgentTestPanel({ channels }: { channels: Channel[] }) {
                 <p className="text-sm text-orange-700">Кейс: [{result.decision.casePriority}] {result.decision.caseTitle}</p>
               )}
               {result.decision.docLinks?.length > 0 && (
-                <div className="pt-2 border-t border-slate-200">
+                <div className="pt-2 border-t border-[#e8edf3]">
                   <p className="text-xs font-medium text-slate-500 mb-1">Использованная документация:</p>
                   {result.decision.docLinks.map((url: string, i: number) => (
                     <a key={i} href={url} target="_blank" className="text-xs text-blue-600 hover:underline block truncate">{url}</a>

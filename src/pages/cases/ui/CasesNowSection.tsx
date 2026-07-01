@@ -111,7 +111,7 @@ export function CasesNowSection({ cases, onSelectCase }: CasesNowSectionProps) {
     <div className="mb-4 flex-shrink-0">
       <button
         onClick={() => setCollapsed(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 bg-white border border-[#e8edf3] rounded-lg hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <Clock className="w-4 h-4 text-slate-500" />

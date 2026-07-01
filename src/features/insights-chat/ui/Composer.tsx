@@ -39,7 +39,7 @@ export function Composer({ onSend, disabled, initialValue }: ComposerProps) {
   }
 
   return (
-    <div className="border-t border-slate-200 bg-white px-4 py-3">
+    <div className="border-t border-[#e8edf3] bg-white px-4 py-3">
       <div className="flex items-end gap-2 max-w-4xl mx-auto">
         <textarea
           ref={taRef}
@@ -54,7 +54,7 @@ export function Composer({ onSend, disabled, initialValue }: ComposerProps) {
           rows={1}
           disabled={disabled}
           placeholder="Спроси о SLA, командах, кейсах… Enter — отправить, Shift+Enter — новая строка"
-          className="flex-1 resize-none px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 disabled:bg-slate-50 disabled:text-slate-400"
+          className="flex-1 resize-none px-3.5 py-2.5 text-sm border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 disabled:bg-slate-50 disabled:text-slate-400"
         />
         <button
           type="button"

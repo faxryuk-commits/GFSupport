@@ -49,7 +49,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
   return (
     <div className="space-y-6">
       {/* Основные настройки */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -73,7 +73,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                 type="text"
                 value={general.companyName}
                 onChange={(e) => onGeneralChange({ ...general, companyName: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
+                className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
                 placeholder="Delever Support"
               />
             </div>
@@ -85,7 +85,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
               <select
                 value={general.defaultLanguage}
                 onChange={(e) => onGeneralChange({ ...general, defaultLanguage: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all appearance-none cursor-pointer"
+                className="w-full px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all appearance-none cursor-pointer"
               >
                 <option value="en">🇬🇧 English</option>
                 <option value="ru">🇷🇺 Русский</option>
@@ -105,7 +105,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                   type={showBotToken ? 'text' : 'password'}
                   value={general.botToken}
                   onChange={(e) => onGeneralChange({ ...general, botToken: e.target.value })}
-                  className="w-full px-4 py-3 pr-12 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all font-mono text-sm"
+                  className="w-full px-4 py-3 pr-12 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all font-mono text-sm"
                   placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
                 />
                 <button
@@ -149,7 +149,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
       </div>
 
       {/* Настройки времени отклика */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
@@ -171,7 +171,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                   type="number"
                   value={response.targetResponseTime}
                   onChange={(e) => onResponseChange({ ...response, targetResponseTime: Number(e.target.value) })}
-                  className="w-full px-4 py-3 pr-14 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 pr-14 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">мин</span>
               </div>
@@ -183,7 +183,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                   type="number"
                   value={response.targetResolutionTime}
                   onChange={(e) => onResponseChange({ ...response, targetResolutionTime: Number(e.target.value) })}
-                  className="w-full px-4 py-3 pr-14 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 pr-14 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">мин</span>
               </div>
@@ -195,7 +195,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                   type="number"
                   value={response.slaTarget}
                   onChange={(e) => onResponseChange({ ...response, slaTarget: Number(e.target.value) })}
-                  className="w-full px-4 py-3 pr-10 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 pr-10 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
               </div>
@@ -213,14 +213,14 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                   type="time"
                   value={response.workingHoursStart}
                   onChange={(e) => onResponseChange({ ...response, workingHoursStart: e.target.value })}
-                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
+                  className="flex-1 px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
                 />
                 <span className="text-slate-400 font-medium">—</span>
                 <input
                   type="time"
                   value={response.workingHoursEnd}
                   onChange={(e) => onResponseChange({ ...response, workingHoursEnd: e.target.value })}
-                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
+                  className="flex-1 px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all"
                 />
               </div>
             </div>

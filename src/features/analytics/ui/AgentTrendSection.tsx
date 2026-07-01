@@ -40,7 +40,7 @@ export function AgentTrendSection({
   const [granularity, setGranularity] = useState<TrendGranularity>('weekly')
 
   return (
-    <section className="bg-white border border-slate-200 rounded-xl p-4">
+    <section className="bg-white border border-[#e8edf3] rounded-xl p-4">
       <header className="flex items-center justify-between mb-3">
         <div>
           <h4 className="text-sm font-semibold text-slate-800">Динамика по периодам</h4>
@@ -215,7 +215,7 @@ function TrendRow({ agentId, metricKey, granularity, periods, source }: TrendRow
             </tbody>
           </table>
           {data.benchmarks && (
-            <div className="mt-2 pt-2 border-t border-slate-200 flex flex-wrap gap-3 text-[10px] text-slate-500">
+            <div className="mt-2 pt-2 border-t border-[#e8edf3] flex flex-wrap gap-3 text-[10px] text-slate-500">
               <span>Цели:</span>
               {data.benchmarks.bronze && (
                 <span>🥉 {formatValue(data.benchmarks.bronze.value, data.descriptor.unit)}</span>

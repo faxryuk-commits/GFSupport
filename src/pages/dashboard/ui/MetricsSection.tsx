@@ -41,7 +41,7 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
           {metricsDisplay.map((metric, i) => {
             const Icon = metric.icon
             return (
-              <div key={i} className="bg-white rounded-xl p-5 border border-slate-200 hover:shadow-md transition-shadow">
+              <div key={i} className="bg-white rounded-xl p-5 border border-[#e8edf3] hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between">
                   <div className={`w-10 h-10 rounded-lg bg-${metric.color}-100 flex items-center justify-center`}>
                     <Icon className={`w-5 h-5 text-${metric.color}-600`} />
@@ -55,7 +55,7 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
                   )}
                 </div>
                 <div className="mt-3">
-                  <p className="text-2xl font-bold text-slate-800">{metric.value}</p>
+                  <p className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">{metric.value}</p>
                   <p className="text-sm text-slate-500 mt-0.5">{metric.label}</p>
                   {metric.sub && (
                     <p className="text-xs text-slate-400 mt-0.5">{metric.sub}</p>
@@ -94,7 +94,7 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
                 blue: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', icon: 'text-blue-500' },
                 purple: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', icon: 'text-purple-500' },
                 green: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', icon: 'text-green-500' },
-                slate: { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', icon: 'text-slate-500' },
+                slate: { bg: 'bg-slate-50', border: 'border-[#e8edf3]', text: 'text-slate-700', icon: 'text-slate-500' },
               }
               const colors = colorMap[config.color] || colorMap.slate
 

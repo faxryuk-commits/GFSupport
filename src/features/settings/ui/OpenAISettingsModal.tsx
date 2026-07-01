@@ -107,7 +107,7 @@ export function OpenAISettingsModal({ isOpen, onClose, onSaved }: Props) {
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
                   placeholder="sk-proj-..."
-                  className="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
+                  className="w-full px-4 py-2.5 pr-10 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
                 />
                 <button
                   type="button"
@@ -130,7 +130,7 @@ export function OpenAISettingsModal({ isOpen, onClose, onSaved }: Props) {
                     className={`flex flex-col items-start px-3 py-2.5 rounded-lg text-sm transition-all ${
                       model === m.id
                         ? 'bg-blue-500 text-white shadow-sm'
-                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                        : 'bg-white text-slate-600 border border-[#e8edf3] hover:bg-slate-50'
                     }`}
                   >
                     <span className="font-medium">{m.name}</span>
@@ -154,7 +154,7 @@ export function OpenAISettingsModal({ isOpen, onClose, onSaved }: Props) {
           </>
         )}
 
-        <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+        <div className="flex items-center justify-between pt-4 border-t border-[#e8edf3]">
           <button
             onClick={handleTest}
             disabled={loading || testing}

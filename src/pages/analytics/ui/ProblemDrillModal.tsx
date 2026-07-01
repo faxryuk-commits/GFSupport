@@ -103,7 +103,7 @@ export function ProblemDrillModal({
 
         {!loading && !error && data && (
           <>
-            <header className="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs text-slate-700 flex flex-wrap gap-3">
+            <header className="bg-slate-50 border border-[#e8edf3] rounded-md p-3 text-xs text-slate-700 flex flex-wrap gap-3">
               <span>
                 Всего обращений: <strong className="text-slate-900">{totalAll}</strong>
               </span>
@@ -130,7 +130,7 @@ export function ProblemDrillModal({
 
             {/* Top intents (более узкие, чем темы) */}
             {data.topIntents.length > 0 && (
-              <section className="bg-white border border-slate-200 rounded-md p-3">
+              <section className="bg-white border border-[#e8edf3] rounded-md p-3">
                 <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
                   Топ intents
                 </h4>
@@ -151,7 +151,7 @@ export function ProblemDrillModal({
 
             {/* Top themes (свободные строки от LLM) */}
             {data.topThemes.length > 0 && (
-              <section className="bg-white border border-slate-200 rounded-md p-3">
+              <section className="bg-white border border-[#e8edf3] rounded-md p-3">
                 <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
                   Топ тем (ai_theme — формулировки LLM)
                 </h4>
@@ -195,7 +195,7 @@ export function ProblemDrillModal({
 
             {/* Top channels — кто чаще жалуется */}
             {data.topChannels.length > 0 && (
-              <section className="bg-white border border-slate-200 rounded-md p-3">
+              <section className="bg-white border border-[#e8edf3] rounded-md p-3">
                 <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
                   Топ покупателей с этой проблемой
                 </h4>
@@ -222,7 +222,7 @@ export function ProblemDrillModal({
             )}
 
             {/* Recent messages */}
-            <section className="bg-white border border-slate-200 rounded-md p-3">
+            <section className="bg-white border border-[#e8edf3] rounded-md p-3">
               <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
                 Последние сообщения · {filteredMessages.length} из {total}
               </h4>
@@ -254,7 +254,7 @@ function DistributionCard({
 }) {
   const total = items.reduce((s, x) => s + x.count, 0) || 1
   return (
-    <div className="bg-white border border-slate-200 rounded-md p-3">
+    <div className="bg-white border border-[#e8edf3] rounded-md p-3">
       <h4 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
         {title}
       </h4>
@@ -284,7 +284,7 @@ function DistributionCard({
 function MessageItem({ m }: { m: ProblemMessage }) {
   const date = new Date(m.createdAt)
   return (
-    <li className="border border-slate-100 rounded-md p-2.5 hover:border-slate-200">
+    <li className="border border-slate-100 rounded-md p-2.5 hover:border-[#e8edf3]">
       <header className="flex items-center justify-between gap-2 mb-1 text-xs text-slate-500 flex-wrap">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-3 h-3" />

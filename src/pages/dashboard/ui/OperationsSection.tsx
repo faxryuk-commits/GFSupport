@@ -12,7 +12,7 @@ interface Props {
 }
 
 const priorityColors = {
-  normal: 'bg-slate-100 text-slate-600 border-slate-200',
+  normal: 'bg-slate-100 text-slate-600 border-[#e8edf3]',
   high: 'bg-orange-50 text-orange-600 border-orange-200',
   urgent: 'bg-red-50 text-red-600 border-red-200 animate-pulse',
 }
@@ -50,7 +50,7 @@ export function OperationsSection({ needsAttention, agents }: Props) {
 
       <div className="grid grid-cols-3 gap-6">
         {/* Needs Attention */}
-        <div className="col-span-2 bg-white rounded-xl border border-slate-200">
+        <div className="col-span-2 bg-white rounded-xl border border-[#e8edf3]">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -103,7 +103,7 @@ export function OperationsSection({ needsAttention, agents }: Props) {
         </div>
 
         {/* Team Status */}
-        <div className="bg-white rounded-xl border border-slate-200">
+        <div className="bg-white rounded-xl border border-[#e8edf3]">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-500" />

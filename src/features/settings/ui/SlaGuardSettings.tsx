@@ -32,7 +32,7 @@ export function SlaGuardSettings() {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden mb-6">
+    <div className="bg-white rounded-2xl border border-[#e8edf3]/60 shadow-sm overflow-hidden mb-6">
       <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">

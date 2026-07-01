@@ -145,7 +145,7 @@ export function ResponseTimeDetailsModal({
     <Modal isOpen={isOpen} onClose={onClose} size="xl">
       <div className="-m-6">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
+        <div className="px-6 py-4 border-b border-[#e8edf3] bg-slate-50 rounded-t-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className={`w-12 h-12 rounded-xl ${color} flex items-center justify-center`}>
@@ -247,7 +247,7 @@ export function ResponseTimeDetailsModal({
                     </div>
                   </div>
 
-                  <div className="ml-1 pl-4 border-l-2 border-slate-200 space-y-3">
+                  <div className="ml-1 pl-4 border-l-2 border-[#e8edf3] space-y-3">
                     <div className="relative">
                       <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-white" />
                       <div className="bg-blue-50 rounded-lg p-3">
@@ -289,7 +289,7 @@ export function ResponseTimeDetailsModal({
         </div>
 
         {!loading && (details.length > 0 || stats) && (
-          <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+          <div className="px-6 py-4 border-t border-[#e8edf3] bg-slate-50 rounded-b-2xl">
             <div className="grid grid-cols-4 gap-4 text-center mb-4">
               <div>
                 <p className="text-2xl font-bold text-slate-800">

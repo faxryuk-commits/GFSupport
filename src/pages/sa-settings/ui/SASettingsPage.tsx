@@ -63,7 +63,7 @@ export default function SASettingsPage() {
 
   return (
     <div className="p-8 max-w-2xl">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Настройки платформы</h1>
+      <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight mb-1">Настройки платформы</h1>
       <p className="text-gray-500 mb-8">Конфигурация платформенного Telegram бота для регистрации и рассылок</p>
 
       {error && (

@@ -217,7 +217,7 @@ export function DashboardPage() {
           />
         )}
 
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-5">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-slate-800">Детальная аналитика</h3>

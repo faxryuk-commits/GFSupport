@@ -68,7 +68,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className="h-full flex flex-col bg-slate-50">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
+      <div className="bg-white border-b border-[#e8edf3] px-6 py-4">
         <div className="flex items-center justify-between mb-4">
           {!embedded ? (
             <div className="flex items-center gap-3">
@@ -129,7 +129,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
             <div className="flex gap-6">
               {/* Categories Sidebar */}
               <div className="w-64 flex-shrink-0">
-                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
                   <h3 className="font-medium text-slate-900 mb-3">Категории</h3>
                   <div className="space-y-1">
                     <button
@@ -167,7 +167,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
                     <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
                   </div>
                 ) : docs.length === 0 ? (
-                  <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <div className="bg-white rounded-xl border border-[#e8edf3] p-12 text-center">
                     <FileText className="w-16 h-16 mx-auto mb-4 text-slate-300" />
                     <h3 className="text-lg font-medium text-slate-900 mb-2">Нет документов</h3>
                     <p className="text-slate-500 mb-4">
@@ -188,7 +188,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
                       return (
                         <div
                           key={doc.id}
-                          className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition-all cursor-pointer"
+                          className="bg-white rounded-xl border border-[#e8edf3] p-4 hover:shadow-md transition-all cursor-pointer"
                         >
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -236,7 +236,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
 
         {view === 'recent' && (
           <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+            <div className="bg-white rounded-xl border border-[#e8edf3] p-8 text-center">
               <Clock className="w-16 h-16 mx-auto mb-4 text-slate-300" />
               <h3 className="text-lg font-medium text-slate-900 mb-2">Недавние</h3>
               <p className="text-slate-500 mb-4">Открой «Каталог» — там все документы, отсортированы по дате обновления.</p>
@@ -256,12 +256,12 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 placeholder="Заголовок"
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
               <select
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg bg-white"
               >
                 {Object.entries(DOC_CATEGORY_CONFIG).map(([key, c]) => (
                   <option key={key} value={key}>{c.icon} {c.label}</option>
@@ -272,7 +272,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
                 onChange={(e) => setForm({ ...form, content: e.target.value })}
                 placeholder="Содержание"
                 rows={6}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full px-4 py-2.5 border border-[#e8edf3] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
             <div className="flex justify-end gap-2 mt-4">

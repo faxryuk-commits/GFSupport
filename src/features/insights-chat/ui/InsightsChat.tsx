@@ -51,7 +51,7 @@ export function InsightsChat() {
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header c контролами периода и источника */}
-        <div className="border-b border-slate-200 px-4 py-2.5 flex items-center gap-3 flex-wrap">
+        <div className="border-b border-[#e8edf3] px-4 py-2.5 flex items-center gap-3 flex-wrap">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
@@ -62,7 +62,7 @@ export function InsightsChat() {
             <select
               value={state.period}
               onChange={(e) => setPeriod(e.target.value)}
-              className="bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              className="bg-white border border-[#e8edf3] rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
             >
               {PERIODS.map((p) => (
                 <option key={p.id} value={p.id}>{p.label}</option>
@@ -72,7 +72,7 @@ export function InsightsChat() {
             <select
               value={state.source}
               onChange={(e) => setSource(e.target.value as any)}
-              className="bg-white border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              className="bg-white border border-[#e8edf3] rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
             >
               {SOURCES.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>

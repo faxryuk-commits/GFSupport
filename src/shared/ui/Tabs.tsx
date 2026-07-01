@@ -38,9 +38,9 @@ export function Tabs({ tabs, activeTab, onChange, variant = 'default', size = 'm
       inactive: 'bg-slate-100 text-slate-600 hover:bg-slate-200',
     },
     underline: {
-      container: 'border-b border-slate-200',
+      container: 'border-b border-[#e8edf3]',
       tab: 'border-b-2 -mb-px rounded-none',
-      active: 'border-blue-500 text-blue-600',
+      active: 'border-[#2563eb] text-[#2563eb] font-semibold',
       inactive: 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300',
     },
   }
