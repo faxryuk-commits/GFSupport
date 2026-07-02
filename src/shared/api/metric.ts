@@ -38,6 +38,11 @@ export interface MetricResult {
     granularity: 'daily' | 'weekly' | 'monthly'
     label: string
   }
+  /** Доп. контекст для FRT (опционально — есть только у frt_avg_minutes). */
+  medianValue?: number | null
+  p90Value?: number | null
+  totalSessions?: number
+  answeredRate?: number | null
 }
 
 export interface MetricResponse {

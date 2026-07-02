@@ -16,6 +16,7 @@
 
 import { getSQL } from '../../lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
+import { ANTI_THANKS_REGEX } from './frtShared.js'
 import type {
   MetricDescriptor,
   MetricResult,
@@ -34,7 +35,9 @@ export const slaComplianceDescriptor: MetricDescriptor = {
   direction: 'higher_better',
   labelRu: 'SLA Compliance Rate',
   formulaRu:
-    'Доля первых ответов с временем ≤ SLA (по умолчанию 10 минут). Та же выборка сессий, что у FRT.',
+    'Доля ВСЕХ новых запросов, отвеченных ≤ SLA (по умолчанию 10 минут). ' +
+    'Знаменатель — все сессии: без ответа в окне или ответ позже SLA считаются нарушением. ' +
+    'Та же выборка сессий, что у FRT.',
   perAgent: true,
 }
 
@@ -84,7 +87,7 @@ export async function computeSlaCompliance(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ '(^|\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|болди|да|нет|йук|ха|понятно|good|thanks|thank you|hozir|тушундим)(\s|$)'
+          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responses AS (
@@ -114,7 +117,11 @@ export async function computeSlaCompliance(
       FROM session_starts ss
     )
     SELECT
-      COUNT(*) FILTER (WHERE response_at IS NOT NULL)::int AS total,
+      -- Знаменатель = ВСЕ сессии периода. Сессия без ответа в окне (или ответ
+      -- позже SLA) — это нарушение SLA, а не повод её выкинуть. Раньше
+      -- знаменателем были только отвеченные → нарушители исключались из
+      -- собственной метрики и SLA завышался (~+11 п.п.).
+      COUNT(*)::int AS total,
       COUNT(*) FILTER (
         WHERE response_at IS NOT NULL
         AND EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0 <= ${slaMinutes}
@@ -212,7 +219,7 @@ export async function computeSlaCompliancePerAgent(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ '(^|\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|болди|да|нет|йук|ха|понятно|good|thanks|thank you|hozir|тушундим)(\s|$)'
+          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responder AS (

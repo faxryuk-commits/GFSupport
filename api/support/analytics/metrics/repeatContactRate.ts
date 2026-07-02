@@ -20,6 +20,7 @@
 
 import { getSQL } from '../../lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
+import { ANTI_THANKS_REGEX } from './frtShared.js'
 import type { MetricDescriptor, MetricResult, MetricScope, ResolvedPeriod } from './types.js'
 
 export const repeatContactRateDescriptor: MetricDescriptor = {
@@ -75,7 +76,7 @@ export async function computeRepeatContactRate(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ '(^|\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|болди|да|нет|йук|ха|понятно|good|thanks|thank you|hozir|тушундим)(\s|$)'
+          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
         )
     ),
     per_channel AS (

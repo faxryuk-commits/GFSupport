@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ANTI_THANKS_REGEX } from './metrics/frtShared.js'
 
 // API Version: 2.2 - SLA Categories with real data
 export const config = {
@@ -326,53 +327,65 @@ export default async function handler(req: Request): Promise<Response> {
     let responseTimeDistribution: any[] = []
     
     try {
+      // Единая логика с Аналитикой (frtAvg.ts): session_start = новый запрос
+      // клиента (не короткое «спасибо»), response = ПЕРВЫЙ ответ поддержки в
+      // 4-часовом окне. Сессии без ответа в окне НЕ выкидываем — они идут в
+      // отдельную корзину 'unanswered', иначе распределение прячет хвост и
+      // сумма корзин не сходится с числом запросов.
       const responseTimesResult = await sql`
         WITH all_msgs AS (
           SELECT
-            channel_id, created_at, sender_role, is_from_client, text_content,
+            id, channel_id, created_at, sender_role, is_from_client, text_content,
             LAG(sender_role) OVER w as prev_sender_role,
-            LAG(is_from_client) OVER w as prev_is_from_client,
-            LEAD(created_at) OVER w as next_at,
-            LEAD(sender_role) OVER w as next_role,
-            LEAD(is_from_client) OVER w as next_is_client
+            LAG(is_from_client) OVER w as prev_is_from_client
           FROM support_messages
           WHERE org_id = ${orgId}
             AND created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND created_at <= ${endDate.toISOString()}
           WINDOW w AS (PARTITION BY channel_id ORDER BY created_at)
         ),
-        client_starts AS (
-          SELECT channel_id, created_at as client_msg_at, next_at, next_role, next_is_client
+        session_starts AS (
+          SELECT channel_id, created_at as client_msg_at
           FROM all_msgs
           WHERE sender_role = 'client' AND is_from_client = true
             AND created_at >= ${startDate.toISOString()}
             AND (prev_sender_role IS NULL OR prev_sender_role IN ('support','team','agent') OR prev_is_from_client = false)
             AND NOT (
               COALESCE(LENGTH(text_content), 0) <= 50
-              AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+              AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
             )
         )
         SELECT
-          EXTRACT(EPOCH FROM (next_at - client_msg_at)) / 60 as response_minutes
-        FROM client_starts
-        WHERE next_at IS NOT NULL
-          AND (next_role IN ('support','team','agent') OR next_is_client = false)
-          AND next_at <= client_msg_at + INTERVAL '4 hours'
+          EXTRACT(EPOCH FROM (
+            (SELECT MIN(m2.created_at) FROM support_messages m2
+              WHERE m2.org_id = ${orgId} AND m2.channel_id = ss.channel_id
+                AND m2.is_from_client = false AND m2.sender_role IN ('support','team','agent')
+                AND m2.created_at > ss.client_msg_at
+                AND m2.created_at <= ss.client_msg_at + INTERVAL '4 hours'
+            ) - ss.client_msg_at
+          )) / 60 as response_minutes
+        FROM session_starts ss
       `
-      
+
       if (responseTimesResult.length > 0) {
-        const totalMinutes = responseTimesResult.reduce((sum: number, r: any) => sum + parseFloat(r.response_minutes || 0), 0)
-        avgFirstResponse = Math.round(totalMinutes / responseTimesResult.length)
-        
+        const answered = responseTimesResult.filter((r: any) => r.response_minutes != null)
+        const totalMinutes = answered.reduce((sum: number, r: any) => sum + parseFloat(r.response_minutes || 0), 0)
+        avgFirstResponse = answered.length > 0 ? Math.round(totalMinutes / answered.length) : 0
+
         const buckets = {
           '5min': { count: 0, total: 0 },
           '10min': { count: 0, total: 0 },
           '30min': { count: 0, total: 0 },
           '60min': { count: 0, total: 0 },
           '60plus': { count: 0, total: 0 },
+          'unanswered': { count: 0, total: 0 },
         }
-        
+
         for (const r of responseTimesResult) {
+          if (r.response_minutes == null) {
+            buckets['unanswered'].count++
+            continue
+          }
           const mins = parseFloat(r.response_minutes || 0)
           let bucket: keyof typeof buckets
           if (mins <= 5) bucket = '5min'
@@ -380,11 +393,11 @@ export default async function handler(req: Request): Promise<Response> {
           else if (mins <= 30) bucket = '30min'
           else if (mins <= 60) bucket = '60min'
           else bucket = '60plus'
-          
+
           buckets[bucket].count++
           buckets[bucket].total += mins
         }
-        
+
         responseTimeDistribution = Object.entries(buckets)
           .filter(([_, v]) => v.count > 0)
           .map(([key, v]) => ({
