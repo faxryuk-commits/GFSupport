@@ -92,6 +92,27 @@ export function BenchmarkCard({
         )}
       </div>
 
+      {/* Контекст для FRT: среднее на скошенном распределении вводит в заблуждение,
+          поэтому показываем медиану, p90 и долю отвеченных запросов. */}
+      {metric && (metric.medianValue != null || metric.answeredRate != null) && (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+          {metric.medianValue != null && (
+            <span title="Медиана — типичный опыт клиента">медиана {formatValue(metric.medianValue, unit)}</span>
+          )}
+          {metric.p90Value != null && (
+            <span title="p90 — насколько плох хвост">p90 {formatValue(metric.p90Value, unit)}</span>
+          )}
+          {metric.answeredRate != null && (
+            <span
+              title="Доля запросов, отвеченных в 4-часовом окне"
+              className={metric.answeredRate < 90 ? 'text-amber-600 font-medium' : ''}
+            >
+              отвечено {metric.answeredRate.toFixed(0)}%
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Полоса бенчмарков */}
       {metric && (metric.benchmarks.bronze || metric.benchmarks.silver || metric.benchmarks.gold) && (
         <div className="space-y-1.5">

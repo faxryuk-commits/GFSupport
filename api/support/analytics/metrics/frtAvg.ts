@@ -21,6 +21,7 @@
 
 import { getSQL } from '../../lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
+import { ANTI_THANKS_REGEX } from './frtShared.js'
 import type {
   MetricDescriptor,
   MetricResult,
@@ -37,13 +38,19 @@ export const frtAvgDescriptor: MetricDescriptor = {
   direction: 'lower_better',
   labelRu: 'Среднее время первого ответа',
   formulaRu:
-    'Среднее время от нового запроса клиента до первого ответа агента (4-часовое окно, фильтр коротких «спасибо/ок»).',
+    'Среднее время от нового запроса клиента до первого ответа агента в 4-часовом окне ' +
+    '(фильтр коротких «спасибо/ок»). Распределение скошенное — смотрите также медиану, ' +
+    'p90 и долю отвеченных: «среднее» само по себе занижено, т.к. считается только по ' +
+    'отвеченным в окне сессиям.',
   perAgent: true,
 }
 
 interface FrtRow {
   avg_minutes: string | number | null
   sample_size: string | number | null
+  total_sessions: string | number | null
+  median_minutes: string | number | null
+  p90_minutes: string | number | null
 }
 
 export async function computeFrtAvg(
@@ -90,7 +97,7 @@ export async function computeFrtAvg(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ '(^|\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|болди|да|нет|йук|ха|понятно|good|thanks|thank you|hozir|тушундим)(\s|$)'
+          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responses AS (
@@ -121,7 +128,12 @@ export async function computeFrtAvg(
     )
     SELECT
       ROUND(AVG(EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0)::numeric, 1) AS avg_minutes,
-      COUNT(*) FILTER (WHERE response_at IS NOT NULL)::int AS sample_size
+      COUNT(*) FILTER (WHERE response_at IS NOT NULL)::int AS sample_size,
+      COUNT(*)::int AS total_sessions,
+      ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+        ORDER BY EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0))::numeric, 1) AS median_minutes,
+      ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (
+        ORDER BY EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0))::numeric, 1) AS p90_minutes
     FROM first_responses
   `) as FrtRow[]
 
@@ -139,6 +151,12 @@ export async function computeFrtAvg(
   const benchmarks = await loadBenchmarks(frtAvgDescriptor.key, scope, period.granularity)
   const status = classifyStatus(value, frtAvgDescriptor, benchmarks)
 
+  const num = (v: string | number | null | undefined): number | null =>
+    v === null || v === undefined ? null : typeof v === 'string' ? parseFloat(v) : v
+  const totalSessions = num(row.total_sessions) ?? 0
+  const answeredRate =
+    totalSessions > 0 ? Math.round((sampleSize / totalSessions) * 1000) / 10 : null
+
   return {
     key: frtAvgDescriptor.key,
     value,
@@ -146,6 +164,10 @@ export async function computeFrtAvg(
     benchmarks,
     status,
     period,
+    medianValue: sampleSize > 0 ? num(row.median_minutes) : null,
+    p90Value: sampleSize > 0 ? num(row.p90_minutes) : null,
+    totalSessions,
+    answeredRate,
   }
 }
 
@@ -220,7 +242,7 @@ export async function computeFrtAvgPerAgent(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ '(^|\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|болди|да|нет|йук|ха|понятно|good|thanks|thank you|hozir|тушундим)(\s|$)'
+          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responder AS (

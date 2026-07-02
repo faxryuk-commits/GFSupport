@@ -127,7 +127,10 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
             </h2>
           </div>
           <div className="p-5">
-            <div className="grid grid-cols-5 gap-4">
+            <div
+              className="grid gap-4"
+              style={{ gridTemplateColumns: `repeat(${analytics.team.responseTimeDistribution.length}, minmax(0, 1fr))` }}
+            >
               {analytics.team.responseTimeDistribution.map((item, i) => {
                 const total = analytics.team.responseTimeDistribution!.reduce((sum, r) => sum + r.count, 0)
                 const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
@@ -139,6 +142,7 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
                   '30min': 'bg-amber-500',
                   '60min': 'bg-orange-500',
                   '60plus': 'bg-red-500',
+                  'unanswered': 'bg-slate-500',
                 }
                 const bucketTitles: Record<string, string> = {
                   '5min': 'до 5 минут',
@@ -146,6 +150,7 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
                   '30min': 'до 30 минут',
                   '60min': 'до 1 часа',
                   '60plus': 'более 1 часа',
+                  'unanswered': 'без ответа (>4ч)',
                 }
                 const color = bucketColors[item.bucket] || 'bg-slate-400'
                 const label = item.bucketLabel || bucketTitles[item.bucket] || item.bucket
