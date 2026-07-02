@@ -335,14 +335,19 @@ export default async function handler(req: Request): Promise<Response> {
       const responseTimesResult = await sql`
         WITH all_msgs AS (
           SELECT
-            id, channel_id, created_at, sender_role, is_from_client, text_content,
-            LAG(sender_role) OVER w as prev_sender_role,
-            LAG(is_from_client) OVER w as prev_is_from_client
-          FROM support_messages
-          WHERE org_id = ${orgId}
-            AND created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
-            AND created_at <= ${endDate.toISOString()}
-          WINDOW w AS (PARTITION BY channel_id ORDER BY created_at)
+            m.channel_id, m.created_at, m.sender_role, m.is_from_client, m.text_content,
+            LAG(m.sender_role) OVER w as prev_sender_role,
+            LAG(m.is_from_client) OVER w as prev_is_from_client,
+            LEAD(m.created_at) OVER w as next_at,
+            LEAD(m.sender_role) OVER w as next_role,
+            LEAD(m.is_from_client) OVER w as next_is_client
+          FROM support_messages m
+          JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = ${orgId}
+          WHERE m.org_id = ${orgId}
+            AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
+            AND m.created_at <= ${endDate.toISOString()}
+            AND (${market}::text IS NULL OR ch.market_id = ${market})
+          WINDOW w AS (PARTITION BY m.channel_id ORDER BY m.created_at)
         ),
         session_starts AS (
           SELECT channel_id, created_at as client_msg_at

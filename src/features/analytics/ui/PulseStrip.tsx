@@ -59,6 +59,8 @@ const STRIP_METRICS: Array<{
 interface PulseStripProps {
   period: FetchMetricParams['period']
   source?: string
+  /** Changes when sidebar market filter changes — triggers metric reload. */
+  marketKey?: string | null
   /** URL ссылки «Подробнее →». По умолчанию ведёт в полную аналитику. */
   detailsHref?: string
   /** Если задано — вместо встроенного заголовка показывается это. */
@@ -68,6 +70,7 @@ interface PulseStripProps {
 export function PulseStrip({
   period,
   source,
+  marketKey,
   detailsHref = '/analytics?tab=pulse',
   title = 'Pulse',
 }: PulseStripProps) {
@@ -97,7 +100,7 @@ export function PulseStrip({
     return () => {
       cancelled = true
     }
-  }, [period, source])
+  }, [period, source, marketKey])
 
   return (
     <section className="bg-white border border-[#e8edf3] rounded-xl p-4">

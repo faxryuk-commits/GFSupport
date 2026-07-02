@@ -32,6 +32,7 @@ export default async function handler(req: Request): Promise<Response> {
   const period = url.searchParams.get('period') || '30d'
   const limit = parseInt(url.searchParams.get('limit') || '50')
   const slaCategory = url.searchParams.get('sla_category') || null
+  const market = url.searchParams.get('market') || null
   const customFrom = url.searchParams.get('from')
   const customTo = url.searchParams.get('to')
   
@@ -119,10 +120,12 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_sender_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_is_from_client
         FROM support_messages m
+        JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = ${orgId}
         WHERE m.org_id = ${orgId}
           AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
           AND (${!useChannelFilter} OR m.channel_id = ANY(${channelFilter.length > 0 ? channelFilter : ['__none__']}))
+          AND (${market}::text IS NULL OR ch.market_id = ${market})
       ),
       client_messages AS (
         SELECT 
@@ -213,9 +216,11 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
+        JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = ${orgId}
         WHERE m.org_id = ${orgId}
           AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
+          AND (${market}::text IS NULL OR ch.market_id = ${market})
       ),
       first_client AS (
         SELECT id, channel_id, created_at as client_msg_at, sender_name
@@ -272,9 +277,11 @@ export default async function handler(req: Request): Promise<Response> {
           LAG(m.sender_role) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_role,
           LAG(m.is_from_client) OVER (PARTITION BY m.channel_id ORDER BY m.created_at) as prev_client
         FROM support_messages m
+        JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = ${orgId}
         WHERE m.org_id = ${orgId}
           AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
+          AND (${market}::text IS NULL OR ch.market_id = ${market})
       ),
       first_client AS (
         SELECT id, channel_id, created_at as client_msg_at

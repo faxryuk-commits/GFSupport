@@ -97,6 +97,7 @@ export interface Channel {
   name: string
   type: 'client' | 'partner' | 'internal'
   source?: 'telegram' | 'whatsapp'
+  slaCategory?: 'client' | 'client_integration' | 'partner' | 'internal'
   companyId?: string
   companyName: string
   leadId?: string
@@ -115,6 +116,10 @@ export interface Channel {
   lastTeamMessageAt?: string | null
   photoUrl?: string
   isForum?: boolean
+  marketId?: string | null
+  marketName?: string | null
+  marketCountry?: string | null
+  marketCode?: string | null
   createdAt?: string
   updatedAt?: string
 }

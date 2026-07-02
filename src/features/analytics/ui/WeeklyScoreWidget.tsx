@@ -73,17 +73,18 @@ function MetricRow({ icon: Icon, label, value, suffix, color }: {
   )
 }
 
-export function WeeklyScoreWidget() {
+export function WeeklyScoreWidget({ marketKey }: { marketKey?: string | null }) {
   const [data, setData] = useState<WeeklyScoreData | null>(null)
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
+    setLoading(true)
     fetchWeeklyScore(8)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [])
+  }, [marketKey])
 
   if (loading) {
     return (

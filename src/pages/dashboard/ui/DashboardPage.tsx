@@ -20,6 +20,7 @@ import { DashboardHeader } from './DashboardHeader'
 import { ChannelSourceSummary, type SourceFilter } from './ChannelSourceSummary'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
+import { useMarket } from '@/shared/hooks/useMarket'
 
 function mapDashboardPeriod(range: string): FetchMetricParams['period'] {
   switch (range) {
@@ -55,6 +56,7 @@ export function DashboardPage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
+  const { selectedMarket, selectedMarketInfo } = useMarket()
 
   const loadData = useCallback(async () => {
     try {
@@ -126,7 +128,7 @@ export function DashboardPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [dateRange])
+  }, [dateRange, selectedMarket])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -168,14 +170,25 @@ export function DashboardPage() {
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {selectedMarketInfo && (
+          <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            Фильтр по рынку: <span className="font-medium text-slate-700">
+              {selectedMarketInfo.name}
+            </span>
+            {' '}— статистика только по каналам этого рынка
+          </div>
+        )}
+
         <CustomerHealthBanner
           period={mapDashboardPeriod(dateRange)}
           source={sourceFilter === 'all' ? undefined : sourceFilter}
+          marketKey={selectedMarket}
         />
 
         <PulseStrip
           period={mapDashboardPeriod(dateRange)}
           source={sourceFilter === 'all' ? undefined : sourceFilter}
+          marketKey={selectedMarket}
         />
 
         <ChannelSourceSummary
@@ -193,7 +206,7 @@ export function DashboardPage() {
           <div className="col-span-2">
             <CommitmentsPanel className="h-full" />
           </div>
-          <WeeklyScoreWidget />
+          <WeeklyScoreWidget marketKey={selectedMarket} />
         </div>
 
         <StatsSection
@@ -214,6 +227,7 @@ export function DashboardPage() {
             avgMinutes={responseTimeModal.avgMinutes}
             period={dateRange === 'today' ? '7d' : dateRange === 'week' ? '7d' : '30d'}
             color={responseTimeModal.color}
+            marketKey={selectedMarket}
           />
         )}
 

@@ -22,6 +22,7 @@ import {
 interface CustomerHealthBannerProps {
   period?: FetchCustomerHealthParams['period']
   source?: string
+  marketKey?: string | null
   /** URL клика — куда уходит при «Подробнее». */
   detailsHref?: string
 }
@@ -29,6 +30,7 @@ interface CustomerHealthBannerProps {
 export function CustomerHealthBanner({
   period = '30d',
   source,
+  marketKey,
   detailsHref = '/analytics?tab=diagnosis',
 }: CustomerHealthBannerProps) {
   const [data, setData] = useState<CustomerHealthResponse | null>(null)
@@ -54,7 +56,7 @@ export function CustomerHealthBanner({
     return () => {
       cancelled = true
     }
-  }, [period, source])
+  }, [period, source, marketKey])
 
   const critical = data?.summary.critical ?? 0
   const atRisk = data?.summary.atRisk ?? 0

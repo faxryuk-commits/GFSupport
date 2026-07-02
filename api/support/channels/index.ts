@@ -54,10 +54,12 @@ export default async function handler(req: Request): Promise<Response> {
             SELECT channel_id, COUNT(*)::int AS cnt
             FROM support_cases WHERE org_id = ${orgId} AND status NOT IN ('resolved', 'closed') GROUP BY channel_id
           )
-          SELECT c.*, COALESCE(m.cnt, 0) AS messages_count, COALESCE(cs.cnt, 0) AS open_cases_count
+          SELECT c.*, COALESCE(m.cnt, 0) AS messages_count, COALESCE(cs.cnt, 0) AS open_cases_count,
+            mk.name AS market_name, mk.country AS market_country, mk.code AS market_code
           FROM support_channels c
           LEFT JOIN ch_msgs m ON m.channel_id = c.id
           LEFT JOIN ch_cases cs ON cs.channel_id = c.id
+          LEFT JOIN support_markets mk ON mk.id = c.market_id
           WHERE c.org_id = ${orgId}
             AND (c.type <> 'feed' OR ${type || 'all'}::text = 'feed')
             AND (${market} = '__ALL__' OR c.market_id = ${market})
@@ -102,6 +104,9 @@ export default async function handler(req: Request): Promise<Response> {
           lastTeamMessageAt: c.last_team_message_at,
           isForum: c.is_forum || false,
           marketId: c.market_id || null,
+          marketName: c.market_name || null,
+          marketCountry: c.market_country || null,
+          marketCode: c.market_code || null,
           photoUrl: c.photo_url || null,
           createdAt: c.created_at,
           lastMessageAt: c.last_message_at,
@@ -194,7 +199,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { id, name, type, slaCategory, companyId, leadId, isActive, settings, awaitingReply, awaiting_reply, assignedTo, tags } = body
+      const { id, name, type, slaCategory, companyId, leadId, isActive, settings, awaitingReply, awaiting_reply, assignedTo, tags, marketId } = body
 
       if (!id) {
         return json({ error: 'Channel ID required' }, 400)
@@ -202,18 +207,36 @@ export default async function handler(req: Request): Promise<Response> {
 
       const awaiting = awaitingReply ?? awaiting_reply // принимаем оба варианта именования
       const tagsArr = Array.isArray(tags) ? tags : null
-      await sql`
-        UPDATE support_channels SET
-          name = COALESCE(${name}, name),
-          type = COALESCE(${type}, type),
-          sla_category = COALESCE(${slaCategory}, sla_category),
-          is_active = COALESCE(${isActive}, is_active),
-          awaiting_reply = COALESCE(${awaiting}, awaiting_reply),
-          assigned_to = COALESCE(${assignedTo ?? null}, assigned_to),
-          tags = COALESCE(${tagsArr}, tags),
-          updated_at = NOW()
-        WHERE id = ${id} AND org_id = ${orgId}
-      `
+      const updateMarket = 'marketId' in body
+
+      if (updateMarket) {
+        await sql`
+          UPDATE support_channels SET
+            name = COALESCE(${name}, name),
+            type = COALESCE(${type}, type),
+            sla_category = COALESCE(${slaCategory}, sla_category),
+            is_active = COALESCE(${isActive}, is_active),
+            awaiting_reply = COALESCE(${awaiting}, awaiting_reply),
+            assigned_to = COALESCE(${assignedTo ?? null}, assigned_to),
+            tags = COALESCE(${tagsArr}, tags),
+            market_id = ${marketId ?? null},
+            updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `
+      } else {
+        await sql`
+          UPDATE support_channels SET
+            name = COALESCE(${name}, name),
+            type = COALESCE(${type}, type),
+            sla_category = COALESCE(${slaCategory}, sla_category),
+            is_active = COALESCE(${isActive}, is_active),
+            awaiting_reply = COALESCE(${awaiting}, awaiting_reply),
+            assigned_to = COALESCE(${assignedTo ?? null}, assigned_to),
+            tags = COALESCE(${tagsArr}, tags),
+            updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `
+      }
 
       return json({
         success: true,

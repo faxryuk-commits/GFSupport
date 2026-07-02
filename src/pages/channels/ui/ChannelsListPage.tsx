@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { 
   Search, Plus, RefreshCw, MessageSquare, Activity,
   Hash, Building, ChevronDown, ExternalLink, MoreHorizontal,
-  CheckCircle, XCircle, Clock, AlertTriangle, Filter, Settings, Edit3, Power
+  CheckCircle, XCircle, Clock, AlertTriangle, Filter, Settings, Edit3, Power, Globe
 } from 'lucide-react'
 import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog } from '@/shared/ui'
 import { fetchChannels, updateChannel, disconnectChannel, type SlaCategory, SLA_CATEGORY_CONFIG } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import { PageHint, EducationalEmptyState } from '@/features/onboarding'
+import { useMarket, formatMarketLabel } from '@/shared/hooks/useMarket'
 
 type FilterStatus = 'all' | 'active' | 'inactive' | 'awaiting'
 type SortBy = 'name' | 'messages' | 'lastActivity' | 'unread'
@@ -31,7 +32,9 @@ export function ChannelsListPage() {
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<'client' | 'partner' | 'internal'>('client')
   const [newSlaCategory, setNewSlaCategory] = useState<SlaCategory>('client')
+  const [newMarketId, setNewMarketId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const { markets } = useMarket()
 
   const loadChannels = useCallback(async () => {
     try {
@@ -65,7 +68,8 @@ export function ChannelsListPage() {
   const handleOpenSettings = (channel: Channel) => {
     setSettingsChannel(channel)
     setNewType(channel.type)
-    setNewSlaCategory((channel as any).slaCategory || 'client')
+    setNewSlaCategory(channel.slaCategory || 'client')
+    setNewMarketId(channel.marketId ?? null)
   }
 
   const handleOpenRename = (channel: Channel) => {
@@ -94,9 +98,24 @@ export function ChannelsListPage() {
     if (!settingsChannel) return
     setActionLoading(true)
     try {
-      await updateChannel(settingsChannel.id, { type: newType, slaCategory: newSlaCategory })
+      const market = markets.find((m) => m.id === newMarketId)
+      await updateChannel(settingsChannel.id, {
+        type: newType,
+        slaCategory: newSlaCategory,
+        marketId: newMarketId,
+      })
       setChannels(prev => prev.map(ch => 
-        ch.id === settingsChannel.id ? { ...ch, type: newType, slaCategory: newSlaCategory } as Channel : ch
+        ch.id === settingsChannel.id
+          ? {
+              ...ch,
+              type: newType,
+              slaCategory: newSlaCategory,
+              marketId: newMarketId,
+              marketName: market?.name ?? null,
+              marketCountry: market?.country ?? null,
+              marketCode: market?.code ?? null,
+            }
+          : ch
       ))
       setSettingsChannel(null)
     } catch (err) {
@@ -106,6 +125,12 @@ export function ChannelsListPage() {
       setActionLoading(false)
     }
   }
+
+  const settingsUnchanged = settingsChannel && (
+    newType === settingsChannel.type &&
+    newSlaCategory === (settingsChannel.slaCategory || 'client') &&
+    newMarketId === (settingsChannel.marketId ?? null)
+  )
 
   const handleDisconnect = async () => {
     if (!disconnectChannelData) return
@@ -381,6 +406,9 @@ export function ChannelsListPage() {
                   Компания
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Рынок
+                </th>
+                <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
                   Тип
                 </th>
                 <th className="text-right px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -525,6 +553,26 @@ export function ChannelsListPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
+                <Globe className="w-4 h-4 inline mr-1 text-slate-400" />
+                Рынок
+                <span className="text-xs text-slate-400 ml-2">(фильтр в сайдбаре и аналитике)</span>
+              </label>
+              <select
+                value={newMarketId ?? ''}
+                onChange={(e) => setNewMarketId(e.target.value || null)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              >
+                <option value="">Не назначен</option>
+                {markets.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {formatMarketLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
                 SLA Категория
                 <span className="text-xs text-slate-400 ml-2">(для метрик дашборда)</span>
               </label>
@@ -562,8 +610,8 @@ export function ChannelsListPage() {
               </button>
               <button
                 onClick={handleUpdateType}
-                disabled={(newType === settingsChannel.type && newSlaCategory === ((settingsChannel as any).slaCategory || 'client')) || actionLoading}
-                className="px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] transition-all text-sm font-medium disabled:opacity-50"
+                disabled={settingsUnchanged || actionLoading}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium disabled:opacity-50"
               >
                 {actionLoading ? 'Сохранение...' : 'Сохранить'}
               </button>
@@ -679,6 +727,14 @@ function ChannelRow({ channel, onSettings, onRename, onDisconnect }: ChannelRowP
               <Hash className="w-3 h-3" />
               <span className="truncate max-w-[150px]">{channel.telegramChatId}</span>
             </div>
+            {channel.marketName ? (
+              <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                <Globe className="w-3 h-3" />
+                <span>{channel.marketName}</span>
+              </div>
+            ) : (
+              <div className="text-[11px] text-amber-600 mt-0.5">Рынок не назначен</div>
+            )}
           </div>
         </div>
       </td>
@@ -736,6 +792,17 @@ function ChannelRow({ channel, onSettings, onRename, onDisconnect }: ChannelRowP
           </div>
         ) : (
           <span className="text-sm text-slate-400">—</span>
+        )}
+      </td>
+
+      {/* Market */}
+      <td className="px-4 py-4 text-center">
+        {channel.marketName ? (
+          <Badge variant="default" size="sm">
+            {channel.marketName}
+          </Badge>
+        ) : (
+          <span className="text-xs text-amber-600">—</span>
         )}
       </td>
 

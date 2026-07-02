@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiGet } from '../services/api.service'
 
 const MARKET_KEY = 'selected_market'
+export const MARKET_CHANGED_EVENT = 'gfsupport:market-changed'
 
 export interface Market {
   id: string
@@ -36,6 +37,20 @@ export function useMarket() {
     fetchMarkets()
   }, [fetchMarkets])
 
+  // Sync when another component (e.g. sidebar in MainLayout) changes the market.
+  useEffect(() => {
+    const syncFromStorage = () => {
+      setSelectedMarketState(localStorage.getItem(MARKET_KEY) || null)
+    }
+    window.addEventListener(MARKET_CHANGED_EVENT, syncFromStorage)
+    window.addEventListener('storage', (e) => {
+      if (e.key === MARKET_KEY) syncFromStorage()
+    })
+    return () => {
+      window.removeEventListener(MARKET_CHANGED_EVENT, syncFromStorage)
+    }
+  }, [])
+
   const setSelectedMarket = useCallback((marketId: string | null) => {
     setSelectedMarketState(marketId)
     if (marketId) {
@@ -43,11 +58,15 @@ export function useMarket() {
     } else {
       localStorage.removeItem(MARKET_KEY)
     }
+    window.dispatchEvent(new CustomEvent(MARKET_CHANGED_EVENT))
   }, [])
+
+  const selectedMarketInfo = markets.find((m) => m.id === selectedMarket) ?? null
 
   return {
     markets,
     selectedMarket,
+    selectedMarketInfo,
     setSelectedMarket,
     loading,
     refetch: fetchMarkets,
@@ -56,4 +75,9 @@ export function useMarket() {
 
 export function getSelectedMarket(): string | null {
   return localStorage.getItem(MARKET_KEY) || null
+}
+
+export function formatMarketLabel(market: Market | null | undefined): string {
+  if (!market) return 'Не назначен'
+  return market.name
 }

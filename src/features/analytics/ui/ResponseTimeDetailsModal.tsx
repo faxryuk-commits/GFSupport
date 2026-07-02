@@ -51,6 +51,7 @@ interface ResponseTimeDetailsModalProps {
   avgMinutes: number
   period: string
   color: string
+  marketKey?: string | null
 }
 
 function formatDateTime(isoString: string): string {
@@ -88,7 +89,8 @@ export function ResponseTimeDetailsModal({
   count,
   avgMinutes,
   period,
-  color
+  color,
+  marketKey,
 }: ResponseTimeDetailsModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -102,15 +104,21 @@ export function ResponseTimeDetailsModal({
     if (isOpen) {
       loadDetails()
     }
-  }, [isOpen, bucket, period])
+  }, [isOpen, bucket, period, marketKey])
 
   const loadDetails = async () => {
     setLoading(true)
     setError(null)
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || 'demo'
+      const params = new URLSearchParams({
+        bucket,
+        period,
+        limit: '100',
+      })
+      if (marketKey) params.set('market', marketKey)
       const response = await fetch(
-        `/api/support/analytics/response-time-details?bucket=${encodeURIComponent(bucket)}&period=${period}&limit=100`,
+        `/api/support/analytics/response-time-details?${params.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
