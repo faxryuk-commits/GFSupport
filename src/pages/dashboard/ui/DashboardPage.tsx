@@ -79,11 +79,16 @@ export function DashboardPage() {
           )
         : null
 
+      const medianFrt = analyticsData?.channels?.medianFirstResponse
       const metricsData: DashboardMetrics = {
         waiting: channelsData.filter((c: any) => c.awaitingReply).length,
         avgResponseTime: analyticsData?.channels?.avgFirstResponse
           ? `${Math.round(analyticsData.channels.avgFirstResponse)}м`
           : '—',
+        medianResponseTime: medianFrt != null
+          ? (medianFrt < 1 ? `${Math.round(medianFrt * 60)}с` : `${Math.round(medianFrt)}м`)
+          : null,
+        frtAnsweredRate: analyticsData?.channels?.firstResponseAnsweredRate ?? null,
         slaPercent,
         slaSampleSize,
         urgentCases: analyticsData?.cases?.urgent || 0,

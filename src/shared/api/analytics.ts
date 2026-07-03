@@ -100,6 +100,8 @@ interface ApiAnalyticsResponse {
     totalChannels: number
     activeChannels: number
     avgFirstResponseMinutes: number | null
+    medianFirstResponseMinutes?: number | null
+    firstResponseAnsweredRate?: number | null
   }
   patterns: {
     byCategory: Array<{ category: string; count: number; openCount: number; avgResolutionMinutes: number }>
@@ -221,6 +223,10 @@ export interface AnalyticsData {
     total: number
     active: number
     avgFirstResponse: number
+    /** Медиана времени первого ответа (минуты) — типичный опыт, устойчив к хвосту. */
+    medianFirstResponse: number | null
+    /** Доля запросов, отвеченных в 4-часовом окне, 0..100. */
+    firstResponseAnsweredRate: number | null
   }
   patterns: {
     byCategory: Array<{ name: string; count: number; openCount: number; avgResolution: number }>
@@ -356,6 +362,8 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
         total: raw.overview?.totalChannels || 0,
         active: raw.overview?.activeChannels || 0,
         avgFirstResponse: raw.overview?.avgFirstResponseMinutes || 0,
+        medianFirstResponse: raw.overview?.medianFirstResponseMinutes ?? null,
+        firstResponseAnsweredRate: raw.overview?.firstResponseAnsweredRate ?? null,
       },
       patterns: {
         byCategory: (raw.patterns?.byCategory || []).map(c => ({
@@ -435,7 +443,7 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
       generatedAt: new Date().toISOString(),
       cases: { total: 0, open: 0, resolved: 0, avgResolutionTime: 0, avgResolutionHours: 0, urgent: 0, urgentOpen: 0, recurring: 0, newPeriod: 0, byPriority: { low: 0, medium: 0, high: 0, urgent: 0 } },
       messages: { total: 0, problems: 0, voice: 0, video: 0, transcribed: 0 },
-      channels: { total: 0, active: 0, avgFirstResponse: 0 },
+      channels: { total: 0, active: 0, avgFirstResponse: 0, medianFirstResponse: null, firstResponseAnsweredRate: null },
       patterns: { byCategory: [], bySentiment: [], byIntent: [], recurringProblems: [] },
       team: { byManager: [], dailyTrend: [], responseTimeDistribution: [] },
       churnSignals: { negativeCompanies: [], stuckCases: [], recurringByCompany: [], highRiskCompanies: [] },
@@ -454,6 +462,10 @@ export async function fetchAnalytics(period?: string): Promise<AnalyticsData> {
 export interface DashboardMetrics {
   waiting: number
   avgResponseTime: string
+  /** Медиана времени ответа (формат «2м»/«30с»); null — нет замеров. Головной KPI. */
+  medianResponseTime?: string | null
+  /** Доля отвеченных запросов в 4ч-окне, 0..100; null — нет замеров. */
+  frtAnsweredRate?: number | null
   // null — недостаточно данных для расчёта (не было замеров FRT за период)
   slaPercent: number | null
   slaSampleSize?: number
@@ -485,11 +497,16 @@ export async function fetchDashboardMetrics(period?: string): Promise<DashboardM
         )
       : null
 
+    const medianFrt = analytics?.channels?.medianFirstResponse
     return {
       waiting: awaitingChannels,
-      avgResponseTime: analytics?.channels?.avgFirstResponse 
-        ? `${Math.round(analytics.channels.avgFirstResponse)}м` 
+      avgResponseTime: analytics?.channels?.avgFirstResponse
+        ? `${Math.round(analytics.channels.avgFirstResponse)}м`
         : '—',
+      medianResponseTime: medianFrt != null
+        ? (medianFrt < 1 ? `${Math.round(medianFrt * 60)}с` : `${Math.round(medianFrt)}м`)
+        : null,
+      frtAnsweredRate: analytics?.channels?.firstResponseAnsweredRate ?? null,
       slaPercent,
       slaSampleSize,
       urgentCases: analytics?.cases?.urgent || 0,
@@ -502,6 +519,8 @@ export async function fetchDashboardMetrics(period?: string): Promise<DashboardM
     return {
       waiting: 0,
       avgResponseTime: '—',
+      medianResponseTime: null,
+      frtAnsweredRate: null,
       slaPercent: null,
       slaSampleSize: 0,
       urgentCases: 0,

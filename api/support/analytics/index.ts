@@ -324,6 +324,8 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     let avgFirstResponse: number | null = null
+    let medianFirstResponse: number | null = null
+    let answeredRate: number | null = null
     let responseTimeDistribution: any[] = []
     
     try {
@@ -337,10 +339,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT
             m.channel_id, m.created_at, m.sender_role, m.is_from_client, m.text_content,
             LAG(m.sender_role) OVER w as prev_sender_role,
-            LAG(m.is_from_client) OVER w as prev_is_from_client,
-            LEAD(m.created_at) OVER w as next_at,
-            LEAD(m.sender_role) OVER w as next_role,
-            LEAD(m.is_from_client) OVER w as next_is_client
+            LAG(m.is_from_client) OVER w as prev_is_from_client
           FROM support_messages m
           JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = ${orgId}
           WHERE m.org_id = ${orgId}
@@ -376,6 +375,16 @@ export default async function handler(req: Request): Promise<Response> {
         const answered = responseTimesResult.filter((r: any) => r.response_minutes != null)
         const totalMinutes = answered.reduce((sum: number, r: any) => sum + parseFloat(r.response_minutes || 0), 0)
         avgFirstResponse = answered.length > 0 ? Math.round(totalMinutes / answered.length) : 0
+        // Медиана — типичный опыт (устойчива к хвосту). Именно её показываем
+        // как головной KPI: среднее перекошено 12% медленных чатов.
+        if (answered.length > 0) {
+          const sorted = answered.map((r: any) => parseFloat(r.response_minutes)).sort((a: number, b: number) => a - b)
+          const mid = Math.floor(sorted.length / 2)
+          medianFirstResponse = sorted.length % 2 === 0
+            ? Math.round(((sorted[mid - 1] + sorted[mid]) / 2) * 10) / 10
+            : Math.round(sorted[mid] * 10) / 10
+        }
+        answeredRate = Math.round((answered.length / responseTimesResult.length) * 1000) / 10
 
         const buckets = {
           '5min': { count: 0, total: 0 },
@@ -814,6 +823,8 @@ export default async function handler(req: Request): Promise<Response> {
         totalChannels: parseInt(channels.total_channels || 0),
         activeChannels: parseInt(channels.active_channels || 0),
         avgFirstResponseMinutes: avgFirstResponse ? Math.round(avgFirstResponse) : null,
+        medianFirstResponseMinutes: medianFirstResponse,
+        firstResponseAnsweredRate: answeredRate,
       },
 
       patterns: {
