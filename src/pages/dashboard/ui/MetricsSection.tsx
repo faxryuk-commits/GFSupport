@@ -22,9 +22,18 @@ export function MetricsSection({ metrics, analytics, onSlaCategoryClick }: Props
     ? 'нет замеров'
     : `по ${slaSample} ответам`
 
+  // Время ответа: головной KPI — МЕДИАНА (типичный опыт), т.к. среднее
+  // перекошено хвостом медленных чатов. Среднее и «% отвечено» — подписью.
+  const hasMedianFrt = metrics?.medianResponseTime != null
+  const frtValue = metrics?.medianResponseTime || metrics?.avgResponseTime || '—'
+  const frtLabel = hasMedianFrt ? 'Время ответа · медиана' : 'Среднее время'
+  const frtSub = hasMedianFrt
+    ? `среднее ${metrics?.avgResponseTime}${metrics?.frtAnsweredRate != null ? ` · отвечено ${Math.round(metrics.frtAnsweredRate)}%` : ''}`
+    : ''
+
   const metricsDisplay = [
     { label: 'Ожидают ответа', value: metrics?.waiting || 0, icon: Clock, color: 'blue', trend: 'neutral' as const, sub: '' },
-    { label: 'Среднее время', value: metrics?.avgResponseTime || '-', icon: Zap, color: 'green', trend: 'neutral' as const, sub: '' },
+    { label: frtLabel, value: frtValue, icon: Zap, color: 'green', trend: 'neutral' as const, sub: frtSub },
     { label: 'SLA выполнено', value: slaValue, icon: Target, color: 'emerald', trend: 'up' as const, sub: slaSub },
     { label: 'Открытых кейсов', value: analytics?.cases?.open || 0, icon: Briefcase, color: 'amber', trend: 'neutral' as const, sub: '' },
   ]
