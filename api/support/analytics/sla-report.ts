@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ANTI_THANKS_REGEX } from './metrics/frtShared.js'
 import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 export const config = {
@@ -78,7 +79,7 @@ export default async function handler(req: Request): Promise<Response> {
           )
           AND NOT (
             COALESCE(LENGTH(text_content), 0) <= 50
-            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+            AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
           )
       ),
       first_responses AS (
@@ -175,7 +176,7 @@ export default async function handler(req: Request): Promise<Response> {
           )
           AND NOT (
             COALESCE(LENGTH(text_content), 0) <= 50
-            AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+            AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
           )
       ),
       with_resp AS (

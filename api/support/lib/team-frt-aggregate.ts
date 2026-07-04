@@ -4,6 +4,8 @@
  * считается по всем событиям периода.
  */
 
+import { ANTI_THANKS_REGEX } from '../analytics/metrics/frtShared.js'
+
 type SqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>
 
 export interface TeamFrtAgentRow {
@@ -57,7 +59,7 @@ export async function fetchTeamFrtAggregate(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responses AS (
