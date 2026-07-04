@@ -141,7 +141,7 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*)::int AS total_messages,
           COALESCE(SUM(LENGTH(COALESCE(m.text_content, ''))), 0)::int AS total_chars,
           COUNT(DISTINCT m.channel_id)::int AS channels_served,
-          COUNT(DISTINCT (m.created_at AT TIME ZONE 'Asia/Tashkent')::date)::int AS active_days
+          COUNT(DISTINCT (m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::date)::int AS active_days
         FROM support_messages m
         LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
         WHERE m.org_id = ${orgId}
@@ -271,7 +271,7 @@ export default async function handler(req: Request): Promise<Response> {
       sql`
         WITH agent_msgs AS (
           SELECT
-            (m.created_at AT TIME ZONE 'Asia/Tashkent')::date AS d,
+            (m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::date AS d,
             COUNT(*)::int AS messages
           FROM support_messages m
           LEFT JOIN support_channels ch ON ch.id = m.channel_id AND ch.org_id = m.org_id
@@ -282,11 +282,11 @@ export default async function handler(req: Request): Promise<Response> {
             AND m.created_at >= ${fromTs}::timestamptz
             AND m.created_at <= ${toTs}::timestamptz
             AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-          GROUP BY (m.created_at AT TIME ZONE 'Asia/Tashkent')::date
+          GROUP BY (m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::date
         ),
         agent_resolved AS (
           SELECT
-            (c.resolved_at AT TIME ZONE 'Asia/Tashkent')::date AS d,
+            (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::date AS d,
             COUNT(*)::int AS resolved
           FROM support_cases c
           LEFT JOIN support_agents a ON a.id::text = c.assigned_to::text
@@ -300,7 +300,7 @@ export default async function handler(req: Request): Promise<Response> {
             AND c.resolved_at >= ${fromTs}::timestamptz
             AND c.resolved_at <= ${toTs}::timestamptz
             AND (${source}::text = 'all' OR COALESCE(ch.source, 'telegram') = ${source})
-          GROUP BY (c.resolved_at AT TIME ZONE 'Asia/Tashkent')::date
+          GROUP BY (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::date
         ),
         -- Полный диапазон дат [fromTs..toTs] в Asia/Tashkent.
         -- Пустые дни тоже попадают в ряд (0/0) — иначе на графике

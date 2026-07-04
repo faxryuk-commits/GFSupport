@@ -98,7 +98,7 @@ export default async function handler(req: Request): Promise<Response> {
     // 4. По часам
     const hourlyLoad = await safeQuery(sql, sql`
       SELECT
-        EXTRACT(HOUR FROM m.created_at AT TIME ZONE 'Asia/Tashkent')::int as hour,
+        EXTRACT(HOUR FROM m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::int as hour,
         COUNT(*)::int as total,
         COUNT(*) FILTER (WHERE m.is_from_client = true)::int as client_msgs,
         COUNT(*) FILTER (WHERE m.is_from_client = false)::int as agent_msgs
@@ -114,7 +114,7 @@ export default async function handler(req: Request): Promise<Response> {
     // 5. По дням недели
     const weekdayLoad = await safeQuery(sql, sql`
       SELECT
-        EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent')::int as dow,
+        EXTRACT(DOW FROM m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')::int as dow,
         COUNT(*)::int as total,
         COUNT(*) FILTER (WHERE m.is_from_client = true)::int as client_msgs,
         COUNT(*) FILTER (WHERE m.is_from_client = false)::int as agent_msgs,
@@ -150,7 +150,7 @@ export default async function handler(req: Request): Promise<Response> {
     // 7. Тренд по дням
     const dailyTrend = await safeQuery(sql, sql`
       SELECT
-        TO_CHAR(DATE(m.created_at AT TIME ZONE 'Asia/Tashkent'), 'YYYY-MM-DD') as day,
+        TO_CHAR(DATE(m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'), 'YYYY-MM-DD') as day,
         COUNT(*)::int as total,
         COUNT(*) FILTER (WHERE m.is_from_client = true)::int as incoming,
         COUNT(*) FILTER (WHERE m.is_from_client = false)::int as outgoing,

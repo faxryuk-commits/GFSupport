@@ -834,7 +834,7 @@ export default async function handler(req: Request): Promise<Response> {
     const weeklyData = await sql`
       SELECT
         COALESCE(a.name, m.sender_name) as agent_name,
-        EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent') as dow,
+        EXTRACT(DOW FROM m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent') as dow,
         COUNT(*) as msg_count
       FROM support_messages m
       JOIN support_channels sc ON sc.id = m.channel_id
@@ -850,7 +850,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND m.created_at >= ${fromDateTime}::timestamptz
         AND m.created_at <= ${toDateTime}::timestamptz
         AND (${source}::text = 'all' OR COALESCE(sc.source, 'telegram') = ${source})
-      GROUP BY COALESCE(a.name, m.sender_name), EXTRACT(DOW FROM m.created_at AT TIME ZONE 'Asia/Tashkent')
+      GROUP BY COALESCE(a.name, m.sender_name), EXTRACT(DOW FROM m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
       ORDER BY agent_name, dow
     `
 
