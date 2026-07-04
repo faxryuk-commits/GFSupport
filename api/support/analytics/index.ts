@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 import { ANTI_THANKS_REGEX } from './metrics/frtShared.js'
+import { resolvePeriod, parsePeriodParam } from './metrics/periodEngine.js'
 
 // API Version: 2.2 - SLA Categories with real data
 export const config = {
@@ -79,32 +80,20 @@ export default async function handler(req: Request): Promise<Response> {
   const customTo = url.searchParams.get('to')
   const market = url.searchParams.get('market') || null
   
-  // Вычисляем дату начала периода
-  // Поддерживаем: today, yesterday, week, month, 7d, 30d, 90d, или custom from/to
-  let periodDays: number
+  // Границы периода — через единый Tashkent-aware движок (periodEngine),
+  // тот же, что у реестра метрик. «Сегодня/вчера/неделя/месяц» считаются по
+  // КАЛЕНДАРНЫМ суткам Ташкента (полночь Ташкента), а не по UTC-rolling-окну.
+  // created_at — наивный UTC, поэтому сравнение с UTC-инстантами границ,
+  // которые возвращает resolvePeriod (Tashkent→UTC), корректно.
   let startDate: Date
-  let endDate: Date = new Date()
-  
+  let endDate: Date
   if (customFrom && customTo) {
-    // Custom date range
-    startDate = new Date(customFrom)
-    endDate = new Date(customTo)
-    endDate.setHours(23, 59, 59, 999) // Include full day
-    periodDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    startDate = new Date(`${customFrom}T00:00:00.000Z`)
+    endDate = new Date(`${customTo}T23:59:59.999Z`)
   } else {
-    switch (period) {
-      case 'today': periodDays = 1; break
-      case 'yesterday': periodDays = 2; break
-      case 'week': 
-      case '7d': periodDays = 7; break
-      case 'month':
-      case '30d': periodDays = 30; break
-      case '90d': periodDays = 90; break
-      default: periodDays = 30
-    }
-    
-    startDate = new Date()
-    startDate.setDate(startDate.getDate() - periodDays)
+    const resolved = resolvePeriod(parsePeriodParam(period))
+    startDate = resolved.from
+    endDate = resolved.to
   }
 
   try {
