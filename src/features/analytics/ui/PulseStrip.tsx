@@ -24,7 +24,7 @@ const STRIP_METRICS: Array<{
     label: 'Время ответа',
     unit: 'minutes',
     icon: <Clock className="w-4 h-4 text-violet-500" />,
-    formula: 'Среднее время от нового запроса клиента до первого ответа агента.',
+    formula: 'Среднее FRT по клиентским каналам (без internal type/sla_category).',
   },
   {
     key: 'resolution_time_hours',

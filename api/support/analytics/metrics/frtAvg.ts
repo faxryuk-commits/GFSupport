@@ -39,9 +39,8 @@ export const frtAvgDescriptor: MetricDescriptor = {
   labelRu: 'Среднее время первого ответа',
   formulaRu:
     'Среднее время от нового запроса клиента до первого ответа агента в 4-часовом окне ' +
-    '(фильтр коротких «спасибо/ок»). Распределение скошенное — смотрите также медиану, ' +
-    'p90 и долю отвеченных: «среднее» само по себе занижено, т.к. считается только по ' +
-    'отвеченным в окне сессиям.',
+    '(фильтр коротких «спасибо/ок»; без каналов type/sla_category = internal). ' +
+    'Распределение скошенное — смотрите также медиану, p90 и долю отвеченных.',
   perAgent: true,
 }
 
@@ -83,6 +82,8 @@ export async function computeFrtAvg(
         AND m.created_at <= ${toISO}::timestamptz
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
+        AND COALESCE(c.type, 'client') <> 'internal'
+        AND COALESCE(c.sla_category, 'client') <> 'internal'
     ),
     session_starts AS (
       SELECT id, channel_id, created_at
@@ -228,6 +229,8 @@ export async function computeFrtAvgPerAgent(
         AND m.created_at <= ${toISO}::timestamptz
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
+        AND COALESCE(c.type, 'client') <> 'internal'
+        AND COALESCE(c.sla_category, 'client') <> 'internal'
     ),
     session_starts AS (
       SELECT id, channel_id, created_at
