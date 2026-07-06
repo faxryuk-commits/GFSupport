@@ -335,6 +335,8 @@ export default async function handler(req: Request): Promise<Response> {
             AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
             AND m.created_at <= ${endDate.toISOString()}
             AND (${market}::text IS NULL OR ch.market_id = ${market})
+            AND COALESCE(ch.type, 'client') <> 'internal'
+            AND COALESCE(ch.sla_category, 'client') <> 'internal'
           WINDOW w AS (PARTITION BY m.channel_id ORDER BY m.created_at)
         ),
         session_starts AS (
@@ -876,6 +878,7 @@ export default async function handler(req: Request): Promise<Response> {
             '30min': 'до 30 мин',
             '60min': 'до 1 часа',
             '60plus': 'более 1 часа',
+            'unanswered': 'без ответа (>4ч)',
           }
           return {
             bucket: r.bucket,

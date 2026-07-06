@@ -218,6 +218,8 @@ export function DashboardPage() {
           analytics={analytics}
           metrics={metrics}
           recentActivity={recentActivity}
+          dateRange={dateRange}
+          marketKey={selectedMarket}
           onResponseTimeClick={setResponseTimeModal}
         />
 
@@ -230,7 +232,7 @@ export function DashboardPage() {
             bucketLabel={responseTimeModal.bucketLabel}
             count={responseTimeModal.count}
             avgMinutes={responseTimeModal.avgMinutes}
-            period={dateRange === 'today' ? '7d' : dateRange === 'week' ? '7d' : '30d'}
+            period={dateRange}
             color={responseTimeModal.color}
             marketKey={selectedMarket}
           />

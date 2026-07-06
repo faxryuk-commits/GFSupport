@@ -89,7 +89,18 @@ export default async function handler(req: Request): Promise<Response> {
       case 'более 1 часа':
         minMinutes = 60
         break
+      case 'late':
+        // SLA breach: первый ответ дольше 10 минут
+        minMinutes = 10
+        break
+      case 'all':
+        minMinutes = 0
+        break
+      case 'unanswered':
+        break
     }
+
+    const unansweredOnly = bucket === 'unanswered'
 
     // Если есть фильтр по SLA категории, получаем ID каналов
     let channelFilter: string[] = []
@@ -127,6 +138,8 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.created_at <= ${endDate.toISOString()}
           AND (${!useChannelFilter} OR m.channel_id = ANY(${channelFilter.length > 0 ? channelFilter : ['__none__']}))
           AND (${market}::text IS NULL OR ch.market_id = ${market})
+          AND COALESCE(ch.type, 'client') <> 'internal'
+          AND COALESCE(ch.sla_category, 'client') <> 'internal'
       ),
       client_messages AS (
         SELECT 
@@ -202,10 +215,18 @@ export default async function handler(req: Request): Promise<Response> {
       FROM response_times rt
       JOIN support_channels ch ON rt.channel_id = ch.id AND ch.org_id = ${orgId}
       LEFT JOIN support_messages rm ON rm.id = rt.response_message_id
-      WHERE rt.response_at IS NOT NULL
+      WHERE (
+        ${unansweredOnly}
+        AND rt.response_at IS NULL
+      ) OR (
+        NOT ${unansweredOnly}
+        AND rt.response_at IS NOT NULL
         AND EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 >= ${minMinutes}
         AND EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 < ${maxMinutes}
-      ORDER BY response_minutes DESC
+      )
+      ORDER BY
+        CASE WHEN ${unansweredOnly} THEN rt.client_msg_at END DESC NULLS LAST,
+        EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 DESC NULLS LAST
       LIMIT ${limit}
     `
 
@@ -222,6 +243,8 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
           AND (${market}::text IS NULL OR ch.market_id = ${market})
+          AND COALESCE(ch.type, 'client') <> 'internal'
+          AND COALESCE(ch.sla_category, 'client') <> 'internal'
       ),
       first_client AS (
         SELECT id, channel_id, created_at as client_msg_at, sender_name
@@ -283,6 +306,8 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
           AND m.created_at <= ${endDate.toISOString()}
           AND (${market}::text IS NULL OR ch.market_id = ${market})
+          AND COALESCE(ch.type, 'client') <> 'internal'
+          AND COALESCE(ch.sla_category, 'client') <> 'internal'
       ),
       first_client AS (
         SELECT id, channel_id, created_at as client_msg_at
@@ -342,7 +367,9 @@ export default async function handler(req: Request): Promise<Response> {
       responderName: d.responder_name || 'Оператор',
       responseMessage: d.response_message || '',
       responseTime: d.response_at,
-      responseMinutes: Math.round(parseFloat(d.response_minutes || '0')),
+      responseMinutes: d.response_at
+        ? Math.round(parseFloat(d.response_minutes || '0'))
+        : null,
       wasEscalated: d.was_escalated || false,
       // Alias fields for SLA category modal
       senderName: d.client_name || 'Клиент',

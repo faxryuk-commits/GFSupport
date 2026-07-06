@@ -5,11 +5,14 @@ import {
 import { Badge } from '@/shared/ui'
 import type { AnalyticsData, DashboardMetrics } from '@/shared/api'
 import type { RecentActivity, ResponseTimeModalData } from '../model/types'
+import { LateResponsesTable } from './LateResponsesTable'
 
 interface Props {
   analytics: AnalyticsData | null
   metrics: DashboardMetrics | null
   recentActivity: RecentActivity[]
+  dateRange: string
+  marketKey?: string | null
   onResponseTimeClick: (data: ResponseTimeModalData) => void
 }
 
@@ -27,8 +30,15 @@ const activityColors = {
   assignment: 'bg-purple-100 text-purple-600',
 }
 
-export function StatsSection({ analytics, metrics, recentActivity, onResponseTimeClick }: Props) {
+export function StatsSection({
+  analytics,
+  recentActivity,
+  dateRange,
+  marketKey,
+  onResponseTimeClick,
+}: Props) {
   const resolvedToday = analytics?.cases?.resolved || 0
+  const distribution = analytics?.team?.responseTimeDistribution || []
 
   return (
     <>
@@ -117,22 +127,29 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
         </div>
       </div>
 
-      {/* Response Time Distribution */}
-      {analytics?.team?.responseTimeDistribution && analytics.team.responseTimeDistribution.length > 0 && (
-        <div className="bg-white rounded-xl border border-[#e8edf3]">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-green-500" />
-              Время первого ответа
-            </h2>
-          </div>
-          <div className="p-5">
+      {/* Response Time Distribution — всегда видна; пустое состояние если нет замеров */}
+      <div className="bg-white rounded-xl border border-[#e8edf3]">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-green-500" />
+            Время первого ответа
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Распределение по скорости · только клиентские каналы
+          </p>
+        </div>
+        <div className="p-5">
+          {distribution.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-6">
+              Нет замеров за выбранный период
+            </p>
+          ) : (
             <div
               className="grid gap-4"
-              style={{ gridTemplateColumns: `repeat(${analytics.team.responseTimeDistribution.length}, minmax(0, 1fr))` }}
+              style={{ gridTemplateColumns: `repeat(${distribution.length}, minmax(0, 1fr))` }}
             >
-              {analytics.team.responseTimeDistribution.map((item, i) => {
-                const total = analytics.team.responseTimeDistribution!.reduce((sum, r) => sum + r.count, 0)
+              {distribution.map((item, i) => {
+                const total = distribution.reduce((sum, r) => sum + r.count, 0)
                 const percent = total > 0 ? Math.round((item.count / total) * 100) : 0
                 // Цвет берём по техническому ключу bucket, не по индексу — иначе при
                 // отсутствии какого-то бакета цвета сдвигаются.
@@ -182,9 +199,11 @@ export function StatsSection({ analytics, metrics, recentActivity, onResponseTim
                 )
               })}
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
+
+      <LateResponsesTable dateRange={dateRange} marketKey={marketKey} />
     </>
   )
 }

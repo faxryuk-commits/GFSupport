@@ -530,3 +530,39 @@ export async function fetchDashboardMetrics(period?: string): Promise<DashboardM
     }
   }
 }
+
+export interface ResponseTimeDetailRow {
+  id: string
+  channelId: string
+  channelName: string
+  clientName: string
+  clientMessage: string
+  clientMessageTime: string
+  responderName: string
+  responseMessage: string
+  responseMinutes: number | null
+}
+
+export async function fetchResponseTimeDetails(params: {
+  bucket?: string
+  period?: string
+  limit?: number
+}): Promise<{ details: ResponseTimeDetailRow[] }> {
+  const qs = new URLSearchParams()
+  qs.set('bucket', params.bucket || 'late')
+  qs.set('limit', String(params.limit ?? 50))
+  if (params.period) {
+    if (params.period.startsWith('custom:')) {
+      const [, from, to] = params.period.split(':')
+      qs.set('from', from)
+      qs.set('to', to)
+    } else {
+      qs.set('period', params.period)
+    }
+  }
+  const data = await apiGet<{ details: ResponseTimeDetailRow[] }>(
+    `/analytics/response-time-details?${qs.toString()}`,
+    false,
+  )
+  return { details: data.details || [] }
+}
