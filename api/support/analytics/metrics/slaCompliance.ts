@@ -73,6 +73,8 @@ export async function computeSlaCompliance(
         AND m.created_at <= ${toISO}::timestamptz
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
+        AND COALESCE(c.type, 'client') <> 'internal'
+        AND COALESCE(c.sla_category, 'client') <> 'internal'
     ),
     session_starts AS (
       SELECT id, channel_id, created_at
@@ -205,6 +207,8 @@ export async function computeSlaCompliancePerAgent(
         AND m.created_at <= ${toISO}::timestamptz
         AND (${market}::text IS NULL OR c.market_id = ${market})
         AND (${source}::text = 'all' OR COALESCE(c.source, 'telegram') = ${source})
+        AND COALESCE(c.type, 'client') <> 'internal'
+        AND COALESCE(c.sla_category, 'client') <> 'internal'
     ),
     session_starts AS (
       SELECT id, channel_id, created_at
