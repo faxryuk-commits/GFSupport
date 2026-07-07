@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
-import { ANTI_THANKS_REGEX } from './metrics/frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './metrics/frtShared.js'
 import { resolvePeriod, parsePeriodParam } from './metrics/periodEngine.js'
 
 // API Version: 2.2 - SLA Categories with real data
@@ -347,7 +347,7 @@ export default async function handler(req: Request): Promise<Response> {
             AND (prev_sender_role IS NULL OR prev_sender_role IN ('support','team','agent') OR prev_is_from_client = false)
             AND NOT (
               COALESCE(LENGTH(text_content), 0) <= 50
-              AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+              AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
             )
         )
         SELECT
@@ -586,7 +586,7 @@ export default async function handler(req: Request): Promise<Response> {
               )
               AND NOT (
                 COALESCE(LENGTH(text_content), 0) <= 50
-                AND LOWER(COALESCE(text_content, '')) ~ '(^|\\s)(хоп|ок|окей|рахмат|спасибо|тушунарли|хорошо|понял|ладно|rahmat|ok|okay|tushunarli|hop|хоп рахмат|ок рахмат|рахмат катта|катта рахмат|болди|хо[пр]|да|нет|йук|ха|хн|понятно|good|thanks|thank you|aни|hozir|тушундим)(\\s|$)'
+                AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
               )
           ),
           response_times AS (

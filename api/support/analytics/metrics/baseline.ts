@@ -17,7 +17,7 @@
  */
 
 import { getSQL } from '../../lib/db.js'
-import { ANTI_THANKS_REGEX } from './frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './frtShared.js'
 import type { MetricDescriptor, MetricResult, MetricScope, ResolvedPeriod } from './types.js'
 
 const MIN_SAMPLE_PER_OBSERVATION = 5
@@ -89,7 +89,7 @@ async function computeFrtPerAgent(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+          AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responder AS (

@@ -1,10 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Clock, Loader2, ArrowUpDown, MessageSquare, ExternalLink } from 'lucide-react'
+import {
+  Clock,
+  Loader2,
+  ArrowUpDown,
+  MessageSquare,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react'
 import { fetchResponseTimeDetails, type ResponseTimeDetailRow } from '@/shared/api/analytics'
 
 type FilterMode = 'late' | 'unanswered'
 type SortKey = 'responseMinutes' | 'clientMessageTime' | 'channelName'
+
+const PAGE_SIZE = 20
 
 interface Props {
   dateRange: string
@@ -38,9 +48,15 @@ function frtTone(minutes: number | null): string {
 export function LateResponsesTable({ dateRange, marketKey }: Props) {
   const [filter, setFilter] = useState<FilterMode>('late')
   const [rows, setRows] = useState<ResponseTimeDetailRow[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [sortKey, setSortKey] = useState<SortKey>('responseMinutes')
   const [sortAsc, setSortAsc] = useState(false)
+
+  useEffect(() => {
+    setPage(0)
+  }, [dateRange, marketKey, filter])
 
   useEffect(() => {
     let cancelled = false
@@ -48,13 +64,23 @@ export function LateResponsesTable({ dateRange, marketKey }: Props) {
     fetchResponseTimeDetails({
       bucket: filter === 'unanswered' ? 'unanswered' : 'late',
       period: dateRange,
-      limit: 100,
+      market: marketKey,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+      sort: sortKey,
+      sortDir: sortAsc ? 'asc' : 'desc',
     })
       .then((r) => {
-        if (!cancelled) setRows(r.details)
+        if (!cancelled) {
+          setRows(r.details)
+          setTotalCount(r.pagination.totalCount)
+        }
       })
       .catch(() => {
-        if (!cancelled) setRows([])
+        if (!cancelled) {
+          setRows([])
+          setTotalCount(0)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -62,27 +88,14 @@ export function LateResponsesTable({ dateRange, marketKey }: Props) {
     return () => {
       cancelled = true
     }
-  }, [dateRange, marketKey, filter])
+  }, [dateRange, marketKey, filter, page, sortKey, sortAsc])
 
-  const sorted = useMemo(() => {
-    const list = [...rows]
-    list.sort((a, b) => {
-      let cmp = 0
-      if (sortKey === 'responseMinutes') {
-        const av = a.responseMinutes ?? 9999
-        const bv = b.responseMinutes ?? 9999
-        cmp = av - bv
-      } else if (sortKey === 'clientMessageTime') {
-        cmp = new Date(a.clientMessageTime).getTime() - new Date(b.clientMessageTime).getTime()
-      } else {
-        cmp = a.channelName.localeCompare(b.channelName, 'ru')
-      }
-      return sortAsc ? cmp : -cmp
-    })
-    return list
-  }, [rows, sortKey, sortAsc])
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+  const pageStart = page * PAGE_SIZE
+  const pageEnd = Math.min(pageStart + rows.length, totalCount)
 
   const toggleSort = (key: SortKey) => {
+    setPage(0)
     if (sortKey === key) setSortAsc((v) => !v)
     else {
       setSortKey(key)
@@ -110,7 +123,7 @@ export function LateResponsesTable({ dateRange, marketKey }: Props) {
             Поздние ответы
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Клиентские каналы · сортировка по времени первого ответа
+            Клиентские каналы (без internal) · сортировка по времени первого ответа
           </p>
         </div>
         <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
@@ -140,77 +153,114 @@ export function LateResponsesTable({ dateRange, marketKey }: Props) {
           <Loader2 className="w-5 h-5 animate-spin" />
           Загрузка...
         </div>
-      ) : sorted.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="py-12 text-center text-sm text-slate-500">
           {filter === 'late'
             ? 'Нет ответов дольше 10 минут за выбранный период'
             : 'Нет запросов без ответа в 4-часовом окне'}
         </div>
       ) : (
-        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
-              <tr>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
-                  <SortHeader label="Время ответа" col="responseMinutes" />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
-                  <SortHeader label="Канал" col="channelName" />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
-                  Сообщение
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
-                  Агент
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
-                  <SortHeader label="Дата запроса" col="clientMessageTime" />
-                </th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {sorted.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span
-                      className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold tabular-nums ${frtTone(row.responseMinutes)}`}
-                    >
-                      {formatFrt(row.responseMinutes)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-medium text-slate-800 max-w-[160px] truncate">
-                    {row.channelName}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 max-w-[240px]">
-                    <div className="flex items-start gap-1.5 min-w-0">
-                      <MessageSquare className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
-                      <span className="truncate" title={row.clientMessage}>
-                        {row.clientMessage || '—'}
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">{row.clientName}</span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                    {row.responseMinutes != null ? row.responderName : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs tabular-nums">
-                    {formatWhen(row.clientMessageTime)}
-                  </td>
-                  <td className="px-2 py-3">
-                    <Link
-                      to={`/chats/${row.channelId}`}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg inline-flex"
-                      title="Открыть чат"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </Link>
-                  </td>
+        <>
+          <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
+                    <SortHeader label="Время ответа" col="responseMinutes" />
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
+                    <SortHeader label="Канал" col="channelName" />
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
+                    Сообщение
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
+                    Агент
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">
+                    <SortHeader label="Дата запроса" col="clientMessageTime" />
+                  </th>
+                  <th className="w-10" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold tabular-nums ${frtTone(row.responseMinutes)}`}
+                      >
+                        {formatFrt(row.responseMinutes)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-800 max-w-[160px] truncate">
+                      {row.channelName}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 max-w-[240px]">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        <MessageSquare className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
+                        <span className="truncate" title={row.clientMessage}>
+                          {row.clientMessage || '—'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-400">{row.clientName}</span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {row.responseMinutes != null ? row.responderName : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs tabular-nums">
+                      {formatWhen(row.clientMessageTime)}
+                    </td>
+                    <td className="px-2 py-3">
+                      <Link
+                        to={`/chats/${row.channelId}`}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg inline-flex"
+                        title="Открыть чат"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalCount > PAGE_SIZE && (
+            <footer className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-600">
+              <div>
+                Показано{' '}
+                <span className="font-medium">
+                  {pageStart + 1}–{pageEnd}
+                </span>{' '}
+                из <span className="font-medium">{totalCount}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  Назад
+                </button>
+                <span className="px-2 tabular-nums">
+                  {page + 1} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+                >
+                  Вперёд
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </footer>
+          )}
+        </>
       )}
     </div>
   )

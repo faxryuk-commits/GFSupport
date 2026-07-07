@@ -16,7 +16,7 @@
 
 import { getSQL } from '../../lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
-import { ANTI_THANKS_REGEX } from './frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './frtShared.js'
 import type {
   MetricDescriptor,
   MetricResult,
@@ -87,7 +87,7 @@ export async function computeSlaCompliance(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+          AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responses AS (
@@ -219,7 +219,7 @@ export async function computeSlaCompliancePerAgent(
         )
         AND NOT (
           COALESCE(LENGTH(text_content), 0) <= 50
-          AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+          AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
     ),
     first_responder AS (

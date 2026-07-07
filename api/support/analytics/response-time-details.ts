@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
-import { ANTI_THANKS_REGEX } from './metrics/frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './metrics/frtShared.js'
 
 export const config = {
   runtime: 'edge',
@@ -31,7 +31,13 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const bucket = url.searchParams.get('bucket') || 'all'
   const period = url.searchParams.get('period') || '30d'
-  const limit = parseInt(url.searchParams.get('limit') || '50')
+  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10) || 20))
+  const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0)
+  const sort = url.searchParams.get('sort') || 'responseMinutes'
+  const sortAsc = url.searchParams.get('sortDir') === 'asc'
+  const sortByMinutes = sort === 'responseMinutes'
+  const sortByTime = sort === 'clientMessageTime'
+  const sortByChannel = sort === 'channelName'
   const slaCategory = url.searchParams.get('sla_category') || null
   const market = url.searchParams.get('market') || null
   const customFrom = url.searchParams.get('from')
@@ -160,7 +166,7 @@ export default async function handler(req: Request): Promise<Response> {
           )
           AND NOT (
             COALESCE(LENGTH(text_content), 0) <= 50
-            AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+            AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),
       response_times AS (
@@ -211,9 +217,12 @@ export default async function handler(req: Request): Promise<Response> {
           WHEN rm.text_content ILIKE '%эскал%' OR rm.text_content ILIKE '%передаю%' OR rm.text_content ILIKE '%перенаправ%'
           THEN true 
           ELSE false 
-        END as was_escalated
+        END as was_escalated,
+        COUNT(*) OVER() as total_count
       FROM response_times rt
       JOIN support_channels ch ON rt.channel_id = ch.id AND ch.org_id = ${orgId}
+        AND COALESCE(ch.type, 'client') <> 'internal'
+        AND COALESCE(ch.sla_category, 'client') <> 'internal'
       LEFT JOIN support_messages rm ON rm.id = rt.response_message_id
       WHERE (
         ${unansweredOnly}
@@ -225,9 +234,19 @@ export default async function handler(req: Request): Promise<Response> {
         AND EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 < ${maxMinutes}
       )
       ORDER BY
-        CASE WHEN ${unansweredOnly} THEN rt.client_msg_at END DESC NULLS LAST,
-        EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 DESC NULLS LAST
+        CASE WHEN ${sortByChannel} AND ${sortAsc} THEN ch.name END ASC NULLS LAST,
+        CASE WHEN ${sortByChannel} AND NOT ${sortAsc} THEN ch.name END DESC NULLS LAST,
+        CASE WHEN ${sortByTime} AND ${sortAsc} THEN rt.client_msg_at END ASC NULLS LAST,
+        CASE WHEN ${sortByTime} AND NOT ${sortAsc} THEN rt.client_msg_at END DESC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND ${sortAsc} AND NOT ${unansweredOnly}
+          THEN EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 END ASC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND NOT ${sortAsc} AND NOT ${unansweredOnly}
+          THEN EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 END DESC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND ${unansweredOnly} AND ${sortAsc} THEN rt.client_msg_at END ASC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND ${unansweredOnly} AND NOT ${sortAsc} THEN rt.client_msg_at END DESC NULLS LAST,
+        rt.client_msg_at DESC
       LIMIT ${limit}
+      OFFSET ${offset}
     `
 
     // Статистика по интервалу (единая логика с details)
@@ -254,7 +273,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
           AND NOT (
             COALESCE(LENGTH(text_content), 0) <= 50
-            AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+            AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),
       response_times AS (
@@ -317,7 +336,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
           AND NOT (
             COALESCE(LENGTH(text_content), 0) <= 50
-            AND LOWER(COALESCE(text_content, '')) ~ ${ANTI_THANKS_REGEX}
+            AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),
       response_times AS (
@@ -354,6 +373,8 @@ export default async function handler(req: Request): Promise<Response> {
       ORDER BY response_count DESC
       LIMIT 10
     `
+
+    const totalCount = details.length > 0 ? parseInt(String(details[0].total_count || '0'), 10) : 0
 
     const mappedDetails = details.map((d: any) => ({
       id: d.client_message_id,
@@ -398,6 +419,12 @@ export default async function handler(req: Request): Promise<Response> {
       })),
       details: mappedDetails,
       messages: mappedDetails,
+      pagination: {
+        totalCount,
+        offset,
+        limit,
+        hasMore: offset + mappedDetails.length < totalCount,
+      },
     }, 200, 30)
   } catch (error: any) {
     console.error('Response time details error:', error)

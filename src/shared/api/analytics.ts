@@ -543,14 +543,29 @@ export interface ResponseTimeDetailRow {
   responseMinutes: number | null
 }
 
+export interface ResponseTimeDetailsPagination {
+  totalCount: number
+  offset: number
+  limit: number
+  hasMore: boolean
+}
+
 export async function fetchResponseTimeDetails(params: {
   bucket?: string
   period?: string
+  market?: string | null
   limit?: number
-}): Promise<{ details: ResponseTimeDetailRow[] }> {
+  offset?: number
+  sort?: 'responseMinutes' | 'clientMessageTime' | 'channelName'
+  sortDir?: 'asc' | 'desc'
+}): Promise<{ details: ResponseTimeDetailRow[]; pagination: ResponseTimeDetailsPagination }> {
   const qs = new URLSearchParams()
   qs.set('bucket', params.bucket || 'late')
-  qs.set('limit', String(params.limit ?? 50))
+  qs.set('limit', String(params.limit ?? 20))
+  qs.set('offset', String(params.offset ?? 0))
+  if (params.sort) qs.set('sort', params.sort)
+  if (params.sortDir) qs.set('sortDir', params.sortDir)
+  if (params.market) qs.set('market', params.market)
   if (params.period) {
     if (params.period.startsWith('custom:')) {
       const [, from, to] = params.period.split(':')
@@ -560,9 +575,18 @@ export async function fetchResponseTimeDetails(params: {
       qs.set('period', params.period)
     }
   }
-  const data = await apiGet<{ details: ResponseTimeDetailRow[] }>(
+  const data = await apiGet<{
+    details: ResponseTimeDetailRow[]
+    pagination?: ResponseTimeDetailsPagination
+  }>(
     `/analytics/response-time-details?${qs.toString()}`,
     false,
   )
-  return { details: data.details || [] }
+  const pagination = data.pagination ?? {
+    totalCount: data.details?.length ?? 0,
+    offset: params.offset ?? 0,
+    limit: params.limit ?? 20,
+    hasMore: false,
+  }
+  return { details: data.details || [], pagination }
 }
