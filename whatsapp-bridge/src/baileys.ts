@@ -213,30 +213,35 @@ export async function startBaileys(
 
     sock.ev.on('creds.update', saveCreds)
 
-    // Pair-code flow: запрашиваем 8-значный код СРАЗУ после создания сокета,
-    // до того как Baileys уйдёт по QR-ветке. Работает только если сессия не зарегистрирована.
-    if (mode === 'pair_code' && pairPhone && !state.creds.registered) {
-      try {
-        const rawCode = await sock.requestPairingCode(pairPhone)
-        currentPairCode = formatPairCode(rawCode)
-        pairCodeExpiresAt = Date.now() + 180_000
-        pairCodePhone = pairPhone
-        console.log(`[Baileys] Pair code issued for +${pairPhone}: ${currentPairCode}`)
-
-        // Через 180 сек код невалиден — очищаем состояние,
-        // чтобы UI не показывал протухший код.
-        pairCodeExpireTimer = setTimeout(() => {
-          console.log('[Baileys] Pair code expired')
-          clearPairCode()
-        }, 185_000)
-      } catch (e: any) {
-        lastError = `Pair code request failed: ${e.message}`
-        console.error('[Baileys]', lastError)
-      }
-    }
+    // Pair-code flow: код НЕЛЬЗЯ запрашивать сразу после makeWASocket — WS ещё
+    // не завершил noise-handshake и requestPairingCode падает с «Connection
+    // Closed». Запрашиваем при первом connection.update с QR-строкой: её приход
+    // означает, что сокет готов к регистрации. Флаг — защита от повторного запроса.
+    let pairCodeRequested = false
 
     sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       console.log(`[Baileys] connection.update: connection=${connection}, hasQR=${!!qr}, mode=${activeMode}`)
+
+      if (qr && activeMode === 'pair_code' && pairPhone && !state.creds.registered && !pairCodeRequested && sock) {
+        pairCodeRequested = true
+        try {
+          const rawCode = await sock.requestPairingCode(pairPhone)
+          currentPairCode = formatPairCode(rawCode)
+          pairCodeExpiresAt = Date.now() + 180_000
+          pairCodePhone = pairPhone
+          console.log(`[Baileys] Pair code issued for +${pairPhone}: ${currentPairCode}`)
+
+          // Через 180 сек код невалиден — очищаем состояние,
+          // чтобы UI не показывал протухший код.
+          pairCodeExpireTimer = setTimeout(() => {
+            console.log('[Baileys] Pair code expired')
+            clearPairCode()
+          }, 185_000)
+        } catch (e: any) {
+          lastError = `Pair code request failed: ${e.message}`
+          console.error('[Baileys]', lastError)
+        }
+      }
 
       // В pair-code режиме Baileys всё равно может прислать QR-строку — игнорируем,
       // чтобы UI не показывал одновременно два способа привязки.
