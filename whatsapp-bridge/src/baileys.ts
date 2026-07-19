@@ -9,8 +9,30 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import * as QRCode from 'qrcode'
+import { SocksProxyAgent } from 'socks-proxy-agent'
+import { HttpsProxyAgent } from 'https-proxy-agent'
 
 const logger = pino({ level: 'info' })
+
+// Прокси для выхода в WhatsApp через ЧИСТЫЙ IP (обход anti-abuse блока
+// датацентр-IP Railway). PROXY_URL: socks5://user:pass@host:port или
+// http(s)://user:pass@host:port. Пусто — прямое подключение (как раньше).
+const PROXY_URL = process.env.PROXY_URL || ''
+function makeProxyAgent(): any {
+  if (!PROXY_URL) return undefined
+  try {
+    const scheme = PROXY_URL.split('://')[0].toLowerCase()
+    const agent = scheme.startsWith('socks')
+      ? new SocksProxyAgent(PROXY_URL)
+      : new HttpsProxyAgent(PROXY_URL)
+    const host = (() => { try { return new URL(PROXY_URL).host } catch { return '???' } })()
+    console.log(`[Baileys] Proxy enabled (${scheme}) via ${host}`)
+    return agent
+  } catch (e: any) {
+    console.error('[Baileys] Bad PROXY_URL, идём напрямую:', e.message)
+    return undefined
+  }
+}
 
 type LinkMode = 'qr' | 'pair_code'
 
@@ -189,6 +211,7 @@ export async function startBaileys(
       console.warn('[Baileys] Could not fetch latest version, using default:', e.message)
     }
 
+    const proxyAgent = makeProxyAgent()
     sock = makeWASocket({
       auth: state,
       logger,
@@ -201,6 +224,8 @@ export async function startBaileys(
       connectTimeoutMs: 60_000,
       // Retry счётчик от Baileys для отдельных запросов
       retryRequestDelayMs: 250,
+      // Прокси: agent — для WS-подключения к WA, fetchAgent — для скачивания медиа.
+      ...(proxyAgent ? { agent: proxyAgent, fetchAgent: proxyAgent } : {}),
       ...(version ? { version } : {}),
     })
     console.log('[Baileys] Socket created, waiting for connection events...')
