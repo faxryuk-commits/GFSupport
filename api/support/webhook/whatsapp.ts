@@ -183,6 +183,90 @@ async function handleReaction(sql: any, body: any): Promise<Response> {
   }
 }
 
+/**
+ * Транслятор вебхука GreenAPI → наш внутренний формат (тот же, что шлёт
+ * Baileys-мост). Так вся ингест-логика ниже («группа = канал», identifySender,
+ * запись сообщения) переиспользуется без изменений — GreenAPI просто заменяет
+ * звено «мост».
+ *
+ * Возвращает объект в формате моста, либо null — если событие не сообщение
+ * (статусы доставки и т.п.), тогда обработчик его пропускает.
+ * Формат GreenAPI: https://green-api.com (typeWebhook=incomingMessageReceived).
+ */
+function translateGreenApi(b: any): any | null {
+  const tw = b?.typeWebhook
+  if (tw !== 'incomingMessageReceived' && tw !== 'outgoingMessageReceived' && tw !== 'outgoingAPIMessageReceived') {
+    return null // outgoingMessageStatus, stateInstanceChanged и пр. — не сообщения
+  }
+  const fromMe = tw !== 'incomingMessageReceived'
+  const sd = b.senderData || {}
+  const md = b.messageData || {}
+  const chatId: string = sd.chatId || ''
+  const isGroup = chatId.endsWith('@g.us')
+  const stripJid = (j?: string) => (j || '').replace(/@c\.us$|@g\.us$|@s\.whatsapp\.net$/,'').replace(/[^0-9]/g,'')
+  // Телефон отправителя: в группе — participant (sender), в 1:1 — сам chatId.
+  const senderPhone = stripJid(sd.sender || (isGroup ? '' : chatId))
+  const senderName = sd.senderContactName || sd.senderName || senderPhone
+
+  // Текст + тип + медиа
+  const type = md.typeMessage
+  let text = ''
+  let contentType = 'text'
+  let mediaUrl: string | null = null
+  let mimeType: string | null = null
+  let fileName: string | null = null
+
+  if (type === 'textMessage') {
+    text = md.textMessageData?.textMessage || ''
+  } else if (type === 'extendedTextMessage') {
+    text = md.extendedTextMessageData?.text || ''
+  } else if (type === 'reactionMessage') {
+    // Реакция → отдельный путь handleReaction
+    return {
+      type: 'reaction',
+      chatId,
+      emoji: md.reactionMessage?.text || md.extendedTextMessageData?.text || '',
+      targetMessageId: md.reactionMessage?.key?.id || md.quotedMessage?.stanzaId || '',
+      senderName: fromMe ? 'Support' : senderName,
+    }
+  } else if (md.fileMessageData) {
+    const fm = md.fileMessageData
+    mediaUrl = fm.downloadUrl || null
+    text = fm.caption || ''
+    fileName = fm.fileName || null
+    mimeType = fm.mimeType || null
+    contentType = type === 'imageMessage' ? 'image'
+      : type === 'videoMessage' ? 'video'
+      : type === 'audioMessage' ? 'audio'
+      : type === 'documentMessage' ? 'document'
+      : type === 'stickerMessage' ? 'sticker'
+      : 'document'
+  } else {
+    // locationMessage/contactMessage/прочее — сохраняем как текст-заглушку
+    text = md.extendedTextMessageData?.text || md.textMessageData?.textMessage || `[${type || 'unsupported'}]`
+  }
+
+  const quoted = md.quotedMessage
+  return {
+    chatId,
+    messageId: b.idMessage,
+    senderName: fromMe ? 'Support' : senderName,
+    senderPhone,
+    text,
+    mediaUrl,
+    thumbnailUrl: null,
+    contentType,
+    mimeType,
+    fileName,
+    timestamp: b.timestamp,
+    isGroup,
+    fromMe,
+    groupName: isGroup ? (sd.chatName || undefined) : undefined,
+    replyToMessageId: quoted?.stanzaId || undefined,
+    replyToText: quoted?.textMessage || quoted?.caption || undefined,
+  }
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -236,7 +320,14 @@ export default async function handler(req: Request): Promise<Response> {
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB` } catch {}
 
   try {
-    const body = await req.json()
+    let body = await req.json()
+
+    // GreenAPI (managed-провайдер) шлёт свой формат — транслируем в формат моста.
+    if (body?.typeWebhook) {
+      const translated = translateGreenApi(body)
+      if (!translated) return json({ ok: true, skipped: `greenapi:${body.typeWebhook}` })
+      body = translated
+    }
 
     if (body.type === 'reaction') {
       return await handleReaction(sql, body)
