@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
-import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './metrics/frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './metrics/frtShared.js'
 import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 export const config = {
@@ -78,7 +78,7 @@ export default async function handler(req: Request): Promise<Response> {
             OR prev_is_from_client = false
           )
           AND NOT (
-            COALESCE(LENGTH(text_content), 0) <= 50
+            COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),
@@ -175,7 +175,7 @@ export default async function handler(req: Request): Promise<Response> {
             OR prev_is_from_client = false
           )
           AND NOT (
-            COALESCE(LENGTH(text_content), 0) <= 50
+            COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),

@@ -4,7 +4,7 @@
  * считается по всем событиям периода.
  */
 
-import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from '../analytics/metrics/frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from '../analytics/metrics/frtShared.js'
 
 type SqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>
 
@@ -58,7 +58,7 @@ export async function fetchTeamFrtAggregate(
           OR prev_is_from_client = false
         )
         AND NOT (
-          COALESCE(LENGTH(text_content), 0) <= 50
+          COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
           AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
     ),

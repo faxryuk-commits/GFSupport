@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
-import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './metrics/frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './metrics/frtShared.js'
 
 export const config = {
   runtime: 'edge',
@@ -165,7 +165,7 @@ export default async function handler(req: Request): Promise<Response> {
             OR prev_is_from_client = false
           )
           AND NOT (
-            COALESCE(LENGTH(text_content), 0) <= 50
+            COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),
@@ -272,7 +272,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND created_at >= ${startDate.toISOString()}
           AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
           AND NOT (
-            COALESCE(LENGTH(text_content), 0) <= 50
+            COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),
@@ -335,7 +335,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND created_at >= ${startDate.toISOString()}
           AND (prev_role IS NULL OR prev_role IN ('support', 'team', 'agent') OR prev_client = false)
           AND NOT (
-            COALESCE(LENGTH(text_content), 0) <= 50
+            COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
       ),

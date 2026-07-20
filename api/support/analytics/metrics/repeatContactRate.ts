@@ -20,7 +20,7 @@
 
 import { getSQL } from '../../lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
-import { ANTI_THANKS_REGEX, ACK_TEXT_SQL } from './frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './frtShared.js'
 import type { MetricDescriptor, MetricResult, MetricScope, ResolvedPeriod } from './types.js'
 
 export const repeatContactRateDescriptor: MetricDescriptor = {
@@ -77,7 +77,7 @@ export async function computeRepeatContactRate(
           OR prev_is_client = false
         )
         AND NOT (
-          COALESCE(LENGTH(text_content), 0) <= 50
+          COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
           AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
     ),
