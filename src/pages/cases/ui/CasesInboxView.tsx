@@ -1,6 +1,7 @@
 import { useMemo, useCallback, useEffect, useRef } from 'react'
-import { AlertTriangle, Timer, User, Bell, Repeat, Ban, MessageSquare, ChevronRight, PlayCircle, Loader2 } from 'lucide-react'
+import { AlertTriangle, Timer, User, Bell, Repeat, Ban, MessageSquare, ChevronRight, PlayCircle, Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
+import { formatDuration } from '@/shared/lib'
 import { CASE_PRIORITY_CONFIG, type Case } from '@/entities/case'
 
 interface InboxRowProps {
@@ -25,6 +26,13 @@ function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
   const priority = CASE_PRIORITY_CONFIG[caseItem.priority]
   const number = caseItem.ticketNumber ? `#${caseItem.ticketNumber}` : `#${caseItem.id.slice(0, 6).toUpperCase()}`
   const isUrgent = caseItem.priority === 'critical' || caseItem.priority === 'urgent'
+
+  // Показатели жизненного цикла (создан уже показан ниже как «N назад»)
+  const isResolved = caseItem.resolutionTimeMinutes != null
+  const frtPending = caseItem.firstResponseMinutes == null && !isResolved
+  const frtLabel = caseItem.firstResponseMinutes != null
+    ? formatDuration(caseItem.firstResponseMinutes)
+    : (isResolved ? '—' : 'ждёт')
 
   return (
     <button
@@ -57,11 +65,21 @@ function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
         )}
       </div>
 
-      {/* Line 2: канал + время */}
+      {/* Line 2: канал + время создания */}
       <div className="flex items-center gap-2 text-[11px] text-slate-500 mb-1">
         <MessageSquare className="w-3 h-3 flex-shrink-0" />
         <span className="truncate flex-1">{caseItem.channelName || 'Без канала'}</span>
-        <span className="flex-shrink-0">{formatRel(caseItem.createdAt)} назад</span>
+        <span className="flex-shrink-0" title="Создан">{formatRel(caseItem.createdAt)} назад</span>
+      </div>
+
+      {/* Line 2b: первый ответ (FRT) + время решения */}
+      <div className="flex items-center gap-3 text-[10px] mb-1">
+        <span className={`flex items-center gap-0.5 ${frtPending ? 'text-amber-600' : 'text-slate-500'}`} title="Первый ответ — от первого сообщения клиента до ответа команды">
+          <Zap className="w-2.5 h-2.5 flex-shrink-0" />{frtLabel}
+        </span>
+        <span className={`flex items-center gap-0.5 ${isResolved ? 'text-emerald-600' : 'text-slate-400'}`} title="Время решения — от первого сообщения клиента до резолюции">
+          <CheckCircle2 className="w-2.5 h-2.5 flex-shrink-0" />{isResolved ? formatDuration(caseItem.resolutionTimeMinutes) : 'в работе'}
+        </span>
       </div>
 
       {/* Line 3: assignee + бейджи */}

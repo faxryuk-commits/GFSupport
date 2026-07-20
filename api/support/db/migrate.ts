@@ -682,6 +682,28 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`Activity unify error: ${e.message}`)
     }
 
+    // Migration 40: Бэкфилл first_response_at из сообщений (для FRT на тикетах).
+    // Первый ответ команды = самое раннее не-клиентское сообщение кейса.
+    // Идемпотентно — заполняем только там, где колонка пустая; forward-стамп
+    // делают Telegram/WhatsApp вебхуки.
+    try {
+      const filled = await sql`
+        UPDATE support_cases c
+        SET first_response_at = fr.first_resp
+        FROM (
+          SELECT case_id, MIN(created_at) AS first_resp
+          FROM support_messages
+          WHERE case_id IS NOT NULL AND is_from_client = false
+          GROUP BY case_id
+        ) fr
+        WHERE c.id = fr.case_id AND c.first_response_at IS NULL
+        RETURNING c.id
+      `
+      migrations.push(`Backfilled first_response_at for ${filled.length} cases`)
+    } catch (e: any) {
+      migrations.push(`FRT backfill error: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+
     return json({
       success: true,
       migrations,
