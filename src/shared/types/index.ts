@@ -57,6 +57,7 @@ export interface Case {
   assigneeName?: string
   reporterName?: string
   firstResponseAt?: string
+  firstResponseMinutes?: number | null
   resolvedAt?: string | null
   resolutionTimeMinutes?: number
   resolutionNotes?: string

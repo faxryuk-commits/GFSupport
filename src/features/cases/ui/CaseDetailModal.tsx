@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell } from 'lucide-react'
+import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
+import { formatDuration } from '@/shared/lib'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
 import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, fetchRelatedCases, type CaseComment, type CaseActivity, type CustomerContext, type RelatedCase } from '@/shared/api'
 import type { Message } from '@/shared/types'
@@ -157,6 +158,9 @@ export interface CaseDetail {
   status: CaseStatus
   createdAt: string
   updatedAt?: string
+  // Показатели жизненного цикла (минуты, с бэкенда — tz-безопасны)
+  firstResponseMinutes?: number | null
+  resolutionTimeMinutes?: number | null
   assignee?: Agent
   comments: CaseComment[]
   tags: string[]
@@ -528,6 +532,13 @@ export function CaseDetailModal({
   const agingText = agingHours < 1 ? 'Менее часа' : agingHours < 24 ? `${Math.floor(agingHours)} ч` : `${Math.floor(agingHours / 24)} д ${Math.floor(agingHours % 24)} ч`
   const agingColor = agingHours < 4 ? 'text-green-600' : agingHours < 24 ? 'text-amber-600' : 'text-red-600'
 
+  // Три показателя жизненного цикла тикета
+  const isResolvedDetail = caseData.resolutionTimeMinutes != null
+  const frtDetailPending = caseData.firstResponseMinutes == null && !isResolvedDetail
+  const frtDetailLabel = caseData.firstResponseMinutes != null
+    ? formatDuration(caseData.firstResponseMinutes)
+    : (isResolvedDetail ? '—' : 'ждёт ответа')
+
   const content = (
     <div className={`flex gap-6 ${mode === 'modal' ? '-mx-6 -mb-6' : ''}`}>
         <div className={`flex-1 ${mode === 'modal' ? 'pl-6 pb-6' : 'p-4'}`}>
@@ -615,6 +626,28 @@ export function CaseDetailModal({
               <button onClick={onDelete} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
                 <Trash2 className="w-4 h-4" />
               </button>
+            </div>
+          </div>
+
+          {/* Три показателя жизненного цикла: создан · первый ответ · решение */}
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title="Когда создан тикет">
+              <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock className="w-3.5 h-3.5" />Создан</span>
+              <span className="text-sm font-semibold text-slate-700">{formatRelativeTime(caseData.createdAt)}</span>
+            </div>
+            <div
+              className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${frtDetailPending ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}
+              title="Время первого реагирования — от первого сообщения клиента до ответа команды"
+            >
+              <span className={`flex items-center gap-1.5 text-xs ${frtDetailPending ? 'text-amber-500' : 'text-slate-400'}`}><Zap className="w-3.5 h-3.5" />Первый ответ</span>
+              <span className={`text-sm font-semibold ${frtDetailPending ? 'text-amber-700' : 'text-slate-700'}`}>{frtDetailLabel}</span>
+            </div>
+            <div
+              className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}
+              title="Время решения — от первого сообщения клиента до резолюции"
+            >
+              <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решение</span>
+              <span className={`text-sm font-semibold ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolvedDetail ? formatDuration(caseData.resolutionTimeMinutes) : 'в работе'}</span>
             </div>
           </div>
 

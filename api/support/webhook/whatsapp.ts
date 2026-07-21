@@ -394,6 +394,19 @@ export default async function handler(req: Request): Promise<Response> {
       )
     `
 
+    // FRT: первый ответ команды в канале стампим на открытых кейсах.
+    // Идемпотентно — COALESCE не перезаписывает уже проставленное время.
+    // (Telegram делает это в updateCasesOnStaffReply; здесь — эквивалент для WhatsApp.)
+    if (!isFromClient) {
+      await sql`
+        UPDATE support_cases
+        SET first_response_at = COALESCE(first_response_at, NOW()), updated_at = NOW()
+        WHERE channel_id = ${channelId} AND org_id = ${orgId}
+          AND status NOT IN ('resolved','closed','cancelled')
+          AND first_response_at IS NULL
+      `.catch(() => { /* non-critical */ })
+    }
+
     const preview = text ? text.slice(0, 100) : `[${msgContentType}]`
     if (isFromClient) {
       await sql`

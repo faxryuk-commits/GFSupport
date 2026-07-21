@@ -131,7 +131,16 @@ export default async function handler(req: Request): Promise<Response> {
             WHEN c.resolved_at IS NOT NULL AND m.first_message_at IS NOT NULL
             THEN EXTRACT(EPOCH FROM (c.resolved_at - m.first_message_at)) / 60.0
             ELSE c.resolution_time_minutes
-          END AS resolution_time_minutes_from_msg
+          END AS resolution_time_minutes_from_msg,
+          -- FRT: время первого ответа команды, считаем от первого сообщения клиента.
+          -- Условие first_response_at >= first_message_at отсекает случаи, когда первым
+          -- сообщением был ответ команды (иначе получили бы отрицательный FRT).
+          CASE
+            WHEN c.first_response_at IS NOT NULL AND m.first_message_at IS NOT NULL
+                 AND c.first_response_at >= m.first_message_at
+            THEN EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0
+            ELSE NULL
+          END AS frt_minutes
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
         LEFT JOIN support_agents a ON c.assigned_to = a.id
@@ -353,6 +362,7 @@ export default async function handler(req: Request): Promise<Response> {
             reporterName: c.reporter_name,
             firstResponseAt: c.first_response_at,
             firstMessageAt: c.first_message_at,
+            firstResponseMinutes: c.frt_minutes != null ? Number(c.frt_minutes) : null,
             resolvedAt: c.resolved_at,
             resolutionTimeMinutes: c.resolution_time_minutes_from_msg != null ? Number(c.resolution_time_minutes_from_msg) : c.resolution_time_minutes,
             resolutionNotes: c.resolution_notes,
