@@ -62,13 +62,22 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
       // --- Фильтры ---
-      // statuses: comma-separated whitelist, либо preset 'active' / 'archive'
+      // statuses: comma-separated whitelist, либо preset 'active' / 'archive'.
+      // Пресеты time-aware: решённый СЕГОДНЯ (Ташкент) кейс остаётся на активной
+      // доске (колонка «Решено»); вчерашние resolved — в архиве. Ночной крон
+      // archive-resolved закрепляет это переводом resolved → closed.
       const statusParam = url.searchParams.get('status')
       let statuses: string[] | null = null
+      // Флаги для resolved-кейсов: включить решённые сегодня (active) /
+      // только решённые НЕ сегодня (archive).
+      let includeResolvedToday = false
+      let includeResolvedOlder = false
       if (statusParam === 'active') {
         statuses = ['detected', 'in_progress', 'waiting', 'blocked', 'recurring']
+        includeResolvedToday = true
       } else if (statusParam === 'archive') {
-        statuses = ['resolved', 'closed', 'cancelled']
+        statuses = ['closed', 'cancelled']
+        includeResolvedOlder = true
       } else {
         statuses = parseList(statusParam, VALID_STATUSES)
       }
@@ -147,7 +156,19 @@ export default async function handler(req: Request): Promise<Response> {
         LEFT JOIN msg_stats m ON m.case_id = c.id
         LEFT JOIN act_stats act ON act.case_id = c.id
         WHERE c.org_id = ${orgId}
-          AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
+          AND (
+            ${statuses}::text[] IS NULL
+            OR c.status = ANY(${statuses}::text[])
+            -- resolved сегодня (Ташкент) — на активной доске
+            OR (${includeResolvedToday} AND c.status = 'resolved' AND c.resolved_at IS NOT NULL
+                AND (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                    >= date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'))
+            -- resolved ранее (или без даты) — в архиве, пока крон не перевёл в closed
+            OR (${includeResolvedOlder} AND c.status = 'resolved'
+                AND (c.resolved_at IS NULL
+                  OR (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                     < date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')))
+          )
           AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
           AND (${channelId}::text IS NULL OR c.channel_id = ${channelId})
           AND (
@@ -204,7 +225,19 @@ export default async function handler(req: Request): Promise<Response> {
           GROUP BY case_id
         ) m ON m.case_id = c.id
         WHERE c.org_id = ${orgId}
-          AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
+          AND (
+            ${statuses}::text[] IS NULL
+            OR c.status = ANY(${statuses}::text[])
+            -- resolved сегодня (Ташкент) — на активной доске
+            OR (${includeResolvedToday} AND c.status = 'resolved' AND c.resolved_at IS NOT NULL
+                AND (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                    >= date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'))
+            -- resolved ранее (или без даты) — в архиве, пока крон не перевёл в closed
+            OR (${includeResolvedOlder} AND c.status = 'resolved'
+                AND (c.resolved_at IS NULL
+                  OR (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                     < date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')))
+          )
           AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
           AND (${channelId}::text IS NULL OR c.channel_id = ${channelId})
           AND (
@@ -333,6 +366,19 @@ export default async function handler(req: Request): Promise<Response> {
       `.catch(() => [{ snoozed: 0 }])
       const snoozedCount = snoozedRow[0]?.snoozed ?? 0
 
+      // Решено сегодня (Ташкент) — для бейджа «Активные» (доска = рабочие + решённые сегодня)
+      const resolvedTodayRow = await sql`
+        SELECT COUNT(*)::int AS cnt
+        FROM support_cases
+        WHERE org_id = ${orgId}
+          AND status = 'resolved'
+          AND resolved_at IS NOT NULL
+          AND (resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+              >= date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+          AND (${market}::text IS NULL OR market_id = ${market})
+      `.catch(() => [{ cnt: 0 }])
+      const resolvedTodayCount = resolvedTodayRow[0]?.cnt ?? 0
+
       return json({
         cases: rows.map((c: any) => {
           const ageHours = c.age_hours != null ? Number(c.age_hours) : null
@@ -397,6 +443,7 @@ export default async function handler(req: Request): Promise<Response> {
         metrics: resolutionMetrics,
         overdueCount,
         snoozedCount,
+        resolvedTodayCount,
       })
 
     } catch (e: any) {

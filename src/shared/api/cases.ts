@@ -29,6 +29,8 @@ export interface CasesResponse {
   metrics: CaseResolutionMetrics
   overdueCount: number
   snoozedCount: number
+  /** Решено сегодня (Ташкент) — эти кейсы ещё на активной доске в колонке «Решено» */
+  resolvedTodayCount?: number
 }
 
 export interface CaseComment {

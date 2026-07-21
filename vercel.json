@@ -73,6 +73,10 @@
     {
       "path": "/api/support/cron/error-resolver",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/support/cron/archive-resolved",
+      "schedule": "15 19 * * *"
     }
   ]
 }
