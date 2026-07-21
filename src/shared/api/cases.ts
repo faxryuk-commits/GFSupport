@@ -5,6 +5,25 @@ export interface CaseStats {
   [status: string]: number
 }
 
+export interface FrtBucket {
+  count: number
+  pct: number
+}
+
+/** Распределение FRT (первый ответ) по тикетам за период: ≤5 / 5-10 / 10-30 / 30-60 / 60+ мин. */
+export interface CaseFrtMetrics {
+  count: number
+  avgMinutes: number | null
+  medianMinutes: number | null
+  buckets: {
+    within5: FrtBucket
+    within10: FrtBucket
+    within30: FrtBucket
+    within60: FrtBucket
+    over60: FrtBucket
+  }
+}
+
 export interface CaseResolutionMetrics {
   periodDays: number
   resolvedCount: number
@@ -17,6 +36,7 @@ export interface CaseResolutionMetrics {
   maxHours: number | null
   medianHours: number | null
   p95Hours: number | null
+  frt?: CaseFrtMetrics
 }
 
 export interface CasesResponse {

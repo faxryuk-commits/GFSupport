@@ -95,6 +95,15 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
   }
 }
 
+// Бакеты распределения FRT: ключи совпадают с metrics.frt.buckets с бэкенда
+const FRT_BUCKET_CONFIG = [
+  { key: 'within5', label: '≤ 5 мин', short: '5м', color: 'bg-emerald-500' },
+  { key: 'within10', label: '5–10 мин', short: '10м', color: 'bg-green-400' },
+  { key: 'within30', label: '10–30 мин', short: '30м', color: 'bg-amber-400' },
+  { key: 'within60', label: '30–60 мин', short: '60м', color: 'bg-orange-500' },
+  { key: 'over60', label: '> 60 мин', short: '60+', color: 'bg-red-500' },
+] as const
+
 // Периоды для фильтра по дате
 const DATE_FILTERS = [
   { key: 'today', label: 'Сегодня' },
@@ -654,6 +663,52 @@ export function CasesPage() {
               ({metrics.shadowCount} auto-resolved)
             </span>
           ) : null}
+
+          {/* FRT: среднее + распределение первого ответа по бакетам */}
+          {metrics?.frt && metrics.frt.count > 0 && (
+            <>
+              <div className="w-px bg-slate-200 mx-1" />
+              <div
+                className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
+                title={`Первый ответ (FRT) по ${metrics.frt.count} тикетам за ${metrics.periodDays} дн: от первого сообщения клиента до ответа команды. Среднее ${metrics.frt.avgMinutes ?? '—'} мин, медиана ${metrics.frt.medianMinutes ?? '—'} мин.`}
+              >
+                <span className="flex items-center gap-1 text-[11px] text-slate-500 uppercase tracking-wide">
+                  <Zap className="w-3 h-3 text-blue-500" />
+                  Ответ
+                </span>
+                <span className="text-base font-bold leading-none text-blue-700">
+                  {metrics.frt.avgMinutes != null ? `${metrics.frt.avgMinutes} мин` : '—'}
+                </span>
+                {/* Стековая полоса распределения */}
+                <div className="flex h-2.5 w-36 rounded-full overflow-hidden bg-slate-200">
+                  {FRT_BUCKET_CONFIG.map(b => {
+                    const bucket = metrics.frt!.buckets[b.key]
+                    if (!bucket.count) return null
+                    return (
+                      <div
+                        key={b.key}
+                        className={b.color}
+                        style={{ width: `${bucket.pct}%` }}
+                        title={`${b.label}: ${bucket.pct}% (${bucket.count})`}
+                      />
+                    )
+                  })}
+                </div>
+                {/* Компактная легенда с процентами */}
+                <div className="flex items-center gap-2">
+                  {FRT_BUCKET_CONFIG.map(b => {
+                    const bucket = metrics.frt!.buckets[b.key]
+                    return (
+                      <span key={b.key} className="flex items-center gap-1 text-[10px] text-slate-500" title={`${b.label}: ${bucket.count} тикетов`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${b.color}`} />
+                        {b.short} <span className="font-semibold text-slate-700">{bucket.pct}%</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Header */}

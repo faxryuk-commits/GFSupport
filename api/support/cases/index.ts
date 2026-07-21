@@ -282,6 +282,54 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE COALESCE(is_shadow, false) = true)::int AS shadow_count
         FROM resolved_cases
       `
+      // FRT-агрегат за тот же период: среднее/медиана + бакеты ≤5/5-10/10-30/30-60/60+ мин.
+      // Популяция: кейсы, созданные за период, у которых есть валидный FRT
+      // (first_response_at >= first_message_at). Shadow исключаем (авто-решённые в чате
+      // отвечаются «мгновенно» и искажают распределение вниз).
+      const frtRow = await sql`
+        WITH frt_cases AS (
+          SELECT EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0 AS frt_min
+          FROM support_cases c
+          JOIN (
+            SELECT case_id, MIN(created_at) AS first_message_at
+            FROM support_messages
+            WHERE org_id = ${orgId} AND case_id IS NOT NULL
+            GROUP BY case_id
+          ) m ON m.case_id = c.id
+          WHERE c.org_id = ${orgId}
+            AND c.created_at >= NOW() - (${metricsPeriodDays} || ' days')::interval
+            AND c.first_response_at IS NOT NULL
+            AND c.first_response_at >= m.first_message_at
+            AND COALESCE(c.is_shadow, false) = false
+            AND (${market}::text IS NULL OR c.market_id = ${market})
+        )
+        SELECT
+          COUNT(*)::int AS frt_count,
+          AVG(frt_min) AS frt_avg,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min) AS frt_median,
+          COUNT(*) FILTER (WHERE frt_min <= 5)::int AS b5,
+          COUNT(*) FILTER (WHERE frt_min > 5 AND frt_min <= 10)::int AS b10,
+          COUNT(*) FILTER (WHERE frt_min > 10 AND frt_min <= 30)::int AS b30,
+          COUNT(*) FILTER (WHERE frt_min > 30 AND frt_min <= 60)::int AS b60,
+          COUNT(*) FILTER (WHERE frt_min > 60)::int AS over60
+        FROM frt_cases
+      `
+      const f = frtRow[0] || {}
+      const frtCount = f.frt_count ?? 0
+      const pct = (n: number) => (frtCount > 0 ? +((n / frtCount) * 100).toFixed(1) : 0)
+      const frtMetrics = {
+        count: frtCount,
+        avgMinutes: f.frt_avg != null ? +Number(f.frt_avg).toFixed(1) : null,
+        medianMinutes: f.frt_median != null ? +Number(f.frt_median).toFixed(1) : null,
+        buckets: {
+          within5: { count: f.b5 ?? 0, pct: pct(f.b5 ?? 0) },
+          within10: { count: f.b10 ?? 0, pct: pct(f.b10 ?? 0) },
+          within30: { count: f.b30 ?? 0, pct: pct(f.b30 ?? 0) },
+          within60: { count: f.b60 ?? 0, pct: pct(f.b60 ?? 0) },
+          over60: { count: f.over60 ?? 0, pct: pct(f.over60 ?? 0) },
+        },
+      }
+
       const m = metricsRow[0] || {}
       const avgMin = m.avg_minutes != null ? Number(m.avg_minutes) : null
       const maxMin = m.max_minutes != null ? Number(m.max_minutes) : null
@@ -299,6 +347,7 @@ export default async function handler(req: Request): Promise<Response> {
         maxHours: maxMin != null ? +(maxMin / 60).toFixed(2) : null,
         medianHours: medMin != null ? +(medMin / 60).toFixed(2) : null,
         p95Hours: p95Min != null ? +(p95Min / 60).toFixed(2) : null,
+        frt: frtMetrics,
       }
 
       // Overdue counter (по активным кейсам) — возраст от первого сообщения клиента
