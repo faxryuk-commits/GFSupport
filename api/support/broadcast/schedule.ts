@@ -172,6 +172,16 @@ async function handleCreate(req: Request, sql: ReturnType<typeof getSQL>, orgId:
   const filterType = String(body.filterType || 'all')
   const selectedChannels = Array.isArray(body.selectedChannels) ? body.selectedChannels : []
 
+  // Fail-closed валидация аудитории. Раньше неизвестный фильтр или пустой
+  // «Выбранные» молча проваливались в unfiltered-выборку и рассылка уходила ВСЕМ.
+  const VALID_FILTERS = ['all', 'active', 'clients', 'partners', 'selected']
+  if (!VALID_FILTERS.includes(filterType)) {
+    return json({ error: 'invalid_filter_type' }, 400)
+  }
+  if (filterType === 'selected' && selectedChannels.length === 0) {
+    return json({ error: 'no_channels_selected' }, 400)
+  }
+
   // 1. Резолвим получателей.
   const channels = await resolveChannels(sql, orgId, filterType, selectedChannels)
   if (channels.length === 0) {
@@ -249,7 +259,9 @@ async function resolveChannels(
   filterType: string,
   selectedChannels: string[],
 ): Promise<ChannelRow[]> {
-  if (filterType === 'selected' && selectedChannels.length > 0) {
+  if (filterType === 'selected') {
+    // Пустой список — fail-closed: НЕ рассылаем всем (валидируется и в handleCreate).
+    if (selectedChannels.length === 0) return []
     return await sql`
       SELECT id, telegram_chat_id, name
       FROM support_channels
@@ -268,12 +280,17 @@ async function resolveChannels(
     ` as ChannelRow[]
   }
   if (filterType === 'clients') {
+    // «Клиенты» = клиентские каналы, БЕЗ партнёров/внутренних/feed.
+    // type и sla_category по умолчанию 'client', поэтому раньше `type='client' OR
+    // sla_category='client'` матчил почти всё (партнёр с дефолтным sla_category
+    // протекал в выборку → рассылка «уходила всем»). Фильтруем через ИСКЛЮЧЕНИЕ.
     return await sql`
       SELECT id, telegram_chat_id, name
       FROM support_channels
       WHERE org_id = ${orgId}
         AND telegram_chat_id IS NOT NULL
-        AND (type = 'client' OR sla_category = 'client')
+        AND type NOT IN ('partner', 'internal', 'feed')
+        AND COALESCE(sla_category, 'client') NOT IN ('partner', 'internal')
     ` as ChannelRow[]
   }
   if (filterType === 'partners') {
@@ -285,11 +302,15 @@ async function resolveChannels(
         AND (type = 'partner' OR sla_category = 'partner')
     ` as ChannelRow[]
   }
-  return await sql`
-    SELECT id, telegram_chat_id, name
-    FROM support_channels
-    WHERE org_id = ${orgId} AND telegram_chat_id IS NOT NULL
-  ` as ChannelRow[]
+  if (filterType === 'all') {
+    return await sql`
+      SELECT id, telegram_chat_id, name
+      FROM support_channels
+      WHERE org_id = ${orgId} AND telegram_chat_id IS NOT NULL
+    ` as ChannelRow[]
+  }
+  // Неизвестный фильтр — fail-closed: пусто, а НЕ «все».
+  return []
 }
 
 async function insertRecipients(
