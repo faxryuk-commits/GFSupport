@@ -262,8 +262,13 @@ export function CasesPage() {
     try {
       setLoading(true)
       setError(null)
+      // Грузим ТОЛЬКО кейсы текущей вкладки (active/archive). Раньше один запрос
+      // тянул и активные, и архив вместе с limit=500 и делил на клиенте — при >500
+      // кейсов у орга активные «вытеснялись» архивными за лимит (список недосчитывал).
+      // Точные счётчики вкладок берём из агрегата statusStats (см. ниже).
       const res = await fetchCases({
         ...serverFilters,
+        status: viewMode === 'active' ? 'active' : 'archive',
         limit: 500,
         sortBy: 'priority',
         metricsPeriodDays,
@@ -279,7 +284,7 @@ export function CasesPage() {
     } finally {
       setLoading(false)
     }
-  }, [serverFilters, metricsPeriodDays])
+  }, [serverFilters, metricsPeriodDays, viewMode])
 
   useEffect(() => {
     loadCases()
@@ -294,6 +299,18 @@ export function CasesPage() {
   const archivedCases = useMemo(() =>
     cases.filter(c => ARCHIVE_STATUSES.includes(c.status as any)),
     [cases]
+  )
+
+  // Точные счётчики вкладок — из агрегата statusStats (GROUP BY status по всему оргу),
+  // а НЕ из длины загруженной выборки (та обрезается лимитом и обновляется под вкладку).
+  const activeStatusCount = useMemo(() =>
+    (statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) +
+    (statusStats.blocked || 0) + (statusStats.recurring || 0),
+    [statusStats]
+  )
+  const archiveStatusCount = useMemo(() =>
+    (statusStats.resolved || 0) + (statusStats.closed || 0) + (statusStats.cancelled || 0),
+    [statusStats]
   )
 
   // На сервере уже отфильтровано — поэтому это просто разделение по viewMode
@@ -563,7 +580,7 @@ export function CasesPage() {
           >
             <Briefcase className="w-4 h-4 text-blue-600" />
             <span className="text-lg font-bold text-blue-700 leading-none">
-              {(statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) + (statusStats.blocked || 0) + (statusStats.recurring || 0)}
+              {activeStatusCount}
             </span>
             <span className="text-xs text-slate-600">активных</span>
           </button>
@@ -674,7 +691,7 @@ export function CasesPage() {
                 <span className={`px-1.5 py-0.5 text-xs rounded-full ${
                   viewMode === 'active' ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {activeCases.length}
+                  {activeStatusCount}
                 </span>
               </button>
               <button
@@ -690,7 +707,7 @@ export function CasesPage() {
                 <span className={`px-1.5 py-0.5 text-xs rounded-full ${
                   viewMode === 'archive' ? 'bg-slate-600 text-white' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {archivedCases.length}
+                  {archiveStatusCount}
                 </span>
               </button>
             </div>
