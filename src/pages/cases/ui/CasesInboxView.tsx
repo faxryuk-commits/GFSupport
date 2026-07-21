@@ -152,15 +152,19 @@ export function CasesInboxView({
   cases, selectedCaseId, onSelectCase, onTakeNext, takeNextPending, renderDetail,
 }: CasesInboxViewProps) {
 
-  // Группируем кейсы по приоритету очереди для визуальной структуры
+  // Группируем кейсы по приоритету очереди для визуальной структуры.
+  // resolved (решённые сегодня — их присылает active-пресет) — отдельной группой внизу,
+  // чтобы не мешались в рабочей очереди.
   const grouped = useMemo(() => {
     const overdueUrgent: Case[] = []
     const overdue: Case[] = []
     const urgent: Case[] = []
     const newUnassigned: Case[] = []
     const other: Case[] = []
+    const resolvedToday: Case[] = []
 
     for (const c of cases) {
+      if (c.status === 'resolved') { resolvedToday.push(c); continue }
       const isUrgent = c.priority === 'critical' || c.priority === 'urgent'
       if (c.isOverdue && isUrgent) overdueUrgent.push(c)
       else if (c.isOverdue) overdue.push(c)
@@ -175,6 +179,7 @@ export function CasesInboxView({
       { key: 'urgent',         label: '⚡ Срочные',                cases: urgent },
       { key: 'new',            label: '🆕 Новые без агента',      cases: newUnassigned },
       { key: 'other',          label: 'В работе',                  cases: other },
+      { key: 'resolved_today', label: '✅ Решено сегодня',        cases: resolvedToday },
     ].filter(g => g.cases.length > 0)
   }, [cases])
 

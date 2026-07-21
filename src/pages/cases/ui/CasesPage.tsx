@@ -6,8 +6,7 @@ import { CasesNowSection } from './CasesNowSection'
 import { CasesInboxView } from './CasesInboxView'
 import { takeNextCase } from '@/shared/api'
 import {
-  ACTIVE_STATUSES,
-  ARCHIVE_STATUSES,
+  isOnActiveBoard,
   UI_ACTIVE_COLUMNS,
   UI_COLUMN_CONFIG,
   getUiColumn,
@@ -137,6 +136,7 @@ export function CasesPage() {
   const [metrics, setMetrics] = useState<CaseResolutionMetrics | null>(null)
   const [statusStats, setStatusStats] = useState<Record<string, number>>({})
   const [overdueCount, setOverdueCount] = useState(0)
+  const [resolvedTodayCount, setResolvedTodayCount] = useState(0)
 
   // Режим просмотра: активные или архив
   const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
@@ -266,7 +266,7 @@ export function CasesPage() {
   }, [dateFilter, customDateFrom, customDateTo])
 
   // Загрузка кейсов: один запрос охватывает и активные и архив (status filter не передаём),
-  // клиент разделит по ACTIVE_STATUSES/ARCHIVE_STATUSES. Server-side применяет остальные фильтры.
+  // клиент разделит через isOnActiveBoard. Server-side применяет остальные фильтры.
   const loadCases = useCallback(async () => {
     try {
       setLoading(true)
@@ -287,6 +287,7 @@ export function CasesPage() {
       setStatusStats(res.stats || {})
       setOverdueCount(res.overdueCount ?? 0)
       setSnoozedCount(res.snoozedCount ?? 0)
+      setResolvedTodayCount(res.resolvedTodayCount ?? 0)
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
@@ -299,27 +300,32 @@ export function CasesPage() {
     loadCases()
   }, [loadCases])
 
-  // Активные / архив — клиентское разделение возвращённой выборки
+  // Активные / архив — клиентское разделение возвращённой выборки.
+  // Решённые СЕГОДНЯ (Ташкент) остаются на активной доске (колонка «Решено»),
+  // вчерашние resolved и closed/cancelled — архив (см. isOnActiveBoard).
   const activeCases = useMemo(() =>
-    cases.filter(c => ACTIVE_STATUSES.includes(c.status as any) || c.status === 'recurring'),
+    cases.filter(c => isOnActiveBoard(c.status, c.resolvedAt)),
     [cases]
   )
 
   const archivedCases = useMemo(() =>
-    cases.filter(c => ARCHIVE_STATUSES.includes(c.status as any)),
+    cases.filter(c => !isOnActiveBoard(c.status, c.resolvedAt)),
     [cases]
   )
 
   // Точные счётчики вкладок — из агрегата statusStats (GROUP BY status по всему оргу),
   // а НЕ из длины загруженной выборки (та обрезается лимитом и обновляется под вкладку).
-  const activeStatusCount = useMemo(() =>
+  // «Активные» = рабочие статусы + решённые сегодня; «Архив» — остальное.
+  const workloadCount = useMemo(() =>
     (statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) +
     (statusStats.blocked || 0) + (statusStats.recurring || 0),
     [statusStats]
   )
+  const activeStatusCount = workloadCount + resolvedTodayCount
   const archiveStatusCount = useMemo(() =>
-    (statusStats.resolved || 0) + (statusStats.closed || 0) + (statusStats.cancelled || 0),
-    [statusStats]
+    Math.max(0, (statusStats.resolved || 0) - resolvedTodayCount) +
+    (statusStats.closed || 0) + (statusStats.cancelled || 0),
+    [statusStats, resolvedTodayCount]
   )
 
   // На сервере уже отфильтровано — поэтому это просто разделение по viewMode
@@ -585,7 +591,7 @@ export function CasesPage() {
           <button
             disabled
             className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg"
-            title="Все активные кейсы (не решённые)"
+            title="Кейсы на активной доске: в работе + решённые сегодня (уйдут в архив завтра ночью)"
           >
             <Briefcase className="w-4 h-4 text-blue-600" />
             <span className="text-lg font-bold text-blue-700 leading-none">
@@ -724,7 +730,7 @@ export function CasesPage() {
                     { title: 'Автоматическое создание', text: 'AI анализирует сообщения и создаёт кейсы при обнаружении проблемы.' },
                     { title: 'Канбан-доска', text: 'Перетаскивайте кейсы между статусами: Обнаружен → В работе → Решён.' },
                     { title: 'Назначение агента', text: 'Каждый кейс можно назначить на ответственного агента.' },
-                    { title: 'Архив', text: 'Решённые кейсы автоматически попадают в архив.' },
+                    { title: 'Архив', text: 'Решённый кейс остаётся на доске до конца дня (колонка «Решено»), а на следующий день автоматически уходит в архив.' },
                   ]}
                 />
               </div>

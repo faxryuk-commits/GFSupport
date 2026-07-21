@@ -704,6 +704,23 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`FRT backfill error: ${e.message?.slice(0, 80) || 'done'}`)
     }
 
+    // Migration 41: разовый перевод исторических resolved (решённых до сегодняшнего
+    // ташкентского дня) в closed — под новую модель «решено остаётся на доске один день».
+    // Дальше это поддерживает ночной крон /api/support/cron/archive-resolved.
+    try {
+      const closed = await sql`
+        UPDATE support_cases
+        SET status = 'closed', updated_at = NOW()
+        WHERE status = 'resolved'
+          AND (COALESCE(resolved_at, updated_at, created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+              < date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+        RETURNING id
+      `
+      migrations.push(`Archived ${closed.length} historical resolved cases (resolved -> closed)`)
+    } catch (e: any) {
+      migrations.push(`Resolved archive error: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+
     return json({
       success: true,
       migrations,
