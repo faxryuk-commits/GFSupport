@@ -321,6 +321,7 @@ export default async function handler(req: Request): Promise<Response> {
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT` } catch {}
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS external_message_id VARCHAR(120)` } catch {}
 
   try {
     let body = await req.json()
@@ -346,6 +347,18 @@ export default async function handler(req: Request): Promise<Response> {
 
     const channelName = isGroup ? (groupName || senderName) : senderName
     const { channelId, orgId } = await getOrCreateWhatsAppChannel(sql, chatId, channelName || '', senderPhone || '', webhookOrgId || undefined)
+
+    // Дедуп: одно WhatsApp-сообщение (idMessage уникален) = одна запись.
+    // GreenAPI ретраит доставку, если не получил быстрый 200 — без этой проверки
+    // одно сообщение вставлялось многократно (наблюдалось 8 копий). Ранний выход
+    // → мгновенный 200 на ретрае → GreenAPI перестаёт слать.
+    if (messageId) {
+      const dup = await sql`
+        SELECT id FROM support_messages
+        WHERE external_message_id = ${String(messageId)} AND channel_id = ${channelId}
+        LIMIT 1` as any[]
+      if (dup[0]) return json({ ok: true, deduped: true, messageId: dup[0].id, channelId })
+    }
 
     let isFromClient: boolean
     let senderRole: string
@@ -385,14 +398,14 @@ export default async function handler(req: Request): Promise<Response> {
         id, channel_id, org_id, sender_id, sender_name, sender_role,
         is_from_client, content_type, text_content, media_url,
         thumbnail_url, file_name, mime_type,
-        reply_to_message_id, reply_to_text,
+        reply_to_message_id, reply_to_text, external_message_id,
         is_read, response_time_ms, created_at
       ) VALUES (
         ${msgId}, ${channelId}, ${orgId}, ${senderPhone || null}, ${senderName || 'Unknown'},
         ${senderRole}, ${isFromClient}, ${msgContentType}, ${text || null},
         ${mediaUrl || null},
         ${thumbnailUrl || null}, ${fileName || null}, ${mimeType || null},
-        ${replyToMessageId || null}, ${replyToText || null},
+        ${replyToMessageId || null}, ${replyToText || null}, ${messageId ? String(messageId) : null},
         ${!isFromClient}, ${responseTimeMs}, NOW()
       )
     `
