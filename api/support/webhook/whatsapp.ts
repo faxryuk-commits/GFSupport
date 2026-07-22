@@ -283,6 +283,9 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const authHeader = req.headers.get('Authorization')
+  // Терпимо к формату: принимаем и "Bearer <секрет>", и просто "<секрет>"
+  // (GreenAPI шлёт секрет в заголовке авторизации, префикс может отличаться).
+  const authToken = (authHeader || '').replace(/^Bearer\s+/i, '').trim()
   const webhookUrl = new URL(req.url)
   const orgParam = webhookUrl.searchParams.get('org')
 
@@ -290,18 +293,18 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (orgParam) {
     const bridge = await getOrgWhatsAppBridge(orgParam)
-    if (bridge.secret && authHeader === `Bearer ${bridge.secret}`) {
+    if (bridge.secret && authToken === bridge.secret) {
       webhookOrgId = orgParam
     } else {
       const envSecret = process.env.WHATSAPP_BRIDGE_SECRET
-      if (!envSecret || authHeader !== `Bearer ${envSecret}`) {
+      if (!envSecret || authToken !== envSecret) {
         return json({ error: 'Unauthorized' }, 401)
       }
     }
   } else {
     const bridgeSecret = process.env.WHATSAPP_BRIDGE_SECRET
     if (!bridgeSecret) return json({ error: 'Bridge secret not configured' }, 500)
-    if (authHeader !== `Bearer ${bridgeSecret}`) {
+    if (authToken !== bridgeSecret) {
       return json({ error: 'Unauthorized' }, 401)
     }
   }
