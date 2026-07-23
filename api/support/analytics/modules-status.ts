@@ -106,6 +106,15 @@ export default async function handler(req: Request): Promise<Response> {
     summary: erC?.reasoning || 'Ещё не запускался', mode: erC?.mode || null,
   })
 
+  // 6b. Сессионный LLM-детектор проблем (cron, Этап 1 новой детекции)
+  const psC = await lastCycle('problem_scan')
+  modules.push({
+    key: 'problem_scan', name: 'Детектор проблем (LLM)',
+    status: psC ? staleAfterMin(psC.created_at, 10) : 'idle',
+    lastRunAt: psC?.created_at || null, schedule: 'каждые 2 мин',
+    summary: psC?.reasoning || 'Ещё не запускался', mode: psC?.mode || null,
+  })
+
   // 7. Скан агента (cron)
   const asC = await lastCycle('agent_scan')
   modules.push({
