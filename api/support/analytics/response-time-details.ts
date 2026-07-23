@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureFrtOverridesTable } from '../lib/frt-overrides-schema.js'
 import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './metrics/frtShared.js'
 
 export const config = {
@@ -28,6 +29,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
+  await ensureFrtOverridesTable(sql)
   const url = new URL(req.url)
   const bucket = url.searchParams.get('bucket') || 'all'
   const period = url.searchParams.get('period') || '30d'
@@ -168,6 +170,12 @@ export default async function handler(req: Request): Promise<Response> {
             COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
+          AND NOT EXISTS (
+            SELECT 1 FROM support_frt_overrides fo
+            WHERE fo.org_id = ${orgId}
+              AND fo.message_id = id
+              AND fo.override_type = 'exclude'
+          )
       ),
       response_times AS (
         SELECT 
@@ -201,50 +209,85 @@ export default async function handler(req: Request): Promise<Response> {
         FROM client_messages cm
       )
       SELECT 
-        rt.client_message_id,
-        rt.channel_id,
-        ch.name as channel_name,
-        ch.photo_url as channel_photo,
-        rt.client_name,
-        rt.client_message,
-        rt.client_msg_at,
-        rm.text_content as response_message,
-        rm.sender_name as responder_name,
-        rm.sender_id as responder_id,
-        rt.response_at,
-        EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 as response_minutes,
-        CASE 
-          WHEN rm.text_content ILIKE '%эскал%' OR rm.text_content ILIKE '%передаю%' OR rm.text_content ILIKE '%перенаправ%'
-          THEN true 
-          ELSE false 
-        END as was_escalated,
+        f.client_message_id,
+        f.channel_id,
+        f.channel_name,
+        f.channel_photo,
+        f.client_name,
+        f.client_message,
+        f.client_msg_at,
+        f.response_message,
+        f.responder_name,
+        f.responder_id,
+        f.response_at,
+        f.computed_minutes,
+        f.effective_minutes,
+        f.was_escalated,
+        f.override_type,
+        f.override_frt_minutes,
+        f.override_note,
+        f.override_by_name,
         COUNT(*) OVER() as total_count
-      FROM response_times rt
-      JOIN support_channels ch ON rt.channel_id = ch.id AND ch.org_id = ${orgId}
-        AND COALESCE(ch.type, 'client') <> 'internal'
-        AND COALESCE(ch.sla_category, 'client') <> 'internal'
-      LEFT JOIN support_messages rm ON rm.id = rt.response_message_id
+      FROM (
+        SELECT 
+          rt.client_message_id,
+          rt.channel_id,
+          ch.name as channel_name,
+          ch.photo_url as channel_photo,
+          rt.client_name,
+          rt.client_message,
+          rt.client_msg_at,
+          rm.text_content as response_message,
+          rm.sender_name as responder_name,
+          rm.sender_id as responder_id,
+          rt.response_at,
+          CASE
+            WHEN rt.response_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60
+            ELSE NULL
+          END as computed_minutes,
+          CASE
+            WHEN fo.override_type = 'manual' AND fo.frt_minutes IS NOT NULL THEN fo.frt_minutes::float
+            WHEN rt.response_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60
+            ELSE NULL
+          END as effective_minutes,
+          CASE 
+            WHEN rm.text_content ILIKE '%эскал%' OR rm.text_content ILIKE '%передаю%' OR rm.text_content ILIKE '%перенаправ%'
+            THEN true 
+            ELSE false 
+          END as was_escalated,
+          fo.override_type,
+          fo.frt_minutes as override_frt_minutes,
+          fo.note as override_note,
+          fo.created_by_name as override_by_name
+        FROM response_times rt
+        JOIN support_channels ch ON rt.channel_id = ch.id AND ch.org_id = ${orgId}
+          AND COALESCE(ch.type, 'client') <> 'internal'
+          AND COALESCE(ch.sla_category, 'client') <> 'internal'
+        LEFT JOIN support_messages rm ON rm.id = rt.response_message_id
+        LEFT JOIN support_frt_overrides fo
+          ON fo.org_id = ${orgId} AND fo.message_id = rt.client_message_id
+      ) f
       WHERE (
         ${unansweredOnly}
-        AND rt.response_at IS NULL
+        AND f.effective_minutes IS NULL
       ) OR (
         NOT ${unansweredOnly}
-        AND rt.response_at IS NOT NULL
-        AND EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 >= ${minMinutes}
-        AND EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 < ${maxMinutes}
+        AND f.effective_minutes IS NOT NULL
+        AND f.effective_minutes >= ${minMinutes}
+        AND f.effective_minutes < ${maxMinutes}
       )
       ORDER BY
-        CASE WHEN ${sortByChannel} AND ${sortAsc} THEN ch.name END ASC NULLS LAST,
-        CASE WHEN ${sortByChannel} AND NOT ${sortAsc} THEN ch.name END DESC NULLS LAST,
-        CASE WHEN ${sortByTime} AND ${sortAsc} THEN rt.client_msg_at END ASC NULLS LAST,
-        CASE WHEN ${sortByTime} AND NOT ${sortAsc} THEN rt.client_msg_at END DESC NULLS LAST,
-        CASE WHEN ${sortByMinutes} AND ${sortAsc} AND NOT ${unansweredOnly}
-          THEN EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 END ASC NULLS LAST,
-        CASE WHEN ${sortByMinutes} AND NOT ${sortAsc} AND NOT ${unansweredOnly}
-          THEN EXTRACT(EPOCH FROM (rt.response_at - rt.client_msg_at)) / 60 END DESC NULLS LAST,
-        CASE WHEN ${sortByMinutes} AND ${unansweredOnly} AND ${sortAsc} THEN rt.client_msg_at END ASC NULLS LAST,
-        CASE WHEN ${sortByMinutes} AND ${unansweredOnly} AND NOT ${sortAsc} THEN rt.client_msg_at END DESC NULLS LAST,
-        rt.client_msg_at DESC
+        CASE WHEN ${sortByChannel} AND ${sortAsc} THEN f.channel_name END ASC NULLS LAST,
+        CASE WHEN ${sortByChannel} AND NOT ${sortAsc} THEN f.channel_name END DESC NULLS LAST,
+        CASE WHEN ${sortByTime} AND ${sortAsc} THEN f.client_msg_at END ASC NULLS LAST,
+        CASE WHEN ${sortByTime} AND NOT ${sortAsc} THEN f.client_msg_at END DESC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND ${sortAsc} AND NOT ${unansweredOnly} THEN f.effective_minutes END ASC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND NOT ${sortAsc} AND NOT ${unansweredOnly} THEN f.effective_minutes END DESC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND ${unansweredOnly} AND ${sortAsc} THEN f.client_msg_at END ASC NULLS LAST,
+        CASE WHEN ${sortByMinutes} AND ${unansweredOnly} AND NOT ${sortAsc} THEN f.client_msg_at END DESC NULLS LAST,
+        f.client_msg_at DESC
       LIMIT ${limit}
       OFFSET ${offset}
     `
@@ -274,6 +317,12 @@ export default async function handler(req: Request): Promise<Response> {
           AND NOT (
             COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM support_frt_overrides fo
+            WHERE fo.org_id = ${orgId}
+              AND fo.message_id = id
+              AND fo.override_type = 'exclude'
           )
       ),
       response_times AS (
@@ -338,6 +387,12 @@ export default async function handler(req: Request): Promise<Response> {
             COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
             AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
           )
+          AND NOT EXISTS (
+            SELECT 1 FROM support_frt_overrides fo
+            WHERE fo.org_id = ${orgId}
+              AND fo.message_id = id
+              AND fo.override_type = 'exclude'
+          )
       ),
       response_times AS (
         SELECT 
@@ -376,7 +431,10 @@ export default async function handler(req: Request): Promise<Response> {
 
     const totalCount = details.length > 0 ? parseInt(String(details[0].total_count || '0'), 10) : 0
 
-    const mappedDetails = details.map((d: any) => ({
+    const mappedDetails = details.map((d: any) => {
+      const computed = d.computed_minutes != null ? Math.round(parseFloat(d.computed_minutes)) : null
+      const effective = d.effective_minutes != null ? Math.round(parseFloat(d.effective_minutes)) : null
+      return {
       id: d.client_message_id,
       channelId: d.channel_id,
       channelName: d.channel_name || 'Неизвестный канал',
@@ -388,9 +446,14 @@ export default async function handler(req: Request): Promise<Response> {
       responderName: d.responder_name || 'Оператор',
       responseMessage: d.response_message || '',
       responseTime: d.response_at,
-      responseMinutes: d.response_at
-        ? Math.round(parseFloat(d.response_minutes || '0'))
-        : null,
+      computedResponseMinutes: computed,
+      responseMinutes: effective,
+      frtOverride: d.override_type ? {
+        type: d.override_type,
+        frtMinutes: d.override_frt_minutes != null ? Number(d.override_frt_minutes) : null,
+        note: d.override_note || null,
+        createdByName: d.override_by_name || null,
+      } : null,
       wasEscalated: d.was_escalated || false,
       // Alias fields for SLA category modal
       senderName: d.client_name || 'Клиент',
@@ -398,7 +461,7 @@ export default async function handler(req: Request): Promise<Response> {
       messageAt: d.client_msg_at,
       respondedAt: d.response_at,
       responderNameShort: d.responder_name || '-',
-    }))
+    }})
 
     return json({
       bucket,

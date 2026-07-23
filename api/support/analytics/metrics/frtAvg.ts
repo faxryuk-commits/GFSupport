@@ -20,6 +20,7 @@
  */
 
 import { getSQL } from '../../lib/db.js'
+import { ensureFrtOverridesTable } from '../../lib/frt-overrides-schema.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
 import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './frtShared.js'
 import type {
@@ -57,6 +58,7 @@ export async function computeFrtAvg(
   period: ResolvedPeriod,
 ): Promise<MetricResult> {
   const sql = getSQL()
+  await ensureFrtOverridesTable(sql)
   const fromISO = period.from.toISOString()
   const toISO = period.to.toISOString()
   const market = scope.market ?? null
@@ -100,6 +102,12 @@ export async function computeFrtAvg(
           COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
           AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM support_frt_overrides fo
+          WHERE fo.org_id = ${scope.orgId}
+            AND fo.message_id = id
+            AND fo.override_type = 'exclude'
+        )
     ),
     first_responses AS (
       SELECT
@@ -124,18 +132,32 @@ export async function computeFrtAvg(
             AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
           ORDER BY m2.created_at ASC
           LIMIT 1
-        ) AS response_at
+        ) AS response_at,
+        fo.override_type,
+        fo.frt_minutes AS override_minutes
       FROM session_starts ss
+      LEFT JOIN support_frt_overrides fo
+        ON fo.org_id = ${scope.orgId} AND fo.message_id = ss.id
+    ),
+    with_minutes AS (
+      SELECT
+        session_id,
+        client_at,
+        response_at,
+        CASE
+          WHEN override_type = 'manual' AND override_minutes IS NOT NULL THEN override_minutes::float
+          WHEN response_at IS NOT NULL THEN EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0
+          ELSE NULL
+        END AS response_minutes
+      FROM first_responses
     )
     SELECT
-      ROUND(AVG(EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0)::numeric, 1) AS avg_minutes,
-      COUNT(*) FILTER (WHERE response_at IS NOT NULL)::int AS sample_size,
+      ROUND(AVG(response_minutes)::numeric, 1) AS avg_minutes,
+      COUNT(*) FILTER (WHERE response_minutes IS NOT NULL)::int AS sample_size,
       COUNT(*)::int AS total_sessions,
-      ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
-        ORDER BY EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0))::numeric, 1) AS median_minutes,
-      ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (
-        ORDER BY EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0))::numeric, 1) AS p90_minutes
-    FROM first_responses
+      ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY response_minutes))::numeric, 1) AS median_minutes,
+      ROUND((PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY response_minutes))::numeric, 1) AS p90_minutes
+    FROM with_minutes
   `) as FrtRow[]
 
   const row = rows[0] || ({} as FrtRow)
@@ -209,6 +231,7 @@ export async function computeFrtAvgPerAgent(
   period: ResolvedPeriod,
 ): Promise<FrtPerAgentResult> {
   const sql = getSQL()
+  await ensureFrtOverridesTable(sql)
   const fromISO = period.from.toISOString()
   const toISO = period.to.toISOString()
   const market = scope.market ?? null
@@ -247,6 +270,12 @@ export async function computeFrtAvgPerAgent(
           COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
           AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM support_frt_overrides fo
+          WHERE fo.org_id = ${scope.orgId}
+            AND fo.message_id = id
+            AND fo.override_type = 'exclude'
+        )
     ),
     first_responder AS (
       SELECT
@@ -282,20 +311,34 @@ export async function computeFrtAvgPerAgent(
             AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
           ORDER BY m2.created_at ASC
           LIMIT 1
-        ) AS responder_agent_id
+        ) AS responder_agent_id,
+        fo.override_type,
+        fo.frt_minutes AS override_minutes
       FROM session_starts ss
+      LEFT JOIN support_frt_overrides fo
+        ON fo.org_id = ${scope.orgId} AND fo.message_id = ss.id
+    ),
+    with_minutes AS (
+      SELECT
+        responder_agent_id,
+        CASE
+          WHEN override_type = 'manual' AND override_minutes IS NOT NULL THEN override_minutes::float
+          WHEN response_at IS NOT NULL THEN EXTRACT(EPOCH FROM (response_at - client_at)) / 60.0
+          ELSE NULL
+        END AS response_minutes
+      FROM first_responder
     )
     SELECT
-      fr.responder_agent_id AS agent_id,
+      wm.responder_agent_id AS agent_id,
       a.name AS agent_name,
-      ROUND(AVG(EXTRACT(EPOCH FROM (fr.response_at - fr.client_at)) / 60.0)::numeric, 1) AS avg_minutes,
+      ROUND(AVG(wm.response_minutes)::numeric, 1) AS avg_minutes,
       COUNT(*)::int AS sample_size
-    FROM first_responder fr
-    LEFT JOIN support_agents a ON a.id::text = fr.responder_agent_id AND a.org_id = ${scope.orgId}
-    WHERE fr.response_at IS NOT NULL
-      AND fr.responder_agent_id IS NOT NULL
+    FROM with_minutes wm
+    LEFT JOIN support_agents a ON a.id::text = wm.responder_agent_id AND a.org_id = ${scope.orgId}
+    WHERE wm.response_minutes IS NOT NULL
+      AND wm.responder_agent_id IS NOT NULL
       AND (${rolesFilter}::text[] IS NULL OR LOWER(a.role) = ANY(${rolesFilter}::text[]))
-    GROUP BY fr.responder_agent_id, a.name
+    GROUP BY wm.responder_agent_id, a.name
     ORDER BY avg_minutes ASC
   `) as PerAgentRawRow[]
 

@@ -1,4 +1,4 @@
-import { apiGet } from '../services/api.service'
+import { apiGet, apiPost, apiDelete, invalidateCache } from '../services/api.service'
 
 export interface WeekData {
   weekStart: string
@@ -540,7 +540,43 @@ export interface ResponseTimeDetailRow {
   clientMessageTime: string
   responderName: string
   responseMessage: string
+  computedResponseMinutes?: number | null
   responseMinutes: number | null
+  frtOverride?: FrtOverrideInfo | null
+}
+
+export type FrtOverrideType = 'exclude' | 'manual'
+
+export interface FrtOverrideInfo {
+  type: FrtOverrideType
+  frtMinutes: number | null
+  note: string | null
+  createdByName: string | null
+}
+
+export interface SaveFrtOverridePayload {
+  messageId: string
+  channelId: string
+  overrideType: FrtOverrideType
+  frtMinutes?: number | null
+  note?: string | null
+}
+
+export async function saveFrtOverride(payload: SaveFrtOverridePayload) {
+  const result = await apiPost<{ ok: boolean; override: FrtOverrideInfo & { messageId: string } }>(
+    '/analytics/frt-overrides',
+    payload,
+  )
+  invalidateCache('/analytics')
+  return result
+}
+
+export async function deleteFrtOverride(messageId: string) {
+  const result = await apiDelete<{ ok: boolean }>(
+    `/analytics/frt-overrides?messageId=${encodeURIComponent(messageId)}`,
+  )
+  invalidateCache('/analytics')
+  return result
 }
 
 export interface ResponseTimeDetailsPagination {

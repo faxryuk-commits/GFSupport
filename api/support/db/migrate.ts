@@ -682,6 +682,30 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`Activity unify error: ${e.message}`)
     }
 
+    // Migration: manual FRT overrides for late-response corrections
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_frt_overrides (
+          id VARCHAR(50) PRIMARY KEY,
+          org_id VARCHAR(50) NOT NULL,
+          message_id VARCHAR(50) NOT NULL,
+          channel_id VARCHAR(50) NOT NULL,
+          override_type VARCHAR(20) NOT NULL,
+          frt_minutes INT,
+          note TEXT,
+          created_by VARCHAR(50),
+          created_by_name VARCHAR(255),
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE (org_id, message_id)
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_frt_overrides_org_msg ON support_frt_overrides(org_id, message_id)`
+      migrations.push('Added support_frt_overrides table')
+    } catch (e: any) {
+      migrations.push(`FRT overrides error: ${e.message}`)
+    }
+
     return json({
       success: true,
       migrations,

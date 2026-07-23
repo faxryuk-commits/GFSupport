@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { ensureFrtOverridesTable } from '../lib/frt-overrides-schema.js'
 import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './metrics/frtShared.js'
 import { resolvePeriod, parsePeriodParam } from './metrics/periodEngine.js'
 
@@ -73,6 +74,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const sql = getSQL()
+  await ensureFrtOverridesTable(sql)
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
   const period = url.searchParams.get('period') || '30d'
@@ -326,7 +328,7 @@ export default async function handler(req: Request): Promise<Response> {
       const responseTimesResult = await sql`
         WITH all_msgs AS (
           SELECT
-            m.channel_id, m.created_at, m.sender_role, m.is_from_client, m.text_content,
+            m.id, m.channel_id, m.created_at, m.sender_role, m.is_from_client, m.text_content,
             LAG(m.sender_role) OVER w as prev_sender_role,
             LAG(m.is_from_client) OVER w as prev_is_from_client
           FROM support_messages m
@@ -340,7 +342,7 @@ export default async function handler(req: Request): Promise<Response> {
           WINDOW w AS (PARTITION BY m.channel_id ORDER BY m.created_at)
         ),
         session_starts AS (
-          SELECT channel_id, created_at as client_msg_at
+          SELECT channel_id, created_at as client_msg_at, id as message_id
           FROM all_msgs
           WHERE sender_role = 'client' AND is_from_client = true
             AND created_at >= ${startDate.toISOString()}
@@ -349,17 +351,35 @@ export default async function handler(req: Request): Promise<Response> {
               COALESCE(LENGTH(text_content), 0) <= ${ACK_MAX_LEN}
               AND ${ACK_TEXT_SQL} ~ ${ANTI_THANKS_REGEX}
             )
+            AND NOT EXISTS (
+              SELECT 1 FROM support_frt_overrides fo
+              WHERE fo.org_id = ${orgId}
+                AND fo.message_id = id
+                AND fo.override_type = 'exclude'
+            )
         )
         SELECT
-          EXTRACT(EPOCH FROM (
-            (SELECT MIN(m2.created_at) FROM support_messages m2
+          CASE
+            WHEN fo.override_type = 'manual' AND fo.frt_minutes IS NOT NULL THEN fo.frt_minutes::float
+            WHEN (
+              SELECT MIN(m2.created_at) FROM support_messages m2
               WHERE m2.org_id = ${orgId} AND m2.channel_id = ss.channel_id
                 AND m2.is_from_client = false AND m2.sender_role IN ('support','team','agent')
                 AND m2.created_at > ss.client_msg_at
                 AND m2.created_at <= ss.client_msg_at + INTERVAL '4 hours'
-            ) - ss.client_msg_at
-          )) / 60 as response_minutes
+            ) IS NOT NULL THEN EXTRACT(EPOCH FROM (
+              (SELECT MIN(m2.created_at) FROM support_messages m2
+                WHERE m2.org_id = ${orgId} AND m2.channel_id = ss.channel_id
+                  AND m2.is_from_client = false AND m2.sender_role IN ('support','team','agent')
+                  AND m2.created_at > ss.client_msg_at
+                  AND m2.created_at <= ss.client_msg_at + INTERVAL '4 hours'
+              ) - ss.client_msg_at
+            )) / 60
+            ELSE NULL
+          END as response_minutes
         FROM session_starts ss
+        LEFT JOIN support_frt_overrides fo
+          ON fo.org_id = ${orgId} AND fo.message_id = ss.message_id
       `
 
       if (responseTimesResult.length > 0) {
