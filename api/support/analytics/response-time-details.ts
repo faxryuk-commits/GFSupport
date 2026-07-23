@@ -173,7 +173,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND NOT EXISTS (
             SELECT 1 FROM support_frt_overrides fo
             WHERE fo.org_id = ${orgId}
-              AND fo.message_id = id
+              AND fo.message_id = all_channel_messages.id
               AND fo.override_type = 'exclude'
           )
       ),
@@ -321,7 +321,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND NOT EXISTS (
             SELECT 1 FROM support_frt_overrides fo
             WHERE fo.org_id = ${orgId}
-              AND fo.message_id = id
+              AND fo.message_id = all_msgs.id
               AND fo.override_type = 'exclude'
           )
       ),
@@ -390,7 +390,7 @@ export default async function handler(req: Request): Promise<Response> {
           AND NOT EXISTS (
             SELECT 1 FROM support_frt_overrides fo
             WHERE fo.org_id = ${orgId}
-              AND fo.message_id = id
+              AND fo.message_id = all_msgs.id
               AND fo.override_type = 'exclude'
           )
       ),
@@ -488,7 +488,7 @@ export default async function handler(req: Request): Promise<Response> {
         limit,
         hasMore: offset + mappedDetails.length < totalCount,
       },
-    }, 200, 30)
+    }, 200, 0)
   } catch (error: any) {
     console.error('Response time details error:', error)
     return json({ 

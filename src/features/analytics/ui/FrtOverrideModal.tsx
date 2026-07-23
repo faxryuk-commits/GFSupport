@@ -13,7 +13,7 @@ interface Props {
   row: ResponseTimeDetailRow | null
   isOpen: boolean
   onClose: () => void
-  onSaved: () => void
+  onSaved: (messageId: string, overrideType: FrtOverrideType) => void
 }
 
 export function FrtOverrideModal({ row, isOpen, onClose, onSaved }: Props) {
@@ -54,7 +54,7 @@ export function FrtOverrideModal({ row, isOpen, onClose, onSaved }: Props) {
         frtMinutes: mode === 'manual' ? Number(minutes) : null,
         note: note.trim() || null,
       })
-      onSaved()
+      onSaved(row.id, mode)
       onClose()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Не удалось сохранить')
@@ -69,7 +69,7 @@ export function FrtOverrideModal({ row, isOpen, onClose, onSaved }: Props) {
     setError(null)
     try {
       await deleteFrtOverride(row.id)
-      onSaved()
+      onSaved(row.id, row.frtOverride?.type ?? 'exclude')
       onClose()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Не удалось удалить')

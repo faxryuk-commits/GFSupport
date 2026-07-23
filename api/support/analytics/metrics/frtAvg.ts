@@ -105,7 +105,7 @@ export async function computeFrtAvg(
         AND NOT EXISTS (
           SELECT 1 FROM support_frt_overrides fo
           WHERE fo.org_id = ${scope.orgId}
-            AND fo.message_id = id
+            AND fo.message_id = all_msgs.id
             AND fo.override_type = 'exclude'
         )
     ),
@@ -273,7 +273,7 @@ export async function computeFrtAvgPerAgent(
         AND NOT EXISTS (
           SELECT 1 FROM support_frt_overrides fo
           WHERE fo.org_id = ${scope.orgId}
-            AND fo.message_id = id
+            AND fo.message_id = all_msgs.id
             AND fo.override_type = 'exclude'
         )
     ),

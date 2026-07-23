@@ -114,7 +114,11 @@ export function LateResponsesTable({ dateRange, marketKey }: Props) {
     }
   }
 
-  const handleOverrideSaved = () => {
+  const handleOverrideSaved = (messageId: string, overrideType: 'exclude' | 'manual') => {
+    if (overrideType === 'exclude') {
+      setRows((prev) => prev.filter((r) => r.id !== messageId))
+      setTotalCount((c) => Math.max(0, c - 1))
+    }
     setRefreshToken((t) => t + 1)
   }
 
