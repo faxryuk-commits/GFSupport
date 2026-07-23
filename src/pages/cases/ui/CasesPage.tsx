@@ -103,6 +103,16 @@ const FRT_BUCKET_CONFIG = [
   { key: 'over60', label: '> 60 мин', short: '60+', color: 'bg-red-500' },
 ] as const
 
+/** Человекочитаемые лейблы срезов FRT (типы каналов и источники). */
+const FRT_SEG_LABELS: Record<string, string> = {
+  client: 'Клиенты',
+  client_integration: 'Клиенты+интегр.',
+  partner: 'Партнёры',
+  internal: 'Внутренние',
+  telegram: 'TG',
+  whatsapp: 'WA',
+}
+
 // Периоды для фильтра по дате
 const DATE_FILTERS = [
   { key: 'today', label: 'Сегодня' },
@@ -676,11 +686,11 @@ export function CasesPage() {
               <div className="w-px bg-slate-200 mx-1" />
               <div
                 className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
-                title={`Первый ответ (FRT) по ${metrics.frt.count} тикетам за ${metrics.periodDays} дн: от первого сообщения клиента до ответа команды. Крупно — МЕДИАНА (типичный ответ, устойчива к хвосту). Среднее ${metrics.frt.avgMinutes ?? '—'} мин перекошено долгими просрочками (см. «60+» в распределении).`}
+                title={`Первый ответ (FRT) ТОЛЬКО по клиентским каналам: ${metrics.frt.count} тикетов за ${metrics.periodDays} дн (партнёрские и внутренние чаты не смешиваются — см. срезы справа). Крупно — МЕДИАНА (типичный ответ). Среднее ${metrics.frt.avgMinutes ?? '—'} мин перекошено долгими просрочками (см. «60+»).`}
               >
                 <span className="flex items-center gap-1 text-[11px] text-slate-500 uppercase tracking-wide">
                   <Zap className="w-3 h-3 text-blue-500" />
-                  Ответ · медиана
+                  Ответ клиентам · медиана
                 </span>
                 <span className="text-base font-bold leading-none text-blue-700">
                   {metrics.frt.medianMinutes != null ? `${metrics.frt.medianMinutes} мин` : '—'}
@@ -718,6 +728,41 @@ export function CasesPage() {
                   })}
                 </div>
               </div>
+
+              {/* Раздельные срезы FRT (медианы) — типы каналов не смешиваем */}
+              {metrics.frt.segments && (
+                <div
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] text-slate-500 cursor-help flex-wrap"
+                  title={`Медиана первого ответа по срезам (за ${metrics.periodDays} дн).\n\nПо типу канала:\n${metrics.frt.segments.byType.map(s => `  ${FRT_SEG_LABELS[s.key] || s.key}: медиана ${s.medianMinutes ?? '—'} мин · среднее ${s.avgMinutes ?? '—'} мин · ${s.count} тикетов`).join('\n')}\n\nПо источнику:\n${metrics.frt.segments.bySource.map(s => `  ${FRT_SEG_LABELS[s.key] || s.key}: медиана ${s.medianMinutes ?? '—'} мин · ${s.count}`).join('\n')}\n\nПо рынку:\n${metrics.frt.segments.byMarket.map(s => `  ${s.key}: медиана ${s.medianMinutes ?? '—'} мин · ${s.count}`).join('\n')}`}
+                >
+                  <span className="uppercase tracking-wide text-slate-400">Срезы</span>
+                  {metrics.frt.segments.byType.filter(s => s.key !== 'client' && s.key !== 'client_integration' && s.count > 0).map(s => (
+                    <span key={s.key} className="flex items-center gap-1">
+                      <span className="text-slate-600">{FRT_SEG_LABELS[s.key] || s.key}</span>
+                      <span className="font-semibold text-slate-700">{s.medianMinutes ?? '—'}м</span>
+                      <span className="text-slate-400">({s.count})</span>
+                    </span>
+                  ))}
+                  <span className="w-px h-3 bg-slate-200" />
+                  {metrics.frt.segments.bySource.filter(s => s.count > 0).map(s => (
+                    <span key={s.key} className="flex items-center gap-1">
+                      <span className="text-slate-600">{FRT_SEG_LABELS[s.key] || s.key}</span>
+                      <span className="font-semibold text-slate-700">{s.medianMinutes ?? '—'}м</span>
+                    </span>
+                  ))}
+                  {metrics.frt.segments.byMarket.length > 1 && (
+                    <>
+                      <span className="w-px h-3 bg-slate-200" />
+                      {metrics.frt.segments.byMarket.slice(0, 3).map(s => (
+                        <span key={s.key} className="flex items-center gap-1">
+                          <span className="text-slate-600">{s.key}</span>
+                          <span className="font-semibold text-slate-700">{s.medianMinutes ?? '—'}м</span>
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

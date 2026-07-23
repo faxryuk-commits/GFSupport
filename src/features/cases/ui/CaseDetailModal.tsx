@@ -682,7 +682,12 @@ export function CaseDetailModal({
                 size="sm"
               />
             ) : (
-              <div className="flex flex-col" style={{ height: 420 }}>
+              <div
+                className="flex flex-col"
+                // Inbox: чат заполняет высоту карточки (под фикс-420px оставалась
+                // огромная пустая зона до низа экрана). Модалка — компактные 420.
+                style={{ height: mode === 'modal' ? 420 : 'calc(100vh - 400px)', minHeight: 360 }}
+              >
                 <div
                   ref={chatScrollRef}
                   className="flex-1 overflow-y-auto border border-[#e8edf3] rounded-lg bg-slate-50 p-3 space-y-2"

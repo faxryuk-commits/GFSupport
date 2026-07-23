@@ -10,7 +10,16 @@ export interface FrtBucket {
   pct: number
 }
 
-/** Распределение FRT (первый ответ) по тикетам за период: ≤5 / 5-10 / 10-30 / 30-60 / 60+ мин. */
+/** Срез FRT по одному значению измерения (тип канала / источник / рынок). */
+export interface CaseFrtSegment {
+  key: string
+  count: number
+  avgMinutes: number | null
+  medianMinutes: number | null
+}
+
+/** Распределение FRT (первый ответ) по тикетам за период: ≤5 / 5-10 / 10-30 / 30-60 / 60+ мин.
+ *  Headline (count/avg/median) и buckets — ТОЛЬКО клиентские каналы. */
 export interface CaseFrtMetrics {
   count: number
   avgMinutes: number | null
@@ -21,6 +30,12 @@ export interface CaseFrtMetrics {
     within30: FrtBucket
     within60: FrtBucket
     over60: FrtBucket
+  }
+  /** Раздельные срезы без смешивания: тип канала, источник (tg/wa), рынок. */
+  segments?: {
+    byType: CaseFrtSegment[]
+    bySource: CaseFrtSegment[]
+    byMarket: CaseFrtSegment[]
   }
 }
 

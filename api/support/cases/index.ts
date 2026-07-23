@@ -319,10 +319,21 @@ export default async function handler(req: Request): Promise<Response> {
       // Популяция: кейсы, созданные за период, у которых есть валидный FRT
       // (first_response_at >= first_message_at). Shadow исключаем (авто-решённые в чате
       // отвечаются «мгновенно» и искажают распределение вниз).
+      //
+      // ЧИСТОТА СРЕЗА: headline и бакеты считаются ТОЛЬКО по клиентским каналам
+      // (type='client'/'client_integration') — скорость коммуникации с клиентами не
+      // смешивается с партнёрскими и внутренними чатами. Остальные типы, источник
+      // (telegram/whatsapp) и рынки отдаются раздельными сегментами (frt.segments).
       const frtRow = await sql`
         WITH frt_cases AS (
-          SELECT EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0 AS frt_min
+          SELECT
+            EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0 AS frt_min,
+            COALESCE(ch.type, 'client') AS ctype,
+            COALESCE(ch.source, 'telegram') AS csource,
+            COALESCE(mk.name, 'Без рынка') AS market_name
           FROM support_cases c
+          LEFT JOIN support_channels ch ON ch.id = c.channel_id
+          LEFT JOIN support_markets mk ON mk.id = c.market_id
           JOIN (
             SELECT case_id, MIN(created_at) AS first_message_at
             FROM support_messages
@@ -335,18 +346,68 @@ export default async function handler(req: Request): Promise<Response> {
             AND c.first_response_at >= m.first_message_at
             AND COALESCE(c.is_shadow, false) = false
             AND (${market}::text IS NULL OR c.market_id = ${market})
+            AND COALESCE(ch.type, 'client') <> 'feed'
         )
         SELECT
-          COUNT(*)::int AS frt_count,
-          AVG(frt_min) AS frt_avg,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min) AS frt_median,
-          COUNT(*) FILTER (WHERE frt_min <= 5)::int AS b5,
-          COUNT(*) FILTER (WHERE frt_min > 5 AND frt_min <= 10)::int AS b10,
-          COUNT(*) FILTER (WHERE frt_min > 10 AND frt_min <= 30)::int AS b30,
-          COUNT(*) FILTER (WHERE frt_min > 30 AND frt_min <= 60)::int AS b60,
-          COUNT(*) FILTER (WHERE frt_min > 60)::int AS over60
+          COUNT(*) FILTER (WHERE ctype IN ('client','client_integration'))::int AS frt_count,
+          AVG(frt_min) FILTER (WHERE ctype IN ('client','client_integration')) AS frt_avg,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min)
+            FILTER (WHERE ctype IN ('client','client_integration')) AS frt_median,
+          COUNT(*) FILTER (WHERE ctype IN ('client','client_integration') AND frt_min <= 5)::int AS b5,
+          COUNT(*) FILTER (WHERE ctype IN ('client','client_integration') AND frt_min > 5 AND frt_min <= 10)::int AS b10,
+          COUNT(*) FILTER (WHERE ctype IN ('client','client_integration') AND frt_min > 10 AND frt_min <= 30)::int AS b30,
+          COUNT(*) FILTER (WHERE ctype IN ('client','client_integration') AND frt_min > 30 AND frt_min <= 60)::int AS b60,
+          COUNT(*) FILTER (WHERE ctype IN ('client','client_integration') AND frt_min > 60)::int AS over60
         FROM frt_cases
       `
+      // Сегменты тем же составом популяции: по типу канала, источнику и рынку.
+      const segRows = await sql`
+        WITH frt_cases AS (
+          SELECT
+            EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0 AS frt_min,
+            COALESCE(ch.type, 'client') AS ctype,
+            COALESCE(ch.source, 'telegram') AS csource,
+            COALESCE(mk.name, 'Без рынка') AS market_name
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON ch.id = c.channel_id
+          LEFT JOIN support_markets mk ON mk.id = c.market_id
+          JOIN (
+            SELECT case_id, MIN(created_at) AS first_message_at
+            FROM support_messages
+            WHERE org_id = ${orgId} AND case_id IS NOT NULL
+            GROUP BY case_id
+          ) m ON m.case_id = c.id
+          WHERE c.org_id = ${orgId}
+            AND c.created_at >= NOW() - (${metricsPeriodDays} || ' days')::interval
+            AND c.first_response_at IS NOT NULL
+            AND c.first_response_at >= m.first_message_at
+            AND COALESCE(c.is_shadow, false) = false
+            AND (${market}::text IS NULL OR c.market_id = ${market})
+            AND COALESCE(ch.type, 'client') <> 'feed'
+        )
+        SELECT 'type' AS dim, ctype AS key, COUNT(*)::int AS cnt,
+               AVG(frt_min) AS avg_min,
+               PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min) AS med_min
+        FROM frt_cases GROUP BY ctype
+        UNION ALL
+        SELECT 'source', csource, COUNT(*)::int, AVG(frt_min),
+               PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min)
+        FROM frt_cases GROUP BY csource
+        UNION ALL
+        SELECT 'market', market_name, COUNT(*)::int, AVG(frt_min),
+               PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min)
+        FROM frt_cases GROUP BY market_name
+      `
+      const toSeg = (r: any) => ({
+        key: r.key,
+        count: r.cnt ?? 0,
+        avgMinutes: r.avg_min != null ? +Number(r.avg_min).toFixed(1) : null,
+        medianMinutes: r.med_min != null ? +Number(r.med_min).toFixed(1) : null,
+      })
+      const bySeg = (dim: string) =>
+        (segRows as any[]).filter((r) => r.dim === dim).map(toSeg)
+          .sort((a, b) => b.count - a.count)
+
       const f = frtRow[0] || {}
       const frtCount = f.frt_count ?? 0
       const pct = (n: number) => (frtCount > 0 ? +((n / frtCount) * 100).toFixed(1) : 0)
@@ -360,6 +421,11 @@ export default async function handler(req: Request): Promise<Response> {
           within30: { count: f.b30 ?? 0, pct: pct(f.b30 ?? 0) },
           within60: { count: f.b60 ?? 0, pct: pct(f.b60 ?? 0) },
           over60: { count: f.over60 ?? 0, pct: pct(f.over60 ?? 0) },
+        },
+        segments: {
+          byType: bySeg('type'),
+          bySource: bySeg('source'),
+          byMarket: bySeg('market'),
         },
       }
 
