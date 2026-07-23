@@ -10,7 +10,7 @@
  * Что в тексте:
  *   - Сводка за день со светофором (🟢/🟡/🔴) и дельтой vs прошлая неделя
  *   - 1-3 совета «над чем поработать завтра» — выбираются по эвристике:
- *     - status='bad' по метрике → совет конкретный
+ *     - метрика ниже Silver (bronze/below_bronze) → совет конкретный
  *     - sessions < половины недельного среднего → совет об активности
  *     - всё в Gold → благодарность
  *   - Ссылка на 360°-профиль
@@ -96,15 +96,22 @@ function fmtPercent(v: number | null): string {
 
 function statusEmoji(status: MetricResult['status']): string {
   switch (status) {
-    case 'good':
+    case 'gold':
       return '🟢'
-    case 'borderline':
+    case 'silver':
       return '🟡'
-    case 'bad':
+    case 'bronze':
+      return '🟠'
+    case 'below_bronze':
       return '🔴'
     default:
       return '⚪'
   }
+}
+
+/** Метрика ниже целевого Silver (bronze или below_bronze) — нужен конкретный совет. */
+function isBelowTarget(status: MetricResult['status']): boolean {
+  return status === 'bronze' || status === 'below_bronze'
 }
 
 function deltaText(
@@ -130,14 +137,14 @@ function buildAdvice(data: ReportData): string[] {
   const advice: string[] = []
   const { today, weekAvg } = data
 
-  // 1. FRT в красной зоне
-  if (today.frt.status === 'bad' && today.frt.benchmarks.silver) {
+  // 1. FRT ниже целевого Silver
+  if (isBelowTarget(today.frt.status) && today.frt.benchmarks.silver) {
     advice.push(
       `Сократить время первого ответа — сейчас ${fmtMinutes(today.frt.value)}, цель Silver: ${fmtMinutes(today.frt.benchmarks.silver.value)}`,
     )
   }
-  // 2. SLA в красной зоне
-  if (today.sla.status === 'bad' && today.sla.benchmarks.silver) {
+  // 2. SLA ниже целевого Silver
+  if (isBelowTarget(today.sla.status) && today.sla.benchmarks.silver) {
     advice.push(
       `Поднять SLA Compliance — сейчас ${fmtPercent(today.sla.value)}, цель Silver: ${fmtPercent(today.sla.benchmarks.silver.value)}`,
     )
@@ -152,15 +159,15 @@ function buildAdvice(data: ReportData): string[] {
       `Сегодня меньше активности чем обычно: ${today.frt.sampleSize} сессий vs среднее ${Math.round(weekAvg.frt.sampleSize / 7)} в день. Завтра — догнать.`,
     )
   }
-  // 4. FRT борется на грани между silver и gold
-  if (today.frt.status === 'borderline' && today.frt.benchmarks.gold) {
+  // 4. FRT в Silver — близко к Gold
+  if (today.frt.status === 'silver' && today.frt.benchmarks.gold) {
     advice.push(
       `Можешь зайти в Gold по FRT — осталось чуть-чуть: текущее ${fmtMinutes(today.frt.value)}, gold ${fmtMinutes(today.frt.benchmarks.gold.value)}`,
     )
   }
 
   // Если всё в Gold — поздравляем
-  if (today.frt.status === 'good' && today.sla.status === 'good' && advice.length === 0) {
+  if (today.frt.status === 'gold' && today.sla.status === 'gold' && advice.length === 0) {
     advice.push('Все ключевые метрики в зоне Gold — отличный день. Просто продолжай.')
   }
   // Если совсем ничего не дали — позитивный закрытый совет

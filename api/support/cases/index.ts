@@ -62,13 +62,22 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
       // --- Фильтры ---
-      // statuses: comma-separated whitelist, либо preset 'active' / 'archive'
+      // statuses: comma-separated whitelist, либо preset 'active' / 'archive'.
+      // Пресеты time-aware: решённый СЕГОДНЯ (Ташкент) кейс остаётся на активной
+      // доске (колонка «Решено»); вчерашние resolved — в архиве. Ночной крон
+      // archive-resolved закрепляет это переводом resolved → closed.
       const statusParam = url.searchParams.get('status')
       let statuses: string[] | null = null
+      // Флаги для resolved-кейсов: включить решённые сегодня (active) /
+      // только решённые НЕ сегодня (archive).
+      let includeResolvedToday = false
+      let includeResolvedOlder = false
       if (statusParam === 'active') {
         statuses = ['detected', 'in_progress', 'waiting', 'blocked', 'recurring']
+        includeResolvedToday = true
       } else if (statusParam === 'archive') {
-        statuses = ['resolved', 'closed', 'cancelled']
+        statuses = ['closed', 'cancelled']
+        includeResolvedOlder = true
       } else {
         statuses = parseList(statusParam, VALID_STATUSES)
       }
@@ -131,14 +140,35 @@ export default async function handler(req: Request): Promise<Response> {
             WHEN c.resolved_at IS NOT NULL AND m.first_message_at IS NOT NULL
             THEN EXTRACT(EPOCH FROM (c.resolved_at - m.first_message_at)) / 60.0
             ELSE c.resolution_time_minutes
-          END AS resolution_time_minutes_from_msg
+          END AS resolution_time_minutes_from_msg,
+          -- FRT: время первого ответа команды, считаем от первого сообщения клиента.
+          -- Условие first_response_at >= first_message_at отсекает случаи, когда первым
+          -- сообщением был ответ команды (иначе получили бы отрицательный FRT).
+          CASE
+            WHEN c.first_response_at IS NOT NULL AND m.first_message_at IS NOT NULL
+                 AND c.first_response_at >= m.first_message_at
+            THEN EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0
+            ELSE NULL
+          END AS frt_minutes
         FROM support_cases c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
         LEFT JOIN support_agents a ON c.assigned_to = a.id
         LEFT JOIN msg_stats m ON m.case_id = c.id
         LEFT JOIN act_stats act ON act.case_id = c.id
         WHERE c.org_id = ${orgId}
-          AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
+          AND (
+            ${statuses}::text[] IS NULL
+            OR c.status = ANY(${statuses}::text[])
+            -- resolved сегодня (Ташкент) — на активной доске
+            OR (${includeResolvedToday} AND c.status = 'resolved' AND c.resolved_at IS NOT NULL
+                AND (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                    >= date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'))
+            -- resolved ранее (или без даты) — в архиве, пока крон не перевёл в closed
+            OR (${includeResolvedOlder} AND c.status = 'resolved'
+                AND (c.resolved_at IS NULL
+                  OR (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                     < date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')))
+          )
           AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
           AND (${channelId}::text IS NULL OR c.channel_id = ${channelId})
           AND (
@@ -195,7 +225,19 @@ export default async function handler(req: Request): Promise<Response> {
           GROUP BY case_id
         ) m ON m.case_id = c.id
         WHERE c.org_id = ${orgId}
-          AND (${statuses}::text[] IS NULL OR c.status = ANY(${statuses}::text[]))
+          AND (
+            ${statuses}::text[] IS NULL
+            OR c.status = ANY(${statuses}::text[])
+            -- resolved сегодня (Ташкент) — на активной доске
+            OR (${includeResolvedToday} AND c.status = 'resolved' AND c.resolved_at IS NOT NULL
+                AND (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                    >= date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'))
+            -- resolved ранее (или без даты) — в архиве, пока крон не перевёл в closed
+            OR (${includeResolvedOlder} AND c.status = 'resolved'
+                AND (c.resolved_at IS NULL
+                  OR (c.resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+                     < date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')))
+          )
           AND (${priorities}::text[] IS NULL OR c.priority = ANY(${priorities}::text[]))
           AND (${channelId}::text IS NULL OR c.channel_id = ${channelId})
           AND (
@@ -273,6 +315,54 @@ export default async function handler(req: Request): Promise<Response> {
           COUNT(*) FILTER (WHERE COALESCE(is_shadow, false) = true)::int AS shadow_count
         FROM resolved_cases
       `
+      // FRT-агрегат за тот же период: среднее/медиана + бакеты ≤5/5-10/10-30/30-60/60+ мин.
+      // Популяция: кейсы, созданные за период, у которых есть валидный FRT
+      // (first_response_at >= first_message_at). Shadow исключаем (авто-решённые в чате
+      // отвечаются «мгновенно» и искажают распределение вниз).
+      const frtRow = await sql`
+        WITH frt_cases AS (
+          SELECT EXTRACT(EPOCH FROM (c.first_response_at - m.first_message_at)) / 60.0 AS frt_min
+          FROM support_cases c
+          JOIN (
+            SELECT case_id, MIN(created_at) AS first_message_at
+            FROM support_messages
+            WHERE org_id = ${orgId} AND case_id IS NOT NULL
+            GROUP BY case_id
+          ) m ON m.case_id = c.id
+          WHERE c.org_id = ${orgId}
+            AND c.created_at >= NOW() - (${metricsPeriodDays} || ' days')::interval
+            AND c.first_response_at IS NOT NULL
+            AND c.first_response_at >= m.first_message_at
+            AND COALESCE(c.is_shadow, false) = false
+            AND (${market}::text IS NULL OR c.market_id = ${market})
+        )
+        SELECT
+          COUNT(*)::int AS frt_count,
+          AVG(frt_min) AS frt_avg,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY frt_min) AS frt_median,
+          COUNT(*) FILTER (WHERE frt_min <= 5)::int AS b5,
+          COUNT(*) FILTER (WHERE frt_min > 5 AND frt_min <= 10)::int AS b10,
+          COUNT(*) FILTER (WHERE frt_min > 10 AND frt_min <= 30)::int AS b30,
+          COUNT(*) FILTER (WHERE frt_min > 30 AND frt_min <= 60)::int AS b60,
+          COUNT(*) FILTER (WHERE frt_min > 60)::int AS over60
+        FROM frt_cases
+      `
+      const f = frtRow[0] || {}
+      const frtCount = f.frt_count ?? 0
+      const pct = (n: number) => (frtCount > 0 ? +((n / frtCount) * 100).toFixed(1) : 0)
+      const frtMetrics = {
+        count: frtCount,
+        avgMinutes: f.frt_avg != null ? +Number(f.frt_avg).toFixed(1) : null,
+        medianMinutes: f.frt_median != null ? +Number(f.frt_median).toFixed(1) : null,
+        buckets: {
+          within5: { count: f.b5 ?? 0, pct: pct(f.b5 ?? 0) },
+          within10: { count: f.b10 ?? 0, pct: pct(f.b10 ?? 0) },
+          within30: { count: f.b30 ?? 0, pct: pct(f.b30 ?? 0) },
+          within60: { count: f.b60 ?? 0, pct: pct(f.b60 ?? 0) },
+          over60: { count: f.over60 ?? 0, pct: pct(f.over60 ?? 0) },
+        },
+      }
+
       const m = metricsRow[0] || {}
       const avgMin = m.avg_minutes != null ? Number(m.avg_minutes) : null
       const maxMin = m.max_minutes != null ? Number(m.max_minutes) : null
@@ -290,6 +380,7 @@ export default async function handler(req: Request): Promise<Response> {
         maxHours: maxMin != null ? +(maxMin / 60).toFixed(2) : null,
         medianHours: medMin != null ? +(medMin / 60).toFixed(2) : null,
         p95Hours: p95Min != null ? +(p95Min / 60).toFixed(2) : null,
+        frt: frtMetrics,
       }
 
       // Overdue counter (по активным кейсам) — возраст от первого сообщения клиента
@@ -324,6 +415,19 @@ export default async function handler(req: Request): Promise<Response> {
       `.catch(() => [{ snoozed: 0 }])
       const snoozedCount = snoozedRow[0]?.snoozed ?? 0
 
+      // Решено сегодня (Ташкент) — для бейджа «Активные» (доска = рабочие + решённые сегодня)
+      const resolvedTodayRow = await sql`
+        SELECT COUNT(*)::int AS cnt
+        FROM support_cases
+        WHERE org_id = ${orgId}
+          AND status = 'resolved'
+          AND resolved_at IS NOT NULL
+          AND (resolved_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+              >= date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+          AND (${market}::text IS NULL OR market_id = ${market})
+      `.catch(() => [{ cnt: 0 }])
+      const resolvedTodayCount = resolvedTodayRow[0]?.cnt ?? 0
+
       return json({
         cases: rows.map((c: any) => {
           const ageHours = c.age_hours != null ? Number(c.age_hours) : null
@@ -353,6 +457,7 @@ export default async function handler(req: Request): Promise<Response> {
             reporterName: c.reporter_name,
             firstResponseAt: c.first_response_at,
             firstMessageAt: c.first_message_at,
+            firstResponseMinutes: c.frt_minutes != null ? Number(c.frt_minutes) : null,
             resolvedAt: c.resolved_at,
             resolutionTimeMinutes: c.resolution_time_minutes_from_msg != null ? Number(c.resolution_time_minutes_from_msg) : c.resolution_time_minutes,
             resolutionNotes: c.resolution_notes,
@@ -387,6 +492,7 @@ export default async function handler(req: Request): Promise<Response> {
         metrics: resolutionMetrics,
         overdueCount,
         snoozedCount,
+        resolvedTodayCount,
       })
 
     } catch (e: any) {

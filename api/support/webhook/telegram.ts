@@ -424,7 +424,22 @@ async function saveMessage(
 ): Promise<string> {
   const messageId = generateId('msg')
   const isFromClient = role === 'client'
-  
+
+  // Дедуп: одно Telegram-сообщение (msg_id уникален в чате) = одна запись.
+  // Telegram может повторно доставить тот же апдейт — без этой проверки одно и
+  // то же сообщение вставлялось заново (наблюдался флуд «/start» каждые ~2 мин:
+  // 56 копий одного tg_msg_id=27930). Если уже есть — возвращаем существующий id.
+  if (telegramMessageId && telegramMessageId > 0) {
+    const dup = await sql`
+      SELECT id FROM support_messages
+      WHERE telegram_message_id = ${telegramMessageId} AND channel_id = ${channelId}
+      LIMIT 1` as any[]
+    if (dup[0]) {
+      console.log(`[Webhook] Дубль tg_msg_id=${telegramMessageId} в канале ${channelId} — пропуск вставки`)
+      return dup[0].id
+    }
+  }
+
   await upsertUser(sql, user, channelId, role, orgId)
   
   try {

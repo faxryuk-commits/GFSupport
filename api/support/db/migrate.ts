@@ -291,16 +291,16 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       // Index for hot messages (last 7 days) - fast operational queries
       await sql`CREATE INDEX IF NOT EXISTS idx_messages_hot_7days ON support_messages(channel_id, created_at DESC) WHERE created_at > NOW() - INTERVAL '7 days'`
-      
+
       // Priority channels index - awaiting reply or unread
       await sql`CREATE INDEX IF NOT EXISTS idx_channels_priority ON support_channels(last_message_at DESC) WHERE awaiting_reply = true OR unread_count > 0`
-      
+
       // Analytics aggregation index
       await sql`CREATE INDEX IF NOT EXISTS idx_messages_analytics ON support_messages(ai_category, ai_sentiment, created_at)`
-      
+
       // Sender role index for team filtering
       await sql`CREATE INDEX IF NOT EXISTS idx_messages_sender ON support_messages(sender_id, sender_role, created_at DESC)`
-      
+
       migrations.push('Created hot data and analytics indexes for 1000 groups')
     } catch (e) { /* indexes exist */ }
 
@@ -308,28 +308,28 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       // Create sequence if not exists
       await sql`CREATE SEQUENCE IF NOT EXISTS support_case_ticket_seq START WITH 1000`
-      
+
       // Get max existing ticket number
       const maxResult = await sql`SELECT COALESCE(MAX(ticket_number), 0) as max_num FROM support_cases WHERE ticket_number IS NOT NULL`
       const maxNum = parseInt(maxResult[0]?.max_num || '0')
-      
+
       // Set sequence to max + 1
       if (maxNum > 0) {
         await sql`SELECT setval('support_case_ticket_seq', ${maxNum + 1}, false)`
       }
-      
+
       // Assign ticket numbers to cases without them (ordered by creation date)
       const casesWithoutNumber = await sql`
         SELECT id FROM support_cases 
         WHERE ticket_number IS NULL 
         ORDER BY created_at ASC
       `
-      
+
       for (const c of casesWithoutNumber) {
         const nextNum = await sql`SELECT nextval('support_case_ticket_seq') as num`
         await sql`UPDATE support_cases SET ticket_number = ${parseInt(nextNum[0].num)} WHERE id = ${c.id}`
       }
-      
+
       migrations.push(`Assigned ticket numbers to ${casesWithoutNumber.length} cases`)
     } catch (e) { /* sequence/numbers exist */ }
 
@@ -390,7 +390,7 @@ export default async function handler(req: Request): Promise<Response> {
         RETURNING c.id
       `
       migrations.push(`Recalculated priorities for ${result.length} cases`)
-    } catch (e: any) { 
+    } catch (e: any) {
       migrations.push(`Priority recalc: ${e.message?.slice(0, 80) || 'done'}`)
     }
 
@@ -452,7 +452,7 @@ export default async function handler(req: Request): Promise<Response> {
         )
       `
       await sql`CREATE INDEX IF NOT EXISTS idx_templates_intent ON support_auto_templates(intent) WHERE is_active = true`
-      
+
       // Insert default templates
       await sql`
         INSERT INTO support_auto_templates (id, intent, template_text, personalization_vars, tone)
@@ -682,24 +682,62 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`Activity unify error: ${e.message}`)
     }
 
-    // Migration: manual FRT overrides for late-response corrections
+    // Migration 40: Бэкфилл first_response_at из сообщений (для FRT на тикетах).
+    // Первый ответ команды = самое раннее не-клиентское сообщение кейса.
+    // Идемпотентно — заполняем только там, где колонка пустая; forward-стамп
+    // делают Telegram/WhatsApp вебхуки.
+    try {
+      const filled = await sql`
+        UPDATE support_cases c
+        SET first_response_at = fr.first_resp
+        FROM (
+          SELECT case_id, MIN(created_at) AS first_resp
+          FROM support_messages
+          WHERE case_id IS NOT NULL AND is_from_client = false
+          GROUP BY case_id
+        ) fr
+        WHERE c.id = fr.case_id AND c.first_response_at IS NULL
+        RETURNING c.id
+      `
+      migrations.push(`Backfilled first_response_at for ${filled.length} cases`)
+    } catch (e: any) {
+      migrations.push(`FRT backfill error: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+
+    // Migration 41: разовый перевод исторических resolved (решённых до сегодняшнего
+    // ташкентского дня) в closed — под новую модель «решено остаётся на доске один день».
+    // Дальше это поддерживает ночной крон /api/support/cron/archive-resolved.
+    try {
+      const closed = await sql`
+        UPDATE support_cases
+        SET status = 'closed', updated_at = NOW()
+        WHERE status = 'resolved'
+          AND (COALESCE(resolved_at, updated_at, created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+              < date_trunc('day', NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent')
+        RETURNING id
+      `
+      migrations.push(`Archived ${closed.length} historical resolved cases (resolved -> closed)`)
+    } catch (e: any) {
+      migrations.push(`Resolved archive error: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+    // Migration 42: manual FRT overrides for late-response corrections
     try {
       await sql`
-        CREATE TABLE IF NOT EXISTS support_frt_overrides (
-          id VARCHAR(50) PRIMARY KEY,
-          org_id VARCHAR(50) NOT NULL,
-          message_id VARCHAR(50) NOT NULL,
-          channel_id VARCHAR(50) NOT NULL,
-          override_type VARCHAR(20) NOT NULL,
-          frt_minutes INT,
-          note TEXT,
-          created_by VARCHAR(50),
-          created_by_name VARCHAR(255),
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW(),
-          UNIQUE (org_id, message_id)
-        )
-      `
+            CREATE TABLE IF NOT EXISTS support_frt_overrides (
+              id VARCHAR(50) PRIMARY KEY,
+              org_id VARCHAR(50) NOT NULL,
+              message_id VARCHAR(50) NOT NULL,
+              channel_id VARCHAR(50) NOT NULL,
+              override_type VARCHAR(20) NOT NULL,
+              frt_minutes INT,
+              note TEXT,
+              created_by VARCHAR(50),
+              created_by_name VARCHAR(255),
+              created_at TIMESTAMPTZ DEFAULT NOW(),
+              updated_at TIMESTAMPTZ DEFAULT NOW(),
+              UNIQUE (org_id, message_id)
+            )
+          `
       await sql`CREATE INDEX IF NOT EXISTS idx_frt_overrides_org_msg ON support_frt_overrides(org_id, message_id)`
       migrations.push('Added support_frt_overrides table')
     } catch (e: any) {
@@ -715,4 +753,5 @@ export default async function handler(req: Request): Promise<Response> {
   } catch (e: any) {
     return json({ error: 'Migration failed' }, 500)
   }
+
 }

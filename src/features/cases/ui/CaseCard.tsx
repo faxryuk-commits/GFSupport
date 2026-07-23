@@ -1,7 +1,8 @@
 import { memo } from 'react'
-import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer, Repeat, Ban, Bell } from 'lucide-react'
+import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer, Repeat, Ban, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '@/shared/ui'
+import { formatDuration } from '@/shared/lib'
 import { CASE_PRIORITY_CONFIG, type CasePriority } from '@/entities/case'
 
 export interface CaseCardData {
@@ -17,6 +18,9 @@ export interface CaseCardData {
   tags?: string[]
   createdAt: string
   updatedAt?: string
+  // Показатели жизненного цикла (минуты, приходят с бэкенда — уже tz-безопасны)
+  firstResponseMinutes?: number | null
+  resolutionTimeMinutes?: number | null
   assignee?: { id: string; name: string }
   reporterName?: string
   commentsCount: number
@@ -103,6 +107,13 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
   const statusAge = getStatusAge(caseItem.lastStatusChangeAt, caseItem.createdAt)
   const lastActivityLabel = formatLastActivity(caseItem.lastActivityAt)
   const isOverdue = Boolean(caseItem.isOverdue)
+
+  // Показатели жизненного цикла тикета
+  const isResolved = caseItem.resolutionTimeMinutes != null
+  const frtPending = caseItem.firstResponseMinutes == null && !isResolved
+  const frtLabel = caseItem.firstResponseMinutes != null
+    ? formatDuration(caseItem.firstResponseMinutes)
+    : (isResolved ? '—' : 'ждёт')
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -263,11 +274,25 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
         )}
       </div>
 
-      {/* Время создания */}
-      <div className="flex items-center gap-3 text-[10px] text-slate-400 mb-2">
-        <div className="flex items-center gap-1" title="Создан">
-          <Clock className="w-3 h-3" />
-          {formatRelativeTime(caseItem.createdAt)}
+      {/* Показатели: создан · первый ответ · решение */}
+      <div className="grid grid-cols-3 gap-1 mb-2 text-[10px]">
+        <div className="flex flex-col gap-0.5 px-1.5 py-1 bg-slate-50 rounded" title="Когда создан тикет">
+          <span className="flex items-center gap-1 text-slate-400"><Clock className="w-2.5 h-2.5" />Создан</span>
+          <span className="font-medium text-slate-600">{formatRelativeTime(caseItem.createdAt)}</span>
+        </div>
+        <div
+          className={`flex flex-col gap-0.5 px-1.5 py-1 rounded ${frtPending ? 'bg-amber-50' : 'bg-slate-50'}`}
+          title="Время первого реагирования — от первого сообщения клиента до ответа команды"
+        >
+          <span className={`flex items-center gap-1 ${frtPending ? 'text-amber-500' : 'text-slate-400'}`}><Zap className="w-2.5 h-2.5" />Ответ</span>
+          <span className={`font-medium ${frtPending ? 'text-amber-700' : 'text-slate-600'}`}>{frtLabel}</span>
+        </div>
+        <div
+          className={`flex flex-col gap-0.5 px-1.5 py-1 rounded ${isResolved ? 'bg-emerald-50' : 'bg-slate-50'}`}
+          title="Время решения — от первого сообщения клиента до резолюции"
+        >
+          <span className={`flex items-center gap-1 ${isResolved ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-2.5 h-2.5" />Решение</span>
+          <span className={`font-medium ${isResolved ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolved ? formatDuration(caseItem.resolutionTimeMinutes) : 'в работе'}</span>
         </div>
       </div>
 

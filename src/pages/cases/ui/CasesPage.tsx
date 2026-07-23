@@ -6,8 +6,7 @@ import { CasesNowSection } from './CasesNowSection'
 import { CasesInboxView } from './CasesInboxView'
 import { takeNextCase } from '@/shared/api'
 import {
-  ACTIVE_STATUSES,
-  ARCHIVE_STATUSES,
+  isOnActiveBoard,
   UI_ACTIVE_COLUMNS,
   UI_COLUMN_CONFIG,
   getUiColumn,
@@ -37,6 +36,8 @@ function mapCaseToCardData(c: Case): CaseCardData {
     tags: c.tags,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
+    firstResponseMinutes: c.firstResponseMinutes,
+    resolutionTimeMinutes: c.resolutionTimeMinutes,
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     reporterName: c.reporterName,
     commentsCount: c.messagesCount,
@@ -81,6 +82,8 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
     status: c.status,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
+    firstResponseMinutes: c.firstResponseMinutes,
+    resolutionTimeMinutes: c.resolutionTimeMinutes,
     assignee: c.assignedTo && c.assigneeName ? { id: c.assignedTo, name: c.assigneeName } : undefined,
     comments: [],
     tags: c.tags || [],
@@ -90,6 +93,15 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
     snoozedUntil: c.snoozedUntil ?? null,
   }
 }
+
+// Бакеты распределения FRT: ключи совпадают с metrics.frt.buckets с бэкенда
+const FRT_BUCKET_CONFIG = [
+  { key: 'within5', label: '≤ 5 мин', short: '5м', color: 'bg-emerald-500' },
+  { key: 'within10', label: '5–10 мин', short: '10м', color: 'bg-green-400' },
+  { key: 'within30', label: '10–30 мин', short: '30м', color: 'bg-amber-400' },
+  { key: 'within60', label: '30–60 мин', short: '60м', color: 'bg-orange-500' },
+  { key: 'over60', label: '> 60 мин', short: '60+', color: 'bg-red-500' },
+] as const
 
 // Периоды для фильтра по дате
 const DATE_FILTERS = [
@@ -124,6 +136,7 @@ export function CasesPage() {
   const [metrics, setMetrics] = useState<CaseResolutionMetrics | null>(null)
   const [statusStats, setStatusStats] = useState<Record<string, number>>({})
   const [overdueCount, setOverdueCount] = useState(0)
+  const [resolvedTodayCount, setResolvedTodayCount] = useState(0)
 
   // Режим просмотра: активные или архив
   const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
@@ -253,13 +266,18 @@ export function CasesPage() {
   }, [dateFilter, customDateFrom, customDateTo])
 
   // Загрузка кейсов: один запрос охватывает и активные и архив (status filter не передаём),
-  // клиент разделит по ACTIVE_STATUSES/ARCHIVE_STATUSES. Server-side применяет остальные фильтры.
+  // клиент разделит через isOnActiveBoard. Server-side применяет остальные фильтры.
   const loadCases = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
+      // Грузим ТОЛЬКО кейсы текущей вкладки (active/archive). Раньше один запрос
+      // тянул и активные, и архив вместе с limit=500 и делил на клиенте — при >500
+      // кейсов у орга активные «вытеснялись» архивными за лимит (список недосчитывал).
+      // Точные счётчики вкладок берём из агрегата statusStats (см. ниже).
       const res = await fetchCases({
         ...serverFilters,
+        status: viewMode === 'active' ? 'active' : 'archive',
         limit: 500,
         sortBy: 'priority',
         metricsPeriodDays,
@@ -269,27 +287,45 @@ export function CasesPage() {
       setStatusStats(res.stats || {})
       setOverdueCount(res.overdueCount ?? 0)
       setSnoozedCount(res.snoozedCount ?? 0)
+      setResolvedTodayCount(res.resolvedTodayCount ?? 0)
     } catch (err) {
       setError('Ошибка загрузки кейсов. Попробуйте обновить страницу.')
       console.error('Ошибка загрузки кейсов:', err)
     } finally {
       setLoading(false)
     }
-  }, [serverFilters, metricsPeriodDays])
+  }, [serverFilters, metricsPeriodDays, viewMode])
 
   useEffect(() => {
     loadCases()
   }, [loadCases])
 
-  // Активные / архив — клиентское разделение возвращённой выборки
+  // Активные / архив — клиентское разделение возвращённой выборки.
+  // Решённые СЕГОДНЯ (Ташкент) остаются на активной доске (колонка «Решено»),
+  // вчерашние resolved и closed/cancelled — архив (см. isOnActiveBoard).
   const activeCases = useMemo(() =>
-    cases.filter(c => ACTIVE_STATUSES.includes(c.status as any) || c.status === 'recurring'),
+    cases.filter(c => isOnActiveBoard(c.status, c.resolvedAt)),
     [cases]
   )
 
   const archivedCases = useMemo(() =>
-    cases.filter(c => ARCHIVE_STATUSES.includes(c.status as any)),
+    cases.filter(c => !isOnActiveBoard(c.status, c.resolvedAt)),
     [cases]
+  )
+
+  // Точные счётчики вкладок — из агрегата statusStats (GROUP BY status по всему оргу),
+  // а НЕ из длины загруженной выборки (та обрезается лимитом и обновляется под вкладку).
+  // «Активные» = рабочие статусы + решённые сегодня; «Архив» — остальное.
+  const workloadCount = useMemo(() =>
+    (statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) +
+    (statusStats.blocked || 0) + (statusStats.recurring || 0),
+    [statusStats]
+  )
+  const activeStatusCount = workloadCount + resolvedTodayCount
+  const archiveStatusCount = useMemo(() =>
+    Math.max(0, (statusStats.resolved || 0) - resolvedTodayCount) +
+    (statusStats.closed || 0) + (statusStats.cancelled || 0),
+    [statusStats, resolvedTodayCount]
   )
 
   // На сервере уже отфильтровано — поэтому это просто разделение по viewMode
@@ -555,11 +591,11 @@ export function CasesPage() {
           <button
             disabled
             className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg"
-            title="Все активные кейсы (не решённые)"
+            title="Кейсы на активной доске: в работе + решённые сегодня (уйдут в архив завтра ночью)"
           >
             <Briefcase className="w-4 h-4 text-blue-600" />
             <span className="text-lg font-bold text-blue-700 leading-none">
-              {(statusStats.detected || 0) + (statusStats.in_progress || 0) + (statusStats.waiting || 0) + (statusStats.blocked || 0) + (statusStats.recurring || 0)}
+              {activeStatusCount}
             </span>
             <span className="text-xs text-slate-600">активных</span>
           </button>
@@ -633,6 +669,52 @@ export function CasesPage() {
               ({metrics.shadowCount} auto-resolved)
             </span>
           ) : null}
+
+          {/* FRT: среднее + распределение первого ответа по бакетам */}
+          {metrics?.frt && metrics.frt.count > 0 && (
+            <>
+              <div className="w-px bg-slate-200 mx-1" />
+              <div
+                className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
+                title={`Первый ответ (FRT) по ${metrics.frt.count} тикетам за ${metrics.periodDays} дн: от первого сообщения клиента до ответа команды. Среднее ${metrics.frt.avgMinutes ?? '—'} мин, медиана ${metrics.frt.medianMinutes ?? '—'} мин.`}
+              >
+                <span className="flex items-center gap-1 text-[11px] text-slate-500 uppercase tracking-wide">
+                  <Zap className="w-3 h-3 text-blue-500" />
+                  Ответ
+                </span>
+                <span className="text-base font-bold leading-none text-blue-700">
+                  {metrics.frt.avgMinutes != null ? `${metrics.frt.avgMinutes} мин` : '—'}
+                </span>
+                {/* Стековая полоса распределения */}
+                <div className="flex h-2.5 w-36 rounded-full overflow-hidden bg-slate-200">
+                  {FRT_BUCKET_CONFIG.map(b => {
+                    const bucket = metrics.frt!.buckets[b.key]
+                    if (!bucket.count) return null
+                    return (
+                      <div
+                        key={b.key}
+                        className={b.color}
+                        style={{ width: `${bucket.pct}%` }}
+                        title={`${b.label}: ${bucket.pct}% (${bucket.count})`}
+                      />
+                    )
+                  })}
+                </div>
+                {/* Компактная легенда с процентами */}
+                <div className="flex items-center gap-2">
+                  {FRT_BUCKET_CONFIG.map(b => {
+                    const bucket = metrics.frt!.buckets[b.key]
+                    return (
+                      <span key={b.key} className="flex items-center gap-1 text-[10px] text-slate-500" title={`${b.label}: ${bucket.count} тикетов`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${b.color}`} />
+                        {b.short} <span className="font-semibold text-slate-700">{bucket.pct}%</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Header */}
@@ -648,7 +730,7 @@ export function CasesPage() {
                     { title: 'Автоматическое создание', text: 'AI анализирует сообщения и создаёт кейсы при обнаружении проблемы.' },
                     { title: 'Канбан-доска', text: 'Перетаскивайте кейсы между статусами: Обнаружен → В работе → Решён.' },
                     { title: 'Назначение агента', text: 'Каждый кейс можно назначить на ответственного агента.' },
-                    { title: 'Архив', text: 'Решённые кейсы автоматически попадают в архив.' },
+                    { title: 'Архив', text: 'Решённый кейс остаётся на доске до конца дня (колонка «Решено»), а на следующий день автоматически уходит в архив.' },
                   ]}
                 />
               </div>
@@ -670,7 +752,7 @@ export function CasesPage() {
                 <span className={`px-1.5 py-0.5 text-xs rounded-full ${
                   viewMode === 'active' ? 'bg-blue-100 text-blue-600' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {activeCases.length}
+                  {activeStatusCount}
                 </span>
               </button>
               <button
@@ -686,7 +768,7 @@ export function CasesPage() {
                 <span className={`px-1.5 py-0.5 text-xs rounded-full ${
                   viewMode === 'archive' ? 'bg-slate-600 text-white' : 'bg-slate-200 text-slate-500'
                 }`}>
-                  {archivedCases.length}
+                  {archiveStatusCount}
                 </span>
               </button>
             </div>

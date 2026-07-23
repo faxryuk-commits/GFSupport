@@ -183,6 +183,90 @@ async function handleReaction(sql: any, body: any): Promise<Response> {
   }
 }
 
+/**
+ * Транслятор вебхука GreenAPI → наш внутренний формат (тот же, что шлёт
+ * Baileys-мост). Так вся ингест-логика ниже («группа = канал», identifySender,
+ * запись сообщения) переиспользуется без изменений — GreenAPI просто заменяет
+ * звено «мост».
+ *
+ * Возвращает объект в формате моста, либо null — если событие не сообщение
+ * (статусы доставки и т.п.), тогда обработчик его пропускает.
+ * Формат GreenAPI: https://green-api.com (typeWebhook=incomingMessageReceived).
+ */
+function translateGreenApi(b: any): any | null {
+  const tw = b?.typeWebhook
+  if (tw !== 'incomingMessageReceived' && tw !== 'outgoingMessageReceived' && tw !== 'outgoingAPIMessageReceived') {
+    return null // outgoingMessageStatus, stateInstanceChanged и пр. — не сообщения
+  }
+  const fromMe = tw !== 'incomingMessageReceived'
+  const sd = b.senderData || {}
+  const md = b.messageData || {}
+  const chatId: string = sd.chatId || ''
+  const isGroup = chatId.endsWith('@g.us')
+  const stripJid = (j?: string) => (j || '').replace(/@c\.us$|@g\.us$|@s\.whatsapp\.net$/,'').replace(/[^0-9]/g,'')
+  // Телефон отправителя: в группе — participant (sender), в 1:1 — сам chatId.
+  const senderPhone = stripJid(sd.sender || (isGroup ? '' : chatId))
+  const senderName = sd.senderContactName || sd.senderName || senderPhone
+
+  // Текст + тип + медиа
+  const type = md.typeMessage
+  let text = ''
+  let contentType = 'text'
+  let mediaUrl: string | null = null
+  let mimeType: string | null = null
+  let fileName: string | null = null
+
+  if (type === 'textMessage') {
+    text = md.textMessageData?.textMessage || ''
+  } else if (type === 'extendedTextMessage') {
+    text = md.extendedTextMessageData?.text || ''
+  } else if (type === 'reactionMessage') {
+    // Реакция → отдельный путь handleReaction
+    return {
+      type: 'reaction',
+      chatId,
+      emoji: md.reactionMessage?.text || md.extendedTextMessageData?.text || '',
+      targetMessageId: md.reactionMessage?.key?.id || md.quotedMessage?.stanzaId || '',
+      senderName: fromMe ? 'Support' : senderName,
+    }
+  } else if (md.fileMessageData) {
+    const fm = md.fileMessageData
+    mediaUrl = fm.downloadUrl || null
+    text = fm.caption || ''
+    fileName = fm.fileName || null
+    mimeType = fm.mimeType || null
+    contentType = type === 'imageMessage' ? 'image'
+      : type === 'videoMessage' ? 'video'
+      : type === 'audioMessage' ? 'audio'
+      : type === 'documentMessage' ? 'document'
+      : type === 'stickerMessage' ? 'sticker'
+      : 'document'
+  } else {
+    // locationMessage/contactMessage/прочее — сохраняем как текст-заглушку
+    text = md.extendedTextMessageData?.text || md.textMessageData?.textMessage || `[${type || 'unsupported'}]`
+  }
+
+  const quoted = md.quotedMessage
+  return {
+    chatId,
+    messageId: b.idMessage,
+    senderName: fromMe ? 'Support' : senderName,
+    senderPhone,
+    text,
+    mediaUrl,
+    thumbnailUrl: null,
+    contentType,
+    mimeType,
+    fileName,
+    timestamp: b.timestamp,
+    isGroup,
+    fromMe,
+    groupName: isGroup ? (sd.chatName || undefined) : undefined,
+    replyToMessageId: quoted?.stanzaId || undefined,
+    replyToText: quoted?.textMessage || quoted?.caption || undefined,
+  }
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -199,6 +283,9 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const authHeader = req.headers.get('Authorization')
+  // Терпимо к формату: принимаем и "Bearer <секрет>", и просто "<секрет>"
+  // (GreenAPI шлёт секрет в заголовке авторизации, префикс может отличаться).
+  const authToken = (authHeader || '').replace(/^Bearer\s+/i, '').trim()
   const webhookUrl = new URL(req.url)
   const orgParam = webhookUrl.searchParams.get('org')
 
@@ -206,18 +293,18 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (orgParam) {
     const bridge = await getOrgWhatsAppBridge(orgParam)
-    if (bridge.secret && authHeader === `Bearer ${bridge.secret}`) {
+    if (bridge.secret && authToken === bridge.secret) {
       webhookOrgId = orgParam
     } else {
       const envSecret = process.env.WHATSAPP_BRIDGE_SECRET
-      if (!envSecret || authHeader !== `Bearer ${envSecret}`) {
+      if (!envSecret || authToken !== envSecret) {
         return json({ error: 'Unauthorized' }, 401)
       }
     }
   } else {
     const bridgeSecret = process.env.WHATSAPP_BRIDGE_SECRET
     if (!bridgeSecret) return json({ error: 'Bridge secret not configured' }, 500)
-    if (authHeader !== `Bearer ${bridgeSecret}`) {
+    if (authToken !== bridgeSecret) {
       return json({ error: 'Unauthorized' }, 401)
     }
   }
@@ -234,9 +321,17 @@ export default async function handler(req: Request): Promise<Response> {
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT` } catch {}
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
   try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB` } catch {}
+  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS external_message_id VARCHAR(120)` } catch {}
 
   try {
-    const body = await req.json()
+    let body = await req.json()
+
+    // GreenAPI (managed-провайдер) шлёт свой формат — транслируем в формат моста.
+    if (body?.typeWebhook) {
+      const translated = translateGreenApi(body)
+      if (!translated) return json({ ok: true, skipped: `greenapi:${body.typeWebhook}` })
+      body = translated
+    }
 
     if (body.type === 'reaction') {
       return await handleReaction(sql, body)
@@ -252,6 +347,18 @@ export default async function handler(req: Request): Promise<Response> {
 
     const channelName = isGroup ? (groupName || senderName) : senderName
     const { channelId, orgId } = await getOrCreateWhatsAppChannel(sql, chatId, channelName || '', senderPhone || '', webhookOrgId || undefined)
+
+    // Дедуп: одно WhatsApp-сообщение (idMessage уникален) = одна запись.
+    // GreenAPI ретраит доставку, если не получил быстрый 200 — без этой проверки
+    // одно сообщение вставлялось многократно (наблюдалось 8 копий). Ранний выход
+    // → мгновенный 200 на ретрае → GreenAPI перестаёт слать.
+    if (messageId) {
+      const dup = await sql`
+        SELECT id FROM support_messages
+        WHERE external_message_id = ${String(messageId)} AND channel_id = ${channelId}
+        LIMIT 1` as any[]
+      if (dup[0]) return json({ ok: true, deduped: true, messageId: dup[0].id, channelId })
+    }
 
     let isFromClient: boolean
     let senderRole: string
@@ -291,17 +398,30 @@ export default async function handler(req: Request): Promise<Response> {
         id, channel_id, org_id, sender_id, sender_name, sender_role,
         is_from_client, content_type, text_content, media_url,
         thumbnail_url, file_name, mime_type,
-        reply_to_message_id, reply_to_text,
+        reply_to_message_id, reply_to_text, external_message_id,
         is_read, response_time_ms, created_at
       ) VALUES (
         ${msgId}, ${channelId}, ${orgId}, ${senderPhone || null}, ${senderName || 'Unknown'},
         ${senderRole}, ${isFromClient}, ${msgContentType}, ${text || null},
         ${mediaUrl || null},
         ${thumbnailUrl || null}, ${fileName || null}, ${mimeType || null},
-        ${replyToMessageId || null}, ${replyToText || null},
+        ${replyToMessageId || null}, ${replyToText || null}, ${messageId ? String(messageId) : null},
         ${!isFromClient}, ${responseTimeMs}, NOW()
       )
     `
+
+    // FRT: первый ответ команды в канале стампим на открытых кейсах.
+    // Идемпотентно — COALESCE не перезаписывает уже проставленное время.
+    // (Telegram делает это в updateCasesOnStaffReply; здесь — эквивалент для WhatsApp.)
+    if (!isFromClient) {
+      await sql`
+        UPDATE support_cases
+        SET first_response_at = COALESCE(first_response_at, NOW()), updated_at = NOW()
+        WHERE channel_id = ${channelId} AND org_id = ${orgId}
+          AND status NOT IN ('resolved','closed','cancelled')
+          AND first_response_at IS NULL
+      `.catch(() => { /* non-critical */ })
+    }
 
     const preview = text ? text.slice(0, 100) : `[${msgContentType}]`
     if (isFromClient) {

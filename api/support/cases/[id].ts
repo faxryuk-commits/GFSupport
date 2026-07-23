@@ -75,6 +75,20 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT 100
       `
 
+      // Три показателя жизненного цикла тикета (в минутах, от первого сообщения клиента).
+      // Разница наивных UTC-таймстампов tz-инвариантна: обе даты парсятся одинаково,
+      // поэтому длительность корректна без AT TIME ZONE (важно только для абсолютного дисплея).
+      const firstMessageAt: string | null = messages.length ? messages[0].created_at : null
+      const diffMinutes = (from: string | null, to: string | null): number | null => {
+        if (!from || !to) return null
+        const mins = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000)
+        return mins >= 0 ? mins : null
+      }
+      const firstResponseMinutes = diffMinutes(firstMessageAt, c.first_response_at)
+      const resolutionTimeMinutes =
+        diffMinutes(firstMessageAt, c.resolved_at) ??
+        (c.resolution_time_minutes != null ? Number(c.resolution_time_minutes) : null)
+
       return json({
         case: {
           id: c.id,
@@ -96,8 +110,10 @@ export default async function handler(req: Request): Promise<Response> {
           assignedTo: c.assigned_to,
           assigneeName: c.assignee_name, // Now from support_agents
           firstResponseAt: c.first_response_at,
+          firstMessageAt,
+          firstResponseMinutes,
           resolvedAt: c.resolved_at,
-          resolutionTimeMinutes: c.resolution_time_minutes,
+          resolutionTimeMinutes,
           resolutionNotes: c.resolution_notes,
           impactMrr: parseFloat(c.impact_mrr || 0),
           churnRiskScore: c.churn_risk_score,
