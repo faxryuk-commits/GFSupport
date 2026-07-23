@@ -333,7 +333,7 @@ export default async function handler(req: Request): Promise<Response> {
             COALESCE(mk.name, 'Без рынка') AS market_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON ch.id = c.channel_id
-          LEFT JOIN support_markets mk ON mk.id = c.market_id
+          LEFT JOIN support_markets mk ON mk.id = COALESCE(c.market_id, ch.market_id)
           JOIN (
             SELECT case_id, MIN(created_at) AS first_message_at
             FROM support_messages
@@ -370,7 +370,7 @@ export default async function handler(req: Request): Promise<Response> {
             COALESCE(mk.name, 'Без рынка') AS market_name
           FROM support_cases c
           LEFT JOIN support_channels ch ON ch.id = c.channel_id
-          LEFT JOIN support_markets mk ON mk.id = c.market_id
+          LEFT JOIN support_markets mk ON mk.id = COALESCE(c.market_id, ch.market_id)
           JOIN (
             SELECT case_id, MIN(created_at) AS first_message_at
             FROM support_messages
