@@ -50,6 +50,8 @@ interface MessageBubbleProps {
   onReaction?: (emoji: string) => void
   onScrollToMessage?: (messageId: string) => void
   onCreateCase?: () => void
+  /** Карта номерных @упоминаний: "77066592902" → имя (WhatsApp-группы). */
+  mentionNames?: Record<string, string>
 }
 
 // Быстрые реакции
@@ -287,14 +289,24 @@ function isEmojiOnly(text: string): boolean {
   return EMOJI_ONLY_RE.test(text.trim())
 }
 
-function renderTextWithMentions(text: string, isClient: boolean) {
+function renderTextWithMentions(text: string, isClient: boolean, mentionNames?: Record<string, string>) {
   const parts = text.split(/(@\w+)/g)
   if (parts.length <= 1) return text
-  return parts.map((part, i) =>
-    part.startsWith('@') ? (
-      <span key={i} className={`font-medium ${isClient ? 'text-blue-600' : 'text-blue-200'}`}>{part}</span>
-    ) : part
-  )
+  return parts.map((part, i) => {
+    if (!part.startsWith('@')) return part
+    // Номерное упоминание (WhatsApp): "@77066592902" → имя из карты, номер — в title.
+    const key = part.slice(1)
+    const resolved = /^\d{9,15}$/.test(key) ? mentionNames?.[key] : undefined
+    return (
+      <span
+        key={i}
+        title={resolved ? part : undefined}
+        className={`font-medium ${isClient ? 'text-blue-600' : 'text-blue-200'}`}
+      >
+        {resolved ? `@${resolved}` : part}
+      </span>
+    )
+  })
 }
 
 function VideoNoteAttachment({ attachment }: { attachment: MediaAttachment }) {
@@ -343,7 +355,7 @@ function replyMediaLabel(type?: string): string {
   }
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage, onCreateCase }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, onReply, onCopy, onForward, onDelete, onPin, onReaction, onScrollToMessage, onCreateCase, mentionNames }: MessageBubbleProps) {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 })
   const [showReactionPicker, setShowReactionPicker] = useState(false)
@@ -522,7 +534,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onReply, onC
                 
                 {message.text && (
                   <div className="px-4 py-3">
-                    <p className="text-sm whitespace-pre-wrap select-text">{renderTextWithMentions(message.text, message.isClient)}</p>
+                    <p className="text-sm whitespace-pre-wrap select-text">{renderTextWithMentions(message.text, message.isClient, mentionNames)}</p>
                   </div>
                 )}
               </div>

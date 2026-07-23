@@ -215,6 +215,35 @@ export default async function handler(req: Request): Promise<Response> {
       }
     })
 
+    // Резолв номерных @упоминаний (WhatsApp): "@77066592902" → имя из
+    // support_users по последним 9 цифрам телефона (та же логика, что в
+    // identifySender). Карта отдаётся фронту, подстановка — при рендере.
+    // NB: regex в SQL без бэкслешей ('[^0-9]') — neon cooked-строки съедают '\'.
+    const mentionPhones = new Set<string>()
+    for (const m of messages) {
+      for (const match of String(m.text_content || '').matchAll(/@(\d{9,15})/g)) {
+        mentionPhones.add(match[1])
+      }
+    }
+    const mentionNames: Record<string, string> = {}
+    if (mentionPhones.size > 0 && mentionPhones.size <= 100) {
+      try {
+        const phones = [...mentionPhones]
+        const last9 = phones.map((p) => p.slice(-9))
+        const rows = await sql`
+          SELECT phone, name FROM support_users
+          WHERE org_id = ${orgId} AND phone IS NOT NULL AND name IS NOT NULL
+            AND RIGHT(regexp_replace(phone, '[^0-9]', '', 'g'), 9) = ANY(${last9}::text[])
+        ` as any[]
+        for (const r of rows) {
+          const digits = String(r.phone).replace(/[^0-9]/g, '').slice(-9)
+          for (const p of phones) {
+            if (p.slice(-9) === digits && !mentionNames[p]) mentionNames[p] = r.name
+          }
+        }
+      } catch { /* не критично — покажем номера как есть */ }
+    }
+
     return json({
       channel: {
         id: channel.id,
@@ -229,6 +258,7 @@ export default async function handler(req: Request): Promise<Response> {
         photoUrl: channel.photo_url,
       },
       messages: formattedMessages,
+      mentionNames,
       total,
       hasMore: messages.length >= limit,
       pagination: {

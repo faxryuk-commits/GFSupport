@@ -188,6 +188,8 @@ export function ChatsPage() {
   const [channels, setChannels] = useState<ChannelItemData[]>([])
   const [selectedChannel, setSelectedChannel] = useState<ChannelItemData | null>(null)
   const [messages, setMessages] = useState<MessageData[]>([])
+  // Номерные @упоминания (WhatsApp): "77066592902" → имя. Пополняется при каждой загрузке.
+  const [mentionNames, setMentionNames] = useState<Record<string, string>>({})
   const [aiContext, setAiContext] = useState<AIContext | null>(null)
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>(defaultQuickReplies)
   const [agents, setAgents] = useState<Agent[]>([])
@@ -377,13 +379,16 @@ export function ChatsPage() {
         const lastMessage = currentMessages[currentMessages.length - 1]
         const since = lastMessage?.date
 
-        const { messages: newData } = await fetchMessages(
-          currentChannel.id, 
+        const { messages: newData, mentionNames: mnPoll } = await fetchMessages(
+          currentChannel.id,
           50,
           { since }
         )
-        
+
         if (!isActive) return
+        if (mnPoll && Object.keys(mnPoll).length > 0) {
+          setMentionNames(prev => ({ ...prev, ...mnPoll }))
+        }
         
         if (newData.length > 0) {
           const newMappedMessages = newData.map(mapMessageToUI)
@@ -482,9 +487,10 @@ export function ChatsPage() {
       setMessagesError(null)
       setHasMoreMessages(true)
       
-      const { messages: data, hasMore } = await fetchMessages(channelId, MESSAGES_LIMIT)
+      const { messages: data, hasMore, mentionNames: mn } = await fetchMessages(channelId, MESSAGES_LIMIT)
       const mappedMessages = data.map(mapMessageToUI)
       setMessages(mappedMessages)
+      setMentionNames(mn || {})
       setHasMoreMessages(hasMore ?? data.length >= MESSAGES_LIMIT)
       
       // Загружаем AI контекст параллельно (не блокируем UI)
@@ -508,12 +514,15 @@ export function ChatsPage() {
       const oldestMessage = messages[0]
       const before = oldestMessage?.date // ISO timestamp
       
-      const { messages: data, hasMore } = await fetchMessages(
-        selectedChannel.id, 
+      const { messages: data, hasMore, mentionNames: mnMore } = await fetchMessages(
+        selectedChannel.id,
         MESSAGES_LIMIT,
         { before }
       )
-      
+      if (mnMore && Object.keys(mnMore).length > 0) {
+        setMentionNames(prev => ({ ...prev, ...mnMore }))
+      }
+
       if (data.length > 0) {
         const mappedMessages = data.map(mapMessageToUI)
         // Добавляем старые сообщения в начало
@@ -1119,6 +1128,7 @@ export function ChatsPage() {
                         {showDateDivider && msg.date && <DateDivider date={msg.date} />}
                         <MessageBubble
                           message={bubbleMsg}
+                          mentionNames={mentionNames}
                           onReply={() => setReplyingTo({ 
                             id: msg.id, 
                             telegramMessageId: msg.telegramMessageId,
