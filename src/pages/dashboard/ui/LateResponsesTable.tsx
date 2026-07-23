@@ -244,6 +244,8 @@ export function LateResponsesTable({ dateRange, marketKey }: Props) {
                           </button>
                           <Link
                             to={`/chats/${row.channelId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg inline-flex"
                             title="Открыть чат"
                           >
