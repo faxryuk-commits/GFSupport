@@ -405,7 +405,12 @@ export default async function handler(req: Request): Promise<Response> {
         ${senderRole}, ${isFromClient}, ${msgContentType}, ${text || null},
         ${mediaUrl || null},
         ${thumbnailUrl || null}, ${fileName || null}, ${mimeType || null},
-        ${replyToMessageId || null}, ${replyToText || null}, ${messageId ? String(messageId) : null},
+        ${/* reply_to_message_id — BIGINT (Telegram-ID). WhatsApp-цитаты несут hex-строку
+            (stanzaId "2A0F..."), вставка её валила 500 → GreenAPI head-blocked очередь
+            (и у Railway-моста это же дало 132 «errors»). Пишем только числовые ID;
+            текст цитаты сохраняется в reply_to_text — превью ответа работает. */
+          replyToMessageId && /^\d+$/.test(String(replyToMessageId)) ? String(replyToMessageId) : null},
+        ${replyToText || null}, ${messageId ? String(messageId) : null},
         ${!isFromClient}, ${responseTimeMs}, NOW()
       )
     `
