@@ -676,15 +676,20 @@ export function CasesPage() {
               <div className="w-px bg-slate-200 mx-1" />
               <div
                 className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
-                title={`Первый ответ (FRT) по ${metrics.frt.count} тикетам за ${metrics.periodDays} дн: от первого сообщения клиента до ответа команды. Среднее ${metrics.frt.avgMinutes ?? '—'} мин, медиана ${metrics.frt.medianMinutes ?? '—'} мин.`}
+                title={`Первый ответ (FRT) по ${metrics.frt.count} тикетам за ${metrics.periodDays} дн: от первого сообщения клиента до ответа команды. Крупно — МЕДИАНА (типичный ответ, устойчива к хвосту). Среднее ${metrics.frt.avgMinutes ?? '—'} мин перекошено долгими просрочками (см. «60+» в распределении).`}
               >
                 <span className="flex items-center gap-1 text-[11px] text-slate-500 uppercase tracking-wide">
                   <Zap className="w-3 h-3 text-blue-500" />
-                  Ответ
+                  Ответ · медиана
                 </span>
                 <span className="text-base font-bold leading-none text-blue-700">
-                  {metrics.frt.avgMinutes != null ? `${metrics.frt.avgMinutes} мин` : '—'}
+                  {metrics.frt.medianMinutes != null ? `${metrics.frt.medianMinutes} мин` : '—'}
                 </span>
+                {metrics.frt.avgMinutes != null && (
+                  <span className="text-[10px] text-slate-400 leading-none">
+                    сред. {metrics.frt.avgMinutes} мин
+                  </span>
+                )}
                 {/* Стековая полоса распределения */}
                 <div className="flex h-2.5 w-36 rounded-full overflow-hidden bg-slate-200">
                   {FRT_BUCKET_CONFIG.map(b => {
