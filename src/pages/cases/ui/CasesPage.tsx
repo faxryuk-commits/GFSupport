@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell, Inbox, LayoutGrid } from 'lucide-react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell, Inbox, LayoutGrid, ArrowUpDown } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CasesNowSection } from './CasesNowSection'
@@ -35,6 +35,7 @@ function mapCaseToCardData(c: Case): CaseCardData {
     category: c.category,
     tags: c.tags,
     createdAt: c.createdAt,
+    resolvedAt: c.resolvedAt ?? null,
     updatedAt: c.updatedAt,
     firstResponseMinutes: c.firstResponseMinutes,
     resolutionTimeMinutes: c.resolutionTimeMinutes,
@@ -81,6 +82,7 @@ function mapCaseToCaseDetail(c: Case): CaseDetail {
     category: c.category,
     status: c.status,
     createdAt: c.createdAt,
+    resolvedAt: c.resolvedAt ?? null,
     updatedAt: c.updatedAt,
     firstResponseMinutes: c.firstResponseMinutes,
     resolutionTimeMinutes: c.resolutionTimeMinutes,
@@ -114,6 +116,22 @@ const DATE_FILTERS = [
 ] as const
 
 type DateFilterKey = (typeof DATE_FILTERS)[number]['key']
+
+type CaseSortBy = 'priority' | 'created_desc' | 'created_asc' | 'last_activity'
+
+const CASE_SORT_OPTIONS: { value: CaseSortBy; label: string }[] = [
+  { value: 'priority', label: 'По приоритету' },
+  { value: 'created_desc', label: 'Сначала новые' },
+  { value: 'created_asc', label: 'Сначала старые' },
+  { value: 'last_activity', label: 'По активности' },
+]
+
+function parseStoredSortBy(value: string | null): CaseSortBy {
+  if (value && CASE_SORT_OPTIONS.some((o) => o.value === value)) {
+    return value as CaseSortBy
+  }
+  return 'priority'
+}
 
 // Категории кейсов
 const CATEGORIES = [
@@ -168,6 +186,21 @@ export function CasesPage() {
   const [channelFilter, setChannelFilter] = useState<string>('all')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
   const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState<CaseSortBy>(() => {
+    try {
+      return parseStoredSortBy(localStorage.getItem('cases.sortBy'))
+    } catch {
+      return 'priority'
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('cases.sortBy', sortBy)
+    } catch {
+      /* ignore */
+    }
+  }, [sortBy])
 
   const [selectedCase, setSelectedCase] = useState<Case | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -279,7 +312,7 @@ export function CasesPage() {
         ...serverFilters,
         status: viewMode === 'active' ? 'active' : 'archive',
         limit: 500,
-        sortBy: 'priority',
+        sortBy,
         metricsPeriodDays,
       })
       setCases(res.cases)
@@ -294,7 +327,7 @@ export function CasesPage() {
     } finally {
       setLoading(false)
     }
-  }, [serverFilters, metricsPeriodDays, viewMode])
+  }, [serverFilters, metricsPeriodDays, viewMode, sortBy])
 
   useEffect(() => {
     loadCases()
@@ -801,6 +834,21 @@ export function CasesPage() {
           </div>
           
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as CaseSortBy)}
+                className="px-3 py-2 bg-white border border-[#e8edf3] rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                aria-label="Сортировка кейсов"
+              >
+                {CASE_SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input

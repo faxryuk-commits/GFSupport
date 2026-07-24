@@ -2,22 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
-import { formatDuration } from '@/shared/lib'
+import { formatDuration, formatDateTime } from '@/shared/lib'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
 import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, fetchRelatedCases, type CaseComment, type CaseActivity, type CustomerContext, type RelatedCase } from '@/shared/api'
 import type { Message } from '@/shared/types'
 
 function formatDate(dateStr: string | undefined | null): string {
-  if (!dateStr) return 'Не указано'
-  try {
-    const date = new Date(dateStr)
-    if (isNaN(date.getTime())) return dateStr
-    return date.toLocaleDateString('ru-RU', {
-      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
-    })
-  } catch {
-    return dateStr
-  }
+  return formatDateTime(dateStr)
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -157,6 +148,7 @@ export interface CaseDetail {
   category: string
   status: CaseStatus
   createdAt: string
+  resolvedAt?: string | null
   updatedAt?: string
   // Показатели жизненного цикла (минуты, с бэкенда — tz-безопасны)
   firstResponseMinutes?: number | null
@@ -633,7 +625,7 @@ export function CaseDetailModal({
           <div className="grid grid-cols-3 gap-2 mb-4">
             <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title="Когда создан тикет">
               <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock className="w-3.5 h-3.5" />Создан</span>
-              <span className="text-sm font-semibold text-slate-700">{formatRelativeTime(caseData.createdAt)}</span>
+              <span className="text-sm font-semibold text-slate-700 tabular-nums">{formatDateTime(caseData.createdAt)}</span>
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${frtDetailPending ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}
@@ -644,10 +636,12 @@ export function CaseDetailModal({
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}
-              title="Время решения — от первого сообщения клиента до резолюции"
+              title={caseData.resolvedAt ? `Решён ${formatDateTime(caseData.resolvedAt)}` : 'Дата решения'}
             >
-              <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решение</span>
-              <span className={`text-sm font-semibold ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolvedDetail ? formatDuration(caseData.resolutionTimeMinutes) : 'в работе'}</span>
+              <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решён</span>
+              <span className={`text-sm font-semibold tabular-nums ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>
+                {caseData.resolvedAt ? formatDateTime(caseData.resolvedAt) : '—'}
+              </span>
             </div>
           </div>
 
@@ -836,8 +830,14 @@ export function CaseDetailModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-500">Создан</label>
-                  <p className="mt-1 text-slate-800">{formatDate(caseData.createdAt)}</p>
+                  <p className="mt-1 text-slate-800 tabular-nums">{formatDateTime(caseData.createdAt)}</p>
                 </div>
+                {caseData.resolvedAt && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-500">Решён</label>
+                    <p className="mt-1 text-slate-800 tabular-nums">{formatDateTime(caseData.resolvedAt)}</p>
+                  </div>
+                )}
                 {caseData.updatedAt && caseData.updatedAt !== caseData.createdAt && (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Обновлён</label>

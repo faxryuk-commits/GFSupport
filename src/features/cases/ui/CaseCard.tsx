@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer, Repeat, Ban, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '@/shared/ui'
-import { formatDuration } from '@/shared/lib'
+import { formatDuration, formatDateTime } from '@/shared/lib'
 import { CASE_PRIORITY_CONFIG, type CasePriority } from '@/entities/case'
 
 export interface CaseCardData {
@@ -17,6 +17,7 @@ export interface CaseCardData {
   category: string
   tags?: string[]
   createdAt: string
+  resolvedAt?: string | null
   updatedAt?: string
   // Показатели жизненного цикла (минуты, приходят с бэкенда — уже tz-безопасны)
   firstResponseMinutes?: number | null
@@ -50,21 +51,8 @@ interface CaseCardProps {
   onToggleSelect?: () => void
 }
 
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
 
-  if (days > 0) return `${days}д назад`
-  if (hours > 0) return `${hours}ч назад`
-  if (minutes > 0) return `${minutes}м назад`
-  return 'только что'
-}
-
-function getAgingInfo(createdAt: string): { label: string; color: string; level: 'ok' | 'warn' | 'danger' } {
+export const CaseCard = memo(function CaseCard({
   const hours = (Date.now() - new Date(createdAt).getTime()) / 3600000
   if (hours < 4) return { label: '', color: '', level: 'ok' }
   if (hours < 24) return { label: `${Math.floor(hours)}ч`, color: 'text-amber-600 bg-amber-50', level: 'warn' }
@@ -278,7 +266,7 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
       <div className="grid grid-cols-3 gap-1 mb-2 text-[10px]">
         <div className="flex flex-col gap-0.5 px-1.5 py-1 bg-slate-50 rounded" title="Когда создан тикет">
           <span className="flex items-center gap-1 text-slate-400"><Clock className="w-2.5 h-2.5" />Создан</span>
-          <span className="font-medium text-slate-600">{formatRelativeTime(caseItem.createdAt)}</span>
+          <span className="font-medium text-slate-600 tabular-nums leading-tight">{formatDateTime(caseItem.createdAt)}</span>
         </div>
         <div
           className={`flex flex-col gap-0.5 px-1.5 py-1 rounded ${frtPending ? 'bg-amber-50' : 'bg-slate-50'}`}
@@ -289,10 +277,12 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
         </div>
         <div
           className={`flex flex-col gap-0.5 px-1.5 py-1 rounded ${isResolved ? 'bg-emerald-50' : 'bg-slate-50'}`}
-          title="Время решения — от первого сообщения клиента до резолюции"
+          title={caseItem.resolvedAt ? `Решён ${formatDateTime(caseItem.resolvedAt)}` : 'Время решения — от первого сообщения клиента до резолюции'}
         >
-          <span className={`flex items-center gap-1 ${isResolved ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-2.5 h-2.5" />Решение</span>
-          <span className={`font-medium ${isResolved ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolved ? formatDuration(caseItem.resolutionTimeMinutes) : 'в работе'}</span>
+          <span className={`flex items-center gap-1 ${isResolved ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-2.5 h-2.5" />Решён</span>
+          <span className={`font-medium tabular-nums leading-tight ${isResolved ? 'text-emerald-700' : 'text-slate-500'}`}>
+            {caseItem.resolvedAt ? formatDateTime(caseItem.resolvedAt) : '—'}
+          </span>
         </div>
       </div>
 
