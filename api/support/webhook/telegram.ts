@@ -1403,6 +1403,16 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    // «/start» в ЛИЧКЕ с ботом — это автокоманда Telegram при нажатии кнопки
+    // «Запустить» (люди просто пробуют бота). Саппорт-ценности ноль, а канал
+    // и сообщение создавались — мусор в инбоксе. Отсекаем ДО создания канала.
+    // В группах не трогаем: там /start может быть осмысленным обращением к боту.
+    const rawText = (message.text || '').trim()
+    if (chat.type === 'private' && (rawText === '/start' || rawText.startsWith('/start@') || rawText.startsWith('/start '))) {
+      console.log(`[Webhook] /start в личке от ${user.fullName} (${user.id}) — пропуск (не саппорт-обращение)`)
+      return json({ ok: true, skipped: 'private_start_command' })
+    }
+
     // Get or create channel (use org from URL param for new channels)
     const { channelId, orgId } = await getOrCreateChannel(sql, chat, user, orgParam || undefined)
     const orgRate = checkOrgRateLimit(orgId)

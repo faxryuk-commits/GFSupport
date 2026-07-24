@@ -5,6 +5,8 @@ interface MessagesResponse {
   messages: Message[]
   hasMore: boolean
   total: number
+  /** Карта номерных @упоминаний (WhatsApp): "77066592902" → имя пользователя. */
+  mentionNames?: Record<string, string>
 }
 
 /**
