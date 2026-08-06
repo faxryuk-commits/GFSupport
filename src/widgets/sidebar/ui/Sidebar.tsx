@@ -10,7 +10,6 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Target,
   Globe,
   ChevronDown,
@@ -20,8 +19,6 @@ import {
   Trophy,
   Bot,
   Waypoints,
-  BookOpen,
-  Map,
 } from 'lucide-react'
 import { BarChart3 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
@@ -228,7 +225,7 @@ const navGroups: NavGroup[] = [
       { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
       { path: '/channels', label: 'Каналы', icon: Hash },
       { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
-      { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
+      // { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
     ],
   },
   {
@@ -244,7 +241,7 @@ const navGroups: NavGroup[] = [
     items: [
       { path: '/ai-agent', label: 'AI Агент', icon: Bot, statusDot: true },
       { path: '/routing', label: 'Маршрутизация', icon: Waypoints },
-      { path: '/knowledge', label: 'База знаний', icon: BookOpen },
+      // { path: '/knowledge', label: 'База знаний', icon: BookOpen },
       { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
     ],
   },
@@ -252,7 +249,7 @@ const navGroups: NavGroup[] = [
     label: 'Система',
     items: [
       { path: '/settings', label: 'Настройки', icon: Settings },
-      { path: '/system-map', label: 'Карта системы', icon: Map },
+      // { path: '/system-map', label: 'Карта системы', icon: Map },
     ],
   },
 ]

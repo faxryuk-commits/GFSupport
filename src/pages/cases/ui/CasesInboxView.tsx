@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useEffect, useRef } from 'react'
 import { AlertTriangle, Timer, User, Bell, Repeat, Ban, MessageSquare, ChevronRight, PlayCircle, Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
-import { formatDuration } from '@/shared/lib'
+import { formatDuration, formatDateTime } from '@/shared/lib'
 import { CASE_PRIORITY_CONFIG, type Case } from '@/entities/case'
 
 interface InboxRowProps {
@@ -10,17 +10,6 @@ interface InboxRowProps {
   onSelect: () => void
 }
 
-function formatRel(date: string | undefined | null): string {
-  if (!date) return '—'
-  const diff = Date.now() - new Date(date).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return 'только что'
-  if (m < 60) return `${m} мин`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h} ч`
-  const d = Math.floor(h / 24)
-  return `${d} д`
-}
 
 function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
   const priority = CASE_PRIORITY_CONFIG[caseItem.priority]
@@ -65,11 +54,18 @@ function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
         )}
       </div>
 
-      {/* Line 2: канал + время создания */}
-      <div className="flex items-center gap-2 text-[11px] text-slate-500 mb-1">
-        <MessageSquare className="w-3 h-3 flex-shrink-0" />
-        <span className="truncate flex-1">{caseItem.channelName || 'Без канала'}</span>
-        <span className="flex-shrink-0" title="Создан">{formatRel(caseItem.createdAt)} назад</span>
+      {/* Line 2: канал + даты */}
+      <div className="flex flex-col gap-0.5 text-[10px] text-slate-500 mb-1">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate flex-1">{caseItem.channelName || 'Без канала'}</span>
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-5 tabular-nums">
+          <span title="Создан">Создан: {formatDateTime(caseItem.createdAt)}</span>
+          {caseItem.resolvedAt && (
+            <span title="Решён">Решён: {formatDateTime(caseItem.resolvedAt)}</span>
+          )}
+        </div>
       </div>
 
       {/* Line 2b: первый ответ (FRT) + время решения */}

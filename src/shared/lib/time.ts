@@ -22,6 +22,18 @@ export function formatDuration(minutes: number | null | undefined): string {
   return remH > 0 ? `${days} д ${remH} ч` : `${days} д`
 }
 
+/** "yyyy-mm-dd hh:mm:ss". null/undefined → "—". */
+export function formatDateTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const normalized = /Z|[+-]\d{2}:?\d{2}$/.test(dateStr)
+    ? dateStr
+    : dateStr.replace(' ', 'T')
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) return dateStr
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 /**
  * Абсолютные даты показываем в рабочей таймзоне (Ташкент), а не в локали браузера —
  * иначе один и тот же тикет у разных сотрудников «создан» в разные дни.

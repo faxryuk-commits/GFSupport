@@ -670,9 +670,9 @@ export function CaseDetailModal({
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}
-              title="Время решения — от первого сообщения клиента до резолюции"
+              title={caseData.resolvedAt ? `Решён ${formatDateTimeDMY(caseData.resolvedAt)}` : 'Время решения — от первого сообщения клиента до резолюции'}
             >
-              <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решение</span>
+              <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решён</span>
               <span className={`text-sm font-semibold ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolvedDetail ? formatDuration(caseData.resolutionTimeMinutes) : 'в работе'}</span>
               <span className={`text-[11px] tabular-nums ${isResolvedDetail ? 'text-emerald-600/80' : 'text-slate-400'}`}>
                 {caseData.resolvedAt ? formatDateTimeDMY(caseData.resolvedAt) : '—'}
@@ -877,8 +877,14 @@ export function CaseDetailModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-500">Создан</label>
-                  <p className="mt-1 text-slate-800">{formatDateTimeDMY(caseData.createdAt)}</p>
+                  <p className="mt-1 text-slate-800 tabular-nums">{formatDateTimeDMY(caseData.createdAt)}</p>
                 </div>
+                {caseData.resolvedAt && (
+                  <div>
+                    <label className="text-sm font-medium text-slate-500">Решён</label>
+                    <p className="mt-1 text-slate-800 tabular-nums">{formatDateTimeDMY(caseData.resolvedAt)}</p>
+                  </div>
+                )}
                 {caseData.updatedAt && caseData.updatedAt !== caseData.createdAt && (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Обновлён</label>
