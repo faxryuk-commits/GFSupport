@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { PageHint } from '@/features/onboarding'
+import { formatDateDMY } from '@/shared/lib'
 
 interface Props {
   dateRange: string
@@ -24,7 +25,7 @@ export function DashboardHeader({ dateRange, onDateRangeChange, onRefresh, isRef
   const getDateRangeLabel = () => {
     if (dateRange.startsWith('custom:')) {
       const [, from, to] = dateRange.split(':')
-      return `${new Date(from).toLocaleDateString('ru-RU')} - ${new Date(to).toLocaleDateString('ru-RU')}`
+      return `${formatDateDMY(from)} - ${formatDateDMY(to)}`
     }
     const labels: Record<string, string> = { today: 'Сегодня', yesterday: 'Вчера', week: 'Эта неделя', month: 'Этот месяц' }
     return labels[dateRange] || dateRange

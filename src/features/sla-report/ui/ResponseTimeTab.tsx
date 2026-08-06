@@ -1,4 +1,5 @@
 import { AlertTriangle, XCircle } from 'lucide-react'
+import { formatDateTimeShort } from '@/shared/lib'
 
 interface SLAViolation {
   channelName: string
@@ -36,10 +37,7 @@ interface Props {
 }
 
 function formatDateTime(dateStr: string) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('ru-RU', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'
-  })
+  return formatDateTimeShort(dateStr)
 }
 
 function formatMinutes(mins: number) {

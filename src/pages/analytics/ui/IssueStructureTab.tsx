@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet } from '@/shared/services/api.service'
+import { formatDateDMY } from '@/shared/lib'
 
 interface Subtype { subtype: string; issues: number; automatablePct: number }
 interface Domain { domain: string; issues: number; automatablePct: number; vaguePct: number; subtypes: Subtype[] }
@@ -61,7 +62,7 @@ export function IssueStructureTab() {
 
   const snap = data.snapshot
   const maxDomain = Math.max(...data.domains.map((d) => d.issues), 1)
-  const computed = data.computedAt ? new Date(data.computedAt).toLocaleDateString('ru-RU') : '—'
+  const computed = formatDateDMY(data.computedAt)
 
   return (
     <div className="space-y-6">

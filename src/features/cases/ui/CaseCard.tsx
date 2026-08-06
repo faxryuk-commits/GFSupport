@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { AlertTriangle, MessageSquare, ExternalLink, Clock, User, Tag, Timer, Repeat, Ban, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '@/shared/ui'
-import { formatDuration, formatDateTime } from '@/shared/lib'
+import { formatDuration, formatDateTime, formatDateTimeShort, formatDateTimeWithTz } from '@/shared/lib'
 import { CASE_PRIORITY_CONFIG, type CasePriority } from '@/entities/case'
 
 export interface CaseCardData {
@@ -171,10 +171,10 @@ export const CaseCard = memo(function CaseCard({ caseItem, onView, onDragStart, 
           {caseItem.isSnoozed && caseItem.snoozedUntil && (
             <span
               className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700"
-              title={`Отложен до ${new Date(caseItem.snoozedUntil).toLocaleString('ru-RU')}`}
+              title={`Отложен до ${formatDateTimeWithTz(caseItem.snoozedUntil)}`}
             >
               <Bell className="w-2.5 h-2.5" />
-              до {new Date(caseItem.snoozedUntil).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              до {formatDateTimeShort(caseItem.snoozedUntil)}
             </span>
           )}
         </div>

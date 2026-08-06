@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, useCallback } from 'rea
 import type { ReactNode } from 'react'
 import { X, MessageSquare, AlertCircle, Bell, ExternalLink } from 'lucide-react'
 import { Avatar } from './Avatar'
+import { formatTimeHM } from '../lib'
 
 export type NotificationType = 'message' | 'ticket' | 'alert'
 
@@ -341,10 +342,7 @@ function NotificationItem({
           {/* Время */}
           <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-slate-400">
-              {notification.timestamp.toLocaleTimeString('ru-RU', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })}
+              {formatTimeHM(notification.timestamp.toISOString())}
             </span>
             {notification.onClick && (
               <span className="text-xs text-blue-500 flex items-center gap-1">

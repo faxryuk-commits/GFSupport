@@ -10,6 +10,7 @@ import { fetchChannels, updateChannel, disconnectChannel, type SlaCategory, SLA_
 import type { Channel } from '@/entities/channel'
 import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 import { useMarket, formatMarketLabel } from '@/shared/hooks/useMarket'
+import { formatDateDMY } from '@/shared/lib'
 
 type FilterStatus = 'all' | 'active' | 'inactive' | 'awaiting'
 type SortBy = 'name' | 'messages' | 'lastActivity' | 'unread'
@@ -886,5 +887,5 @@ function formatRelativeTime(dateStr: string): string {
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days} дн назад`
   
-  return date.toLocaleDateString('ru-RU')
+  return formatDateDMY(dateStr)
 }

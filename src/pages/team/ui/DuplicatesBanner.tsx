@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Users, Loader2, Check, X, ChevronRight } from 'lucide-react'
 import { Modal } from '@/shared/ui'
+import { formatDateDMY } from '@/shared/lib'
 
 interface DuplicateMember {
   id: string
@@ -233,7 +234,7 @@ function DuplicateGroupCard({ group, onMerged }: { group: DuplicateGroup; onMerg
                   <span>{m.totalMessages} сообщ.</span>
                   <span>{m.totalCases} кейсов</span>
                   {m.lastActiveAt && (
-                    <span>был {new Date(m.lastActiveAt).toLocaleDateString('ru-RU')}</span>
+                    <span>был {formatDateDMY(m.lastActiveAt)}</span>
                   )}
                 </div>
               </div>

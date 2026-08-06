@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { formatDateTimeShort } from '@/shared/lib'
 import {
   X, Loader2, Mic, Video, Image as ImageIcon, FileText, MessageSquare,
   ArrowRight, Frown, Meh, Smile, AlertTriangle,
@@ -241,5 +242,5 @@ function formatTime(iso: string): string {
   const diffH = (now.getTime() - d.getTime()) / 3600000
   if (diffH < 1) return `${Math.max(1, Math.round(diffH * 60))} мин назад`
   if (diffH < 24) return `${Math.round(diffH)}ч назад`
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return formatDateTimeShort(iso)
 }

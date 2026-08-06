@@ -1,5 +1,6 @@
 import { Modal } from '@/shared/ui'
 import { AlertTriangle, CheckCircle, Clock, MessageSquare, XCircle, Lightbulb, TrendingUp } from 'lucide-react'
+import { formatDateTimeShort } from '@/shared/lib'
 
 export type DrilldownMetric = 
   | 'sla' | 'avgTime' | 'caseResolution' | 'avgResolution'
@@ -105,10 +106,7 @@ const METRIC_TITLES: Record<DrilldownMetric, string> = {
 }
 
 function fmtDate(d: string) {
-  if (!d) return '-'
-  return new Date(d).toLocaleString('ru-RU', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'
-  })
+  return formatDateTimeShort(d)
 }
 
 function fmtMin(m: number) {

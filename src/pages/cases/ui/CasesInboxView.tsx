@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useEffect, useRef } from 'react'
 import { AlertTriangle, Timer, User, Bell, Repeat, Ban, MessageSquare, ChevronRight, PlayCircle, Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Avatar } from '@/shared/ui'
-import { formatDuration, formatDateTime } from '@/shared/lib'
+import { formatDuration, formatDateTime, formatDateTimeWithTz } from '@/shared/lib'
 import { CASE_PRIORITY_CONFIG, type Case } from '@/entities/case'
 
 interface InboxRowProps {
@@ -103,7 +103,7 @@ function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
           </span>
         )}
         {caseItem.isSnoozed && (
-          <span className="flex items-center gap-0.5 text-[9px] text-purple-500" title={`Отложен до ${caseItem.snoozedUntil ? new Date(caseItem.snoozedUntil).toLocaleString('ru-RU') : ''}`}>
+          <span className="flex items-center gap-0.5 text-[9px] text-purple-500" title={`Отложен до ${formatDateTimeWithTz(caseItem.snoozedUntil)}`}>
             <Bell className="w-2.5 h-2.5" />
           </span>
         )}

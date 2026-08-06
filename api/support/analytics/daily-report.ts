@@ -36,6 +36,7 @@ import {
   resolvePeriod,
 } from './metrics/index.js'
 import type { MetricResult, ResolvedPeriod } from './metrics/index.js'
+import { formatWorkDate } from '../lib/work-time.js'
 
 export const config = {
   runtime: 'edge',
@@ -180,7 +181,7 @@ function buildAdvice(data: ReportData): string[] {
 
 function buildReportText(data: ReportData): string {
   const { agentName, today, weekAvg } = data
-  const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  const date = formatWorkDate(new Date())
 
   const lines: string[] = []
   lines.push(`📊 <b>Итоги дня · ${agentName}</b>`)

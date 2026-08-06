@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Activity, ThumbsUp, ThumbsDown, MessageSquare, AlertTriangle, UserPlus, FileText, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { fetchAgentDecisions, submitAgentFeedback, type AgentDecisionItem, type AgentStats } from '@/shared/api'
+import { formatDateTimeShort } from '@/shared/lib'
 
 const ACTION_CONFIG: Record<string, { icon: typeof Activity; label: string; color: string }> = {
   reply: { icon: MessageSquare, label: 'Ответил', color: 'bg-blue-100 text-blue-700' },
@@ -42,7 +43,7 @@ function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id:
   const [feedbackNote, setFeedbackNote] = useState('')
   const config = ACTION_CONFIG[d.action] || ACTION_CONFIG.wait
   const Icon = config.icon
-  const time = new Date(d.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const time = formatDateTimeShort(d.createdAt)
   const confPct = Math.round(d.confidence * 100)
 
   return (

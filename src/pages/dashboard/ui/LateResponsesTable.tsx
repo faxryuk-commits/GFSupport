@@ -15,6 +15,7 @@ import {
   type ResponseTimeDetailRow,
 } from '@/shared/api/analytics'
 import { FrtOverrideModal } from '@/features/analytics/ui/FrtOverrideModal'
+import { formatDateTimeShort } from '@/shared/lib'
 
 type FilterMode = 'late' | 'unanswered'
 type SortKey = 'responseMinutes' | 'clientMessageTime' | 'channelName'
@@ -35,12 +36,7 @@ function formatFrt(minutes: number | null): string {
 }
 
 function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatDateTimeShort(iso)
 }
 
 function frtTone(minutes: number | null): string {

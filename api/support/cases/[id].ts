@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { formatWorkDateTime } from '../lib/work-time.js'
 
 export const config = {
   runtime: 'edge',
@@ -307,7 +308,7 @@ export default async function handler(req: Request): Promise<Response> {
             ${'act_' + Date.now()},
             ${caseId},
             ${ts ? 'snoozed' : 'unsnoozed'},
-            ${ts ? `Отложен до ${ts.toLocaleString('ru-RU')}` : 'Snooze снят'},
+            ${ts ? `Отложен до ${formatWorkDateTime(ts)}` : 'Snooze снят'},
             ${reason || null}
           )
         `.catch(() => {})

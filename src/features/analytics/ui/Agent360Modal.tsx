@@ -9,6 +9,7 @@ import { Modal } from '@/shared/ui'
 import { fetchMetric } from '@/shared/api'
 import type { MetricResult } from '@/shared/api'
 import { AgentTrendSection } from './AgentTrendSection'
+import { formatDateShort, formatDateTimeShort, formatDateWithWeekday } from '@/shared/lib'
 
 /* ============================================================ */
 /* Types                                                         */
@@ -112,26 +113,18 @@ function formatMinutes(m: number | null): string {
 }
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return formatDateTimeShort(iso)
 }
 
 // Короткая дата для оси X в "Активность по дням": "12 апр".
 // Принимаем YYYY-MM-DD (как с бэка) и отдаём день+месяц на русском.
 function formatShortDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(`${iso}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+  return formatDateShort(iso)
 }
 
 // Полная дата с днём недели для tooltip: "пн, 12 апр 2026".
 function formatLongDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(`${iso}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  return formatDateWithWeekday(iso)
 }
 
 function SourceBadge({ source }: { source: string }) {

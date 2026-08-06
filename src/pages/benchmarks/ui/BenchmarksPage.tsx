@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Loader2, RefreshCw, Bot, User, Pencil, Trash2, Info, AlertCircle, Check } from 'lucide-react'
+import { formatDateDMY } from '@/shared/lib'
 import {
   fetchBenchmarks,
   recomputeBenchmarks,
@@ -370,12 +371,12 @@ export function BenchmarksPage() {
 
                             {row && row.sourceType === 'percentile_internal' && row.computedAt && (
                               <div className="text-[10px] opacity-60 mt-2">
-                                Авто · {new Date(row.computedAt).toLocaleDateString('ru-RU')}
+                                Авто · {formatDateDMY(row.computedAt)}
                               </div>
                             )}
                             {row && row.sourceType === 'manual' && row.setAt && (
                               <div className="text-[10px] opacity-60 mt-2">
-                                Вручную · {new Date(row.setAt).toLocaleDateString('ru-RU')}
+                                Вручную · {formatDateDMY(row.setAt)}
                               </div>
                             )}
                           </div>

@@ -38,6 +38,7 @@ import { PageHint, TabGuide } from '@/features/onboarding'
 import { TeamPage } from '@/pages/team/ui/TeamPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
+import { formatDateDMY } from '@/shared/lib'
 
 type SettingsTab = 'general' | 'team' | 'users' | 'markets' | 'automations' | 'autoreply' | 'ai-content' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
@@ -323,7 +324,7 @@ export function SettingsPage() {
       id: Date.now().toString(),
       name,
       key: `sk_${Math.random().toString(36).slice(2, 10)}...${Math.random().toString(36).slice(2, 8)}`,
-      createdAt: new Date().toLocaleDateString('ru-RU'),
+      createdAt: formatDateDMY(new Date().toISOString()),
       permissions,
     }
     setApiKeys(prev => [...prev, newKey])

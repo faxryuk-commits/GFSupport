@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
-import { formatDuration, formatDateDMY, formatDateTime, formatDateTimeWithTz, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
+import { formatDuration, formatDateDMY, formatDateTime, formatDateTimeShort, formatDateTimeWithTz, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
 import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, fetchRelatedCases, type CaseComment, type CaseActivity, type CustomerContext, type RelatedCase } from '@/shared/api'
 import type { Message } from '@/shared/types'
@@ -600,10 +600,10 @@ export function CaseDetailModal({
                   onClick={() => applySnooze(null)}
                   disabled={snoozePending}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100"
-                  title={`Отложен до ${new Date(caseData.snoozedUntil).toLocaleString('ru-RU')}. Нажмите чтобы снять.`}
+                  title={`Отложен до ${formatDateTimeWithTz(caseData.snoozedUntil)}. Нажмите чтобы снять.`}
                 >
                   <Bell className="w-4 h-4" />
-                  до {new Date(caseData.snoozedUntil).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  до {formatDateTimeShort(caseData.snoozedUntil)}
                 </button>
               ) : (
                 <button
@@ -627,7 +627,7 @@ export function CaseDetailModal({
                     >
                       <span>Отложить {p.label}</span>
                       <span className="text-xs text-slate-400">
-                        {p.until.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {formatDateTimeShort(p.until.toISOString())}
                       </span>
                     </button>
                   ))}

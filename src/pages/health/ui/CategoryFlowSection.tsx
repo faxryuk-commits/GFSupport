@@ -11,6 +11,7 @@ import {
 } from '../../../shared/api/support-health'
 import { PlatformBadge } from './PlatformBadge'
 import { ProblemDrillModal } from '../../analytics/ui/ProblemDrillModal'
+import { formatDateTime } from '@/shared/lib'
 
 interface Props {
   period: HealthPeriod
@@ -398,7 +399,7 @@ function IgnoredTable({ items }: { items: CategoryFlowPayload['ignoredList'] }) 
                     {it.channelName && <span className="text-slate-600 truncate max-w-[160px]">{it.channelName}</span>}
                     <span className="px-1.5 py-0.5 bg-slate-100 rounded">{it.domain}</span>
                     <span>·</span>
-                    <span>{new Date(it.createdAt).toLocaleString('ru-RU')}</span>
+                    <span>{formatDateTime(it.createdAt)}</span>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0 mt-1" />
@@ -443,7 +444,7 @@ function UnhappyTable({ items }: { items: CategoryFlowPayload['unhappyList'] }) 
                     <span className="px-1.5 py-0.5 bg-slate-100 rounded">{it.domain}</span>
                     {it.hasChurn && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">угрожает уйти</span>}
                     <span>·</span>
-                    <span>{new Date(it.createdAt).toLocaleString('ru-RU')}</span>
+                    <span>{formatDateTime(it.createdAt)}</span>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0 mt-1" />

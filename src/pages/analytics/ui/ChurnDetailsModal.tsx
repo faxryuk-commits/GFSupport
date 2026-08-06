@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, AlertCircle, MessageSquare, ExternalLink } from 'lucide-react'
 import { Modal } from '@/shared/ui'
+import { formatDateDMY, formatDateTimeWithTz } from '@/shared/lib'
 import {
   fetchChurnSignals,
   type ChurnSignalsResponse,
@@ -155,7 +156,6 @@ export function ChurnDetailsModal({
 function ChurnRow({ row, channelId }: { row: ChurnSignalRow; channelId: string | null }) {
   const phrases = row.matches.map((m) => m.phrase)
   const sevStyle = SEVERITY_STYLES[row.maxSeverity]
-  const date = new Date(row.createdAt)
 
   return (
     <li className="border border-[#e8edf3] rounded-lg p-3 hover:border-slate-300">
@@ -164,7 +164,7 @@ function ChurnRow({ row, channelId }: { row: ChurnSignalRow; channelId: string |
           <MessageSquare className="w-3.5 h-3.5" />
           <span className="font-medium text-slate-700">{row.senderName || 'Клиент'}</span>
           <span>·</span>
-          <span title={date.toLocaleString('ru-RU')}>{date.toLocaleDateString('ru-RU')}</span>
+          <span title={formatDateTimeWithTz(row.createdAt)}>{formatDateDMY(row.createdAt)}</span>
         </div>
         <span
           className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border ${sevStyle.chip}`}

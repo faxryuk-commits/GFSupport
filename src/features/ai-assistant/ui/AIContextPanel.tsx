@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Brain, MessageSquare, Folder, Lightbulb, User, Clock, AlertTriangle, Loader2 } from 'lucide-react'
 import { getAIContext, type AIContextResponse } from '@/shared/api/ai'
 import { ResponseTimeComparison, type ResponseTimeStats } from '@/features/response-time'
+import { formatDateDMY } from '@/shared/lib'
 
 interface AIContextPanelProps {
   channelId: string
@@ -152,7 +153,7 @@ export function AIContextPanel({ channelId, isOpen, onClose, className = '' }: A
                   {context.context.clientHistory.firstContact && (
                     <div className="flex justify-between">
                       <span className="text-slate-500">Первый контакт</span>
-                      <span>{new Date(context.context.clientHistory.firstContact).toLocaleDateString()}</span>
+                      <span>{formatDateDMY(context.context.clientHistory.firstContact)}</span>
                     </div>
                   )}
                 </div>

@@ -18,6 +18,7 @@ import { RootCauseSection } from './RootCauseSection'
 import { CategoryFlowSection } from './CategoryFlowSection'
 import { TaxonomyBackfillPanel } from './TaxonomyBackfillPanel'
 import { PlatformBadge } from './PlatformBadge'
+import { formatDateDMY } from '@/shared/lib'
 
 const PERIOD_OPTIONS: { value: HealthPeriod; label: string }[] = [
   { value: '7d', label: 'Последние 7 дней' },
@@ -587,7 +588,7 @@ export function HealthPage() {
       )}
 
       <div className="text-xs text-slate-400 mt-4 text-center">
-        Данные за период с {new Date(data.period.from).toLocaleDateString('ru-RU')} по {new Date(data.period.to).toLocaleDateString('ru-RU')}
+        Данные за период с {formatDateDMY(data.period.from)} по {formatDateDMY(data.period.to)}
       </div>
 
       {drill && (

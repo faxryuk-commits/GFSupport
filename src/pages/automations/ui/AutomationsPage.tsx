@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Zap, Play, Pause, Trash2, Clock, MessageSquare, Users, AlertTriangle, ChevronRight, ToggleLeft, ToggleRight, Loader2, RefreshCw } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { fetchAutomations, createAutomation, deleteAutomation, toggleAutomation, type Automation } from '@/shared/api'
+import { formatDateDMY } from '@/shared/lib'
 
 const triggerIcons: Record<string, typeof MessageSquare> = {
   'new_message': MessageSquare,
@@ -119,11 +120,7 @@ export function AutomationsPage({ embedded = false }: AutomationsPageProps) {
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '—'
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
+    return formatDateDMY(dateStr)
   }
 
   const formatLastRun = (dateStr: string | null) => {

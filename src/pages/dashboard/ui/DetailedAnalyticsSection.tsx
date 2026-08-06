@@ -7,6 +7,7 @@ import {
 import { Badge } from '@/shared/ui'
 import type { AnalyticsData } from '@/shared/api'
 import { getCategoryLabel } from '../model/types'
+import { formatDateShort } from '@/shared/lib'
 
 interface Props {
   analytics: AnalyticsData
@@ -168,7 +169,7 @@ function ChartsRow({ analytics }: { analytics: AnalyticsData }) {
                       {d.cases === 0 && d.resolved === 0 && <div className="w-full bg-slate-200 rounded-sm" style={{ height: '2px' }} />}
                     </div>
                     <span className="text-[8px] text-slate-400 truncate w-full text-center mt-1 leading-none">
-                      {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '')}
+                      {formatDateShort(d.date).replace('.', '')}
                     </span>
                   </div>
                 )

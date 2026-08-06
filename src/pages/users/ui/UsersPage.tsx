@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Search, Plus, Mail, Calendar, Shield, Edit, Trash2, Eye, Building2, MessageSquare, RefreshCw, AlertCircle, Loader2 } from 'lucide-react'
 import { Modal, ConfirmDialog } from '@/shared/ui'
 import { fetchUsers, createUser, updateUser, deleteUser, type User, type UsersResponse } from '@/shared/api'
+import { formatDateDMY } from '@/shared/lib'
 
 const roleConfig = {
   client: { label: 'Клиент', color: 'bg-slate-100 text-slate-700' },
@@ -164,11 +165,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
+    return formatDateDMY(dateStr)
   }
 
   const formatLastSeen = (dateStr?: string) => {
@@ -476,7 +473,7 @@ export function UsersPage({ embedded = false }: UsersPageProps) {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-700 truncate">{channel?.name || channel?.id || 'Канал'}</p>
                         {channel?.addedAt && (
-                          <p className="text-xs text-slate-400">Добавлен: {new Date(channel.addedAt).toLocaleDateString('ru-RU')}</p>
+                          <p className="text-xs text-slate-400">Добавлен: {formatDateDMY(channel.addedAt)}</p>
                         )}
                       </div>
                       <MessageSquare className="w-4 h-4 text-slate-400 flex-shrink-0" />

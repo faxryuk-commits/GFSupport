@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronRight, Loader2, UserPlus, Users, Check, X } from 'lucide-react'
 import { Modal } from '@/shared/ui'
 import { fetchShadowAgents, restoreShadowAgent, type ShadowSender } from '@/shared/api'
+import { formatDateDMY } from '@/shared/lib'
 
 interface Props {
   onRestored: () => void
@@ -169,7 +170,7 @@ function ShadowAgentCard({
           <div className="mt-1 text-[11px] text-slate-500 break-all">
             sender_id: <span className="font-mono">{shadow.senderId}</span>
             {' · '}
-            был {new Date(shadow.lastSeen).toLocaleDateString('ru-RU')}
+            был {formatDateDMY(shadow.lastSeen)}
           </div>
           {hasMatch && (
             <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-800">

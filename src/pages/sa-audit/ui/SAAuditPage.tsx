@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { saGet } from '@/shared/services/sa-api.service'
 import { ScrollText, Filter, ChevronLeft, ChevronRight } from 'lucide-react'
+import { formatDateTimeShort } from '@/shared/lib'
 
 interface AuditLog {
   id: number
@@ -114,7 +115,7 @@ export function SAAuditPage() {
                   {logs.map(log => (
                     <tr key={log.id} className="hover:bg-slate-50/50">
                       <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {formatDateTimeShort(log.createdAt)}
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${actionColor(log.action)}`}>

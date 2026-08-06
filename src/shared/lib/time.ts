@@ -76,12 +76,58 @@ export function formatTimeHM(dateStr: string | null | undefined): string {
   return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: WORK_TZ })
 }
 
+/** "6 авг" в рабочей tz — компактная дата для таблиц, осей графиков, бейджей. */
+export function formatDateShort(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', timeZone: WORK_TZ })
+}
+
+/** "6 авг, 14:32" в рабочей tz — компактные дата+время. */
+export function formatDateTimeShort(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
+  return d.toLocaleString('ru-RU', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: WORK_TZ,
+  })
+}
+
+/** "6 августа 2026" в рабочей tz. */
+export function formatDateFull(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: WORK_TZ,
+  })
+}
+
 /** Ключ календарного дня в рабочей tz: "2026-08-06". Для группировки событий по датам. */
 export function workDayKey(dateStr: string | null | undefined): string | null {
   const d = parseTs(dateStr)
   if (!d) return null
   // en-CA даёт ISO-подобный порядок yyyy-mm-dd
   return d.toLocaleDateString('en-CA', { timeZone: WORK_TZ })
+}
+
+/** Сегодняшний календарный день в рабочей tz: "2026-08-06". */
+export function todayWorkDayKey(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: WORK_TZ })
+}
+
+/** "пн" — короткий день недели в рабочей tz. */
+export function formatWeekdayShort(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
+  return d.toLocaleDateString('ru-RU', { weekday: 'short', timeZone: WORK_TZ })
+}
+
+/** "пн, 6 авг 2026" — дата с днём недели, для тултипов графиков. */
+export function formatDateWithWeekday(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
+  return d.toLocaleDateString('ru-RU', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: WORK_TZ,
+  })
 }
 
 /** Подпись разделителя дня в ленте: «Сегодня», «Вчера» или «6 августа 2026». */

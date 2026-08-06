@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import { formatDateShort, formatDateTimeShort, formatWeekdayShort, todayWorkDayKey, workDayKey } from '@/shared/lib'
 import { 
   Clock, 
   CheckCircle, 
@@ -201,16 +202,7 @@ export function CommitmentsPage() {
     return `Через ${diffDays} дн.`
   }
   
-  // Format absolute date/time in Tashkent timezone
-  const formatDateTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString('ru-RU', {
-      timeZone: 'Asia/Tashkent',
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+  const formatDateTime = (dateStr: string) => formatDateTimeShort(dateStr)
 
   const isOverdue = (dateStr: string) => new Date(dateStr) < new Date()
 
@@ -543,35 +535,34 @@ function CalendarView({
 }) {
   // Group commitments by date
   const groupedByDate = commitments.reduce((acc, c) => {
-    const date = new Date(c.dueDate).toISOString().split('T')[0]
+    // Ключ дня — календарный день в рабочей tz, а не UTC-срез
+    const date = workDayKey(c.dueDate) || c.dueDate.slice(0, 10)
     if (!acc[date]) acc[date] = []
     acc[date].push(c)
     return acc
   }, {} as Record<string, Commitment[]>)
 
-  // Get dates for next 14 days
+  // Колонки календаря: 3 дня назад + 14 вперёд, дни считаем в рабочей tz
+  const todayKey = todayWorkDayKey()
   const dates: string[] = []
-  const today = new Date()
+  const base = new Date(`${todayKey}T00:00:00Z`)
   for (let i = -3; i < 14; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    dates.push(d.toISOString().split('T')[0])
+    const d = new Date(base)
+    d.setUTCDate(base.getUTCDate() + i)
+    dates.push(d.toISOString().slice(0, 10))
   }
 
   const formatDateHeader = (dateStr: string) => {
-    const date = new Date(dateStr)
-    const today = new Date()
-    const isToday = date.toDateString() === today.toDateString()
-    const tomorrow = new Date(today)
-    tomorrow.setDate(today.getDate() + 1)
-    const isTomorrow = date.toDateString() === tomorrow.toDateString()
-    
-    const dayName = date.toLocaleDateString('ru-RU', { weekday: 'short' })
-    const dayNum = date.getDate()
-    const month = date.toLocaleDateString('ru-RU', { month: 'short' })
-    
-    if (isToday) return { label: 'Сегодня', sub: `${dayNum} ${month}`, isToday: true }
-    if (isTomorrow) return { label: 'Завтра', sub: `${dayNum} ${month}`, isToday: false }
+    const tomorrowKey = new Date(new Date(`${todayKey}T00:00:00Z`).getTime() + 86400000)
+      .toISOString().slice(0, 10)
+    // "6 авг" → день и месяц отдельно, чтобы верстать в две строки
+    const short = formatDateShort(dateStr)          // "6 авг."
+    const [dayNum, ...rest] = short.split(' ')
+    const month = rest.join(' ')
+    const dayName = formatWeekdayShort(dateStr)
+
+    if (dateStr === todayKey) return { label: 'Сегодня', sub: short, isToday: true }
+    if (dateStr === tomorrowKey) return { label: 'Завтра', sub: short, isToday: false }
     return { label: `${dayName}, ${dayNum}`, sub: month, isToday: false }
   }
 
@@ -592,7 +583,7 @@ function CalendarView({
           {dates.map(dateStr => {
             const items = groupedByDate[dateStr] || []
             const { label, sub, isToday } = formatDateHeader(dateStr)
-            const isPast = new Date(dateStr) < new Date(new Date().toDateString())
+            const isPast = dateStr < todayKey
             
             return (
               <div 

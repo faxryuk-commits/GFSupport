@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { formatWorkDateTime } from '../lib/work-time.js'
 
 export const config = {
   runtime: 'edge',
@@ -13,9 +14,7 @@ async function sendCommitmentNotification(
     const { sendNotification } = await import('../lib/notifications.js')
 
     const isOverdue = new Date(commitment.due_date) < new Date()
-    const dueDate = new Date(commitment.due_date).toLocaleString('ru-RU', {
-      timeZone: 'Asia/Tashkent', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-    })
+    const dueDate = formatWorkDateTime(commitment.due_date)
 
     const results = await sendNotification({
       orgId,

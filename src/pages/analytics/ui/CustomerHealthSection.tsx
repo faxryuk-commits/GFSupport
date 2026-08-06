@@ -27,6 +27,7 @@ import {
 } from '@/shared/api'
 import { ChurnDetailsModal } from './ChurnDetailsModal'
 import { OutreachModal } from './OutreachModal'
+import { formatDateTimeWithTz } from '@/shared/lib'
 
 interface Props {
   period: '7d' | '30d' | '90d'
@@ -650,7 +651,7 @@ function CustomerRow({
       </td>
       <td
         className="px-4 py-2 text-right text-xs text-slate-500"
-        title={row.lastMessageAt ? new Date(row.lastMessageAt).toLocaleString('ru-RU') : 'Нет сообщений'}
+        title={row.lastMessageAt ? formatDateTimeWithTz(row.lastMessageAt) : 'Нет сообщений'}
       >
         {formatDays(row.daysSinceLastMessage)}
       </td>

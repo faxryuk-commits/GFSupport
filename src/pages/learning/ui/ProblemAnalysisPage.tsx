@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Badge, Modal, Button } from '@/shared/ui'
+import { formatDateTime } from '@/shared/lib'
 
 interface ProblemType {
   key: string
@@ -455,7 +456,7 @@ export default function ProblemAnalysisPage() {
                   <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-[#e8edf3]">
                     <p className="text-slate-700">{ex.text}</p>
                     <p className="text-xs text-slate-400 mt-1">
-                      {new Date(ex.date).toLocaleString('ru-RU')}
+                      {formatDateTime(ex.date)}
                     </p>
                   </div>
                 ))}

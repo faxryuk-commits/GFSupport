@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Loader2, Copy, Check, Link, Mail } from 'lucide-react'
 import { apiPost, apiGet } from '@/shared/services/api.service'
 import { Modal } from '@/shared/ui'
+import { formatDateDMY } from '@/shared/lib'
 
 interface Invite {
   id: string
@@ -160,7 +161,7 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     <span className="text-slate-700">{inv.email || 'Без email'}</span>
                     <span className="text-slate-400 ml-2">• {inv.role}</span>
                   </div>
-                  <span className="text-xs text-slate-500">до {new Date(inv.expiresAt).toLocaleDateString('ru')}</span>
+                  <span className="text-xs text-slate-500">до {formatDateDMY(inv.expiresAt)}</span>
                 </div>
               ))}
             </div>

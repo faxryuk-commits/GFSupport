@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, AlertCircle, ExternalLink, MessageSquare, TrendingUp } from 'lucide-react'
 import { Modal } from '@/shared/ui'
+import { formatDateDMY } from '@/shared/lib'
 import {
   fetchProblemDrill,
   type ProblemDrillResponse,
@@ -282,7 +283,6 @@ function DistributionCard({
 }
 
 function MessageItem({ m }: { m: ProblemMessage }) {
-  const date = new Date(m.createdAt)
   return (
     <li className="border border-slate-100 rounded-md p-2.5 hover:border-[#e8edf3]">
       <header className="flex items-center justify-between gap-2 mb-1 text-xs text-slate-500 flex-wrap">
@@ -292,7 +292,7 @@ function MessageItem({ m }: { m: ProblemMessage }) {
             {m.channelName || m.channelId}
           </Link>
           <span>·</span>
-          <span>{date.toLocaleDateString('ru-RU')}</span>
+          <span>{formatDateDMY(m.createdAt)}</span>
         </div>
         <div className="flex items-center gap-1">
           {m.sentiment && (

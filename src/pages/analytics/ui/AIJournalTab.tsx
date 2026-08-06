@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
+import { formatDateTimeShort } from '@/shared/lib'
 
 interface FeedItem {
   actor: 'ai_agent' | 'sla_guard'
@@ -27,7 +28,7 @@ interface Resp {
 }
 
 const TIER_COLOR: Record<string, string> = { CRITICAL: 'text-red-600', BREACH: 'text-orange-600', WARNING: 'text-amber-600' }
-const fmt = (ts: string) => { try { return new Date(ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) } catch { return ts } }
+const fmt = (ts: string) => formatDateTimeShort(ts)
 
 function Card({ big, label, tone = 'text-slate-900' }: { big: React.ReactNode; label: string; tone?: string }) {
   return (

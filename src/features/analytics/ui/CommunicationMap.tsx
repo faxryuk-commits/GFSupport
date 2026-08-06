@@ -4,6 +4,7 @@ import {
   ArrowUpRight, ArrowDownRight, Hash, Zap, BarChart3, Mail, Send
 } from 'lucide-react'
 import { apiGet } from '@/shared/services/api.service'
+import { formatDateShort } from '@/shared/lib'
 
 interface Overview {
   totalMessages: number
@@ -362,7 +363,7 @@ export function CommunicationMap({ source = 'all' }: { source?: string }) {
             {dailyTrend.map(d => {
               const pctIn = (d.incoming / maxDaily) * 100
               const pctOut = (d.outgoing / maxDaily) * 100
-              const dayLabel = new Date(d.day).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+              const dayLabel = formatDateShort(d.day)
               return (
                 <div key={d.day} className="flex-1 flex flex-col items-center gap-0.5 group" title={`${dayLabel}: ${d.incoming} вх / ${d.outgoing} исх`}>
                   <div className="w-full flex flex-col justify-end h-20">

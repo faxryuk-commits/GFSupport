@@ -4,6 +4,7 @@ import {
   ChevronRight, Loader2, Calendar, ArrowRight, Users, TrendingUp
 } from 'lucide-react'
 import { Modal, Avatar, Badge } from '@/shared/ui'
+import { formatDateTimeShort } from '@/shared/lib'
 
 interface ResponseTimeDetail {
   id: string
@@ -55,15 +56,7 @@ interface ResponseTimeDetailsModalProps {
 }
 
 function formatDateTime(isoString: string): string {
-  const date = new Date(isoString)
-  return date.toLocaleString('ru-RU', {
-    // Единая рабочая зона: команды заходят из разных регионов, локаль браузера сдвинула бы время
-    timeZone: 'Asia/Tashkent',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  return formatDateTimeShort(isoString)
 }
 
 function formatDuration(minutes: number): string {

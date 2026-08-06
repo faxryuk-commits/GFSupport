@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { workDayKey } from '../lib/work-time.js'
 
 export const config = {
   runtime: 'edge',
@@ -87,7 +88,7 @@ function isOverdue(commitmentDate: Date, timeframe: string | null): boolean {
   
   // "today/сегодня/bugun" - overdue if not same day
   if (/today|сегодня|бугун|bugun/i.test(lowerTimeframe)) {
-    return commitDate.toDateString() !== now.toDateString() && now > commitDate
+    return workDayKey(commitDate) !== workDayKey(now) && now > commitDate
   }
   
   // "tomorrow/завтра/ertaga" - overdue if more than 1 day passed

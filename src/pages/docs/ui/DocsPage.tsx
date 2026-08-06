@@ -3,6 +3,7 @@ import { FileText, Search, Plus, FolderOpen, Star, Clock, Loader2, Trash2 } from
 import { DocsSearch } from '@/features/docs'
 import { fetchDocs, createDoc, deleteDoc, type Doc } from '@/shared/api/docs'
 import { DOC_CATEGORY_CONFIG, getDocHelpfulnessRatio, type DocCategory } from '@/entities/doc'
+import { formatDateDMY } from '@/shared/lib'
 
 type View = 'search' | 'browse' | 'recent'
 
@@ -222,7 +223,7 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
                           
                           <div className="flex items-center justify-between text-xs text-slate-400">
                             <span>{doc.viewCount} просмотров</span>
-                            <span>{new Date(doc.updatedAt).toLocaleDateString()}</span>
+                            <span>{formatDateDMY(doc.updatedAt)}</span>
                           </div>
                         </div>
                       )

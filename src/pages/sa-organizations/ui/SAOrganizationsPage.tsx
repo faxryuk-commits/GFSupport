@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { saGet, saPost, saPut, saDelete } from '@/shared/services/sa-api.service'
+import { formatDateDMY } from '@/shared/lib'
 import {
   Building2, Plus, Users, Globe, MessageSquare, Bot, Brain,
   Check, X, Trash2, ChevronDown, ChevronUp, Pencil, Save,
@@ -336,7 +337,7 @@ function ViewPanel({ org, onEdit, onToggleActive, onDelete }: { org: OrgData; on
         <IntegrationBadge label="Telegram" active={org.hasTelegram} detail={org.telegramBotUsername ? `@${org.telegramBotUsername}` : undefined} />
         <IntegrationBadge label="WhatsApp" active={org.hasWhatsApp} />
         <IntegrationBadge label="OpenAI" active={org.hasOpenAI} />
-        <MiniStat label="Создана" value={org.createdAt ? new Date(org.createdAt).toLocaleDateString('ru') : '—'} />
+        <MiniStat label="Создана" value={org.createdAt ? formatDateDMY(org.createdAt) : '—'} />
       </div>
       <div className="flex gap-2 flex-wrap">
         <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-indigo-600 hover:bg-indigo-50">

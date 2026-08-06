@@ -9,6 +9,7 @@ import { fetchBroadcasts, createBroadcast, cancelBroadcast, stopAllBroadcasts, t
 import type { Channel } from '@/entities/channel'
 import type { Agent } from '@/entities/agent'
 import { BroadcastDetailsModal } from './BroadcastDetailsModal'
+import { formatDateTime } from '@/shared/lib'
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: 'В очереди', color: 'bg-blue-100 text-blue-700', icon: Clock },
@@ -232,9 +233,7 @@ export function BroadcastPage() {
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '—'
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
-      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-    })
+    return formatDateTime(dateStr)
   }
 
   if (isLoading) {
