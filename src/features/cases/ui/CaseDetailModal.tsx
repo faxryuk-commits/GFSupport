@@ -2,23 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
-import { formatDuration } from '@/shared/lib'
+import { formatDuration, formatDateDMY, formatDateTimeDMY, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
 import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, fetchRelatedCases, type CaseComment, type CaseActivity, type CustomerContext, type RelatedCase } from '@/shared/api'
 import type { Message } from '@/shared/types'
-
-function formatDate(dateStr: string | undefined | null): string {
-  if (!dateStr) return 'Не указано'
-  try {
-    const date = new Date(dateStr)
-    if (isNaN(date.getTime())) return dateStr
-    return date.toLocaleDateString('ru-RU', {
-      day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
-    })
-  } catch {
-    return dateStr
-  }
-}
 
 function formatRelativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -87,28 +74,59 @@ function CaseHistoryTimeline({
   return (
     <div className="space-y-3">
       {!hasCreatedEvent && (
-        <TimelineItem
-          icon="clock"
-          text="Кейс создан"
-          time={createdAt}
-        />
+        <>
+          <DayDivider date={createdAt} />
+          <TimelineItem
+            icon="clock"
+            text="Кейс создан"
+            time={createdAt}
+          />
+        </>
       )}
       {sorted.length === 0 ? (
         <div className="text-sm text-slate-400 py-4">Ещё нет записей в истории.</div>
       ) : (
-        sorted.map(a => {
+        sorted.map((a, i) => {
           const d = describeActivity(a)
+          const prev = i > 0 ? sorted[i - 1] : null
+          // Первое событие: выше уже есть разделитель строки «Кейс создан» — дублируем
+          // только если день отличается. Иначе разделитель открывает ленту.
+          const showDay = prev
+            ? workDayKey(prev.createdAt) !== workDayKey(a.createdAt)
+            : hasCreatedEvent || workDayKey(createdAt) !== workDayKey(a.createdAt)
           return (
-            <TimelineItem
-              key={a.id}
-              icon={d.icon}
-              text={d.text}
-              description={a.description && a.description !== d.text ? a.description : undefined}
-              time={a.createdAt}
-            />
+            <div key={a.id} className="space-y-3">
+              {showDay && <DayDivider date={a.createdAt} />}
+              <TimelineItem
+                icon={d.icon}
+                text={d.text}
+                description={a.description && a.description !== d.text ? a.description : undefined}
+                time={a.createdAt}
+              />
+            </div>
           )
         })
       )}
+    </div>
+  )
+}
+
+/**
+ * Разделитель календарного дня в ленте (переписка, история).
+ * Линия с датой по центру — чтобы было видно, где кончается один день и начинается другой.
+ */
+function DayDivider({ date }: { date: string }) {
+  const label = formatDayLabel(date)
+  const numeric = formatDateDMY(date)
+  const text = label === 'Сегодня' || label === 'Вчера' ? `${label} · ${numeric}` : numeric
+
+  return (
+    <div className="flex items-center gap-3 py-1.5 select-none">
+      <div className="flex-1 h-px bg-slate-200" />
+      <span className="px-2.5 py-0.5 text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full whitespace-nowrap tabular-nums">
+        {text}
+      </span>
+      <div className="flex-1 h-px bg-slate-200" />
     </div>
   )
 }
@@ -131,7 +149,7 @@ function TimelineItem({
       <div className="flex-1 min-w-0">
         <p className="text-sm text-slate-800">{text}</p>
         {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
-        <p className="text-xs text-slate-400 mt-0.5">{formatDate(time)} · {formatRelativeTime(time)}</p>
+        <p className="text-xs text-slate-400 mt-0.5">{formatDateTimeDMY(time)} · {formatRelativeTime(time)}</p>
       </div>
     </div>
   )
@@ -161,6 +179,10 @@ export interface CaseDetail {
   // Показатели жизненного цикла (минуты, с бэкенда — tz-безопасны)
   firstResponseMinutes?: number | null
   resolutionTimeMinutes?: number | null
+  // Абсолютные метки тех же событий — для подписи «когда именно»
+  firstMessageAt?: string | null
+  firstResponseAt?: string | null
+  resolvedAt?: string | null
   assignee?: Agent
   comments: CaseComment[]
   tags: string[]
@@ -631,9 +653,10 @@ export function CaseDetailModal({
 
           {/* Три показателя жизненного цикла: создан · первый ответ · решение */}
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title="Когда создан тикет">
+            <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title={`Когда создан тикет · ${formatDateTimeDMY(caseData.createdAt)}`}>
               <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock className="w-3.5 h-3.5" />Создан</span>
               <span className="text-sm font-semibold text-slate-700">{formatRelativeTime(caseData.createdAt)}</span>
+              <span className="text-[11px] text-slate-400 tabular-nums">{formatDateTimeDMY(caseData.createdAt)}</span>
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${frtDetailPending ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}
@@ -641,6 +664,9 @@ export function CaseDetailModal({
             >
               <span className={`flex items-center gap-1.5 text-xs ${frtDetailPending ? 'text-amber-500' : 'text-slate-400'}`}><Zap className="w-3.5 h-3.5" />Первый ответ</span>
               <span className={`text-sm font-semibold ${frtDetailPending ? 'text-amber-700' : 'text-slate-700'}`}>{frtDetailLabel}</span>
+              <span className={`text-[11px] tabular-nums ${frtDetailPending ? 'text-amber-500/80' : 'text-slate-400'}`}>
+                {caseData.firstResponseAt ? formatDateTimeDMY(caseData.firstResponseAt) : '—'}
+              </span>
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}
@@ -648,6 +674,9 @@ export function CaseDetailModal({
             >
               <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решение</span>
               <span className={`text-sm font-semibold ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolvedDetail ? formatDuration(caseData.resolutionTimeMinutes) : 'в работе'}</span>
+              <span className={`text-[11px] tabular-nums ${isResolvedDetail ? 'text-emerald-600/80' : 'text-slate-400'}`}>
+                {caseData.resolvedAt ? formatDateTimeDMY(caseData.resolvedAt) : '—'}
+              </span>
             </div>
           </div>
 
@@ -704,11 +733,14 @@ export function CaseDetailModal({
                       В этом канале пока нет сообщений.
                     </div>
                   ) : (
-                    chatMessages.map((m) => {
+                    chatMessages.map((m, i) => {
                       const isTeam = m.isFromTeam || m.senderRole === 'support' || m.senderRole === 'team'
+                      const prev = i > 0 ? chatMessages[i - 1] : null
+                      const showDay = !prev || workDayKey(prev.createdAt) !== workDayKey(m.createdAt)
                       return (
+                        <div key={m.id}>
+                        {showDay && <DayDivider date={m.createdAt} />}
                         <div
-                          key={m.id}
                           className={`flex ${isTeam ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
@@ -729,10 +761,14 @@ export function CaseDetailModal({
                                 📎 {m.mediaType || 'media'}
                               </p>
                             )}
-                            <p className={`text-[10px] mt-0.5 text-right ${isTeam ? 'text-blue-100' : 'text-slate-400'}`}>
-                              {formatRelativeTime(m.createdAt)}
+                            <p
+                              className={`text-[10px] mt-0.5 text-right tabular-nums ${isTeam ? 'text-blue-100' : 'text-slate-400'}`}
+                              title={formatDateTimeDMY(m.createdAt)}
+                            >
+                              {formatTimeHM(m.createdAt)}
                             </p>
                           </div>
+                        </div>
                         </div>
                       )
                     })
@@ -841,12 +877,12 @@ export function CaseDetailModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-500">Создан</label>
-                  <p className="mt-1 text-slate-800">{formatDate(caseData.createdAt)}</p>
+                  <p className="mt-1 text-slate-800">{formatDateTimeDMY(caseData.createdAt)}</p>
                 </div>
                 {caseData.updatedAt && caseData.updatedAt !== caseData.createdAt && (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Обновлён</label>
-                    <p className="mt-1 text-slate-800">{formatDate(caseData.updatedAt)}</p>
+                    <p className="mt-1 text-slate-800">{formatDateTimeDMY(caseData.updatedAt)}</p>
                   </div>
                 )}
                 <div>
