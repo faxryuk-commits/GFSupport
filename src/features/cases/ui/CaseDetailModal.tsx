@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2 } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
-import { formatDuration, formatDateDMY, formatDateTimeDMY, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
+import { formatDuration, formatDateDMY, formatDateTime, formatDateTimeWithTz, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
 import { fetchCaseComments, fetchCaseActivities, fetchMessages, sendMessage, snoozeCase, fetchCustomerContext, fetchRelatedCases, type CaseComment, type CaseActivity, type CustomerContext, type RelatedCase } from '@/shared/api'
 import type { Message } from '@/shared/types'
@@ -149,7 +149,7 @@ function TimelineItem({
       <div className="flex-1 min-w-0">
         <p className="text-sm text-slate-800">{text}</p>
         {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
-        <p className="text-xs text-slate-400 mt-0.5">{formatDateTimeDMY(time)} · {formatRelativeTime(time)}</p>
+        <p className="text-xs text-slate-400 mt-0.5">{formatDateTime(time)} · {formatRelativeTime(time)}</p>
       </div>
     </div>
   )
@@ -653,29 +653,31 @@ export function CaseDetailModal({
 
           {/* Три показателя жизненного цикла: создан · первый ответ · решение */}
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title={`Когда создан тикет · ${formatDateTimeDMY(caseData.createdAt)}`}>
+            <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title={`Когда создан тикет · ${formatDateTimeWithTz(caseData.createdAt)}`}>
               <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock className="w-3.5 h-3.5" />Создан</span>
               <span className="text-sm font-semibold text-slate-700">{formatRelativeTime(caseData.createdAt)}</span>
-              <span className="text-[11px] text-slate-400 tabular-nums">{formatDateTimeDMY(caseData.createdAt)}</span>
+              <span className="text-[11px] text-slate-400 tabular-nums">{formatDateTime(caseData.createdAt)}</span>
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${frtDetailPending ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}
-              title="Время первого реагирования — от первого сообщения клиента до ответа команды"
+              title={caseData.firstResponseAt
+                ? `Первый ответ команды · ${formatDateTimeWithTz(caseData.firstResponseAt)}`
+                : 'Время первого реагирования — от первого сообщения клиента до ответа команды'}
             >
               <span className={`flex items-center gap-1.5 text-xs ${frtDetailPending ? 'text-amber-500' : 'text-slate-400'}`}><Zap className="w-3.5 h-3.5" />Первый ответ</span>
               <span className={`text-sm font-semibold ${frtDetailPending ? 'text-amber-700' : 'text-slate-700'}`}>{frtDetailLabel}</span>
               <span className={`text-[11px] tabular-nums ${frtDetailPending ? 'text-amber-500/80' : 'text-slate-400'}`}>
-                {caseData.firstResponseAt ? formatDateTimeDMY(caseData.firstResponseAt) : '—'}
+                {caseData.firstResponseAt ? formatDateTime(caseData.firstResponseAt) : '—'}
               </span>
             </div>
             <div
               className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}
-              title={caseData.resolvedAt ? `Решён ${formatDateTimeDMY(caseData.resolvedAt)}` : 'Время решения — от первого сообщения клиента до резолюции'}
+              title={caseData.resolvedAt ? `Решён ${formatDateTimeWithTz(caseData.resolvedAt)}` : 'Время решения — от первого сообщения клиента до резолюции'}
             >
               <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решён</span>
               <span className={`text-sm font-semibold ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolvedDetail ? formatDuration(caseData.resolutionTimeMinutes) : 'в работе'}</span>
               <span className={`text-[11px] tabular-nums ${isResolvedDetail ? 'text-emerald-600/80' : 'text-slate-400'}`}>
-                {caseData.resolvedAt ? formatDateTimeDMY(caseData.resolvedAt) : '—'}
+                {caseData.resolvedAt ? formatDateTime(caseData.resolvedAt) : '—'}
               </span>
             </div>
           </div>
@@ -763,7 +765,7 @@ export function CaseDetailModal({
                             )}
                             <p
                               className={`text-[10px] mt-0.5 text-right tabular-nums ${isTeam ? 'text-blue-100' : 'text-slate-400'}`}
-                              title={formatDateTimeDMY(m.createdAt)}
+                              title={formatDateTimeWithTz(m.createdAt)}
                             >
                               {formatTimeHM(m.createdAt)}
                             </p>
@@ -877,18 +879,18 @@ export function CaseDetailModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-slate-500">Создан</label>
-                  <p className="mt-1 text-slate-800 tabular-nums">{formatDateTimeDMY(caseData.createdAt)}</p>
+                  <p className="mt-1 text-slate-800 tabular-nums">{formatDateTime(caseData.createdAt)}</p>
                 </div>
                 {caseData.resolvedAt && (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Решён</label>
-                    <p className="mt-1 text-slate-800 tabular-nums">{formatDateTimeDMY(caseData.resolvedAt)}</p>
+                    <p className="mt-1 text-slate-800 tabular-nums">{formatDateTime(caseData.resolvedAt)}</p>
                   </div>
                 )}
                 {caseData.updatedAt && caseData.updatedAt !== caseData.createdAt && (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Обновлён</label>
-                    <p className="mt-1 text-slate-800">{formatDateTimeDMY(caseData.updatedAt)}</p>
+                    <p className="mt-1 text-slate-800">{formatDateTime(caseData.updatedAt)}</p>
                   </div>
                 )}
                 <div>

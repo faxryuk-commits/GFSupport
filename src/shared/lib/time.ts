@@ -22,67 +22,72 @@ export function formatDuration(minutes: number | null | undefined): string {
   return remH > 0 ? `${days} д ${remH} ч` : `${days} д`
 }
 
-/** "yyyy-mm-dd hh:mm:ss". null/undefined → "—". */
-export function formatDateTime(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const normalized = /Z|[+-]\d{2}:?\d{2}$/.test(dateStr)
-    ? dateStr
-    : dateStr.replace(' ', 'T')
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) return dateStr
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
+/**
+ * Абсолютные даты показываем в ОДНОЙ рабочей таймзоне, а не в локали браузера:
+ * команды заходят из разных регионов, и локальное форматирование означало бы,
+ * что двое обсуждают один тикет, называя разные числа, а суточные границы в UI
+ * расходятся с бэкендом (архив, крон 00:15, аналитика — всё считается по Ташкенту).
+ */
+export const WORK_TZ = 'Asia/Tashkent'
+/** Подпись зоны для тултипов — чтобы дата не читалась как «моё местное время». */
+export const WORK_TZ_LABEL = 'Ташкент, UTC+5'
 
 /**
- * Абсолютные даты показываем в рабочей таймзоне (Ташкент), а не в локали браузера —
- * иначе один и тот же тикет у разных сотрудников «создан» в разные дни.
+ * Наивный таймстамп из БД ("2026-08-06 09:32:00", без tz) по конвенции хранится в UTC.
+ * Без явного маркера зоны JS распарсил бы его как локальное время браузера — поэтому
+ * дописываем Z. Строки с Z или ±hh:mm отдаём как есть.
  */
-const WORK_TZ = 'Asia/Tashkent'
-
-/** "06/08/2026". Невалидная/пустая дата → "—". */
-export function formatDateDMY(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('ru-RU', {
-    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: WORK_TZ,
-  })
+function parseTs(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(dateStr)
+  const d = new Date(hasZone ? dateStr : `${dateStr.replace(' ', 'T')}Z`)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** "06/08/2026, 14:32". Невалидная/пустая дата → "—". */
-export function formatDateTimeDMY(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return '—'
+/** "06.08.2026, 14:32" в рабочей tz. null/undefined/мусор → "—". */
+export function formatDateTime(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
   return d.toLocaleString('ru-RU', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit', timeZone: WORK_TZ,
   })
 }
 
-/** "14:32" в рабочей tz. Невалидная/пустая дата → "—". */
+/** "06.08.2026, 14:32 (Ташкент, UTC+5)" — для тултипов, где зона должна быть явной. */
+export function formatDateTimeWithTz(dateStr: string | null | undefined): string {
+  const formatted = formatDateTime(dateStr)
+  return formatted === '—' ? formatted : `${formatted} (${WORK_TZ_LABEL})`
+}
+
+/** "06.08.2026" в рабочей tz. */
+export function formatDateDMY(dateStr: string | null | undefined): string {
+  const d = parseTs(dateStr)
+  if (!d) return '—'
+  return d.toLocaleDateString('ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: WORK_TZ,
+  })
+}
+
+/** "14:32" в рабочей tz. */
 export function formatTimeHM(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseTs(dateStr)
+  if (!d) return '—'
   return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: WORK_TZ })
 }
 
 /** Ключ календарного дня в рабочей tz: "2026-08-06". Для группировки событий по датам. */
 export function workDayKey(dateStr: string | null | undefined): string | null {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return null
+  const d = parseTs(dateStr)
+  if (!d) return null
   // en-CA даёт ISO-подобный порядок yyyy-mm-dd
   return d.toLocaleDateString('en-CA', { timeZone: WORK_TZ })
 }
 
 /** Подпись разделителя дня в ленте: «Сегодня», «Вчера» или «6 августа 2026». */
 export function formatDayLabel(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return '—'
+  const d = parseTs(dateStr)
+  if (!d) return '—'
   const key = workDayKey(dateStr)
   const today = workDayKey(new Date().toISOString())
   const yesterday = workDayKey(new Date(Date.now() - 86400000).toISOString())

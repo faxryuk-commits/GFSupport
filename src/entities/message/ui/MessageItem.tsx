@@ -5,6 +5,7 @@ import {
   FileCode, FileArchive, Image as ImageIcon, Volume2,
   File
 } from 'lucide-react'
+import { formatTimeHM } from '@/shared/lib'
 import type { Message } from '../model'
 
 interface MessageItemProps {
@@ -759,6 +760,5 @@ function MediaRenderer({
 }
 
 function formatTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return formatTimeHM(dateStr)
 }

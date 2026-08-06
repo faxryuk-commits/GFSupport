@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchMessages, sendMessage, sendMediaMessage } from '../api/messages'
 import { useCache, type CachedMessage } from '../store'
+import { formatTimeHM } from '../lib'
 import type { Message } from '../types'
 
 const STALE_TIME = 30 * 1000 // 30 seconds
@@ -45,7 +46,7 @@ export function useMessages(channelId: string | null) {
       senderName: m.senderName,
       senderAvatar: m.senderPhotoUrl || undefined,
       text: m.text,
-      time: new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      time: formatTimeHM(m.createdAt),
       timestamp: new Date(m.createdAt).getTime(),
       isClient: m.senderRole === 'client',
       status: m.isRead ? 'read' : 'delivered',

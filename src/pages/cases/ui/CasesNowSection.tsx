@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, AlertTriangle, Clock, CheckCircle, Timer, User } from 'lucide-react'
 import type { Case } from '@/entities/case'
 import { getUiColumn } from '@/entities/case'
+import { formatTimeHM } from '@/shared/lib'
 
 interface CasesNowSectionProps {
   cases: Case[]
@@ -206,7 +207,6 @@ function AgeBadge({ case_: c, bucketId }: { case_: Case; bucketId: Bucket['id'] 
   }
   // done
   const base = c.resolvedAt || c.lastStatusChangeAt || c.updatedAt || c.createdAt
-  const d = new Date(base)
-  const label = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  const label = formatTimeHM(base)
   return <span className="text-[10px] text-green-700 font-medium">{label}</span>
 }

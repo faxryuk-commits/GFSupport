@@ -57,6 +57,8 @@ interface ResponseTimeDetailsModalProps {
 function formatDateTime(isoString: string): string {
   const date = new Date(isoString)
   return date.toLocaleString('ru-RU', {
+    // Единая рабочая зона: команды заходят из разных регионов, локаль браузера сдвинула бы время
+    timeZone: 'Asia/Tashkent',
     day: 'numeric',
     month: 'short',
     hour: '2-digit',

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, MoreVertical, Info } from 'lucide-react'
 import { MessageItem, type Message } from '@/entities/message'
 import { MessageComposer } from '@/features/messages'
+import { formatDayLabel, workDayKey } from '@/shared/lib'
 import type { Channel } from '@/entities/channel'
 
 interface ChatPanelProps {
@@ -155,7 +156,7 @@ function groupMessagesByDate(messages: Message[]): MessageGroup[] {
   const groups: Map<string, Message[]> = new Map()
   
   messages.forEach(msg => {
-    const date = new Date(msg.createdAt).toDateString()
+    const date = workDayKey(msg.createdAt) || msg.createdAt
     if (!groups.has(date)) {
       groups.set(date, [])
     }
@@ -169,21 +170,5 @@ function groupMessagesByDate(messages: Message[]): MessageGroup[] {
 }
 
 function formatDateHeader(dateStr: string): string {
-  const date = new Date(dateStr)
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  if (date.toDateString() === today.toDateString()) {
-    return 'Сегодня'
-  }
-  if (date.toDateString() === yesterday.toDateString()) {
-    return 'Вчера'
-  }
-  
-  return date.toLocaleDateString('ru-RU', { 
-    day: 'numeric', 
-    month: 'long',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
-  })
+  return formatDayLabel(dateStr)
 }

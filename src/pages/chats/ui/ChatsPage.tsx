@@ -10,7 +10,7 @@ import { CommitmentsPanel } from '@/features/commitments/ui'
 import { QuickCaseModal } from '@/features/cases/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import { useAuth } from '@/shared/hooks/useAuth'
-import { playMessageSoundIfEnabled } from '@/shared/lib'
+import { playMessageSoundIfEnabled, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
 import type { Agent } from '@/entities/agent'
@@ -22,29 +22,14 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-// Форматирование даты для разделителя (Сегодня, Вчера, дата)
+// Форматирование даты для разделителя (Сегодня, Вчера, дата) — рабочая tz
 function formatDateDivider(dateStr: string): string {
-  const date = new Date(dateStr)
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-  
-  const isToday = date.toDateString() === today.toDateString()
-  const isYesterday = date.toDateString() === yesterday.toDateString()
-  
-  if (isToday) return 'Сегодня'
-  if (isYesterday) return 'Вчера'
-  
-  return date.toLocaleDateString('ru-RU', { 
-    day: 'numeric', 
-    month: 'long',
-    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
-  })
+  return formatDayLabel(dateStr)
 }
 
-// Получить дату без времени для группировки
+// Ключ дня для группировки — календарный день в рабочей tz, а не в локали браузера
 function getDateKey(dateStr: string): string {
-  return new Date(dateStr).toDateString()
+  return workDayKey(dateStr) || dateStr
 }
 
 // Компонент разделителя по дате
@@ -102,9 +87,7 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
 
 // Преобразование сообщения из API в формат UI компонента  
 function mapMessageToUI(message: Message): MessageData {
-  const formatTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  }
+  const formatTime = (dateStr: string) => formatTimeHM(dateStr)
 
   const getMediaType = (mediaType?: string): 'image' | 'video' | 'video_note' | 'audio' | 'voice' | 'document' | 'sticker' => {
     switch (mediaType) {
