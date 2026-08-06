@@ -131,6 +131,66 @@ function DayDivider({ date }: { date: string }) {
   )
 }
 
+// ===== Маркеры жизненного цикла в ленте чата =====
+
+type LifecycleKey = 'created' | 'first_response' | 'resolved'
+
+const LIFECYCLE_MARKER_CONFIG: Record<LifecycleKey, {
+  label: string
+  icon: typeof Clock
+  line: string
+  pill: string
+  ring: string
+}> = {
+  created: {
+    label: 'Тикет создан',
+    icon: Clock,
+    line: 'bg-blue-200',
+    pill: 'bg-blue-50 border-blue-200 text-blue-700',
+    ring: 'ring-blue-300',
+  },
+  first_response: {
+    label: 'Первый ответ команды',
+    icon: Zap,
+    line: 'bg-amber-200',
+    pill: 'bg-amber-50 border-amber-300 text-amber-700',
+    ring: 'ring-amber-300',
+  },
+  resolved: {
+    label: 'Тикет решён',
+    icon: CheckCircle2,
+    line: 'bg-emerald-200',
+    pill: 'bg-emerald-50 border-emerald-300 text-emerald-700',
+    ring: 'ring-emerald-300',
+  },
+}
+
+/**
+ * Якорь события жизненного цикла внутри переписки: линия с цветной пилюлей
+ * в месте, где тикет был создан / получил первый ответ / был решён.
+ * Карточки над чатом прокручивают ленту к этим якорям.
+ */
+function LifecycleMarker({
+  eventKey, time, highlighted, markerRef,
+}: { eventKey: LifecycleKey; time: string; highlighted: boolean; markerRef: (el: HTMLDivElement | null) => void }) {
+  const cfg = LIFECYCLE_MARKER_CONFIG[eventKey]
+  const Icon = cfg.icon
+  return (
+    <div ref={markerRef} className="flex items-center gap-2 py-1.5 select-none">
+      <div className={`flex-1 h-px ${cfg.line}`} />
+      <span
+        className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border rounded-full whitespace-nowrap tabular-nums transition-shadow ${cfg.pill} ${
+          highlighted ? `ring-2 ${cfg.ring} animate-pulse` : ''
+        }`}
+      >
+        <Icon className="w-3 h-3" />
+        {cfg.label} · {formatDateTimeShort(time)}
+      </span>
+      <div className={`flex-1 h-px ${cfg.line}`} />
+    </div>
+  )
+}
+
 function TimelineItem({
   icon, text, description, time,
 }: { icon: 'history' | 'clock' | 'chat' | 'system'; text: string; description?: string; time: string }) {
@@ -375,6 +435,10 @@ export function CaseDetailModal({
   const [sending, setSending] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
 
+  // Прыжок из карточек «Создан / Первый ответ / Решение» к якорю события в чате
+  const markerRefs = useRef<Partial<Record<LifecycleKey, HTMLDivElement | null>>>({})
+  const [jumpTarget, setJumpTarget] = useState<{ key: LifecycleKey; n: number } | null>(null)
+
   // Snooze UI
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false)
   const [snoozePending, setSnoozePending] = useState(false)
@@ -508,6 +572,30 @@ export function CaseDetailModal({
     }
   }, [detailTab, isVisible, caseData?.channelId, loadChat])
 
+  // Прокрутка к якорю события после клика по карточке (ждём вкладку чата и загрузку)
+  useEffect(() => {
+    if (!jumpTarget || detailTab !== 'chat' || loadingChat) return
+    const el = markerRefs.current[jumpTarget.key]
+    const container = chatScrollRef.current
+    if (!el || !container) return
+    // rAF: даём ленте отрендериться (после смены вкладки/загрузки)
+    const raf = requestAnimationFrame(() => {
+      const delta = el.getBoundingClientRect().top - container.getBoundingClientRect().top
+      container.scrollTo({
+        top: container.scrollTop + delta - container.clientHeight / 2 + el.clientHeight / 2,
+        behavior: 'smooth',
+      })
+    })
+    // Подсветка гаснет сама
+    const timer = setTimeout(() => setJumpTarget(null), 2500)
+    return () => { cancelAnimationFrame(raf); clearTimeout(timer) }
+  }, [jumpTarget, detailTab, loadingChat])
+
+  const jumpToEvent = (key: LifecycleKey) => {
+    setDetailTab('chat')
+    setJumpTarget({ key, n: Date.now() })
+  }
+
   const handleSendReply = async () => {
     if (!replyText.trim() || !caseData?.channelId) return
     const text = replyText.trim()
@@ -560,6 +648,28 @@ export function CaseDetailModal({
   const frtDetailLabel = caseData.firstResponseMinutes != null
     ? formatDuration(caseData.firstResponseMinutes)
     : (isResolvedDetail ? '—' : 'ждёт ответа')
+
+  // События жизненного цикла с таймстампами — якоря для ленты чата.
+  // Времена из одного API-формата, поэтому сравнение через new Date консистентно.
+  const lifecycleEvents: { key: LifecycleKey; time: string }[] = [
+    { key: 'created' as const, time: caseData.createdAt },
+    ...(caseData.firstResponseAt ? [{ key: 'first_response' as const, time: caseData.firstResponseAt }] : []),
+    ...(caseData.resolvedAt ? [{ key: 'resolved' as const, time: caseData.resolvedAt }] : []),
+  ].filter(e => Boolean(e.time))
+
+  // Позиция якоря: индекс первого сообщения НЕ раньше события; после всех — в конец
+  const markerPositions = new Map<number, { key: LifecycleKey; time: string }[]>()
+  if (chatMessages.length > 0) {
+    for (const ev of lifecycleEvents) {
+      const t = new Date(ev.time).getTime()
+      let idx = chatMessages.findIndex(m => new Date(m.createdAt).getTime() >= t)
+      if (idx === -1) idx = chatMessages.length
+      const list = markerPositions.get(idx) || []
+      list.push(ev)
+      markerPositions.set(idx, list)
+    }
+  }
+  const canJump = Boolean(caseData.channelId)
 
   const content = (
     <div className={`flex gap-6 ${mode === 'modal' ? '-mx-6 -mb-6' : ''}`}>
@@ -651,17 +761,27 @@ export function CaseDetailModal({
             </div>
           </div>
 
-          {/* Три показателя жизненного цикла: создан · первый ответ · решение */}
+          {/* Три показателя жизненного цикла: создан · первый ответ · решение.
+              Кликабельны — прокручивают чат к якорю события. */}
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <div className="flex flex-col gap-1 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100" title={`Когда создан тикет · ${formatDateTimeWithTz(caseData.createdAt)}`}>
+            <button
+              type="button"
+              onClick={() => canJump && jumpToEvent('created')}
+              disabled={!canJump}
+              className={`flex flex-col gap-1 px-3 py-2 text-left bg-slate-50 rounded-lg border border-slate-100 ${canJump ? 'cursor-pointer hover:border-blue-300 hover:ring-1 hover:ring-blue-200 transition-shadow' : 'cursor-default'}`}
+              title={`Когда создан тикет · ${formatDateTimeWithTz(caseData.createdAt)}${canJump ? '. Клик — показать место в переписке' : ''}`}
+            >
               <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock className="w-3.5 h-3.5" />Создан</span>
               <span className="text-sm font-semibold text-slate-700">{formatRelativeTime(caseData.createdAt)}</span>
               <span className="text-[11px] text-slate-400 tabular-nums">{formatDateTime(caseData.createdAt)}</span>
-            </div>
-            <div
-              className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${frtDetailPending ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => canJump && caseData.firstResponseAt && jumpToEvent('first_response')}
+              disabled={!canJump || !caseData.firstResponseAt}
+              className={`flex flex-col gap-1 px-3 py-2 text-left rounded-lg border ${frtDetailPending ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'} ${canJump && caseData.firstResponseAt ? 'cursor-pointer hover:border-amber-400 hover:ring-1 hover:ring-amber-200 transition-shadow' : 'cursor-default'}`}
               title={caseData.firstResponseAt
-                ? `Первый ответ команды · ${formatDateTimeWithTz(caseData.firstResponseAt)}`
+                ? `Первый ответ команды · ${formatDateTimeWithTz(caseData.firstResponseAt)}${canJump ? '. Клик — показать место в переписке' : ''}`
                 : 'Время первого реагирования — от первого сообщения клиента до ответа команды'}
             >
               <span className={`flex items-center gap-1.5 text-xs ${frtDetailPending ? 'text-amber-500' : 'text-slate-400'}`}><Zap className="w-3.5 h-3.5" />Первый ответ</span>
@@ -669,17 +789,20 @@ export function CaseDetailModal({
               <span className={`text-[11px] tabular-nums ${frtDetailPending ? 'text-amber-500/80' : 'text-slate-400'}`}>
                 {caseData.firstResponseAt ? formatDateTime(caseData.firstResponseAt) : '—'}
               </span>
-            </div>
-            <div
-              className={`flex flex-col gap-1 px-3 py-2 rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}
-              title={caseData.resolvedAt ? `Решён ${formatDateTimeWithTz(caseData.resolvedAt)}` : 'Время решения — от первого сообщения клиента до резолюции'}
+            </button>
+            <button
+              type="button"
+              onClick={() => canJump && caseData.resolvedAt && jumpToEvent('resolved')}
+              disabled={!canJump || !caseData.resolvedAt}
+              className={`flex flex-col gap-1 px-3 py-2 text-left rounded-lg border ${isResolvedDetail ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'} ${canJump && caseData.resolvedAt ? 'cursor-pointer hover:border-emerald-400 hover:ring-1 hover:ring-emerald-200 transition-shadow' : 'cursor-default'}`}
+              title={caseData.resolvedAt ? `Решён ${formatDateTimeWithTz(caseData.resolvedAt)}${canJump ? '. Клик — показать место в переписке' : ''}` : 'Время решения — от первого сообщения клиента до резолюции'}
             >
               <span className={`flex items-center gap-1.5 text-xs ${isResolvedDetail ? 'text-emerald-500' : 'text-slate-400'}`}><CheckCircle2 className="w-3.5 h-3.5" />Решён</span>
               <span className={`text-sm font-semibold ${isResolvedDetail ? 'text-emerald-700' : 'text-slate-500'}`}>{isResolvedDetail ? formatDuration(caseData.resolutionTimeMinutes) : 'в работе'}</span>
               <span className={`text-[11px] tabular-nums ${isResolvedDetail ? 'text-emerald-600/80' : 'text-slate-400'}`}>
                 {caseData.resolvedAt ? formatDateTime(caseData.resolvedAt) : '—'}
               </span>
-            </div>
+            </button>
           </div>
 
           {/* Customer 360 — компактная сводка по клиенту, раскрывается по клику */}
@@ -735,12 +858,23 @@ export function CaseDetailModal({
                       В этом канале пока нет сообщений.
                     </div>
                   ) : (
-                    chatMessages.map((m, i) => {
+                    <>
+                    {chatMessages.map((m, i) => {
                       const isTeam = m.isFromTeam || m.senderRole === 'support' || m.senderRole === 'team'
                       const prev = i > 0 ? chatMessages[i - 1] : null
                       const showDay = !prev || workDayKey(prev.createdAt) !== workDayKey(m.createdAt)
+                      const markersHere = markerPositions.get(i)
                       return (
                         <div key={m.id}>
+                        {markersHere?.map(ev => (
+                          <LifecycleMarker
+                            key={ev.key}
+                            eventKey={ev.key}
+                            time={ev.time}
+                            highlighted={jumpTarget?.key === ev.key}
+                            markerRef={el => { markerRefs.current[ev.key] = el }}
+                          />
+                        ))}
                         {showDay && <DayDivider date={m.createdAt} />}
                         <div
                           className={`flex ${isTeam ? 'justify-end' : 'justify-start'}`}
@@ -773,7 +907,18 @@ export function CaseDetailModal({
                         </div>
                         </div>
                       )
-                    })
+                    })}
+                    {/* События после последнего сообщения (например, решён без финальной реплики) */}
+                    {markerPositions.get(chatMessages.length)?.map(ev => (
+                      <LifecycleMarker
+                        key={ev.key}
+                        eventKey={ev.key}
+                        time={ev.time}
+                        highlighted={jumpTarget?.key === ev.key}
+                        markerRef={el => { markerRefs.current[ev.key] = el }}
+                      />
+                    ))}
+                    </>
                   )}
                 </div>
 
