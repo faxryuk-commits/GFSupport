@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Bell, Inbox, LayoutGrid, ArrowUpDown } from 'lucide-react'
+import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Inbox, LayoutGrid, ArrowUpDown } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
-import { CasesNowSection } from './CasesNowSection'
 import { CasesInboxView } from './CasesInboxView'
 import { takeNextCase } from '@/shared/api'
 import {
@@ -25,7 +24,7 @@ import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 function mapCaseToCardData(c: Case): CaseCardData {
   return {
     id: c.id,
-    number: c.ticketNumber ? `#${c.ticketNumber}` : `CASE-${c.id.slice(0, 6).toUpperCase()}`,
+    number: c.ticketNumber ? `#${c.ticketNumber}` : `#…${c.id.slice(-4)}`,
     title: c.title,
     description: c.description,
     company: c.companyName,
@@ -69,7 +68,7 @@ function formatHours(hours: number | null | undefined): string {
 function mapCaseToCaseDetail(c: Case): CaseDetail {
   return {
     id: c.id,
-    number: c.ticketNumber ? `#${c.ticketNumber}` : `CASE-${c.id.slice(0, 6).toUpperCase()}`,
+    number: c.ticketNumber ? `#${c.ticketNumber}` : `#…${c.id.slice(-4)}`,
     ticketNumber: c.ticketNumber,
     title: c.title,
     description: c.description,
@@ -184,8 +183,11 @@ export function CasesPage() {
   // Take Next
   const [takeNextPending, setTakeNextPending] = useState(false)
 
-  // Базовые фильтры
-  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned' | 'snoozed'>('all')
+  // Базовые фильтры. 'waiting' и 'resolvedToday' — клиентские срезы активной выборки.
+  const [quickFilter, setQuickFilter] = useState<'all' | 'my' | 'urgent' | 'overdue' | 'unassigned' | 'snoozed' | 'waiting' | 'resolvedToday'>('all')
+  // Аналитика (среднее/медиана/P95/FRT) свёрнута по умолчанию: это вопросы
+  // руководителя, оператору в очереди они не нужны на каждом экране.
+  const [metricsOpen, setMetricsOpen] = useState(false)
   const [snoozedCount, setSnoozedCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
@@ -373,10 +375,24 @@ export function CasesPage() {
     [statusStats, resolvedTodayCount]
   )
 
-  // На сервере уже отфильтровано — поэтому это просто разделение по viewMode
+  // На сервере уже отфильтровано; 'waiting' и 'resolvedToday' — клиентские срезы
   const filteredCases = useMemo(() => {
-    return viewMode === 'active' ? activeCases : archivedCases
-  }, [viewMode, activeCases, archivedCases])
+    const base = viewMode === 'active' ? activeCases : archivedCases
+    if (viewMode !== 'active') return base
+    if (quickFilter === 'waiting') {
+      return base.filter(c => c.status !== 'resolved' && c.firstResponseMinutes == null && c.resolutionTimeMinutes == null)
+    }
+    if (quickFilter === 'resolvedToday') return base.filter(c => c.status === 'resolved')
+    return base
+  }, [viewMode, activeCases, archivedCases, quickFilter])
+
+  // Счётчики сигналов строки внимания
+  const signalCounts = useMemo(() => ({
+    unassigned: activeCases.filter(c => !c.assignedTo && c.status !== 'resolved').length,
+    waiting: activeCases.filter(c => c.status !== 'resolved' && c.firstResponseMinutes == null && c.resolutionTimeMinutes == null).length,
+    my: currentUser?.id ? activeCases.filter(c => c.assignedTo === currentUser.id).length : 0,
+    urgent: activeCases.filter(c => c.priority === 'high' || c.priority === 'urgent' || c.priority === 'critical').length,
+  }), [activeCases, currentUser?.id])
 
   // Количество активных расширенных фильтров (для UI-бейджа)
   const activeFiltersCount = useMemo(() => {
@@ -630,65 +646,130 @@ export function CasesPage() {
   return (
     <>
       <div className="h-full flex flex-col p-6 overflow-y-auto">
-        {/* Компактная панель метрик: счётчики кейсов + время решения в одну строку */}
-        <div className="flex flex-wrap items-stretch gap-2 mb-4 flex-shrink-0">
-          {/* Счётчики кейсов (кликабельные → фильтр) */}
-          <button
-            disabled
-            className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg"
-            title="Кейсы на активной доске: в работе + решённые сегодня (уйдут в архив завтра ночью)"
-          >
-            <Briefcase className="w-4 h-4 text-blue-600" />
-            <span className="text-lg font-bold text-blue-700 leading-none">
-              {activeStatusCount}
-            </span>
-            <span className="text-xs text-slate-600">активных</span>
-          </button>
+        {/* Строка внимания: только сигналы, требующие действия. Чип = фильтр,
+            повторный клик снимает. Нули — тихие (серые), «всё нормально» не кричит. */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 flex-shrink-0">
+          {viewMode === 'active' && (
+            <>
+              {([
+                { key: 'overdue' as const, label: 'Просрочка', icon: Timer, count: overdueCount, tone: 'red' as const, tip: 'Активные кейсы старше SLA-порога по приоритету (4 ч / 24 ч / 72 ч / 168 ч)' },
+                { key: 'unassigned' as const, label: 'Без агента', icon: User, count: signalCounts.unassigned, tone: 'amber' as const, tip: 'Активные кейсы без назначенного агента' },
+                { key: 'waiting' as const, label: 'Ждут ответа', icon: Zap, count: signalCounts.waiting, tone: 'amber' as const, tip: 'Клиент написал — первого ответа команды ещё нет' },
+                { key: 'resolvedToday' as const, label: 'Решено сегодня', icon: CheckCircle, count: resolvedTodayCount, tone: 'green' as const, tip: 'Решённые сегодня — уйдут в архив ночью' },
+              ]).map(chip => {
+                const active = quickFilter === chip.key
+                const zero = chip.count === 0
+                const colorCls = zero
+                  ? 'bg-white border-[#e8edf3] text-slate-400'
+                  : chip.tone === 'red' ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                  : chip.tone === 'amber' ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                return (
+                  <button
+                    key={chip.key}
+                    onClick={() => setQuickFilter(active ? 'all' : chip.key)}
+                    title={chip.tip}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm font-medium transition-all ${colorCls} ${
+                      active ? 'ring-2 ring-blue-300' : ''
+                    }`}
+                  >
+                    <chip.icon className="w-3.5 h-3.5" />
+                    {chip.label}
+                    <span className="font-bold tabular-nums">{chip.count}</span>
+                  </button>
+                )
+              })}
 
+              <div className="h-5 w-px bg-slate-200 mx-1" />
+
+              {/* Вторичные срезы — тихие, без плашек */}
+              {([
+                { key: 'my' as const, label: 'Мои', count: signalCounts.my },
+                { key: 'urgent' as const, label: 'Срочные', count: signalCounts.urgent },
+                { key: 'snoozed' as const, label: 'Отложенные', count: snoozedCount },
+              ]).map(chip => {
+                const active = quickFilter === chip.key
+                return (
+                  <button
+                    key={chip.key}
+                    onClick={() => setQuickFilter(active ? 'all' : chip.key)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm transition-colors ${
+                      active ? 'bg-blue-500 text-white' : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {chip.label}
+                    <span className={`tabular-nums text-xs ${active ? 'text-blue-100' : 'text-slate-400'}`}>{chip.count}</span>
+                  </button>
+                )
+              })}
+
+              {quickFilter !== 'all' && (
+                <button
+                  onClick={() => setQuickFilter('all')}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+                >
+                  <X className="w-3 h-3" />
+                  Сбросить
+                </button>
+              )}
+            </>
+          )}
+
+          <div className="flex-1" />
+
+          {/* Аналитика — за одним кликом */}
           <button
-            onClick={() => setQuickFilter('overdue')}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-              quickFilter === 'overdue'
-                ? 'bg-red-500 border-red-500 text-white'
-                : 'bg-red-50 border-red-100 hover:bg-red-100'
+            onClick={() => setMetricsOpen(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              metricsOpen ? 'bg-slate-100 text-slate-700' : 'text-slate-500 hover:bg-slate-100'
             }`}
-            title="Активные кейсы старше SLA-порога по приоритету (4 ч / 24 ч / 72 ч / 168 ч)"
+            title="Показатели за период: решено, время решения, первый ответ"
           >
-            <Timer className={`w-4 h-4 ${quickFilter === 'overdue' ? 'text-white' : 'text-red-600'}`} />
-            <span className={`text-lg font-bold leading-none ${quickFilter === 'overdue' ? 'text-white' : 'text-red-700'}`}>
-              {overdueCount}
-            </span>
-            <span className={`text-xs ${quickFilter === 'overdue' ? 'text-red-50' : 'text-slate-600'}`}>просрочка</span>
+            <TrendingUp className="w-4 h-4" />
+            Показатели {metrics?.periodDays ?? 30}д
+            <ChevronDown className={`w-4 h-4 transition-transform ${metricsOpen ? 'rotate-180' : ''}`} />
           </button>
 
           <button
-            onClick={() => setQuickFilter('unassigned')}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-              quickFilter === 'unassigned'
-                ? 'bg-amber-500 border-amber-500 text-white'
-                : 'bg-amber-50 border-amber-100 hover:bg-amber-100'
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              showFilters || activeFiltersCount > 0
+                ? 'bg-blue-50 text-blue-600 border border-blue-200'
+                : 'text-slate-500 hover:bg-slate-100'
             }`}
-            title="Активные кейсы без назначенного агента"
           >
-            <User className={`w-4 h-4 ${quickFilter === 'unassigned' ? 'text-white' : 'text-amber-600'}`} />
-            <span className={`text-lg font-bold leading-none ${quickFilter === 'unassigned' ? 'text-white' : 'text-amber-700'}`}>
-              {activeCases.filter(c => !c.assignedTo).length}
-            </span>
-            <span className={`text-xs ${quickFilter === 'unassigned' ? 'text-amber-50' : 'text-slate-600'}`}>без агента</span>
+            <Filter className="w-4 h-4" />
+            Фильтры
+            {activeFiltersCount > 0 && (
+              <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded-full">
+                {activeFiltersCount}
+              </span>
+            )}
+            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </button>
 
-          <button
-            disabled
-            className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-lg"
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={resetFilters}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+            >
+              <X className="w-3 h-3" />
+              Сбросить
+            </button>
+          )}
+        </div>
+
+        {/* Свёртка аналитики: решено за период + время решения + FRT */}
+        {metricsOpen && (
+        <div className="flex flex-wrap items-stretch gap-2 mb-4 p-3 bg-slate-50 rounded-lg flex-shrink-0">
+          <div
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-green-100 rounded-lg"
             title={`Resolved + closed за ${metrics?.periodDays ?? 30} дн (без shadow auto-resolved)`}
           >
             <CheckCircle className="w-4 h-4 text-green-600" />
             <span className="text-lg font-bold text-green-700 leading-none">{metrics?.resolvedCount ?? 0}</span>
             <span className="text-xs text-slate-600">решено / {metrics?.periodDays ?? 30}д</span>
-          </button>
-
-          {/* Разделитель + метрики времени */}
-          <div className="w-px bg-slate-200 mx-1" />
+          </div>
 
           {[
             { key: 'avg', label: 'Среднее', value: metrics?.avgHours, color: 'text-violet-700', tip: 'Среднее время от первого сообщения клиента до закрытия кейса. Может перекошиться одним длинным кейсом.' },
@@ -698,7 +779,7 @@ export function CasesPage() {
           ].map(m => (
             <div
               key={m.key}
-              className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-[#e8edf3] rounded-lg cursor-help"
               title={m.tip}
             >
               <span className="text-[11px] text-slate-500 uppercase tracking-wide">{m.label}</span>
@@ -720,7 +801,7 @@ export function CasesPage() {
             <>
               <div className="w-px bg-slate-200 mx-1" />
               <div
-                className="flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg cursor-help"
+                className="flex items-center gap-3 px-3 py-2 bg-white border border-[#e8edf3] rounded-lg cursor-help"
                 title={`Первый ответ (FRT) ТОЛЬКО по клиентским каналам: ${metrics.frt.count} тикетов за ${metrics.periodDays} дн (партнёрские и внутренние чаты не смешиваются — см. срезы справа). Крупно — МЕДИАНА (типичный ответ). Среднее ${metrics.frt.avgMinutes ?? '—'} мин перекошено долгими просрочками (см. «60+»).`}
               >
                 <span className="flex items-center gap-1 text-[11px] text-slate-500 uppercase tracking-wide">
@@ -767,7 +848,7 @@ export function CasesPage() {
               {/* Раздельные срезы FRT (медианы) — типы каналов не смешиваем */}
               {metrics.frt.segments && (
                 <div
-                  className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] text-slate-500 cursor-help flex-wrap"
+                  className="flex items-center gap-2 px-3 py-2 bg-white border border-[#e8edf3] rounded-lg text-[10px] text-slate-500 cursor-help flex-wrap"
                   title={`Медиана первого ответа по срезам (за ${metrics.periodDays} дн).\n\nПо типу канала:\n${metrics.frt.segments.byType.map(s => `  ${FRT_SEG_LABELS[s.key] || s.key}: медиана ${s.medianMinutes ?? '—'} мин · среднее ${s.avgMinutes ?? '—'} мин · ${s.count} тикетов`).join('\n')}\n\nПо источнику:\n${metrics.frt.segments.bySource.map(s => `  ${FRT_SEG_LABELS[s.key] || s.key}: медиана ${s.medianMinutes ?? '—'} мин · ${s.count}`).join('\n')}\n\nПо рынку:\n${metrics.frt.segments.byMarket.map(s => `  ${s.key}: медиана ${s.medianMinutes ?? '—'} мин · ${s.count}`).join('\n')}`}
                 >
                   <span className="uppercase tracking-wide text-slate-400">Срезы</span>
@@ -801,6 +882,7 @@ export function CasesPage() {
             </>
           )}
         </div>
+        )}
 
         {/* Header */}
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
@@ -825,7 +907,7 @@ export function CasesPage() {
             {/* Переключатель Активные / Архив */}
             <div className="flex bg-slate-100 rounded-lg p-1">
               <button
-                onClick={() => setViewMode('active')}
+                onClick={() => { setViewMode('active'); setQuickFilter('all') }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   viewMode === 'active' 
                     ? 'bg-white text-slate-800 shadow-sm' 
@@ -841,7 +923,7 @@ export function CasesPage() {
                 </span>
               </button>
               <button
-                onClick={() => setViewMode('archive')}
+                onClick={() => { setViewMode('archive'); setQuickFilter('all') }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   viewMode === 'archive'
                     ? 'bg-white text-slate-800 shadow-sm'
@@ -933,65 +1015,6 @@ export function CasesPage() {
               </button>
             )}
           </div>
-        </div>
-
-        {/* Quick Filters */}
-        <div className="flex items-center gap-2 mb-4 flex-shrink-0 flex-wrap">
-          {[
-            { key: 'all' as const, label: 'Все', icon: Filter, count: filteredCases.length },
-            { key: 'my' as const, label: 'Мои', icon: User, count: filteredCases.filter(c => currentUser?.id && c.assignedTo === currentUser.id).length },
-            { key: 'urgent' as const, label: 'Срочные', icon: AlertTriangle, count: filteredCases.filter(c => c.priority === 'high' || c.priority === 'critical' || c.priority === 'urgent').length },
-            { key: 'overdue' as const, label: 'Просрочка', icon: Timer, count: overdueCount, danger: true },
-            { key: 'unassigned' as const, label: 'Без агента', icon: User, count: filteredCases.filter(c => !c.assignedTo).length },
-            { key: 'snoozed' as const, label: 'Отложенные', icon: Bell, count: snoozedCount },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => setQuickFilter(f.key)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                quickFilter === f.key
-                  ? f.danger ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
-              }`}
-            >
-              <f.icon className="w-4 h-4" />
-              {f.label}
-              <span className={`px-1.5 py-0.5 rounded text-xs ${quickFilter === f.key ? 'bg-white/20' : f.danger && f.count > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>
-                {f.count}
-              </span>
-            </button>
-          ))}
-          
-          <div className="h-6 w-px bg-slate-200 mx-2" />
-          
-          {/* Toggle advanced filters */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-              showFilters || activeFiltersCount > 0 
-                ? 'bg-blue-50 text-blue-600 border border-blue-200' 
-                : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Фильтры
-            {activeFiltersCount > 0 && (
-              <span className="px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded-full">
-                {activeFiltersCount}
-              </span>
-            )}
-            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-          </button>
-          
-          {activeFiltersCount > 0 && (
-            <button
-              onClick={resetFilters}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
-            >
-              <X className="w-3 h-3" />
-              Сбросить
-            </button>
-          )}
         </div>
 
         {/* Advanced Filters Panel */}
@@ -1101,11 +1124,6 @@ export function CasesPage() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* Что происходит сейчас */}
-        {viewMode === 'active' && cases.length > 0 && (
-          <CasesNowSection cases={cases} onSelectCase={handleViewCase} />
         )}
 
         {/* Kanban Board / Archive View */}

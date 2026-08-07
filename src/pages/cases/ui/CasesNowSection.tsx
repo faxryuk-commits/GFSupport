@@ -169,7 +169,7 @@ function BucketCard({ bucket, onSelectCase }: BucketCardProps) {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-mono text-blue-600 font-semibold flex-shrink-0">
-                  {c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 6).toUpperCase()}
+                  {c.ticketNumber ? `#${c.ticketNumber}` : `#…${c.id.slice(-4)}`}
                 </span>
                 <AgeBadge case_={c} bucketId={bucket.id} />
               </div>

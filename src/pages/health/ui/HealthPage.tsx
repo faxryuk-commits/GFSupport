@@ -555,7 +555,7 @@ export function HealthPage() {
                   <>
                     <span className="flex items-center gap-1.5">
                       <span className="text-xs font-mono text-blue-600 font-semibold">
-                        {c.ticketNumber ? `#${c.ticketNumber}` : c.id.slice(0, 6).toUpperCase()}
+                        {c.ticketNumber ? `#${c.ticketNumber}` : `#…${c.id.slice(-4)}`}
                       </span>
                       <PlatformBadge source={c.source} />
                     </span>

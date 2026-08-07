@@ -323,7 +323,7 @@ function Customer360Banner({
               <div className="space-y-1">
                 {ctx.activeCases.map(ac => (
                   <div key={ac.id} className="text-xs flex items-center gap-2 px-2 py-1 bg-slate-50 rounded">
-                    <span className="font-mono text-blue-600">#{ac.ticketNumber || ac.id.slice(0, 6)}</span>
+                    <span className="font-mono text-blue-600">#{ac.ticketNumber || `…${ac.id.slice(-4)}`}</span>
                     <span className="text-slate-700 truncate flex-1">{ac.title}</span>
                     <span className="text-[10px] px-1.5 py-0.5 bg-white border border-[#e8edf3] rounded text-slate-500">
                       {ac.priority}
@@ -345,7 +345,7 @@ function Customer360Banner({
                 {ctx.recentResolved.map(rr => (
                   <div key={rr.id} className="text-xs px-2 py-1.5 bg-green-50/60 border border-green-100 rounded">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-green-700">#{rr.ticketNumber || rr.id.slice(0, 6)}</span>
+                      <span className="font-mono text-green-700">#{rr.ticketNumber || `…${rr.id.slice(-4)}`}</span>
                       <span className="text-slate-700 truncate flex-1">{rr.title}</span>
                       <span className="text-[10px] text-slate-500">
                         решили за {formatMinutesShort(rr.resolvedInMinutes)}
@@ -971,7 +971,7 @@ export function CaseDetailModal({
                   <div key={rc.id} className="border border-[#e8edf3] rounded-lg p-3 bg-gradient-to-br from-green-50/40 to-blue-50/40">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="font-mono text-xs text-green-700 font-semibold">
-                        #{rc.ticketNumber || rc.id.slice(0, 6)}
+                        #{rc.ticketNumber || `…${rc.id.slice(-4)}`}
                       </span>
                       <span className="text-sm font-medium text-slate-800 flex-1 truncate">{rc.title}</span>
                       {rc.score != null && (

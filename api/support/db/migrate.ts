@@ -744,6 +744,31 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`FRT overrides error: ${e.message}`)
     }
 
+    // Migration 43: ticket_number — sequence + DEFAULT + бэкфилл.
+    // Шесть путей создания кейса (ai/analyze, ai-agent, autoresponder, from-message,
+    // automations, error-resolver) не проставляли ticket_number → NULL, и UI падал
+    // на фолбэк id.slice(0,6) = «CASE_1» у всех. Sequence с DEFAULT закрывает все
+    // пути разом и убирает гонку COALESCE(MAX())+1 в существующих вставках.
+    try {
+      await sql`CREATE SEQUENCE IF NOT EXISTS support_cases_ticket_seq`
+      // Стартуем с max+1 (setval безопасен при повторном прогоне: только вверх)
+      await sql`
+        SELECT setval('support_cases_ticket_seq',
+          GREATEST((SELECT COALESCE(MAX(ticket_number), 1000) FROM support_cases),
+                   (SELECT last_value FROM support_cases_ticket_seq)))
+      `
+      await sql`ALTER TABLE support_cases ALTER COLUMN ticket_number SET DEFAULT nextval('support_cases_ticket_seq')`
+      const backfilled = await sql`
+        UPDATE support_cases
+        SET ticket_number = nextval('support_cases_ticket_seq')
+        WHERE ticket_number IS NULL
+        RETURNING id
+      `
+      migrations.push(`Ticket numbers: sequence + default, backfilled ${backfilled.length} cases`)
+    } catch (e: any) {
+      migrations.push(`Ticket number seq error: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+
     return json({
       success: true,
       migrations,

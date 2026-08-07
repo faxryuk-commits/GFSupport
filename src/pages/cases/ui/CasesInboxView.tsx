@@ -13,7 +13,7 @@ interface InboxRowProps {
 
 function InboxRow({ caseItem, selected, onSelect }: InboxRowProps) {
   const priority = CASE_PRIORITY_CONFIG[caseItem.priority]
-  const number = caseItem.ticketNumber ? `#${caseItem.ticketNumber}` : `#${caseItem.id.slice(0, 6).toUpperCase()}`
+  const number = caseItem.ticketNumber ? `#${caseItem.ticketNumber}` : `#…${caseItem.id.slice(-4)}`
   const isUrgent = caseItem.priority === 'critical' || caseItem.priority === 'urgent'
 
   // Показатели жизненного цикла (создан уже показан ниже как «N назад»)
