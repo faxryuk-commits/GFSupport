@@ -5,6 +5,7 @@ import { apiDelete } from '@/shared/services/api.service'
 import type { Agent } from '@/entities/agent'
 import { TeamHeader } from './TeamHeader'
 import { AgentTable } from './AgentTable'
+import { WorkloadTable } from './WorkloadTable'
 import { AgentDetailPanel } from './AgentDetailPanel'
 import { AgentEditModal } from './AgentEditModal'
 import { InviteModal } from './InviteModal'
@@ -186,6 +187,8 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         onInvite={() => setInviteOpen(true)}
         embedded={embedded}
       />
+
+      <WorkloadTable />
 
       <AgentTable
         agents={filtered}

@@ -769,6 +769,26 @@ export default async function handler(req: Request): Promise<Response> {
       migrations.push(`Ticket number seq error: ${e.message?.slice(0, 80) || 'done'}`)
     }
 
+    // Migration 44: слияние дублей агентов через merged_into (неразрушающее).
+    // Строки-дубли НЕ удаляем: у Аслиддина два telegram-аккаунта, и вторая строка —
+    // это механизм, по которому identifySender распознаёт его сообщения как support.
+    // Агрегаты считают COALESCE(merged_into, id). Подтверждено владельцем 08.08.2026:
+    // 𝓝🧚🏻 (@rahimovna_n_t) = Насиба; оба Asliddin — один человек; два Хасана — один.
+    try {
+      await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS merged_into VARCHAR(50)`
+      // Насиба: человекочитаемое имя вместо эмодзи-ника
+      await sql`UPDATE support_agents SET name = 'Насиба' WHERE id = 'agent_6710681196' AND name <> 'Насиба'`
+      // Аслиддин: второй TG-аккаунт (@asliddindeh) → канонический agent_440492871 (Ruzikulov)
+      await sql`UPDATE support_agents SET merged_into = 'agent_440492871' WHERE id = 'agent_1041527960' AND merged_into IS NULL`
+      // Хасан: канонический — agent_114211802 (на нём логины/heartbeat и telegram_id);
+      // роль поднимаем до admin, имя — кириллицей; новый пустой admin-дубль вливаем в него
+      await sql`UPDATE support_agents SET role = 'admin', name = 'Шаропов Хасан' WHERE id = 'agent_114211802' AND role <> 'admin'`
+      await sql`UPDATE support_agents SET merged_into = 'agent_114211802' WHERE id = 'agent_1782907504486_tqbo' AND merged_into IS NULL`
+      migrations.push('Agent identity: merged_into + Насиба/Аслиддин/Хасан dedup')
+    } catch (e: any) {
+      migrations.push(`Agent merge error: ${e.message?.slice(0, 80) || 'done'}`)
+    }
+
     return json({
       success: true,
       migrations,

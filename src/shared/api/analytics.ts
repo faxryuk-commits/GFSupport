@@ -626,3 +626,32 @@ export async function fetchResponseTimeDetails(params: {
   }
   return { details: data.details || [], pagination }
 }
+
+// ===== Загрузка команды (workload) =====
+
+export interface WorkloadAgentRow {
+  id: string | null
+  name: string
+  role: string | null
+  messages: number
+  chars: number
+  mediaMessages: number
+  channels: number
+  activeDays: number
+  casesTouched: number
+  frtAvgMinutes: number | null
+  frtResponses: number
+  appHours: number | null
+}
+
+export interface WorkloadPayload {
+  periodDays: number
+  teamAvgFrtMinutes: number | null
+  agents: WorkloadAgentRow[]
+  methodology: Record<string, string>
+}
+
+/** Таблица загрузки сотрудников: объём переписки, тикеты, скорость, часы в приложении. */
+export async function fetchWorkload(days: number): Promise<WorkloadPayload> {
+  return apiGet<WorkloadPayload>(`/analytics/workload?days=${days}`)
+}
