@@ -161,6 +161,9 @@ export function CasesPage() {
   const [channels, setChannels] = useState<Channel[]>([])
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
+  // Полноэкранный лоадер — только на самой первой загрузке. Рефетчи по фильтрам
+  // обновляют список на месте, иначе каждый клик по чипу «моргает» всей страницей.
+  const [booted, setBooted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [metrics, setMetrics] = useState<CaseResolutionMetrics | null>(null)
   const [statusStats, setStatusStats] = useState<Record<string, number>>({})
@@ -269,14 +272,18 @@ export function CasesPage() {
     return {}
   }, [dateFilter, customDateFrom, customDateTo])
 
-  // Серверные параметры фильтрации (зависят от UI-фильтров)
+  // Серверные параметры фильтрации (зависят от UI-фильтров).
+  // 'waiting' и 'resolvedToday' — чисто клиентские срезы: для сервера это 'all',
+  // иначе каждый клик по таким чипам зря дёргает рефетч.
+  const serverQuick = (quickFilter === 'my' || quickFilter === 'urgent' || quickFilter === 'overdue'
+    || quickFilter === 'unassigned' || quickFilter === 'snoozed') ? quickFilter : 'all'
   const serverFilters = useMemo(() => {
-    const priorities = quickFilter === 'urgent' ? ['high', 'urgent', 'critical'] : undefined
+    const priorities = serverQuick === 'urgent' ? ['high', 'urgent', 'critical'] : undefined
     return {
       // viewMode сам по себе не отправляем — запрос делаем для активных и архивных раздельно
-      assignedTo: quickFilter === 'my' && currentUser?.id ? currentUser.id : undefined,
-      unassigned: quickFilter === 'unassigned',
-      overdue: quickFilter === 'overdue',
+      assignedTo: serverQuick === 'my' && currentUser?.id ? currentUser.id : undefined,
+      unassigned: serverQuick === 'unassigned',
+      overdue: serverQuick === 'overdue',
       priorities,
       channelId: channelFilter === 'all' ? undefined : channelFilter,
       category: categoryFilter === 'all' ? undefined : categoryFilter,
@@ -284,9 +291,9 @@ export function CasesPage() {
       search: searchDebounced || undefined,
       dateFrom: dateFromIso,
       dateTo: dateToIso,
-      snoozed: (quickFilter === 'snoozed' ? 'only' : 'hide') as 'hide' | 'only',
+      snoozed: (serverQuick === 'snoozed' ? 'only' : 'hide') as 'hide' | 'only',
     }
-  }, [quickFilter, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso, dateToIso])
+  }, [serverQuick, currentUser?.id, channelFilter, categoryFilter, sourceFilter, searchDebounced, dateFromIso, dateToIso])
 
   // Загрузка справочников один раз
   useEffect(() => {
@@ -340,6 +347,7 @@ export function CasesPage() {
       console.error('Ошибка загрузки кейсов:', err)
     } finally {
       setLoading(false)
+      setBooted(true)
     }
   }, [serverFilters, metricsPeriodDays, viewMode, sortBy])
 
@@ -614,7 +622,7 @@ export function CasesPage() {
     }
   }
 
-  if (loading) {
+  if (loading && !booted) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -714,6 +722,9 @@ export function CasesPage() {
               )}
             </>
           )}
+
+          {/* Тихий индикатор фонового рефетча (страница при этом не моргает) */}
+          {loading && booted && <Loader2 className="w-4 h-4 animate-spin text-slate-300" />}
 
           <div className="flex-1" />
 
