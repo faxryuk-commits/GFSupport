@@ -208,15 +208,16 @@ export function DashboardPage() {
           agents={agents}
         />
 
+        {/* Загрузка команды: объём переписки, тикеты, часы — с раскрытием по группам.
+            Выше обязательств: владелец искал отчёт и не находил под фолдом. */}
+        <WorkloadTable />
+
         <div className="grid grid-cols-3 gap-6">
           <div className="col-span-2">
             <CommitmentsPanel className="h-full" />
           </div>
           <WeeklyScoreWidget marketKey={selectedMarket} />
         </div>
-
-        {/* Загрузка команды: объём переписки, тикеты, часы — с раскрытием по группам */}
-        <WorkloadTable />
 
         <StatsSection
           analytics={analytics}
