@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trash2, Send, History, MessageSquare, Link2, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2 } from 'lucide-react'
+import { Trash2, Send, History, MessageSquare, ExternalLink, Clock, Timer, Loader2, BellOff, Bell, Zap, CheckCircle2, User } from 'lucide-react'
 import { Modal, Avatar, Badge, EmptyState, Tabs, TabPanel } from '@/shared/ui'
 import { formatDuration, formatDateDMY, formatDateTime, formatDateTimeShort, formatDateTimeWithTz, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
 import { CASE_STATUS_CONFIG, CASE_PRIORITY_CONFIG, KANBAN_STATUSES, type CaseStatus, type CasePriority } from '@/entities/case'
@@ -674,10 +674,15 @@ export function CaseDetailModal({
   const content = (
     <div className={`flex gap-6 ${mode === 'modal' ? '-mx-6 -mb-6' : ''}`}>
         <div className={`flex-1 ${mode === 'modal' ? 'pl-6 pb-6' : 'p-4'}`}>
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-800">{caseData.title}</h3>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="min-w-0">
+              <h3
+                className="text-lg font-semibold text-slate-800 leading-snug line-clamp-2"
+                title={caseData.title}
+              >
+                {caseData.title}
+              </h3>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <span className={`px-2 py-0.5 text-xs font-medium rounded ${CASE_PRIORITY_CONFIG[caseData.priority].bgColor} ${CASE_PRIORITY_CONFIG[caseData.priority].color}`}>
                   {CASE_PRIORITY_CONFIG[caseData.priority].label}
                 </span>
@@ -693,7 +698,27 @@ export function CaseDetailModal({
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-2 relative">
+            <div className="flex items-center gap-2 relative flex-shrink-0">
+              {/* Назначен — рядом со статусом: это два самых частых действия при разборе
+                  кейса, раньше ответственного нужно было искать в сайдбаре под инфо о клиенте. */}
+              <div className="relative">
+                <User className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <select
+                  value={caseData.assignee?.id || ''}
+                  onChange={(e) => {
+                    const agent = agents.find(a => a.id === e.target.value)
+                    onAssign(caseData.id, agent || null)
+                  }}
+                  className={`pl-8 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                    caseData.assignee ? 'border-[#e8edf3]' : 'border-amber-300 bg-amber-50 text-amber-700'
+                  }`}
+                >
+                  <option value="">Не назначен</option>
+                  {agents.map(agent => (
+                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                  ))}
+                </select>
+              </div>
               <select
                 value={caseData.status}
                 onChange={(e) => onStatusChange(caseData.id, e.target.value as CaseStatus)}
@@ -1121,51 +1146,30 @@ export function CaseDetailModal({
           </TabPanel>
         </div>
 
-        {/* Sidebar */}
-        <div className="w-64 bg-slate-50 p-4 border-l border-[#e8edf3]">
-          <h4 className="font-medium text-slate-700 mb-3">Канал / Клиент</h4>
-          <div className="flex items-center gap-3 mb-4">
-            <Avatar name={caseData.channelName || caseData.company} size="md" />
-            <div>
-              <p className="font-medium text-slate-800 text-sm">{caseData.channelName || caseData.company}</p>
-              {caseData.contactName && <p className="text-xs text-slate-500">{caseData.contactName}</p>}
-            </div>
-          </div>
-
-          <h4 className="font-medium text-slate-700 mb-3">Назначен</h4>
-          <select
-            value={caseData.assignee?.id || ''}
-            onChange={(e) => {
-              const agent = agents.find(a => a.id === e.target.value)
-              onAssign(caseData.id, agent || null)
-            }}
-            className="w-full px-3 py-2 text-sm border border-[#e8edf3] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 mb-4"
-          >
-            <option value="">Не назначен</option>
-            {agents.map(agent => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
-            ))}
-          </select>
-
-          <h4 className="font-medium text-slate-700 mb-3">Связанные чаты</h4>
-          {!caseData.channelId && caseData.linkedChats.length === 0 ? (
-            <p className="text-sm text-slate-400 mb-4">Нет связанных чатов</p>
-          ) : (
-            <div className="space-y-2 mb-4">
-              {caseData.channelId && (
-                <button onClick={handleOpenChat} className="flex items-center gap-2 text-sm text-blue-500 hover:underline">
-                  <Link2 className="w-4 h-4" />
-                  {caseData.channelName || 'Открыть чат'}
-                </button>
-              )}
+        {/* Sidebar — сведён к одному назначению: уйти в полный чат канала.
+            Имя клиента и «Назначен» отсюда убраны: имя уже видно в баннере
+            Customer 360 сверху, а назначение — рядом со статусом в шапке.
+            Раньше одно и то же имя клиента показывалось здесь 3 раза одновременно. */}
+        <div className="w-56 bg-slate-50 p-4 border-l border-[#e8edf3] flex flex-col">
+          {/* Фолбэк на случай, если Customer 360 не подгрузился (нет канала/ошибка) —
+              тогда имя клиента больше нигде не видно, показываем его тут. */}
+          {!customerCtx && (
+            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-[#e8edf3]">
+              <Avatar name={caseData.channelName || caseData.company} size="md" />
+              <div className="min-w-0">
+                <p className="font-medium text-slate-800 text-sm truncate">{caseData.channelName || caseData.company}</p>
+                {caseData.contactName && <p className="text-xs text-slate-500 truncate">{caseData.contactName}</p>}
+              </div>
             </div>
           )}
 
-          {caseData.channelId && (
+          {caseData.channelId ? (
             <button onClick={handleOpenChat} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] text-sm font-medium rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]">
               <ExternalLink className="w-4 h-4" />
               Открыть чат
             </button>
+          ) : (
+            <p className="text-sm text-slate-400">Нет связанного чата</p>
           )}
         </div>
       </div>
