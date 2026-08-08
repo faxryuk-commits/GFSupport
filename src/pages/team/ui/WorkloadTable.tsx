@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Info, MessageSquare, Briefcase, Zap, Monitor, CalendarDays } from 'lucide-react'
+import { Loader2, Info, MessageSquare, Briefcase, Zap, Monitor, CalendarDays, Clock } from 'lucide-react'
 import { fetchWorkload, type WorkloadPayload } from '@/shared/api'
 
 const PERIODS = [7, 30, 90] as const
@@ -83,7 +83,10 @@ export function WorkloadTable() {
                 <th className="text-right font-medium px-3 py-2" title="Средняя скорость первого ответа клиенту; в скобках — сколько первых ответов дал">
                   <span className="inline-flex items-center gap-1"><Zap className="w-3 h-3" />Ср. ответ</span>
                 </th>
-                <th className="text-right font-medium px-4 py-2" title="Время с открытой вкладкой приложения (по heartbeat). НЕ включает работу из Telegram напрямую — читать вместе с колонкой «Сообщений»">
+                <th className="text-right font-medium px-3 py-2" title="Часы в переписке: промежутки ≤15 мин между сообщениями агента суммируются, больший разрыв = перерыв. Оценка снизу — работа без сообщений (чтение, звонки, настройки) не видна">
+                  <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" />В переписке</span>
+                </th>
+                <th className="text-right font-medium px-4 py-2" title="Время с открытой вкладкой приложения (по heartbeat). НЕ включает работу из Telegram напрямую — читать вместе с «В переписке»">
                   <span className="inline-flex items-center gap-1"><Monitor className="w-3 h-3" />В приложении</span>
                 </th>
               </tr>
@@ -122,6 +125,11 @@ export function WorkloadTable() {
                       </>
                     ) : '—'}
                   </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {a.chatHours != null && a.chatHours > 0
+                      ? <span className="font-medium text-slate-800">{a.chatHours.toLocaleString('ru-RU')} ч</span>
+                      : '—'}
+                  </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                     {a.appHours != null && a.appHours > 0 ? `${a.appHours.toLocaleString('ru-RU')} ч` : '—'}
                   </td>
@@ -135,10 +143,11 @@ export function WorkloadTable() {
       <div className="flex items-start gap-2 px-4 py-3 bg-slate-50 border-t border-[#e8edf3] text-[11px] text-slate-500">
         <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
         <p>
-          Все колонки — прокси, читать вместе. «В приложении» = время с открытой вкладкой:
-          кто работает из Telegram напрямую, здесь невидим, но виден в «Сообщений».
-          «Тикетов» — по факту переписки в канале тикета, а не по полю «назначен».
-          Реальные часы фокуса на клиенте система не измеряет.
+          Все колонки — прокси, читать вместе. «В переписке» — кластеры сообщений
+          (разрыв больше 15 мин = перерыв), оценка снизу: консультации, звонки и настройки
+          без сообщений не видны. «В приложении» — время с открытой вкладкой: кто работает
+          из Telegram, здесь невидим. «Тикетов» — по факту переписки, а не по полю «назначен».
+          Работа вне системы (обучение клиентов, сведение с поставщиками) не измеряется ничем.
         </p>
       </div>
     </div>

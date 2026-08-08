@@ -15,6 +15,9 @@ export const config = {
  *                         (m.case_id не заполняется — 0 покрытия, поэтому через канал)
  *  - activeDays         — календарные дни (Ташкент) хотя бы с одним сообщением
  *  - frtAvgMinutes      — средняя скорость первого ответа (reuse team-frt-aggregate)
+ *  - chatHours          — «часы в переписке»: кластеризация сообщений агента,
+ *                         промежутки ≤15 мин суммируются, больший разрыв = перерыв.
+ *                         Оценка СНИЗУ: чтение/звонки/настройки без сообщений невидимы.
  *  - appHours           — реконструкция из heartbeat-логов вкладки (45с тики):
  *                         сумма промежутков < 5 мин. Время с ОТКРЫТОЙ ВКЛАДКОЙ,
  *                         не «время на клиенте»: кто работает из Telegram (Фирдавс,
@@ -35,6 +38,7 @@ interface WorkloadRow {
   casesTouched: number
   frtAvgMinutes: number | null
   frtResponses: number
+  chatHours: number | null
   appHours: number | null
 }
 
@@ -57,7 +61,7 @@ export default async function handler(req: Request) {
     // Канонический агент для сообщения: LATERAL + LIMIT 1 с приоритетом матчей,
     // иначе OR-join даёт фанаут (sender матчится и по telegram_id одной строки,
     // и по имени другой — сообщение посчиталось бы дважды).
-    const [agents, msgAgg, caseAgg, heartbeat, frt] = await Promise.all([
+    const [agents, msgAgg, caseAgg, heartbeat, chatHours, frt] = await Promise.all([
       sql`
         SELECT id, name, role, merged_into
         FROM support_agents
@@ -142,6 +146,40 @@ export default async function handler(req: Request) {
         FROM beats
         GROUP BY agent_id
       `,
+      sql`
+        WITH team_msgs AS (
+          SELECT ag.canonical_id, m.created_at
+          FROM support_messages m
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(ra.merged_into, ra.id) AS canonical_id
+            FROM support_agents ra
+            WHERE ra.org_id = ${orgId} AND (
+              ra.telegram_id::text = m.sender_id::text
+              OR ra.id::text = m.sender_id::text
+              OR (m.sender_username IS NOT NULL AND LOWER(ra.username) = LOWER(m.sender_username))
+              OR LOWER(ra.name) = LOWER(m.sender_name)
+            )
+            ORDER BY (ra.telegram_id::text = m.sender_id::text) DESC,
+                     (ra.id::text = m.sender_id::text) DESC,
+                     (LOWER(ra.username) = LOWER(COALESCE(m.sender_username, ''))) DESC
+            LIMIT 1
+          ) ag ON true
+          WHERE m.org_id = ${orgId}
+            AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
+            AND m.sender_role IN ('support', 'team', 'agent')
+            AND m.is_from_client = false
+        ),
+        gaps AS (
+          SELECT canonical_id,
+            EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY canonical_id ORDER BY created_at))) AS sec
+          FROM team_msgs
+          WHERE canonical_id IS NOT NULL
+        )
+        SELECT canonical_id,
+          ROUND((SUM(CASE WHEN sec IS NOT NULL AND sec <= 900 THEN sec ELSE 0 END) / 3600.0)::numeric, 1)::float AS hours
+        FROM gaps
+        GROUP BY canonical_id
+      `,
       fetchTeamFrtAggregate(sql, {
         orgId,
         fromDateTime: new Date(Date.now() - days * 86400000).toISOString(),
@@ -175,7 +213,7 @@ export default async function handler(req: Request) {
           name: a?.name || '— не сопоставлено',
           role: a?.role || null,
           messages: 0, chars: 0, mediaMessages: 0, channels: 0, activeDays: 0,
-          casesTouched: 0, frtAvgMinutes: null, frtResponses: 0, appHours: null,
+          casesTouched: 0, frtAvgMinutes: null, frtResponses: 0, chatHours: null, appHours: null,
         }
         rows.set(key, r)
       }
@@ -194,6 +232,10 @@ export default async function handler(req: Request) {
     for (const c of caseAgg as any[]) {
       const r = rowFor(canonical(c.canonical_id))
       r.casesTouched = Math.max(r.casesTouched, Number(c.cases))
+    }
+    for (const ch of chatHours as any[]) {
+      const r = rowFor(canonical(ch.canonical_id))
+      r.chatHours = (r.chatHours || 0) + Number(ch.hours)
     }
     for (const h of heartbeat as any[]) {
       const r = rowFor(canonical(h.agent_id))
@@ -223,6 +265,7 @@ export default async function handler(req: Request) {
       teamAvgFrtMinutes: frt.avgResponseMinutes || null,
       agents: result,
       methodology: {
+        chatHours: 'Кластеризация сообщений агента: промежутки ≤15 мин между сообщениями суммируются, больший разрыв = перерыв. Оценка снизу — работа без сообщений (чтение, звонки, настройки) невидима.',
         appHours: 'Время с открытой вкладкой приложения (heartbeat каждые 45с, разрыв >5 мин = перерыв). НЕ включает работу из Telegram напрямую.',
         casesTouched: 'Тикеты, в чей канал агент писал в период жизни тикета (+1ч после решения).',
         messages: 'Сообщения, отправленные клиентам за период (Telegram + WhatsApp).',

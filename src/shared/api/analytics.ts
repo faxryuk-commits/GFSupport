@@ -641,6 +641,7 @@ export interface WorkloadAgentRow {
   casesTouched: number
   frtAvgMinutes: number | null
   frtResponses: number
+  chatHours: number | null
   appHours: number | null
 }
 
