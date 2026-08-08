@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Loader2, Info, MessageSquare, Briefcase, Zap, Monitor, CalendarDays, Clock } from 'lucide-react'
-import { fetchWorkload, type WorkloadPayload } from '@/shared/api'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Loader2, Info, MessageSquare, Briefcase, Zap, Monitor, CalendarDays, Clock, ChevronDown } from 'lucide-react'
+import { fetchWorkload, type WorkloadPayload, type WorkloadGroupRow } from '@/shared/api'
 
 const PERIODS = [7, 30, 90] as const
 
@@ -20,6 +20,28 @@ export function WorkloadTable() {
   const [data, setData] = useState<WorkloadPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Раскрытые строки: сотрудник → топ групп по времени
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const groupsByAgent = useMemo(() => {
+    const map = new Map<string, WorkloadGroupRow[]>()
+    for (const g of data?.groups ?? []) {
+      const list = map.get(g.agentId) || []
+      list.push(g)
+      map.set(g.agentId, list)
+    }
+    return map
+  }, [data])
+
+  const toggleExpand = (id: string | null) => {
+    if (!id) return
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -93,9 +115,17 @@ export function WorkloadTable() {
             </thead>
             <tbody>
               {data.agents.map(a => (
-                <tr key={a.id || 'unmatched'} className={`border-b border-slate-50 hover:bg-slate-50/60 ${a.id ? '' : 'opacity-60'}`}>
+                <Fragment key={a.id || 'unmatched'}>
+                <tr
+                  onClick={() => toggleExpand(a.id)}
+                  className={`border-b border-slate-50 hover:bg-slate-50/60 ${a.id ? 'cursor-pointer' : 'opacity-60'}`}
+                  title={a.id ? 'Клик — на какие группы уходит время' : undefined}
+                >
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2 min-w-[160px]">
+                      {a.id && (
+                        <ChevronDown className={`w-3.5 h-3.5 text-slate-300 flex-shrink-0 transition-transform ${expanded.has(a.id) ? 'rotate-180' : ''}`} />
+                      )}
                       <div className="min-w-0">
                         <p className="font-medium text-slate-800 truncate">{a.name}</p>
                         {a.role && <p className="text-[11px] text-slate-400">{a.role}</p>}
@@ -126,14 +156,56 @@ export function WorkloadTable() {
                     ) : '—'}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
-                    {a.chatHours != null && a.chatHours > 0
-                      ? <span className="font-medium text-slate-800">{a.chatHours.toLocaleString('ru-RU')} ч</span>
-                      : '—'}
+                    {a.chatHours != null && a.chatHours > 0 ? (
+                      <>
+                        <span className="font-medium text-slate-800">
+                          {(Math.round((a.chatHours - (a.chatHoursInternal || 0)) * 10) / 10).toLocaleString('ru-RU')} ч
+                        </span>
+                        {(a.chatHoursInternal || 0) > 0 && (
+                          <span className="text-[11px] text-slate-400" title="Из них во внутренних чатах команды — не клиентская работа">
+                            {' '}+{a.chatHoursInternal!.toLocaleString('ru-RU')} внутр.
+                          </span>
+                        )}
+                      </>
+                    ) : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                     {a.appHours != null && a.appHours > 0 ? `${a.appHours.toLocaleString('ru-RU')} ч` : '—'}
                   </td>
                 </tr>
+                {a.id && expanded.has(a.id) && (
+                  <tr className="border-b border-slate-100 bg-slate-50/40">
+                    <td colSpan={7} className="px-4 py-2.5">
+                      {(() => {
+                        const list = groupsByAgent.get(a.id!) || []
+                        if (list.length === 0) return <p className="text-xs text-slate-400 py-1">Нет данных по группам за период.</p>
+                        const maxH = Math.max(...list.map(g => g.hours), 0.1)
+                        return (
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-1.5">Куда уходит время · топ-{list.length} групп</p>
+                            {list.map(g => (
+                              <div key={g.channelId} className="flex items-center gap-2 text-xs">
+                                <span className="w-52 truncate text-slate-700" title={g.name}>{g.name}</span>
+                                {g.kind === 'internal' && (
+                                  <span className="px-1 py-px text-[9px] rounded bg-slate-200 text-slate-500 flex-shrink-0" title="Внутренний чат команды">внутр.</span>
+                                )}
+                                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden max-w-[240px]">
+                                  <div
+                                    className={`h-full rounded-full ${g.kind === 'internal' ? 'bg-slate-300' : 'bg-blue-400'}`}
+                                    style={{ width: `${Math.max(3, Math.round((g.hours / maxH) * 100))}%` }}
+                                  />
+                                </div>
+                                <span className="tabular-nums text-slate-600 w-14 text-right">{g.hours.toLocaleString('ru-RU')} ч</span>
+                                <span className="tabular-nums text-slate-400 w-16 text-right">{g.msgs} сообщ.</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -143,7 +215,8 @@ export function WorkloadTable() {
       <div className="flex items-start gap-2 px-4 py-3 bg-slate-50 border-t border-[#e8edf3] text-[11px] text-slate-500">
         <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
         <p>
-          Все колонки — прокси, читать вместе. «В переписке» — кластеры сообщений
+          Все колонки — прокси, читать вместе. «В переписке» — клиентские группы; «+N внутр.» —
+          внутренние чаты команды отдельно. Это кластеры сообщений
           (разрыв больше 15 мин = перерыв), оценка снизу: консультации, звонки и настройки
           без сообщений не видны. «В приложении» — время с открытой вкладкой: кто работает
           из Telegram, здесь невидим. «Тикетов» — по факту переписки, а не по полю «назначен».

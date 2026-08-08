@@ -39,7 +39,17 @@ interface WorkloadRow {
   frtAvgMinutes: number | null
   frtResponses: number
   chatHours: number | null
+  chatHoursInternal: number | null
   appHours: number | null
+}
+
+interface GroupRow {
+  agentId: string
+  channelId: string
+  name: string
+  kind: 'client' | 'internal'
+  msgs: number
+  hours: number
 }
 
 export default async function handler(req: Request) {
@@ -61,7 +71,7 @@ export default async function handler(req: Request) {
     // Канонический агент для сообщения: LATERAL + LIMIT 1 с приоритетом матчей,
     // иначе OR-join даёт фанаут (sender матчится и по telegram_id одной строки,
     // и по имени другой — сообщение посчиталось бы дважды).
-    const [agents, msgAgg, caseAgg, heartbeat, chatHours, frt] = await Promise.all([
+    const [agents, msgAgg, caseAgg, heartbeat, chatHours, topGroups, frt] = await Promise.all([
       sql`
         SELECT id, name, role, merged_into
         FROM support_agents
@@ -148,8 +158,10 @@ export default async function handler(req: Request) {
       `,
       sql`
         WITH team_msgs AS (
-          SELECT ag.canonical_id, m.created_at
+          SELECT ag.canonical_id, m.created_at,
+                 CASE WHEN COALESCE(ch.type, 'client') = 'internal' THEN 'internal' ELSE 'client' END AS kind
           FROM support_messages m
+          JOIN support_channels ch ON ch.id = m.channel_id
           LEFT JOIN LATERAL (
             SELECT COALESCE(ra.merged_into, ra.id) AS canonical_id
             FROM support_agents ra
@@ -170,15 +182,60 @@ export default async function handler(req: Request) {
             AND m.is_from_client = false
         ),
         gaps AS (
-          SELECT canonical_id,
-            EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY canonical_id ORDER BY created_at))) AS sec
+          SELECT canonical_id, kind,
+            EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY canonical_id, kind ORDER BY created_at))) AS sec
           FROM team_msgs
           WHERE canonical_id IS NOT NULL
         )
-        SELECT canonical_id,
+        SELECT canonical_id, kind,
           ROUND((SUM(CASE WHEN sec IS NOT NULL AND sec <= 900 THEN sec ELSE 0 END) / 3600.0)::numeric, 1)::float AS hours
         FROM gaps
-        GROUP BY canonical_id
+        GROUP BY canonical_id, kind
+      `,
+      sql`
+        WITH team_msgs AS (
+          SELECT ag.canonical_id, m.channel_id, ch.name,
+                 CASE WHEN COALESCE(ch.type, 'client') = 'internal' THEN 'internal' ELSE 'client' END AS kind,
+                 m.created_at
+          FROM support_messages m
+          JOIN support_channels ch ON ch.id = m.channel_id
+          LEFT JOIN LATERAL (
+            SELECT COALESCE(ra.merged_into, ra.id) AS canonical_id
+            FROM support_agents ra
+            WHERE ra.org_id = ${orgId} AND (
+              ra.telegram_id::text = m.sender_id::text
+              OR ra.id::text = m.sender_id::text
+              OR (m.sender_username IS NOT NULL AND LOWER(ra.username) = LOWER(m.sender_username))
+              OR LOWER(ra.name) = LOWER(m.sender_name)
+            )
+            ORDER BY (ra.telegram_id::text = m.sender_id::text) DESC,
+                     (ra.id::text = m.sender_id::text) DESC,
+                     (LOWER(ra.username) = LOWER(COALESCE(m.sender_username, ''))) DESC
+            LIMIT 1
+          ) ag ON true
+          WHERE m.org_id = ${orgId}
+            AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
+            AND m.sender_role IN ('support', 'team', 'agent')
+            AND m.is_from_client = false
+        ),
+        gaps AS (
+          SELECT canonical_id, channel_id, name, kind,
+            EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY canonical_id, channel_id ORDER BY created_at))) AS sec
+          FROM team_msgs
+          WHERE canonical_id IS NOT NULL
+        ),
+        per_group AS (
+          SELECT canonical_id, channel_id, name, kind, COUNT(*)::int AS msgs,
+            ROUND((SUM(CASE WHEN sec IS NOT NULL AND sec <= 900 THEN sec ELSE 0 END) / 3600.0)::numeric, 1)::float AS hours
+          FROM gaps
+          GROUP BY canonical_id, channel_id, name, kind
+        ),
+        ranked AS (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY canonical_id ORDER BY hours DESC, msgs DESC) AS rn
+          FROM per_group
+        )
+        SELECT canonical_id, channel_id, name, kind, msgs, hours
+        FROM ranked WHERE rn <= 10
       `,
       fetchTeamFrtAggregate(sql, {
         orgId,
@@ -213,7 +270,7 @@ export default async function handler(req: Request) {
           name: a?.name || '— не сопоставлено',
           role: a?.role || null,
           messages: 0, chars: 0, mediaMessages: 0, channels: 0, activeDays: 0,
-          casesTouched: 0, frtAvgMinutes: null, frtResponses: 0, chatHours: null, appHours: null,
+          casesTouched: 0, frtAvgMinutes: null, frtResponses: 0, chatHours: null, chatHoursInternal: null, appHours: null,
         }
         rows.set(key, r)
       }
@@ -236,6 +293,7 @@ export default async function handler(req: Request) {
     for (const ch of chatHours as any[]) {
       const r = rowFor(canonical(ch.canonical_id))
       r.chatHours = (r.chatHours || 0) + Number(ch.hours)
+      if (ch.kind === 'internal') r.chatHoursInternal = (r.chatHoursInternal || 0) + Number(ch.hours)
     }
     for (const h of heartbeat as any[]) {
       const r = rowFor(canonical(h.agent_id))
@@ -256,6 +314,15 @@ export default async function handler(req: Request) {
       }
     }
 
+    const groups: GroupRow[] = (topGroups as any[]).map(g => ({
+      agentId: canonical(g.canonical_id) as string,
+      channelId: g.channel_id,
+      name: g.name,
+      kind: g.kind,
+      msgs: Number(g.msgs),
+      hours: Number(g.hours),
+    }))
+
     const result = [...rows.values()]
       .filter(r => r.messages > 0 || (r.appHours || 0) > 0.5 || r.casesTouched > 0)
       .sort((a, b) => b.messages - a.messages)
@@ -264,7 +331,9 @@ export default async function handler(req: Request) {
       periodDays: days,
       teamAvgFrtMinutes: frt.avgResponseMinutes || null,
       agents: result,
+      groups,
       methodology: {
+        groups: 'Топ-10 групп на сотрудника по времени переписки; kind=internal — внутренние чаты команды, не клиентская работа.',
         chatHours: 'Кластеризация сообщений агента: промежутки ≤15 мин между сообщениями суммируются, больший разрыв = перерыв. Оценка снизу — работа без сообщений (чтение, звонки, настройки) невидима.',
         appHours: 'Время с открытой вкладкой приложения (heartbeat каждые 45с, разрыв >5 мин = перерыв). НЕ включает работу из Telegram напрямую.',
         casesTouched: 'Тикеты, в чей канал агент писал в период жизни тикета (+1ч после решения).',

@@ -11,6 +11,7 @@ import {
   WeeklyScoreWidget,
   PulseStrip,
   CustomerHealthBanner,
+  WorkloadTable,
 } from '@/features/analytics'
 import type { FetchMetricParams } from '@/shared/api'
 import { CommitmentsPanel } from '@/features/commitments/ui'
@@ -213,6 +214,9 @@ export function DashboardPage() {
           </div>
           <WeeklyScoreWidget marketKey={selectedMarket} />
         </div>
+
+        {/* Загрузка команды: объём переписки, тикеты, часы — с раскрытием по группам */}
+        <WorkloadTable />
 
         <StatsSection
           analytics={analytics}

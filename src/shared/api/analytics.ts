@@ -642,13 +642,24 @@ export interface WorkloadAgentRow {
   frtAvgMinutes: number | null
   frtResponses: number
   chatHours: number | null
+  chatHoursInternal: number | null
   appHours: number | null
+}
+
+export interface WorkloadGroupRow {
+  agentId: string
+  channelId: string
+  name: string
+  kind: 'client' | 'internal'
+  msgs: number
+  hours: number
 }
 
 export interface WorkloadPayload {
   periodDays: number
   teamAvgFrtMinutes: number | null
   agents: WorkloadAgentRow[]
+  groups: WorkloadGroupRow[]
   methodology: Record<string, string>
 }
 
