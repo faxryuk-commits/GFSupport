@@ -672,8 +672,8 @@ export function CaseDetailModal({
   const canJump = Boolean(caseData.channelId)
 
   const content = (
-    <div className={`flex gap-6 ${mode === 'modal' ? '-mx-6 -mb-6' : ''}`}>
-        <div className={`flex-1 ${mode === 'modal' ? 'pl-6 pb-6' : 'p-4'}`}>
+    <div className={mode === 'modal' ? '' : 'p-4'}>
+        <div>
           <div className="flex items-start justify-between gap-4 mb-4">
             <div className="min-w-0">
               <h3
@@ -729,26 +729,36 @@ export function CaseDetailModal({
                 ))}
               </select>
 
-              {/* Snooze */}
+              {/* Snooze — иконка вместо широкой кнопки: место в шапке дороже подписи */}
               {caseData.snoozedUntil && new Date(caseData.snoozedUntil) > new Date() ? (
                 <button
                   onClick={() => applySnooze(null)}
                   disabled={snoozePending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100"
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100"
                   title={`Отложен до ${formatDateTimeWithTz(caseData.snoozedUntil)}. Нажмите чтобы снять.`}
                 >
                   <Bell className="w-4 h-4" />
-                  до {formatDateTimeShort(caseData.snoozedUntil)}
+                  {formatDateTimeShort(caseData.snoozedUntil)}
                 </button>
               ) : (
                 <button
                   onClick={() => setSnoozeMenuOpen(v => !v)}
                   disabled={snoozePending}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-[#e8edf3] rounded-lg hover:bg-slate-50"
+                  className="p-2 text-slate-500 border border-[#e8edf3] rounded-lg hover:bg-slate-50"
                   title="Отложить кейс на потом"
                 >
                   <BellOff className="w-4 h-4" />
-                  Отложить
+                </button>
+              )}
+
+              {caseData.channelId && (
+                <button
+                  onClick={handleOpenChat}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100"
+                  title="Открыть полный чат канала"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Чат
                 </button>
               )}
 
@@ -830,13 +840,21 @@ export function CaseDetailModal({
             </button>
           </div>
 
-          {/* Customer 360 — компактная сводка по клиенту, раскрывается по клику */}
-          {customerCtx && (
+          {/* Customer 360 — компактная сводка по клиенту, раскрывается по клику.
+              Если контекст не подгрузился (нет канала) — простая строка с именем,
+              иначе имя клиента не видно нигде (сайдбар удалён). */}
+          {customerCtx ? (
             <Customer360Banner
               ctx={customerCtx}
               expanded={customer360Expanded}
               onToggle={() => setCustomer360Expanded(v => !v)}
             />
+          ) : (
+            <div className="mb-4 flex items-center gap-2.5 px-3 py-2 rounded-lg border border-[#e8edf3] bg-slate-50/40">
+              <Avatar name={caseData.channelName || caseData.company} size="sm" />
+              <p className="text-sm font-medium text-slate-800 truncate">{caseData.channelName || caseData.company}</p>
+              {caseData.contactName && <p className="text-xs text-slate-500 truncate">{caseData.contactName}</p>}
+            </div>
           )}
 
           <Tabs
@@ -1146,32 +1164,6 @@ export function CaseDetailModal({
           </TabPanel>
         </div>
 
-        {/* Sidebar — сведён к одному назначению: уйти в полный чат канала.
-            Имя клиента и «Назначен» отсюда убраны: имя уже видно в баннере
-            Customer 360 сверху, а назначение — рядом со статусом в шапке.
-            Раньше одно и то же имя клиента показывалось здесь 3 раза одновременно. */}
-        <div className="w-56 bg-slate-50 p-4 border-l border-[#e8edf3] flex flex-col">
-          {/* Фолбэк на случай, если Customer 360 не подгрузился (нет канала/ошибка) —
-              тогда имя клиента больше нигде не видно, показываем его тут. */}
-          {!customerCtx && (
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-[#e8edf3]">
-              <Avatar name={caseData.channelName || caseData.company} size="md" />
-              <div className="min-w-0">
-                <p className="font-medium text-slate-800 text-sm truncate">{caseData.channelName || caseData.company}</p>
-                {caseData.contactName && <p className="text-xs text-slate-500 truncate">{caseData.contactName}</p>}
-              </div>
-            </div>
-          )}
-
-          {caseData.channelId ? (
-            <button onClick={handleOpenChat} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] text-sm font-medium rounded-lg hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)]">
-              <ExternalLink className="w-4 h-4" />
-              Открыть чат
-            </button>
-          ) : (
-            <p className="text-sm text-slate-400">Нет связанного чата</p>
-          )}
-        </div>
       </div>
   )
 
