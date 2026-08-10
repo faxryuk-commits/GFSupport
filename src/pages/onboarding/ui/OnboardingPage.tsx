@@ -15,7 +15,7 @@ import {
   Plug, Plus, Loader2, RefreshCw, X, Archive, ArchiveRestore, Trash2,
   History, Settings2, LayoutGrid, ChevronUp, ChevronDown, Pencil, Check,
   BarChart3, AlertTriangle, MessageSquare, ListTodo, User, Flame, Clock,
-  ArrowRight, Link2,
+  ArrowRight, Link2, Target, Table2, FlagTriangleRight, CircleDashed,
 } from 'lucide-react'
 
 // Цвета статусов (справочник хранит ключ цвета, не классы)
@@ -52,6 +52,45 @@ function fmtSeconds(sec: number): string {
 
 function hoursSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 3600000
+}
+
+function fmtShortDur(hours: number): string {
+  if (hours >= 24) return `${(hours / 24).toFixed(1)} дн`
+  return `${Math.round(hours)} ч`
+}
+
+function initials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+}
+
+function isTaskStuck(kind: string | undefined, hours: number): boolean {
+  return (kind === 'waiting' && hours > STUCK_WAITING_HOURS) || (kind === 'active' && hours > STUCK_ACTIVE_HOURS)
+}
+
+/** Разбор бренда для фокус-режима: боттлнек, счётчики, полка. */
+function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
+  let worst: { task: ObBrand['tasks'][number]; kind: string; hours: number; stuck: boolean } | null = null
+  let inFlight = 0
+  let done = 0
+  let countable = 0
+  for (const t of brand.tasks) {
+    const kind = t.statusId ? statusById[t.statusId]?.kind : undefined
+    if (!kind || kind === 'na' || kind === 'cancelled') continue
+    countable++
+    if (kind === 'done') { done++; continue }
+    if (kind === 'active' || kind === 'waiting') {
+      inFlight++
+      const h = hoursSince(t.statusSince)
+      if (!worst || h > worst.hours) worst = { task: t, kind, hours: h, stuck: isTaskStuck(kind, h) }
+    }
+  }
+  const hasBlockers = !!brand.blockers?.trim()
+  let shelf: 'attention' | 'progress' | 'queue' | 'finish'
+  if (countable > 0 && done === countable) shelf = 'finish'
+  else if (hasBlockers || (worst?.stuck ?? false)) shelf = 'attention'
+  else if (inFlight === 0 && done === 0) shelf = 'queue'
+  else shelf = 'progress'
+  return { worst, inFlight, done, countable, hasBlockers, shelf }
 }
 
 export function OnboardingPage() {
@@ -188,6 +227,13 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
   const [newName, setNewName] = useState('')
   const [newPos, setNewPos] = useState('')
   const [saving, setSaving] = useState(false)
+  const [view, setView] = useState<'focus' | 'matrix'>(() =>
+    (localStorage.getItem('onboarding_board_view') as 'focus' | 'matrix') || 'focus',
+  )
+  const switchView = (v: 'focus' | 'matrix') => {
+    setView(v)
+    localStorage.setItem('onboarding_board_view', v)
+  }
 
   const taskTypes = board.taskTypes.filter(t => t.isActive)
   const statusById = useMemo(
@@ -276,6 +322,24 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
           </div>
         )}
 
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+          {([
+            ['focus', 'Фокус', Target],
+            ['matrix', 'Матрица', Table2],
+          ] as const).map(([key, label, Icon]) => (
+            <button
+              key={key}
+              onClick={() => switchView(key)}
+              className={`flex items-center gap-1 px-2.5 py-1 ${
+                view === key ? 'bg-gray-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <Icon className="w-3 h-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span>{summary.brands} в онбординге</span>
           {summary.stuck > 0 && (
@@ -300,6 +364,14 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
         <div className="rounded-lg border border-dashed border-gray-300 py-16 text-center text-gray-400 text-sm">
           Пока нет брендов — добавьте первый
         </div>
+      ) : view === 'focus' ? (
+        <FocusView
+          board={board}
+          statusById={statusById}
+          posById={posById}
+          onOpenBrand={onOpenBrand}
+          onChanged={onChanged}
+        />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full text-sm">
@@ -332,6 +404,184 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Фокус-режим: бренды на полках по требуемому действию, виден только боттлнек
+function FocusView({ board, statusById, posById, onOpenBrand, onChanged }: {
+  board: ObBoard
+  statusById: Record<string, ObStatus>
+  posById: Record<string, ObBoard['posSystems'][number]>
+  onOpenBrand: (b: ObBrand) => void
+  onChanged: () => void
+}) {
+  const typeById = useMemo(
+    () => Object.fromEntries(board.taskTypes.map(t => [t.id, t])),
+    [board.taskTypes],
+  )
+
+  const shelves = useMemo(() => {
+    const acc = {
+      attention: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
+      progress: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
+      queue: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
+      finish: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
+    }
+    for (const brand of board.brands) {
+      if (brand.archivedAt) continue
+      const a = analyzeBrand(brand, statusById)
+      acc[a.shelf].push({ brand, a })
+    }
+    acc.attention.sort((x, y) => (y.a.worst?.hours || 0) - (x.a.worst?.hours || 0))
+    acc.progress.sort((x, y) => (y.a.worst?.hours || 0) - (x.a.worst?.hours || 0))
+    return acc
+  }, [board.brands, statusById])
+
+  const shelfDefs = [
+    { key: 'attention' as const, label: 'Требуют действия', icon: Flame, cls: 'text-red-600' },
+    { key: 'progress' as const, label: 'В работе', icon: LayoutGrid, cls: 'text-gray-500' },
+    { key: 'queue' as const, label: 'Очередь', icon: CircleDashed, cls: 'text-gray-400' },
+    { key: 'finish' as const, label: 'Финишная прямая', icon: FlagTriangleRight, cls: 'text-green-700' },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {shelfDefs.map(def => {
+        const items = shelves[def.key]
+        if (items.length === 0) return null
+        const Icon = def.icon
+        return (
+          <div key={def.key}>
+            <div className={`flex items-center gap-1.5 text-xs font-medium mb-2 ${def.cls}`}>
+              <Icon className="w-3.5 h-3.5" />
+              {def.label} · {items.length}
+            </div>
+            <div className="space-y-2">
+              {items.map(({ brand, a }) => (
+                <FocusCard
+                  key={brand.id}
+                  brand={brand}
+                  a={a}
+                  shelf={def.key}
+                  posName={brand.posId ? posById[brand.posId]?.name : undefined}
+                  typeById={typeById}
+                  statusById={statusById}
+                  onOpen={() => onOpenBrand(brand)}
+                  onChanged={onChanged}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function FocusCard({ brand, a, shelf, posName, typeById, statusById, onOpen, onChanged }: {
+  brand: ObBrand
+  a: ReturnType<typeof analyzeBrand>
+  shelf: 'attention' | 'progress' | 'queue' | 'finish'
+  posName?: string
+  typeById: Record<string, ObBoard['taskTypes'][number]>
+  statusById: Record<string, ObStatus>
+  onOpen: () => void
+  onChanged: () => void
+}) {
+  const borderCls = shelf === 'attention'
+    ? 'border-red-300'
+    : shelf === 'finish' ? 'border-green-300' : 'border-gray-200'
+  const worst = a.worst
+  const worstStatus = worst?.task.statusId ? statusById[worst.task.statusId] : undefined
+  const worstLabel = worst ? typeById[worst.task.taskTypeId]?.label : null
+  const othersInFlight = worst ? a.inFlight - 1 : a.inFlight
+
+  const finishOnboarding = async () => {
+    if (!window.confirm(`Завершить онбординг «${brand.name}» и убрать бренд в архив?`)) return
+    await updateBrand({ id: brand.id, archived: true })
+    onChanged()
+  }
+
+  return (
+    <div className={`rounded-xl border bg-white px-4 py-2.5 hover:shadow-sm transition-shadow ${borderCls}`}>
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <button onClick={onOpen} className="font-medium text-gray-900 hover:text-blue-600 text-sm">
+          {brand.name}
+        </button>
+        <span className="text-[11px] text-gray-400 whitespace-nowrap">
+          {posName || 'без POS'} · {a.done}/{a.countable}
+        </span>
+
+        {shelf === 'finish' ? (
+          <span className="text-xs text-green-700">все шаги закрыты</span>
+        ) : worst && (
+          <span className={`text-xs px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
+            worst.stuck ? 'bg-red-100 text-red-700'
+              : worst.kind === 'waiting' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+          }`}>
+            {worst.stuck && (worst.kind === 'waiting'
+              ? <Clock className="w-3 h-3" /> : <Flame className="w-3 h-3" />)}
+            {worstLabel} — {worstStatus?.label?.toLowerCase()} {fmtShortDur(worst.hours)}
+          </span>
+        )}
+        {othersInFlight > 0 && (
+          <span className="text-[11px] text-gray-400">+{othersInFlight} в процессе</span>
+        )}
+
+        <span className="ml-auto flex items-center gap-2">
+          {brand.commentsCount > 0 && (
+            <span className="flex items-center gap-0.5 text-[11px] text-gray-400">
+              <MessageSquare className="w-3 h-3" />{brand.commentsCount}
+            </span>
+          )}
+          {brand.openTodosCount > 0 && (
+            <span className="flex items-center gap-0.5 text-[11px] text-blue-500">
+              <ListTodo className="w-3 h-3" />{brand.openTodosCount}
+            </span>
+          )}
+          {brand.assigneeName && (
+            <span
+              title={brand.assigneeName}
+              className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-medium flex items-center justify-center"
+            >
+              {initials(brand.assigneeName)}
+            </span>
+          )}
+          {shelf === 'finish' && (
+            <button
+              onClick={finishOnboarding}
+              className="text-xs px-2.5 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50"
+            >
+              Завершить онбординг
+            </button>
+          )}
+        </span>
+      </div>
+
+      {(brand.nextStep?.trim() || brand.dependsOn?.trim() || a.hasBlockers) && (
+        <div className="mt-1.5 space-y-0.5">
+          {brand.nextStep?.trim() && (
+            <div className="text-xs text-gray-600 flex items-center gap-1">
+              <ArrowRight className="w-3 h-3 text-blue-500 shrink-0" />
+              {brand.nextStep}
+              {brand.dependsOn?.trim() && (
+                <span className="text-gray-400">· зависим от: {brand.dependsOn}</span>
+              )}
+            </div>
+          )}
+          {!brand.nextStep?.trim() && brand.dependsOn?.trim() && (
+            <div className="text-xs text-gray-400 flex items-center gap-1">
+              <Link2 className="w-3 h-3 shrink-0" />зависим от: {brand.dependsOn}
+            </div>
+          )}
+          {a.hasBlockers && (
+            <div className="text-xs text-red-600 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 shrink-0" />{brand.blockers}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -445,7 +695,9 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
   const colors = STATUS_COLORS[status?.color || 'gray'] || STATUS_COLORS.gray
   const kind = status?.kind
   const h = hoursSince(task.statusSince)
-  const isStuck = (kind === 'waiting' && h > STUCK_WAITING_HOURS) || (kind === 'active' && h > STUCK_ACTIVE_HOURS)
+  const isStuck = isTaskStuck(kind, h)
+  // Тихие статусы гаснут — цвет остаётся только там, где нужно действие
+  const quiet = kind === 'done' || kind === 'na' || kind === 'todo' || kind === 'cancelled'
 
   const timeHint = [
     task.activeSeconds ? `в работе ${fmtSeconds(task.activeSeconds)}` : '',
@@ -474,14 +726,30 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
         onClick={() => setOpen(v => !v)}
         title={[status?.label, option?.label, timeHint, task.assigneeName ? `исп: ${task.assigneeName}` : '']
           .filter(Boolean).join(' · ')}
-        className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap transition-colors inline-flex items-center gap-1 ${colors.chip} ${
-          isStuck ? 'ring-2 ring-red-400' : ''
-        }`}
+        className={quiet
+          ? 'px-1.5 py-0.5 rounded text-xs whitespace-nowrap inline-flex items-center gap-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500'
+          : `px-2 py-0.5 rounded-full text-xs whitespace-nowrap transition-colors inline-flex items-center gap-1 ${colors.chip} ${
+              isStuck ? 'ring-2 ring-red-400' : ''
+            }`}
       >
-        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : (
+        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : quiet ? (
+          kind === 'done' ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-green-500/70" />
+              {option && <span className="text-gray-400">{option.label}</span>}
+            </>
+          ) : kind === 'na' ? (
+            <span>—</span>
+          ) : kind === 'cancelled' ? (
+            <span className="line-through">{status?.label}</span>
+          ) : (
+            <span className="text-gray-400">{status?.label || '—'}</span>
+          )
+        ) : (
           <>
             {isStuck && (kind === 'waiting' ? <Clock className="w-3 h-3 text-red-500" /> : <Flame className="w-3 h-3 text-red-500" />)}
             <span>{status?.label || '—'}</span>
+            <span className="opacity-70">· {fmtShortDur(h)}</span>
             {option && <span className="opacity-70">· {option.label}</span>}
           </>
         )}
