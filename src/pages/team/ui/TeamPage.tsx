@@ -188,8 +188,6 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         embedded={embedded}
       />
 
-      <WorkloadTable />
-
       <AgentTable
         agents={filtered}
         frtByAgentId={frtByAgentId}
@@ -201,6 +199,11 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         onEdit={setEditingAgent}
         onDeactivate={setDeactivateAgent}
       />
+
+      {/* Загрузка — ПОСЛЕ ростера: вкладка Команда прежде всего про управление
+          (роли, логины, приглашения); когда таблица загрузки стояла первой,
+          владелец решил, что настройки сотрудников исчезли. */}
+      <WorkloadTable />
 
       <AgentDetailPanel
         agent={selectedAgent}
