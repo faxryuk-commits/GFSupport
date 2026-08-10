@@ -24,6 +24,20 @@ export function obId(prefix: string): string {
 export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<void> {
   if (ensuredOrgs.has(orgId)) return
 
+  // Быстрый путь: схема уже актуальна (маркер — последняя добавленная колонка)
+  // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
+  try {
+    const [probe] = await sql`
+      SELECT group_label FROM onboarding_task_types WHERE org_id = ${orgId} LIMIT 1
+    `
+    if (probe !== undefined) {
+      ensuredOrgs.add(orgId)
+      return
+    }
+  } catch {
+    // колонки/таблицы нет — идём по полному пути ниже
+  }
+
   await sql`
     CREATE TABLE IF NOT EXISTS onboarding_statuses (
       id VARCHAR(50) PRIMARY KEY,

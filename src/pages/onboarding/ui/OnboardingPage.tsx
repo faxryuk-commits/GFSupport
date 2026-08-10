@@ -170,6 +170,91 @@ function AgentAvatar({ name, size = 'w-6 h-6 text-[10px]' }: { name: string | nu
   )
 }
 
+/** Аватар ответственного бренда: клик открывает выбор сотрудника. «?» = не назначен. */
+function AssigneeBadge({ brand, agents, onMutateBrand, onChanged, size = 'w-6 h-6 text-[10px]' }: {
+  brand: ObBrand
+  agents: Agent[]
+  onMutateBrand: (brandId: string, patch: Partial<ObBrand>) => void
+  onChanged: () => void
+  size?: string
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const open = rect !== null
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (btnRef.current?.contains(e.target as Node)) return
+      if (panelRef.current?.contains(e.target as Node)) return
+      setRect(null)
+    }
+    const onScroll = () => setRect(null)
+    document.addEventListener('mousedown', onDoc)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [open])
+
+  const pick = async (agent: Agent | null) => {
+    setRect(null)
+    onMutateBrand(brand.id, { assigneeId: agent?.id || null, assigneeName: agent?.name || null })
+    await updateBrand({ id: brand.id, assigneeId: agent?.id || null, assigneeName: agent?.name || null })
+    onChanged()
+  }
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const panelStyle: CSSProperties | undefined = rect ? {
+    position: 'fixed',
+    zIndex: 60,
+    width: 192,
+    left: Math.min(Math.max(8, rect.right - 192), vw - 200),
+    ...(rect.bottom > vh - 300 ? { bottom: Math.max(8, vh - rect.top + 4) } : { top: rect.bottom + 4 }),
+    maxHeight: 280,
+    overflowY: 'auto',
+  } : undefined
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={e => { e.stopPropagation(); setRect(open ? null : btnRef.current?.getBoundingClientRect() || null) }}
+        title={brand.assigneeName
+          ? `Ведёт: ${brand.assigneeName} — нажмите, чтобы сменить`
+          : 'Ответственный не назначен — нажмите, чтобы назначить'}
+        className="hover:ring-2 hover:ring-blue-300 rounded-full transition-shadow"
+      >
+        <AgentAvatar name={brand.assigneeName} size={size} />
+      </button>
+      {open && rect && createPortal(
+        <div ref={panelRef} style={panelStyle} className="rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+          <div className="px-3 py-1 text-[10px] uppercase text-gray-400">Кто ведёт проект</div>
+          <button onClick={() => pick(null)} className="w-full px-3 py-1.5 text-left text-xs text-gray-400 hover:bg-gray-50">
+            Не назначен
+          </button>
+          {agents.map(ag => (
+            <button
+              key={ag.id}
+              onClick={() => pick(ag)}
+              className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 ${
+                ag.id === brand.assigneeId ? 'font-semibold' : ''
+              }`}
+            >
+              <AgentAvatar name={ag.name} size="w-5 h-5 text-[9px]" />
+              {ag.name}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 // ───────────────────────────── страница
 
 export function OnboardingPage() {
@@ -180,13 +265,14 @@ export function OnboardingPage() {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'focus' | 'matrix' | 'stats' | 'history' | 'refs'>('focus')
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
   const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true)
     else setLoading(true)
     setError(null)
     try {
-      const data = await fetchOnboardingBoard(false)
+      const data = await fetchOnboardingBoard(showArchived)
       setBoard({
         ...data,
         statuses: data.statuses || [],
@@ -204,11 +290,28 @@ export function OnboardingPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [showArchived])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(board !== null) }, [load]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     fetchAgents().then(list => setAgents(list.filter(a => a.isActive !== false))).catch(() => {})
+  }, [])
+
+  // Оптимистичные локальные правки — UI отзывается мгновенно, API работает в фоне
+  const mutateTask = useCallback((taskId: string, patch: Partial<ObTask>) => {
+    setBoard(prev => prev ? {
+      ...prev,
+      brands: prev.brands.map(b => ({
+        ...b,
+        tasks: b.tasks.map(t => (t.id === taskId ? { ...t, ...patch } : t)),
+      })),
+    } : prev)
+  }, [])
+  const mutateBrand = useCallback((brandId: string, patch: Partial<ObBrand>) => {
+    setBoard(prev => prev ? {
+      ...prev,
+      brands: prev.brands.map(b => (b.id === brandId ? { ...b, ...patch } : b)),
+    } : prev)
   }, [])
 
   const statusById = useMemo(
@@ -273,7 +376,11 @@ export function OnboardingPage() {
           agents={agents}
           statusById={statusById}
           selectedBrand={selectedBrand}
+          showArchived={showArchived}
+          onToggleArchived={setShowArchived}
           onSelect={setSelectedBrandId}
+          onMutateTask={mutateTask}
+          onMutateBrand={mutateBrand}
           onChanged={() => load(true)}
         />
       )}
@@ -283,6 +390,7 @@ export function OnboardingPage() {
             board={board}
             statusById={statusById}
             onSelect={setSelectedBrandId}
+            onMutateTask={mutateTask}
             onChanged={() => load(true)}
           />
           {selectedBrand && (
@@ -295,6 +403,8 @@ export function OnboardingPage() {
                   agents={agents}
                   statusById={statusById}
                   onClose={() => setSelectedBrandId(null)}
+                  onMutateTask={mutateTask}
+                  onMutateBrand={mutateBrand}
                   onChanged={() => load(true)}
                 />
               </div>
@@ -313,15 +423,22 @@ export function OnboardingPage() {
 
 // ───────────────────────────── Фокус
 
-function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChanged }: {
+function FocusTab({ board, agents, statusById, selectedBrand, showArchived, onToggleArchived, onSelect, onMutateTask, onMutateBrand, onChanged }: {
   board: ObBoard
   agents: Agent[]
   statusById: Record<string, ObStatus>
   selectedBrand: ObBrand | null
+  showArchived: boolean
+  onToggleArchived: (v: boolean) => void
   onSelect: (id: string | null) => void
+  onMutateTask: (taskId: string, patch: Partial<ObTask>) => void
+  onMutateBrand: (brandId: string, patch: Partial<ObBrand>) => void
   onChanged: () => void
 }) {
-  const [filter, setFilter] = useState<'all' | 'stuck' | 'mine'>('all')
+  const [filter, setFilter] = useState<'all' | 'stuck' | 'mine' | 'archive'>('all')
+  useEffect(() => {
+    if ((filter === 'archive') !== showArchived) onToggleArchived(filter === 'archive')
+  }, [filter, showArchived, onToggleArchived])
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPos, setNewPos] = useState('')
@@ -333,8 +450,8 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
   const posById = useMemo(() => Object.fromEntries(board.posSystems.map(p => [p.id, p])), [board.posSystems])
 
   const analyzed = useMemo(() => board.brands
-    .filter(b => !b.archivedAt)
-    .map(brand => ({ brand, a: analyzeBrand(brand, statusById) })), [board.brands, statusById])
+    .filter(b => (filter === 'archive' ? !!b.archivedAt : !b.archivedAt))
+    .map(brand => ({ brand, a: analyzeBrand(brand, statusById) })), [board.brands, statusById, filter])
 
   const stuckTotal = analyzed.reduce((s, x) => s + x.a.inFlightTasks.filter(t => t.stuck).length, 0)
 
@@ -344,12 +461,15 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
     return true
   })
 
-  const shelves = {
-    attention: filtered.filter(x => x.a.shelf === 'attention').sort((a, b) => (b.a.worst?.hours || 0) - (a.a.worst?.hours || 0)),
-    progress: filtered.filter(x => x.a.shelf === 'progress').sort((a, b) => (b.a.worst?.hours || 0) - (a.a.worst?.hours || 0)),
-    queue: filtered.filter(x => x.a.shelf === 'queue'),
-    finish: filtered.filter(x => x.a.shelf === 'finish'),
-  }
+  const shelves = filter === 'archive'
+    ? { attention: [], progress: [], queue: [], finish: [], archive: filtered }
+    : {
+        attention: filtered.filter(x => x.a.shelf === 'attention').sort((a, b) => (b.a.worst?.hours || 0) - (a.a.worst?.hours || 0)),
+        progress: filtered.filter(x => x.a.shelf === 'progress').sort((a, b) => (b.a.worst?.hours || 0) - (a.a.worst?.hours || 0)),
+        queue: filtered.filter(x => x.a.shelf === 'queue'),
+        finish: filtered.filter(x => x.a.shelf === 'finish'),
+        archive: [] as typeof filtered,
+      }
 
   const handleAdd = async () => {
     if (!newName.trim()) return
@@ -385,9 +505,10 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
       )}
       <span className="flex gap-1.5 ml-1">
         {([
-          ['all', `Все ${analyzed.length}`],
-          ['stuck', `застряло ${stuckTotal}`],
+          ['all', filter === 'archive' ? 'Все' : `Все ${analyzed.length}`],
+          ['stuck', `застряло ${filter === 'archive' ? '' : stuckTotal}`.trim()],
           ['mine', 'мои'],
+          ['archive', 'архив'],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -412,6 +533,7 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
     { key: 'progress' as const, label: 'В работе', cls: 'text-blue-700' },
     { key: 'queue' as const, label: 'Очередь', cls: 'text-gray-400' },
     { key: 'finish' as const, label: 'Финишная прямая', cls: 'text-green-700' },
+    { key: 'archive' as const, label: 'Архив — онбординг завершён', cls: 'text-gray-400' },
   ]
 
   // ── сплит: выбран бренд
@@ -468,6 +590,8 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
               agents={agents}
               statusById={statusById}
               onClose={() => onSelect(null)}
+              onMutateTask={onMutateTask}
+              onMutateBrand={onMutateBrand}
               onChanged={onChanged}
             />
           </div>
@@ -501,7 +625,9 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
                     typeById={typeById}
                     optionById={optionById}
                     statusById={statusById}
+                    agents={agents}
                     onOpen={() => onSelect(brand.id)}
+                    onMutateBrand={onMutateBrand}
                     onChanged={onChanged}
                   />
                 ))}
@@ -514,16 +640,18 @@ function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChange
   )
 }
 
-function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, statusById, onOpen, onChanged }: {
+function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, statusById, agents, onOpen, onMutateBrand, onChanged }: {
   brand: ObBrand
   a: ReturnType<typeof analyzeBrand>
-  shelf: 'attention' | 'progress' | 'queue' | 'finish'
+  shelf: 'attention' | 'progress' | 'queue' | 'finish' | 'archive'
   posName?: string
   taskTypes: ObTaskType[]
   typeById: Record<string, ObTaskType>
   optionById: Record<string, ObBoard['options'][number]>
   statusById: Record<string, ObStatus>
+  agents: Agent[]
   onOpen: () => void
+  onMutateBrand: (brandId: string, patch: Partial<ObBrand>) => void
   onChanged: () => void
 }) {
   const worst = a.worst
@@ -551,7 +679,9 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
         <Pipeline tasks={orderedTasks(brand, taskTypes)} statusById={statusById} height="h-[3px]" />
       </span>
       <span className="min-w-0 flex-1 text-[12px] truncate">
-        {shelf === 'finish' ? (
+        {shelf === 'archive' ? (
+          <span className="text-gray-400">завершён {brand.archivedAt ? formatDateShort(brand.archivedAt) : ''} · {a.done}/{a.countable} шагов</span>
+        ) : shelf === 'finish' ? (
           <span className="text-green-700">все шаги закрыты</span>
         ) : shelf === 'queue' ? (
           <span className="text-gray-400">не начат — {a.countable || brand.tasks.length} шагов впереди</span>
@@ -588,12 +718,23 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
           <button onClick={finishOnboarding} className="text-xs px-2.5 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50">
             Завершить
           </button>
+        ) : shelf === 'archive' ? (
+          <button
+            onClick={async () => {
+              onMutateBrand(brand.id, { archivedAt: null })
+              await updateBrand({ id: brand.id, archived: false })
+              onChanged()
+            }}
+            className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+          >
+            Вернуть из архива
+          </button>
         ) : (
           <button onClick={onOpen} className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
             Открыть
           </button>
         )}
-        <AgentAvatar name={brand.assigneeName} size="w-6 h-6 text-[10px]" />
+        <AssigneeBadge brand={brand} agents={agents} onMutateBrand={onMutateBrand} onChanged={onChanged} />
       </span>
     </div>
   )
@@ -601,12 +742,14 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
 
 // ───────────────────────────── Панель бренда (сплит + шторка)
 
-function BrandPanel({ brand, board, agents, statusById, onClose, onChanged }: {
+function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, onMutateBrand, onChanged }: {
   brand: ObBrand
   board: ObBoard
   agents: Agent[]
   statusById: Record<string, ObStatus>
   onClose: () => void
+  onMutateTask: (taskId: string, patch: Partial<ObTask>) => void
+  onMutateBrand: (brandId: string, patch: Partial<ObBrand>) => void
   onChanged: () => void
 }) {
   const [showFields, setShowFields] = useState(false)
@@ -672,7 +815,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onChanged }: {
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[16px] font-medium text-gray-900">{brand.name}</span>
         {posName && <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 text-gray-500">{posName}</span>}
-        <AgentAvatar name={brand.assigneeName} size="w-5 h-5 text-[9px]" />
+        <AssigneeBadge brand={brand} agents={agents} onMutateBrand={onMutateBrand} onChanged={onChanged} size="w-5 h-5 text-[9px]" />
         <span className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => setCardTab('comments')}
@@ -789,6 +932,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onChanged }: {
                                 board={board}
                                 status={task.statusId ? statusById[task.statusId] : undefined}
                                 option={undefined}
+                                onMutate={onMutateTask}
                                 onChanged={onChanged}
                               />
                             </span>
@@ -1040,10 +1184,11 @@ function TodosBlock({ brandId, todos, agents, onChanged }: {
 
 // ───────────────────────────── Матрица
 
-function MatrixTab({ board, statusById, onSelect, onChanged }: {
+function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
   board: ObBoard
   statusById: Record<string, ObStatus>
   onSelect: (id: string) => void
+  onMutateTask: (taskId: string, patch: Partial<ObTask>) => void
   onChanged: () => void
 }) {
   const taskTypes = board.taskTypes.filter(t => t.isActive)
@@ -1120,6 +1265,7 @@ function MatrixTab({ board, statusById, onSelect, onChanged }: {
                             board={board}
                             status={task.statusId ? statusById[task.statusId] : undefined}
                             option={task.optionId ? optionById[task.optionId] : undefined}
+                            onMutate={onMutateTask}
                             onChanged={onChanged}
                           />
                         ))}
@@ -1138,7 +1284,7 @@ function MatrixTab({ board, statusById, onSelect, onChanged }: {
 
 // ───────────────────────────── Чип статуса (портал-дропдаун)
 
-function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, board, status, option, onChanged }: {
+function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, board, status, option, onMutate, onChanged }: {
   task: ObTask
   taskType: ObTaskType
   brandId: string
@@ -1147,10 +1293,10 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   board: ObBoard
   status?: ObStatus
   option?: ObBoard['options'][number]
+  onMutate: (taskId: string, patch: Partial<ObTask>) => void
   onChanged: () => void
 }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
-  const [saving, setSaving] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const open = rect !== null
@@ -1193,15 +1339,15 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
     : []
   const addableOptions = catOptions.filter(o => !siblingOptionIds.includes(o.id))
 
+  // Оптимистично: чип меняется мгновенно, API — в фоне, затем тихая синхронизация
   const pickStatus = async (statusId: string) => {
-    if (saving || statusId === task.statusId) { setOpen(false); return }
-    setSaving(true)
+    if (statusId === task.statusId) { setOpen(false); return }
+    setRect(null)
+    onMutate(task.id, { statusId, statusSince: new Date().toISOString() })
     try {
       await setTaskStatus(task.id, statusId)
-      onChanged()
     } finally {
-      setSaving(false)
-      setOpen(false)
+      onChanged()
     }
   }
 
@@ -1234,7 +1380,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
               isStuck ? 'ring-2 ring-red-400' : ''
             }`}
       >
-        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : quiet ? (
+        {quiet ? (
           kind === 'done' ? (
             <>
               <Check className="w-3.5 h-3.5 text-green-500/70" />
@@ -1287,8 +1433,9 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
               <select
                 value={task.optionId || ''}
                 onChange={async e => {
-                  await setTaskOption(task.id, e.target.value || null)
-                  onChanged()
+                  const v = e.target.value || null
+                  onMutate(task.id, { optionId: v })
+                  try { await setTaskOption(task.id, v) } finally { onChanged() }
                 }}
                 className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
               >
@@ -1321,8 +1468,9 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
             <AgentSelect
               value={task.assigneeId}
               onChange={async id => {
-                await setTaskAssignee(task.id, id)
-                onChanged()
+                const name = id ? (cachedAgents?.find(a => a.id === id)?.name || null) : null
+                onMutate(task.id, { assigneeId: id, assigneeName: name })
+                try { await setTaskAssignee(task.id, id) } finally { onChanged() }
               }}
             />
           </div>
@@ -1609,6 +1757,57 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
           )}
         </div>
       </div>
+
+      {stats && stats.people.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 overflow-x-auto">
+          <div className="text-sm font-medium text-gray-900 mb-2">По сотрудникам</div>
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="text-left font-medium py-1.5 pr-3">Сотрудник</th>
+                <th className="text-right font-medium py-1.5 px-3">Изменений</th>
+                <th className="text-right font-medium py-1.5 px-3">Закрыто этапов</th>
+                <th className="text-right font-medium py-1.5 px-3">Открытых задач</th>
+                <th className="text-right font-medium py-1.5 pl-3">Последняя активность</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.people.map(p => (
+                <tr key={p.name} className="border-b border-gray-50 last:border-0">
+                  <td className="py-1.5 pr-3 text-gray-800">
+                    <span className="inline-flex items-center gap-1.5">
+                      <AgentAvatar name={p.name} size="w-5 h-5 text-[9px]" />
+                      {p.name}
+                    </span>
+                  </td>
+                  <td className="py-1.5 px-3 text-right text-gray-600">{p.events || ''}</td>
+                  <td className="py-1.5 px-3 text-right text-green-700">{p.completed || ''}</td>
+                  <td className="py-1.5 px-3 text-right text-blue-600">{p.openTasks || ''}</td>
+                  <td className="py-1.5 pl-3 text-right text-gray-400 text-xs">
+                    {p.lastActivity ? formatDateTimeShort(p.lastActivity) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {(() => {
+                const unassigned = brands.reduce((s, b) => s + (b.assigneeName ? 0 : b.tasks.filter(t => {
+                  const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+                  return (k === 'active' || k === 'waiting' || k === 'todo') && !t.assigneeName
+                }).length), 0)
+                if (!unassigned) return null
+                return (
+                  <tr>
+                    <td className="py-1.5 pr-3 text-amber-700">без исполнителя</td>
+                    <td className="py-1.5 px-3" />
+                    <td className="py-1.5 px-3" />
+                    <td className="py-1.5 px-3 text-right text-red-600 font-medium">{unassigned}</td>
+                    <td className="py-1.5 pl-3 text-right text-xs text-amber-600">назначьте через аватар «?»</td>
+                  </tr>
+                )
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {stats && stats.stages.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-4">
