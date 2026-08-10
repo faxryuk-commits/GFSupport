@@ -170,6 +170,54 @@ function AgentAvatar({ name, size = 'w-6 h-6 text-[10px]' }: { name: string | nu
   )
 }
 
+// ── свой confirm вместо window.confirm ─────────────────────────────
+let confirmResolver: ((v: boolean) => void) | null = null
+let confirmSetter: ((msg: string | null) => void) | null = null
+
+function appConfirm(message: string): Promise<boolean> {
+  return new Promise(res => {
+    confirmResolver = res
+    if (confirmSetter) confirmSetter(message)
+    else res(window.confirm(message))
+  })
+}
+
+function ConfirmHost() {
+  const [msg, setMsg] = useState<string | null>(null)
+  useEffect(() => {
+    confirmSetter = setMsg
+    return () => { confirmSetter = null }
+  }, [])
+  if (!msg) return null
+  const answer = (v: boolean) => {
+    setMsg(null)
+    confirmResolver?.(v)
+    confirmResolver = null
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30" onClick={() => answer(false)} />
+      <div className="relative bg-white rounded-xl shadow-xl border border-gray-200 p-5 w-[380px] max-w-[90vw]">
+        <div className="flex items-start gap-3 mb-4">
+          <span className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-4 h-4" />
+          </span>
+          <div className="text-sm text-gray-800 pt-1">{msg}</div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={() => answer(false)} className="px-3.5 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+            Отмена
+          </button>
+          <button onClick={() => answer(true)} className="px-3.5 py-1.5 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700">
+            Подтвердить
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 /** Аватар ответственного бренда: клик открывает выбор сотрудника. «?» = не назначен. */
 function AssigneeBadge({ brand, agents, onMutateBrand, onChanged, size = 'w-6 h-6 text-[10px]' }: {
   brand: ObBrand
@@ -324,6 +372,7 @@ export function OnboardingPage() {
 
   return (
     <div className="p-4 sm:p-6 max-w-full">
+      <ConfirmHost />
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <Plug className="w-6 h-6 text-blue-600" />
@@ -661,7 +710,7 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
   const days = Math.round(hoursSince(brand.startedAt) / 24)
 
   const finishOnboarding = async () => {
-    if (!window.confirm(`Завершить онбординг «${brand.name}» и убрать бренд в архив?`)) return
+    if (!(await appConfirm(`Завершить онбординг «${brand.name}» и убрать бренд в архив? Бренд останется доступен в фильтре «архив».`))) return
     await updateBrand({ id: brand.id, archived: true })
     onChanged()
   }
@@ -740,6 +789,77 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
   )
 }
 
+/**
+ * «Напомнить…» — меню с явным адресатом. Сейчас рабочий пункт — сотруднику
+ * (создаёт задачу-напоминание ведущему); клиенту/поставщику появятся после
+ * привязки Telegram-канала бренда.
+ */
+function ReminderMenu({ brand, worstLabel, onCreated }: {
+  brand: ObBrand
+  worstLabel: string | null
+  onCreated: () => void
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const open = rect !== null
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (btnRef.current?.contains(e.target as Node)) return
+      if (panelRef.current?.contains(e.target as Node)) return
+      setRect(null)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const reminderText = `Напоминание: ${brand.nextStep?.trim() || worstLabel || 'продвинуть онбординг'}`
+
+  const remindAssignee = async () => {
+    setRect(null)
+    await addBrandTodo(brand.id, { text: reminderText, assigneeId: brand.assigneeId || null })
+    onCreated()
+  }
+
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const panelStyle: CSSProperties | undefined = rect ? {
+    position: 'fixed', zIndex: 60, width: 264,
+    left: Math.max(8, rect.right - 264),
+    ...(rect.bottom > vh - 220 ? { bottom: vh - rect.top + 4 } : { top: rect.bottom + 4 }),
+  } : undefined
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => setRect(open ? null : btnRef.current?.getBoundingClientRect() || null)}
+        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+      >
+        Напомнить <ChevronDown className="w-3 h-3" />
+      </button>
+      {open && rect && createPortal(
+        <div ref={panelRef} style={panelStyle} className="rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+          <button onClick={remindAssignee} className="w-full px-3 py-2 text-left hover:bg-gray-50">
+            <span className="text-xs text-gray-900 block">Сотруднику{brand.assigneeName ? ` — ${brand.assigneeName}` : ''}</span>
+            <span className="text-[11px] text-gray-400 block">создаст задачу «{reminderText.slice(0, 40)}…»</span>
+          </button>
+          <div className="w-full px-3 py-2 opacity-50 cursor-not-allowed">
+            <span className="text-xs text-gray-900 block">Клиенту в Telegram-чат</span>
+            <span className="text-[11px] text-gray-400 block">скоро — нужна привязка канала бренда (⚙)</span>
+          </div>
+          <div className="w-full px-3 py-2 opacity-50 cursor-not-allowed">
+            <span className="text-xs text-gray-900 block">Поставщику</span>
+            <span className="text-[11px] text-gray-400 block">скоро — контакты поставщиков в справочнике</span>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 // ───────────────────────────── Панель бренда (сплит + шторка)
 
 function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, onMutateBrand, onChanged }: {
@@ -766,6 +886,12 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
     fetchOnboardingEvents(brand.id, 200).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [brand.id])
   useEffect(() => { loadCard() }, [loadCard])
+  // После операций (смена статусов и т.п.) доска перезагружается — подтягиваем
+  // свежий журнал, чтобы «История» сразу показывала событие с автором.
+  useEffect(() => {
+    fetchOnboardingEvents(brand.id, 200).then(r => setEvents(r.events)).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand])
 
   const taskTypes = board.taskTypes.filter(t => t.isActive)
   const typeById = useMemo(() => Object.fromEntries(board.taskTypes.map(t => [t.id, t])), [board.taskTypes])
@@ -781,6 +907,19 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
   const days = Math.round(hoursSince(brand.startedAt) / 24)
   const stuckCount = a.inFlightTasks.filter(t => t.stuck).length
   const posName = brand.posId ? board.posSystems.find(p => p.id === brand.posId)?.name : null
+
+  // Подсказка следующего действия по боттлнеку, когда поле пустое
+  const suggestion = useMemo(() => {
+    if (a.worst) {
+      const label = typeById[a.worst.task.taskTypeId]?.label || 'этап'
+      const opt = a.worst.task.optionId ? optionById[a.worst.task.optionId]?.label : null
+      const full = `${label}${opt ? ` · ${opt}` : ''}`
+      return a.worst.kind === 'waiting' ? `дожать данные: ${full}` : `завершить: ${full}`
+    }
+    const firstTodo = orderedTasks(brand, taskTypes).find(t => statusById[t.statusId || '']?.kind === 'todo')
+    if (firstTodo) return `начать: ${typeById[firstTodo.taskTypeId]?.label || 'первый шаг'}`
+    return null
+  }, [a.worst, brand, taskTypes, typeById, optionById, statusById])
 
   // раскрыты: группы с застрявшими/ожидающими
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -803,7 +942,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
   }
 
   const handleDelete = async () => {
-    if (!window.confirm(`Удалить бренд «${brand.name}» вместе с историей? Это необратимо.`)) return
+    if (!(await appConfirm(`Удалить бренд «${brand.name}» вместе с историей? Это необратимо.`))) return
     await deleteBrand(brand.id)
     onClose()
     onChanged()
@@ -817,12 +956,11 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
         {posName && <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 text-gray-500">{posName}</span>}
         <AssigneeBadge brand={brand} agents={agents} onMutateBrand={onMutateBrand} onChanged={onChanged} size="w-5 h-5 text-[9px]" />
         <span className="ml-auto flex items-center gap-1.5">
-          <button
-            onClick={() => setCardTab('comments')}
-            className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Напомнить клиенту
-          </button>
+          <ReminderMenu
+            brand={brand}
+            worstLabel={a.worst ? `${typeById[a.worst.task.taskTypeId]?.label || ''}${a.worst.task.optionId && optionById[a.worst.task.optionId] ? ` · ${optionById[a.worst.task.optionId].label}` : ''}` : null}
+            onCreated={() => { loadCard(); onChanged() }}
+          />
           <button onClick={() => setShowFields(v => !v)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" title="Поля бренда">
             <Settings className="w-4 h-4" />
           </button>
@@ -842,7 +980,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
         <Pipeline tasks={orderedTasks(brand, taskTypes)} statusById={statusById} height="h-[5px]" />
       </div>
 
-      {/* Следующий шаг */}
+      {/* Следующий шаг: если не заполнен — система предлагает по боттлнеку */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 mb-2.5 flex items-center gap-2">
         <span className="text-xs font-medium text-amber-800 shrink-0">Следующий шаг:</span>
         <input
@@ -852,6 +990,15 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
           placeholder="что делаем дальше…"
           className="flex-1 min-w-0 bg-transparent text-xs text-amber-900 placeholder-amber-300 focus:outline-none"
         />
+        {!nextStep.trim() && suggestion && (
+          <button
+            onClick={() => { setNextStep(suggestion); save({ nextStep: suggestion }) }}
+            className="text-[11px] text-amber-700 underline decoration-dotted shrink-0 hover:text-amber-900 truncate max-w-[45%]"
+            title={`Подставить: ${suggestion}`}
+          >
+            → {suggestion}
+          </button>
+        )}
         {a.worst && a.worst.kind === 'waiting' && (
           <span className="text-[11px] text-amber-700 shrink-0">ждём {fmtShortDur(a.worst.hours)}</span>
         )}
@@ -982,10 +1129,21 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
       </div>
 
       {cardTab === 'comments' && (
-        <CommentsBlock brandId={brand.id} comments={comments} onChanged={() => { loadCard(); onChanged() }} />
+        <CommentsBlock
+          brandId={brand.id}
+          comments={comments}
+          selfName={agents.find(x => x.id === (localStorage.getItem('support_agent_token') || ''))?.name || 'Вы'}
+          onChanged={() => { loadCard(); onChanged() }}
+        />
       )}
       {cardTab === 'todos' && (
-        <TodosBlock brandId={brand.id} todos={todos} agents={agents} onChanged={() => { loadCard(); onChanged() }} />
+        <TodosBlock
+          brandId={brand.id}
+          todos={todos}
+          agents={agents}
+          selfName={agents.find(x => x.id === (localStorage.getItem('support_agent_token') || ''))?.name || 'Вы'}
+          onChanged={() => { loadCard(); onChanged() }}
+        />
       )}
       {cardTab === 'history' && (
         events === null ? <div className="text-gray-400 text-sm py-3 text-center"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
@@ -1082,19 +1240,29 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
   )
 }
 
-function CommentsBlock({ brandId, comments, onChanged }: {
+function CommentsBlock({ brandId, comments, selfName, onChanged }: {
   brandId: string
   comments: ObComment[] | null
+  selfName: string
   onChanged: () => void
 }) {
   const [text, setText] = useState('')
+  // Оптимизм: комментарий появляется мгновенно, сервер догоняет в фоне
+  const [pending, setPending] = useState<ObComment[]>([])
+  useEffect(() => { setPending([]) }, [comments])
+
   const submit = async () => {
     const t = text.trim()
     if (!t) return
     setText('')
+    setPending(p => [{
+      id: `tmp_${Date.now()}`, authorId: null, authorName: selfName,
+      text: t, createdAt: new Date().toISOString(),
+    }, ...p])
     await addBrandComment(brandId, t)
     onChanged()
   }
+  const items = [...pending, ...(comments || [])]
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
@@ -1104,11 +1272,11 @@ function CommentsBlock({ brandId, comments, onChanged }: {
           className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
         <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
       </div>
-      {comments === null ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
-        : comments.length === 0 ? <div className="text-gray-400 text-xs">Комментариев нет</div>
+      {comments === null && pending.length === 0 ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+        : items.length === 0 ? <div className="text-gray-400 text-xs">Комментариев нет</div>
           : (
             <ul className="space-y-2">
-              {comments.map(c => (
+              {items.map(c => (
                 <li key={c.id} className="rounded-lg bg-gray-50 px-3 py-2 group">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-xs font-medium text-gray-700">{c.authorName || 'Без имени'}</span>
@@ -1127,22 +1295,43 @@ function CommentsBlock({ brandId, comments, onChanged }: {
   )
 }
 
-function TodosBlock({ brandId, todos, agents, onChanged }: {
+function TodosBlock({ brandId, todos, agents, selfName, onChanged }: {
   brandId: string
   todos: ObTodo[] | null
   agents: Agent[]
+  selfName: string
   onChanged: () => void
 }) {
   const [text, setText] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [pending, setPending] = useState<ObTodo[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  useEffect(() => { setPending([]) }, [todos])
+
   const submit = async () => {
     const t = text.trim()
     if (!t) return
+    const agName = assignee ? agents.find(a => a.id === assignee)?.name || null : null
     setText('')
+    setPending(p => [{
+      id: `tmp_${Date.now()}`, text: t, assigneeId: assignee || null, assigneeName: agName,
+      dueAt: null, doneAt: null, createdBy: selfName, createdAt: new Date().toISOString(),
+    }, ...p])
     await addBrandTodo(brandId, { text: t, assigneeId: assignee || null })
     setAssignee('')
     onChanged()
   }
+
+  const saveEdit = async (todo: ObTodo) => {
+    const t = editText.trim()
+    setEditingId(null)
+    if (!t || t === todo.text) return
+    await updateBrandTodo(todo.id, { text: t })
+    onChanged()
+  }
+
+  const items = [...pending, ...(todos || [])]
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
@@ -1156,24 +1345,52 @@ function TodosBlock({ brandId, todos, agents, onChanged }: {
         </select>
         <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
       </div>
-      {todos === null ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
-        : todos.length === 0 ? <div className="text-gray-400 text-xs">Задач нет</div>
+      {todos === null && pending.length === 0 ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+        : items.length === 0 ? <div className="text-gray-400 text-xs">Задач нет</div>
           : (
             <ul className="space-y-1.5">
-              {todos.map(t => (
-                <li key={t.id} className="flex items-start gap-2 text-sm group">
+              {items.map(t => (
+                <li key={t.id} className="flex items-start gap-2 text-sm">
                   <input type="checkbox" checked={!!t.doneAt}
                     onChange={async e => { await updateBrandTodo(t.id, { done: e.target.checked }); onChanged() }}
                     className="mt-0.5 rounded" />
                   <div className="flex-1 min-w-0">
-                    <div className={t.doneAt ? 'line-through text-gray-400' : 'text-gray-800'}>{t.text}</div>
+                    {editingId === t.id ? (
+                      <input
+                        autoFocus
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveEdit(t)
+                          if (e.key === 'Escape') setEditingId(null)
+                        }}
+                        onBlur={() => saveEdit(t)}
+                        className="w-full px-2 py-0.5 rounded border border-blue-300 text-sm"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => { if (!t.id.startsWith('tmp_')) { setEditingId(t.id); setEditText(t.text) } }}
+                        title="Нажмите, чтобы отредактировать"
+                        className={`text-left w-full ${t.doneAt ? 'line-through text-gray-400' : 'text-gray-800 hover:text-blue-700'}`}
+                      >
+                        {t.text}
+                      </button>
+                    )}
                     <div className="text-[11px] text-gray-400">
                       {t.assigneeName && <span className="mr-2">→ {t.assigneeName}</span>}
                       {t.createdBy && <span>от {t.createdBy}</span>}
                     </div>
                   </div>
-                  <button onClick={async () => { await deleteBrandTodo(t.id); onChanged() }}
-                    className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button
+                    onClick={async () => {
+                      if (!(await appConfirm('Удалить задачу?'))) return
+                      await deleteBrandTodo(t.id)
+                      onChanged()
+                    }}
+                    className="p-1 text-gray-300 hover:text-red-500"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -1297,6 +1514,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   onChanged: () => void
 }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const [, forceRender] = useState(0)
   const btnRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const open = rect !== null
@@ -1304,6 +1522,12 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
 
   useEffect(() => {
     if (!open) return
+    if (!cachedAgents) {
+      fetchAgents().then(list => {
+        cachedAgents = list.filter(a => a.isActive !== false)
+        forceRender(x => x + 1)
+      }).catch(() => {})
+    }
     const onDoc = (e: MouseEvent) => {
       if (btnRef.current?.contains(e.target as Node)) return
       if (panelRef.current?.contains(e.target as Node)) return
@@ -1428,51 +1652,89 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
           })}
 
           {catOptions.length > 0 && (
-            <div className="border-t border-gray-100 mt-1 px-3 py-1.5">
-              <div className="text-[10px] uppercase text-gray-400 mb-1">Поставщик</div>
-              <select
-                value={task.optionId || ''}
-                onChange={async e => {
-                  const v = e.target.value || null
-                  onMutate(task.id, { optionId: v })
-                  try { await setTaskOption(task.id, v) } finally { onChanged() }
-                }}
-                className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
-              >
-                <option value="">—</option>
-                {catOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-              {addableOptions.length > 0 && (
-                <div className="mt-1.5">
-                  <div className="text-[10px] uppercase text-gray-400 mb-0.5">Добавить поставщика</div>
-                  {addableOptions.map(o => (
+            <div className="border-t border-gray-100 mt-1 py-1">
+              <div className="text-[10px] uppercase text-gray-400 px-3 pt-0.5 pb-1">Поставщик</div>
+              <div className="max-h-36 overflow-y-auto">
+                {catOptions.map(o => {
+                  const current = o.id === task.optionId
+                  const usedByOther = !current && siblingOptionIds.includes(o.id)
+                  return (
                     <button
                       key={o.id}
+                      disabled={usedByOther}
                       onClick={async () => {
-                        await addProviderTask(brandId, taskType.id, o.id)
-                        setRect(null)
-                        onChanged()
+                        const v = current ? null : o.id
+                        onMutate(task.id, { optionId: v })
+                        try { await setTaskOption(task.id, v) } finally { onChanged() }
                       }}
-                      className="flex items-center gap-1.5 w-full py-0.5 text-left text-xs text-blue-600 hover:text-blue-800"
+                      title={usedByOther ? 'Уже добавлен отдельной строкой' : current ? 'Нажмите, чтобы снять' : undefined}
+                      className={`flex items-center gap-2 w-full px-3 py-1 text-left text-xs ${
+                        usedByOther ? 'text-gray-300' : current ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
                     >
-                      <Plus className="w-3 h-3" />{o.label}
+                      <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${current ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                        {current && <Check className="w-2.5 h-2.5 text-white" />}
+                      </span>
+                      {o.label}
                     </button>
-                  ))}
+                  )
+                })}
+              </div>
+              {addableOptions.length > 0 && (
+                <div className="border-t border-gray-50 mt-1 pt-1">
+                  <div className="text-[10px] uppercase text-gray-400 px-3 pb-0.5">Добавить строкой</div>
+                  <div className="max-h-24 overflow-y-auto">
+                    {addableOptions.map(o => (
+                      <button
+                        key={o.id}
+                        onClick={async () => {
+                          await addProviderTask(brandId, taskType.id, o.id)
+                          setRect(null)
+                          onChanged()
+                        }}
+                        className="flex items-center gap-1.5 w-full px-3 py-1 text-left text-xs text-blue-600 hover:bg-blue-50"
+                      >
+                        <Plus className="w-3 h-3" />{o.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          <div className={`px-3 py-1.5 ${catOptions.length === 0 ? 'border-t border-gray-100 mt-1' : ''}`}>
-            <div className="text-[10px] uppercase text-gray-400 mb-1">Исполнитель</div>
-            <AgentSelect
-              value={task.assigneeId}
-              onChange={async id => {
-                const name = id ? (cachedAgents?.find(a => a.id === id)?.name || null) : null
-                onMutate(task.id, { assigneeId: id, assigneeName: name })
-                try { await setTaskAssignee(task.id, id) } finally { onChanged() }
-              }}
-            />
+          <div className={`py-1 ${catOptions.length === 0 ? 'border-t border-gray-100 mt-1' : 'border-t border-gray-100'}`}>
+            <div className="text-[10px] uppercase text-gray-400 px-3 pt-0.5 pb-1">Исполнитель</div>
+            <div className="max-h-36 overflow-y-auto">
+              <button
+                onClick={async () => {
+                  onMutate(task.id, { assigneeId: null, assigneeName: null })
+                  try { await setTaskAssignee(task.id, null) } finally { onChanged() }
+                }}
+                className={`w-full px-3 py-1 text-left text-xs ${!task.assigneeId ? 'text-gray-700 font-medium' : 'text-gray-400 hover:bg-gray-50'}`}
+              >
+                Не назначен
+              </button>
+              {(cachedAgents || []).map(ag => {
+                const current = ag.id === task.assigneeId
+                return (
+                  <button
+                    key={ag.id}
+                    onClick={async () => {
+                      onMutate(task.id, { assigneeId: ag.id, assigneeName: ag.name })
+                      try { await setTaskAssignee(task.id, ag.id) } finally { onChanged() }
+                    }}
+                    className={`flex items-center gap-2 w-full px-3 py-1 text-left text-xs ${
+                      current ? 'text-blue-700 font-medium bg-blue-50/60' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <AgentAvatar name={ag.name} size="w-4 h-4 text-[8px]" />
+                    {ag.name}
+                    {current && <Check className="w-3 h-3 ml-auto text-blue-600" />}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="border-t border-gray-100 mt-1 px-3 py-1.5 text-[11px] text-gray-400">
@@ -1484,7 +1746,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
           {siblingCount > 1 && (
             <button
               onClick={async () => {
-                if (!window.confirm('Убрать этого поставщика из ячейки?')) return
+                if (!(await appConfirm('Убрать этого поставщика из ячейки? История по нему сохранится в журнале.'))) return
                 await deleteTask(task.id)
                 setRect(null)
                 onChanged()
@@ -1502,26 +1764,6 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
 }
 
 let cachedAgents: Agent[] | null = null
-function AgentSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
-  const [agents, setAgents] = useState<Agent[]>(cachedAgents || [])
-  useEffect(() => {
-    if (cachedAgents) return
-    fetchAgents().then(list => {
-      cachedAgents = list.filter(a => a.isActive !== false)
-      setAgents(cachedAgents)
-    }).catch(() => {})
-  }, [])
-  return (
-    <select
-      value={value || ''}
-      onChange={e => onChange(e.target.value || null)}
-      className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
-    >
-      <option value="">—</option>
-      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-    </select>
-  )
-}
 
 // ───────────────────────────── Аналитика
 
