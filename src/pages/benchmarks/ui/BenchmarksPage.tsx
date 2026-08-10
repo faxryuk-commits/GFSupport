@@ -80,6 +80,9 @@ export function BenchmarksPage() {
   const [rows, setRows] = useState<BenchmarkRow[]>([])
   const [loading, setLoading] = useState(true)
   const [recomputing, setRecomputing] = useState(false)
+  // Окно пересчёта: 60 дней — стабильная планка, 14–30 — быстрее следует за
+  // текущей формой команды (недавние улучшения видны сразу)
+  const [recomputeDays, setRecomputeDays] = useState(60)
   const [recomputeProgress, setRecomputeProgress] = useState<string | null>(null)
   const [recomputeResult, setRecomputeResult] = useState<RecomputeSummaryItem[] | null>(null)
   const [editing, setEditing] = useState<EditState | null>(null)
@@ -114,7 +117,7 @@ export function BenchmarksPage() {
       const all: RecomputeSummaryItem[] = []
       for (let i = 0; i < keys.length; i++) {
         setRecomputeProgress(`${i + 1}/${keys.length}: ${metrics[i].labelRu || keys[i]}`)
-        const result = await recomputeBenchmarks(keys[i], 60)
+        const result = await recomputeBenchmarks(keys[i], recomputeDays)
         all.push(...result.summary)
       }
       setRecomputeResult(all)
@@ -199,18 +202,32 @@ export function BenchmarksPage() {
             от минимально приемлемого до отличного.
           </p>
         </div>
-        <button
-          onClick={handleRecompute}
-          disabled={recomputing}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-md hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {recomputing ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4" />
-          )}
-          {recomputing && recomputeProgress ? `Считаем ${recomputeProgress}` : 'Пересчитать из истории (60 дней)'}
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <select
+            value={recomputeDays}
+            onChange={e => setRecomputeDays(Number(e.target.value))}
+            disabled={recomputing}
+            className="px-2 py-2 text-sm border border-[#e8edf3] rounded-md bg-white text-slate-700"
+            title="Окно истории: 60 дней — стабильная планка; 14–30 — быстрее реагирует на недавние улучшения"
+          >
+            <option value={14}>14 дней</option>
+            <option value={30}>30 дней</option>
+            <option value={60}>60 дней</option>
+            <option value={90}>90 дней</option>
+          </select>
+          <button
+            onClick={handleRecompute}
+            disabled={recomputing}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-[#3b82f6] to-[#2563eb] text-white shadow-[0_3px_10px_rgba(37,99,235,0.22)] rounded-md hover:brightness-[1.04] hover:shadow-[0_5px_16px_rgba(37,99,235,0.34)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {recomputing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            {recomputing && recomputeProgress ? `Считаем ${recomputeProgress}` : 'Пересчитать из истории'}
+          </button>
+        </div>
       </div>
 
       {error && (

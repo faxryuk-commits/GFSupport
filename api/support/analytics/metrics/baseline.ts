@@ -349,6 +349,7 @@ export async function upsertBaselines(
         source_type = EXCLUDED.source_type,
         sample_size = EXCLUDED.sample_size,
         computed_at = EXCLUDED.computed_at
+      WHERE benchmark_targets.source_type <> 'manual'
     `
   }
 }
