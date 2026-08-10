@@ -80,6 +80,7 @@ export function BenchmarksPage() {
   const [rows, setRows] = useState<BenchmarkRow[]>([])
   const [loading, setLoading] = useState(true)
   const [recomputing, setRecomputing] = useState(false)
+  const [recomputeProgress, setRecomputeProgress] = useState<string | null>(null)
   const [recomputeResult, setRecomputeResult] = useState<RecomputeSummaryItem[] | null>(null)
   const [editing, setEditing] = useState<EditState | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -106,13 +107,23 @@ export function BenchmarksPage() {
     setRecomputeResult(null)
     setError(null)
     try {
-      const result = await recomputeBenchmarks('all', 60)
-      setRecomputeResult(result.summary)
+      // По одной метрике за запрос: пересчёт всех сразу (6 метрик × 3 scope ×
+      // ~9 недельных SQL) не укладывается в 25с лимит Edge-функции →
+      // FUNCTION_INVOCATION_TIMEOUT. Секвенция мелких запросов надёжнее.
+      const keys = metrics.map(m => m.key)
+      const all: RecomputeSummaryItem[] = []
+      for (let i = 0; i < keys.length; i++) {
+        setRecomputeProgress(`${i + 1}/${keys.length}: ${metrics[i].labelRu || keys[i]}`)
+        const result = await recomputeBenchmarks(keys[i], 60)
+        all.push(...result.summary)
+      }
+      setRecomputeResult(all)
       await load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Recompute не удался')
     } finally {
       setRecomputing(false)
+      setRecomputeProgress(null)
     }
   }
 
@@ -198,7 +209,7 @@ export function BenchmarksPage() {
           ) : (
             <RefreshCw className="w-4 h-4" />
           )}
-          Пересчитать из истории (60 дней)
+          {recomputing && recomputeProgress ? `Считаем ${recomputeProgress}` : 'Пересчитать из истории (60 дней)'}
         </button>
       </div>
 

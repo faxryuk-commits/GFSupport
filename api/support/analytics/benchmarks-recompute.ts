@@ -79,12 +79,16 @@ export default async function handler(req: Request): Promise<Response> {
     gold?: number
   }> = []
 
+  // Метрики — последовательно, но scope-варианты одной метрики параллельно:
+  // это в 3 раза сокращает время. Edge-функция обязана ответить за 25с, поэтому
+  // UI гоняет пересчёт ПО ОДНОЙ метрике за запрос (metric=<key>), а metric=all
+  // оставлен для маленьких орг/скриптов.
   for (const key of metrics) {
     const entry = METRIC_REGISTRY[key]
-    for (const variant of SCOPE_VARIANTS) {
+    const variantResults = await Promise.all(SCOPE_VARIANTS.map(async (variant) => {
       try {
         const scope = {
-          orgId: ctx.orgId,
+          orgId: ctx.orgId!,
           market: null,
           source: variant.source,
           role: null,
@@ -94,8 +98,8 @@ export default async function handler(req: Request): Promise<Response> {
         const baseline = entry.computeBaseline
           ? await entry.computeBaseline(entry.descriptor, scope, period)
           : await computeWeeklyPercentileBaseline(entry.descriptor, scope, period, entry.compute)
-        await upsertBaselines(ctx.orgId, baseline, periodType, now)
-        summary.push({
+        await upsertBaselines(ctx.orgId!, baseline, periodType, now)
+        return {
           metric: key,
           scope: variant.label,
           observations: baseline.observations,
@@ -103,17 +107,18 @@ export default async function handler(req: Request): Promise<Response> {
           bronze: baseline.bronze,
           silver: baseline.silver,
           gold: baseline.gold,
-        })
+        }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Unknown error'
-        summary.push({
+        return {
           metric: key,
           scope: variant.label,
           observations: 0,
           reason: `error: ${msg}`,
-        })
+        }
       }
-    }
+    }))
+    summary.push(...variantResults)
   }
 
   return json({
