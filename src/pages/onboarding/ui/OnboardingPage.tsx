@@ -68,10 +68,16 @@ function isTaskStuck(kind: string | undefined, hours: number): boolean {
   return (kind === 'waiting' && hours > STUCK_WAITING_HOURS) || (kind === 'active' && hours > STUCK_ACTIVE_HOURS)
 }
 
-/** Разбор бренда для фокус-режима: боттлнек, счётчики, полка. */
+interface InFlightTask {
+  task: ObBrand['tasks'][number]
+  kind: string
+  hours: number
+  stuck: boolean
+}
+
+/** Разбор бренда для фокус-режима: активные задачи, счётчики, полка. */
 function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
-  let worst: { task: ObBrand['tasks'][number]; kind: string; hours: number; stuck: boolean } | null = null
-  let inFlight = 0
+  const inFlightTasks: InFlightTask[] = []
   let done = 0
   let countable = 0
   for (const t of brand.tasks) {
@@ -80,18 +86,20 @@ function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
     countable++
     if (kind === 'done') { done++; continue }
     if (kind === 'active' || kind === 'waiting') {
-      inFlight++
       const h = hoursSince(t.statusSince)
-      if (!worst || h > worst.hours) worst = { task: t, kind, hours: h, stuck: isTaskStuck(kind, h) }
+      inFlightTasks.push({ task: t, kind, hours: h, stuck: isTaskStuck(kind, h) })
     }
   }
+  inFlightTasks.sort((a, b) => b.hours - a.hours)
+  const worst = inFlightTasks[0] || null
+  const inFlight = inFlightTasks.length
   const hasBlockers = !!brand.blockers?.trim()
   let shelf: 'attention' | 'progress' | 'queue' | 'finish'
   if (countable > 0 && done === countable) shelf = 'finish'
   else if (hasBlockers || (worst?.stuck ?? false)) shelf = 'attention'
   else if (inFlight === 0 && done === 0) shelf = 'queue'
   else shelf = 'progress'
-  return { worst, inFlight, done, countable, hasBlockers, shelf }
+  return { worst, inFlightTasks, inFlight, done, countable, hasBlockers, shelf }
 }
 
 export function OnboardingPage() {
@@ -460,7 +468,7 @@ function FocusView({ board, statusById, posById, onOpenBrand, onChanged }: {
         const Icon = def.icon
         return (
           <div key={def.key}>
-            <div className={`flex items-center gap-1.5 text-xs font-medium mb-2 ${def.cls}`}>
+            <div className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide mb-2 ${def.cls}`}>
               <Icon className="w-3.5 h-3.5" />
               {def.label} · {items.length}
             </div>
@@ -498,16 +506,15 @@ function FocusCard({ brand, a, shelf, posName, typeById, optionById, statusById,
   onOpen: () => void
   onChanged: () => void
 }) {
-  const borderCls = shelf === 'attention'
-    ? 'border-red-300'
-    : shelf === 'finish' ? 'border-green-300' : 'border-gray-200'
-  const worst = a.worst
-  const worstStatus = worst?.task.statusId ? statusById[worst.task.statusId] : undefined
-  const worstOption = worst?.task.optionId ? optionById[worst.task.optionId] : undefined
-  const worstLabel = worst
-    ? `${typeById[worst.task.taskTypeId]?.label || ''}${worstOption ? ` (${worstOption.label})` : ''}`
-    : null
-  const othersInFlight = worst ? a.inFlight - 1 : a.inFlight
+  const [expanded, setExpanded] = useState(false)
+  const accentCls = shelf === 'attention'
+    ? 'border-l-red-400'
+    : shelf === 'finish' ? 'border-l-green-400'
+      : shelf === 'queue' ? 'border-l-gray-200' : 'border-l-blue-400'
+  const VISIBLE = 3
+  const visibleTasks = expanded ? a.inFlightTasks : a.inFlightTasks.slice(0, VISIBLE)
+  const hiddenCount = a.inFlightTasks.length - VISIBLE
+  const progressPct = a.countable ? Math.round((a.done / a.countable) * 100) : 0
 
   const finishOnboarding = async () => {
     if (!window.confirm(`Завершить онбординг «${brand.name}» и убрать бренд в архив?`)) return
@@ -516,30 +523,22 @@ function FocusCard({ brand, a, shelf, posName, typeById, optionById, statusById,
   }
 
   return (
-    <div className={`rounded-xl border bg-white px-4 py-2.5 hover:shadow-sm transition-shadow ${borderCls}`}>
-      <div className="flex items-center gap-2.5 flex-wrap">
-        <button onClick={onOpen} className="font-medium text-gray-900 hover:text-blue-600 text-sm">
+    <div className={`rounded-r-xl border border-gray-200 border-l-[3px] bg-white px-4 py-3 hover:shadow-sm transition-shadow ${accentCls}`}>
+      {/* Шапка: имя, POS, прогресс, счётчики, ответственный */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={onOpen} className="font-medium text-gray-900 hover:text-blue-600 text-[15px]">
           {brand.name}
         </button>
-        <span className="text-[11px] text-gray-400 whitespace-nowrap">
-          {posName || 'без POS'} · {a.done}/{a.countable}
+        <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 bg-gray-50 text-gray-500">
+          {posName || 'без POS'}
         </span>
-
-        {shelf === 'finish' ? (
-          <span className="text-xs text-green-700">все шаги закрыты</span>
-        ) : worst && (
-          <span className={`text-xs px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
-            worst.stuck ? 'bg-red-100 text-red-700'
-              : worst.kind === 'waiting' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-          }`}>
-            {worst.stuck && (worst.kind === 'waiting'
-              ? <Clock className="w-3 h-3" /> : <Flame className="w-3 h-3" />)}
-            {worstLabel} — {worstStatus?.label?.toLowerCase()} {fmtShortDur(worst.hours)}
+        <span className="inline-flex items-center gap-1.5 ml-1">
+          <span className="w-14 h-1 rounded-full bg-gray-100 overflow-hidden inline-block">
+            <span className="block h-full bg-green-500" style={{ width: `${progressPct}%` }} />
           </span>
-        )}
-        {othersInFlight > 0 && (
-          <span className="text-[11px] text-gray-400">+{othersInFlight} в процессе</span>
-        )}
+          <span className="text-[11px] text-gray-400">{a.done}/{a.countable}</span>
+        </span>
+        {shelf === 'finish' && <span className="text-xs text-green-700">все шаги закрыты</span>}
 
         <span className="ml-auto flex items-center gap-2">
           {brand.commentsCount > 0 && (
@@ -571,25 +570,80 @@ function FocusCard({ brand, a, shelf, posName, typeById, optionById, statusById,
         </span>
       </div>
 
+      {/* Активные задачи: у каждой виден поставщик — понятно, от кого ждём */}
+      {visibleTasks.length > 0 && (
+        <div className="mt-2.5 space-y-1.5">
+          {visibleTasks.map(({ task, kind, hours, stuck }) => {
+            const option = task.optionId ? optionById[task.optionId] : undefined
+            const status = task.statusId ? statusById[task.statusId] : undefined
+            const waiting = kind === 'waiting'
+            const waitSource = waiting && !option && brand.dependsOn?.trim() ? brand.dependsOn : null
+            return (
+              <div key={task.id} className="flex items-center gap-2 text-[13px] flex-wrap">
+                <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${waiting ? 'bg-amber-500' : 'bg-blue-500'}`} />
+                <span className="text-gray-800">{typeById[task.taskTypeId]?.label}</span>
+                {option && (
+                  <span className={`text-[11px] px-1.5 py-px rounded-full ${
+                    waiting ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+                  }`}>
+                    {option.label}
+                  </span>
+                )}
+                <span className={waiting ? 'text-amber-700' : 'text-gray-500'}>
+                  {status?.label?.toLowerCase()}{waitSource ? ` · от: ${waitSource}` : ''}
+                </span>
+                <span className={`text-xs ${stuck ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                  {stuck && (waiting
+                    ? <Clock className="w-3 h-3 inline mr-0.5 -mt-px" />
+                    : <Flame className="w-3 h-3 inline mr-0.5 -mt-px" />)}
+                  {fmtShortDur(hours)}
+                </span>
+                {task.assigneeName && (
+                  <span className="text-[11px] text-gray-400">· {task.assigneeName}</span>
+                )}
+              </div>
+            )
+          })}
+          {!expanded && hiddenCount > 0 && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
+            >
+              ещё {hiddenCount} {hiddenCount === 1 ? 'задача' : hiddenCount < 5 ? 'задачи' : 'задач'}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          )}
+          {expanded && hiddenCount > 0 && (
+            <button
+              onClick={() => setExpanded(false)}
+              className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
+            >
+              свернуть <ChevronUp className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Подвал: следующий шаг / зависимость / блокер */}
       {(brand.nextStep?.trim() || brand.dependsOn?.trim() || a.hasBlockers) && (
-        <div className="mt-1.5 space-y-0.5">
+        <div className="mt-2.5 pt-2 border-t border-gray-100 space-y-1">
           {brand.nextStep?.trim() && (
-            <div className="text-xs text-gray-600 flex items-center gap-1">
+            <div className="text-xs text-gray-600 flex items-center gap-1.5">
               <ArrowRight className="w-3 h-3 text-blue-500 shrink-0" />
-              {brand.nextStep}
+              Далее: {brand.nextStep}
               {brand.dependsOn?.trim() && (
                 <span className="text-gray-400">· зависим от: {brand.dependsOn}</span>
               )}
             </div>
           )}
           {!brand.nextStep?.trim() && brand.dependsOn?.trim() && (
-            <div className="text-xs text-gray-400 flex items-center gap-1">
+            <div className="text-xs text-gray-400 flex items-center gap-1.5">
               <Link2 className="w-3 h-3 shrink-0" />зависим от: {brand.dependsOn}
             </div>
           )}
           {a.hasBlockers && (
-            <div className="text-xs text-red-600 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 shrink-0" />{brand.blockers}
+            <div className="text-xs text-red-600 flex items-center gap-1.5">
+              <AlertTriangle className="w-3 h-3 shrink-0" />Блокер: {brand.blockers}
             </div>
           )}
         </div>
