@@ -1,14 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
-import { formatDateTimeShort } from '@/shared/lib'
+import { formatDateTimeShort, formatDateShort } from '@/shared/lib'
+import { fetchAgents } from '@/shared/api/agents'
+import type { Agent } from '@/shared/types'
 import {
-  fetchOnboardingBoard, createBrand, updateBrand, deleteBrand,
-  setTaskStatus, fetchOnboardingEvents,
+  fetchOnboardingBoard, fetchOnboardingStats, createBrand, updateBrand, deleteBrand,
+  setTaskStatus, setTaskAssignee, setTaskOption, fetchOnboardingEvents,
+  fetchBrandCard, addBrandComment, deleteBrandComment,
+  addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
-  type ObBoard, type ObBrand, type ObStatus, type ObEvent,
+  type ObBoard, type ObBrand, type ObStatus, type ObEvent, type ObStats,
+  type ObComment, type ObTodo,
 } from '@/shared/api/onboarding'
 import {
   Plug, Plus, Loader2, RefreshCw, X, Archive, ArchiveRestore, Trash2,
   History, Settings2, LayoutGrid, ChevronUp, ChevronDown, Pencil, Check,
+  BarChart3, AlertTriangle, MessageSquare, ListTodo, User, Flame, Clock,
+  ArrowRight, Link2,
 } from 'lucide-react'
 
 // Цвета статусов (справочник хранит ключ цвета, не классы)
@@ -31,6 +38,10 @@ const METRIC_KINDS: { value: string; label: string }[] = [
   { value: 'na', label: 'Не применимо' },
 ]
 
+// Пороги «застревания» — сигналы на чипах и в аналитике
+const STUCK_WAITING_HOURS = 48
+const STUCK_ACTIVE_HOURS = 120
+
 function fmtSeconds(sec: number): string {
   if (!sec || sec <= 0) return ''
   const h = sec / 3600
@@ -39,14 +50,19 @@ function fmtSeconds(sec: number): string {
   return `${(h / 24).toFixed(1)} дн`
 }
 
+function hoursSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / 3600000
+}
+
 export function OnboardingPage() {
   const [board, setBoard] = useState<ObBoard | null>(null)
+  const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'board' | 'history' | 'refs'>('board')
+  const [tab, setTab] = useState<'board' | 'stats' | 'history' | 'refs'>('board')
   const [showArchived, setShowArchived] = useState(false)
-  const [openBrand, setOpenBrand] = useState<ObBrand | null>(null)
+  const [openBrandId, setOpenBrandId] = useState<string | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true)
@@ -65,15 +81,11 @@ export function OnboardingPage() {
   }, [showArchived])
 
   useEffect(() => { load() }, [load])
-
-  // Держим открытую карточку в актуальном состоянии после перезагрузки доски
   useEffect(() => {
-    if (openBrand && board) {
-      const fresh = board.brands.find(b => b.id === openBrand.id)
-      if (fresh) setOpenBrand(fresh)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board])
+    fetchAgents().then(list => setAgents(list.filter(a => a.isActive !== false))).catch(() => {})
+  }, [])
+
+  const openBrand = openBrandId && board ? board.brands.find(b => b.id === openBrandId) || null : null
 
   return (
     <div className="p-4 sm:p-6 max-w-full">
@@ -94,6 +106,7 @@ export function OnboardingPage() {
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
             {([
               ['board', 'Доска', LayoutGrid],
+              ['stats', 'Аналитика', BarChart3],
               ['history', 'История', History],
               ['refs', 'Справочники', Settings2],
             ] as const).map(([key, label, Icon]) => (
@@ -128,10 +141,11 @@ export function OnboardingPage() {
           board={board}
           showArchived={showArchived}
           onToggleArchived={() => setShowArchived(v => !v)}
-          onOpenBrand={setOpenBrand}
+          onOpenBrand={b => setOpenBrandId(b.id)}
           onChanged={() => load(true)}
         />
       )}
+      {!loading && !error && tab === 'stats' && <StatsTab />}
       {!loading && !error && board && tab === 'history' && <HistoryTab board={board} />}
       {!loading && !error && board && tab === 'refs' && (
         <RefsTab board={board} onChanged={() => load(true)} />
@@ -141,7 +155,8 @@ export function OnboardingPage() {
         <BrandDrawer
           brand={openBrand}
           board={board}
-          onClose={() => setOpenBrand(null)}
+          agents={agents}
+          onClose={() => setOpenBrandId(null)}
           onChanged={() => load(true)}
         />
       )}
@@ -172,6 +187,26 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
     () => Object.fromEntries(board.posSystems.map(p => [p.id, p])),
     [board.posSystems],
   )
+  const optionById = useMemo(
+    () => Object.fromEntries(board.options.map(o => [o.id, o])),
+    [board.options],
+  )
+
+  // Сводка: сигналы по доске
+  const summary = useMemo(() => {
+    let stuck = 0
+    let blocked = 0
+    for (const b of board.brands) {
+      if (b.archivedAt) continue
+      if (b.blockers?.trim()) blocked++
+      for (const t of b.tasks) {
+        const kind = t.statusId ? statusById[t.statusId]?.kind : null
+        const h = hoursSince(t.statusSince)
+        if ((kind === 'waiting' && h > STUCK_WAITING_HOURS) || (kind === 'active' && h > STUCK_ACTIVE_HOURS)) stuck++
+      }
+    }
+    return { stuck, blocked, brands: board.brands.filter(b => !b.archivedAt).length }
+  }, [board, statusById])
 
   const handleAdd = async () => {
     if (!newName.trim() || saving) return
@@ -229,6 +264,21 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
             </button>
           </div>
         )}
+
+        <div className="flex items-center gap-3 text-xs text-gray-500">
+          <span>{summary.brands} в онбординге</span>
+          {summary.stuck > 0 && (
+            <span className="flex items-center gap-1 text-red-600">
+              <Flame className="w-3.5 h-3.5" /> застряло: {summary.stuck}
+            </span>
+          )}
+          {summary.blocked > 0 && (
+            <span className="flex items-center gap-1 text-amber-600">
+              <AlertTriangle className="w-3.5 h-3.5" /> с блокерами: {summary.blocked}
+            </span>
+          )}
+        </div>
+
         <label className="flex items-center gap-1.5 text-sm text-gray-500 ml-auto cursor-pointer">
           <input type="checkbox" checked={showArchived} onChange={onToggleArchived} className="rounded" />
           Показать архив
@@ -244,7 +294,7 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[180px]">
+                <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[210px]">
                   Бренд
                 </th>
                 <th className="text-left font-medium text-gray-600 px-2 py-2">Прогресс</th>
@@ -260,9 +310,10 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
                 <BrandRow
                   key={brand.id}
                   brand={brand}
+                  board={board}
                   taskTypes={taskTypes}
                   statusById={statusById}
-                  statuses={board.statuses.filter(s => s.isActive)}
+                  optionById={optionById}
                   posName={brand.posId ? posById[brand.posId]?.name : undefined}
                   onOpen={() => onOpenBrand(brand)}
                   onChanged={onChanged}
@@ -276,11 +327,12 @@ function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChange
   )
 }
 
-function BrandRow({ brand, taskTypes, statusById, statuses, posName, onOpen, onChanged }: {
+function BrandRow({ brand, board, taskTypes, statusById, optionById, posName, onOpen, onChanged }: {
   brand: ObBrand
+  board: ObBoard
   taskTypes: ObBoard['taskTypes']
   statusById: Record<string, ObStatus>
-  statuses: ObStatus[]
+  optionById: Record<string, ObBoard['options'][number]>
   posName?: string
   onOpen: () => void
   onChanged: () => void
@@ -294,15 +346,37 @@ function BrandRow({ brand, taskTypes, statusById, statuses, posName, onOpen, onC
     return k && k !== 'na' && k !== 'cancelled'
   })
   const done = countable.filter(t => statusById[t.statusId!]?.kind === 'done').length
+  const hasBlockers = !!brand.blockers?.trim()
 
   return (
-    <tr className={`border-b border-gray-100 last:border-0 ${brand.archivedAt ? 'opacity-50' : ''}`}>
-      <td className="sticky left-0 bg-white z-10 px-3 py-2">
-        <button onClick={onOpen} className="text-left group">
-          <div className="font-medium text-gray-900 group-hover:text-blue-600">{brand.name}</div>
-          <div className="text-xs text-gray-400">
-            {posName || 'без POS'}{brand.ownerName ? ` · ${brand.ownerName}` : ''}
+    <tr className={`border-b border-gray-100 last:border-0 ${brand.archivedAt ? 'opacity-50' : ''} ${hasBlockers ? 'bg-red-50/40' : ''}`}>
+      <td className={`sticky left-0 z-10 px-3 py-2 ${hasBlockers ? 'bg-red-50' : 'bg-white'} border-l-2 ${hasBlockers ? 'border-red-400' : 'border-transparent'}`}>
+        <button onClick={onOpen} className="text-left group w-full">
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium text-gray-900 group-hover:text-blue-600">{brand.name}</span>
+            {hasBlockers && <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
+            {brand.commentsCount > 0 && (
+              <span className="flex items-center gap-0.5 text-[11px] text-gray-400">
+                <MessageSquare className="w-3 h-3" />{brand.commentsCount}
+              </span>
+            )}
+            {brand.openTodosCount > 0 && (
+              <span className="flex items-center gap-0.5 text-[11px] text-blue-500">
+                <ListTodo className="w-3 h-3" />{brand.openTodosCount}
+              </span>
+            )}
           </div>
+          <div className="text-xs text-gray-400 flex items-center gap-1 flex-wrap">
+            <span>{posName || 'без POS'}</span>
+            {brand.assigneeName && (
+              <span className="flex items-center gap-0.5"><User className="w-3 h-3" />{brand.assigneeName}</span>
+            )}
+          </div>
+          {brand.nextStep?.trim() && (
+            <div className="text-[11px] text-blue-600 flex items-center gap-1 mt-0.5 truncate max-w-[190px]">
+              <ArrowRight className="w-3 h-3 shrink-0" />{brand.nextStep}
+            </div>
+          )}
         </button>
       </td>
       <td className="px-2 py-2 whitespace-nowrap">
@@ -323,8 +397,10 @@ function BrandRow({ brand, taskTypes, statusById, statuses, posName, onOpen, onC
           <td key={tt.id} className="px-2 py-2">
             <StatusChip
               task={task}
+              taskType={tt}
+              board={board}
               status={task.statusId ? statusById[task.statusId] : undefined}
-              statuses={statuses}
+              option={task.optionId ? optionById[task.optionId] : undefined}
               onChanged={onChanged}
             />
           </td>
@@ -334,10 +410,12 @@ function BrandRow({ brand, taskTypes, statusById, statuses, posName, onOpen, onC
   )
 }
 
-function StatusChip({ task, status, statuses, onChanged }: {
+function StatusChip({ task, taskType, board, status, option, onChanged }: {
   task: ObBrand['tasks'][number]
+  taskType: ObBoard['taskTypes'][number]
+  board: ObBoard
   status?: ObStatus
-  statuses: ObStatus[]
+  option?: ObBoard['options'][number]
   onChanged: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -354,12 +432,20 @@ function StatusChip({ task, status, statuses, onChanged }: {
   }, [open])
 
   const colors = STATUS_COLORS[status?.color || 'gray'] || STATUS_COLORS.gray
+  const kind = status?.kind
+  const h = hoursSince(task.statusSince)
+  const isStuck = (kind === 'waiting' && h > STUCK_WAITING_HOURS) || (kind === 'active' && h > STUCK_ACTIVE_HOURS)
+
   const timeHint = [
     task.activeSeconds ? `в работе ${fmtSeconds(task.activeSeconds)}` : '',
     task.waitingSeconds ? `ожидание ${fmtSeconds(task.waitingSeconds)}` : '',
   ].filter(Boolean).join(', ')
 
-  const pick = async (statusId: string) => {
+  const catOptions = taskType.optionCategoryId
+    ? board.options.filter(o => o.categoryId === taskType.optionCategoryId && o.isActive)
+    : []
+
+  const pickStatus = async (statusId: string) => {
     if (saving || statusId === task.statusId) { setOpen(false); return }
     setSaving(true)
     try {
@@ -375,19 +461,28 @@ function StatusChip({ task, status, statuses, onChanged }: {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(v => !v)}
-        title={timeHint ? `${status?.label || '—'} · ${timeHint}` : status?.label}
-        className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap transition-colors ${colors.chip}`}
+        title={[status?.label, option?.label, timeHint, task.assigneeName ? `исп: ${task.assigneeName}` : '']
+          .filter(Boolean).join(' · ')}
+        className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap transition-colors inline-flex items-center gap-1 ${colors.chip} ${
+          isStuck ? 'ring-2 ring-red-400' : ''
+        }`}
       >
-        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : (status?.label || '—')}
+        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : (
+          <>
+            {isStuck && (kind === 'waiting' ? <Clock className="w-3 h-3 text-red-500" /> : <Flame className="w-3 h-3 text-red-500" />)}
+            <span>{status?.label || '—'}</span>
+            {option && <span className="opacity-70">· {option.label}</span>}
+          </>
+        )}
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 left-0 w-44 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
-          {statuses.map(s => {
+        <div className="absolute z-30 mt-1 left-0 w-52 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+          {board.statuses.filter(s => s.isActive).map(s => {
             const c = STATUS_COLORS[s.color] || STATUS_COLORS.gray
             return (
               <button
                 key={s.id}
-                onClick={() => pick(s.id)}
+                onClick={() => pickStatus(s.id)}
                 className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 ${
                   s.id === task.statusId ? 'font-semibold' : ''
                 }`}
@@ -397,8 +492,38 @@ function StatusChip({ task, status, statuses, onChanged }: {
               </button>
             )
           })}
-          {timeHint && (
+
+          {catOptions.length > 0 && (
+            <div className="border-t border-gray-100 mt-1 px-3 py-1.5">
+              <div className="text-[10px] uppercase text-gray-400 mb-1">Провайдер</div>
+              <select
+                value={task.optionId || ''}
+                onChange={async e => {
+                  await setTaskOption(task.id, e.target.value || null)
+                  onChanged()
+                }}
+                className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
+              >
+                <option value="">—</option>
+                {catOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div className={`px-3 py-1.5 ${catOptions.length === 0 ? 'border-t border-gray-100 mt-1' : ''}`}>
+            <div className="text-[10px] uppercase text-gray-400 mb-1">Исполнитель</div>
+            <AgentSelect
+              value={task.assigneeId}
+              onChange={async id => {
+                await setTaskAssignee(task.id, id)
+                onChanged()
+              }}
+            />
+          </div>
+
+          {(timeHint || isStuck) && (
             <div className="border-t border-gray-100 mt-1 px-3 py-1.5 text-[11px] text-gray-400">
+              {isStuck && <span className="text-red-500 font-medium">в статусе {fmtSeconds(h * 3600)} · </span>}
               {timeHint}
             </div>
           )}
@@ -408,25 +533,63 @@ function StatusChip({ task, status, statuses, onChanged }: {
   )
 }
 
+/** Селект сотрудника — список подгружается один раз на страницу через контекст пропсов. */
+let cachedAgents: Agent[] | null = null
+function AgentSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+  const [agents, setAgents] = useState<Agent[]>(cachedAgents || [])
+  useEffect(() => {
+    if (cachedAgents) return
+    fetchAgents().then(list => {
+      cachedAgents = list.filter(a => a.isActive !== false)
+      setAgents(cachedAgents)
+    }).catch(() => {})
+  }, [])
+  return (
+    <select
+      value={value || ''}
+      onChange={e => onChange(e.target.value || null)}
+      className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
+    >
+      <option value="">—</option>
+      {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+    </select>
+  )
+}
+
 // ─────────────────────────────────────────────── Карточка бренда
 
-function BrandDrawer({ brand, board, onClose, onChanged }: {
+function BrandDrawer({ brand, board, agents, onClose, onChanged }: {
   brand: ObBrand
   board: ObBoard
+  agents: Agent[]
   onClose: () => void
   onChanged: () => void
 }) {
   const [events, setEvents] = useState<ObEvent[] | null>(null)
+  const [comments, setComments] = useState<ObComment[] | null>(null)
+  const [todos, setTodos] = useState<ObTodo[] | null>(null)
   const [name, setName] = useState(brand.name)
-  const [owner, setOwner] = useState(brand.ownerName || '')
+  const [nextStep, setNextStep] = useState(brand.nextStep || '')
+  const [dependsOn, setDependsOn] = useState(brand.dependsOn || '')
+  const [blockers, setBlockers] = useState(brand.blockers || '')
   const [notes, setNotes] = useState(brand.notes || '')
   const [posId, setPosId] = useState(brand.posId || '')
+  const [newComment, setNewComment] = useState('')
+  const [newTodo, setNewTodo] = useState('')
+  const [newTodoAssignee, setNewTodoAssignee] = useState('')
+
+  const loadCard = useCallback(() => {
+    fetchBrandCard(brand.id)
+      .then(r => { setComments(r.comments); setTodos(r.todos) })
+      .catch(() => { setComments([]); setTodos([]) })
+  }, [brand.id])
 
   useEffect(() => {
     fetchOnboardingEvents(brand.id, 200)
       .then(r => setEvents(r.events))
       .catch(() => setEvents([]))
-  }, [brand.id])
+    loadCard()
+  }, [brand.id, loadCard])
 
   const save = async (patch: Omit<Parameters<typeof updateBrand>[0], 'id'>) => {
     await updateBrand({ id: brand.id, ...patch })
@@ -440,20 +603,40 @@ function BrandDrawer({ brand, board, onClose, onChanged }: {
     onChanged()
   }
 
+  const submitComment = async () => {
+    const text = newComment.trim()
+    if (!text) return
+    setNewComment('')
+    await addBrandComment(brand.id, text)
+    loadCard()
+    onChanged()
+  }
+
+  const submitTodo = async () => {
+    const text = newTodo.trim()
+    if (!text) return
+    setNewTodo('')
+    await addBrandTodo(brand.id, { text, assigneeId: newTodoAssignee || null })
+    setNewTodoAssignee('')
+    loadCard()
+    onChanged()
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-white shadow-xl overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+      <div className="relative w-full max-w-lg h-full bg-white shadow-xl overflow-y-auto">
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900 truncate">{brand.name}</h2>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
-          <div className="space-y-3">
-            <label className="block">
+        <div className="p-4 space-y-5">
+          {/* Основные поля */}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block col-span-2">
               <span className="text-xs text-gray-500">Название</span>
               <input
                 value={name}
@@ -476,16 +659,50 @@ function BrandDrawer({ brand, board, onClose, onChanged }: {
               </select>
             </label>
             <label className="block">
-              <span className="text-xs text-gray-500">Ответственный</span>
+              <span className="text-xs text-gray-500 flex items-center gap-1"><User className="w-3 h-3" />Ведёт проект</span>
+              <select
+                value={brand.assigneeId || ''}
+                onChange={e => {
+                  const a = agents.find(x => x.id === e.target.value)
+                  save({ assigneeId: e.target.value || null, assigneeName: a?.name || null })
+                }}
+                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm bg-white"
+              >
+                <option value="">Не назначен</option>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </label>
+            <label className="block col-span-2">
+              <span className="text-xs text-gray-500 flex items-center gap-1"><ArrowRight className="w-3 h-3" />Следующий шаг</span>
               <input
-                value={owner}
-                onChange={e => setOwner(e.target.value)}
-                onBlur={() => { if (owner !== (brand.ownerName || '')) save({ ownerName: owner || null }) }}
-                placeholder="Имя сотрудника"
+                value={nextStep}
+                onChange={e => setNextStep(e.target.value)}
+                onBlur={() => { if (nextStep !== (brand.nextStep || '')) save({ nextStep: nextStep || null }) }}
+                placeholder="Что делаем дальше"
                 className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
               />
             </label>
             <label className="block">
+              <span className="text-xs text-gray-500 flex items-center gap-1"><Link2 className="w-3 h-3" />От кого зависим</span>
+              <input
+                value={dependsOn}
+                onChange={e => setDependsOn(e.target.value)}
+                onBlur={() => { if (dependsOn !== (brand.dependsOn || '')) save({ dependsOn: dependsOn || null }) }}
+                placeholder="Клиент / поставщик / …"
+                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Блокеры</span>
+              <input
+                value={blockers}
+                onChange={e => setBlockers(e.target.value)}
+                onBlur={() => { if (blockers !== (brand.blockers || '')) save({ blockers: blockers || null }) }}
+                placeholder="Что мешает"
+                className={`mt-1 w-full px-3 py-1.5 rounded-lg border text-sm ${blockers.trim() ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
+              />
+            </label>
+            <label className="block col-span-2">
               <span className="text-xs text-gray-500">Заметки</span>
               <textarea
                 value={notes}
@@ -521,6 +738,117 @@ function BrandDrawer({ brand, board, onClose, onChanged }: {
             </button>
           </div>
 
+          {/* Мини-задачи */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+              <ListTodo className="w-4 h-4 text-gray-400" /> Задачи
+            </h3>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                value={newTodo}
+                onChange={e => setNewTodo(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitTodo() }}
+                placeholder="Новая задача"
+                className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+              />
+              <select
+                value={newTodoAssignee}
+                onChange={e => setNewTodoAssignee(e.target.value)}
+                className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white max-w-[130px]"
+              >
+                <option value="">Кому…</option>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <button
+                onClick={submitTodo}
+                disabled={!newTodo.trim()}
+                className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            {todos === null ? (
+              <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+            ) : todos.length === 0 ? (
+              <div className="text-gray-400 text-xs">Задач нет</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {todos.map(t => (
+                  <li key={t.id} className="flex items-start gap-2 text-sm group">
+                    <input
+                      type="checkbox"
+                      checked={!!t.doneAt}
+                      onChange={async e => { await updateBrandTodo(t.id, { done: e.target.checked }); loadCard(); onChanged() }}
+                      className="mt-0.5 rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className={t.doneAt ? 'line-through text-gray-400' : 'text-gray-800'}>{t.text}</div>
+                      <div className="text-[11px] text-gray-400">
+                        {t.assigneeName && <span className="mr-2">→ {t.assigneeName}</span>}
+                        {t.createdBy && <span>от {t.createdBy}</span>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => { await deleteBrandTodo(t.id); loadCard(); onChanged() }}
+                      className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Комментарии */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-gray-400" /> Комментарии
+            </h3>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitComment() }}
+                placeholder="Написать комментарий…"
+                className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+              />
+              <button
+                onClick={submitComment}
+                disabled={!newComment.trim()}
+                className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            {comments === null ? (
+              <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+            ) : comments.length === 0 ? (
+              <div className="text-gray-400 text-xs">Комментариев нет</div>
+            ) : (
+              <ul className="space-y-2">
+                {comments.map(c => (
+                  <li key={c.id} className="rounded-lg bg-gray-50 px-3 py-2 group">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-medium text-gray-700">{c.authorName || 'Без имени'}</span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-[11px] text-gray-400">{formatDateTimeShort(c.createdAt)}</span>
+                        <button
+                          onClick={async () => { await deleteBrandComment(c.id); loadCard(); onChanged() }}
+                          className="p-0.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-800 whitespace-pre-wrap">{c.text}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* История */}
           <div>
             <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
               <History className="w-4 h-4 text-gray-400" /> История изменений
@@ -551,6 +879,173 @@ function BrandDrawer({ brand, board, onClose, onChanged }: {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────── Аналитика
+
+function StatsTab() {
+  const [stats, setStats] = useState<ObStats | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    fetchOnboardingStats().then(setStats).catch(() => setError(true))
+  }, [])
+
+  if (error) return <div className="text-sm text-red-600 py-8 text-center">Не удалось загрузить аналитику</div>
+  if (!stats) {
+    return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
+  }
+
+  const avgAge = stats.brands.length
+    ? stats.brands.reduce((s, b) => s + b.ageSeconds, 0) / stats.brands.length
+    : 0
+  const stuckCount = stats.stuck.filter(s =>
+    (s.kind === 'waiting' && s.seconds > STUCK_WAITING_HOURS * 3600) ||
+    (s.kind === 'active' && s.seconds > STUCK_ACTIVE_HOURS * 3600)).length
+
+  return (
+    <div className="space-y-6">
+      {/* Сводка */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Брендов в онбординге', value: String(stats.brands.length) },
+          { label: 'Средний возраст онбординга', value: fmtSeconds(avgAge) || '—' },
+          { label: 'Застрявших задач', value: String(stuckCount), alert: stuckCount > 0 },
+          { label: 'С блокерами', value: String(stats.brands.filter(b => b.hasBlockers).length), alert: stats.brands.some(b => b.hasBlockers) },
+        ].map(t => (
+          <div key={t.label} className={`rounded-lg border p-3 ${t.alert ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
+            <div className={`text-2xl font-semibold ${t.alert ? 'text-red-600' : 'text-gray-900'}`}>{t.value}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{t.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Сигналы: застрявшие задачи */}
+      {stats.stuck.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white">
+          <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700 flex items-center gap-1.5">
+            <Flame className="w-4 h-4 text-red-500" /> Дольше всего в текущем статусе
+          </div>
+          <div className="divide-y divide-gray-50">
+            {stats.stuck.map((s, i) => {
+              const isBad = (s.kind === 'waiting' && s.seconds > STUCK_WAITING_HOURS * 3600) ||
+                (s.kind === 'active' && s.seconds > STUCK_ACTIVE_HOURS * 3600)
+              return (
+                <div key={i} className="px-4 py-2 text-sm flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium text-gray-900">{s.brandName}</span>
+                  <span className="text-gray-600">{s.taskLabel}</span>
+                  <span className="text-gray-400">{s.statusLabel}</span>
+                  {s.assigneeName && <span className="text-xs text-gray-400">→ {s.assigneeName}</span>}
+                  <span className={`ml-auto text-xs font-medium ${isBad ? 'text-red-600' : 'text-gray-500'}`}>
+                    {fmtSeconds(s.seconds)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* По этапам */}
+      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700">По этапам</div>
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-500 border-b border-gray-100">
+              <th className="text-left font-medium px-4 py-2">Этап</th>
+              <th className="text-right font-medium px-3 py-2">Готово</th>
+              <th className="text-right font-medium px-3 py-2">В работе</th>
+              <th className="text-right font-medium px-3 py-2">Ожидание</th>
+              <th className="text-right font-medium px-3 py-2">Ср. время работы</th>
+              <th className="text-right font-medium px-3 py-2">Ср. ожидание</th>
+              <th className="text-right font-medium px-3 py-2">Макс.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.stages.map(s => (
+              <tr key={s.id} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2 text-gray-800">{s.label}</td>
+                <td className="px-3 py-2 text-right text-green-600">{s.done || ''}</td>
+                <td className="px-3 py-2 text-right text-blue-600">{s.active || ''}</td>
+                <td className="px-3 py-2 text-right text-amber-600">{s.waiting || ''}</td>
+                <td className="px-3 py-2 text-right text-gray-600">{fmtSeconds(s.avgActiveSeconds) || '—'}</td>
+                <td className="px-3 py-2 text-right text-gray-600">{fmtSeconds(s.avgWaitingSeconds) || '—'}</td>
+                <td className="px-3 py-2 text-right text-gray-400">
+                  {fmtSeconds(Math.max(s.maxActiveSeconds, s.maxWaitingSeconds)) || '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* По сотрудникам */}
+      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700">По сотрудникам</div>
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-500 border-b border-gray-100">
+              <th className="text-left font-medium px-4 py-2">Сотрудник</th>
+              <th className="text-right font-medium px-3 py-2">Изменений</th>
+              <th className="text-right font-medium px-3 py-2">Закрыто этапов</th>
+              <th className="text-right font-medium px-3 py-2">Открытых задач</th>
+              <th className="text-right font-medium px-3 py-2">Последняя активность</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.people.map(p => (
+              <tr key={p.name} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2 text-gray-800">{p.name}</td>
+                <td className="px-3 py-2 text-right text-gray-600">{p.events || ''}</td>
+                <td className="px-3 py-2 text-right text-green-600">{p.completed || ''}</td>
+                <td className="px-3 py-2 text-right text-blue-600">{p.openTasks || ''}</td>
+                <td className="px-3 py-2 text-right text-gray-400 text-xs">
+                  {p.lastActivity ? formatDateTimeShort(p.lastActivity) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* По брендам */}
+      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700">По брендам</div>
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-500 border-b border-gray-100">
+              <th className="text-left font-medium px-4 py-2">Бренд</th>
+              <th className="text-left font-medium px-3 py-2">Ведёт</th>
+              <th className="text-left font-medium px-3 py-2">Прогресс</th>
+              <th className="text-right font-medium px-3 py-2">В онбординге</th>
+              <th className="text-right font-medium px-3 py-2">Старт</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.brands.map(b => (
+              <tr key={b.id} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2 text-gray-800 flex items-center gap-1.5">
+                  {b.name}
+                  {b.hasBlockers && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
+                </td>
+                <td className="px-3 py-2 text-gray-600 text-xs">{b.assigneeName || '—'}</td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-green-500" style={{ width: b.total ? `${(b.done / b.total) * 100}%` : '0%' }} />
+                    </div>
+                    <span className="text-xs text-gray-400">{b.done}/{b.total}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right text-gray-600">{fmtSeconds(b.ageSeconds)}</td>
+                <td className="px-3 py-2 text-right text-gray-400 text-xs">{formatDateShort(b.startedAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -600,8 +1095,11 @@ function RefsTab({ board, onChanged }: { board: ObBoard; onChanged: () => void }
     <div className="grid gap-6 lg:grid-cols-2">
       <StatusesEditor board={board} onChanged={onChanged} />
       <TaskTypesEditor board={board} onChanged={onChanged} />
-      <PosEditor board={board} onChanged={onChanged} />
-      <TemplateEditor board={board} onChanged={onChanged} />
+      <CategoriesEditor board={board} onChanged={onChanged} />
+      <div className="space-y-6">
+        <PosEditor board={board} onChanged={onChanged} />
+        <TemplateEditor board={board} onChanged={onChanged} />
+      </div>
     </div>
   )
 }
@@ -761,7 +1259,7 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
   return (
     <RefCard
       title="Шаги чек-листа (колонки)"
-      hint="У существующих брендов новый шаг появится после назначения его POS-системе в шаблоне"
+      hint="Категория связывает колонку со справочником провайдеров — в ячейке можно будет выбрать конкретного"
     >
       <ul className="space-y-2">
         {board.taskTypes.map((t, i) => (
@@ -778,6 +1276,17 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
               value={t.label}
               onSave={label => updateRefItem({ kind: 'taskType', id: t.id, label }).then(onChanged)}
             />
+            <select
+              value={t.optionCategoryId || ''}
+              onChange={e => updateRefItem({ kind: 'taskType', id: t.id, categoryId: e.target.value || null }).then(onChanged)}
+              className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 max-w-[130px]"
+              title="Категория провайдеров"
+            >
+              <option value="">без категории</option>
+              {board.optionCategories.filter(c => c.isActive).map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
             <span className="ml-auto flex items-center gap-1">
               <button
                 onClick={() => updateRefItem({ kind: 'taskType', id: t.id, isActive: !t.isActive }).then(onChanged)}
@@ -796,8 +1305,93 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
         ))}
       </ul>
       <AddRow
-        placeholder="Новый шаг (напр. Wolt)"
+        placeholder="Новый шаг (напр. Телефония)"
         onAdd={label => createRefItem({ kind: 'taskType', label }).then(onChanged)}
+      />
+    </RefCard>
+  )
+}
+
+function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () => void }) {
+  const [openCat, setOpenCat] = useState<string | null>(null)
+
+  return (
+    <RefCard
+      title="Категории и провайдеры"
+      hint="Тип оплаты, агрегаторы, курьер-сервисы, СМС, телефония, каналы продаж — списки провайдеров для выбора в ячейках"
+    >
+      <ul className="space-y-1">
+        {board.optionCategories.map(cat => {
+          const opts = board.options.filter(o => o.categoryId === cat.id)
+          const isOpen = openCat === cat.id
+          return (
+            <li key={cat.id} className={cat.isActive ? '' : 'opacity-40'}>
+              <div className="flex items-center gap-2 py-1">
+                <button
+                  onClick={() => setOpenCat(isOpen ? null : cat.id)}
+                  className="p-0.5 text-gray-400 hover:text-gray-600"
+                >
+                  {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+                <InlineEdit
+                  value={cat.label}
+                  onSave={label => updateRefItem({ kind: 'category', id: cat.id, label }).then(onChanged)}
+                />
+                <span className="text-xs text-gray-400">{opts.length}</span>
+                <span className="ml-auto flex items-center gap-1">
+                  <button
+                    onClick={() => updateRefItem({ kind: 'category', id: cat.id, isActive: !cat.isActive }).then(onChanged)}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    {cat.isActive ? 'скрыть' : 'вернуть'}
+                  </button>
+                  <button
+                    onClick={() => deleteRefItem('category', cat.id).then(onChanged)}
+                    className="p-1 text-gray-300 hover:text-red-500"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              </div>
+              {isOpen && (
+                <div className="ml-7 mb-2 border-l border-gray-100 pl-3">
+                  <ul className="space-y-1">
+                    {opts.map(o => (
+                      <li key={o.id} className={`flex items-center gap-2 ${o.isActive ? '' : 'opacity-40'}`}>
+                        <InlineEdit
+                          value={o.label}
+                          onSave={label => updateRefItem({ kind: 'option', id: o.id, label }).then(onChanged)}
+                        />
+                        <span className="ml-auto flex items-center gap-1">
+                          <button
+                            onClick={() => updateRefItem({ kind: 'option', id: o.id, isActive: !o.isActive }).then(onChanged)}
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            {o.isActive ? 'скрыть' : 'вернуть'}
+                          </button>
+                          <button
+                            onClick={() => deleteRefItem('option', o.id).then(onChanged)}
+                            className="p-1 text-gray-300 hover:text-red-500"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <AddRow
+                    placeholder="Новый провайдер"
+                    onAdd={label => createRefItem({ kind: 'option', categoryId: cat.id, label }).then(onChanged)}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <AddRow
+        placeholder="Новая категория"
+        onAdd={label => createRefItem({ kind: 'category', label }).then(onChanged)}
       />
     </RefCard>
   )

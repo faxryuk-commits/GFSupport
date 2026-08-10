@@ -34,12 +34,25 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       const includeArchived = url.searchParams.get('archived') === 'true'
 
-      const [statuses, taskTypes, posSystems, posTaskMap] = await Promise.all([
+      const [statuses, taskTypes, posSystems, posTaskMap, categories, options, commentCounts] = await Promise.all([
         sql`SELECT * FROM onboarding_statuses WHERE org_id = ${orgId} ORDER BY sort_order`,
         sql`SELECT * FROM onboarding_task_types WHERE org_id = ${orgId} ORDER BY sort_order`,
         sql`SELECT * FROM onboarding_pos_systems WHERE org_id = ${orgId} ORDER BY name`,
         sql`SELECT pos_id, task_type_id FROM onboarding_pos_task_map WHERE org_id = ${orgId}`,
+        sql`SELECT * FROM onboarding_option_categories WHERE org_id = ${orgId} ORDER BY sort_order`,
+        sql`SELECT * FROM onboarding_options WHERE org_id = ${orgId} ORDER BY sort_order`,
+        sql`SELECT brand_id, COUNT(*)::int AS count FROM onboarding_comments WHERE org_id = ${orgId} GROUP BY brand_id`,
       ])
+      const commentsByBrand: Record<string, number> = Object.fromEntries(
+        commentCounts.map((c: any) => [c.brand_id, c.count]),
+      )
+      const openTodos = await sql`
+        SELECT brand_id, COUNT(*)::int AS count FROM onboarding_todos
+        WHERE org_id = ${orgId} AND done_at IS NULL GROUP BY brand_id
+      `
+      const todosByBrand: Record<string, number> = Object.fromEntries(
+        openTodos.map((c: any) => [c.brand_id, c.count]),
+      )
 
       const brands = includeArchived
         ? await sql`SELECT * FROM onboarding_brands WHERE org_id = ${orgId} ORDER BY archived_at NULLS FIRST, created_at`
@@ -86,7 +99,9 @@ export default async function handler(req: Request): Promise<Response> {
           id: t.id,
           taskTypeId: t.task_type_id,
           statusId: t.status_id,
+          assigneeId: t.assignee_id,
           assigneeName: t.assignee_name,
+          optionId: t.option_id,
           statusSince: t.status_since,
           activeSeconds: dur.active || 0,
           waitingSeconds: dur.waiting || 0,
@@ -100,18 +115,33 @@ export default async function handler(req: Request): Promise<Response> {
         })),
         taskTypes: taskTypes.map((t: any) => ({
           id: t.id, label: t.label, sortOrder: t.sort_order, isActive: t.is_active,
+          optionCategoryId: t.option_category_id,
         })),
         posSystems: posSystems.map((p: any) => ({
           id: p.id, name: p.name, isActive: p.is_active,
         })),
         posTaskMap: posTaskMap.map((m: any) => ({ posId: m.pos_id, taskTypeId: m.task_type_id })),
+        optionCategories: categories.map((c: any) => ({
+          id: c.id, label: c.label, sortOrder: c.sort_order, isActive: c.is_active,
+        })),
+        options: options.map((o: any) => ({
+          id: o.id, categoryId: o.category_id, label: o.label,
+          sortOrder: o.sort_order, isActive: o.is_active,
+        })),
         brands: brands.map((b: any) => ({
           id: b.id,
           name: b.name,
           posId: b.pos_id,
           channelId: b.channel_id,
           ownerName: b.owner_name,
+          assigneeId: b.assignee_id,
+          assigneeName: b.assignee_name,
+          nextStep: b.next_step,
+          dependsOn: b.depends_on,
+          blockers: b.blockers,
           notes: b.notes,
+          commentsCount: commentsByBrand[b.id] || 0,
+          openTodosCount: todosByBrand[b.id] || 0,
           startedAt: b.started_at,
           archivedAt: b.archived_at,
           createdAt: b.created_at,
@@ -172,8 +202,25 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { id, name, posId, ownerName, channelId, notes, archived } = body
+      const { id, name, posId, ownerName, channelId, notes, archived,
+              assigneeId, assigneeName, nextStep, dependsOn, blockers } = body
       if (!id) return json({ error: 'id is required' }, 400)
+
+      if (assigneeId !== undefined) {
+        await sql`UPDATE onboarding_brands SET assignee_id = ${assigneeId} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (assigneeName !== undefined) {
+        await sql`UPDATE onboarding_brands SET assignee_name = ${assigneeName} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (nextStep !== undefined) {
+        await sql`UPDATE onboarding_brands SET next_step = ${nextStep} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (dependsOn !== undefined) {
+        await sql`UPDATE onboarding_brands SET depends_on = ${dependsOn} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (blockers !== undefined) {
+        await sql`UPDATE onboarding_brands SET blockers = ${blockers} WHERE id = ${id} AND org_id = ${orgId}`
+      }
 
       if (name !== undefined) {
         await sql`UPDATE onboarding_brands SET name = ${name} WHERE id = ${id} AND org_id = ${orgId}`

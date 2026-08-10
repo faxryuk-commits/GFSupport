@@ -72,6 +72,35 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ success: true, id })
       }
 
+      if (kind === 'category') {
+        const { label } = body
+        if (!label) return json({ error: 'label is required' }, 400)
+        const [{ max }] = await sql`
+          SELECT COALESCE(MAX(sort_order), -1)::int AS max FROM onboarding_option_categories WHERE org_id = ${orgId}
+        `
+        const id = obId('obcat')
+        await sql`
+          INSERT INTO onboarding_option_categories (id, org_id, label, sort_order)
+          VALUES (${id}, ${orgId}, ${label}, ${max + 1})
+        `
+        return json({ success: true, id })
+      }
+
+      if (kind === 'option') {
+        const { label, categoryId } = body
+        if (!label || !categoryId) return json({ error: 'label and categoryId are required' }, 400)
+        const [{ max }] = await sql`
+          SELECT COALESCE(MAX(sort_order), -1)::int AS max FROM onboarding_options
+          WHERE org_id = ${orgId} AND category_id = ${categoryId}
+        `
+        const id = obId('obopt')
+        await sql`
+          INSERT INTO onboarding_options (id, org_id, category_id, label, sort_order)
+          VALUES (${id}, ${orgId}, ${categoryId}, ${label}, ${max + 1})
+        `
+        return json({ success: true, id })
+      }
+
       if (kind === 'pos') {
         const { name } = body
         if (!name) return json({ error: 'name is required' }, 400)
@@ -140,7 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (kind === 'taskType') {
-        const { label, sortOrder, isActive } = body
+        const { label, sortOrder, isActive, categoryId } = body
         if (label !== undefined) {
           await sql`UPDATE onboarding_task_types SET label = ${label} WHERE id = ${id} AND org_id = ${orgId}`
         }
@@ -149,6 +178,37 @@ export default async function handler(req: Request): Promise<Response> {
         }
         if (isActive !== undefined) {
           await sql`UPDATE onboarding_task_types SET is_active = ${isActive} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (categoryId !== undefined) {
+          await sql`UPDATE onboarding_task_types SET option_category_id = ${categoryId || null} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        return json({ success: true })
+      }
+
+      if (kind === 'category') {
+        const { label, sortOrder, isActive } = body
+        if (label !== undefined) {
+          await sql`UPDATE onboarding_option_categories SET label = ${label} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (sortOrder !== undefined) {
+          await sql`UPDATE onboarding_option_categories SET sort_order = ${sortOrder} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (isActive !== undefined) {
+          await sql`UPDATE onboarding_option_categories SET is_active = ${isActive} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        return json({ success: true })
+      }
+
+      if (kind === 'option') {
+        const { label, sortOrder, isActive } = body
+        if (label !== undefined) {
+          await sql`UPDATE onboarding_options SET label = ${label} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (sortOrder !== undefined) {
+          await sql`UPDATE onboarding_options SET sort_order = ${sortOrder} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (isActive !== undefined) {
+          await sql`UPDATE onboarding_options SET is_active = ${isActive} WHERE id = ${id} AND org_id = ${orgId}`
         }
         return json({ success: true })
       }
@@ -211,6 +271,32 @@ export default async function handler(req: Request): Promise<Response> {
         }
         await sql`DELETE FROM onboarding_pos_task_map WHERE pos_id = ${id} AND org_id = ${orgId}`
         await sql`DELETE FROM onboarding_pos_systems WHERE id = ${id} AND org_id = ${orgId}`
+        return json({ success: true })
+      }
+
+      if (kind === 'category') {
+        const [{ count }] = await sql`
+          SELECT COUNT(*)::int AS count FROM onboarding_task_types
+          WHERE option_category_id = ${id} AND org_id = ${orgId}
+        `
+        if (count > 0) {
+          await sql`UPDATE onboarding_option_categories SET is_active = false WHERE id = ${id} AND org_id = ${orgId}`
+          return json({ success: true, softDeleted: true })
+        }
+        await sql`DELETE FROM onboarding_options WHERE category_id = ${id} AND org_id = ${orgId}`
+        await sql`DELETE FROM onboarding_option_categories WHERE id = ${id} AND org_id = ${orgId}`
+        return json({ success: true })
+      }
+
+      if (kind === 'option') {
+        const [{ count }] = await sql`
+          SELECT COUNT(*)::int AS count FROM onboarding_tasks WHERE option_id = ${id} AND org_id = ${orgId}
+        `
+        if (count > 0) {
+          await sql`UPDATE onboarding_options SET is_active = false WHERE id = ${id} AND org_id = ${orgId}`
+          return json({ success: true, softDeleted: true })
+        }
+        await sql`DELETE FROM onboarding_options WHERE id = ${id} AND org_id = ${orgId}`
         return json({ success: true })
       }
 

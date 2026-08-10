@@ -104,8 +104,105 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_events_brand ON onboarding_task_events(brand_id, changed_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_brands_org ON onboarding_brands(org_id, archived_at)`
 
+  // v2: категории провайдеров, исполнители, next step / блокеры, комментарии, мини-задачи
+  await sql`
+    CREATE TABLE IF NOT EXISTS onboarding_option_categories (
+      id VARCHAR(50) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      label VARCHAR(100) NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS onboarding_options (
+      id VARCHAR(50) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      category_id VARCHAR(50) NOT NULL,
+      label VARCHAR(100) NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS onboarding_comments (
+      id VARCHAR(50) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      brand_id VARCHAR(50) NOT NULL,
+      author_id VARCHAR(64),
+      author_name VARCHAR(255),
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS onboarding_todos (
+      id VARCHAR(50) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      brand_id VARCHAR(50) NOT NULL,
+      text TEXT NOT NULL,
+      assignee_id VARCHAR(64),
+      assignee_name VARCHAR(255),
+      due_at TIMESTAMPTZ,
+      done_at TIMESTAMPTZ,
+      created_by VARCHAR(255),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS option_category_id VARCHAR(50)`
+  await sql`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
+  await sql`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS option_id VARCHAR(50)`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS depends_on TEXT`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS blockers TEXT`
+  await sql`CREATE INDEX IF NOT EXISTS idx_ob_comments_brand ON onboarding_comments(brand_id, created_at)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_ob_todos_brand ON onboarding_todos(brand_id)`
+
   await seedDefaults(sql, orgId)
+  await seedCategories(sql, orgId)
   ensuredOrgs.add(orgId)
+}
+
+/**
+ * Категории провайдеров + стартовые опции. Привязка колонок чек-листа
+ * к категориям — по текущим названиям колонок (только если ещё не привязаны).
+ */
+async function seedCategories(sql: SQL, orgId: string): Promise<void> {
+  const [{ count }] = await sql`
+    SELECT COUNT(*)::int AS count FROM onboarding_option_categories WHERE org_id = ${orgId}
+  `
+  if (count > 0) return
+
+  const categories: { label: string; options: string[]; taskTypes: string[] }[] = [
+    { label: 'Тип оплаты', options: ['Наличные', 'Payme', 'Click', 'Uzum Pay'], taskTypes: ['Тип оплаты'] },
+    { label: 'Агрегаторы', options: ['Uzum Tezkor', 'Yandex Eats', 'Wolt'], taskTypes: ['Uzum Tezkor', 'Yandex Eats'] },
+    { label: 'Курьер-сервисы', options: ['NOOR', 'MILLENIUM', 'Yandex Delivery'], taskTypes: ['Курьер сервис', 'Служба доставки'] },
+    { label: 'СМС-сервисы', options: ['Eskiz', 'Play Mobile'], taskTypes: ['Смс провайдер'] },
+    { label: 'Телефония', options: [], taskTypes: [] },
+    { label: 'Каналы продаж', options: ['Сайт', 'Telegram-бот', 'Моб. приложение'], taskTypes: ['Сайт/Бот'] },
+  ]
+  for (let i = 0; i < categories.length; i++) {
+    const c = categories[i]
+    const catId = obId('obcat')
+    await sql`
+      INSERT INTO onboarding_option_categories (id, org_id, label, sort_order)
+      VALUES (${catId}, ${orgId}, ${c.label}, ${i})
+    `
+    for (let j = 0; j < c.options.length; j++) {
+      await sql`
+        INSERT INTO onboarding_options (id, org_id, category_id, label, sort_order)
+        VALUES (${obId('obopt')}, ${orgId}, ${catId}, ${c.options[j]}, ${j})
+      `
+    }
+    for (const tt of c.taskTypes) {
+      await sql`
+        UPDATE onboarding_task_types SET option_category_id = ${catId}
+        WHERE org_id = ${orgId} AND label = ${tt} AND option_category_id IS NULL
+      `
+    }
+  }
 }
 
 async function seedDefaults(sql: SQL, orgId: string): Promise<void> {
