@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "gfsupport-proto",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:proto"],
+      "port": 5173
     }
   ]
 }

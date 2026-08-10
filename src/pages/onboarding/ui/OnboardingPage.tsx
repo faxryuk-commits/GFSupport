@@ -9,26 +9,35 @@ import {
   fetchBrandCard, addBrandComment, deleteBrandComment,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
-  type ObBoard, type ObBrand, type ObStatus, type ObEvent, type ObStats,
-  type ObComment, type ObTodo,
+  type ObBoard, type ObBrand, type ObStatus, type ObEvent, type ObStats, type ObTaskType,
+  type ObComment, type ObTodo, type ObTask,
 } from '@/shared/api/onboarding'
 import {
   Plug, Plus, Loader2, RefreshCw, X, Archive, ArchiveRestore, Trash2,
-  History, Settings2, LayoutGrid, ChevronUp, ChevronDown, Pencil, Check,
-  BarChart3, AlertTriangle, MessageSquare, ListTodo, User, Flame, Clock,
-  ArrowRight, Link2, Target, Table2, FlagTriangleRight, CircleDashed,
+  History, Settings2, ChevronUp, ChevronDown, ChevronRight, Pencil, Check,
+  BarChart3, AlertTriangle, MessageSquare, ListTodo, Flame, Clock,
+  ArrowRight, Target, Table2, Settings,
 } from 'lucide-react'
 
-// Цвета статусов (справочник хранит ключ цвета, не классы)
-const STATUS_COLORS: Record<string, { chip: string; dot: string }> = {
-  gray: { chip: 'bg-gray-100 text-gray-600 hover:bg-gray-200', dot: 'bg-gray-400' },
-  blue: { chip: 'bg-blue-100 text-blue-700 hover:bg-blue-200', dot: 'bg-blue-500' },
-  amber: { chip: 'bg-amber-100 text-amber-700 hover:bg-amber-200', dot: 'bg-amber-500' },
-  green: { chip: 'bg-green-100 text-green-700 hover:bg-green-200', dot: 'bg-green-500' },
-  red: { chip: 'bg-red-100 text-red-700 hover:bg-red-200', dot: 'bg-red-500' },
-  slate: { chip: 'bg-slate-100 text-slate-500 hover:bg-slate-200', dot: 'bg-slate-400' },
+// ───────────────────────────── константы и утилиты
+
+const STATUS_COLORS: Record<string, { chip: string; dot: string; seg: string }> = {
+  gray: { chip: 'bg-gray-100 text-gray-600 hover:bg-gray-200', dot: 'bg-gray-400', seg: 'bg-gray-200' },
+  blue: { chip: 'bg-blue-100 text-blue-700 hover:bg-blue-200', dot: 'bg-blue-500', seg: 'bg-blue-500' },
+  amber: { chip: 'bg-amber-100 text-amber-700 hover:bg-amber-200', dot: 'bg-amber-500', seg: 'bg-amber-500' },
+  green: { chip: 'bg-green-100 text-green-700 hover:bg-green-200', dot: 'bg-green-500', seg: 'bg-green-500' },
+  red: { chip: 'bg-red-100 text-red-700 hover:bg-red-200', dot: 'bg-red-500', seg: 'bg-red-400' },
+  slate: { chip: 'bg-slate-100 text-slate-500 hover:bg-slate-200', dot: 'bg-slate-400', seg: 'bg-gray-100' },
 }
 const COLOR_KEYS = Object.keys(STATUS_COLORS)
+
+const KIND_SEG: Record<string, string> = {
+  done: 'bg-green-500',
+  active: 'bg-blue-500',
+  waiting: 'bg-amber-500',
+  todo: 'bg-gray-200',
+  cancelled: 'bg-gray-200',
+}
 
 const METRIC_KINDS: { value: string; label: string }[] = [
   { value: 'todo', label: 'Не начато (очередь)' },
@@ -39,7 +48,6 @@ const METRIC_KINDS: { value: string; label: string }[] = [
   { value: 'na', label: 'Не применимо' },
 ]
 
-// Пороги «застревания» — сигналы на чипах и в аналитике
 const STUCK_WAITING_HOURS = 48
 const STUCK_ACTIVE_HOURS = 120
 
@@ -51,13 +59,13 @@ function fmtSeconds(sec: number): string {
   return `${(h / 24).toFixed(1)} дн`
 }
 
-function hoursSince(iso: string): number {
-  return (Date.now() - new Date(iso).getTime()) / 3600000
-}
-
 function fmtShortDur(hours: number): string {
   if (hours >= 24) return `${(hours / 24).toFixed(1)} дн`
   return `${Math.round(hours)} ч`
+}
+
+function hoursSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / 3600000
 }
 
 function initials(name: string): string {
@@ -68,14 +76,30 @@ function isTaskStuck(kind: string | undefined, hours: number): boolean {
   return (kind === 'waiting' && hours > STUCK_WAITING_HOURS) || (kind === 'active' && hours > STUCK_ACTIVE_HOURS)
 }
 
+interface StepGroup {
+  label: string
+  types: ObTaskType[]
+}
+
+/** Блоки запуска в порядке следования шагов. */
+function buildGroups(taskTypes: ObTaskType[]): StepGroup[] {
+  const groups: StepGroup[] = []
+  for (const t of taskTypes) {
+    const label = t.groupLabel || 'Прочее'
+    const last = groups[groups.length - 1]
+    if (last && last.label === label) last.types.push(t)
+    else groups.push({ label, types: [t] })
+  }
+  return groups
+}
+
 interface InFlightTask {
-  task: ObBrand['tasks'][number]
+  task: ObTask
   kind: string
   hours: number
   stuck: boolean
 }
 
-/** Разбор бренда для фокус-режима: активные задачи, счётчики, полка. */
 function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
   const inFlightTasks: InFlightTask[] = []
   let done = 0
@@ -92,15 +116,61 @@ function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
   }
   inFlightTasks.sort((a, b) => b.hours - a.hours)
   const worst = inFlightTasks[0] || null
-  const inFlight = inFlightTasks.length
   const hasBlockers = !!brand.blockers?.trim()
   let shelf: 'attention' | 'progress' | 'queue' | 'finish'
   if (countable > 0 && done === countable) shelf = 'finish'
   else if (hasBlockers || (worst?.stuck ?? false)) shelf = 'attention'
-  else if (inFlight === 0 && done === 0) shelf = 'queue'
+  else if (inFlightTasks.length === 0 && done === 0) shelf = 'queue'
   else shelf = 'progress'
-  return { worst, inFlightTasks, inFlight, done, countable, hasBlockers, shelf }
+  return { worst, inFlightTasks, inFlight: inFlightTasks.length, done, countable, hasBlockers, shelf }
 }
+
+/** Задачи бренда в порядке чек-листа (для пайплайна). */
+function orderedTasks(brand: ObBrand, taskTypes: ObTaskType[]): ObTask[] {
+  const order = Object.fromEntries(taskTypes.map((t, i) => [t.id, i]))
+  return [...brand.tasks].sort((a, b) => (order[a.taskTypeId] ?? 99) - (order[b.taskTypeId] ?? 99))
+}
+
+function Pipeline({ tasks, statusById, height = 'h-[4px]' }: {
+  tasks: ObTask[]
+  statusById: Record<string, ObStatus>
+  height?: string
+}) {
+  const segs = tasks.filter(t => {
+    const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+    return k && k !== 'na' && k !== 'cancelled'
+  })
+  if (segs.length === 0) return null
+  return (
+    <span className="flex gap-[2px] w-full">
+      {segs.map(t => {
+        const kind = t.statusId ? statusById[t.statusId]?.kind : 'todo'
+        const stuck = isTaskStuck(kind, hoursSince(t.statusSince))
+        return (
+          <span
+            key={t.id}
+            className={`flex-1 rounded-[2px] ${height} ${KIND_SEG[kind || 'todo'] || 'bg-gray-200'} ${stuck ? 'ring-1 ring-red-300' : ''}`}
+          />
+        )
+      })}
+    </span>
+  )
+}
+
+function AgentAvatar({ name, size = 'w-6 h-6 text-[10px]' }: { name: string | null; size?: string }) {
+  if (!name) {
+    return (
+      <span className={`${size} rounded-full bg-gray-100 text-gray-400 font-medium flex items-center justify-center shrink-0`} title="Не назначен">?</span>
+    )
+  }
+  return (
+    <span className={`${size} rounded-full bg-blue-100 text-blue-700 font-medium flex items-center justify-center shrink-0`} title={name}>
+      {initials(name)}
+    </span>
+  )
+}
+
+// ───────────────────────────── страница
 
 export function OnboardingPage() {
   const [board, setBoard] = useState<ObBoard | null>(null)
@@ -108,18 +178,15 @@ export function OnboardingPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'board' | 'stats' | 'history' | 'refs'>('board')
-  const [showArchived, setShowArchived] = useState(false)
-  const [openBrandId, setOpenBrandId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'focus' | 'matrix' | 'stats' | 'history' | 'refs'>('focus')
+  const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true)
     else setLoading(true)
     setError(null)
     try {
-      const data = await fetchOnboardingBoard(showArchived)
-      // Страховка от рассинхрона фронт/API в момент деплоя: недостающие
-      // коллекции считаем пустыми, а не роняем доску.
+      const data = await fetchOnboardingBoard(false)
       setBoard({
         ...data,
         statuses: data.statuses || [],
@@ -137,14 +204,20 @@ export function OnboardingPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [showArchived])
+  }, [])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
     fetchAgents().then(list => setAgents(list.filter(a => a.isActive !== false))).catch(() => {})
   }, [])
 
-  const openBrand = openBrandId && board ? board.brands.find(b => b.id === openBrandId) || null : null
+  const statusById = useMemo(
+    () => Object.fromEntries((board?.statuses || []).map(s => [s.id, s])),
+    [board?.statuses],
+  )
+  const selectedBrand = selectedBrandId && board
+    ? board.brands.find(b => b.id === selectedBrandId) || null
+    : null
 
   return (
     <div className="p-4 sm:p-6 max-w-full">
@@ -162,18 +235,19 @@ export function OnboardingPage() {
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm bg-white">
             {([
-              ['board', 'Доска', LayoutGrid],
+              ['focus', 'Фокус', Target],
+              ['matrix', 'Матрица', Table2],
               ['stats', 'Аналитика', BarChart3],
               ['history', 'История', History],
               ['refs', 'Справочники', Settings2],
             ] as const).map(([key, label, Icon]) => (
               <button
                 key={key}
-                onClick={() => setTab(key)}
+                onClick={() => { setTab(key); if (key !== 'focus' && key !== 'matrix') setSelectedBrandId(null) }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 ${
-                  tab === key ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  tab === key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -190,331 +264,273 @@ export function OnboardingPage() {
         </div>
       )}
       {!loading && error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
-          {error}
-        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{error}</div>
       )}
 
-      {!loading && !error && board && tab === 'board' && (
-        <BoardTab
+      {!loading && !error && board && tab === 'focus' && (
+        <FocusTab
           board={board}
-          showArchived={showArchived}
-          onToggleArchived={() => setShowArchived(v => !v)}
-          onOpenBrand={b => setOpenBrandId(b.id)}
+          agents={agents}
+          statusById={statusById}
+          selectedBrand={selectedBrand}
+          onSelect={setSelectedBrandId}
           onChanged={() => load(true)}
         />
       )}
-      {!loading && !error && tab === 'stats' && <StatsTab />}
+      {!loading && !error && board && tab === 'matrix' && (
+        <>
+          <MatrixTab
+            board={board}
+            statusById={statusById}
+            onSelect={setSelectedBrandId}
+            onChanged={() => load(true)}
+          />
+          {selectedBrand && (
+            <div className="fixed inset-0 z-40 flex justify-end">
+              <div className="absolute inset-0 bg-black/20" onClick={() => setSelectedBrandId(null)} />
+              <div className="relative w-full max-w-xl h-full bg-white shadow-xl overflow-y-auto border-l-2 border-blue-500">
+                <BrandPanel
+                  brand={selectedBrand}
+                  board={board}
+                  agents={agents}
+                  statusById={statusById}
+                  onClose={() => setSelectedBrandId(null)}
+                  onChanged={() => load(true)}
+                />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {!loading && !error && tab === 'stats' && board && <StatsTab board={board} statusById={statusById} />}
       {!loading && !error && board && tab === 'history' && <HistoryTab board={board} />}
       {!loading && !error && board && tab === 'refs' && (
         <RefsTab board={board} onChanged={() => load(true)} />
       )}
-
-      {openBrand && board && (
-        <BrandDrawer
-          brand={openBrand}
-          board={board}
-          agents={agents}
-          onClose={() => setOpenBrandId(null)}
-          onChanged={() => load(true)}
-        />
-      )}
     </div>
   )
 }
 
-// ─────────────────────────────────────────────── Доска (матрица)
+// ───────────────────────────── Фокус
 
-function BoardTab({ board, showArchived, onToggleArchived, onOpenBrand, onChanged }: {
+function FocusTab({ board, agents, statusById, selectedBrand, onSelect, onChanged }: {
   board: ObBoard
-  showArchived: boolean
-  onToggleArchived: () => void
-  onOpenBrand: (b: ObBrand) => void
+  agents: Agent[]
+  statusById: Record<string, ObStatus>
+  selectedBrand: ObBrand | null
+  onSelect: (id: string | null) => void
   onChanged: () => void
 }) {
+  const [filter, setFilter] = useState<'all' | 'stuck' | 'mine'>('all')
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPos, setNewPos] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [view, setView] = useState<'focus' | 'matrix'>(() =>
-    (localStorage.getItem('onboarding_board_view') as 'focus' | 'matrix') || 'focus',
-  )
-  const switchView = (v: 'focus' | 'matrix') => {
-    setView(v)
-    localStorage.setItem('onboarding_board_view', v)
-  }
+  const myId = localStorage.getItem('support_agent_token') || ''
 
   const taskTypes = board.taskTypes.filter(t => t.isActive)
-  const statusById = useMemo(
-    () => Object.fromEntries(board.statuses.map(s => [s.id, s])),
-    [board.statuses],
-  )
-  const posById = useMemo(
-    () => Object.fromEntries(board.posSystems.map(p => [p.id, p])),
-    [board.posSystems],
-  )
-  const optionById = useMemo(
-    () => Object.fromEntries(board.options.map(o => [o.id, o])),
-    [board.options],
-  )
+  const typeById = useMemo(() => Object.fromEntries(board.taskTypes.map(t => [t.id, t])), [board.taskTypes])
+  const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
+  const posById = useMemo(() => Object.fromEntries(board.posSystems.map(p => [p.id, p])), [board.posSystems])
 
-  // Сводка: сигналы по доске
-  const summary = useMemo(() => {
-    let stuck = 0
-    let blocked = 0
-    for (const b of board.brands) {
-      if (b.archivedAt) continue
-      if (b.blockers?.trim()) blocked++
-      for (const t of b.tasks) {
-        const kind = t.statusId ? statusById[t.statusId]?.kind : null
-        const h = hoursSince(t.statusSince)
-        if ((kind === 'waiting' && h > STUCK_WAITING_HOURS) || (kind === 'active' && h > STUCK_ACTIVE_HOURS)) stuck++
-      }
-    }
-    return { stuck, blocked, brands: board.brands.filter(b => !b.archivedAt).length }
-  }, [board, statusById])
+  const analyzed = useMemo(() => board.brands
+    .filter(b => !b.archivedAt)
+    .map(brand => ({ brand, a: analyzeBrand(brand, statusById) })), [board.brands, statusById])
 
-  const handleAdd = async () => {
-    if (!newName.trim() || saving) return
-    setSaving(true)
-    try {
-      await createBrand({ name: newName.trim(), posId: newPos || null })
-      setNewName('')
-      setNewPos('')
-      setAdding(false)
-      onChanged()
-    } finally {
-      setSaving(false)
-    }
+  const stuckTotal = analyzed.reduce((s, x) => s + x.a.inFlightTasks.filter(t => t.stuck).length, 0)
+
+  const filtered = analyzed.filter(({ brand, a }) => {
+    if (filter === 'stuck') return a.shelf === 'attention'
+    if (filter === 'mine') return brand.assigneeId === myId || brand.tasks.some(t => t.assigneeId === myId)
+    return true
+  })
+
+  const shelves = {
+    attention: filtered.filter(x => x.a.shelf === 'attention').sort((a, b) => (b.a.worst?.hours || 0) - (a.a.worst?.hours || 0)),
+    progress: filtered.filter(x => x.a.shelf === 'progress').sort((a, b) => (b.a.worst?.hours || 0) - (a.a.worst?.hours || 0)),
+    queue: filtered.filter(x => x.a.shelf === 'queue'),
+    finish: filtered.filter(x => x.a.shelf === 'finish'),
   }
 
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        {!adding ? (
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" /> Бренд
-          </button>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              autoFocus
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAdding(false) }}
-              placeholder="Название бренда"
-              className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <select
-              value={newPos}
-              onChange={e => setNewPos(e.target.value)}
-              className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white"
-            >
-              <option value="">POS-система…</option>
-              {board.posSystems.filter(p => p.isActive).map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleAdd}
-              disabled={!newName.trim() || saving}
-              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Создать'}
-            </button>
-            <button onClick={() => setAdding(false)} className="p-1.5 text-gray-400 hover:text-gray-600">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+  const handleAdd = async () => {
+    if (!newName.trim()) return
+    await createBrand({ name: newName.trim(), posId: newPos || null })
+    setNewName(''); setNewPos(''); setAdding(false)
+    onChanged()
+  }
 
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-          {([
-            ['focus', 'Фокус', Target],
-            ['matrix', 'Матрица', Table2],
-          ] as const).map(([key, label, Icon]) => (
-            <button
-              key={key}
-              onClick={() => switchView(key)}
-              className={`flex items-center gap-1 px-2.5 py-1 ${
-                view === key ? 'bg-gray-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              <Icon className="w-3 h-3" />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3 text-xs text-gray-500">
-          <span>{summary.brands} в онбординге</span>
-          {summary.stuck > 0 && (
-            <span className="flex items-center gap-1 text-red-600">
-              <Flame className="w-3.5 h-3.5" /> застряло: {summary.stuck}
-            </span>
-          )}
-          {summary.blocked > 0 && (
-            <span className="flex items-center gap-1 text-amber-600">
-              <AlertTriangle className="w-3.5 h-3.5" /> с блокерами: {summary.blocked}
-            </span>
-          )}
-        </div>
-
-        <label className="flex items-center gap-1.5 text-sm text-gray-500 ml-auto cursor-pointer">
-          <input type="checkbox" checked={showArchived} onChange={onToggleArchived} className="rounded" />
-          Показать архив
-        </label>
-      </div>
-
-      {board.brands.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 py-16 text-center text-gray-400 text-sm">
-          Пока нет брендов — добавьте первый
-        </div>
-      ) : view === 'focus' ? (
-        <FocusView
-          board={board}
-          statusById={statusById}
-          posById={posById}
-          onOpenBrand={onOpenBrand}
-          onChanged={onChanged}
-        />
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2 mb-3">
+      {!adding ? (
+        <button
+          onClick={() => setAdding(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+        >
+          <Plus className="w-4 h-4" /> Бренд
+        </button>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[210px]">
-                  Бренд
-                </th>
-                <th className="text-left font-medium text-gray-600 px-2 py-2">Прогресс</th>
-                {taskTypes.map(t => (
-                  <th key={t.id} className="text-left font-medium text-gray-600 px-2 py-2 whitespace-nowrap">
-                    {t.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {board.brands.map(brand => (
-                <BrandRow
-                  key={brand.id}
-                  brand={brand}
-                  board={board}
-                  taskTypes={taskTypes}
-                  statusById={statusById}
-                  optionById={optionById}
-                  posName={brand.posId ? posById[brand.posId]?.name : undefined}
-                  onOpen={() => onOpenBrand(brand)}
-                  onChanged={onChanged}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <span className="flex items-center gap-2">
+          <input
+            autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAdding(false) }}
+            placeholder="Название бренда"
+            className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+          />
+          <select value={newPos} onChange={e => setNewPos(e.target.value)} className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white">
+            <option value="">POS…</option>
+            {board.posSystems.filter(p => p.isActive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button onClick={handleAdd} disabled={!newName.trim()} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">Создать</button>
+          <button onClick={() => setAdding(false)} className="p-1.5 text-gray-400"><X className="w-4 h-4" /></button>
+        </span>
       )}
+      <span className="flex gap-1.5 ml-1">
+        {([
+          ['all', `Все ${analyzed.length}`],
+          ['stuck', `застряло ${stuckTotal}`],
+          ['mine', 'мои'],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            className={`text-xs px-2.5 py-1 rounded-full border ${
+              filter === key
+                ? 'bg-gray-900 text-white border-gray-900'
+                : key === 'stuck'
+                  ? 'bg-white border-gray-200 text-red-600 hover:bg-gray-50'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </span>
     </div>
   )
-}
-
-// Фокус-режим: бренды на полках по требуемому действию, виден только боттлнек
-function FocusView({ board, statusById, posById, onOpenBrand, onChanged }: {
-  board: ObBoard
-  statusById: Record<string, ObStatus>
-  posById: Record<string, ObBoard['posSystems'][number]>
-  onOpenBrand: (b: ObBrand) => void
-  onChanged: () => void
-}) {
-  const typeById = useMemo(
-    () => Object.fromEntries(board.taskTypes.map(t => [t.id, t])),
-    [board.taskTypes],
-  )
-  const optionById = useMemo(
-    () => Object.fromEntries(board.options.map(o => [o.id, o])),
-    [board.options],
-  )
-
-  const shelves = useMemo(() => {
-    const acc = {
-      attention: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
-      progress: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
-      queue: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
-      finish: [] as { brand: ObBrand; a: ReturnType<typeof analyzeBrand> }[],
-    }
-    for (const brand of board.brands) {
-      if (brand.archivedAt) continue
-      const a = analyzeBrand(brand, statusById)
-      acc[a.shelf].push({ brand, a })
-    }
-    acc.attention.sort((x, y) => (y.a.worst?.hours || 0) - (x.a.worst?.hours || 0))
-    acc.progress.sort((x, y) => (y.a.worst?.hours || 0) - (x.a.worst?.hours || 0))
-    return acc
-  }, [board.brands, statusById])
 
   const shelfDefs = [
-    { key: 'attention' as const, label: 'Требуют действия', icon: Flame, cls: 'text-red-600' },
-    { key: 'progress' as const, label: 'В работе', icon: LayoutGrid, cls: 'text-gray-500' },
-    { key: 'queue' as const, label: 'Очередь', icon: CircleDashed, cls: 'text-gray-400' },
-    { key: 'finish' as const, label: 'Финишная прямая', icon: FlagTriangleRight, cls: 'text-green-700' },
+    { key: 'attention' as const, label: 'Требуют действия', cls: 'text-red-600' },
+    { key: 'progress' as const, label: 'В работе', cls: 'text-blue-700' },
+    { key: 'queue' as const, label: 'Очередь', cls: 'text-gray-400' },
+    { key: 'finish' as const, label: 'Финишная прямая', cls: 'text-green-700' },
   ]
 
-  return (
-    <div className="space-y-5">
-      {shelfDefs.map(def => {
-        const items = shelves[def.key]
-        if (items.length === 0) return null
-        const Icon = def.icon
-        return (
-          <div key={def.key}>
-            <div className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide mb-2 ${def.cls}`}>
-              <Icon className="w-3.5 h-3.5" />
-              {def.label} · {items.length}
-            </div>
-            <div className="space-y-2">
-              {items.map(({ brand, a }) => (
-                <FocusCard
-                  key={brand.id}
-                  brand={brand}
-                  a={a}
-                  shelf={def.key}
-                  posName={brand.posId ? posById[brand.posId]?.name : undefined}
-                  typeById={typeById}
-                  optionById={optionById}
-                  statusById={statusById}
-                  onOpen={() => onOpenBrand(brand)}
-                  onChanged={onChanged}
-                />
-              ))}
-            </div>
+  // ── сплит: выбран бренд
+  if (selectedBrand) {
+    return (
+      <div>
+        {toolbar}
+        <div className="flex gap-4 items-start">
+          <div className="w-60 shrink-0 rounded-lg border border-gray-200 bg-white overflow-hidden">
+            {shelfDefs.map(def => {
+              const items = shelves[def.key]
+              if (items.length === 0) return null
+              return (
+                <div key={def.key}>
+                  <div className={`text-[10px] font-medium uppercase tracking-wide px-3 pt-2.5 pb-1 ${def.cls}`}>
+                    {def.label} · {items.length}
+                  </div>
+                  {items.map(({ brand, a }) => {
+                    const active = brand.id === selectedBrand.id
+                    const worstType = a.worst ? typeById[a.worst.task.taskTypeId]?.label : null
+                    const worstOpt = a.worst?.task.optionId ? optionById[a.worst.task.optionId]?.label : null
+                    return (
+                      <button
+                        key={brand.id}
+                        onClick={() => onSelect(brand.id)}
+                        className={`block w-full text-left px-3 py-2 border-t border-gray-50 ${active ? 'bg-blue-50 border-l-2 border-l-blue-600' : 'hover:bg-gray-50 border-l-2 border-l-transparent'}`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[13px] font-medium text-gray-900 truncate">{brand.name}</span>
+                          {a.hasBlockers && <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />}
+                          {a.worst && (
+                            <span className={`ml-auto text-[11px] font-medium ${a.worst.stuck ? 'text-red-600' : 'text-gray-400'}`}>
+                              {(a.worst.hours / 24).toFixed(1)}
+                            </span>
+                          )}
+                          {def.key === 'finish' && <span className="ml-auto text-[11px] text-green-700">✓</span>}
+                        </span>
+                        {a.worst && worstType && (
+                          <span className={`block text-[11px] truncate ${a.worst.kind === 'waiting' ? 'text-amber-700' : 'text-gray-400'}`}>
+                            {a.worst.kind === 'waiting' ? '⏸' : '●'} {worstType}{worstOpt ? ` · ${worstOpt}` : ''}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
           </div>
-        )
-      })}
+          <div className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-white">
+            <BrandPanel
+              brand={selectedBrand}
+              board={board}
+              agents={agents}
+              statusById={statusById}
+              onClose={() => onSelect(null)}
+              onChanged={onChanged}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── реестр на всю ширину
+  return (
+    <div>
+      {toolbar}
+      <div className="space-y-4">
+        {shelfDefs.map(def => {
+          const items = shelves[def.key]
+          if (items.length === 0) return null
+          return (
+            <div key={def.key}>
+              <div className={`text-[11px] font-medium uppercase tracking-wide mb-1.5 ${def.cls}`}>
+                {def.label} · {items.length}
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-50 overflow-hidden">
+                {items.map(({ brand, a }) => (
+                  <FocusRow
+                    key={brand.id}
+                    brand={brand}
+                    a={a}
+                    shelf={def.key}
+                    posName={brand.posId ? posById[brand.posId]?.name : undefined}
+                    taskTypes={taskTypes}
+                    typeById={typeById}
+                    optionById={optionById}
+                    statusById={statusById}
+                    onOpen={() => onSelect(brand.id)}
+                    onChanged={onChanged}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-function FocusCard({ brand, a, shelf, posName, typeById, optionById, statusById, onOpen, onChanged }: {
+function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, statusById, onOpen, onChanged }: {
   brand: ObBrand
   a: ReturnType<typeof analyzeBrand>
   shelf: 'attention' | 'progress' | 'queue' | 'finish'
   posName?: string
-  typeById: Record<string, ObBoard['taskTypes'][number]>
+  taskTypes: ObTaskType[]
+  typeById: Record<string, ObTaskType>
   optionById: Record<string, ObBoard['options'][number]>
   statusById: Record<string, ObStatus>
   onOpen: () => void
   onChanged: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const accentCls = shelf === 'attention'
-    ? 'border-l-red-400'
-    : shelf === 'finish' ? 'border-l-green-400'
-      : shelf === 'queue' ? 'border-l-gray-200' : 'border-l-blue-400'
-  const VISIBLE = 3
-  const visibleTasks = expanded ? a.inFlightTasks : a.inFlightTasks.slice(0, VISIBLE)
-  const hiddenCount = a.inFlightTasks.length - VISIBLE
-  const progressPct = a.countable ? Math.round((a.done / a.countable) * 100) : 0
+  const worst = a.worst
+  const worstType = worst ? typeById[worst.task.taskTypeId]?.label : null
+  const worstOpt = worst?.task.optionId ? optionById[worst.task.optionId]?.label : null
+  const worstStatus = worst?.task.statusId ? statusById[worst.task.statusId] : undefined
+  const days = Math.round(hoursSince(brand.startedAt) / 24)
 
   const finishOnboarding = async () => {
     if (!window.confirm(`Завершить онбординг «${brand.name}» и убрать бренд в архив?`)) return
@@ -523,230 +539,608 @@ function FocusCard({ brand, a, shelf, posName, typeById, optionById, statusById,
   }
 
   return (
-    <div className={`rounded-r-xl border border-gray-200 border-l-[3px] bg-white px-4 py-3 hover:shadow-sm transition-shadow ${accentCls}`}>
-      {/* Шапка: имя, POS, прогресс, счётчики, ответственный */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={onOpen} className="font-medium text-gray-900 hover:text-blue-600 text-[15px]">
-          {brand.name}
-        </button>
-        <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 bg-gray-50 text-gray-500">
-          {posName || 'без POS'}
+    <div className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-gray-50/60 cursor-pointer" onClick={onOpen}>
+      <div className="w-40 shrink-0">
+        <span className="flex items-center gap-1.5">
+          <span className="text-[13px] font-medium text-gray-900 truncate">{brand.name}</span>
+          {a.hasBlockers && <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />}
         </span>
-        <span className="inline-flex items-center gap-1.5 ml-1">
-          <span className="w-14 h-1 rounded-full bg-gray-100 overflow-hidden inline-block">
-            <span className="block h-full bg-green-500" style={{ width: `${progressPct}%` }} />
-          </span>
-          <span className="text-[11px] text-gray-400">{a.done}/{a.countable}</span>
-        </span>
-        {shelf === 'finish' && <span className="text-xs text-green-700">все шаги закрыты</span>}
+        <span className="text-[11px] text-gray-400">{posName || 'без POS'} · {days} дн · {a.done}/{a.countable}</span>
+      </div>
+      <span className="w-24 shrink-0">
+        <Pipeline tasks={orderedTasks(brand, taskTypes)} statusById={statusById} height="h-[3px]" />
+      </span>
+      <span className="min-w-0 flex-1 text-[12px] truncate">
+        {shelf === 'finish' ? (
+          <span className="text-green-700">все шаги закрыты</span>
+        ) : shelf === 'queue' ? (
+          <span className="text-gray-400">не начат — {a.countable || brand.tasks.length} шагов впереди</span>
+        ) : worst ? (
+          <>
+            <span className={worst.kind === 'waiting' ? 'text-amber-700' : 'text-gray-600'}>
+              {worst.kind === 'waiting' ? '⏸ ' : '● '}
+              {worstType}
+              {worstOpt && <span className="text-gray-400"> · {worstOpt}</span>}
+              {' — '}{worstStatus?.label?.toLowerCase()}
+            </span>
+            <span className={`ml-1 font-medium ${worst.stuck ? 'text-red-600' : 'text-gray-400'}`}>{fmtShortDur(worst.hours)}</span>
+            {a.inFlight > 1 && <span className="text-gray-400"> · +{a.inFlight - 1}</span>}
+          </>
+        ) : null}
+      </span>
+      <span className="min-w-0 flex-1 text-[11px] truncate hidden lg:block">
+        {a.hasBlockers ? (
+          <span className="text-red-600">⚠ {brand.blockers}</span>
+        ) : brand.nextStep?.trim() ? (
+          <span className="text-gray-500">→ {brand.nextStep}</span>
+        ) : shelf === 'attention' && !worst?.task.assigneeId && !brand.assigneeId ? (
+          <span className="text-amber-600">исполнитель не назначен</span>
+        ) : null}
+      </span>
+      <span className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+        {brand.commentsCount > 0 && (
+          <span className="flex items-center gap-0.5 text-[11px] text-gray-400"><MessageSquare className="w-3 h-3" />{brand.commentsCount}</span>
+        )}
+        {brand.openTodosCount > 0 && (
+          <span className="flex items-center gap-0.5 text-[11px] text-blue-500"><ListTodo className="w-3 h-3" />{brand.openTodosCount}</span>
+        )}
+        {shelf === 'finish' ? (
+          <button onClick={finishOnboarding} className="text-xs px-2.5 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50">
+            Завершить
+          </button>
+        ) : (
+          <button onClick={onOpen} className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+            Открыть
+          </button>
+        )}
+        <AgentAvatar name={brand.assigneeName} size="w-6 h-6 text-[10px]" />
+      </span>
+    </div>
+  )
+}
 
-        <span className="ml-auto flex items-center gap-2">
-          {brand.commentsCount > 0 && (
-            <span className="flex items-center gap-0.5 text-[11px] text-gray-400">
-              <MessageSquare className="w-3 h-3" />{brand.commentsCount}
-            </span>
-          )}
-          {brand.openTodosCount > 0 && (
-            <span className="flex items-center gap-0.5 text-[11px] text-blue-500">
-              <ListTodo className="w-3 h-3" />{brand.openTodosCount}
-            </span>
-          )}
-          {brand.assigneeName && (
-            <span
-              title={brand.assigneeName}
-              className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-medium flex items-center justify-center"
-            >
-              {initials(brand.assigneeName)}
-            </span>
-          )}
-          {shelf === 'finish' && (
-            <button
-              onClick={finishOnboarding}
-              className="text-xs px-2.5 py-1 rounded-lg border border-green-300 text-green-700 hover:bg-green-50"
-            >
-              Завершить онбординг
-            </button>
-          )}
+// ───────────────────────────── Панель бренда (сплит + шторка)
+
+function BrandPanel({ brand, board, agents, statusById, onClose, onChanged }: {
+  brand: ObBrand
+  board: ObBoard
+  agents: Agent[]
+  statusById: Record<string, ObStatus>
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [showFields, setShowFields] = useState(false)
+  const [cardTab, setCardTab] = useState<'comments' | 'todos' | 'history'>('comments')
+  const [events, setEvents] = useState<ObEvent[] | null>(null)
+  const [comments, setComments] = useState<ObComment[] | null>(null)
+  const [todos, setTodos] = useState<ObTodo[] | null>(null)
+  const [nextStep, setNextStep] = useState(brand.nextStep || '')
+
+  useEffect(() => { setNextStep(brand.nextStep || '') }, [brand.id, brand.nextStep])
+
+  const loadCard = useCallback(() => {
+    fetchBrandCard(brand.id).then(r => { setComments(r.comments); setTodos(r.todos) }).catch(() => { setComments([]); setTodos([]) })
+    fetchOnboardingEvents(brand.id, 200).then(r => setEvents(r.events)).catch(() => setEvents([]))
+  }, [brand.id])
+  useEffect(() => { loadCard() }, [loadCard])
+
+  const taskTypes = board.taskTypes.filter(t => t.isActive)
+  const typeById = useMemo(() => Object.fromEntries(board.taskTypes.map(t => [t.id, t])), [board.taskTypes])
+  const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
+  const groups = useMemo(() => buildGroups(taskTypes), [taskTypes])
+  const tasksByType = useMemo(() => {
+    const acc: Record<string, ObTask[]> = {}
+    for (const t of brand.tasks) (acc[t.taskTypeId] = acc[t.taskTypeId] || []).push(t)
+    return acc
+  }, [brand.tasks])
+
+  const a = analyzeBrand(brand, statusById)
+  const days = Math.round(hoursSince(brand.startedAt) / 24)
+  const stuckCount = a.inFlightTasks.filter(t => t.stuck).length
+  const posName = brand.posId ? board.posSystems.find(p => p.id === brand.posId)?.name : null
+
+  // раскрыты: группы с застрявшими/ожидающими
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    const open = new Set<string>()
+    for (const g of buildGroups(board.taskTypes.filter(t => t.isActive))) {
+      const hasHot = g.types.some(tt => (tasksByType[tt.id] || []).some(t => {
+        const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+        return k === 'waiting' || (k === 'active' && isTaskStuck(k, hoursSince(t.statusSince)))
+      }))
+      if (hasHot) open.add(g.label)
+    }
+    setExpanded(open)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand.id])
+
+  const save = async (patch: Omit<Parameters<typeof updateBrand>[0], 'id'>) => {
+    await updateBrand({ id: brand.id, ...patch })
+    onChanged()
+  }
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Удалить бренд «${brand.name}» вместе с историей? Это необратимо.`)) return
+    await deleteBrand(brand.id)
+    onClose()
+    onChanged()
+  }
+
+  return (
+    <div className="p-4">
+      {/* Шапка */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[16px] font-medium text-gray-900">{brand.name}</span>
+        {posName && <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 text-gray-500">{posName}</span>}
+        <AgentAvatar name={brand.assigneeName} size="w-5 h-5 text-[9px]" />
+        <span className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={() => setCardTab('comments')}
+            className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          >
+            Напомнить клиенту
+          </button>
+          <button onClick={() => setShowFields(v => !v)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" title="Поля бренда">
+            <Settings className="w-4 h-4" />
+          </button>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"><X className="w-4 h-4" /></button>
         </span>
       </div>
 
-      {/* Активные задачи: у каждой виден поставщик — понятно, от кого ждём */}
-      {visibleTasks.length > 0 && (
-        <div className="mt-2.5 space-y-1.5">
-          {visibleTasks.map(({ task, kind, hours, stuck }) => {
-            const option = task.optionId ? optionById[task.optionId] : undefined
-            const status = task.statusId ? statusById[task.statusId] : undefined
-            const waiting = kind === 'waiting'
-            const waitSource = waiting && !option && brand.dependsOn?.trim() ? brand.dependsOn : null
-            return (
-              <div key={task.id} className="flex items-center gap-2 text-[13px] flex-wrap">
-                <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${waiting ? 'bg-amber-500' : 'bg-blue-500'}`} />
-                <span className="text-gray-800">{typeById[task.taskTypeId]?.label}</span>
-                {option && (
-                  <span className={`text-[11px] px-1.5 py-px rounded-full ${
-                    waiting ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
-                  }`}>
-                    {option.label}
-                  </span>
-                )}
-                <span className={waiting ? 'text-amber-700' : 'text-gray-500'}>
-                  {status?.label?.toLowerCase()}{waitSource ? ` · от: ${waitSource}` : ''}
-                </span>
-                <span className={`text-xs ${stuck ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
-                  {stuck && (waiting
-                    ? <Clock className="w-3 h-3 inline mr-0.5 -mt-px" />
-                    : <Flame className="w-3 h-3 inline mr-0.5 -mt-px" />)}
-                  {fmtShortDur(hours)}
-                </span>
-                {task.assigneeName && (
-                  <span className="text-[11px] text-gray-400">· {task.assigneeName}</span>
-                )}
-              </div>
-            )
-          })}
-          {!expanded && hiddenCount > 0 && (
-            <button
-              onClick={() => setExpanded(true)}
-              className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
-            >
-              ещё {hiddenCount} {hiddenCount === 1 ? 'задача' : hiddenCount < 5 ? 'задачи' : 'задач'}
-              <ChevronDown className="w-3 h-3" />
-            </button>
-          )}
-          {expanded && hiddenCount > 0 && (
-            <button
-              onClick={() => setExpanded(false)}
-              className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
-            >
-              свернуть <ChevronUp className="w-3 h-3" />
-            </button>
-          )}
+      {/* Ключевые цифры */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500 mt-2 mb-2.5">
+        <span>в онбординге <b className="font-medium text-gray-900">{days} дн</b></span>
+        <span>прогресс <b className="font-medium text-gray-900">{a.done}/{a.countable}</b></span>
+        {stuckCount > 0 && <span>застряло <b className="font-medium text-red-600">{stuckCount}</b></span>}
+        {brand.dependsOn?.trim() && <span>зависим от: <b className="font-medium text-gray-900">{brand.dependsOn}</b></span>}
+      </div>
+
+      <div className="mb-2.5">
+        <Pipeline tasks={orderedTasks(brand, taskTypes)} statusById={statusById} height="h-[5px]" />
+      </div>
+
+      {/* Следующий шаг */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 mb-2.5 flex items-center gap-2">
+        <span className="text-xs font-medium text-amber-800 shrink-0">Следующий шаг:</span>
+        <input
+          value={nextStep}
+          onChange={e => setNextStep(e.target.value)}
+          onBlur={() => { if (nextStep !== (brand.nextStep || '')) save({ nextStep: nextStep || null }) }}
+          placeholder="что делаем дальше…"
+          className="flex-1 min-w-0 bg-transparent text-xs text-amber-900 placeholder-amber-300 focus:outline-none"
+        />
+        {a.worst && a.worst.kind === 'waiting' && (
+          <span className="text-[11px] text-amber-700 shrink-0">ждём {fmtShortDur(a.worst.hours)}</span>
+        )}
+      </div>
+
+      {a.hasBlockers && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 mb-2.5 text-xs text-red-700 flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />Блокер: {brand.blockers}
         </div>
       )}
 
-      {/* Подвал: следующий шаг / зависимость / блокер */}
-      {(brand.nextStep?.trim() || brand.dependsOn?.trim() || a.hasBlockers) && (
-        <div className="mt-2.5 pt-2 border-t border-gray-100 space-y-1">
-          {brand.nextStep?.trim() && (
-            <div className="text-xs text-gray-600 flex items-center gap-1.5">
-              <ArrowRight className="w-3 h-3 text-blue-500 shrink-0" />
-              Далее: {brand.nextStep}
-              {brand.dependsOn?.trim() && (
-                <span className="text-gray-400">· зависим от: {brand.dependsOn}</span>
+      {/* Поля бренда (по кнопке ⚙) */}
+      {showFields && (
+        <BrandFields brand={brand} board={board} agents={agents} onSave={save} onDelete={handleDelete} />
+      )}
+
+      {/* Чек-лист по группам */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden mb-3">
+        {groups.map(g => {
+          const gTasks = g.types.flatMap(tt => tasksByType[tt.id] || [])
+          const counted = gTasks.filter(t => {
+            const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+            return k && k !== 'na' && k !== 'cancelled'
+          })
+          const gDone = counted.filter(t => statusById[t.statusId!]?.kind === 'done').length
+          const gStuck = counted.some(t => {
+            const k = statusById[t.statusId!]?.kind
+            return isTaskStuck(k, hoursSince(t.statusSince))
+          })
+          const gWaiting = counted.some(t => statusById[t.statusId!]?.kind === 'waiting')
+          const isOpen = expanded.has(g.label)
+          const allDone = counted.length > 0 && gDone === counted.length
+          return (
+            <div key={g.label} className="border-b border-gray-100 last:border-0">
+              <button
+                onClick={() => setExpanded(prev => {
+                  const next = new Set(prev)
+                  if (next.has(g.label)) next.delete(g.label)
+                  else next.add(g.label)
+                  return next
+                })}
+                className={`flex items-center gap-2 w-full px-3 py-1.5 text-left ${gStuck || gWaiting ? 'bg-amber-50/70' : 'bg-gray-50/70'} hover:bg-gray-100/70`}
+              >
+                {isOpen ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+                <span className={`text-xs ${gStuck ? 'font-medium text-gray-900' : 'text-gray-700'}`}>{g.label}</span>
+                <span className="w-14 shrink-0"><Pipeline tasks={gTasks} statusById={statusById} height="h-[3px]" /></span>
+                <span className={`ml-auto text-[11px] ${allDone ? 'text-green-700' : gStuck ? 'text-red-600' : 'text-gray-400'}`}>
+                  {allDone ? `${gDone}/${counted.length} ✓` : counted.length ? `${gDone}/${counted.length}${gStuck ? ' · застряло' : ''}` : '—'}
+                </span>
+              </button>
+              {isOpen && (
+                <div className="py-0.5">
+                  {g.types.map(tt => {
+                    const list = tasksByType[tt.id] || []
+                    const catOptions = tt.optionCategoryId
+                      ? board.options.filter(o => o.categoryId === tt.optionCategoryId && o.isActive)
+                      : []
+                    const usedOptIds = list.map(t => t.optionId).filter(Boolean) as string[]
+                    const addable = catOptions.filter(o => !usedOptIds.includes(o.id))
+                    return (
+                      <div key={tt.id}>
+                        {list.map(task => (
+                          <div key={task.id} className="flex items-center gap-2 pl-8 pr-3 py-1 hover:bg-gray-50">
+                            <span className="text-[12px] text-gray-800 min-w-0 truncate">
+                              {tt.label}
+                              {task.optionId && optionById[task.optionId] && (
+                                <span className="text-gray-400"> · {optionById[task.optionId].label}</span>
+                              )}
+                            </span>
+                            <span className="ml-auto flex items-center gap-2 shrink-0">
+                              {task.assigneeName && <span className="text-[11px] text-gray-400">{task.assigneeName}</span>}
+                              <StatusChip
+                                task={task}
+                                taskType={tt}
+                                brandId={brand.id}
+                                siblingOptionIds={usedOptIds}
+                                siblingCount={list.length}
+                                board={board}
+                                status={task.statusId ? statusById[task.statusId] : undefined}
+                                option={undefined}
+                                onChanged={onChanged}
+                              />
+                            </span>
+                          </div>
+                        ))}
+                        {addable.length > 0 && (
+                          <div className="pl-8 pr-3 pb-1">
+                            <select
+                              value=""
+                              onChange={async e => {
+                                if (!e.target.value) return
+                                await addProviderTask(brand.id, tt.id, e.target.value)
+                                onChanged()
+                              }}
+                              className="text-[11px] text-blue-600 bg-transparent border-0 focus:outline-none cursor-pointer"
+                            >
+                              <option value="">+ добавить {tt.label.toLowerCase()}…</option>
+                              {addable.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
-          )}
-          {!brand.nextStep?.trim() && brand.dependsOn?.trim() && (
-            <div className="text-xs text-gray-400 flex items-center gap-1.5">
-              <Link2 className="w-3 h-3 shrink-0" />зависим от: {brand.dependsOn}
-            </div>
-          )}
-          {a.hasBlockers && (
-            <div className="text-xs text-red-600 flex items-center gap-1.5">
-              <AlertTriangle className="w-3 h-3 shrink-0" />Блокер: {brand.blockers}
-            </div>
-          )}
-        </div>
+          )
+        })}
+      </div>
+
+      {/* Вкладки карточки */}
+      <div className="flex gap-4 text-[12px] text-gray-500 border-b border-gray-100 mb-2">
+        {([
+          ['comments', `Комментарии${comments?.length ? ` ${comments.length}` : ''}`],
+          ['todos', `Задачи${todos?.filter(t => !t.doneAt).length ? ` ${todos!.filter(t => !t.doneAt).length}` : ''}`],
+          ['history', `История${events?.length ? ` ${events.length}` : ''}`],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setCardTab(key)}
+            className={`pb-1.5 -mb-px ${cardTab === key ? 'text-gray-900 border-b-2 border-blue-600' : 'hover:text-gray-700'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {cardTab === 'comments' && (
+        <CommentsBlock brandId={brand.id} comments={comments} onChanged={() => { loadCard(); onChanged() }} />
+      )}
+      {cardTab === 'todos' && (
+        <TodosBlock brandId={brand.id} todos={todos} agents={agents} onChanged={() => { loadCard(); onChanged() }} />
+      )}
+      {cardTab === 'history' && (
+        events === null ? <div className="text-gray-400 text-sm py-3 text-center"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+          : events.length === 0 ? <div className="text-gray-400 text-xs">Изменений пока нет</div>
+            : (
+              <ul className="space-y-1.5">
+                {events.map(e => (
+                  <li key={e.id} className="text-[11px] text-gray-600 border-l-2 border-gray-200 pl-2.5">
+                    <span className="font-medium text-gray-800">{e.taskLabel || '—'}{e.optionLabel ? ` · ${e.optionLabel}` : ''}</span>
+                    {': '}<span className="text-gray-400">{e.oldLabel || '∅'}</span>{' → '}{e.newLabel || '∅'}
+                    <span className="text-gray-400"> · {formatDateTimeShort(e.changedAt)}{e.changedBy ? ` · ${e.changedBy}` : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            )
       )}
     </div>
   )
 }
 
-function BrandRow({ brand, board, taskTypes, statusById, optionById, posName, onOpen, onChanged }: {
+function BrandFields({ brand, board, agents, onSave, onDelete }: {
   brand: ObBrand
   board: ObBoard
-  taskTypes: ObBoard['taskTypes']
-  statusById: Record<string, ObStatus>
-  optionById: Record<string, ObBoard['options'][number]>
-  posName?: string
-  onOpen: () => void
-  onChanged: () => void
+  agents: Agent[]
+  onSave: (patch: Omit<Parameters<typeof updateBrand>[0], 'id'>) => void
+  onDelete: () => void
 }) {
-  const tasksByType = useMemo(() => {
-    const acc: Record<string, ObBrand['tasks']> = {}
-    for (const t of brand.tasks) (acc[t.taskTypeId] = acc[t.taskTypeId] || []).push(t)
-    return acc
-  }, [brand.tasks])
-  const countable = brand.tasks.filter(t => {
-    const k = t.statusId ? statusById[t.statusId]?.kind : null
-    return k && k !== 'na' && k !== 'cancelled'
-  })
-  const done = countable.filter(t => statusById[t.statusId!]?.kind === 'done').length
-  const hasBlockers = !!brand.blockers?.trim()
+  const [name, setName] = useState(brand.name)
+  const [depends, setDepends] = useState(brand.dependsOn || '')
+  const [blockers, setBlockers] = useState(brand.blockers || '')
+  const [notes, setNotes] = useState(brand.notes || '')
 
   return (
-    <tr className={`border-b border-gray-100 last:border-0 ${brand.archivedAt ? 'opacity-50' : ''} ${hasBlockers ? 'bg-red-50/40' : ''}`}>
-      <td className={`sticky left-0 z-10 px-3 py-2 ${hasBlockers ? 'bg-red-50' : 'bg-white'} border-l-2 ${hasBlockers ? 'border-red-400' : 'border-transparent'}`}>
-        <button onClick={onOpen} className="text-left group w-full">
-          <div className="flex items-center gap-1.5">
-            <span className="font-medium text-gray-900 group-hover:text-blue-600">{brand.name}</span>
-            {hasBlockers && <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
-            {brand.commentsCount > 0 && (
-              <span className="flex items-center gap-0.5 text-[11px] text-gray-400">
-                <MessageSquare className="w-3 h-3" />{brand.commentsCount}
-              </span>
-            )}
-            {brand.openTodosCount > 0 && (
-              <span className="flex items-center gap-0.5 text-[11px] text-blue-500">
-                <ListTodo className="w-3 h-3" />{brand.openTodosCount}
-              </span>
-            )}
-          </div>
-          <div className="text-xs text-gray-400 flex items-center gap-1 flex-wrap">
-            <span>{posName || 'без POS'}</span>
-            {brand.assigneeName && (
-              <span className="flex items-center gap-0.5"><User className="w-3 h-3" />{brand.assigneeName}</span>
-            )}
-          </div>
-          {brand.nextStep?.trim() && (
-            <div className="text-[11px] text-blue-600 flex items-center gap-1 mt-0.5 truncate max-w-[190px]">
-              <ArrowRight className="w-3 h-3 shrink-0" />{brand.nextStep}
-            </div>
-          )}
+    <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 mb-2.5 grid grid-cols-2 gap-2.5">
+      <label className="block col-span-2">
+        <span className="text-[10px] uppercase text-gray-400">Название</span>
+        <input value={name} onChange={e => setName(e.target.value)}
+          onBlur={() => { if (name.trim() && name !== brand.name) onSave({ name: name.trim() }) }}
+          className="mt-0.5 w-full px-2.5 py-1 rounded-lg border border-gray-300 text-sm bg-white" />
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-gray-400">POS-система</span>
+        <select value={brand.posId || ''} onChange={e => onSave({ posId: e.target.value || null })}
+          className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
+          <option value="">Не выбрана</option>
+          {board.posSystems.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-gray-400">Ведёт проект</span>
+        <select value={brand.assigneeId || ''} onChange={e => {
+          const ag = agents.find(x => x.id === e.target.value)
+          onSave({ assigneeId: e.target.value || null, assigneeName: ag?.name || null })
+        }} className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
+          <option value="">Не назначен</option>
+          {agents.map(ag => <option key={ag.id} value={ag.id}>{ag.name}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-gray-400">От кого зависим</span>
+        <input value={depends} onChange={e => setDepends(e.target.value)}
+          onBlur={() => { if (depends !== (brand.dependsOn || '')) onSave({ dependsOn: depends || null }) }}
+          placeholder="клиент / поставщик"
+          className="mt-0.5 w-full px-2.5 py-1 rounded-lg border border-gray-300 text-sm bg-white" />
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-red-400">Блокеры</span>
+        <input value={blockers} onChange={e => setBlockers(e.target.value)}
+          onBlur={() => { if (blockers !== (brand.blockers || '')) onSave({ blockers: blockers || null }) }}
+          placeholder="что мешает"
+          className={`mt-0.5 w-full px-2.5 py-1 rounded-lg border text-sm ${blockers.trim() ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'}`} />
+      </label>
+      <label className="block col-span-2">
+        <span className="text-[10px] uppercase text-gray-400">Заметки</span>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)}
+          onBlur={() => { if (notes !== (brand.notes || '')) onSave({ notes: notes || null }) }}
+          rows={2} className="mt-0.5 w-full px-2.5 py-1 rounded-lg border border-gray-300 text-sm bg-white" />
+      </label>
+      <div className="col-span-2 flex gap-2">
+        {brand.archivedAt ? (
+          <button onClick={() => onSave({ archived: false })} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-300 text-xs text-gray-600 hover:bg-white">
+            <ArchiveRestore className="w-3.5 h-3.5" /> Вернуть из архива
+          </button>
+        ) : (
+          <button onClick={() => onSave({ archived: true })} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-300 text-xs text-gray-600 hover:bg-white">
+            <Archive className="w-3.5 h-3.5" /> В архив
+          </button>
+        )}
+        <button onClick={onDelete} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-red-200 text-xs text-red-600 hover:bg-red-50">
+          <Trash2 className="w-3.5 h-3.5" /> Удалить
         </button>
-      </td>
-      <td className="px-2 py-2 whitespace-nowrap">
-        <div className="flex items-center gap-1.5">
-          <div className="w-14 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-green-500"
-              style={{ width: countable.length ? `${(done / countable.length) * 100}%` : '0%' }}
-            />
-          </div>
-          <span className="text-xs text-gray-400">{done}/{countable.length}</span>
-        </div>
-      </td>
-      {taskTypes.map(tt => {
-        const list = tasksByType[tt.id]
-        if (!list || list.length === 0) return <td key={tt.id} className="px-2 py-2 text-gray-300">—</td>
-        return (
-          <td key={tt.id} className="px-2 py-2 align-top">
-            <div className="flex flex-col items-start gap-1">
-              {list.map(task => (
-                <StatusChip
-                  key={task.id}
-                  task={task}
-                  taskType={tt}
-                  brandId={brand.id}
-                  siblingOptionIds={list.map(x => x.optionId).filter(Boolean) as string[]}
-                  siblingCount={list.length}
-                  board={board}
-                  status={task.statusId ? statusById[task.statusId] : undefined}
-                  option={task.optionId ? optionById[task.optionId] : undefined}
-                  onChanged={onChanged}
-                />
-              ))}
-            </div>
-          </td>
-        )
-      })}
-    </tr>
+      </div>
+    </div>
   )
 }
 
+function CommentsBlock({ brandId, comments, onChanged }: {
+  brandId: string
+  comments: ObComment[] | null
+  onChanged: () => void
+}) {
+  const [text, setText] = useState('')
+  const submit = async () => {
+    const t = text.trim()
+    if (!t) return
+    setText('')
+    await addBrandComment(brandId, t)
+    onChanged()
+  }
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <input value={text} onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder="Написать комментарий…"
+          className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
+        <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
+      </div>
+      {comments === null ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+        : comments.length === 0 ? <div className="text-gray-400 text-xs">Комментариев нет</div>
+          : (
+            <ul className="space-y-2">
+              {comments.map(c => (
+                <li key={c.id} className="rounded-lg bg-gray-50 px-3 py-2 group">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-medium text-gray-700">{c.authorName || 'Без имени'}</span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-[11px] text-gray-400">{formatDateTimeShort(c.createdAt)}</span>
+                      <button onClick={async () => { await deleteBrandComment(c.id); onChanged() }}
+                        className="p-0.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-wrap">{c.text}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+    </div>
+  )
+}
+
+function TodosBlock({ brandId, todos, agents, onChanged }: {
+  brandId: string
+  todos: ObTodo[] | null
+  agents: Agent[]
+  onChanged: () => void
+}) {
+  const [text, setText] = useState('')
+  const [assignee, setAssignee] = useState('')
+  const submit = async () => {
+    const t = text.trim()
+    if (!t) return
+    setText('')
+    await addBrandTodo(brandId, { text: t, assigneeId: assignee || null })
+    setAssignee('')
+    onChanged()
+  }
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <input value={text} onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit() }}
+          placeholder="Новая задача"
+          className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
+        <select value={assignee} onChange={e => setAssignee(e.target.value)} className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white max-w-[120px]">
+          <option value="">Кому…</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
+      </div>
+      {todos === null ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+        : todos.length === 0 ? <div className="text-gray-400 text-xs">Задач нет</div>
+          : (
+            <ul className="space-y-1.5">
+              {todos.map(t => (
+                <li key={t.id} className="flex items-start gap-2 text-sm group">
+                  <input type="checkbox" checked={!!t.doneAt}
+                    onChange={async e => { await updateBrandTodo(t.id, { done: e.target.checked }); onChanged() }}
+                    className="mt-0.5 rounded" />
+                  <div className="flex-1 min-w-0">
+                    <div className={t.doneAt ? 'line-through text-gray-400' : 'text-gray-800'}>{t.text}</div>
+                    <div className="text-[11px] text-gray-400">
+                      {t.assigneeName && <span className="mr-2">→ {t.assigneeName}</span>}
+                      {t.createdBy && <span>от {t.createdBy}</span>}
+                    </div>
+                  </div>
+                  <button onClick={async () => { await deleteBrandTodo(t.id); onChanged() }}
+                    className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+    </div>
+  )
+}
+
+// ───────────────────────────── Матрица
+
+function MatrixTab({ board, statusById, onSelect, onChanged }: {
+  board: ObBoard
+  statusById: Record<string, ObStatus>
+  onSelect: (id: string) => void
+  onChanged: () => void
+}) {
+  const taskTypes = board.taskTypes.filter(t => t.isActive)
+  const groups = useMemo(() => buildGroups(taskTypes), [taskTypes])
+  const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
+  const posById = useMemo(() => Object.fromEntries(board.posSystems.map(p => [p.id, p])), [board.posSystems])
+  const brands = board.brands.filter(b => !b.archivedAt)
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <table className="min-w-full text-sm border-collapse">
+        <thead>
+          <tr className="bg-gray-100/80 border-b border-gray-200">
+            <th className="sticky left-0 bg-gray-100 z-10 px-3 py-1.5" />
+            {groups.map(g => (
+              <th
+                key={g.label}
+                colSpan={g.types.length}
+                className="text-left font-medium text-[10px] uppercase tracking-wide text-gray-500 px-2 py-1.5 border-l border-gray-200 whitespace-nowrap"
+              >
+                {g.label}
+              </th>
+            ))}
+          </tr>
+          <tr className="border-b border-gray-200 bg-gray-50">
+            <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[150px] text-xs">Бренд</th>
+            {groups.flatMap((g, gi) => g.types.map((t, ti) => (
+              <th
+                key={t.id}
+                className={`text-left font-medium text-gray-500 px-2 py-2 whitespace-nowrap text-[11px] ${ti === 0 && gi > 0 ? 'border-l border-gray-200' : ''}`}
+              >
+                {t.label}
+              </th>
+            )))}
+          </tr>
+        </thead>
+        <tbody>
+          {brands.map(brand => {
+            const tasksByType: Record<string, ObTask[]> = {}
+            for (const t of brand.tasks) (tasksByType[t.taskTypeId] = tasksByType[t.taskTypeId] || []).push(t)
+            const hasBlockers = !!brand.blockers?.trim()
+            return (
+              <tr key={brand.id} className={`border-b border-gray-100 last:border-0 ${hasBlockers ? 'bg-red-50/30' : ''}`}>
+                <td className={`sticky left-0 z-10 px-3 py-2 ${hasBlockers ? 'bg-red-50' : 'bg-white'}`}>
+                  <button onClick={() => onSelect(brand.id)} className="text-left group">
+                    <span className="flex items-center gap-1">
+                      <span className="text-[13px] font-medium text-gray-900 group-hover:text-blue-600">{brand.name}</span>
+                      {hasBlockers && <AlertTriangle className="w-3 h-3 text-red-500" />}
+                      <ChevronRight className="w-3 h-3 text-gray-300 group-hover:text-blue-500" />
+                    </span>
+                    <span className="text-[11px] text-gray-400">
+                      {(brand.posId ? posById[brand.posId]?.name : null) || 'без POS'}
+                      {brand.assigneeName ? ` · ${initials(brand.assigneeName)}` : ''}
+                    </span>
+                  </button>
+                </td>
+                {groups.flatMap((g, gi) => g.types.map((tt, ti) => {
+                  const list = tasksByType[tt.id]
+                  const borderCls = ti === 0 && gi > 0 ? 'border-l border-gray-100' : ''
+                  if (!list || list.length === 0) {
+                    return <td key={tt.id} className={`px-2 py-2 text-gray-300 ${borderCls}`}>—</td>
+                  }
+                  return (
+                    <td key={tt.id} className={`px-2 py-2 align-top ${borderCls}`}>
+                      <div className="flex flex-col items-start gap-1">
+                        {list.map(task => (
+                          <StatusChip
+                            key={task.id}
+                            task={task}
+                            taskType={tt}
+                            brandId={brand.id}
+                            siblingOptionIds={list.map(x => x.optionId).filter(Boolean) as string[]}
+                            siblingCount={list.length}
+                            board={board}
+                            status={task.statusId ? statusById[task.statusId] : undefined}
+                            option={task.optionId ? optionById[task.optionId] : undefined}
+                            onChanged={onChanged}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                  )
+                }))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ───────────────────────────── Чип статуса (портал-дропдаун)
+
 function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, board, status, option, onChanged }: {
-  task: ObBrand['tasks'][number]
-  taskType: ObBoard['taskTypes'][number]
+  task: ObTask
+  taskType: ObTaskType
   brandId: string
   siblingOptionIds: string[]
   siblingCount: number
@@ -755,8 +1149,6 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   option?: ObBoard['options'][number]
   onChanged: () => void
 }) {
-  // Дропдаун рендерится порталом с fixed-позицией: не режется overflow-контейнером
-  // таблицы и у нижнего края экрана раскрывается вверх.
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [saving, setSaving] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -789,7 +1181,6 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   const kind = status?.kind
   const h = hoursSince(task.statusSince)
   const isStuck = isTaskStuck(kind, h)
-  // Тихие статусы гаснут — цвет остаётся только там, где нужно действие
   const quiet = kind === 'done' || kind === 'na' || kind === 'todo' || kind === 'cancelled'
 
   const timeHint = [
@@ -833,7 +1224,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
     <div className="relative">
       <button
         ref={btnRef}
-        onClick={() => setOpen(!open)}
+        onClick={e => { e.stopPropagation(); setOpen(!open) }}
         title={[status?.label, option?.label, `статус с ${formatDateTimeShort(task.statusSince)}`, timeHint,
           task.assigneeName ? `исп: ${task.assigneeName}` : '']
           .filter(Boolean).join(' · ')}
@@ -962,7 +1353,6 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   )
 }
 
-/** Селект сотрудника — список подгружается один раз на страницу через контекст пропсов. */
 let cachedAgents: Agent[] | null = null
 function AgentSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   const [agents, setAgents] = useState<Agent[]>(cachedAgents || [])
@@ -985,504 +1375,273 @@ function AgentSelect({ value, onChange }: { value: string | null; onChange: (id:
   )
 }
 
-// ─────────────────────────────────────────────── Карточка бренда
+// ───────────────────────────── Аналитика
 
-function BrandDrawer({ brand, board, agents, onClose, onChanged }: {
-  brand: ObBrand
-  board: ObBoard
-  agents: Agent[]
-  onClose: () => void
-  onChanged: () => void
+function Donut({ segments, centerTitle, centerSub }: {
+  segments: { value: number; color: string }[]
+  centerTitle: string
+  centerSub: string
 }) {
-  const [events, setEvents] = useState<ObEvent[] | null>(null)
-  const [comments, setComments] = useState<ObComment[] | null>(null)
-  const [todos, setTodos] = useState<ObTodo[] | null>(null)
-  const [name, setName] = useState(brand.name)
-  const [nextStep, setNextStep] = useState(brand.nextStep || '')
-  const [dependsOn, setDependsOn] = useState(brand.dependsOn || '')
-  const [blockers, setBlockers] = useState(brand.blockers || '')
-  const [notes, setNotes] = useState(brand.notes || '')
-  const [posId, setPosId] = useState(brand.posId || '')
-  const [newComment, setNewComment] = useState('')
-  const [newTodo, setNewTodo] = useState('')
-  const [newTodoAssignee, setNewTodoAssignee] = useState('')
-
-  const loadCard = useCallback(() => {
-    fetchBrandCard(brand.id)
-      .then(r => { setComments(r.comments); setTodos(r.todos) })
-      .catch(() => { setComments([]); setTodos([]) })
-  }, [brand.id])
-
-  useEffect(() => {
-    fetchOnboardingEvents(brand.id, 200)
-      .then(r => setEvents(r.events))
-      .catch(() => setEvents([]))
-    loadCard()
-  }, [brand.id, loadCard])
-
-  const save = async (patch: Omit<Parameters<typeof updateBrand>[0], 'id'>) => {
-    await updateBrand({ id: brand.id, ...patch })
-    onChanged()
-  }
-
-  const handleDelete = async () => {
-    if (!window.confirm(`Удалить бренд «${brand.name}» вместе с историей? Это необратимо.`)) return
-    await deleteBrand(brand.id)
-    onClose()
-    onChanged()
-  }
-
-  const submitComment = async () => {
-    const text = newComment.trim()
-    if (!text) return
-    setNewComment('')
-    await addBrandComment(brand.id, text)
-    loadCard()
-    onChanged()
-  }
-
-  const submitTodo = async () => {
-    const text = newTodo.trim()
-    if (!text) return
-    setNewTodo('')
-    await addBrandTodo(brand.id, { text, assigneeId: newTodoAssignee || null })
-    setNewTodoAssignee('')
-    loadCard()
-    onChanged()
-  }
-
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1
+  const C = 2 * Math.PI * 38
+  let offset = 0
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative w-full max-w-lg h-full bg-white shadow-xl overflow-y-auto">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900 truncate">{brand.name}</h2>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-5">
-          {/* Основные поля */}
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block col-span-2">
-              <span className="text-xs text-gray-500">Название</span>
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                onBlur={() => { if (name.trim() && name !== brand.name) save({ name: name.trim() }) }}
-                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-500">POS-система</span>
-              <select
-                value={posId}
-                onChange={e => { setPosId(e.target.value); save({ posId: e.target.value || null }) }}
-                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm bg-white"
-              >
-                <option value="">Не выбрана</option>
-                {board.posSystems.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-500 flex items-center gap-1"><User className="w-3 h-3" />Ведёт проект</span>
-              <select
-                value={brand.assigneeId || ''}
-                onChange={e => {
-                  const a = agents.find(x => x.id === e.target.value)
-                  save({ assigneeId: e.target.value || null, assigneeName: a?.name || null })
-                }}
-                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm bg-white"
-              >
-                <option value="">Не назначен</option>
-                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </label>
-            <label className="block col-span-2">
-              <span className="text-xs text-gray-500 flex items-center gap-1"><ArrowRight className="w-3 h-3" />Следующий шаг</span>
-              <input
-                value={nextStep}
-                onChange={e => setNextStep(e.target.value)}
-                onBlur={() => { if (nextStep !== (brand.nextStep || '')) save({ nextStep: nextStep || null }) }}
-                placeholder="Что делаем дальше"
-                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-500 flex items-center gap-1"><Link2 className="w-3 h-3" />От кого зависим</span>
-              <input
-                value={dependsOn}
-                onChange={e => setDependsOn(e.target.value)}
-                onBlur={() => { if (dependsOn !== (brand.dependsOn || '')) save({ dependsOn: dependsOn || null }) }}
-                placeholder="Клиент / поставщик / …"
-                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Блокеры</span>
-              <input
-                value={blockers}
-                onChange={e => setBlockers(e.target.value)}
-                onBlur={() => { if (blockers !== (brand.blockers || '')) save({ blockers: blockers || null }) }}
-                placeholder="Что мешает"
-                className={`mt-1 w-full px-3 py-1.5 rounded-lg border text-sm ${blockers.trim() ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
-              />
-            </label>
-            <label className="block col-span-2">
-              <span className="text-xs text-gray-500">Заметки</span>
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                onBlur={() => { if (notes !== (brand.notes || '')) save({ notes: notes || null }) }}
-                rows={2}
-                className="mt-1 w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-              />
-            </label>
-          </div>
-
-          <div className="flex gap-2">
-            {brand.archivedAt ? (
-              <button
-                onClick={() => save({ archived: false })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
-              >
-                <ArchiveRestore className="w-4 h-4" /> Вернуть из архива
-              </button>
-            ) : (
-              <button
-                onClick={() => save({ archived: true })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50"
-              >
-                <Archive className="w-4 h-4" /> В архив
-              </button>
-            )}
-            <button
-              onClick={handleDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-sm text-red-600 hover:bg-red-50"
-            >
-              <Trash2 className="w-4 h-4" /> Удалить
-            </button>
-          </div>
-
-          {/* Мини-задачи */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
-              <ListTodo className="w-4 h-4 text-gray-400" /> Задачи
-            </h3>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                value={newTodo}
-                onChange={e => setNewTodo(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') submitTodo() }}
-                placeholder="Новая задача"
-                className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-              />
-              <select
-                value={newTodoAssignee}
-                onChange={e => setNewTodoAssignee(e.target.value)}
-                className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white max-w-[130px]"
-              >
-                <option value="">Кому…</option>
-                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              <button
-                onClick={submitTodo}
-                disabled={!newTodo.trim()}
-                className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            {todos === null ? (
-              <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
-            ) : todos.length === 0 ? (
-              <div className="text-gray-400 text-xs">Задач нет</div>
-            ) : (
-              <ul className="space-y-1.5">
-                {todos.map(t => (
-                  <li key={t.id} className="flex items-start gap-2 text-sm group">
-                    <input
-                      type="checkbox"
-                      checked={!!t.doneAt}
-                      onChange={async e => { await updateBrandTodo(t.id, { done: e.target.checked }); loadCard(); onChanged() }}
-                      className="mt-0.5 rounded"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className={t.doneAt ? 'line-through text-gray-400' : 'text-gray-800'}>{t.text}</div>
-                      <div className="text-[11px] text-gray-400">
-                        {t.assigneeName && <span className="mr-2">→ {t.assigneeName}</span>}
-                        {t.createdBy && <span>от {t.createdBy}</span>}
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => { await deleteBrandTodo(t.id); loadCard(); onChanged() }}
-                      className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Комментарии */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
-              <MessageSquare className="w-4 h-4 text-gray-400" /> Комментарии
-            </h3>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') submitComment() }}
-                placeholder="Написать комментарий…"
-                className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-              />
-              <button
-                onClick={submitComment}
-                disabled={!newComment.trim()}
-                className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            {comments === null ? (
-              <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
-            ) : comments.length === 0 ? (
-              <div className="text-gray-400 text-xs">Комментариев нет</div>
-            ) : (
-              <ul className="space-y-2">
-                {comments.map(c => (
-                  <li key={c.id} className="rounded-lg bg-gray-50 px-3 py-2 group">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs font-medium text-gray-700">{c.authorName || 'Без имени'}</span>
-                      <span className="flex items-center gap-1">
-                        <span className="text-[11px] text-gray-400">{formatDateTimeShort(c.createdAt)}</span>
-                        <button
-                          onClick={async () => { await deleteBrandComment(c.id); loadCard(); onChanged() }}
-                          className="p-0.5 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap">{c.text}</div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* История */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
-              <History className="w-4 h-4 text-gray-400" /> История изменений
-            </h3>
-            {events === null ? (
-              <div className="text-gray-400 text-sm py-4 text-center">
-                <Loader2 className="w-4 h-4 animate-spin inline" />
-              </div>
-            ) : events.length === 0 ? (
-              <div className="text-gray-400 text-sm">Изменений пока нет</div>
-            ) : (
-              <ul className="space-y-2">
-                {events.map(e => (
-                  <li key={e.id} className="text-xs text-gray-600 border-l-2 border-gray-200 pl-2.5">
-                    <div>
-                      <span className="font-medium text-gray-800">
-                        {e.taskLabel || '—'}{e.optionLabel ? ` · ${e.optionLabel}` : ''}
-                      </span>
-                      {': '}
-                      <span className="text-gray-400">{e.oldLabel || '∅'}</span>
-                      {' → '}
-                      <span>{e.newLabel || '∅'}</span>
-                    </div>
-                    <div className="text-gray-400">
-                      {formatDateTimeShort(e.changedAt)}{e.changedBy ? ` · ${e.changedBy}` : ''}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <svg width="104" height="104" viewBox="0 0 104 104" className="shrink-0">
+      <circle cx="52" cy="52" r="38" fill="none" stroke="#E5E7EB" strokeWidth="15" />
+      {segments.map((s, i) => {
+        const len = (s.value / total) * C
+        const el = (
+          <circle
+            key={i}
+            cx="52" cy="52" r="38" fill="none"
+            stroke={s.color} strokeWidth="15"
+            strokeDasharray={`${len} ${C - len}`}
+            strokeDashoffset={-offset}
+            transform="rotate(-90 52 52)"
+          />
+        )
+        offset += len
+        return el
+      })}
+      <text x="52" y="49" textAnchor="middle" fontSize="17" fontWeight="500" fill="#111827">{centerTitle}</text>
+      <text x="52" y="63" textAnchor="middle" fontSize="9" fill="#9CA3AF">{centerSub}</text>
+    </svg>
   )
 }
 
-// ─────────────────────────────────────────────── Аналитика
-
-function StatsTab() {
+function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<string, ObStatus> }) {
   const [stats, setStats] = useState<ObStats | null>(null)
-  const [error, setError] = useState(false)
+  const [events, setEvents] = useState<ObEvent[] | null>(null)
 
   useEffect(() => {
-    fetchOnboardingStats().then(setStats).catch(() => setError(true))
+    fetchOnboardingStats().then(setStats).catch(() => setStats(null))
+    fetchOnboardingEvents(undefined, 500).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [])
 
-  if (error) return <div className="text-sm text-red-600 py-8 text-center">Не удалось загрузить аналитику</div>
-  if (!stats) {
-    return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
-  }
+  const brands = board.brands.filter(b => !b.archivedAt)
+  const taskTypes = board.taskTypes.filter(t => t.isActive)
+  const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
 
-  const avgAge = stats.brands.length
-    ? stats.brands.reduce((s, b) => s + b.ageSeconds, 0) / stats.brands.length
+  // донат статусов
+  const statusCounts = useMemo(() => {
+    const c = { done: 0, active: 0, waiting: 0, todo: 0 }
+    for (const b of brands) for (const t of b.tasks) {
+      const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+      if (k === 'done') c.done++
+      else if (k === 'active') c.active++
+      else if (k === 'waiting') c.waiting++
+      else if (k === 'todo') c.todo++
+    }
+    return c
+  }, [brands, statusById])
+  const totalTasks = statusCounts.done + statusCounts.active + statusCounts.waiting + statusCounts.todo
+
+  // «кто тормозит»: накопленное ожидание по источникам
+  const blockSources = useMemo(() => {
+    const acc: Record<string, number> = {}
+    for (const b of brands) for (const t of b.tasks) {
+      if (!t.waitingSeconds) continue
+      const opt = t.optionId ? optionById[t.optionId]?.label : null
+      const src = opt || (b.dependsOn?.trim() || 'Клиент')
+      acc[src] = (acc[src] || 0) + t.waitingSeconds
+    }
+    return Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  }, [brands, optionById])
+  const blockTotal = blockSources.reduce((s, [, v]) => s + v, 0)
+  const PIE_COLORS = ['#DC2626', '#F59E0B', '#8B5CF6', '#0EA5E9', '#64748B']
+
+  // воронка этапов
+  const funnel = useMemo(() => taskTypes.map(tt => {
+    let applicable = 0
+    let done = 0
+    for (const b of brands) {
+      const list = b.tasks.filter(t => t.taskTypeId === tt.id)
+      const real = list.filter(t => {
+        const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+        return k && k !== 'na' && k !== 'cancelled'
+      })
+      if (real.length === 0) continue
+      applicable++
+      if (real.every(t => statusById[t.statusId!]?.kind === 'done')) done++
+    }
+    return { label: tt.label, pct: applicable ? Math.round((done / applicable) * 100) : 0, applicable }
+  }).filter(f => f.applicable > 0), [taskTypes, brands, statusById])
+  const worstFunnel = funnel.length ? funnel.reduce((min, f) => (f.pct < min.pct ? f : min), funnel[0]) : null
+
+  // тренд закрытий по дням (14 дней)
+  const trend = useMemo(() => {
+    if (!events) return null
+    const byDay: Record<string, number> = {}
+    for (const e of events) {
+      const kind = e.newStatusId ? statusById[e.newStatusId]?.kind : undefined
+      if (kind !== 'done') continue
+      const d = new Date(e.changedAt)
+      const key = `${d.getMonth() + 1}-${d.getDate()}`
+      byDay[key] = (byDay[key] || 0) + 1
+    }
+    const days: { label: string; count: number }[] = []
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000)
+      const key = `${d.getMonth() + 1}-${d.getDate()}`
+      days.push({ label: `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`, count: byDay[key] || 0 })
+    }
+    return days
+  }, [events, statusById])
+
+  const avgAge = brands.length
+    ? brands.reduce((s, b) => s + hoursSince(b.startedAt), 0) / brands.length / 24
     : 0
-  const stuckCount = stats.stuck.filter(s =>
-    (s.kind === 'waiting' && s.seconds > STUCK_WAITING_HOURS * 3600) ||
-    (s.kind === 'active' && s.seconds > STUCK_ACTIVE_HOURS * 3600)).length
+  const stuckCount = brands.reduce((s, b) => s + b.tasks.filter(t => {
+    const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+    return isTaskStuck(k, hoursSince(t.statusSince))
+  }).length, 0)
+  const readyCount = brands.filter(b => {
+    const a = analyzeBrand(b, statusById)
+    return a.shelf === 'finish'
+  }).length
+
+  const maxTrend = trend ? Math.max(1, ...trend.map(t => t.count)) : 1
 
   return (
-    <div className="space-y-6">
-      {/* Сводка */}
+    <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Брендов в онбординге', value: String(stats.brands.length) },
-          { label: 'Средний возраст онбординга', value: fmtSeconds(avgAge) || '—' },
-          { label: 'Застрявших задач', value: String(stuckCount), alert: stuckCount > 0 },
-          { label: 'С блокерами', value: String(stats.brands.filter(b => b.hasBlockers).length), alert: stats.brands.some(b => b.hasBlockers) },
+          { label: 'в онбординге', value: String(brands.length), cls: 'text-gray-900', border: 'border-gray-200' },
+          { label: 'застряло задач', value: String(stuckCount), cls: stuckCount ? 'text-red-600' : 'text-gray-900', border: stuckCount ? 'border-red-200' : 'border-gray-200' },
+          { label: 'средний возраст', value: `${avgAge.toFixed(1)} дн`, cls: 'text-gray-900', border: 'border-gray-200' },
+          { label: 'готовы к завершению', value: String(readyCount), cls: 'text-green-700', border: 'border-gray-200' },
         ].map(t => (
-          <div key={t.label} className={`rounded-lg border p-3 ${t.alert ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
-            <div className={`text-2xl font-semibold ${t.alert ? 'text-red-600' : 'text-gray-900'}`}>{t.value}</div>
+          <div key={t.label} className={`rounded-lg border bg-white p-3 ${t.border}`}>
+            <div className={`text-2xl font-medium ${t.cls}`}>{t.value}</div>
             <div className="text-xs text-gray-500 mt-0.5">{t.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Сигналы: застрявшие задачи */}
-      {stats.stuck.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700 flex items-center gap-1.5">
-            <Flame className="w-4 h-4 text-red-500" /> Дольше всего в текущем статусе
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 flex items-center gap-4">
+          <Donut
+            segments={[
+              { value: statusCounts.done, color: '#1D9E75' },
+              { value: statusCounts.active, color: '#378ADD' },
+              { value: statusCounts.waiting, color: '#F59E0B' },
+              { value: statusCounts.todo, color: '#E5E7EB' },
+            ]}
+            centerTitle={String(totalTasks)}
+            centerSub="задач"
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-900 mb-2">Все задачи по статусам</div>
+            <div className="text-xs text-gray-600 space-y-1">
+              <div><span className="text-green-600">●</span> Готово — {statusCounts.done} ({Math.round(statusCounts.done / (totalTasks || 1) * 100)}%)</div>
+              <div><span className="text-blue-600">●</span> В работе — {statusCounts.active}</div>
+              <div><span className="text-amber-500">●</span> Ждём данные — {statusCounts.waiting}</div>
+              <div><span className="text-gray-400">●</span> Не начато — {statusCounts.todo}</div>
+            </div>
           </div>
-          <div className="divide-y divide-gray-50">
-            {stats.stuck.map((s, i) => {
-              const isBad = (s.kind === 'waiting' && s.seconds > STUCK_WAITING_HOURS * 3600) ||
-                (s.kind === 'active' && s.seconds > STUCK_ACTIVE_HOURS * 3600)
-              return (
-                <div key={i} className="px-4 py-2 text-sm flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium text-gray-900">{s.brandName}</span>
-                  <span className="text-gray-600">{s.taskLabel}</span>
-                  <span className="text-gray-400">{s.statusLabel}</span>
-                  {s.assigneeName && <span className="text-xs text-gray-400">→ {s.assigneeName}</span>}
-                  <span className={`ml-auto text-xs font-medium ${isBad ? 'text-red-600' : 'text-gray-500'}`}>
-                    {fmtSeconds(s.seconds)}
-                  </span>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4 flex items-center gap-4">
+          <Donut
+            segments={blockSources.map(([, v], i) => ({ value: v, color: PIE_COLORS[i] }))}
+            centerTitle={fmtSeconds(blockTotal) || '0'}
+            centerSub="ожиданий"
+          />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-900 mb-2">Кто нас тормозит <span className="text-[10px] text-gray-400 font-normal">время «ждём данные»</span></div>
+            <div className="text-xs text-gray-600 space-y-1">
+              {blockSources.length === 0 && <div className="text-gray-400">ожиданий нет</div>}
+              {blockSources.map(([label, v], i) => (
+                <div key={label}>
+                  <span style={{ color: PIE_COLORS[i] }}>●</span> {label} — {fmtSeconds(v)} ({Math.round(v / (blockTotal || 1) * 100)}%)
                 </div>
-              )
-            })}
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="text-sm font-medium text-gray-900 mb-3">Воронка этапов <span className="text-[10px] text-gray-400 font-normal">% брендов, закрывших этап</span></div>
+          <div className="space-y-1.5">
+            {funnel.map(f => (
+              <div key={f.label} className="flex items-center gap-2">
+                <span className="w-40 text-[11px] text-gray-600 truncate shrink-0">{f.label}</span>
+                <span className="flex-1 h-3.5 rounded bg-gray-100 overflow-hidden">
+                  <span
+                    className={`block h-full rounded ${f === worstFunnel && f.pct < 50 ? 'bg-red-400' : 'bg-green-500/80'}`}
+                    style={{ width: `${Math.max(2, f.pct)}%` }}
+                  />
+                </span>
+                <span className={`w-12 text-right text-[11px] ${f === worstFunnel && f.pct < 50 ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                  {f.pct}%{f === worstFunnel && f.pct < 50 ? ' ←' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="text-sm font-medium text-gray-900 mb-1">Темп: закрыто этапов за день</div>
+          {trend === null ? (
+            <div className="text-gray-400 text-sm py-6 text-center"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
+          ) : (
+            <>
+              <svg width="100%" height="90" viewBox="0 0 280 90" preserveAspectRatio="none">
+                <polygon
+                  points={`0,86 ${trend.map((t, i) => `${(i / (trend.length - 1)) * 280},${86 - (t.count / maxTrend) * 74}`).join(' ')} 280,86`}
+                  fill="#DBEAFE"
+                />
+                <polyline
+                  points={trend.map((t, i) => `${(i / (trend.length - 1)) * 280},${86 - (t.count / maxTrend) * 74}`).join(' ')}
+                  fill="none" stroke="#2563EB" strokeWidth="2"
+                />
+              </svg>
+              <div className="flex justify-between text-[10px] text-gray-400">
+                <span>{trend[0].label}</span>
+                <span>{trend[Math.floor(trend.length / 2)].label}</span>
+                <span>сегодня</span>
+              </div>
+              <div className="text-[11px] text-gray-500 mt-1.5">
+                за 14 дней закрыто <b className="font-medium text-gray-900">{trend.reduce((s, t) => s + t.count, 0)}</b> этапов
+                {' · '}пик — <b className="font-medium text-gray-900">{maxTrend}</b> в день
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {stats && stats.stages.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="text-sm font-medium text-gray-900 mb-3">
+            Где теряем время <span className="text-[10px] text-gray-400 font-normal">· ср. время на этап: <span className="text-blue-500">■</span> работа <span className="text-amber-500">■</span> ожидание</span>
+          </div>
+          <div className="space-y-1.5">
+            {[...stats.stages]
+              .filter(s => s.avgActiveSeconds + s.avgWaitingSeconds > 0)
+              .sort((a, b) => (b.avgActiveSeconds + b.avgWaitingSeconds) - (a.avgActiveSeconds + a.avgWaitingSeconds))
+              .slice(0, 8)
+              .map(s => {
+                const total = s.avgActiveSeconds + s.avgWaitingSeconds
+                const max = Math.max(...stats.stages.map(x => x.avgActiveSeconds + x.avgWaitingSeconds), 1)
+                return (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <span className="w-40 text-[11px] text-gray-600 truncate shrink-0">{s.label}</span>
+                    <span className="flex-1 h-3.5 rounded bg-gray-100 overflow-hidden flex">
+                      <span className="block h-full bg-blue-500/80" style={{ width: `${(s.avgActiveSeconds / max) * 100}%` }} />
+                      <span className="block h-full bg-amber-400" style={{ width: `${(s.avgWaitingSeconds / max) * 100}%` }} />
+                    </span>
+                    <span className="w-14 text-right text-[11px] text-gray-600">{fmtSeconds(total)}</span>
+                  </div>
+                )
+              })}
           </div>
         </div>
       )}
-
-      {/* По этапам */}
-      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
-        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700">По этапам</div>
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-xs text-gray-500 border-b border-gray-100">
-              <th className="text-left font-medium px-4 py-2">Этап</th>
-              <th className="text-right font-medium px-3 py-2">Готово</th>
-              <th className="text-right font-medium px-3 py-2">В работе</th>
-              <th className="text-right font-medium px-3 py-2">Ожидание</th>
-              <th className="text-right font-medium px-3 py-2">Ср. время работы</th>
-              <th className="text-right font-medium px-3 py-2">Ср. ожидание</th>
-              <th className="text-right font-medium px-3 py-2">Макс.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.stages.map(s => (
-              <tr key={s.id} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2 text-gray-800">{s.label}</td>
-                <td className="px-3 py-2 text-right text-green-600">{s.done || ''}</td>
-                <td className="px-3 py-2 text-right text-blue-600">{s.active || ''}</td>
-                <td className="px-3 py-2 text-right text-amber-600">{s.waiting || ''}</td>
-                <td className="px-3 py-2 text-right text-gray-600">{fmtSeconds(s.avgActiveSeconds) || '—'}</td>
-                <td className="px-3 py-2 text-right text-gray-600">{fmtSeconds(s.avgWaitingSeconds) || '—'}</td>
-                <td className="px-3 py-2 text-right text-gray-400">
-                  {fmtSeconds(Math.max(s.maxActiveSeconds, s.maxWaitingSeconds)) || '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* По сотрудникам */}
-      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
-        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700">По сотрудникам</div>
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-xs text-gray-500 border-b border-gray-100">
-              <th className="text-left font-medium px-4 py-2">Сотрудник</th>
-              <th className="text-right font-medium px-3 py-2">Изменений</th>
-              <th className="text-right font-medium px-3 py-2">Закрыто этапов</th>
-              <th className="text-right font-medium px-3 py-2">Открытых задач</th>
-              <th className="text-right font-medium px-3 py-2">Последняя активность</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.people.map(p => (
-              <tr key={p.name} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2 text-gray-800">{p.name}</td>
-                <td className="px-3 py-2 text-right text-gray-600">{p.events || ''}</td>
-                <td className="px-3 py-2 text-right text-green-600">{p.completed || ''}</td>
-                <td className="px-3 py-2 text-right text-blue-600">{p.openTasks || ''}</td>
-                <td className="px-3 py-2 text-right text-gray-400 text-xs">
-                  {p.lastActivity ? formatDateTimeShort(p.lastActivity) : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* По брендам */}
-      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
-        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-700">По брендам</div>
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-xs text-gray-500 border-b border-gray-100">
-              <th className="text-left font-medium px-4 py-2">Бренд</th>
-              <th className="text-left font-medium px-3 py-2">Ведёт</th>
-              <th className="text-left font-medium px-3 py-2">Прогресс</th>
-              <th className="text-right font-medium px-3 py-2">В онбординге</th>
-              <th className="text-right font-medium px-3 py-2">Старт</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.brands.map(b => (
-              <tr key={b.id} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2 text-gray-800 flex items-center gap-1.5">
-                  {b.name}
-                  {b.hasBlockers && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
-                </td>
-                <td className="px-3 py-2 text-gray-600 text-xs">{b.assigneeName || '—'}</td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-green-500" style={{ width: b.total ? `${(b.done / b.total) * 100}%` : '0%' }} />
-                    </div>
-                    <span className="text-xs text-gray-400">{b.done}/{b.total}</span>
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right text-gray-600">{fmtSeconds(b.ageSeconds)}</td>
-                <td className="px-3 py-2 text-right text-gray-400 text-xs">{formatDateShort(b.startedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   )
 }
 
-// ─────────────────────────────────────────────── История
+// ───────────────────────────── История
 
 function HistoryTab({ board }: { board: ObBoard }) {
   const [events, setEvents] = useState<ObEvent[] | null>(null)
@@ -1494,11 +1653,7 @@ function HistoryTab({ board }: { board: ObBoard }) {
   }, [board])
 
   if (events === null) {
-    return (
-      <div className="flex justify-center py-16 text-gray-400">
-        <Loader2 className="w-5 h-5 animate-spin" />
-      </div>
-    )
+    return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
   }
   if (events.length === 0) {
     return <div className="text-gray-400 text-sm py-16 text-center">Изменений пока нет</div>
@@ -1519,7 +1674,7 @@ function HistoryTab({ board }: { board: ObBoard }) {
   )
 }
 
-// ─────────────────────────────────────────────── Справочники
+// ───────────────────────────── Справочники
 
 function RefsTab({ board, onChanged }: { board: ObBoard; onChanged: () => void }) {
   return (
@@ -1552,10 +1707,7 @@ function InlineEdit({ value, onSave }: { value: string; onSave: (v: string) => v
 
   if (!editing) {
     return (
-      <button
-        onClick={() => setEditing(true)}
-        className="group flex items-center gap-1.5 text-sm text-gray-800 text-left"
-      >
+      <button onClick={() => setEditing(true)} className="group flex items-center gap-1.5 text-sm text-gray-800 text-left">
         {value}
         <Pencil className="w-3 h-3 text-gray-300 group-hover:text-gray-500" />
       </button>
@@ -1564,9 +1716,7 @@ function InlineEdit({ value, onSave }: { value: string; onSave: (v: string) => v
   return (
     <span className="flex items-center gap-1">
       <input
-        autoFocus
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
+        autoFocus value={draft} onChange={e => setDraft(e.target.value)}
         onKeyDown={e => {
           if (e.key === 'Enter' && draft.trim()) { onSave(draft.trim()); setEditing(false) }
           if (e.key === 'Escape') setEditing(false)
@@ -1599,17 +1749,12 @@ function AddRow({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string
   return (
     <div className="flex items-center gap-2 mt-3">
       <input
-        value={value}
-        onChange={e => setValue(e.target.value)}
+        value={value} onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') submit() }}
         placeholder={placeholder}
         className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
       />
-      <button
-        onClick={submit}
-        disabled={!value.trim() || busy}
-        className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"
-      >
+      <button onClick={submit} disabled={!value.trim() || busy} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40">
         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
       </button>
     </div>
@@ -1628,15 +1773,11 @@ function StatusesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =>
           return (
             <li key={s.id} className={`flex flex-wrap items-center gap-2 ${s.isActive ? '' : 'opacity-40'}`}>
               <span className={`w-2.5 h-2.5 rounded-full ${c.dot}`} />
-              <InlineEdit
-                value={s.label}
-                onSave={label => updateRefItem({ kind: 'status', id: s.id, label }).then(onChanged)}
-              />
+              <InlineEdit value={s.label} onSave={label => updateRefItem({ kind: 'status', id: s.id, label }).then(onChanged)} />
               <select
                 value={s.kind}
                 onChange={e => updateRefItem({ kind: 'status', id: s.id, metricKind: e.target.value }).then(onChanged)}
                 className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500"
-                title="Тип для метрик"
               >
                 {METRIC_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
               </select>
@@ -1644,21 +1785,14 @@ function StatusesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =>
                 value={s.color}
                 onChange={e => updateRefItem({ kind: 'status', id: s.id, color: e.target.value }).then(onChanged)}
                 className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500"
-                title="Цвет"
               >
                 {COLOR_KEYS.map(ck => <option key={ck} value={ck}>{ck}</option>)}
               </select>
               <span className="ml-auto flex items-center gap-1">
-                <button
-                  onClick={() => updateRefItem({ kind: 'status', id: s.id, isActive: !s.isActive }).then(onChanged)}
-                  className="text-xs text-gray-400 hover:text-gray-600"
-                >
+                <button onClick={() => updateRefItem({ kind: 'status', id: s.id, isActive: !s.isActive }).then(onChanged)} className="text-xs text-gray-400 hover:text-gray-600">
                   {s.isActive ? 'скрыть' : 'вернуть'}
                 </button>
-                <button
-                  onClick={() => deleteRefItem('status', s.id).then(onChanged)}
-                  className="p-1 text-gray-300 hover:text-red-500"
-                >
+                <button onClick={() => deleteRefItem('status', s.id).then(onChanged)} className="p-1 text-gray-300 hover:text-red-500">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </span>
@@ -1666,15 +1800,16 @@ function StatusesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =>
           )
         })}
       </ul>
-      <AddRow
-        placeholder="Новый статус"
-        onAdd={label => createRefItem({ kind: 'status', label }).then(onChanged)}
-      />
+      <AddRow placeholder="Новый статус" onAdd={label => createRefItem({ kind: 'status', label }).then(onChanged)} />
     </RefCard>
   )
 }
 
 function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () => void }) {
+  const groupLabels = useMemo(
+    () => [...new Set(board.taskTypes.map(t => t.groupLabel).filter(Boolean))] as string[],
+    [board.taskTypes],
+  )
   const move = async (idx: number, dir: -1 | 1) => {
     const list = board.taskTypes
     const a = list[idx]
@@ -1689,12 +1824,15 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
 
   return (
     <RefCard
-      title="Шаги чек-листа (колонки)"
-      hint="Категория связывает колонку со справочником провайдеров — в ячейке можно будет выбрать конкретного"
+      title="Шаги чек-листа"
+      hint="Группа объединяет шаги в блок запуска; категория связывает шаг со справочником поставщиков"
     >
+      <datalist id="ob-groups">
+        {groupLabels.map(g => <option key={g} value={g} />)}
+      </datalist>
       <ul className="space-y-2">
         {board.taskTypes.map((t, i) => (
-          <li key={t.id} className={`flex items-center gap-2 ${t.isActive ? '' : 'opacity-40'}`}>
+          <li key={t.id} className={`flex flex-wrap items-center gap-2 ${t.isActive ? '' : 'opacity-40'}`}>
             <span className="flex flex-col">
               <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-300 hover:text-gray-500 disabled:opacity-30">
                 <ChevronUp className="w-3 h-3" />
@@ -1703,15 +1841,22 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
                 <ChevronDown className="w-3 h-3" />
               </button>
             </span>
-            <InlineEdit
-              value={t.label}
-              onSave={label => updateRefItem({ kind: 'taskType', id: t.id, label }).then(onChanged)}
+            <InlineEdit value={t.label} onSave={label => updateRefItem({ kind: 'taskType', id: t.id, label }).then(onChanged)} />
+            <input
+              defaultValue={t.groupLabel || ''}
+              list="ob-groups"
+              placeholder="группа"
+              onBlur={e => {
+                if (e.target.value !== (t.groupLabel || '')) {
+                  updateRefItem({ kind: 'taskType', id: t.id, groupLabel: e.target.value || null }).then(onChanged)
+                }
+              }}
+              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-500 w-36"
             />
             <select
               value={t.optionCategoryId || ''}
               onChange={e => updateRefItem({ kind: 'taskType', id: t.id, categoryId: e.target.value || null }).then(onChanged)}
-              className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 max-w-[130px]"
-              title="Категория провайдеров"
+              className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 max-w-[120px]"
             >
               <option value="">без категории</option>
               {board.optionCategories.filter(c => c.isActive).map(c => (
@@ -1719,26 +1864,17 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
               ))}
             </select>
             <span className="ml-auto flex items-center gap-1">
-              <button
-                onClick={() => updateRefItem({ kind: 'taskType', id: t.id, isActive: !t.isActive }).then(onChanged)}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
+              <button onClick={() => updateRefItem({ kind: 'taskType', id: t.id, isActive: !t.isActive }).then(onChanged)} className="text-xs text-gray-400 hover:text-gray-600">
                 {t.isActive ? 'скрыть' : 'вернуть'}
               </button>
-              <button
-                onClick={() => deleteRefItem('taskType', t.id).then(onChanged)}
-                className="p-1 text-gray-300 hover:text-red-500"
-              >
+              <button onClick={() => deleteRefItem('taskType', t.id).then(onChanged)} className="p-1 text-gray-300 hover:text-red-500">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </span>
           </li>
         ))}
       </ul>
-      <AddRow
-        placeholder="Новый шаг (напр. Телефония)"
-        onAdd={label => createRefItem({ kind: 'taskType', label }).then(onChanged)}
-      />
+      <AddRow placeholder="Новый шаг" onAdd={label => createRefItem({ kind: 'taskType', label }).then(onChanged)} />
     </RefCard>
   )
 }
@@ -1748,8 +1884,8 @@ function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () 
 
   return (
     <RefCard
-      title="Категории и провайдеры"
-      hint="Тип оплаты, агрегаторы, курьер-сервисы, СМС, телефония, каналы продаж — списки провайдеров для выбора в ячейках"
+      title="Категории и поставщики"
+      hint="Тип оплаты, агрегаторы, курьер-сервисы, СМС, телефония, каналы продаж — списки для выбора в ячейках"
     >
       <ul className="space-y-1">
         {board.optionCategories.map(cat => {
@@ -1758,28 +1894,16 @@ function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () 
           return (
             <li key={cat.id} className={cat.isActive ? '' : 'opacity-40'}>
               <div className="flex items-center gap-2 py-1">
-                <button
-                  onClick={() => setOpenCat(isOpen ? null : cat.id)}
-                  className="p-0.5 text-gray-400 hover:text-gray-600"
-                >
+                <button onClick={() => setOpenCat(isOpen ? null : cat.id)} className="p-0.5 text-gray-400 hover:text-gray-600">
                   {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
-                <InlineEdit
-                  value={cat.label}
-                  onSave={label => updateRefItem({ kind: 'category', id: cat.id, label }).then(onChanged)}
-                />
+                <InlineEdit value={cat.label} onSave={label => updateRefItem({ kind: 'category', id: cat.id, label }).then(onChanged)} />
                 <span className="text-xs text-gray-400">{opts.length}</span>
                 <span className="ml-auto flex items-center gap-1">
-                  <button
-                    onClick={() => updateRefItem({ kind: 'category', id: cat.id, isActive: !cat.isActive }).then(onChanged)}
-                    className="text-xs text-gray-400 hover:text-gray-600"
-                  >
+                  <button onClick={() => updateRefItem({ kind: 'category', id: cat.id, isActive: !cat.isActive }).then(onChanged)} className="text-xs text-gray-400 hover:text-gray-600">
                     {cat.isActive ? 'скрыть' : 'вернуть'}
                   </button>
-                  <button
-                    onClick={() => deleteRefItem('category', cat.id).then(onChanged)}
-                    className="p-1 text-gray-300 hover:text-red-500"
-                  >
+                  <button onClick={() => deleteRefItem('category', cat.id).then(onChanged)} className="p-1 text-gray-300 hover:text-red-500">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </span>
@@ -1789,41 +1913,26 @@ function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () 
                   <ul className="space-y-1">
                     {opts.map(o => (
                       <li key={o.id} className={`flex items-center gap-2 ${o.isActive ? '' : 'opacity-40'}`}>
-                        <InlineEdit
-                          value={o.label}
-                          onSave={label => updateRefItem({ kind: 'option', id: o.id, label }).then(onChanged)}
-                        />
+                        <InlineEdit value={o.label} onSave={label => updateRefItem({ kind: 'option', id: o.id, label }).then(onChanged)} />
                         <span className="ml-auto flex items-center gap-1">
-                          <button
-                            onClick={() => updateRefItem({ kind: 'option', id: o.id, isActive: !o.isActive }).then(onChanged)}
-                            className="text-xs text-gray-400 hover:text-gray-600"
-                          >
+                          <button onClick={() => updateRefItem({ kind: 'option', id: o.id, isActive: !o.isActive }).then(onChanged)} className="text-xs text-gray-400 hover:text-gray-600">
                             {o.isActive ? 'скрыть' : 'вернуть'}
                           </button>
-                          <button
-                            onClick={() => deleteRefItem('option', o.id).then(onChanged)}
-                            className="p-1 text-gray-300 hover:text-red-500"
-                          >
+                          <button onClick={() => deleteRefItem('option', o.id).then(onChanged)} className="p-1 text-gray-300 hover:text-red-500">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </span>
                       </li>
                     ))}
                   </ul>
-                  <AddRow
-                    placeholder="Новый провайдер"
-                    onAdd={label => createRefItem({ kind: 'option', categoryId: cat.id, label }).then(onChanged)}
-                  />
+                  <AddRow placeholder="Новый поставщик" onAdd={label => createRefItem({ kind: 'option', categoryId: cat.id, label }).then(onChanged)} />
                 </div>
               )}
             </li>
           )
         })}
       </ul>
-      <AddRow
-        placeholder="Новая категория"
-        onAdd={label => createRefItem({ kind: 'category', label }).then(onChanged)}
-      />
+      <AddRow placeholder="Новая категория" onAdd={label => createRefItem({ kind: 'category', label }).then(onChanged)} />
     </RefCard>
   )
 }
@@ -1834,31 +1943,19 @@ function PosEditor({ board, onChanged }: { board: ObBoard; onChanged: () => void
       <ul className="space-y-2">
         {board.posSystems.map(p => (
           <li key={p.id} className={`flex items-center gap-2 ${p.isActive ? '' : 'opacity-40'}`}>
-            <InlineEdit
-              value={p.name}
-              onSave={name => updateRefItem({ kind: 'pos', id: p.id, name }).then(onChanged)}
-            />
+            <InlineEdit value={p.name} onSave={name => updateRefItem({ kind: 'pos', id: p.id, name }).then(onChanged)} />
             <span className="ml-auto flex items-center gap-1">
-              <button
-                onClick={() => updateRefItem({ kind: 'pos', id: p.id, isActive: !p.isActive }).then(onChanged)}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
+              <button onClick={() => updateRefItem({ kind: 'pos', id: p.id, isActive: !p.isActive }).then(onChanged)} className="text-xs text-gray-400 hover:text-gray-600">
                 {p.isActive ? 'скрыть' : 'вернуть'}
               </button>
-              <button
-                onClick={() => deleteRefItem('pos', p.id).then(onChanged)}
-                className="p-1 text-gray-300 hover:text-red-500"
-              >
+              <button onClick={() => deleteRefItem('pos', p.id).then(onChanged)} className="p-1 text-gray-300 hover:text-red-500">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </span>
           </li>
         ))}
       </ul>
-      <AddRow
-        placeholder="Новая POS-система"
-        onAdd={name => createRefItem({ kind: 'pos', name }).then(onChanged)}
-      />
+      <AddRow placeholder="Новая POS-система" onAdd={name => createRefItem({ kind: 'pos', name }).then(onChanged)} />
     </RefCard>
   )
 }
@@ -1874,10 +1971,7 @@ function TemplateEditor({ board, onChanged }: { board: ObBoard; onChanged: () =>
   const types = board.taskTypes.filter(t => t.isActive)
 
   return (
-    <RefCard
-      title="Шаблон: POS → шаги"
-      hint="Какие шаги чек-листа создаются для бренда с данной POS-системой"
-    >
+    <RefCard title="Шаблон: POS → шаги" hint="Какие шаги чек-листа создаются для бренда с данной POS-системой">
       <div className="overflow-x-auto">
         <table className="text-xs">
           <thead>

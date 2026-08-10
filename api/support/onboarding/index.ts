@@ -116,6 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
         taskTypes: taskTypes.map((t: any) => ({
           id: t.id, label: t.label, sortOrder: t.sort_order, isActive: t.is_active,
           optionCategoryId: t.option_category_id,
+          groupLabel: t.group_label,
         })),
         posSystems: posSystems.map((p: any) => ({
           id: p.id, name: p.name, isActive: p.is_active,

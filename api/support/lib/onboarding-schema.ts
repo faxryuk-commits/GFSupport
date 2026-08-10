@@ -160,6 +160,8 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
     ON onboarding_tasks (brand_id, task_type_id, COALESCE(option_id, ''))
   `
   await sql`ALTER TABLE onboarding_task_events ADD COLUMN IF NOT EXISTS option_id VARCHAR(50)`
+  // v6: группировка шагов чек-листа по блокам запуска (Компания, Каталог, Оплата…)
+  await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS group_label VARCHAR(100)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`

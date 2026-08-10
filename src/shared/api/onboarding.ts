@@ -17,6 +17,8 @@ export interface ObTaskType {
   isActive: boolean
   /** Категория провайдеров для этой колонки (в ячейке можно выбрать опцию) */
   optionCategoryId: string | null
+  /** Блок запуска («1 · Компания и филиал» …) — группировка чек-листа */
+  groupLabel: string | null
 }
 
 export interface ObPosSystem {

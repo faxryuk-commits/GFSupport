@@ -48,6 +48,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      // Прототип: PROTO_API=1 направляет onboarding-эндпоинты на локальный сервер
+      // (scripts/dev-api-server.mjs) с новым кодом; остальное — на прод.
+      ...(process.env.PROTO_API
+        ? { '/api/support/onboarding': { target: 'http://localhost:8788', changeOrigin: false } }
+        : {}),
       // /api проксируется на прод — vercel dev не запускается из-за 171 endpoint > 128 builds limit
       '/api': {
         target: 'https://www.gfsupport.uz',

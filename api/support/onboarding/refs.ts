@@ -53,15 +53,15 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (kind === 'taskType') {
-        const { label } = body
+        const { label, groupLabel } = body
         if (!label) return json({ error: 'label is required' }, 400)
         const [{ max }] = await sql`
           SELECT COALESCE(MAX(sort_order), -1)::int AS max FROM onboarding_task_types WHERE org_id = ${orgId}
         `
         const id = obId('obtt')
         await sql`
-          INSERT INTO onboarding_task_types (id, org_id, label, sort_order)
-          VALUES (${id}, ${orgId}, ${label}, ${max + 1})
+          INSERT INTO onboarding_task_types (id, org_id, label, sort_order, group_label)
+          VALUES (${id}, ${orgId}, ${label}, ${max + 1}, ${groupLabel || null})
         `
         // Новый шаг по умолчанию входит в шаблон всех POS-систем.
         await sql`
@@ -169,7 +169,10 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (kind === 'taskType') {
-        const { label, sortOrder, isActive, categoryId } = body
+        const { label, sortOrder, isActive, categoryId, groupLabel } = body
+        if (groupLabel !== undefined) {
+          await sql`UPDATE onboarding_task_types SET group_label = ${groupLabel || null} WHERE id = ${id} AND org_id = ${orgId}`
+        }
         if (label !== undefined) {
           await sql`UPDATE onboarding_task_types SET label = ${label} WHERE id = ${id} AND org_id = ${orgId}`
         }
