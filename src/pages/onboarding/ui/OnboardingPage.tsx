@@ -70,7 +70,18 @@ export function OnboardingPage() {
     setError(null)
     try {
       const data = await fetchOnboardingBoard(showArchived)
-      setBoard(data)
+      // Страховка от рассинхрона фронт/API в момент деплоя: недостающие
+      // коллекции считаем пустыми, а не роняем доску.
+      setBoard({
+        ...data,
+        statuses: data.statuses || [],
+        taskTypes: data.taskTypes || [],
+        posSystems: data.posSystems || [],
+        posTaskMap: data.posTaskMap || [],
+        optionCategories: data.optionCategories || [],
+        options: data.options || [],
+        brands: data.brands || [],
+      })
     } catch (e) {
       console.error('Failed to load onboarding board:', e)
       setError('Не удалось загрузить данные')
