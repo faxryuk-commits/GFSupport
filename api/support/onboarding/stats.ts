@@ -38,19 +38,19 @@ export default async function handler(req: Request): Promise<Response> {
     // Интервалы по kind из журнала (закрытые интервалы + текущий открытый до NOW)
     const stages = await sql`
       WITH ev AS (
-        SELECT e.brand_id, e.task_type_id, e.new_status_id, e.changed_at,
-               LEAD(e.changed_at) OVER (PARTITION BY e.brand_id, e.task_type_id ORDER BY e.changed_at) AS next_at
+        SELECT e.brand_id, e.task_type_id, e.option_id, e.new_status_id, e.changed_at,
+               LEAD(e.changed_at) OVER (PARTITION BY e.brand_id, e.task_type_id, COALESCE(e.option_id, '') ORDER BY e.changed_at) AS next_at
         FROM onboarding_task_events e
         JOIN onboarding_brands b ON b.id = e.brand_id
         WHERE e.org_id = ${orgId} AND b.archived_at IS NULL
       ),
       per_task AS (
-        SELECT ev.task_type_id, ev.brand_id, s.kind,
+        SELECT ev.task_type_id, ev.brand_id, COALESCE(ev.option_id, '') AS option_key, s.kind,
                SUM(EXTRACT(EPOCH FROM (COALESCE(ev.next_at, NOW()) - ev.changed_at))) AS seconds
         FROM ev
         JOIN onboarding_statuses s ON s.id = ev.new_status_id
         WHERE s.kind IN ('active', 'waiting')
-        GROUP BY ev.task_type_id, ev.brand_id, s.kind
+        GROUP BY ev.task_type_id, ev.brand_id, COALESCE(ev.option_id, ''), s.kind
       )
       SELECT tt.id, tt.label, pt.kind,
              COUNT(*)::int AS tasks,
@@ -116,13 +116,15 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Сигналы: задачи, дольше всего висящие в active/waiting прямо сейчас
     const stuck = await sql`
-      SELECT b.name AS brand_name, tt.label AS task_label, s.label AS status_label, s.kind,
+      SELECT b.name AS brand_name, tt.label AS task_label, op.label AS option_label,
+             s.label AS status_label, s.kind,
              COALESCE(t.assignee_name, b.assignee_name) AS assignee_name,
              EXTRACT(EPOCH FROM (NOW() - t.status_since))::bigint AS seconds
       FROM onboarding_tasks t
       JOIN onboarding_brands b ON b.id = t.brand_id
       JOIN onboarding_task_types tt ON tt.id = t.task_type_id
       JOIN onboarding_statuses s ON s.id = t.status_id
+      LEFT JOIN onboarding_options op ON op.id = t.option_id
       WHERE t.org_id = ${orgId} AND b.archived_at IS NULL AND s.kind IN ('active', 'waiting')
       ORDER BY seconds DESC
       LIMIT 15
@@ -178,7 +180,7 @@ export default async function handler(req: Request): Promise<Response> {
       })),
       stuck: stuck.map((s: any) => ({
         brandName: s.brand_name,
-        taskLabel: s.task_label,
+        taskLabel: s.option_label ? `${s.task_label} · ${s.option_label}` : s.task_label,
         statusLabel: s.status_label,
         kind: s.kind,
         assigneeName: s.assignee_name,

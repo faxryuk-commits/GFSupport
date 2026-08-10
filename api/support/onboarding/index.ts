@@ -73,28 +73,28 @@ export default async function handler(req: Request): Promise<Response> {
       // Интервал = от события до следующего события той же задачи (или до NOW()).
       const durations = await sql`
         WITH ev AS (
-          SELECT brand_id, task_type_id, new_status_id, changed_at,
-                 LEAD(changed_at) OVER (PARTITION BY brand_id, task_type_id ORDER BY changed_at) AS next_at
+          SELECT brand_id, task_type_id, option_id, new_status_id, changed_at,
+                 LEAD(changed_at) OVER (PARTITION BY brand_id, task_type_id, COALESCE(option_id, '') ORDER BY changed_at) AS next_at
           FROM onboarding_task_events
           WHERE org_id = ${orgId}
         )
-        SELECT ev.brand_id, ev.task_type_id, s.kind,
+        SELECT ev.brand_id, ev.task_type_id, COALESCE(ev.option_id, '') AS option_key, s.kind,
                SUM(EXTRACT(EPOCH FROM (COALESCE(ev.next_at, NOW()) - ev.changed_at)))::bigint AS seconds
         FROM ev
         JOIN onboarding_statuses s ON s.id = ev.new_status_id
         WHERE s.kind IN ('active', 'waiting')
-        GROUP BY ev.brand_id, ev.task_type_id, s.kind
+        GROUP BY ev.brand_id, ev.task_type_id, COALESCE(ev.option_id, ''), s.kind
       `
       const durMap: Record<string, { active?: number; waiting?: number }> = {}
       for (const d of durations) {
-        const key = `${d.brand_id}|${d.task_type_id}`
+        const key = `${d.brand_id}|${d.task_type_id}|${d.option_key || ''}`
         durMap[key] = durMap[key] || {}
         durMap[key][d.kind as 'active' | 'waiting'] = Number(d.seconds)
       }
 
       const tasksByBrand: Record<string, any[]> = {}
       for (const t of tasks) {
-        const dur = durMap[`${t.brand_id}|${t.task_type_id}`] || {}
+        const dur = durMap[`${t.brand_id}|${t.task_type_id}|${t.option_id || ''}`] || {}
         ;(tasksByBrand[t.brand_id] = tasksByBrand[t.brand_id] || []).push({
           id: t.id,
           taskTypeId: t.task_type_id,
@@ -189,7 +189,7 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           INSERT INTO onboarding_tasks (id, org_id, brand_id, task_type_id, status_id)
           VALUES (${obId('obtk')}, ${orgId}, ${brandId}, ${t.id}, ${defaultStatus?.id || null})
-          ON CONFLICT (brand_id, task_type_id) DO NOTHING
+          ON CONFLICT (brand_id, task_type_id, (COALESCE(option_id, ''))) DO NOTHING
         `
       }
 
@@ -247,7 +247,7 @@ export default async function handler(req: Request): Promise<Response> {
             await sql`
               INSERT INTO onboarding_tasks (id, org_id, brand_id, task_type_id, status_id)
               VALUES (${obId('obtk')}, ${orgId}, ${id}, ${t.id}, ${defaultStatus?.id || null})
-              ON CONFLICT (brand_id, task_type_id) DO NOTHING
+              ON CONFLICT (brand_id, task_type_id, (COALESCE(option_id, ''))) DO NOTHING
             `
           }
         }

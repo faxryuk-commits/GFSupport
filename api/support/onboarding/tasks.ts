@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema, resolveAgentName } from '../lib/onboarding-schema.js'
+import { ensureOnboardingSchema, obId, resolveAgentName } from '../lib/onboarding-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -9,16 +9,19 @@ export const config = {
 
 /**
  * Задачи онбординга: смена статуса с записью в журнал + история событий.
+ * Ячейка может содержать несколько под-задач — по одной на поставщика.
  *
- * PUT - сменить статус задачи / назначить исполнителя
- * GET - журнал событий (?brandId= или последние по организации)
+ * PUT    - сменить статус задачи / исполнителя / поставщика
+ * POST   - добавить под-задачу поставщика: { brandId, taskTypeId, optionId }
+ * DELETE - убрать под-задачу: ?taskId= (события остаются в журнале)
+ * GET    - журнал событий (?brandId= или последние по организации)
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Org-Id',
       },
     })
@@ -36,22 +39,25 @@ export default async function handler(req: Request): Promise<Response> {
 
       const events = brandId
         ? await sql`
-            SELECT e.*, os.label AS old_label, ns.label AS new_label, tt.label AS task_label
+            SELECT e.*, os.label AS old_label, ns.label AS new_label, tt.label AS task_label,
+                   op.label AS option_label
             FROM onboarding_task_events e
             LEFT JOIN onboarding_statuses os ON os.id = e.old_status_id
             LEFT JOIN onboarding_statuses ns ON ns.id = e.new_status_id
             LEFT JOIN onboarding_task_types tt ON tt.id = e.task_type_id
+            LEFT JOIN onboarding_options op ON op.id = e.option_id
             WHERE e.org_id = ${orgId} AND e.brand_id = ${brandId}
             ORDER BY e.changed_at DESC
             LIMIT ${limit}
           `
         : await sql`
             SELECT e.*, os.label AS old_label, ns.label AS new_label, tt.label AS task_label,
-                   b.name AS brand_name
+                   op.label AS option_label, b.name AS brand_name
             FROM onboarding_task_events e
             LEFT JOIN onboarding_statuses os ON os.id = e.old_status_id
             LEFT JOIN onboarding_statuses ns ON ns.id = e.new_status_id
             LEFT JOIN onboarding_task_types tt ON tt.id = e.task_type_id
+            LEFT JOIN onboarding_options op ON op.id = e.option_id
             LEFT JOIN onboarding_brands b ON b.id = e.brand_id
             WHERE e.org_id = ${orgId}
             ORDER BY e.changed_at DESC
@@ -65,6 +71,7 @@ export default async function handler(req: Request): Promise<Response> {
           brandName: e.brand_name,
           taskTypeId: e.task_type_id,
           taskLabel: e.task_label,
+          optionLabel: e.option_label,
           oldStatusId: e.old_status_id,
           oldLabel: e.old_label,
           newStatusId: e.new_status_id,
@@ -99,8 +106,8 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE id = ${taskId} AND org_id = ${orgId}
         `
         await sql`
-          INSERT INTO onboarding_task_events (org_id, brand_id, task_type_id, old_status_id, new_status_id, changed_by)
-          VALUES (${orgId}, ${task.brand_id}, ${task.task_type_id}, ${task.status_id}, ${statusId}, ${changedBy})
+          INSERT INTO onboarding_task_events (org_id, brand_id, task_type_id, option_id, old_status_id, new_status_id, changed_by)
+          VALUES (${orgId}, ${task.brand_id}, ${task.task_type_id}, ${task.option_id}, ${task.status_id}, ${statusId}, ${changedBy})
         `
       }
 
@@ -130,6 +137,42 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ success: true })
     } catch (e: any) {
       return json({ error: 'Failed to update task', details: e?.message }, 500)
+    }
+  }
+
+  if (req.method === 'POST') {
+    try {
+      const body = await req.json()
+      const { brandId, taskTypeId, optionId } = body
+      if (!brandId || !taskTypeId) return json({ error: 'brandId and taskTypeId are required' }, 400)
+
+      const [defaultStatus] = await sql`
+        SELECT id FROM onboarding_statuses
+        WHERE org_id = ${orgId} AND kind = 'todo' AND is_active = true
+        ORDER BY sort_order LIMIT 1
+      `
+      const id = obId('obtk')
+      const rows = await sql`
+        INSERT INTO onboarding_tasks (id, org_id, brand_id, task_type_id, status_id, option_id)
+        VALUES (${id}, ${orgId}, ${brandId}, ${taskTypeId}, ${defaultStatus?.id || null}, ${optionId || null})
+        ON CONFLICT (brand_id, task_type_id, (COALESCE(option_id, ''))) DO NOTHING
+        RETURNING id
+      `
+      if (rows.length === 0) return json({ error: 'Такой поставщик уже добавлен' }, 409)
+      return json({ success: true, id })
+    } catch (e: any) {
+      return json({ error: 'Failed to create task', details: e?.message }, 500)
+    }
+  }
+
+  if (req.method === 'DELETE') {
+    try {
+      const taskId = url.searchParams.get('taskId')
+      if (!taskId) return json({ error: 'taskId is required' }, 400)
+      await sql`DELETE FROM onboarding_tasks WHERE id = ${taskId} AND org_id = ${orgId}`
+      return json({ success: true })
+    } catch (e: any) {
+      return json({ error: 'Failed to delete task', details: e?.message }, 500)
     }
   }
 

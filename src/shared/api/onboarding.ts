@@ -88,6 +88,7 @@ export interface ObEvent {
   brandName?: string
   taskTypeId: string
   taskLabel: string | null
+  optionLabel: string | null
   oldStatusId: string | null
   oldLabel: string | null
   newStatusId: string | null
@@ -212,6 +213,15 @@ export function setTaskAssignee(taskId: string, assigneeId: string | null): Prom
 
 export function setTaskOption(taskId: string, optionId: string | null): Promise<{ success: boolean }> {
   return apiPut('/onboarding/tasks', { taskId, optionId })
+}
+
+/** Добавить в ячейку под-задачу поставщика (свой статус/таймер/исполнитель). */
+export function addProviderTask(brandId: string, taskTypeId: string, optionId: string | null): Promise<{ success: boolean; id: string }> {
+  return apiPost('/onboarding/tasks', { brandId, taskTypeId, optionId })
+}
+
+export function deleteTask(taskId: string): Promise<{ success: boolean }> {
+  return apiDelete(`/onboarding/tasks?taskId=${encodeURIComponent(taskId)}`)
 }
 
 export function fetchOnboardingEvents(brandId?: string, limit = 100): Promise<{ events: ObEvent[] }> {

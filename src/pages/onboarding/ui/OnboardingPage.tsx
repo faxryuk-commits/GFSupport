@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { formatDateTimeShort, formatDateShort } from '@/shared/lib'
 import { fetchAgents } from '@/shared/api/agents'
 import type { Agent } from '@/shared/types'
 import {
   fetchOnboardingBoard, fetchOnboardingStats, createBrand, updateBrand, deleteBrand,
-  setTaskStatus, setTaskAssignee, setTaskOption, fetchOnboardingEvents,
+  setTaskStatus, setTaskAssignee, setTaskOption, addProviderTask, deleteTask, fetchOnboardingEvents,
   fetchBrandCard, addBrandComment, deleteBrandComment,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
@@ -422,6 +423,10 @@ function FocusView({ board, statusById, posById, onOpenBrand, onChanged }: {
     () => Object.fromEntries(board.taskTypes.map(t => [t.id, t])),
     [board.taskTypes],
   )
+  const optionById = useMemo(
+    () => Object.fromEntries(board.options.map(o => [o.id, o])),
+    [board.options],
+  )
 
   const shelves = useMemo(() => {
     const acc = {
@@ -468,6 +473,7 @@ function FocusView({ board, statusById, posById, onOpenBrand, onChanged }: {
                   shelf={def.key}
                   posName={brand.posId ? posById[brand.posId]?.name : undefined}
                   typeById={typeById}
+                  optionById={optionById}
                   statusById={statusById}
                   onOpen={() => onOpenBrand(brand)}
                   onChanged={onChanged}
@@ -481,12 +487,13 @@ function FocusView({ board, statusById, posById, onOpenBrand, onChanged }: {
   )
 }
 
-function FocusCard({ brand, a, shelf, posName, typeById, statusById, onOpen, onChanged }: {
+function FocusCard({ brand, a, shelf, posName, typeById, optionById, statusById, onOpen, onChanged }: {
   brand: ObBrand
   a: ReturnType<typeof analyzeBrand>
   shelf: 'attention' | 'progress' | 'queue' | 'finish'
   posName?: string
   typeById: Record<string, ObBoard['taskTypes'][number]>
+  optionById: Record<string, ObBoard['options'][number]>
   statusById: Record<string, ObStatus>
   onOpen: () => void
   onChanged: () => void
@@ -496,7 +503,10 @@ function FocusCard({ brand, a, shelf, posName, typeById, statusById, onOpen, onC
     : shelf === 'finish' ? 'border-green-300' : 'border-gray-200'
   const worst = a.worst
   const worstStatus = worst?.task.statusId ? statusById[worst.task.statusId] : undefined
-  const worstLabel = worst ? typeById[worst.task.taskTypeId]?.label : null
+  const worstOption = worst?.task.optionId ? optionById[worst.task.optionId] : undefined
+  const worstLabel = worst
+    ? `${typeById[worst.task.taskTypeId]?.label || ''}${worstOption ? ` (${worstOption.label})` : ''}`
+    : null
   const othersInFlight = worst ? a.inFlight - 1 : a.inFlight
 
   const finishOnboarding = async () => {
@@ -598,10 +608,11 @@ function BrandRow({ brand, board, taskTypes, statusById, optionById, posName, on
   onOpen: () => void
   onChanged: () => void
 }) {
-  const taskByType = useMemo(
-    () => Object.fromEntries(brand.tasks.map(t => [t.taskTypeId, t])),
-    [brand.tasks],
-  )
+  const tasksByType = useMemo(() => {
+    const acc: Record<string, ObBrand['tasks']> = {}
+    for (const t of brand.tasks) (acc[t.taskTypeId] = acc[t.taskTypeId] || []).push(t)
+    return acc
+  }, [brand.tasks])
   const countable = brand.tasks.filter(t => {
     const k = t.statusId ? statusById[t.statusId]?.kind : null
     return k && k !== 'na' && k !== 'cancelled'
@@ -652,18 +663,26 @@ function BrandRow({ brand, board, taskTypes, statusById, optionById, posName, on
         </div>
       </td>
       {taskTypes.map(tt => {
-        const task = taskByType[tt.id]
-        if (!task) return <td key={tt.id} className="px-2 py-2 text-gray-300">—</td>
+        const list = tasksByType[tt.id]
+        if (!list || list.length === 0) return <td key={tt.id} className="px-2 py-2 text-gray-300">—</td>
         return (
-          <td key={tt.id} className="px-2 py-2">
-            <StatusChip
-              task={task}
-              taskType={tt}
-              board={board}
-              status={task.statusId ? statusById[task.statusId] : undefined}
-              option={task.optionId ? optionById[task.optionId] : undefined}
-              onChanged={onChanged}
-            />
+          <td key={tt.id} className="px-2 py-2 align-top">
+            <div className="flex flex-col items-start gap-1">
+              {list.map(task => (
+                <StatusChip
+                  key={task.id}
+                  task={task}
+                  taskType={tt}
+                  brandId={brand.id}
+                  siblingOptionIds={list.map(x => x.optionId).filter(Boolean) as string[]}
+                  siblingCount={list.length}
+                  board={board}
+                  status={task.statusId ? statusById[task.statusId] : undefined}
+                  option={task.optionId ? optionById[task.optionId] : undefined}
+                  onChanged={onChanged}
+                />
+              ))}
+            </div>
           </td>
         )
       })}
@@ -671,25 +690,45 @@ function BrandRow({ brand, board, taskTypes, statusById, optionById, posName, on
   )
 }
 
-function StatusChip({ task, taskType, board, status, option, onChanged }: {
+function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, board, status, option, onChanged }: {
   task: ObBrand['tasks'][number]
   taskType: ObBoard['taskTypes'][number]
+  brandId: string
+  siblingOptionIds: string[]
+  siblingCount: number
   board: ObBoard
   status?: ObStatus
   option?: ObBoard['options'][number]
   onChanged: () => void
 }) {
-  const [open, setOpen] = useState(false)
+  // Дропдаун рендерится порталом с fixed-позицией: не режется overflow-контейнером
+  // таблицы и у нижнего края экрана раскрывается вверх.
+  const [rect, setRect] = useState<DOMRect | null>(null)
   const [saving, setSaving] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const open = rect !== null
+  const setOpen = (v: boolean) => setRect(v ? btnRef.current?.getBoundingClientRect() || null : null)
 
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (btnRef.current?.contains(e.target as Node)) return
+      if (panelRef.current?.contains(e.target as Node)) return
+      setRect(null)
+    }
+    const onScroll = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return
+      setRect(null)
     }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
   }, [open])
 
   const colors = STATUS_COLORS[status?.color || 'gray'] || STATUS_COLORS.gray
@@ -707,6 +746,7 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
   const catOptions = taskType.optionCategoryId
     ? board.options.filter(o => o.categoryId === taskType.optionCategoryId && o.isActive)
     : []
+  const addableOptions = catOptions.filter(o => !siblingOptionIds.includes(o.id))
 
   const pickStatus = async (statusId: string) => {
     if (saving || statusId === task.statusId) { setOpen(false); return }
@@ -720,11 +760,28 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
     }
   }
 
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const PANEL_W = 232
+  const panelStyle: CSSProperties | undefined = rect ? {
+    position: 'fixed',
+    zIndex: 60,
+    width: PANEL_W,
+    left: Math.min(Math.max(8, rect.left), vw - PANEL_W - 8),
+    ...(rect.bottom > vh - 360
+      ? { bottom: Math.max(8, vh - rect.top + 4) }
+      : { top: rect.bottom + 4 }),
+    maxHeight: Math.min(400, vh - 16),
+    overflowY: 'auto',
+  } : undefined
+
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       <button
-        onClick={() => setOpen(v => !v)}
-        title={[status?.label, option?.label, timeHint, task.assigneeName ? `исп: ${task.assigneeName}` : '']
+        ref={btnRef}
+        onClick={() => setOpen(!open)}
+        title={[status?.label, option?.label, `статус с ${formatDateTimeShort(task.statusSince)}`, timeHint,
+          task.assigneeName ? `исп: ${task.assigneeName}` : '']
           .filter(Boolean).join(' · ')}
         className={quiet
           ? 'px-1.5 py-0.5 rounded text-xs whitespace-nowrap inline-flex items-center gap-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500'
@@ -737,13 +794,16 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
             <>
               <Check className="w-3.5 h-3.5 text-green-500/70" />
               {option && <span className="text-gray-400">{option.label}</span>}
+              <span className="text-gray-300">{formatDateShort(task.statusSince)}</span>
             </>
           ) : kind === 'na' ? (
             <span>—</span>
           ) : kind === 'cancelled' ? (
             <span className="line-through">{status?.label}</span>
           ) : (
-            <span className="text-gray-400">{status?.label || '—'}</span>
+            <span className="text-gray-400">
+              {status?.label || '—'}{option ? ` · ${option.label}` : ''}
+            </span>
           )
         ) : (
           <>
@@ -754,8 +814,12 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
           </>
         )}
       </button>
-      {open && (
-        <div className="absolute z-30 mt-1 left-0 w-52 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+      {open && rect && createPortal(
+        <div
+          ref={panelRef}
+          style={panelStyle}
+          className="rounded-lg border border-gray-200 bg-white shadow-lg py-1"
+        >
           {board.statuses.filter(s => s.isActive).map(s => {
             const c = STATUS_COLORS[s.color] || STATUS_COLORS.gray
             return (
@@ -774,7 +838,7 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
 
           {catOptions.length > 0 && (
             <div className="border-t border-gray-100 mt-1 px-3 py-1.5">
-              <div className="text-[10px] uppercase text-gray-400 mb-1">Провайдер</div>
+              <div className="text-[10px] uppercase text-gray-400 mb-1">Поставщик</div>
               <select
                 value={task.optionId || ''}
                 onChange={async e => {
@@ -786,6 +850,24 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
                 <option value="">—</option>
                 {catOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
+              {addableOptions.length > 0 && (
+                <div className="mt-1.5">
+                  <div className="text-[10px] uppercase text-gray-400 mb-0.5">Добавить поставщика</div>
+                  {addableOptions.map(o => (
+                    <button
+                      key={o.id}
+                      onClick={async () => {
+                        await addProviderTask(brandId, taskType.id, o.id)
+                        setRect(null)
+                        onChanged()
+                      }}
+                      className="flex items-center gap-1.5 w-full py-0.5 text-left text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      <Plus className="w-3 h-3" />{o.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -800,13 +882,27 @@ function StatusChip({ task, taskType, board, status, option, onChanged }: {
             />
           </div>
 
-          {(timeHint || isStuck) && (
-            <div className="border-t border-gray-100 mt-1 px-3 py-1.5 text-[11px] text-gray-400">
-              {isStuck && <span className="text-red-500 font-medium">в статусе {fmtSeconds(h * 3600)} · </span>}
-              {timeHint}
-            </div>
+          <div className="border-t border-gray-100 mt-1 px-3 py-1.5 text-[11px] text-gray-400">
+            <div>Статус с {formatDateTimeShort(task.statusSince)}</div>
+            {isStuck && <div className="text-red-500 font-medium">в статусе {fmtSeconds(h * 3600)}</div>}
+            {timeHint && <div>{timeHint}</div>}
+          </div>
+
+          {siblingCount > 1 && (
+            <button
+              onClick={async () => {
+                if (!window.confirm('Убрать этого поставщика из ячейки?')) return
+                await deleteTask(task.id)
+                setRect(null)
+                onChanged()
+              }}
+              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-left text-xs text-red-500 hover:bg-red-50 border-t border-gray-100"
+            >
+              <Trash2 className="w-3 h-3" />Убрать поставщика
+            </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -1143,7 +1239,9 @@ function BrandDrawer({ brand, board, agents, onClose, onChanged }: {
                 {events.map(e => (
                   <li key={e.id} className="text-xs text-gray-600 border-l-2 border-gray-200 pl-2.5">
                     <div>
-                      <span className="font-medium text-gray-800">{e.taskLabel || '—'}</span>
+                      <span className="font-medium text-gray-800">
+                        {e.taskLabel || '—'}{e.optionLabel ? ` · ${e.optionLabel}` : ''}
+                      </span>
                       {': '}
                       <span className="text-gray-400">{e.oldLabel || '∅'}</span>
                       {' → '}
@@ -1356,7 +1454,7 @@ function HistoryTab({ board }: { board: ObBoard }) {
       {events.map(e => (
         <div key={e.id} className="px-4 py-2.5 text-sm flex flex-wrap items-baseline gap-x-2">
           <span className="font-medium text-gray-900">{e.brandName || e.brandId}</span>
-          <span className="text-gray-600">{e.taskLabel || '—'}</span>
+          <span className="text-gray-600">{e.taskLabel || '—'}{e.optionLabel ? ` · ${e.optionLabel}` : ''}</span>
           <span className="text-gray-400">{e.oldLabel || '∅'} → {e.newLabel || '∅'}</span>
           <span className="ml-auto text-xs text-gray-400">
             {formatDateTimeShort(e.changedAt)}{e.changedBy ? ` · ${e.changedBy}` : ''}

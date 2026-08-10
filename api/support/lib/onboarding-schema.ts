@@ -152,6 +152,14 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS option_category_id VARCHAR(50)`
   await sql`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS option_id VARCHAR(50)`
+  // v3: несколько поставщиков в одной ячейке — по под-задаче на поставщика.
+  // UNIQUE(brand, type) → UNIQUE(brand, type, поставщик).
+  await sql`ALTER TABLE onboarding_tasks DROP CONSTRAINT IF EXISTS onboarding_tasks_brand_id_task_type_id_key`
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_ob_tasks_brand_type_option
+    ON onboarding_tasks (brand_id, task_type_id, COALESCE(option_id, ''))
+  `
+  await sql`ALTER TABLE onboarding_task_events ADD COLUMN IF NOT EXISTS option_id VARCHAR(50)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`
