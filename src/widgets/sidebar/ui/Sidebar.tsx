@@ -20,7 +20,7 @@ import {
   Bot,
   Waypoints,
 } from 'lucide-react'
-import { BarChart3 } from 'lucide-react'
+import { BarChart3, Plug } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
 // CSS for coin flip and shine animations
@@ -225,6 +225,7 @@ const navGroups: NavGroup[] = [
       { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
       { path: '/channels', label: 'Каналы', icon: Hash },
       { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
+      { path: '/onboarding', label: 'Подключения', icon: Plug },
       // { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
     ],
   },

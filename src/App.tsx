@@ -24,6 +24,7 @@ const LoginPage = lazy(() => import('@/pages/login/ui/LoginPage').then(m => ({ d
 const RegisterPage = lazy(() => import('@/pages/register/ui/RegisterPage').then(m => ({ default: m.RegisterPage })))
 const KnowledgePage = lazy(() => import('@/pages/knowledge/ui/KnowledgePage').then(m => ({ default: m.KnowledgePage })))
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
+const OnboardingPage = lazy(() => import('@/pages/onboarding/ui/OnboardingPage').then(m => ({ default: m.OnboardingPage })))
 const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
 const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
@@ -81,6 +82,7 @@ export default function App() {
           <Route path="/health" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
           <Route path="/health-legacy" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
           <Route path="/commitments" element={<CommitmentsPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/sla-report" element={<Navigate to="/analytics?tab=detail" replace />} />
           <Route path="/sla-report-legacy" element={<Navigate to="/analytics?tab=detail" replace />} />
           <Route path="/benchmarks" element={<BenchmarksPage />} />

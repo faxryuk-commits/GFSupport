@@ -18,7 +18,7 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxChannels: 3,
     maxMessagesPerMonth: 1000,
     features: ['chats', 'channels', 'cases', 'health', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/health', '/settings'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/health', '/settings'],
   },
   business: {
     name: 'Business',
@@ -28,7 +28,7 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxMessagesPerMonth: 20000,
     features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'settings'],
     // Редизайн (4 группы): Аналитика/Бенчмарки/Маршрутизация/Карта системы добавлены в меню.
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
   },
   enterprise: {
     name: 'Enterprise',
@@ -37,7 +37,7 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxChannels: -1,
     maxMessagesPerMonth: -1,
     features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
   },
 }
 
