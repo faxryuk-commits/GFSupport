@@ -593,14 +593,14 @@ function FocusTab({ board, agents, statusById, selectedBrand, showArchived, onTo
           onClick={() => setAdding(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
         >
-          <Plus className="w-4 h-4" /> Бренд
+          <Plus className="w-4 h-4" /> Проект
         </button>
       ) : (
         <span className="flex items-center gap-2">
           <input
             autoFocus value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAdding(false) }}
-            placeholder="Название бренда"
+            placeholder="Название проекта"
             className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
           />
           <select value={newPos} onChange={e => setNewPos(e.target.value)} className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white">
@@ -769,7 +769,7 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
   const days = Math.round(hoursSince(brand.startedAt) / 24)
 
   const finishOnboarding = async () => {
-    if (!(await appConfirm(`Завершить онбординг «${brand.name}» и убрать бренд в архив? Бренд останется доступен в фильтре «архив».`))) return
+    if (!(await appConfirm(`Завершить проект «${brand.name}» и убрать его в архив? Проект останется доступен в фильтре «архив».`))) return
     await updateBrand({ id: brand.id, archived: true })
     onChanged()
   }
@@ -788,11 +788,11 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
       </span>
       <span className="min-w-0 flex-1 text-[12px] truncate">
         {shelf === 'archive' ? (
-          <span className="text-gray-400">завершён {brand.archivedAt ? fmtDMY(brand.archivedAt) : ''} · старт {fmtDMY(brand.startedAt)} · {a.done}/{a.countable} шагов</span>
+          <span className="text-gray-400">завершён {brand.archivedAt ? fmtDMY(brand.archivedAt) : ''} · старт {fmtDMY(brand.startedAt)} · {a.done}/{a.countable} задач</span>
         ) : shelf === 'finish' ? (
-          <span className="text-green-700">все шаги закрыты</span>
+          <span className="text-green-700">все задачи закрыты</span>
         ) : shelf === 'queue' ? (
-          <span className="text-gray-400">не начат — {a.countable || brand.tasks.length} шагов впереди</span>
+          <span className="text-gray-400">не начат — {a.countable || brand.tasks.length} задач впереди</span>
         ) : worst ? (
           <>
             <span className={worst.kind === 'waiting' ? 'text-amber-700' : 'text-gray-600'}>
@@ -943,7 +943,7 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
           {brand.channelId ? (
             clientMode ? (
               <div className="px-3 py-2 border-t border-gray-100">
-                <div className="text-[10px] uppercase text-gray-400 mb-1">Сообщение в чат бренда</div>
+                <div className="text-[10px] uppercase text-gray-400 mb-1">Сообщение в чат проекта</div>
                 <textarea
                   autoFocus
                   value={clientText}
@@ -967,13 +967,13 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
             ) : (
               <button onClick={openClientMode} className="w-full px-3 py-2 text-left hover:bg-gray-50 border-t border-gray-100">
                 <span className="text-xs text-gray-900 block">Клиенту в Telegram-чат</span>
-                <span className="text-[11px] text-gray-400 block">отправит через бота в привязанный канал</span>
+                <span className="text-[11px] text-gray-400 block">отправит через бота в чат проекта</span>
               </button>
             )
           ) : (
             <div className="w-full px-3 py-2 opacity-50 cursor-not-allowed border-t border-gray-100">
               <span className="text-xs text-gray-900 block">Клиенту в Telegram-чат</span>
-              <span className="text-[11px] text-gray-400 block">привяжите канал бренда в ⚙ — и пункт оживёт</span>
+              <span className="text-[11px] text-gray-400 block">привяжите канал проекта в ⚙ — и пункт оживёт</span>
             </div>
           )}
         </div>,
@@ -1065,7 +1065,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
   }
 
   const handleDelete = async () => {
-    if (!(await appConfirm(`Удалить бренд «${brand.name}» вместе с историей? Это необратимо.`))) return
+    if (!(await appConfirm(`Удалить проект «${brand.name}» вместе с историей? Это необратимо.`))) return
     await deleteBrand(brand.id)
     onClose()
     onChanged()
@@ -1083,7 +1083,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
             <Link
               to={`/chats/${brand.channelId}`}
               className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-              title="Открыть переписку бренда в Чатах"
+              title="Открыть переписку проекта в Чатах"
             >
               Чат ↗
             </Link>
@@ -1093,7 +1093,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
             worstLabel={a.worst ? `${typeById[a.worst.task.taskTypeId]?.label || ''}${a.worst.task.optionId && optionById[a.worst.task.optionId] ? ` · ${optionById[a.worst.task.optionId].label}` : ''}` : null}
             onCreated={() => { loadCard(); onChanged() }}
           />
-          <button onClick={() => setShowFields(v => !v)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" title="Поля бренда">
+          <button onClick={() => setShowFields(v => !v)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" title="Поля проекта">
             <Settings className="w-4 h-4" />
           </button>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"><X className="w-4 h-4" /></button>
@@ -1248,7 +1248,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
       <div className="flex gap-4 text-[12px] text-gray-500 border-b border-gray-100 mb-2">
         {([
           ['comments', `Комментарии${comments?.length ? ` ${comments.length}` : ''}`],
-          ['todos', `Задачи${todos?.filter(t => !t.doneAt).length ? ` ${todos!.filter(t => !t.doneAt).length}` : ''}`],
+          ['todos', `Мини-задачи${todos?.filter(t => !t.doneAt).length ? ` ${todos!.filter(t => !t.doneAt).length}` : ''}`],
           ['history', `История${events?.length ? ` ${events.length}` : ''}`],
         ] as const).map(([key, label]) => (
           <button
@@ -1343,7 +1343,7 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
         </select>
       </label>
       <label className="block col-span-2">
-        <span className="text-[10px] uppercase text-gray-400">Telegram-канал бренда</span>
+        <span className="text-[10px] uppercase text-gray-400">Telegram-канал проекта</span>
         <select
           value={brand.channelId || ''}
           onChange={e => onSave({ channelId: e.target.value || null })}
@@ -1626,7 +1626,7 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
             ))}
           </tr>
           <tr className="border-b border-gray-200 bg-gray-50">
-            <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[150px] text-xs">Бренд</th>
+            <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[150px] text-xs">Проект</th>
             {groups.flatMap((g, gi) => g.types.map((t, ti) => (
               <th
                 key={t.id}
@@ -2157,7 +2157,7 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'в онбординге', value: String(brands.length), cls: 'text-gray-900', border: 'border-gray-200' },
+          { label: 'проектов в онбординге', value: String(brands.length), cls: 'text-gray-900', border: 'border-gray-200' },
           { label: 'застряло задач', value: String(stuckCount), cls: stuckCount ? 'text-red-600' : 'text-gray-900', border: stuckCount ? 'border-red-200' : 'border-gray-200' },
           { label: 'средний возраст', value: `${avgAge.toFixed(1)} дн`, cls: 'text-gray-900', border: 'border-gray-200' },
           { label: 'готовы к завершению', value: String(readyCount), cls: 'text-green-700', border: 'border-gray-200' },
@@ -2212,7 +2212,7 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="text-sm font-medium text-gray-900 mb-3">Воронка этапов <span className="text-[10px] text-gray-400 font-normal">% брендов, закрывших этап</span></div>
+          <div className="text-sm font-medium text-gray-900 mb-3">Воронка этапов <span className="text-[10px] text-gray-400 font-normal">% проектов, закрывших задачу</span></div>
           <div className="space-y-1.5">
             {funnel.map(f => (
               <div key={f.label} className="flex items-center gap-2">
@@ -2673,8 +2673,8 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
 
   return (
     <RefCard
-      title="Шаги чек-листа"
-      hint="Группа объединяет шаги в блок запуска; категория связывает шаг со справочником поставщиков"
+      title="Задачи чек-листа"
+      hint="Группа объединяет задачи в блок запуска; категория связывает задачу со справочником поставщиков"
     >
       <datalist id="ob-groups">
         {groupLabels.map(g => <option key={g} value={g} />)}
@@ -2737,7 +2737,7 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
           </li>
         ))}
       </ul>
-      <AddRow placeholder="Новый шаг" onAdd={label => createRefItem({ kind: 'taskType', label }).then(onChanged)} />
+      <AddRow placeholder="Новая задача чек-листа" onAdd={label => createRefItem({ kind: 'taskType', label }).then(onChanged)} />
     </RefCard>
   )
 }
@@ -2802,7 +2802,7 @@ function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () 
 
 function PosEditor({ board, onChanged }: { board: ObBoard; onChanged: () => void }) {
   return (
-    <RefCard title="POS-системы" hint="При создании бренда выбирается POS — она определяет набор шагов из шаблона">
+    <RefCard title="POS-системы" hint="При создании проекта выбирается POS — она определяет набор задач из шаблона">
       <ul className="space-y-2">
         {board.posSystems.map(p => (
           <li key={p.id} className={`flex items-center gap-2 ${p.isActive ? '' : 'opacity-40'}`}>
@@ -2834,7 +2834,7 @@ function TemplateEditor({ board, onChanged }: { board: ObBoard; onChanged: () =>
   const types = board.taskTypes.filter(t => t.isActive)
 
   return (
-    <RefCard title="Шаблон: POS → шаги" hint="Какие шаги чек-листа создаются для бренда с данной POS-системой">
+    <RefCard title="Шаблон: POS → задачи" hint="Какие задачи чек-листа создаются для проекта с данной POS-системой">
       <div className="overflow-x-auto">
         <table className="text-xs">
           <thead>
