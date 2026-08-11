@@ -130,6 +130,8 @@ export default async function handler(req: Request): Promise<Response> {
           optionCategoryId: t.option_category_id,
           groupLabel: t.group_label,
           targetDays: t.target_days,
+          ownerAgentId: t.owner_agent_id,
+          ownerName: t.owner_name,
         })),
         posSystems: posSystems.map((p: any) => ({
           id: p.id, name: p.name, isActive: p.is_active,

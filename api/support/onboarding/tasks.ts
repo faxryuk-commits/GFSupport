@@ -112,6 +112,23 @@ export default async function handler(req: Request): Promise<Response> {
           INSERT INTO onboarding_task_events (org_id, brand_id, task_type_id, option_id, old_status_id, new_status_id, changed_by)
           VALUES (${orgId}, ${task.brand_id}, ${task.task_type_id}, ${task.option_id}, ${task.status_id}, ${statusId}, ${changedBy})
         `
+
+        // Процесс не должен стоять без ответственного: если исполнителя нет,
+        // подставляем владельца процесса из справочника шага.
+        if (!task.assignee_id) {
+          const [tt] = await sql`
+            SELECT owner_agent_id, owner_name FROM onboarding_task_types
+            WHERE id = ${task.task_type_id} LIMIT 1
+          `
+          if (tt?.owner_agent_id) {
+            await sql`
+              UPDATE onboarding_tasks
+              SET assignee_id = ${tt.owner_agent_id}, assignee_name = ${tt.owner_name}, updated_at = NOW()
+              WHERE id = ${taskId} AND org_id = ${orgId} AND assignee_id IS NULL
+            `
+            await addParticipant(sql, orgId, task.brand_id, tt.owner_agent_id, tt.owner_name)
+          }
+        }
       }
 
       if (assigneeId !== undefined) {

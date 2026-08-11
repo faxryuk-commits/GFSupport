@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema, obId } from '../lib/onboarding-schema.js'
+import { ensureOnboardingSchema, obId, resolveAgentName } from '../lib/onboarding-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -175,6 +175,10 @@ export default async function handler(req: Request): Promise<Response> {
         }
         if (targetDays !== undefined) {
           await sql`UPDATE onboarding_task_types SET target_days = ${targetDays || null} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (body.ownerAgentId !== undefined) {
+          const ownerName = body.ownerAgentId ? await resolveAgentName(sql, body.ownerAgentId) : null
+          await sql`UPDATE onboarding_task_types SET owner_agent_id = ${body.ownerAgentId || null}, owner_name = ${ownerName} WHERE id = ${id} AND org_id = ${orgId}`
         }
         if (label !== undefined) {
           await sql`UPDATE onboarding_task_types SET label = ${label} WHERE id = ${id} AND org_id = ${orgId}`

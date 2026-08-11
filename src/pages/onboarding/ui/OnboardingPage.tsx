@@ -426,9 +426,9 @@ export function OnboardingPage() {
     : null
 
   return (
-    <div className="p-4 sm:p-6 max-w-full">
+    <div className="h-full flex flex-col p-4 sm:p-6 max-w-full overflow-hidden">
       <ConfirmHost />
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 shrink-0">
         <div className="flex items-center gap-2">
           <Plug className="w-6 h-6 text-blue-600" />
           <h1 className="text-xl font-semibold text-gray-900">Подключения</h1>
@@ -474,6 +474,7 @@ export function OnboardingPage() {
       {!loading && error && (
         <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{error}</div>
       )}
+      <div className="flex-1 min-h-0 overflow-y-auto">
 
       {!loading && !error && board && tab === 'focus' && (
         <FocusTab
@@ -525,6 +526,7 @@ export function OnboardingPage() {
       {!loading && !error && board && tab === 'refs' && (
         <RefsTab board={board} onChanged={() => load(true)} />
       )}
+      </div>
     </div>
   )
 }
@@ -811,8 +813,10 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
           <span className="text-red-600">⚠ {brand.blockers}</span>
         ) : brand.nextStep?.trim() ? (
           <span className="text-gray-500">→ {brand.nextStep}</span>
-        ) : shelf === 'attention' && !worst?.task.assigneeId && !brand.assigneeId ? (
-          <span className="text-amber-600">исполнитель не назначен</span>
+        ) : shelf === 'attention' && worst && !worst.task.assigneeId && !brand.assigneeId ? (
+          typeById[worst.task.taskTypeId]?.ownerName
+            ? <span className="text-gray-500">отв. процесса: {typeById[worst.task.taskTypeId].ownerName}</span>
+            : <span className="text-amber-600">исполнитель не назначен</span>
         ) : null}
       </span>
       <span className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
@@ -2029,7 +2033,12 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
 
           {kind === 'waiting' && (
             <div className="border-t border-gray-100 px-3 py-1.5">
-              <div className="text-[10px] uppercase text-gray-400 mb-1">Ждём кого</div>
+              <div className="text-[10px] uppercase text-gray-400 mb-1">
+                Ждём кого
+                <span className="normal-case float-right text-gray-400">
+                  отв.: {task.assigneeName || taskType.ownerName || '—'}
+                </span>
+              </div>
               <div className="flex gap-1">
                 {(['us', 'client', 'provider'] as const).map(w => (
                   <button
@@ -2947,6 +2956,14 @@ function StatusesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =>
 }
 
 function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () => void }) {
+  const [, forceAgents] = useState(0)
+  useEffect(() => {
+    if (cachedAgents) return
+    fetchAgents().then(list => {
+      cachedAgents = list.filter(a => a.isActive !== false)
+      forceAgents(x => x + 1)
+    }).catch(() => {})
+  }, [])
   const groupLabels = useMemo(
     () => [...new Set(board.taskTypes.map(t => t.groupLabel).filter(Boolean))] as string[],
     [board.taskTypes],
@@ -2994,6 +3011,19 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
               }}
               className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-500 w-36"
             />
+            <select
+              value={t.ownerAgentId || ''}
+              onChange={e => updateRefItem({ kind: 'taskType', id: t.id, ownerAgentId: e.target.value || null }).then(onChanged)}
+              title="Владелец процесса — подставляется исполнителем, если никто не назначен"
+              className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-500 max-w-[110px]"
+            >
+              <option value="">без владельца</option>
+              {groupAgentsByDep(cachedAgents || []).map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
             <input
               type="number"
               min={1}

@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT target_days FROM onboarding_task_types WHERE org_id = ${orgId} LIMIT 1
+      SELECT owner_name FROM onboarding_task_types WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -191,6 +191,9 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
     )
   `
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_ob_participants ON onboarding_participants (brand_id, name)`
+  // v15: владелец процесса у задачи чек-листа — отвечает, когда процесс стоит
+  await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS owner_agent_id VARCHAR(64)`
+  await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`

@@ -21,6 +21,9 @@ export interface ObTaskType {
   groupLabel: string | null
   /** Норматив дней на этап; больше — этап «застрял» (null = общие пороги) */
   targetDays: number | null
+  /** Владелец процесса: отвечает за задачу, когда исполнитель не назначен */
+  ownerAgentId: string | null
+  ownerName: string | null
 }
 
 export interface ObPosSystem {
