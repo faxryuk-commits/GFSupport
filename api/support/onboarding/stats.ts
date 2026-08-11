@@ -98,7 +98,7 @@ export default async function handler(req: Request): Promise<Response> {
                FILTER (WHERE new_kind = 'done' AND prev_at IS NOT NULL))::bigint AS avg_close_seconds,
              MAX(changed_at) AS last_activity
       FROM seq
-      WHERE changed_by IS NOT NULL
+      WHERE changed_by IS NOT NULL AND changed_by NOT LIKE 'импорт%'
       GROUP BY changed_by
       ORDER BY completed DESC, avg_close_seconds ASC NULLS LAST
     `
