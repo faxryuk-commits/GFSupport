@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema, obId } from '../lib/onboarding-schema.js'
+import { ensureOnboardingSchema, obId, addParticipant } from '../lib/onboarding-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -46,6 +46,17 @@ export default async function handler(req: Request): Promise<Response> {
       const commentsByBrand: Record<string, number> = Object.fromEntries(
         commentCounts.map((c: any) => [c.brand_id, c.count]),
       )
+      const participantRows = await sql`
+        SELECT brand_id, agent_id, name FROM onboarding_participants
+        WHERE org_id = ${orgId} ORDER BY added_at
+      `
+      const participantsByBrand: Record<string, { agentId: string | null; name: string }[]> = {}
+      for (const pr of participantRows) {
+        ;(participantsByBrand[pr.brand_id] = participantsByBrand[pr.brand_id] || []).push({
+          agentId: pr.agent_id, name: pr.name,
+        })
+      }
+
       const openTodos = await sql`
         SELECT brand_id, COUNT(*)::int AS count FROM onboarding_todos
         WHERE org_id = ${orgId} AND done_at IS NULL GROUP BY brand_id
@@ -143,6 +154,7 @@ export default async function handler(req: Request): Promise<Response> {
           dependsOn: b.depends_on,
           blockers: b.blockers,
           notes: b.notes,
+          participants: participantsByBrand[b.id] || [],
           commentsCount: commentsByBrand[b.id] || 0,
           openTodosCount: todosByBrand[b.id] || 0,
           startedAt: b.started_at,
@@ -214,6 +226,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
       if (assigneeName !== undefined) {
         await sql`UPDATE onboarding_brands SET assignee_name = ${assigneeName} WHERE id = ${id} AND org_id = ${orgId}`
+        if (assigneeName) await addParticipant(sql, orgId, id, (assigneeId as string) || null, assigneeName)
       }
       if (nextStep !== undefined) {
         await sql`UPDATE onboarding_brands SET next_step = ${nextStep} WHERE id = ${id} AND org_id = ${orgId}`

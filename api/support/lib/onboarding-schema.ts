@@ -179,6 +179,18 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // v11: «ждём кого» на задаче (us|client|provider) и норматив дней на шаг
   await sql`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS waiting_on VARCHAR(12)`
   await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS target_days INT`
+  // v14: участники проекта — назначаются вручную и автоматически по действиям
+  await sql`
+    CREATE TABLE IF NOT EXISTS onboarding_participants (
+      org_id VARCHAR(50) NOT NULL,
+      brand_id VARCHAR(50) NOT NULL,
+      agent_id VARCHAR(64),
+      name VARCHAR(255) NOT NULL,
+      source VARCHAR(10) NOT NULL DEFAULT 'auto',
+      added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_ob_participants ON onboarding_participants (brand_id, name)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`
@@ -291,6 +303,21 @@ async function seedDefaults(sql: SQL, orgId: string): Promise<void> {
       ON CONFLICT DO NOTHING
     `
   }
+}
+
+/** Участник проекта: любое действие в карточке добавляет автора (идемпотентно). */
+export async function addParticipant(
+  sql: SQL, orgId: string, brandId: string,
+  agentId: string | null, name: string | null, source = 'auto',
+): Promise<void> {
+  if (!name || name.startsWith('импорт')) return
+  try {
+    await sql`
+      INSERT INTO onboarding_participants (org_id, brand_id, agent_id, name, source)
+      VALUES (${orgId}, ${brandId}, ${agentId}, ${name}, ${source})
+      ON CONFLICT (brand_id, name) DO NOTHING
+    `
+  } catch {}
 }
 
 /** Имя агента для журнала событий (changed_by). */

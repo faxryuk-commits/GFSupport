@@ -70,6 +70,8 @@ export interface ObBrand {
   dependsOn: string | null
   blockers: string | null
   notes: string | null
+  /** Участники проекта: назначенные вручную + все, кто действовал в карточке */
+  participants: { agentId: string | null; name: string }[]
   commentsCount: number
   openTodosCount: number
   startedAt: string
@@ -246,6 +248,10 @@ export function fetchOnboardingEvents(brandId?: string, limit = 100): Promise<{ 
 // Карточка: комментарии и мини-задачи
 export function fetchBrandCard(brandId: string): Promise<{ comments: ObComment[]; todos: ObTodo[] }> {
   return apiGet(`/onboarding/card?brandId=${encodeURIComponent(brandId)}`, false)
+}
+
+export function addBrandParticipant(brandId: string, agentId: string): Promise<{ success: boolean }> {
+  return apiPost('/onboarding/card', { brandId, participant: { agentId } })
 }
 
 export function addBrandComment(brandId: string, comment: string): Promise<{ success: boolean; id: string }> {

@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema, obId, resolveAgentName } from '../lib/onboarding-schema.js'
+import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -80,6 +80,13 @@ export default async function handler(req: Request): Promise<Response> {
 
       const ctx = await extractAgentContext(req)
       const authorName = await resolveAgentName(sql, ctx.agentId)
+      await addParticipant(sql, orgId, brandId, ctx.agentId, authorName)
+
+      if (body.participant?.agentId) {
+        const pName = await resolveAgentName(sql, body.participant.agentId)
+        await addParticipant(sql, orgId, brandId, body.participant.agentId, pName, 'manual')
+        return json({ success: true })
+      }
 
       if (body.comment) {
         const id = obId('obcm')
@@ -93,6 +100,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (body.todo?.text) {
         const { text, assigneeId, dueAt } = body.todo
         const assigneeName = assigneeId ? await resolveAgentName(sql, assigneeId) : null
+        if (assigneeId) await addParticipant(sql, orgId, brandId, assigneeId, assigneeName)
         const id = obId('obtd')
         await sql`
           INSERT INTO onboarding_todos (id, org_id, brand_id, text, assignee_id, assignee_name, due_at, created_by)

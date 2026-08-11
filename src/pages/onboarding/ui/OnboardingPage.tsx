@@ -10,7 +10,7 @@ import type { Agent } from '@/shared/types'
 import {
   fetchOnboardingBoard, fetchOnboardingStats, createBrand, updateBrand, deleteBrand,
   setTaskStatus, setTaskAssignee, setTaskOption, setTaskWaitingOn, addProviderTask, deleteTask, fetchOnboardingEvents,
-  fetchBrandCard, addBrandComment, deleteBrandComment,
+  fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
   type ObBoard, type ObBrand, type ObStatus, type ObEvent, type ObStats, type ObTaskType,
@@ -384,7 +384,7 @@ export function OnboardingPage() {
         posTaskMap: data.posTaskMap || [],
         optionCategories: data.optionCategories || [],
         options: data.options || [],
-        brands: data.brands || [],
+        brands: (data.brands || []).map(b => ({ ...b, participants: b.participants || [] })),
       })
     } catch (e) {
       console.error('Failed to load onboarding board:', e)
@@ -842,9 +842,115 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
             Открыть
           </button>
         )}
+        <ParticipantsStack brand={brand} agents={agents} />
         <AssigneeBadge brand={brand} agents={agents} onMutateBrand={onMutateBrand} onChanged={onChanged} />
       </span>
     </div>
+  )
+}
+
+/**
+ * Стек аватаров участников проекта: кто и сколько человек в запуске.
+ * Участники добавляются вручную («+») и автоматически по действиям в карточке.
+ */
+function ParticipantsStack({ brand, agents, canAdd = false, onMutateBrand, onChanged }: {
+  brand: ObBrand
+  agents: Agent[]
+  canAdd?: boolean
+  onMutateBrand?: (brandId: string, patch: Partial<ObBrand>) => void
+  onChanged?: () => void
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const open = rect !== null
+  const list = brand.participants || []
+  const MAX = 4
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (btnRef.current?.contains(e.target as Node)) return
+      if (panelRef.current?.contains(e.target as Node)) return
+      setRect(null)
+    }
+    const onScroll = () => setRect(null)
+    document.addEventListener('mousedown', onDoc)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [open])
+
+  const addable = agents.filter(a => !list.some(pt => pt.agentId === a.id || pt.name === a.name))
+
+  const add = async (ag: Agent) => {
+    setRect(null)
+    onMutateBrand?.(brand.id, { participants: [...list, { agentId: ag.id, name: ag.name }] })
+    await addBrandParticipant(brand.id, ag.id)
+    onChanged?.()
+  }
+
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const panelStyle: CSSProperties | undefined = rect ? {
+    position: 'fixed', zIndex: 60, width: 208,
+    left: Math.max(8, rect.right - 208),
+    ...(rect.bottom > vh - 320 ? { bottom: vh - rect.top + 4 } : { top: rect.bottom + 4 }),
+    maxHeight: 300, overflowY: 'auto',
+  } : undefined
+
+  if (list.length === 0 && !canAdd) return null
+
+  return (
+    <span className="flex items-center" title={list.map(pt => pt.name).join(', ') || 'Участников пока нет'}>
+      {list.slice(0, MAX).map((pt, i) => (
+        <span key={pt.name} className={i > 0 ? '-ml-1.5' : ''} style={{ zIndex: MAX - i }}>
+          <span className="block rounded-full ring-2 ring-white">
+            <AgentAvatar name={pt.name} size="w-5 h-5 text-[9px]" />
+          </span>
+        </span>
+      ))}
+      {list.length > MAX && (
+        <span className="-ml-1.5 w-5 h-5 rounded-full bg-gray-200 text-gray-600 text-[9px] font-medium flex items-center justify-center ring-2 ring-white" style={{ zIndex: 0 }}>
+          +{list.length - MAX}
+        </span>
+      )}
+      {canAdd && (
+        <>
+          <button
+            ref={btnRef}
+            onClick={e => { e.stopPropagation(); setRect(open ? null : btnRef.current?.getBoundingClientRect() || null) }}
+            title="Добавить участника"
+            className="-ml-1 w-5 h-5 rounded-full border border-dashed border-gray-300 text-gray-400 text-[10px] flex items-center justify-center hover:border-blue-400 hover:text-blue-500 bg-white"
+            style={{ zIndex: 0 }}
+          >
+            +
+          </button>
+          {open && rect && createPortal(
+            <div ref={panelRef} style={panelStyle} className="rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+              <div className="px-3 py-1 text-[10px] uppercase text-gray-400">Добавить участника</div>
+              {groupAgentsByDep(addable).map(g => (
+                <div key={g.label}>
+                  <div className="px-3 pt-1.5 pb-0.5 text-[10px] uppercase text-gray-400">{g.label}</div>
+                  {g.agents.map(ag => (
+                    <button
+                      key={ag.id}
+                      onClick={() => add(ag)}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+                    >
+                      <AgentAvatar name={ag.name} size="w-5 h-5 text-[9px]" />
+                      {ag.name}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>,
+            document.body,
+          )}
+        </>
+      )}
+    </span>
   )
 }
 
@@ -1078,6 +1184,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
         <span className="text-[16px] font-medium text-gray-900">{brand.name}</span>
         {posName && <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 text-gray-500">{posName}</span>}
         <AssigneeBadge brand={brand} agents={agents} onMutateBrand={onMutateBrand} onChanged={onChanged} size="w-5 h-5 text-[9px]" />
+        <span className="ml-1"><ParticipantsStack brand={brand} agents={agents} canAdd onMutateBrand={onMutateBrand} onChanged={onChanged} /></span>
         <span className="ml-auto flex items-center gap-1.5">
           {brand.channelId && (
             <Link

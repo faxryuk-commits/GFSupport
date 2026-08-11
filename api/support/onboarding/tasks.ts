@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema, obId, resolveAgentName } from '../lib/onboarding-schema.js'
+import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
 
 export const config = {
   runtime: 'edge',
@@ -96,9 +96,12 @@ export default async function handler(req: Request): Promise<Response> {
       `
       if (!task) return json({ error: 'Task not found' }, 404)
 
+      const ctx = await extractAgentContext(req)
+      const actorName = await resolveAgentName(sql, ctx.agentId)
+      await addParticipant(sql, orgId, task.brand_id, ctx.agentId, actorName)
+
       if (statusId !== undefined && statusId !== task.status_id) {
-        const ctx = await extractAgentContext(req)
-        const changedBy = await resolveAgentName(sql, ctx.agentId)
+        const changedBy = actorName
 
         await sql`
           UPDATE onboarding_tasks
@@ -118,6 +121,7 @@ export default async function handler(req: Request): Promise<Response> {
           SET assignee_id = ${assigneeId || null}, assignee_name = ${name}, updated_at = NOW()
           WHERE id = ${taskId} AND org_id = ${orgId}
         `
+        if (assigneeId) await addParticipant(sql, orgId, task.brand_id, assigneeId, name)
       } else if (assigneeName !== undefined) {
         await sql`
           UPDATE onboarding_tasks
@@ -159,6 +163,10 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND kind = 'todo' AND is_active = true
         ORDER BY sort_order LIMIT 1
       `
+      const ctx = await extractAgentContext(req)
+      const actorName = await resolveAgentName(sql, ctx.agentId)
+      await addParticipant(sql, orgId, brandId, ctx.agentId, actorName)
+
       const id = obId('obtk')
       const rows = await sql`
         INSERT INTO onboarding_tasks (id, org_id, brand_id, task_type_id, status_id, option_id)
