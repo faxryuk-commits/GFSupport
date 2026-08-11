@@ -2025,66 +2025,154 @@ let cachedAgents: Agent[] | null = null
 
 // ───────────────────────────── Аналитика
 
-function Donut({ segments, centerTitle, centerSub }: {
+function Donut({ segments, centerTitle, centerSub, size = 110 }: {
   segments: { value: number; color: string }[]
   centerTitle: string
   centerSub: string
+  size?: number
 }) {
   const total = segments.reduce((s, x) => s + x.value, 0) || 1
-  const C = 2 * Math.PI * 38
+  const r = size * 0.36
+  const C = 2 * Math.PI * r
+  const c = size / 2
   let offset = 0
   return (
-    <svg width="104" height="104" viewBox="0 0 104 104" className="shrink-0">
-      <circle cx="52" cy="52" r="38" fill="none" stroke="#E5E7EB" strokeWidth="15" />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle cx={c} cy={c} r={r} fill="none" stroke="#E5E7EB" strokeWidth={size * 0.145} />
       {segments.map((s, i) => {
         const len = (s.value / total) * C
         const el = (
           <circle
             key={i}
-            cx="52" cy="52" r="38" fill="none"
-            stroke={s.color} strokeWidth="15"
+            cx={c} cy={c} r={r} fill="none"
+            stroke={s.color} strokeWidth={size * 0.145}
             strokeDasharray={`${len} ${C - len}`}
             strokeDashoffset={-offset}
-            transform="rotate(-90 52 52)"
+            transform={`rotate(-90 ${c} ${c})`}
           />
         )
         offset += len
         return el
       })}
-      <text x="52" y="49" textAnchor="middle" fontSize="17" fontWeight="500" fill="#111827">{centerTitle}</text>
-      <text x="52" y="63" textAnchor="middle" fontSize="9" fill="#9CA3AF">{centerSub}</text>
+      <text x={c} y={c - 3} textAnchor="middle" fontSize={size * 0.15} fontWeight="500" fill="#111827">{centerTitle}</text>
+      <text x={c} y={c + size * 0.11} textAnchor="middle" fontSize={size * 0.085} fill="#9CA3AF">{centerSub}</text>
     </svg>
   )
 }
 
+function SectionCard({ icon, iconCls, title, right, children }: {
+  icon: ReactNode
+  iconCls: string
+  title: string
+  right?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[12px] ${iconCls}`}>{icon}</span>
+        <span className="text-[13px] font-medium text-gray-900">{title}</span>
+        {right && <span className="ml-auto text-[11px] text-gray-400">{right}</span>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+type StatsPeriod = 'day' | 'week' | 'month' | 'custom'
+
 function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<string, ObStatus> }) {
   const [stats, setStats] = useState<ObStats | null>(null)
   const [events, setEvents] = useState<ObEvent[] | null>(null)
+  const [period, setPeriod] = useState<StatsPeriod>('week')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
 
   useEffect(() => {
     fetchOnboardingStats().then(setStats).catch(() => setStats(null))
-    fetchOnboardingEvents(undefined, 500).then(r => setEvents(r.events)).catch(() => setEvents([]))
+    fetchOnboardingEvents(undefined, 1000).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [])
 
   const brands = board.brands.filter(b => !b.archivedAt)
   const taskTypes = board.taskTypes.filter(t => t.isActive)
+  const typeById = useMemo(() => Object.fromEntries(board.taskTypes.map(t => [t.id, t])), [board.taskTypes])
   const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
 
-  // донат статусов
-  const statusCounts = useMemo(() => {
-    const c = { done: 0, active: 0, waiting: 0, todo: 0 }
-    for (const b of brands) for (const t of b.tasks) {
-      const k = t.statusId ? statusById[t.statusId]?.kind : undefined
-      if (k === 'done') c.done++
-      else if (k === 'active') c.active++
-      else if (k === 'waiting') c.waiting++
-      else if (k === 'todo') c.todo++
+  // Границы периода (скользящие окна; свой диапазон — включительно)
+  const { start, end, prevStart } = useMemo(() => {
+    const now = Date.now()
+    const DAY = 86400000
+    if (period === 'custom' && customFrom) {
+      const s = new Date(`${customFrom}T00:00:00`).getTime()
+      const e = customTo ? new Date(`${customTo}T23:59:59`).getTime() : now
+      return { start: s, end: e, prevStart: s - (e - s) }
     }
-    return c
-  }, [brands, statusById])
-  const totalTasks = statusCounts.done + statusCounts.active + statusCounts.waiting + statusCounts.todo
+    const len = period === 'day' ? DAY : period === 'week' ? 7 * DAY : 30 * DAY
+    return { start: now - len, end: now, prevStart: now - 2 * len }
+  }, [period, customFrom, customTo])
 
-  // «кто тормозит»: накопленное ожидание по источникам
+  const inPeriod = useCallback((iso: string) => {
+    const t = new Date(iso).getTime()
+    return t >= start && t <= end
+  }, [start, end])
+
+  // Метрики периода из журнала
+  const periodStats = useMemo(() => {
+    if (!events) return null
+    let closed = 0
+    let prevClosed = 0
+    const byDay: Record<string, number> = {}
+    const people: Record<string, { closed: number; events: number; closeDurs: number[] }> = {}
+    const eventsAsc = [...events].sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+    const lastEventAt: Record<string, number> = {}
+    for (const e of eventsAsc) {
+      const taskKey = `${e.brandId}|${e.taskTypeId}|${e.taskLabel || ''}|${e.optionLabel || ''}`
+      const t = new Date(e.changedAt).getTime()
+      const isDone = e.newStatusId ? statusById[e.newStatusId]?.kind === 'done' : false
+      if (isDone && t >= prevStart && t < start) prevClosed++
+      if (t >= start && t <= end) {
+        if (e.changedBy && !e.changedBy.startsWith('импорт')) {
+          const p = (people[e.changedBy] = people[e.changedBy] || { closed: 0, events: 0, closeDurs: [] })
+          p.events++
+          if (isDone) {
+            p.closed++
+            if (lastEventAt[taskKey]) p.closeDurs.push((t - lastEventAt[taskKey]) / 1000)
+          }
+        }
+        if (isDone) {
+          closed++
+          byDay[dayKeyTz(e.changedAt)] = (byDay[dayKeyTz(e.changedAt)] || 0) + 1
+        }
+      }
+      lastEventAt[taskKey] = t
+    }
+    const startedInPeriod = brands.filter(b => inPeriod(b.startedAt)).length
+    const spark: number[] = []
+    const days = Math.max(1, Math.min(60, Math.ceil((end - start) / 86400000)))
+    for (let i = days - 1; i >= 0; i--) {
+      const key = dayKeyTz(new Date(end - i * 86400000).toISOString())
+      spark.push(byDay[key] || 0)
+    }
+    const rating = Object.entries(people)
+      .map(([name, p]) => ({
+        name,
+        closed: p.closed,
+        eventsCount: p.events,
+        avgClose: p.closeDurs.length ? p.closeDurs.reduce((s, x) => s + x, 0) / p.closeDurs.length : null,
+      }))
+      .sort((a, b) => b.closed - a.closed || (a.avgClose ?? Infinity) - (b.avgClose ?? Infinity))
+    return { closed, prevClosed, startedInPeriod, spark, rating }
+  }, [events, statusById, start, end, prevStart, brands, inPeriod])
+
+  // Текущее состояние (не зависит от периода)
+  const stuckCount = brands.reduce((s, b) => s + b.tasks.filter(t => {
+    const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+    return isTaskStuck(k, hoursSince(t.statusSince), typeById[t.taskTypeId]?.targetDays)
+  }).length, 0)
+  const avgAge = brands.length
+    ? brands.reduce((s, b) => s + hoursSince(b.startedAt), 0) / brands.length / 24
+    : 0
+
   const blockSources = useMemo(() => {
     const acc: Record<string, number> = {}
     for (const b of brands) for (const t of b.tasks) {
@@ -2100,235 +2188,242 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
   }, [brands, optionById])
   const blockTotal = blockSources.reduce((s, [, v]) => s + v, 0)
   const PIE_COLORS = ['#DC2626', '#F59E0B', '#8B5CF6', '#0EA5E9', '#64748B']
+  const topSourceShare = blockTotal ? Math.round((blockSources[0]?.[1] || 0) / blockTotal * 100) : 0
 
-  // воронка этапов
-  const funnel = useMemo(() => taskTypes.map(tt => {
+  const groups = useMemo(() => buildGroups(taskTypes), [taskTypes])
+  const funnel = useMemo(() => groups.map(g => {
     let applicable = 0
-    let done = 0
+    let doneCnt = 0
     for (const b of brands) {
-      const list = b.tasks.filter(t => t.taskTypeId === tt.id)
-      const real = list.filter(t => {
+      const tasks = b.tasks.filter(t => g.types.some(tt => tt.id === t.taskTypeId))
+      const real = tasks.filter(t => {
         const k = t.statusId ? statusById[t.statusId]?.kind : undefined
         return k && k !== 'na' && k !== 'cancelled'
       })
       if (real.length === 0) continue
       applicable++
-      if (real.every(t => statusById[t.statusId!]?.kind === 'done')) done++
+      if (real.every(t => statusById[t.statusId!]?.kind === 'done')) doneCnt++
     }
-    return { label: tt.label, pct: applicable ? Math.round((done / applicable) * 100) : 0, applicable }
-  }).filter(f => f.applicable > 0), [taskTypes, brands, statusById])
-  const worstFunnel = funnel.length ? funnel.reduce((min, f) => (f.pct < min.pct ? f : min), funnel[0]) : null
-
-  // тренд закрытий по дням (14 дней)
-  const trend = useMemo(() => {
-    if (!events) return null
-    const byDay: Record<string, number> = {}
-    for (const e of events) {
-      const kind = e.newStatusId ? statusById[e.newStatusId]?.kind : undefined
-      if (kind !== 'done') continue
-      const d = new Date(e.changedAt)
-      const key = `${d.getMonth() + 1}-${d.getDate()}`
-      byDay[key] = (byDay[key] || 0) + 1
+    return { label: g.label.replace(/^\d+ · /, ''), pct: applicable ? Math.round((doneCnt / applicable) * 100) : 0, applicable }
+  }).filter(f => f.applicable > 0), [groups, brands, statusById])
+  const worstDrop = useMemo(() => {
+    let worst: { label: string; drop: number } | null = null
+    for (let i = 1; i < funnel.length; i++) {
+      const drop = funnel[i - 1].pct - funnel[i].pct
+      if (!worst || drop > worst.drop) worst = { label: funnel[i].label, drop }
     }
-    const days: { label: string; count: number }[] = []
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000)
-      const key = `${d.getMonth() + 1}-${d.getDate()}`
-      days.push({ label: `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`, count: byDay[key] || 0 })
-    }
-    return days
-  }, [events, statusById])
+    return worst && worst.drop > 0 ? worst : null
+  }, [funnel])
 
-  const avgAge = brands.length
-    ? brands.reduce((s, b) => s + hoursSince(b.startedAt), 0) / brands.length / 24
-    : 0
-  const stuckCount = brands.reduce((s, b) => s + b.tasks.filter(t => {
-    const k = t.statusId ? statusById[t.statusId]?.kind : undefined
-    return isTaskStuck(k, hoursSince(t.statusSince))
-  }).length, 0)
-  const readyCount = brands.filter(b => {
-    const a = analyzeBrand(b, statusById)
-    return a.shelf === 'finish'
-  }).length
+  const sparkMax = periodStats ? Math.max(1, ...periodStats.spark) : 1
+  const closedDelta = periodStats ? periodStats.closed - periodStats.prevClosed : 0
 
-  const maxTrend = trend ? Math.max(1, ...trend.map(t => t.count)) : 1
+  if (!periodStats) {
+    return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'проектов в онбординге', value: String(brands.length), cls: 'text-gray-900', border: 'border-gray-200' },
-          { label: 'застряло задач', value: String(stuckCount), cls: stuckCount ? 'text-red-600' : 'text-gray-900', border: stuckCount ? 'border-red-200' : 'border-gray-200' },
-          { label: 'средний возраст', value: `${avgAge.toFixed(1)} дн`, cls: 'text-gray-900', border: 'border-gray-200' },
-          { label: 'готовы к завершению', value: String(readyCount), cls: 'text-green-700', border: 'border-gray-200' },
-        ].map(t => (
-          <div key={t.label} className={`rounded-lg border bg-white p-3 ${t.border}`}>
-            <div className={`text-2xl font-medium ${t.cls}`}>{t.value}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{t.label}</div>
-          </div>
+    <div className="space-y-3">
+      {/* Период */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {([['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц'], ['custom', 'Свой период']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setPeriod(key)}
+            className={`text-xs px-3 py-1 rounded-full border ${
+              period === key ? 'bg-gray-900 text-white border-gray-900' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {label}
+          </button>
         ))}
+        {period === 'custom' && (
+          <span className="flex items-center gap-1.5 ml-1">
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              className="text-xs px-2 py-1 rounded-lg border border-gray-300 bg-white" />
+            <span className="text-gray-400 text-xs">—</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              className="text-xs px-2 py-1 rounded-lg border border-gray-300 bg-white" />
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-gray-400">{fmtDMY(new Date(start).toISOString())} — {fmtDMY(new Date(end).toISOString())}</span>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-4 flex items-center gap-4">
-          <Donut
-            segments={[
-              { value: statusCounts.done, color: '#1D9E75' },
-              { value: statusCounts.active, color: '#378ADD' },
-              { value: statusCounts.waiting, color: '#F59E0B' },
-              { value: statusCounts.todo, color: '#E5E7EB' },
-            ]}
-            centerTitle={String(totalTasks)}
-            centerSub="задач"
-          />
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-gray-900 mb-2">Все задачи по статусам</div>
-            <div className="text-xs text-gray-600 space-y-1">
-              <div><span className="text-green-600">●</span> Готово — {statusCounts.done} ({Math.round(statusCounts.done / (totalTasks || 1) * 100)}%)</div>
-              <div><span className="text-blue-600">●</span> В работе — {statusCounts.active}</div>
-              <div><span className="text-amber-500">●</span> Ждём данные — {statusCounts.waiting}</div>
-              <div><span className="text-gray-400">●</span> Не начато — {statusCounts.todo}</div>
+      {/* KPI */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="rounded-xl border border-gray-200 bg-white p-3.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="w-5 h-5 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center"><Target className="w-3 h-3" /></span>
+            проектов в работе
+          </div>
+          <div className="text-2xl font-medium text-gray-900 mt-1.5">{brands.length}</div>
+          {periodStats.startedInPeriod > 0 && (
+            <div className="text-[11px] text-green-700 mt-0.5">▲ +{periodStats.startedInPeriod} новых за период</div>
+          )}
+        </div>
+        <div className={`rounded-xl border bg-white p-3.5 ${stuckCount ? 'border-red-200' : 'border-gray-200'}`}>
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="w-5 h-5 rounded-md bg-red-50 text-red-600 flex items-center justify-center"><Flame className="w-3 h-3" /></span>
+            застряло задач
+          </div>
+          <div className={`text-2xl font-medium mt-1.5 ${stuckCount ? 'text-red-600' : 'text-gray-900'}`}>{stuckCount}</div>
+          {stuckCount > 0 && <div className="text-[11px] text-red-500 mt-0.5">главный риск сроков</div>}
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="w-5 h-5 rounded-md bg-green-50 text-green-700 flex items-center justify-center"><Clock className="w-3 h-3" /></span>
+            средний возраст проекта
+          </div>
+          <div className="text-2xl font-medium text-gray-900 mt-1.5">{avgAge.toFixed(1)} <span className="text-sm text-gray-400">дн</span></div>
+          <div className="text-[11px] text-gray-400 mt-0.5">цель — 5 дн на запуск</div>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-3.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="w-5 h-5 rounded-md bg-green-50 text-green-700 flex items-center justify-center"><Check className="w-3 h-3" /></span>
+            задач закрыто за период
+          </div>
+          <div className="flex items-end gap-2 mt-1.5">
+            <span className="text-2xl font-medium text-gray-900">{periodStats.closed}</span>
+            {closedDelta !== 0 && (
+              <span className={`text-[11px] mb-1 ${closedDelta > 0 ? 'text-green-700' : 'text-red-500'}`}>
+                {closedDelta > 0 ? '▲' : '▼'} {closedDelta > 0 ? '+' : ''}{closedDelta} к пред.
+              </span>
+            )}
+          </div>
+          <svg width="100%" height="20" viewBox={`0 0 ${Math.max(periodStats.spark.length - 1, 1) * 10} 20`} preserveAspectRatio="none">
+            <polyline
+              points={periodStats.spark.map((v, i) => `${i * 10},${18 - (v / sparkMax) * 15}`).join(' ')}
+              fill="none" stroke="#1D9E75" strokeWidth="1.5"
+            />
+          </svg>
+        </div>
+      </div>
+
+      <div className="grid gap-2.5 lg:grid-cols-2">
+        <SectionCard
+          icon={<Clock className="w-3 h-3" />}
+          iconCls="bg-red-50 text-red-600"
+          title="Кто нас тормозит"
+          right={blockTotal ? `${fmtSeconds(blockTotal)} ожиданий всего` : 'ожиданий нет'}
+        >
+          <div className="flex items-center gap-4">
+            <Donut
+              segments={blockSources.map(([, v], i) => ({ value: v, color: PIE_COLORS[i] }))}
+              centerTitle={`${topSourceShare}%`}
+              centerSub={blockSources[0]?.[0]?.toLowerCase().slice(0, 10) || '—'}
+            />
+            <div className="min-w-0 flex-1 text-xs">
+              {blockSources.map(([label, v], i) => (
+                <div key={label} className="flex items-center py-1 border-b border-gray-50 last:border-0">
+                  <span className="w-2 h-2 rounded-[2px] mr-2 shrink-0" style={{ background: PIE_COLORS[i] }} />
+                  <span className="text-gray-800 truncate">{label}</span>
+                  <span className="ml-auto font-medium text-gray-900 shrink-0">{fmtSeconds(v)}</span>
+                  <span className="w-10 text-right text-gray-400 shrink-0">{Math.round(v / (blockTotal || 1) * 100)}%</span>
+                </div>
+              ))}
+              {blockSources.length > 0 && blockSources[0][0] === 'Клиенты' && (
+                <div className="mt-2 bg-red-50 rounded-lg px-2.5 py-1.5 text-[11px] text-red-800">
+                  💡 больше всего простоя — ожидание клиентов; напоминания в чаты («Напомнить → Клиенту») сокращают его сильнее всего
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="rounded-lg border border-gray-200 bg-white p-4 flex items-center gap-4">
-          <Donut
-            segments={blockSources.map(([, v], i) => ({ value: v, color: PIE_COLORS[i] }))}
-            centerTitle={fmtSeconds(blockTotal) || '0'}
-            centerSub="ожиданий"
-          />
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-gray-900 mb-2">Кто нас тормозит <span className="text-[10px] text-gray-400 font-normal">время «ждём данные»</span></div>
-            <div className="text-xs text-gray-600 space-y-1">
-              {blockSources.length === 0 && <div className="text-gray-400">ожиданий нет</div>}
-              {blockSources.map(([label, v], i) => (
-                <div key={label}>
-                  <span style={{ color: PIE_COLORS[i] }}>●</span> {label} — {fmtSeconds(v)} ({Math.round(v / (blockTotal || 1) * 100)}%)
+        <SectionCard
+          icon={<BarChart3 className="w-3 h-3" />}
+          iconCls="bg-blue-50 text-blue-600"
+          title="Воронка запуска"
+          right={worstDrop ? <span className="text-red-500">обрыв: {worstDrop.label}</span> : undefined}
+        >
+          <div className="text-[11px] space-y-1.5">
+            {funnel.map((f, i) => {
+              const isDrop = worstDrop && f.label === worstDrop.label
+              return (
+                <div key={f.label} className="flex items-center gap-2">
+                  <span className={`w-24 text-right truncate ${isDrop ? 'text-red-600 font-medium' : 'text-gray-600'}`}>{f.label}</span>
+                  <span className="flex-1">
+                    <span
+                      className={`flex items-center h-[18px] rounded pl-2 text-[10px] text-white ${isDrop ? 'bg-red-400' : 'bg-green-600/80'}`}
+                      style={{ width: `${Math.max(9, f.pct)}%`, opacity: isDrop ? 1 : Math.max(0.45, 1 - i * 0.1) }}
+                    >
+                      {f.pct}%{isDrop && worstDrop ? ` ↓${worstDrop.drop}` : ''}
+                    </span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        icon={<span>🏆</span>}
+        iconCls="bg-amber-50"
+        title="Рейтинг сотрудников"
+        right="закрытые задачи × скорость · за выбранный период"
+      >
+        {periodStats.rating.length === 0 ? (
+          <div className="text-xs text-gray-400">За период активности нет</div>
+        ) : (
+          <>
+            <div className="grid gap-2 sm:grid-cols-3 mb-3">
+              {periodStats.rating.slice(0, 3).map((p, i) => (
+                <div
+                  key={p.name}
+                  className={`rounded-lg border px-3 py-2.5 flex items-center gap-2.5 ${
+                    i === 0 ? 'border-amber-200 bg-amber-50/60' : 'border-gray-200'
+                  }`}
+                >
+                  <span className={i === 0 ? 'text-xl' : 'text-base'}>{['🥇', '🥈', '🥉'][i]}</span>
+                  <AgentAvatar name={p.name} size={i === 0 ? 'w-8 h-8 text-[12px]' : 'w-7 h-7 text-[10px]'} />
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium text-gray-900 truncate">{p.name}</div>
+                    <div className="text-[11px] text-gray-500">
+                      {p.closed} задач{p.avgClose != null ? ` · ср. ${fmtSeconds(p.avgClose)}` : ''}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="text-sm font-medium text-gray-900 mb-3">Воронка этапов <span className="text-[10px] text-gray-400 font-normal">% проектов, закрывших задачу</span></div>
-          <div className="space-y-1.5">
-            {funnel.map(f => (
-              <div key={f.label} className="flex items-center gap-2">
-                <span className="w-40 text-[11px] text-gray-600 truncate shrink-0">{f.label}</span>
-                <span className="flex-1 h-3.5 rounded bg-gray-100 overflow-hidden">
-                  <span
-                    className={`block h-full rounded ${f === worstFunnel && f.pct < 50 ? 'bg-red-400' : 'bg-green-500/80'}`}
-                    style={{ width: `${Math.max(2, f.pct)}%` }}
-                  />
-                </span>
-                <span className={`w-12 text-right text-[11px] ${f === worstFunnel && f.pct < 50 ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
-                  {f.pct}%{f === worstFunnel && f.pct < 50 ? ' ←' : ''}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="text-sm font-medium text-gray-900 mb-1">Темп: закрыто этапов за день</div>
-          {trend === null ? (
-            <div className="text-gray-400 text-sm py-6 text-center"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
-          ) : (
-            <>
-              <svg width="100%" height="90" viewBox="0 0 280 90" preserveAspectRatio="none">
-                <polygon
-                  points={`0,86 ${trend.map((t, i) => `${(i / (trend.length - 1)) * 280},${86 - (t.count / maxTrend) * 74}`).join(' ')} 280,86`}
-                  fill="#DBEAFE"
-                />
-                <polyline
-                  points={trend.map((t, i) => `${(i / (trend.length - 1)) * 280},${86 - (t.count / maxTrend) * 74}`).join(' ')}
-                  fill="none" stroke="#2563EB" strokeWidth="2"
-                />
-              </svg>
-              <div className="flex justify-between text-[10px] text-gray-400">
-                <span>{trend[0].label}</span>
-                <span>{trend[Math.floor(trend.length / 2)].label}</span>
-                <span>сегодня</span>
-              </div>
-              <div className="text-[11px] text-gray-500 mt-1.5">
-                за 14 дней закрыто <b className="font-medium text-gray-900">{trend.reduce((s, t) => s + t.count, 0)}</b> этапов
-                {' · '}пик — <b className="font-medium text-gray-900">{maxTrend}</b> в день
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {stats && stats.people.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4 overflow-x-auto">
-          <div className="text-sm font-medium text-gray-900 mb-2">
-            Рейтинг сотрудников <span className="text-[10px] text-gray-400 font-normal">· чем быстрее закрываются этапы, тем выше место</span>
-          </div>
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-xs text-gray-500 border-b border-gray-100">
-                <th className="text-left font-medium py-1.5 pr-3 w-8">#</th>
-                <th className="text-left font-medium py-1.5 pr-3">Сотрудник</th>
-                <th className="text-right font-medium py-1.5 px-3">Закрыто этапов</th>
-                <th className="text-right font-medium py-1.5 px-3">Ср. время закрытия</th>
-                <th className="text-right font-medium py-1.5 px-3">Открытых задач</th>
-                <th className="text-right font-medium py-1.5 pl-3">Последняя активность</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...stats.people]
-                .sort((a, b) => (b.completed - a.completed)
-                  || ((a.avgCloseSeconds ?? Infinity) - (b.avgCloseSeconds ?? Infinity)))
-                .map((p, i) => (
-                <tr key={p.name} className="border-b border-gray-50 last:border-0">
-                  <td className={`py-1.5 pr-3 ${i === 0 ? 'text-amber-500 font-medium' : 'text-gray-400'}`}>
-                    {i === 0 ? '🏆' : i + 1}
-                  </td>
-                  <td className="py-1.5 pr-3 text-gray-800">
-                    <span className="inline-flex items-center gap-1.5">
-                      <AgentAvatar name={p.name} size="w-5 h-5 text-[9px]" />
-                      {p.name}
-                    </span>
-                  </td>
-                  <td className="py-1.5 px-3 text-right text-green-700">{p.completed || ''}</td>
-                  <td className="py-1.5 px-3 text-right text-gray-700">
-                    {p.avgCloseSeconds != null ? fmtSeconds(p.avgCloseSeconds) : '—'}
-                  </td>
-                  <td className="py-1.5 px-3 text-right text-blue-600">{p.openTasks || ''}</td>
-                  <td className="py-1.5 pl-3 text-right text-gray-400 text-xs">
-                    {p.lastActivity ? formatDateTimeShort(p.lastActivity) : '—'}
-                  </td>
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b border-gray-100">
+                  <th className="text-left font-medium py-1.5 pr-3 w-8">#</th>
+                  <th className="text-left font-medium py-1.5 pr-3">Сотрудник</th>
+                  <th className="text-right font-medium py-1.5 px-3">Закрыто</th>
+                  <th className="text-right font-medium py-1.5 px-3">Ср. время закрытия</th>
+                  <th className="text-right font-medium py-1.5 pl-3">Событий</th>
                 </tr>
-              ))}
-              {(() => {
-                const unassigned = brands.reduce((s, b) => s + (b.assigneeName ? 0 : b.tasks.filter(t => {
-                  const k = t.statusId ? statusById[t.statusId]?.kind : undefined
-                  return (k === 'active' || k === 'waiting' || k === 'todo') && !t.assigneeName
-                }).length), 0)
-                if (!unassigned) return null
-                return (
-                  <tr>
-                    <td className="py-1.5 pr-3" />
-                    <td className="py-1.5 pr-3 text-amber-700">без исполнителя</td>
-                    <td className="py-1.5 px-3" />
-                    <td className="py-1.5 px-3" />
-                    <td className="py-1.5 px-3 text-right text-red-600 font-medium">{unassigned}</td>
-                    <td className="py-1.5 pl-3 text-right text-xs text-amber-600">назначьте через аватар «?»</td>
+              </thead>
+              <tbody>
+                {periodStats.rating.map((p, i) => (
+                  <tr key={p.name} className="border-b border-gray-50 last:border-0">
+                    <td className="py-1.5 pr-3 text-gray-400">{i + 1}</td>
+                    <td className="py-1.5 pr-3 text-gray-800">
+                      <span className="inline-flex items-center gap-1.5">
+                        <AgentAvatar name={p.name} size="w-5 h-5 text-[9px]" />
+                        {p.name}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-3 text-right text-green-700">{p.closed || ''}</td>
+                    <td className="py-1.5 px-3 text-right text-gray-700">{p.avgClose != null ? fmtSeconds(p.avgClose) : '—'}</td>
+                    <td className="py-1.5 pl-3 text-right text-gray-500">{p.eventsCount}</td>
                   </tr>
-                )
-              })()}
-            </tbody>
-          </table>
-        </div>
-      )}
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </SectionCard>
 
       {stats && stats.stages.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="text-sm font-medium text-gray-900 mb-3">
-            Где теряем время <span className="text-[10px] text-gray-400 font-normal">· ср. время на этап: <span className="text-blue-500">■</span> работа <span className="text-amber-500">■</span> ожидание</span>
-          </div>
+        <SectionCard
+          icon={<Clock className="w-3 h-3" />}
+          iconCls="bg-amber-50 text-amber-700"
+          title="Где теряем время"
+          right={<span><span className="text-blue-500">■</span> работа <span className="text-amber-500">■</span> ожидание · ср. на задачу</span>}
+        >
           <div className="space-y-1.5">
             {[...stats.stages]
               .filter(s => s.avgActiveSeconds + s.avgWaitingSeconds > 0)
@@ -2349,7 +2444,7 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
                 )
               })}
           </div>
-        </div>
+        </SectionCard>
       )}
     </div>
   )
@@ -2372,6 +2467,7 @@ function TimelineTab({ board, statusById, onSelect }: {
   onSelect: (id: string) => void
 }) {
   const [events, setEvents] = useState<ObEvent[] | null>(null)
+  const [mode, setMode] = useState<'projects' | 'people'>('projects')
   useEffect(() => {
     fetchOnboardingEvents(undefined, 1000).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [])
@@ -2440,19 +2536,107 @@ function TimelineTab({ board, statusById, onSelect }: {
       .sort((x, y) => y.redCount - x.redCount || (y.a.worst?.hours || 0) - (x.a.worst?.hours || 0))
   }, [events, board.brands, days, statusById])
 
-  if (rows === null) {
+  // Активность сотрудников: клетка-день по событиям автора
+  const peopleRows = useMemo(() => {
+    if (!events) return null
+    const byPersonDay: Record<string, { total: number; done: number; brands: Set<string> }> = {}
+    const totals: Record<string, number> = {}
+    for (const e of events) {
+      if (!e.changedBy || e.changedBy.startsWith('импорт')) continue
+      const key = `${e.changedBy}|${dayKeyTz(e.changedAt)}`
+      const cell = (byPersonDay[key] = byPersonDay[key] || { total: 0, done: 0, brands: new Set() })
+      cell.total++
+      if (e.brandName) cell.brands.add(e.brandName)
+      if (e.newStatusId && statusById[e.newStatusId]?.kind === 'done') cell.done++
+      totals[e.changedBy] = (totals[e.changedBy] || 0) + 1
+    }
+    return Object.keys(totals)
+      .sort((a, b) => totals[b] - totals[a])
+      .map(name => ({
+        name,
+        total: totals[name],
+        cells: days.map(day => {
+          const cell = byPersonDay[`${name}|${day.key}`]
+          if (!cell) return { cls: 'bg-gray-100', title: 'без активности' }
+          const brandsList = [...cell.brands].slice(0, 5).join(', ')
+          if (cell.done > 0) {
+            return { cls: 'bg-green-500', title: `закрыто задач: ${cell.done} (событий ${cell.total})\n${brandsList}` }
+          }
+          return { cls: 'bg-blue-400', title: `событий: ${cell.total}, без закрытий\n${brandsList}` }
+        }),
+      }))
+  }, [events, days, statusById])
+
+  if (rows === null || peopleRows === null) {
     return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
   }
 
   return (
     <div>
-      <div className="text-[11px] text-gray-500 mb-2 flex flex-wrap gap-x-3 gap-y-1">
-        <span><span className="text-green-500">■</span> закрывались этапы</span>
-        <span><span className="text-blue-400">■</span> активность без закрытий</span>
-        <span><span className="text-amber-400">■</span> пауза 1–2 дня</span>
-        <span><span className="text-red-400">■</span> простой 3+ дней</span>
-        <span className="text-gray-400">▨ не начат · наведите на день — детали · самые «красные» сверху</span>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span className="flex rounded-lg border border-gray-200 overflow-hidden text-xs bg-white">
+          {([['projects', 'Проекты'], ['people', 'Сотрудники']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              className={`px-3 py-1 ${mode === key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+        <span className="text-[11px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
+          {mode === 'projects' ? (
+            <>
+              <span><span className="text-green-500">■</span> закрывались задачи</span>
+              <span><span className="text-blue-400">■</span> активность без закрытий</span>
+              <span><span className="text-amber-400">■</span> пауза 1–2 дня</span>
+              <span><span className="text-red-400">■</span> простой 3+ дней</span>
+              <span className="text-gray-400">▨ не начат · самые «красные» сверху</span>
+            </>
+          ) : (
+            <>
+              <span><span className="text-green-500">■</span> закрывал задачи</span>
+              <span><span className="text-blue-400">■</span> активность без закрытий</span>
+              <span><span className="text-gray-300">■</span> без активности · самые активные сверху</span>
+            </>
+          )}
+        </span>
       </div>
+
+      {mode === 'people' ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-3 overflow-x-auto">
+          <div className="flex items-center mb-1.5" style={{ minWidth: 720 }}>
+            <span className="w-40 shrink-0" />
+            {days.map(d => (
+              <span key={d.key} className={`flex-1 text-center text-[9px] ${d.isToday ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                {d.isToday ? 'сегодня' : d.label}
+              </span>
+            ))}
+          </div>
+          {peopleRows.length === 0 && <div className="text-xs text-gray-400 py-6 text-center">Активности пока нет</div>}
+          {peopleRows.map(p => (
+            <div key={p.name} className="flex items-center mb-1.5" style={{ minWidth: 720 }}>
+              <span className="w-40 shrink-0 pr-2 flex items-center gap-1.5">
+                <AgentAvatar name={p.name} size="w-5 h-5 text-[9px]" />
+                <span className="min-w-0">
+                  <span className="text-[12px] font-medium text-gray-900 truncate block">{p.name}</span>
+                  <span className="text-[10px] text-gray-400">{p.total} событий</span>
+                </span>
+              </span>
+              {p.cells.map((c, i) => (
+                <span
+                  key={i}
+                  title={`${days[i].label}: ${c.title}`}
+                  className={`flex-1 h-[16px] mr-[2px] rounded-[2px] ${c.cls} ${days[i].isToday ? 'ring-1 ring-blue-300' : ''}`}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {mode === 'projects' && (
       <div className="rounded-lg border border-gray-200 bg-white p-3 overflow-x-auto">
         <div className="flex items-center mb-1.5" style={{ minWidth: 720 }}>
           <span className="w-40 shrink-0" />
@@ -2486,6 +2670,7 @@ function TimelineTab({ board, statusById, onSelect }: {
           </div>
         ))}
       </div>
+      )}
     </div>
   )
 }
