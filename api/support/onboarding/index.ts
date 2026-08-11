@@ -153,6 +153,8 @@ export default async function handler(req: Request): Promise<Response> {
           assigneeId: b.assignee_id,
           assigneeName: b.assignee_name,
           nextStep: b.next_step,
+          tariff: b.tariff,
+          launchDue: b.launch_due,
           dependsOn: b.depends_on,
           blockers: b.blockers,
           notes: b.notes,
@@ -232,6 +234,12 @@ export default async function handler(req: Request): Promise<Response> {
       }
       if (nextStep !== undefined) {
         await sql`UPDATE onboarding_brands SET next_step = ${nextStep} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (body.tariff !== undefined) {
+        await sql`UPDATE onboarding_brands SET tariff = ${body.tariff || null} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (body.launchDue !== undefined) {
+        await sql`UPDATE onboarding_brands SET launch_due = ${body.launchDue || null} WHERE id = ${id} AND org_id = ${orgId}`
       }
       if (dependsOn !== undefined) {
         await sql`UPDATE onboarding_brands SET depends_on = ${dependsOn} WHERE id = ${id} AND org_id = ${orgId}`

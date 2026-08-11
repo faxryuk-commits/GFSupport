@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT owner_name FROM onboarding_task_types WHERE org_id = ${orgId} LIMIT 1
+      SELECT tariff FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -194,6 +194,9 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // v15: владелец процесса у задачи чек-листа — отвечает, когда процесс стоит
   await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS owner_agent_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255)`
+  // v16: заявка от продаж — тариф и дедлайн запуска
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS tariff VARCHAR(100)`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS launch_due DATE`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`
@@ -224,6 +227,7 @@ async function seedCategories(sql: SQL, orgId: string): Promise<void> {
     { label: 'СМС-сервисы', options: ['Eskiz', 'Play Mobile'], taskTypes: ['Смс провайдер'] },
     { label: 'Телефония', options: [], taskTypes: [] },
     { label: 'Каналы продаж', options: ['Сайт', 'Telegram-бот', 'Моб. приложение'], taskTypes: ['Сайт/Бот'] },
+    { label: 'Тарифы', options: ['Start', 'Pro', 'Enterprise'], taskTypes: [] },
   ]
   for (let i = 0; i < categories.length; i++) {
     const c = categories[i]

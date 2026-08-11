@@ -70,6 +70,10 @@ export interface ObBrand {
   assigneeId: string | null
   assigneeName: string | null
   nextStep: string | null
+  /** Тариф из заявки (справочник «Тарифы») */
+  tariff: string | null
+  /** Дедлайн запуска (yyyy-mm-dd) */
+  launchDue: string | null
   dependsOn: string | null
   blockers: string | null
   notes: string | null
@@ -203,6 +207,8 @@ export function updateBrand(data: {
   channelId?: string | null
   notes?: string | null
   archived?: boolean
+  tariff?: string | null
+  launchDue?: string | null
   assigneeId?: string | null
   assigneeName?: string | null
   nextStep?: string | null
@@ -210,6 +216,19 @@ export function updateBrand(data: {
   blockers?: string | null
 }): Promise<{ success: boolean }> {
   return apiPut('/onboarding', data)
+}
+
+/** Заявка от продаж: тапы превращаются в проект с ТЗ. */
+export function createIntake(data: {
+  name: string
+  posId?: string | null
+  tariff?: string | null
+  launchDue?: string | null
+  assigneeId?: string | null
+  notes?: string | null
+  selections: Record<string, string[]>
+}): Promise<{ success: boolean; id: string }> {
+  return apiPost('/onboarding/intake', data)
 }
 
 export function deleteBrand(id: string): Promise<{ success: boolean }> {

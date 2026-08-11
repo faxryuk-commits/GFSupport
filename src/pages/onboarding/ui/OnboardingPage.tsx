@@ -8,7 +8,7 @@ import { sendMessage } from '@/shared/api/messages'
 import type { Channel } from '@/shared/types'
 import type { Agent } from '@/shared/types'
 import {
-  fetchOnboardingBoard, fetchOnboardingStats, createBrand, updateBrand, deleteBrand,
+  fetchOnboardingBoard, fetchOnboardingStats, createBrand, createIntake, updateBrand, deleteBrand,
   setTaskStatus, setTaskAssignee, setTaskOption, setTaskWaitingOn, addProviderTask, deleteTask, fetchOnboardingEvents,
   fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
@@ -537,7 +537,10 @@ export function OnboardingPage() {
   )
 }
 
-/** «+ Проект» в шапке — доступен из любой вкладки (Фокус, Матрица, …). */
+/**
+ * «+ Проект» — конструктор заявки: менеджер тапами выбирает POS, тариф
+ * и возможности; справа собирается ТЗ; на выходе — готовый проект.
+ */
 function AddProjectButton({ board, onCreated }: {
   board: ObBoard
   onCreated: (brandId: string) => void
@@ -545,73 +548,204 @@ function AddProjectButton({ board, onCreated }: {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [posId, setPosId] = useState('')
+  const [tariff, setTariff] = useState('')
+  const [launchDue, setLaunchDue] = useState('')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [notes, setNotes] = useState('')
+  const [selections, setSelections] = useState<Record<string, string[]>>({})
   const [saving, setSaving] = useState(false)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const btnRef = useRef<HTMLButtonElement>(null)
+  const [, forceAgents] = useState(0)
 
   useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (btnRef.current?.contains(e.target as Node)) return
-      if (panelRef.current?.contains(e.target as Node)) return
-      setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    if (!open || cachedAgents) return
+    fetchAgents().then(list => {
+      cachedAgents = list.filter(a => a.isActive !== false)
+      forceAgents(x => x + 1)
+    }).catch(() => {})
   }, [open])
+
+  const tariffCat = board.optionCategories.find(c => c.label === 'Тарифы' && c.isActive)
+  const tariffs = tariffCat ? board.options.filter(o => o.categoryId === tariffCat.id && o.isActive) : []
+  // Секции возможностей: активные задачи чек-листа с категориями (кроме Тарифов)
+  const featureTypes = board.taskTypes.filter(t =>
+    t.isActive && t.optionCategoryId && t.optionCategoryId !== tariffCat?.id)
+
+  const toggle = (typeId: string, optionId: string) => {
+    setSelections(prev => {
+      const cur = prev[typeId] || []
+      return { ...prev, [typeId]: cur.includes(optionId) ? cur.filter(x => x !== optionId) : [...cur, optionId] }
+    })
+  }
+
+  const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
+  const posName = posId ? board.posSystems.find(p => p.id === posId)?.name : null
+  const selectedLines = featureTypes
+    .filter(t => (selections[t.id] || []).length > 0)
+    .map(t => `${t.label}: ${(selections[t.id] || []).map(oid => optionById[oid]?.label).filter(Boolean).join(', ')}`)
+  const skippedLabels = featureTypes.filter(t => (selections[t.id] || []).length === 0).map(t => t.label)
+
+  const reset = () => {
+    setName(''); setPosId(''); setTariff(''); setLaunchDue(''); setAssigneeId(''); setNotes(''); setSelections({})
+  }
 
   const submit = async () => {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      const r = await createBrand({ name: name.trim(), posId: posId || null })
-      setName(''); setPosId(''); setOpen(false)
+      const r = await createIntake({
+        name: name.trim(),
+        posId: posId || null,
+        tariff: tariff || null,
+        launchDue: launchDue || null,
+        assigneeId: assigneeId || null,
+        notes: notes.trim() || null,
+        selections,
+      })
+      reset()
+      setOpen(false)
       onCreated(r.id)
     } finally {
       setSaving(false)
     }
   }
 
+  const chip = (active: boolean) =>
+    `text-xs px-3 py-1 rounded-full border transition-colors ${
+      active ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+    }`
+
   return (
-    <div className="relative">
+    <>
       <button
-        ref={btnRef}
-        onClick={() => setOpen(v => !v)}
+        onClick={() => setOpen(true)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
       >
         <Plus className="w-4 h-4" /> Проект
       </button>
-      {open && (
-        <div ref={panelRef} className="absolute right-0 top-full mt-1 z-50 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-3">
-          <div className="text-[10px] uppercase text-gray-400 mb-1">Новый проект</div>
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
-            placeholder="Название"
-            className="w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm mb-2"
-          />
-          <select
-            value={posId}
-            onChange={e => setPosId(e.target.value)}
-            className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white mb-2"
-          >
-            <option value="">POS-система…</option>
-            {board.posSystems.filter(p => p.isActive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button
-            onClick={submit}
-            disabled={!name.trim() || saving}
-            className="w-full py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Создать и открыть'}
-          </button>
-        </div>
+      {open && createPortal(
+        <div className="fixed inset-0 z-[65] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2 shrink-0">
+              <span className="text-sm font-medium text-gray-900">Новая заявка на подключение</span>
+              <span className="text-[11px] text-gray-400">тапайте возможности — справа собирается ТЗ</span>
+              <button onClick={() => setOpen(false)} className="ml-auto p-1.5 text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-1 min-h-0">
+              <div className="flex-[1.35] min-w-0 overflow-y-auto p-4 border-r border-gray-100">
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <input
+                    autoFocus value={name} onChange={e => setName(e.target.value)}
+                    placeholder="Название клиента / бренда *"
+                    className="col-span-2 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+                  />
+                  <input type="date" value={launchDue} onChange={e => setLaunchDue(e.target.value)}
+                    title="Запуск до"
+                    className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white" />
+                  <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+                    className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white">
+                    <option value="">Ведёт проект…</option>
+                    {groupAgentsByDep(cachedAgents || []).map(g => (
+                      <optgroup key={g.label} label={g.label}>
+                        {g.agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                {tariffs.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-[10px] uppercase text-gray-400 mb-1">Тариф</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {tariffs.map(t => (
+                        <button key={t.id} onClick={() => setTariff(tariff === t.label ? '' : t.label)} className={chip(tariff === t.label)}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mb-3">
+                  <div className="text-[10px] uppercase text-gray-400 mb-1">POS-система</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {board.posSystems.filter(p => p.isActive).map(p => (
+                      <button key={p.id} onClick={() => setPosId(posId === p.id ? '' : p.id)} className={chip(posId === p.id)}>
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {featureTypes.map(t => {
+                  const opts = board.options.filter(o => o.categoryId === t.optionCategoryId && o.isActive)
+                  if (opts.length === 0) return null
+                  const sel = selections[t.id] || []
+                  return (
+                    <div key={t.id} className="mb-3">
+                      <div className="text-[10px] uppercase text-gray-400 mb-1">{t.label}</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {opts.map(o => (
+                          <button key={o.id} onClick={() => toggle(t.id, o.id)} className={chip(sel.includes(o.id))}>
+                            {o.label}{sel.includes(o.id) ? ' ✓' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                <textarea
+                  value={notes} onChange={e => setNotes(e.target.value)}
+                  rows={2} placeholder="Комментарий для поддержки (особенности клиента, договорённости)…"
+                  className="w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+                />
+              </div>
+
+              <div className="flex-1 min-w-0 bg-gray-50 p-4 overflow-y-auto flex flex-col">
+                <div className="text-[10px] uppercase text-gray-400 mb-1.5">ТЗ для поддержки — собирается само</div>
+                <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 leading-relaxed">
+                  <span className="font-medium text-gray-900">{name.trim() || 'Название клиента'}</span>
+                  {posName ? ` · ${posName}` : ' · POS не выбрана'}{tariff ? ` · тариф ${tariff}` : ''}
+                  {launchDue && <div className="text-gray-400">запуск до {fmtDMY(launchDue)}</div>}
+                  <div className="border-t border-gray-100 my-2" />
+                  {selectedLines.length === 0 && <div className="text-gray-400">выберите возможности слева…</div>}
+                  {selectedLines.map(l => <div key={l}>✅ {l}</div>)}
+                  {skippedLabels.length > 0 && selectedLines.length > 0 && (
+                    <div className="text-gray-400 mt-1">— не требуются: {skippedLabels.join(', ')}</div>
+                  )}
+                  {notes.trim() && <div className="mt-1 text-gray-500">💬 {notes.trim()}</div>}
+                </div>
+                <div className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+                  Проект создастся с чек-листом ровно под выбор: поставщики — строками,
+                  невыбранное — «Не требуется», ТЗ — первым комментарием, владельцы
+                  затронутых блоков получат мини-задачи.
+                </div>
+                <div className="mt-auto pt-3 flex gap-2">
+                  <button
+                    onClick={submit}
+                    disabled={!name.trim() || saving}
+                    className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50 hover:bg-blue-700"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Создать проект'}
+                  </button>
+                  <button onClick={() => setOpen(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   )
 }
+
 
 // ───────────────────────────── Фокус
 
@@ -1299,6 +1433,17 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
         <span>в онбординге <b className="font-medium text-gray-900">{days} дн</b></span>
         <span>прогресс <b className="font-medium text-gray-900">{a.done}/{a.countable}</b></span>
         {stuckCount > 0 && <span>застряло <b className="font-medium text-red-600">{stuckCount}</b></span>}
+        {brand.tariff && <span>тариф <b className="font-medium text-gray-900">{brand.tariff}</b></span>}
+        {brand.launchDue && (() => {
+          const left = Math.ceil((new Date(brand.launchDue).getTime() - Date.now()) / 86400000)
+          return (
+            <span>
+              запуск до <b className={`font-medium ${left < 0 ? 'text-red-600' : left <= 2 ? 'text-amber-600' : 'text-gray-900'}`}>
+                {fmtDMY(brand.launchDue)}{left < 0 ? ` · просрочен на ${-left} дн` : ` · осталось ${left} дн`}
+              </b>
+            </span>
+          )
+        })()}
         {brand.dependsOn?.trim() && <span>зависим от: <b className="font-medium text-gray-900">{brand.dependsOn}</b></span>}
       </div>
 
@@ -1534,6 +1679,22 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
             </optgroup>
           ))}
         </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-gray-400">Тариф</span>
+        <select value={brand.tariff || ''} onChange={e => onSave({ tariff: e.target.value || null })}
+          className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
+          <option value="">Не выбран</option>
+          {board.options
+            .filter(o => board.optionCategories.some(c => c.id === o.categoryId && c.label === 'Тарифы'))
+            .map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-gray-400">Запуск до</span>
+        <input type="date" value={brand.launchDue ? brand.launchDue.slice(0, 10) : ''}
+          onChange={e => onSave({ launchDue: e.target.value || null })}
+          className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white" />
       </label>
       <label className="block col-span-2">
         <span className="text-[10px] uppercase text-gray-400">Telegram-канал проекта</span>
