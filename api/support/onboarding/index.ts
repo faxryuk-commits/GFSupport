@@ -308,6 +308,9 @@ export default async function handler(req: Request): Promise<Response> {
 
       await sql`DELETE FROM onboarding_task_events WHERE brand_id = ${id} AND org_id = ${orgId}`
       await sql`DELETE FROM onboarding_tasks WHERE brand_id = ${id} AND org_id = ${orgId}`
+      await sql`DELETE FROM onboarding_comments WHERE brand_id = ${id} AND org_id = ${orgId}`
+      await sql`DELETE FROM onboarding_todos WHERE brand_id = ${id} AND org_id = ${orgId}`
+      await sql`DELETE FROM onboarding_participants WHERE brand_id = ${id} AND org_id = ${orgId}`
       await sql`DELETE FROM onboarding_brands WHERE id = ${id} AND org_id = ${orgId}`
       return json({ success: true })
     } catch (e: any) {
