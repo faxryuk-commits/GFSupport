@@ -19,6 +19,8 @@ export interface ObTaskType {
   optionCategoryId: string | null
   /** Блок запуска («1 · Компания и филиал» …) — группировка чек-листа */
   groupLabel: string | null
+  /** Норматив дней на этап; больше — этап «застрял» (null = общие пороги) */
+  targetDays: number | null
 }
 
 export interface ObPosSystem {
@@ -49,6 +51,8 @@ export interface ObTask {
   assigneeId: string | null
   assigneeName: string | null
   optionId: string | null
+  /** Кого ждём при статусе «Ждем данные»: us | client | provider */
+  waitingOn: string | null
   statusSince: string
   activeSeconds: number
   waitingSeconds: number
@@ -217,6 +221,10 @@ export function setTaskAssignee(taskId: string, assigneeId: string | null): Prom
 
 export function setTaskOption(taskId: string, optionId: string | null): Promise<{ success: boolean }> {
   return apiPut('/onboarding/tasks', { taskId, optionId })
+}
+
+export function setTaskWaitingOn(taskId: string, waitingOn: string | null): Promise<{ success: boolean }> {
+  return apiPut('/onboarding/tasks', { taskId, waitingOn })
 }
 
 /** Добавить в ячейку под-задачу поставщика (свой статус/таймер/исполнитель). */

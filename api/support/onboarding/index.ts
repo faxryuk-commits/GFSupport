@@ -102,6 +102,7 @@ export default async function handler(req: Request): Promise<Response> {
           assigneeId: t.assignee_id,
           assigneeName: t.assignee_name,
           optionId: t.option_id,
+          waitingOn: t.waiting_on,
           statusSince: t.status_since,
           activeSeconds: dur.active || 0,
           waitingSeconds: dur.waiting || 0,
@@ -117,6 +118,7 @@ export default async function handler(req: Request): Promise<Response> {
           id: t.id, label: t.label, sortOrder: t.sort_order, isActive: t.is_active,
           optionCategoryId: t.option_category_id,
           groupLabel: t.group_label,
+          targetDays: t.target_days,
         })),
         posSystems: posSystems.map((p: any) => ({
           id: p.id, name: p.name, isActive: p.is_active,

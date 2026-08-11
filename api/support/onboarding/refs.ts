@@ -169,9 +169,12 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       if (kind === 'taskType') {
-        const { label, sortOrder, isActive, categoryId, groupLabel } = body
+        const { label, sortOrder, isActive, categoryId, groupLabel, targetDays } = body
         if (groupLabel !== undefined) {
           await sql`UPDATE onboarding_task_types SET group_label = ${groupLabel || null} WHERE id = ${id} AND org_id = ${orgId}`
+        }
+        if (targetDays !== undefined) {
+          await sql`UPDATE onboarding_task_types SET target_days = ${targetDays || null} WHERE id = ${id} AND org_id = ${orgId}`
         }
         if (label !== undefined) {
           await sql`UPDATE onboarding_task_types SET label = ${label} WHERE id = ${id} AND org_id = ${orgId}`

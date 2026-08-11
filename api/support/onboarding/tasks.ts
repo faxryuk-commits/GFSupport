@@ -88,7 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { taskId, statusId, assigneeName, assigneeId, optionId } = body
+      const { taskId, statusId, assigneeName, assigneeId, optionId, waitingOn } = body
       if (!taskId) return json({ error: 'taskId is required' }, 400)
 
       const [task] = await sql`
@@ -130,6 +130,14 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           UPDATE onboarding_tasks
           SET option_id = ${optionId || null}, updated_at = NOW()
+          WHERE id = ${taskId} AND org_id = ${orgId}
+        `
+      }
+
+      if (waitingOn !== undefined) {
+        await sql`
+          UPDATE onboarding_tasks
+          SET waiting_on = ${waitingOn || null}, updated_at = NOW()
           WHERE id = ${taskId} AND org_id = ${orgId}
         `
       }

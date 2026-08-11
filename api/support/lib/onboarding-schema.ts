@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT group_label FROM onboarding_task_types WHERE org_id = ${orgId} LIMIT 1
+      SELECT target_days FROM onboarding_task_types WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -176,6 +176,9 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   await sql`ALTER TABLE onboarding_task_events ADD COLUMN IF NOT EXISTS option_id VARCHAR(50)`
   // v6: группировка шагов чек-листа по блокам запуска (Компания, Каталог, Оплата…)
   await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS group_label VARCHAR(100)`
+  // v11: «ждём кого» на задаче (us|client|provider) и норматив дней на шаг
+  await sql`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS waiting_on VARCHAR(12)`
+  await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS target_days INT`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_id VARCHAR(64)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS assignee_name VARCHAR(255)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`

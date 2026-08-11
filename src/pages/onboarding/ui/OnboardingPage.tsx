@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { formatDateTimeShort, formatDateShort } from '@/shared/lib'
 import { fetchAgents } from '@/shared/api/agents'
+import { fetchChannels } from '@/shared/api/channels'
+import { sendMessage } from '@/shared/api/messages'
+import type { Channel } from '@/shared/types'
 import type { Agent } from '@/shared/types'
 import {
   fetchOnboardingBoard, fetchOnboardingStats, createBrand, updateBrand, deleteBrand,
-  setTaskStatus, setTaskAssignee, setTaskOption, addProviderTask, deleteTask, fetchOnboardingEvents,
+  setTaskStatus, setTaskAssignee, setTaskOption, setTaskWaitingOn, addProviderTask, deleteTask, fetchOnboardingEvents,
   fetchBrandCard, addBrandComment, deleteBrandComment,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
@@ -16,7 +20,7 @@ import {
   Plug, Plus, Loader2, RefreshCw, X, Archive, ArchiveRestore, Trash2,
   History, Settings2, ChevronUp, ChevronDown, ChevronRight, Pencil, Check,
   BarChart3, AlertTriangle, MessageSquare, ListTodo, Flame, Clock,
-  ArrowRight, Target, Table2, Settings,
+  ArrowRight, Target, Table2, Settings, CalendarDays,
 } from 'lucide-react'
 
 // ───────────────────────────── константы и утилиты
@@ -106,9 +110,12 @@ function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 }
 
-function isTaskStuck(kind: string | undefined, hours: number): boolean {
+function isTaskStuck(kind: string | undefined, hours: number, targetDays?: number | null): boolean {
+  if (targetDays != null && (kind === 'waiting' || kind === 'active')) return hours > targetDays * 24
   return (kind === 'waiting' && hours > STUCK_WAITING_HOURS) || (kind === 'active' && hours > STUCK_ACTIVE_HOURS)
 }
+
+const WAITING_LABELS: Record<string, string> = { us: 'мы', client: 'клиент', provider: 'поставщик' }
 
 interface StepGroup {
   label: string
@@ -143,7 +150,7 @@ interface InFlightTask {
   stuck: boolean
 }
 
-function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
+function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>, typeById?: Record<string, ObTaskType>) {
   const inFlightTasks: InFlightTask[] = []
   let done = 0
   let countable = 0
@@ -154,7 +161,7 @@ function analyzeBrand(brand: ObBrand, statusById: Record<string, ObStatus>) {
     if (kind === 'done') { done++; continue }
     if (kind === 'active' || kind === 'waiting') {
       const h = hoursSince(t.statusSince)
-      inFlightTasks.push({ task: t, kind, hours: h, stuck: isTaskStuck(kind, h) })
+      inFlightTasks.push({ task: t, kind, hours: h, stuck: isTaskStuck(kind, h, typeById?.[t.taskTypeId]?.targetDays) })
     }
   }
   inFlightTasks.sort((a, b) => b.hours - a.hours)
@@ -359,7 +366,7 @@ export function OnboardingPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'focus' | 'matrix' | 'stats' | 'history' | 'refs'>('focus')
+  const [tab, setTab] = useState<'focus' | 'matrix' | 'timeline' | 'stats' | 'history' | 'refs'>('focus')
   const [selectedBrandId, setSelectedBrandId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
 
@@ -439,6 +446,7 @@ export function OnboardingPage() {
             {([
               ['focus', 'Фокус', Target],
               ['matrix', 'Матрица', Table2],
+              ['timeline', 'Таймлайн', CalendarDays],
               ['stats', 'Аналитика', BarChart3],
               ['history', 'История', History],
               ['refs', 'Справочники', Settings2],
@@ -509,6 +517,9 @@ export function OnboardingPage() {
           )}
         </>
       )}
+      {!loading && !error && tab === 'timeline' && board && (
+        <TimelineTab board={board} statusById={statusById} onSelect={id => { setSelectedBrandId(id); setTab('focus') }} />
+      )}
       {!loading && !error && tab === 'stats' && board && <StatsTab board={board} statusById={statusById} />}
       {!loading && !error && board && tab === 'history' && <HistoryTab board={board} />}
       {!loading && !error && board && tab === 'refs' && (
@@ -548,7 +559,7 @@ function FocusTab({ board, agents, statusById, selectedBrand, showArchived, onTo
 
   const analyzed = useMemo(() => board.brands
     .filter(b => (filter === 'archive' ? !!b.archivedAt : !b.archivedAt))
-    .map(brand => ({ brand, a: analyzeBrand(brand, statusById) })), [board.brands, statusById, filter])
+    .map(brand => ({ brand, a: analyzeBrand(brand, statusById, typeById) })), [board.brands, statusById, typeById, filter])
 
   const stuckTotal = analyzed.reduce((s, x) => s + x.a.inFlightTasks.filter(t => t.stuck).length, 0)
 
@@ -837,10 +848,24 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
   )
 }
 
+// Каналы грузим один раз на страницу — для привязки бренда и отправки напоминаний
+let cachedChannels: Channel[] | null = null
+function useChannels(load: boolean): Channel[] {
+  const [list, setList] = useState<Channel[]>(cachedChannels || [])
+  useEffect(() => {
+    if (!load || cachedChannels) return
+    fetchChannels().then(ch => {
+      cachedChannels = ch
+      setList(ch)
+    }).catch(() => {})
+  }, [load])
+  return list
+}
+
 /**
- * «Напомнить…» — меню с явным адресатом. Сейчас рабочий пункт — сотруднику
- * (создаёт задачу-напоминание ведущему); клиенту/поставщику появятся после
- * привязки Telegram-канала бренда.
+ * «Напомнить…» — меню с явным адресатом. «Сотруднику» создаёт задачу-напоминание;
+ * «Клиенту в Telegram» шлёт сообщение в привязанный канал бренда существующим
+ * механизмом чатов (никакого нового чата — тот же бот и та же переписка).
  */
 function ReminderMenu({ brand, worstLabel, onCreated }: {
   brand: ObBrand
@@ -864,11 +889,33 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
   }, [open])
 
   const reminderText = `Напоминание: ${brand.nextStep?.trim() || worstLabel || 'продвинуть онбординг'}`
+  const [clientMode, setClientMode] = useState(false)
+  const [clientText, setClientText] = useState('')
+  const [sending, setSending] = useState(false)
 
   const remindAssignee = async () => {
     setRect(null)
     await addBrandTodo(brand.id, { text: reminderText, assigneeId: brand.assigneeId || null })
     onCreated()
+  }
+
+  const openClientMode = () => {
+    setClientText(`Здравствуйте! Напоминаем: ждём от вас — ${brand.nextStep?.trim() || worstLabel || 'данные для подключения'} 🙏`)
+    setClientMode(true)
+  }
+
+  const sendToClient = async () => {
+    if (!brand.channelId || !clientText.trim() || sending) return
+    setSending(true)
+    try {
+      await sendMessage(brand.channelId, clientText.trim())
+      await addBrandComment(brand.id, `📨 Напоминание клиенту в чат: «${clientText.trim().slice(0, 120)}»`).catch(() => {})
+      setRect(null)
+      setClientMode(false)
+      onCreated()
+    } finally {
+      setSending(false)
+    }
   }
 
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
@@ -893,14 +940,42 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
             <span className="text-xs text-gray-900 block">Сотруднику{brand.assigneeName ? ` — ${brand.assigneeName}` : ''}</span>
             <span className="text-[11px] text-gray-400 block">создаст задачу «{reminderText.slice(0, 40)}…»</span>
           </button>
-          <div className="w-full px-3 py-2 opacity-50 cursor-not-allowed">
-            <span className="text-xs text-gray-900 block">Клиенту в Telegram-чат</span>
-            <span className="text-[11px] text-gray-400 block">скоро — нужна привязка канала бренда (⚙)</span>
-          </div>
-          <div className="w-full px-3 py-2 opacity-50 cursor-not-allowed">
-            <span className="text-xs text-gray-900 block">Поставщику</span>
-            <span className="text-[11px] text-gray-400 block">скоро — контакты поставщиков в справочнике</span>
-          </div>
+          {brand.channelId ? (
+            clientMode ? (
+              <div className="px-3 py-2 border-t border-gray-100">
+                <div className="text-[10px] uppercase text-gray-400 mb-1">Сообщение в чат бренда</div>
+                <textarea
+                  autoFocus
+                  value={clientText}
+                  onChange={e => setClientText(e.target.value)}
+                  rows={3}
+                  className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-xs"
+                />
+                <div className="flex justify-end gap-1.5 mt-1.5">
+                  <button onClick={() => setClientMode(false)} className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-500">
+                    Отмена
+                  </button>
+                  <button
+                    onClick={sendToClient}
+                    disabled={!clientText.trim() || sending}
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-blue-600 text-white disabled:opacity-50"
+                  >
+                    {sending ? 'Отправка…' : 'Отправить в чат'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={openClientMode} className="w-full px-3 py-2 text-left hover:bg-gray-50 border-t border-gray-100">
+                <span className="text-xs text-gray-900 block">Клиенту в Telegram-чат</span>
+                <span className="text-[11px] text-gray-400 block">отправит через бота в привязанный канал</span>
+              </button>
+            )
+          ) : (
+            <div className="w-full px-3 py-2 opacity-50 cursor-not-allowed border-t border-gray-100">
+              <span className="text-xs text-gray-900 block">Клиенту в Telegram-чат</span>
+              <span className="text-[11px] text-gray-400 block">привяжите канал бренда в ⚙ — и пункт оживёт</span>
+            </div>
+          )}
         </div>,
         document.body,
       )}
@@ -951,7 +1026,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
     return acc
   }, [brand.tasks])
 
-  const a = analyzeBrand(brand, statusById)
+  const a = analyzeBrand(brand, statusById, typeById)
   const days = Math.round(hoursSince(brand.startedAt) / 24)
   const stuckCount = a.inFlightTasks.filter(t => t.stuck).length
   const posName = brand.posId ? board.posSystems.find(p => p.id === brand.posId)?.name : null
@@ -1004,6 +1079,15 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
         {posName && <span className="text-[11px] px-2 py-px rounded-full border border-gray-200 text-gray-500">{posName}</span>}
         <AssigneeBadge brand={brand} agents={agents} onMutateBrand={onMutateBrand} onChanged={onChanged} size="w-5 h-5 text-[9px]" />
         <span className="ml-auto flex items-center gap-1.5">
+          {brand.channelId && (
+            <Link
+              to={`/chats/${brand.channelId}`}
+              className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+              title="Открыть переписку бренда в Чатах"
+            >
+              Чат ↗
+            </Link>
+          )}
           <ReminderMenu
             brand={brand}
             worstLabel={a.worst ? `${typeById[a.worst.task.taskTypeId]?.label || ''}${a.worst.task.optionId && optionById[a.worst.task.optionId] ? ` · ${optionById[a.worst.task.optionId].label}` : ''}` : null}
@@ -1226,6 +1310,7 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
   const [depends, setDepends] = useState(brand.dependsOn || '')
   const [blockers, setBlockers] = useState(brand.blockers || '')
   const [notes, setNotes] = useState(brand.notes || '')
+  const channels = useChannels(true)
 
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3 mb-2.5 grid grid-cols-2 gap-2.5">
@@ -1256,6 +1341,18 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
             </optgroup>
           ))}
         </select>
+      </label>
+      <label className="block col-span-2">
+        <span className="text-[10px] uppercase text-gray-400">Telegram-канал бренда</span>
+        <select
+          value={brand.channelId || ''}
+          onChange={e => onSave({ channelId: e.target.value || null })}
+          className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white"
+        >
+          <option value="">Не привязан</option>
+          {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <span className="text-[10px] text-gray-400">откроет «Чат ↗» и оживит «Напомнить → Клиенту»</span>
       </label>
       <label className="block">
         <span className="text-[10px] uppercase text-gray-400">От кого зависим</span>
@@ -1554,9 +1651,12 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
                       {hasBlockers && <AlertTriangle className="w-3 h-3 text-red-500" />}
                       <ChevronRight className="w-3 h-3 text-gray-300 group-hover:text-blue-500" />
                     </span>
-                    <span className="text-[11px] text-gray-400">
+                    <span className="text-[11px] text-gray-400 block">
                       {(brand.posId ? posById[brand.posId]?.name : null) || 'без POS'}
                       {brand.assigneeName ? ` · ${initials(brand.assigneeName)}` : ''}
+                    </span>
+                    <span className="text-[11px] text-gray-400 block">
+                      {fmtDMY(brand.startedAt)} → {brand.archivedAt ? fmtDMY(brand.archivedAt) : '…'} · {Math.round(hoursSince(brand.startedAt) / 24)} дн
                     </span>
                   </button>
                 </td>
@@ -1710,8 +1810,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
           kind === 'done' ? (
             <>
               <Check className="w-3.5 h-3.5 text-green-600" />
-              {option && <span className="text-green-700 font-medium">{option.label}</span>}
-              <span className="text-gray-500">{fmtDMY(task.statusSince)}</span>
+              <span className="text-green-700">Готово{option ? ` · ${option.label}` : ''}</span>
             </>
           ) : kind === 'na' ? (
             <span className="text-gray-300">—</span>
@@ -1726,6 +1825,9 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
           <>
             {isStuck && (kind === 'waiting' ? <Clock className="w-3 h-3 text-red-500" /> : <Flame className="w-3 h-3 text-red-500" />)}
             <span>{status?.label || '—'}</span>
+            {kind === 'waiting' && task.waitingOn && WAITING_LABELS[task.waitingOn] && (
+              <span className="font-medium">· {WAITING_LABELS[task.waitingOn]}</span>
+            )}
             <span className="opacity-70">· {fmtShortDur(h)}</span>
             {option && <span className="opacity-70">· {option.label}</span>}
           </>
@@ -1815,6 +1917,31 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {kind === 'waiting' && (
+            <div className="border-t border-gray-100 px-3 py-1.5">
+              <div className="text-[10px] uppercase text-gray-400 mb-1">Ждём кого</div>
+              <div className="flex gap-1">
+                {(['us', 'client', 'provider'] as const).map(w => (
+                  <button
+                    key={w}
+                    onClick={async () => {
+                      const v = task.waitingOn === w ? null : w
+                      onMutate(task.id, { waitingOn: v })
+                      try { await setTaskWaitingOn(task.id, v) } finally { onChanged() }
+                    }}
+                    className={`flex-1 text-[11px] px-1 py-1 rounded-md border ${
+                      task.waitingOn === w
+                        ? 'bg-amber-100 border-amber-300 text-amber-800 font-medium'
+                        : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    {WAITING_LABELS[w]}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1963,7 +2090,10 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
     for (const b of brands) for (const t of b.tasks) {
       if (!t.waitingSeconds) continue
       const opt = t.optionId ? optionById[t.optionId]?.label : null
-      const src = opt || (b.dependsOn?.trim() || 'Клиент')
+      const src = t.waitingOn === 'us' ? 'Мы (внутренние)'
+        : t.waitingOn === 'client' ? 'Клиенты'
+          : t.waitingOn === 'provider' ? (opt || 'Поставщики')
+            : opt || (b.dependsOn?.trim() || 'Клиенты')
       acc[src] = (acc[src] || 0) + t.waitingSeconds
     }
     return Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 5)
@@ -2225,6 +2355,141 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
   )
 }
 
+// ───────────────────────────── Таймлайн
+
+const dayKeyTz = (iso: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date(iso))
+
+/**
+ * Гант по фактам: клетка-день окрашена журналом событий.
+ * Зелёный — закрывались этапы; синий — активность без закрытий;
+ * янтарный — тихая пауза 1–2 дня; красный — простой 3+ дней; штрих — не начат.
+ */
+function TimelineTab({ board, statusById, onSelect }: {
+  board: ObBoard
+  statusById: Record<string, ObStatus>
+  onSelect: (id: string) => void
+}) {
+  const [events, setEvents] = useState<ObEvent[] | null>(null)
+  useEffect(() => {
+    fetchOnboardingEvents(undefined, 1000).then(r => setEvents(r.events)).catch(() => setEvents([]))
+  }, [])
+
+  const DAYS = 21
+  const days = useMemo(() => {
+    const list: { key: string; label: string; isToday: boolean }[] = []
+    for (let i = DAYS - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000)
+      list.push({
+        key: dayKeyTz(d.toISOString()),
+        label: new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit' }).format(d),
+        isToday: i === 0,
+      })
+    }
+    return list
+  }, [])
+
+  const rows = useMemo(() => {
+    if (!events) return null
+    const byBrandDay: Record<string, { total: number; done: number; labels: string[] }> = {}
+    for (const e of events) {
+      const key = `${e.brandId}|${dayKeyTz(e.changedAt)}`
+      const cell = (byBrandDay[key] = byBrandDay[key] || { total: 0, done: 0, labels: [] })
+      cell.total++
+      if (e.newStatusId && statusById[e.newStatusId]?.kind === 'done') cell.done++
+      if (cell.labels.length < 6) {
+        cell.labels.push(`${e.taskLabel || ''}${e.optionLabel ? ` · ${e.optionLabel}` : ''}: ${e.newLabel || ''}`)
+      }
+    }
+
+    return board.brands
+      .filter(b => !b.archivedAt)
+      .map(brand => {
+        const startKey = dayKeyTz(brand.startedAt)
+        const started = brand.tasks.some(t => {
+          const k = t.statusId ? statusById[t.statusId]?.kind : undefined
+          return k === 'done' || k === 'active' || k === 'waiting'
+        })
+        let quietStreak = 0
+        let redCount = 0
+        const cells = days.map(day => {
+          if (day.key < startKey) return { cls: '', title: '' }
+          const cell = byBrandDay[`${brand.id}|${day.key}`]
+          if (!started && !cell) {
+            return { cls: 'bg-[repeating-linear-gradient(90deg,#F3F4F6_0_5px,#fff_5px_10px)]', title: 'не начат' }
+          }
+          if (cell && cell.done > 0) {
+            quietStreak = 0
+            return { cls: 'bg-green-500', title: `закрыто этапов: ${cell.done} из ${cell.total} событий\n${cell.labels.join('\n')}` }
+          }
+          if (cell) {
+            quietStreak = 0
+            return { cls: 'bg-blue-400', title: `событий: ${cell.total}, без закрытий\n${cell.labels.join('\n')}` }
+          }
+          quietStreak++
+          if (quietStreak >= 3) {
+            redCount++
+            return { cls: 'bg-red-400', title: `простой ${quietStreak}-й день` }
+          }
+          return { cls: 'bg-amber-300', title: `пауза (${quietStreak}-й день)` }
+        })
+        const a = analyzeBrand(brand, statusById)
+        return { brand, a, cells, redCount }
+      })
+      .sort((x, y) => y.redCount - x.redCount || (y.a.worst?.hours || 0) - (x.a.worst?.hours || 0))
+  }, [events, board.brands, days, statusById])
+
+  if (rows === null) {
+    return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
+  }
+
+  return (
+    <div>
+      <div className="text-[11px] text-gray-500 mb-2 flex flex-wrap gap-x-3 gap-y-1">
+        <span><span className="text-green-500">■</span> закрывались этапы</span>
+        <span><span className="text-blue-400">■</span> активность без закрытий</span>
+        <span><span className="text-amber-400">■</span> пауза 1–2 дня</span>
+        <span><span className="text-red-400">■</span> простой 3+ дней</span>
+        <span className="text-gray-400">▨ не начат · наведите на день — детали · самые «красные» сверху</span>
+      </div>
+      <div className="rounded-lg border border-gray-200 bg-white p-3 overflow-x-auto">
+        <div className="flex items-center mb-1.5" style={{ minWidth: 720 }}>
+          <span className="w-40 shrink-0" />
+          {days.map(d => (
+            <span key={d.key} className={`flex-1 text-center text-[9px] ${d.isToday ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+              {d.isToday ? 'сегодня' : d.label}
+            </span>
+          ))}
+        </div>
+        {rows.map(({ brand, a, cells }) => (
+          <div key={brand.id} className="flex items-center mb-1.5" style={{ minWidth: 720 }}>
+            <button
+              onClick={() => onSelect(brand.id)}
+              className="w-40 shrink-0 text-left pr-2 group"
+            >
+              <span className="text-[12px] font-medium text-gray-900 group-hover:text-blue-600 truncate block">
+                {brand.name}
+                {a.hasBlockers && <AlertTriangle className="w-3 h-3 text-red-500 inline ml-1 -mt-px" />}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                {fmtDMY(brand.startedAt)} → … · {a.done}/{a.countable}
+              </span>
+            </button>
+            {cells.map((c, i) => (
+              <span
+                key={i}
+                title={c.title ? `${days[i].label}: ${c.title}` : days[i].label}
+                className={`flex-1 h-[16px] mr-[2px] rounded-[2px] ${c.cls || ''} ${days[i].isToday ? 'ring-1 ring-blue-300' : ''}`}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ───────────────────────────── История
 
 function HistoryTab({ board }: { board: ObBoard }) {
@@ -2436,6 +2701,20 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
                 }
               }}
               className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-500 w-36"
+            />
+            <input
+              type="number"
+              min={1}
+              defaultValue={t.targetDays ?? ''}
+              placeholder="дн"
+              title="Норматив дней на этап (пусто — общий порог)"
+              onBlur={e => {
+                const v = e.target.value ? parseInt(e.target.value) : null
+                if (v !== (t.targetDays ?? null)) {
+                  updateRefItem({ kind: 'taskType', id: t.id, targetDays: v }).then(onChanged)
+                }
+              }}
+              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-500 w-12"
             />
             <select
               value={t.optionCategoryId || ''}
