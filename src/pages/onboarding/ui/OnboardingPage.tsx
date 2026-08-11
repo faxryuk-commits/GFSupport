@@ -68,6 +68,40 @@ function hoursSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 3600000
 }
 
+/** Понятная дата dd/mm/yyyy (рабочая tz — Ташкент). */
+function fmtDMY(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const p = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(d)
+  return p.replace(/\./g, '/')
+}
+
+// Отделы: нормализация значений support_agents.department и порядок показа —
+// «Поддержка и подключения» всегда первыми.
+function depLabel(d?: string | null): string {
+  const v = (d || '').trim().toLowerCase()
+  if (['support', 'поддержка', 'poderjka'].includes(v)) return 'Поддержка и подключения'
+  if (v === 'admin') return 'Администрация'
+  if (v === 'product') return 'Продукт'
+  if (v === 'sales') return 'Продажи'
+  if (v === 'it') return 'IT'
+  return d?.trim() || 'Прочие'
+}
+const DEP_ORDER = ['Поддержка и подключения', 'Продажи', 'Продукт', 'Администрация', 'IT', 'Прочие']
+
+function groupAgentsByDep(agents: Agent[]): { label: string; agents: Agent[] }[] {
+  const acc: Record<string, Agent[]> = {}
+  for (const a of agents) (acc[depLabel(a.department)] = acc[depLabel(a.department)] || []).push(a)
+  return Object.entries(acc)
+    .sort((x, y) => {
+      const xi = DEP_ORDER.indexOf(x[0]); const yi = DEP_ORDER.indexOf(y[0])
+      return (xi === -1 ? 99 : xi) - (yi === -1 ? 99 : yi)
+    })
+    .map(([label, list]) => ({ label, agents: list.sort((a, b) => a.name.localeCompare(b.name)) }))
+}
+
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 }
@@ -81,16 +115,25 @@ interface StepGroup {
   types: ObTaskType[]
 }
 
-/** Блоки запуска в порядке следования шагов. */
+/**
+ * Блоки запуска: шаги собираются в свой блок независимо от порядка в
+ * справочнике (иначе перестановка шага дробит группу на куски);
+ * блоки упорядочены по первому шагу.
+ */
 function buildGroups(taskTypes: ObTaskType[]): StepGroup[] {
-  const groups: StepGroup[] = []
+  const byLabel = new Map<string, StepGroup>()
   for (const t of taskTypes) {
     const label = t.groupLabel || 'Прочее'
-    const last = groups[groups.length - 1]
-    if (last && last.label === label) last.types.push(t)
-    else groups.push({ label, types: [t] })
+    let g = byLabel.get(label)
+    if (!g) {
+      g = { label, types: [] }
+      byLabel.set(label, g)
+    }
+    g.types.push(t)
   }
-  return groups
+  return [...byLabel.values()].sort(
+    (a, b) => Math.min(...a.types.map(t => t.sortOrder)) - Math.min(...b.types.map(t => t.sortOrder)),
+  )
 }
 
 interface InFlightTask {
@@ -284,17 +327,22 @@ function AssigneeBadge({ brand, agents, onMutateBrand, onChanged, size = 'w-6 h-
           <button onClick={() => pick(null)} className="w-full px-3 py-1.5 text-left text-xs text-gray-400 hover:bg-gray-50">
             Не назначен
           </button>
-          {agents.map(ag => (
-            <button
-              key={ag.id}
-              onClick={() => pick(ag)}
-              className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 ${
-                ag.id === brand.assigneeId ? 'font-semibold' : ''
-              }`}
-            >
-              <AgentAvatar name={ag.name} size="w-5 h-5 text-[9px]" />
-              {ag.name}
-            </button>
+          {groupAgentsByDep(agents).map(g => (
+            <div key={g.label}>
+              <div className="px-3 pt-1.5 pb-0.5 text-[10px] uppercase text-gray-400">{g.label}</div>
+              {g.agents.map(ag => (
+                <button
+                  key={ag.id}
+                  onClick={() => pick(ag)}
+                  className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50 ${
+                    ag.id === brand.assigneeId ? 'font-semibold' : ''
+                  }`}
+                >
+                  <AgentAvatar name={ag.name} size="w-5 h-5 text-[9px]" />
+                  {ag.name}
+                </button>
+              ))}
+            </div>
           ))}
         </div>,
         document.body,
@@ -729,7 +777,7 @@ function FocusRow({ brand, a, shelf, posName, taskTypes, typeById, optionById, s
       </span>
       <span className="min-w-0 flex-1 text-[12px] truncate">
         {shelf === 'archive' ? (
-          <span className="text-gray-400">завершён {brand.archivedAt ? formatDateShort(brand.archivedAt) : ''} · {a.done}/{a.countable} шагов</span>
+          <span className="text-gray-400">завершён {brand.archivedAt ? fmtDMY(brand.archivedAt) : ''} · старт {fmtDMY(brand.startedAt)} · {a.done}/{a.countable} шагов</span>
         ) : shelf === 'finish' ? (
           <span className="text-green-700">все шаги закрыты</span>
         ) : shelf === 'queue' ? (
@@ -970,6 +1018,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
 
       {/* Ключевые цифры */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500 mt-2 mb-2.5">
+        <span>старт <b className="font-medium text-gray-900">{fmtDMY(brand.startedAt)}</b></span>
         <span>в онбординге <b className="font-medium text-gray-900">{days} дн</b></span>
         <span>прогресс <b className="font-medium text-gray-900">{a.done}/{a.countable}</b></span>
         {stuckCount > 0 && <span>застряло <b className="font-medium text-red-600">{stuckCount}</b></span>}
@@ -1131,7 +1180,9 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
       {cardTab === 'comments' && (
         <CommentsBlock
           brandId={brand.id}
+          brandName={brand.name}
           comments={comments}
+          agents={agents}
           selfName={agents.find(x => x.id === (localStorage.getItem('support_agent_token') || ''))?.name || 'Вы'}
           onChanged={() => { loadCard(); onChanged() }}
         />
@@ -1199,7 +1250,11 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
           onSave({ assigneeId: e.target.value || null, assigneeName: ag?.name || null })
         }} className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
           <option value="">Не назначен</option>
-          {agents.map(ag => <option key={ag.id} value={ag.id}>{ag.name}</option>)}
+          {groupAgentsByDep(agents).map(g => (
+            <optgroup key={g.label} label={g.label}>
+              {g.agents.map(ag => <option key={ag.id} value={ag.id}>{ag.name}</option>)}
+            </optgroup>
+          ))}
         </select>
       </label>
       <label className="block">
@@ -1240,9 +1295,11 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
   )
 }
 
-function CommentsBlock({ brandId, comments, selfName, onChanged }: {
+function CommentsBlock({ brandId, brandName, comments, agents, selfName, onChanged }: {
   brandId: string
+  brandName: string
   comments: ObComment[] | null
+  agents: Agent[]
   selfName: string
   onChanged: () => void
 }) {
@@ -1250,6 +1307,17 @@ function CommentsBlock({ brandId, comments, selfName, onChanged }: {
   // Оптимизм: комментарий появляется мгновенно, сервер догоняет в фоне
   const [pending, setPending] = useState<ObComment[]>([])
   useEffect(() => { setPending([]) }, [comments])
+
+  // @-упоминания: автодополнение по сотрудникам; упомянутый получает задачу-вызов
+  const atMatch = /@([^@\n]*)$/.exec(text)
+  const mentionQuery = atMatch ? atMatch[1].toLowerCase() : null
+  const mentionSuggestions = mentionQuery !== null
+    ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery)).slice(0, 6)
+    : []
+
+  const insertMention = (name: string) => {
+    setText(t => t.replace(/@([^@\n]*)$/, `@${name} `))
+  }
 
   const submit = async () => {
     const t = text.trim()
@@ -1260,17 +1328,43 @@ function CommentsBlock({ brandId, comments, selfName, onChanged }: {
       text: t, createdAt: new Date().toISOString(),
     }, ...p])
     await addBrandComment(brandId, t)
+    // вызов упомянутых: каждому — задача со ссылкой на контекст
+    const mentioned = agents.filter(a => t.includes(`@${a.name}`))
+    for (const m of mentioned) {
+      await addBrandTodo(brandId, {
+        text: `@${selfName} позвал(а) вас: «${t.replace(`@${m.name}`, '').trim().slice(0, 80)}» (${brandName})`,
+        assigneeId: m.id,
+      }).catch(() => {})
+    }
     onChanged()
   }
   const items = [...pending, ...(comments || [])]
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
+      <div className="relative flex items-center gap-2 mb-2">
         <input value={text} onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') submit() }}
-          placeholder="Написать комментарий…"
+          onKeyDown={e => {
+            if (e.key === 'Enter' && mentionSuggestions.length > 0) { e.preventDefault(); insertMention(mentionSuggestions[0].name); return }
+            if (e.key === 'Enter') submit()
+          }}
+          placeholder="Комментарий… (@имя — позвать сотрудника)"
           className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
         <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
+        {mentionSuggestions.length > 0 && (
+          <div className="absolute left-0 top-full mt-1 z-30 w-64 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+            {mentionSuggestions.map(a => (
+              <button
+                key={a.id}
+                onClick={() => insertMention(a.name)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+              >
+                <AgentAvatar name={a.name} size="w-5 h-5 text-[9px]" />
+                <span className="min-w-0 truncate">{a.name}</span>
+                <span className="ml-auto text-[10px] text-gray-400">{depLabel(a.department)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {comments === null && pending.length === 0 ? <div className="text-gray-400 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin inline" /></div>
         : items.length === 0 ? <div className="text-gray-400 text-xs">Комментариев нет</div>
@@ -1341,7 +1435,11 @@ function TodosBlock({ brandId, todos, agents, selfName, onChanged }: {
           className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
         <select value={assignee} onChange={e => setAssignee(e.target.value)} className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white max-w-[120px]">
           <option value="">Кому…</option>
-          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          {groupAgentsByDep(agents).map(g => (
+            <optgroup key={g.label} label={g.label}>
+              {g.agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+          ))}
         </select>
         <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
       </div>
@@ -1514,11 +1612,15 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   onChanged: () => void
 }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const [section, setSection] = useState<'provider' | 'assignee' | null>(null)
   const [, forceRender] = useState(0)
   const btnRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const open = rect !== null
-  const setOpen = (v: boolean) => setRect(v ? btnRef.current?.getBoundingClientRect() || null : null)
+  const setOpen = (v: boolean) => {
+    setRect(v ? btnRef.current?.getBoundingClientRect() || null : null)
+    if (!v) setSection(null)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -1595,11 +1697,11 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
       <button
         ref={btnRef}
         onClick={e => { e.stopPropagation(); setOpen(!open) }}
-        title={[status?.label, option?.label, `статус с ${formatDateTimeShort(task.statusSince)}`, timeHint,
+        title={[status?.label, option?.label, `статус с ${fmtDMY(task.statusSince)}`, timeHint,
           task.assigneeName ? `исп: ${task.assigneeName}` : '']
           .filter(Boolean).join(' · ')}
         className={quiet
-          ? 'px-1.5 py-0.5 rounded text-xs whitespace-nowrap inline-flex items-center gap-1 text-gray-300 hover:bg-gray-100 hover:text-gray-500'
+          ? 'px-1.5 py-0.5 rounded text-xs whitespace-nowrap inline-flex items-center gap-1 hover:bg-gray-100'
           : `px-2 py-0.5 rounded-full text-xs whitespace-nowrap transition-colors inline-flex items-center gap-1 ${colors.chip} ${
               isStuck ? 'ring-2 ring-red-400' : ''
             }`}
@@ -1607,16 +1709,16 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
         {quiet ? (
           kind === 'done' ? (
             <>
-              <Check className="w-3.5 h-3.5 text-green-500/70" />
-              {option && <span className="text-gray-400">{option.label}</span>}
-              <span className="text-gray-300">{formatDateShort(task.statusSince)}</span>
+              <Check className="w-3.5 h-3.5 text-green-600" />
+              {option && <span className="text-green-700 font-medium">{option.label}</span>}
+              <span className="text-gray-500">{fmtDMY(task.statusSince)}</span>
             </>
           ) : kind === 'na' ? (
-            <span>—</span>
+            <span className="text-gray-300">—</span>
           ) : kind === 'cancelled' ? (
-            <span className="line-through">{status?.label}</span>
+            <span className="line-through text-gray-400">{status?.label}</span>
           ) : (
-            <span className="text-gray-400">
+            <span className="text-gray-500">
               {status?.label || '—'}{option ? ` · ${option.label}` : ''}
             </span>
           )
@@ -1651,94 +1753,123 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
             )
           })}
 
+          {/* Секции свёрнуты в строки — дропдаун компактный, детали по клику */}
           {catOptions.length > 0 && (
-            <div className="border-t border-gray-100 mt-1 py-1">
-              <div className="text-[10px] uppercase text-gray-400 px-3 pt-0.5 pb-1">Поставщик</div>
-              <div className="max-h-36 overflow-y-auto">
-                {catOptions.map(o => {
-                  const current = o.id === task.optionId
-                  const usedByOther = !current && siblingOptionIds.includes(o.id)
-                  return (
-                    <button
-                      key={o.id}
-                      disabled={usedByOther}
-                      onClick={async () => {
-                        const v = current ? null : o.id
-                        onMutate(task.id, { optionId: v })
-                        try { await setTaskOption(task.id, v) } finally { onChanged() }
-                      }}
-                      title={usedByOther ? 'Уже добавлен отдельной строкой' : current ? 'Нажмите, чтобы снять' : undefined}
-                      className={`flex items-center gap-2 w-full px-3 py-1 text-left text-xs ${
-                        usedByOther ? 'text-gray-300' : current ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${current ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
-                        {current && <Check className="w-2.5 h-2.5 text-white" />}
-                      </span>
-                      {o.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {addableOptions.length > 0 && (
-                <div className="border-t border-gray-50 mt-1 pt-1">
-                  <div className="text-[10px] uppercase text-gray-400 px-3 pb-0.5">Добавить строкой</div>
-                  <div className="max-h-24 overflow-y-auto">
-                    {addableOptions.map(o => (
-                      <button
-                        key={o.id}
-                        onClick={async () => {
-                          await addProviderTask(brandId, taskType.id, o.id)
-                          setRect(null)
-                          onChanged()
-                        }}
-                        className="flex items-center gap-1.5 w-full px-3 py-1 text-left text-xs text-blue-600 hover:bg-blue-50"
-                      >
-                        <Plus className="w-3 h-3" />{o.label}
-                      </button>
-                    ))}
+            <div className="border-t border-gray-100 mt-1">
+              <button
+                onClick={() => setSection(section === 'provider' ? null : 'provider')}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+              >
+                <span className="text-gray-400">Поставщик:</span>
+                <span className={option ? 'text-gray-900 font-medium' : 'text-gray-400'}>{option?.label || '—'}</span>
+                {siblingCount > 1 && <span className="text-[10px] text-gray-400">+{siblingCount - 1} строкой</span>}
+                {section === 'provider'
+                  ? <ChevronUp className="w-3 h-3 ml-auto text-gray-400" />
+                  : <ChevronRight className="w-3 h-3 ml-auto text-gray-400" />}
+              </button>
+              {section === 'provider' && (
+                <div className="pb-1">
+                  <div className="max-h-32 overflow-y-auto">
+                    {catOptions.map(o => {
+                      const current = o.id === task.optionId
+                      const usedByOther = !current && siblingOptionIds.includes(o.id)
+                      return (
+                        <button
+                          key={o.id}
+                          disabled={usedByOther}
+                          onClick={async () => {
+                            const v = current ? null : o.id
+                            onMutate(task.id, { optionId: v })
+                            try { await setTaskOption(task.id, v) } finally { onChanged() }
+                          }}
+                          title={usedByOther ? 'Уже добавлен отдельной строкой' : current ? 'Нажмите, чтобы снять' : undefined}
+                          className={`flex items-center gap-2 w-full pl-5 pr-3 py-1 text-left text-xs ${
+                            usedByOther ? 'text-gray-300' : current ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${current ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                            {current && <Check className="w-2.5 h-2.5 text-white" />}
+                          </span>
+                          {o.label}
+                        </button>
+                      )
+                    })}
                   </div>
+                  {addableOptions.length > 0 && (
+                    <div className="border-t border-gray-50 mt-1 pt-1 max-h-20 overflow-y-auto">
+                      {addableOptions.map(o => (
+                        <button
+                          key={o.id}
+                          onClick={async () => {
+                            await addProviderTask(brandId, taskType.id, o.id)
+                            setRect(null)
+                            onChanged()
+                          }}
+                          title="Добавить отдельной строкой со своим статусом"
+                          className="flex items-center gap-1.5 w-full pl-5 pr-3 py-1 text-left text-xs text-blue-600 hover:bg-blue-50"
+                        >
+                          <Plus className="w-3 h-3" />{o.label} — строкой
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          <div className={`py-1 ${catOptions.length === 0 ? 'border-t border-gray-100 mt-1' : 'border-t border-gray-100'}`}>
-            <div className="text-[10px] uppercase text-gray-400 px-3 pt-0.5 pb-1">Исполнитель</div>
-            <div className="max-h-36 overflow-y-auto">
-              <button
-                onClick={async () => {
-                  onMutate(task.id, { assigneeId: null, assigneeName: null })
-                  try { await setTaskAssignee(task.id, null) } finally { onChanged() }
-                }}
-                className={`w-full px-3 py-1 text-left text-xs ${!task.assigneeId ? 'text-gray-700 font-medium' : 'text-gray-400 hover:bg-gray-50'}`}
-              >
-                Не назначен
-              </button>
-              {(cachedAgents || []).map(ag => {
-                const current = ag.id === task.assigneeId
-                return (
-                  <button
-                    key={ag.id}
-                    onClick={async () => {
-                      onMutate(task.id, { assigneeId: ag.id, assigneeName: ag.name })
-                      try { await setTaskAssignee(task.id, ag.id) } finally { onChanged() }
-                    }}
-                    className={`flex items-center gap-2 w-full px-3 py-1 text-left text-xs ${
-                      current ? 'text-blue-700 font-medium bg-blue-50/60' : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <AgentAvatar name={ag.name} size="w-4 h-4 text-[8px]" />
-                    {ag.name}
-                    {current && <Check className="w-3 h-3 ml-auto text-blue-600" />}
-                  </button>
-                )
-              })}
-            </div>
+          <div className="border-t border-gray-100">
+            <button
+              onClick={() => setSection(section === 'assignee' ? null : 'assignee')}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
+            >
+              <span className="text-gray-400">Исполнитель:</span>
+              <span className={task.assigneeName ? 'text-gray-900 font-medium' : 'text-gray-400'}>{task.assigneeName || '—'}</span>
+              {section === 'assignee'
+                ? <ChevronUp className="w-3 h-3 ml-auto text-gray-400" />
+                : <ChevronRight className="w-3 h-3 ml-auto text-gray-400" />}
+            </button>
+            {section === 'assignee' && (
+              <div className="pb-1 max-h-44 overflow-y-auto">
+                <button
+                  onClick={async () => {
+                    onMutate(task.id, { assigneeId: null, assigneeName: null })
+                    try { await setTaskAssignee(task.id, null) } finally { onChanged() }
+                  }}
+                  className={`w-full pl-5 pr-3 py-1 text-left text-xs ${!task.assigneeId ? 'text-gray-700 font-medium' : 'text-gray-400 hover:bg-gray-50'}`}
+                >
+                  Не назначен
+                </button>
+                {groupAgentsByDep(cachedAgents || []).map(g => (
+                  <div key={g.label}>
+                    <div className="pl-5 pr-3 pt-1.5 pb-0.5 text-[10px] uppercase text-gray-400">{g.label}</div>
+                    {g.agents.map(ag => {
+                      const current = ag.id === task.assigneeId
+                      return (
+                        <button
+                          key={ag.id}
+                          onClick={async () => {
+                            onMutate(task.id, { assigneeId: ag.id, assigneeName: ag.name })
+                            try { await setTaskAssignee(task.id, ag.id) } finally { onChanged() }
+                          }}
+                          className={`flex items-center gap-2 w-full pl-5 pr-3 py-1 text-left text-xs ${
+                            current ? 'text-blue-700 font-medium bg-blue-50/60' : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <AgentAvatar name={ag.name} size="w-4 h-4 text-[8px]" />
+                          {ag.name}
+                          {current && <Check className="w-3 h-3 ml-auto text-blue-600" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="border-t border-gray-100 mt-1 px-3 py-1.5 text-[11px] text-gray-400">
-            <div>Статус с {formatDateTimeShort(task.statusSince)}</div>
+            <div>Статус с {fmtDMY(task.statusSince)}, {formatDateTimeShort(task.statusSince).split(', ')[1] || ''}</div>
             {isStuck && <div className="text-red-500 font-medium">в статусе {fmtSeconds(h * 3600)}</div>}
             {timeHint && <div>{timeHint}</div>}
           </div>
@@ -2002,28 +2133,39 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
 
       {stats && stats.people.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-4 overflow-x-auto">
-          <div className="text-sm font-medium text-gray-900 mb-2">По сотрудникам</div>
+          <div className="text-sm font-medium text-gray-900 mb-2">
+            Рейтинг сотрудников <span className="text-[10px] text-gray-400 font-normal">· чем быстрее закрываются этапы, тем выше место</span>
+          </div>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="text-left font-medium py-1.5 pr-3 w-8">#</th>
                 <th className="text-left font-medium py-1.5 pr-3">Сотрудник</th>
-                <th className="text-right font-medium py-1.5 px-3">Изменений</th>
                 <th className="text-right font-medium py-1.5 px-3">Закрыто этапов</th>
+                <th className="text-right font-medium py-1.5 px-3">Ср. время закрытия</th>
                 <th className="text-right font-medium py-1.5 px-3">Открытых задач</th>
                 <th className="text-right font-medium py-1.5 pl-3">Последняя активность</th>
               </tr>
             </thead>
             <tbody>
-              {stats.people.map(p => (
+              {[...stats.people]
+                .sort((a, b) => (b.completed - a.completed)
+                  || ((a.avgCloseSeconds ?? Infinity) - (b.avgCloseSeconds ?? Infinity)))
+                .map((p, i) => (
                 <tr key={p.name} className="border-b border-gray-50 last:border-0">
+                  <td className={`py-1.5 pr-3 ${i === 0 ? 'text-amber-500 font-medium' : 'text-gray-400'}`}>
+                    {i === 0 ? '🏆' : i + 1}
+                  </td>
                   <td className="py-1.5 pr-3 text-gray-800">
                     <span className="inline-flex items-center gap-1.5">
                       <AgentAvatar name={p.name} size="w-5 h-5 text-[9px]" />
                       {p.name}
                     </span>
                   </td>
-                  <td className="py-1.5 px-3 text-right text-gray-600">{p.events || ''}</td>
                   <td className="py-1.5 px-3 text-right text-green-700">{p.completed || ''}</td>
+                  <td className="py-1.5 px-3 text-right text-gray-700">
+                    {p.avgCloseSeconds != null ? fmtSeconds(p.avgCloseSeconds) : '—'}
+                  </td>
                   <td className="py-1.5 px-3 text-right text-blue-600">{p.openTasks || ''}</td>
                   <td className="py-1.5 pl-3 text-right text-gray-400 text-xs">
                     {p.lastActivity ? formatDateTimeShort(p.lastActivity) : '—'}
@@ -2038,6 +2180,7 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
                 if (!unassigned) return null
                 return (
                   <tr>
+                    <td className="py-1.5 pr-3" />
                     <td className="py-1.5 pr-3 text-amber-700">без исполнителя</td>
                     <td className="py-1.5 px-3" />
                     <td className="py-1.5 px-3" />

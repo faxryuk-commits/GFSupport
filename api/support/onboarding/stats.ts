@@ -77,17 +77,30 @@ export default async function handler(req: Request): Promise<Response> {
       ORDER BY tt.sort_order
     `
 
-    // По сотрудникам: события в журнале + переводы в done + текущие назначения
+    // По сотрудникам: события в журнале + переводы в done + текущие назначения.
+    // Рейтинг скорости: среднее время закрытия этапа = интервал от предыдущего
+    // события той же задачи до перевода в done (кто перевёл — тому и время).
     const people = await sql`
-      SELECT e.changed_by AS name,
+      WITH seq AS (
+        SELECT e.changed_by, e.changed_at, s.kind AS new_kind,
+               LAG(e.changed_at) OVER (
+                 PARTITION BY e.brand_id, e.task_type_id, COALESCE(e.option_id, '')
+                 ORDER BY e.changed_at
+               ) AS prev_at
+        FROM onboarding_task_events e
+        LEFT JOIN onboarding_statuses s ON s.id = e.new_status_id
+        WHERE e.org_id = ${orgId}
+      )
+      SELECT changed_by AS name,
              COUNT(*)::int AS events,
-             COUNT(*) FILTER (WHERE s.kind = 'done')::int AS completed,
-             MAX(e.changed_at) AS last_activity
-      FROM onboarding_task_events e
-      LEFT JOIN onboarding_statuses s ON s.id = e.new_status_id
-      WHERE e.org_id = ${orgId} AND e.changed_by IS NOT NULL
-      GROUP BY e.changed_by
-      ORDER BY events DESC
+             COUNT(*) FILTER (WHERE new_kind = 'done')::int AS completed,
+             ROUND(AVG(EXTRACT(EPOCH FROM (changed_at - prev_at)))
+               FILTER (WHERE new_kind = 'done' AND prev_at IS NOT NULL))::bigint AS avg_close_seconds,
+             MAX(changed_at) AS last_activity
+      FROM seq
+      WHERE changed_by IS NOT NULL
+      GROUP BY changed_by
+      ORDER BY completed DESC, avg_close_seconds ASC NULLS LAST
     `
     const assigned = await sql`
       SELECT COALESCE(t.assignee_name, b.assignee_name) AS name, COUNT(*)::int AS open_tasks
@@ -160,13 +173,14 @@ export default async function handler(req: Request): Promise<Response> {
         name: p.name,
         events: p.events,
         completed: p.completed,
+        avgCloseSeconds: p.avg_close_seconds != null ? Number(p.avg_close_seconds) : null,
         openTasks: assignedMap[p.name] || 0,
         lastActivity: p.last_activity,
       })).concat(
         // сотрудники с назначениями, но без событий
         Object.keys(assignedMap)
           .filter(n => !people.some((p: any) => p.name === n))
-          .map(n => ({ name: n, events: 0, completed: 0, openTasks: assignedMap[n], lastActivity: null })),
+          .map(n => ({ name: n, events: 0, completed: 0, avgCloseSeconds: null, openTasks: assignedMap[n], lastActivity: null })),
       ),
       brands: brands.map((b: any) => ({
         id: b.id,

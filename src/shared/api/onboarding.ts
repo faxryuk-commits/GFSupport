@@ -135,6 +135,8 @@ export interface ObPersonStat {
   name: string
   events: number
   completed: number
+  /** Среднее время закрытия этапа (сек) — рейтинг скорости */
+  avgCloseSeconds: number | null
   openTasks: number
   lastActivity: string | null
 }
