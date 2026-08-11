@@ -241,10 +241,27 @@ export function deleteTask(taskId: string): Promise<{ success: boolean }> {
   return apiDelete(`/onboarding/tasks?taskId=${encodeURIComponent(taskId)}`)
 }
 
-export function fetchOnboardingEvents(brandId?: string, limit = 100): Promise<{ events: ObEvent[] }> {
+export interface ObEventsQuery {
+  brandId?: string
+  limit?: number
+  offset?: number
+  /** yyyy-mm-dd (рабочая tz) */
+  from?: string
+  to?: string
+  /** kind нового статуса: done | active | waiting | todo | cancelled */
+  kind?: string
+  actor?: string
+}
+
+export function fetchOnboardingEvents(opts: ObEventsQuery = {}): Promise<{ events: ObEvent[]; hasMore: boolean }> {
   const params = new URLSearchParams()
-  if (brandId) params.append('brandId', brandId)
-  params.append('limit', String(limit))
+  if (opts.brandId) params.append('brandId', opts.brandId)
+  params.append('limit', String(opts.limit ?? 100))
+  if (opts.offset) params.append('offset', String(opts.offset))
+  if (opts.from) params.append('from', opts.from)
+  if (opts.to) params.append('to', opts.to)
+  if (opts.kind) params.append('kind', opts.kind)
+  if (opts.actor) params.append('actor', opts.actor)
   return apiGet(`/onboarding/tasks?${params}`, false)
 }
 

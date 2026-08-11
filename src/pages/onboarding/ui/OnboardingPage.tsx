@@ -435,6 +435,12 @@ export function OnboardingPage() {
           {refreshing && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </div>
         <div className="flex items-center gap-2">
+          {board && (
+            <AddProjectButton
+              board={board}
+              onCreated={id => { setSelectedBrandId(id); setTab('focus'); load(true) }}
+            />
+          )}
           <button
             onClick={() => load(true)}
             className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"
@@ -527,6 +533,82 @@ export function OnboardingPage() {
         <RefsTab board={board} onChanged={() => load(true)} />
       )}
       </div>
+    </div>
+  )
+}
+
+/** «+ Проект» в шапке — доступен из любой вкладки (Фокус, Матрица, …). */
+function AddProjectButton({ board, onCreated }: {
+  board: ObBoard
+  onCreated: (brandId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [posId, setPosId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (btnRef.current?.contains(e.target as Node)) return
+      if (panelRef.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const submit = async () => {
+    if (!name.trim() || saving) return
+    setSaving(true)
+    try {
+      const r = await createBrand({ name: name.trim(), posId: posId || null })
+      setName(''); setPosId(''); setOpen(false)
+      onCreated(r.id)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+      >
+        <Plus className="w-4 h-4" /> Проект
+      </button>
+      {open && (
+        <div ref={panelRef} className="absolute right-0 top-full mt-1 z-50 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-3">
+          <div className="text-[10px] uppercase text-gray-400 mb-1">Новый проект</div>
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
+            placeholder="Название"
+            className="w-full px-3 py-1.5 rounded-lg border border-gray-300 text-sm mb-2"
+          />
+          <select
+            value={posId}
+            onChange={e => setPosId(e.target.value)}
+            className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white mb-2"
+          >
+            <option value="">POS-система…</option>
+            {board.posSystems.filter(p => p.isActive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button
+            onClick={submit}
+            disabled={!name.trim() || saving}
+            className="w-full py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Создать и открыть'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -1116,13 +1198,13 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
 
   const loadCard = useCallback(() => {
     fetchBrandCard(brand.id).then(r => { setComments(r.comments); setTodos(r.todos) }).catch(() => { setComments([]); setTodos([]) })
-    fetchOnboardingEvents(brand.id, 200).then(r => setEvents(r.events)).catch(() => setEvents([]))
+    fetchOnboardingEvents({ brandId: brand.id, limit: 200 }).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [brand.id])
   useEffect(() => { loadCard() }, [loadCard])
   // После операций (смена статусов и т.п.) доска перезагружается — подтягиваем
   // свежий журнал, чтобы «История» сразу показывала событие с автором.
   useEffect(() => {
-    fetchOnboardingEvents(brand.id, 200).then(r => setEvents(r.events)).catch(() => {})
+    fetchOnboardingEvents({ brandId: brand.id, limit: 200 }).then(r => setEvents(r.events)).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brand])
 
@@ -2206,7 +2288,7 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
 
   useEffect(() => {
     fetchOnboardingStats().then(setStats).catch(() => setStats(null))
-    fetchOnboardingEvents(undefined, 1000).then(r => setEvents(r.events)).catch(() => setEvents([]))
+    fetchOnboardingEvents({ limit: 1000 }).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [])
 
   const brands = board.brands.filter(b => !b.archivedAt)
@@ -2585,7 +2667,7 @@ function TimelineTab({ board, statusById, onSelect }: {
   const [events, setEvents] = useState<ObEvent[] | null>(null)
   const [mode, setMode] = useState<'projects' | 'people'>('projects')
   useEffect(() => {
-    fetchOnboardingEvents(undefined, 1000).then(r => setEvents(r.events)).catch(() => setEvents([]))
+    fetchOnboardingEvents({ limit: 1000 }).then(r => setEvents(r.events)).catch(() => setEvents([]))
   }, [])
 
   const DAYS = 21
@@ -2793,33 +2875,109 @@ function TimelineTab({ board, statusById, onSelect }: {
 
 // ───────────────────────────── История
 
+const PAGE_SIZE = 50
+
 function HistoryTab({ board }: { board: ObBoard }) {
   const [events, setEvents] = useState<ObEvent[] | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [brandId, setBrandId] = useState('')
+  const [kind, setKind] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+
+  const brands = board.brands
+  const kinds = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const s of board.statuses) if (s.isActive && !seen.has(s.kind)) seen.set(s.kind, s.label)
+    return [...seen.entries()]
+  }, [board.statuses])
+
+  const query = useMemo(() => ({
+    brandId: brandId || undefined,
+    kind: kind || undefined,
+    from: from || undefined,
+    to: to || undefined,
+    limit: PAGE_SIZE,
+  }), [brandId, kind, from, to])
 
   useEffect(() => {
-    fetchOnboardingEvents(undefined, 200)
-      .then(r => setEvents(r.events))
-      .catch(() => setEvents([]))
-  }, [board])
+    setEvents(null)
+    fetchOnboardingEvents(query)
+      .then(r => { setEvents(r.events); setHasMore(r.hasMore) })
+      .catch(() => { setEvents([]); setHasMore(false) })
+  }, [query])
 
-  if (events === null) {
-    return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
+  const loadMore = async () => {
+    if (!events || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const r = await fetchOnboardingEvents({ ...query, offset: events.length })
+      setEvents(prev => [...(prev || []), ...r.events])
+      setHasMore(r.hasMore)
+    } finally {
+      setLoadingMore(false)
+    }
   }
-  if (events.length === 0) {
-    return <div className="text-gray-400 text-sm py-16 text-center">Изменений пока нет</div>
-  }
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
-      {events.map(e => (
-        <div key={e.id} className="px-4 py-2.5 text-sm flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium text-gray-900">{e.brandName || e.brandId}</span>
-          <span className="text-gray-600">{e.taskLabel || '—'}{e.optionLabel ? ` · ${e.optionLabel}` : ''}</span>
-          <span className="text-gray-400">{e.oldLabel || '∅'} → {e.newLabel || '∅'}</span>
-          <span className="ml-auto text-xs text-gray-400">
-            {formatDateTimeShort(e.changedAt)}{e.changedBy ? ` · ${e.changedBy}` : ''}
-          </span>
-        </div>
-      ))}
+    <div>
+      {/* Фильтры: проект · тип события · период */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <select value={brandId} onChange={e => setBrandId(e.target.value)}
+          className="text-xs px-2 py-1.5 rounded-lg border border-gray-300 bg-white max-w-[180px]">
+          <option value="">Все проекты</option>
+          {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <select value={kind} onChange={e => setKind(e.target.value)}
+          className="text-xs px-2 py-1.5 rounded-lg border border-gray-300 bg-white">
+          <option value="">Все события</option>
+          {kinds.map(([k, label]) => <option key={k} value={k}>→ {label}</option>)}
+        </select>
+        <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+          className="text-xs px-2 py-1 rounded-lg border border-gray-300 bg-white" />
+        <span className="text-gray-400 text-xs">—</span>
+        <input type="date" value={to} onChange={e => setTo(e.target.value)}
+          className="text-xs px-2 py-1 rounded-lg border border-gray-300 bg-white" />
+        {(brandId || kind || from || to) && (
+          <button
+            onClick={() => { setBrandId(''); setKind(''); setFrom(''); setTo('') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            сбросить
+          </button>
+        )}
+      </div>
+
+      {events === null ? (
+        <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
+      ) : events.length === 0 ? (
+        <div className="text-gray-400 text-sm py-16 text-center">По выбранным фильтрам событий нет</div>
+      ) : (
+        <>
+          <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+            {events.map(e => (
+              <div key={e.id} className="px-4 py-2 text-sm flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium text-gray-900">{e.brandName || e.brandId}</span>
+                <span className="text-gray-600 truncate max-w-[220px]">{e.taskLabel || '—'}{e.optionLabel ? ` · ${e.optionLabel}` : ''}</span>
+                <span className="text-gray-400">{e.oldLabel || '∅'} → <span className="text-gray-600">{e.newLabel || '∅'}</span></span>
+                <span className="ml-auto text-xs text-gray-400 shrink-0">
+                  {formatDateTimeShort(e.changedAt)}{e.changedBy ? ` · ${e.changedBy}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+          {hasMore && (
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="mt-3 w-full py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {loadingMore ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `Показать ещё ${PAGE_SIZE}`}
+            </button>
+          )}
+        </>
+      )}
     </div>
   )
 }

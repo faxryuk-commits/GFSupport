@@ -35,36 +35,47 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
       const brandId = url.searchParams.get('brandId')
-      const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500)
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 1000)
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0'))
+      const from = url.searchParams.get('from')
+      const to = url.searchParams.get('to')
+      const kind = url.searchParams.get('kind')
+      const actor = url.searchParams.get('actor')
 
-      const events = brandId
-        ? await sql`
-            SELECT e.*, os.label AS old_label, ns.label AS new_label, tt.label AS task_label,
-                   op.label AS option_label
-            FROM onboarding_task_events e
-            LEFT JOIN onboarding_statuses os ON os.id = e.old_status_id
-            LEFT JOIN onboarding_statuses ns ON ns.id = e.new_status_id
-            LEFT JOIN onboarding_task_types tt ON tt.id = e.task_type_id
-            LEFT JOIN onboarding_options op ON op.id = e.option_id
-            WHERE e.org_id = ${orgId} AND e.brand_id = ${brandId}
-            ORDER BY e.changed_at DESC
-            LIMIT ${limit}
-          `
-        : await sql`
-            SELECT e.*, os.label AS old_label, ns.label AS new_label, tt.label AS task_label,
-                   op.label AS option_label, b.name AS brand_name
-            FROM onboarding_task_events e
-            LEFT JOIN onboarding_statuses os ON os.id = e.old_status_id
-            LEFT JOIN onboarding_statuses ns ON ns.id = e.new_status_id
-            LEFT JOIN onboarding_task_types tt ON tt.id = e.task_type_id
-            LEFT JOIN onboarding_options op ON op.id = e.option_id
-            LEFT JOIN onboarding_brands b ON b.id = e.brand_id
-            WHERE e.org_id = ${orgId}
-            ORDER BY e.changed_at DESC
-            LIMIT ${limit}
-          `
+      // Пагинация + фильтры: динамический WHERE через параметризованный запрос
+      const conds: string[] = ['e.org_id = $1']
+      const params: any[] = [orgId]
+      const add = (cond: string, value: any) => {
+        params.push(value)
+        conds.push(cond.replace('?', `$${params.length}`))
+      }
+      if (brandId) add('e.brand_id = ?', brandId)
+      if (from) add('e.changed_at >= ?::timestamptz', `${from}T00:00:00+05:00`)
+      if (to) add('e.changed_at <= ?::timestamptz', `${to}T23:59:59+05:00`)
+      if (kind) add('ns.kind = ?', kind)
+      if (actor) add('e.changed_by = ?', actor)
+      params.push(limit + 1, offset)
+
+      const events = await sql.query(
+        `SELECT e.*, os.label AS old_label, ns.label AS new_label, tt.label AS task_label,
+                op.label AS option_label, b.name AS brand_name
+         FROM onboarding_task_events e
+         LEFT JOIN onboarding_statuses os ON os.id = e.old_status_id
+         LEFT JOIN onboarding_statuses ns ON ns.id = e.new_status_id
+         LEFT JOIN onboarding_task_types tt ON tt.id = e.task_type_id
+         LEFT JOIN onboarding_options op ON op.id = e.option_id
+         LEFT JOIN onboarding_brands b ON b.id = e.brand_id
+         WHERE ${conds.join(' AND ')}
+         ORDER BY e.changed_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params,
+      ) as any[]
+
+      const hasMore = events.length > limit
+      if (hasMore) events.pop()
 
       return json({
+        hasMore,
         events: events.map((e: any) => ({
           id: String(e.id),
           brandId: e.brand_id,
