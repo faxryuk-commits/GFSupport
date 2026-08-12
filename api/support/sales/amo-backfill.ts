@@ -28,6 +28,9 @@ export const config = { runtime: 'edge' }
 
 const ORG = process.env.SALES_ORG || 'org_delever'
 const GARBAGE_MIN_PRICE = 500_000   // сум: ниже — брошенная карточка, а не сделка
+// Перенос идёт постранично и в edge-функции: за один вызов успеваем немного,
+// поэтому ответ всегда содержит ссылку next на продолжение
+const TIME_BUDGET_MS = 14_000
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
@@ -48,6 +51,7 @@ export default async function handler(req: Request): Promise<Response> {
   const pages = Math.min(10, Math.max(1, parseInt(url.searchParams.get('pages') || '2', 10)))
   const dry = url.searchParams.get('dry') === '1'
 
+  const started = Date.now()
   const sql = getSQL()
   await ensureSalesSchema(sql, ORG)
 
@@ -80,6 +84,7 @@ export default async function handler(req: Request): Promise<Response> {
     const contacts = await fetchContacts(creds, [...ids])
 
     for (const lead of batch) {
+      if (Date.now() - started > TIME_BUDGET_MS) { out.hasMore = true; break }
       try {
         if (!isAllowedPipeline(lead.pipeline_id)) { out.wrongMode++; continue }
         const st = statuses.get(lead.status_id)

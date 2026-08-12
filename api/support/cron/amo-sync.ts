@@ -25,7 +25,13 @@ export const config = { runtime: 'edge' }
 
 const ORG = process.env.SALES_ORG || 'org_delever'
 const CURSOR_KEY = 'sales_amo_cursor'
-const MAX_PAGES = 4            // 1000 сделок за проход — с запасом для минутного крона
+// Бюджеты на один вызов. Edge-функция живёт ~25 секунд, а на каждый лид
+// приходится несколько запросов к базе — без ограничения первый же запуск
+// с суточным окном упирается в таймаут (проверено на проде 13.08.2026).
+const MAX_PAGES = 2
+const MAX_LEADS_PER_RUN = 60
+const TIME_BUDGET_MS = 14_000
+const SCHEMA_BUDGET_MS = 8_000
 const FIRST_RUN_WINDOW_H = 24  // первый запуск не тянет архив, для этого есть backfill
 
 export default async function handler(req: Request): Promise<Response> {
@@ -40,8 +46,16 @@ export default async function handler(req: Request): Promise<Response> {
   if (!domain || !token) return json({ ok: false, error: 'AMO_DOMAIN / AMO_TOKEN not set' }, 200)
   const creds = { domain, token }
 
+  const started = Date.now()
   const sql = getSQL()
   await ensureSalesSchema(sql, ORG)
+
+  // Первый запуск создаёт 19 таблиц с индексами и сидами. Если это заняло
+  // заметное время — на синхронизацию в этом вызове уже не идём, её подхватит
+  // следующая минута. Иначе функция гарантированно упрётся в лимит.
+  if (Date.now() - started > SCHEMA_BUDGET_MS) {
+    return json({ ok: true, schema: 'initialized', note: 'синхронизация начнётся со следующего прохода' })
+  }
 
   const [cursorRow] = await sql`
     SELECT value FROM support_platform_settings WHERE key = ${CURSOR_KEY}
@@ -50,15 +64,18 @@ export default async function handler(req: Request): Promise<Response> {
     ? parseInt(cursorRow.value, 10)
     : Math.floor(Date.now() / 1000) - FIRST_RUN_WINDOW_H * 3600
 
-  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, errors: 0 }
+  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, errors: 0, deferred: 0 }
   let maxUpdated = since
 
   try {
     // ─── 1. Сделки, изменившиеся с прошлого прохода ───────────────────────────
     const leads: any[] = []
     for (let page = 1; page <= MAX_PAGES; page++) {
+      // Порядок по возрастанию времени изменения: курсор двигается строго
+      // по обработанным сделкам, поэтому прерванный проход дочитывается со
+      // следующего вызова без пропусков
       const data = await amoGet(creds,
-        `/leads?filter[updated_at][from]=${since}&with=contacts&limit=250&page=${page}`)
+        `/leads?filter[updated_at][from]=${since}&with=contacts&limit=250&page=${page}&order[updated_at]=asc`)
       const batch = data?._embedded?.leads || []
       leads.push(...batch)
       if (batch.length < 250) break
@@ -81,7 +98,13 @@ export default async function handler(req: Request): Promise<Response> {
     const contacts = await fetchContacts(creds, [...contactIds])
 
     // ─── 3. В приёмник — тем же путём, что сайт и Instagram ───────────────────
+    let processed = 0
     for (const lead of leads) {
+      if (processed >= MAX_LEADS_PER_RUN || Date.now() - started > TIME_BUDGET_MS) {
+        out.deferred = leads.length - processed
+        break
+      }
+      processed++
       try {
         if (lead.updated_at && lead.updated_at > maxUpdated) maxUpdated = lead.updated_at
         // В аккаунте девять воронок: Instagram comments и Onboarding в CRM продаж не нужны
