@@ -20,6 +20,17 @@ type SQL = NeonQueryFunction<false, false>
 
 const ensuredOrgs = new Set<string>()
 
+/**
+ * Версия схемы. Поднимается при любом изменении DDL или сидов.
+ *
+ * Раньше быстрый путь опирался на наличие последней добавленной колонки, и это
+ * дало неприятный эффект на проде: пока колонки нет, КАЖДЫЙ запрос гнал полный
+ * прогон из 140 операций и не укладывался в лимит edge-функции. Версия в одной
+ * строке настроек снимает проблему: проверка — один запрос, полный прогон
+ * случается ровно один раз на изменение.
+ */
+const SCHEMA_VERSION = '2026-08-13.2'
+
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
 }
@@ -146,19 +157,18 @@ const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
 export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> {
   if (ensuredOrgs.has(orgId)) return
 
-  // Быстрый путь: маркер — последняя добавленная таблица модуля. to_regclass
-  // возвращает строку всегда, поэтому проба работает и на пустой организации.
+  // Быстрый путь: одна строка с версией схемы
+  const versionKey = `sales_schema_${orgId}`
   try {
-    const [probe] = await sql`
-      SELECT column_name FROM information_schema.columns
-      WHERE table_name = 'sales_leads' AND column_name = 'city'
+    const [row] = await sql`
+      SELECT value FROM support_platform_settings WHERE key = ${versionKey}
     `
-    if (probe?.column_name) {
+    if (row?.value === SCHEMA_VERSION) {
       ensuredOrgs.add(orgId)
       return
     }
   } catch {
-    // таблиц ещё нет — идём полным путём
+    // таблицы настроек нет — идём полным путём
   }
 
   // ─── Аккаунт: сквозной объект ────────────────────────────────────────────────
@@ -928,6 +938,14 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
               ${t.numberFormat}, ${t.name}, ${t.body}, true)
     `
   }
+
+  // Версию пишем последней: упавший на середине прогон повторится в следующий
+  // раз, а не будет считаться выполненным
+  await sql`
+    INSERT INTO support_platform_settings (key, value, updated_at)
+    VALUES (${versionKey}, ${SCHEMA_VERSION}, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = ${SCHEMA_VERSION}, updated_at = NOW()
+  `
 
   ensuredOrgs.add(orgId)
 }
