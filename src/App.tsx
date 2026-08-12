@@ -27,6 +27,15 @@ const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPag
 const OnboardingPage = lazy(() => import('@/pages/onboarding/ui/OnboardingPage').then(m => ({ default: m.OnboardingPage })))
 const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
 const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
+const PublicDocPage = lazy(() => import('@/pages/doc/ui/PublicDocPage'))
+const SalesQueuePage = lazy(() => import('@/pages/sales/ui/SalesQueuePage'))
+const SalesDealPage = lazy(() => import('@/pages/sales/ui/SalesDealPage'))
+const SalesDealsPage = lazy(() => import('@/pages/sales/ui/SalesDealsPage'))
+const SalesLeadsPage = lazy(() => import('@/pages/sales/ui/SalesLeadsPage'))
+const SalesAccountsPage = lazy(() => import('@/pages/sales/ui/SalesAccountsPage'))
+const SalesAccountPage = lazy(() => import('@/pages/sales/ui/SalesAccountPage'))
+const SalesReportsPage = lazy(() => import('@/pages/sales/ui/SalesReportsPage'))
+const SalesSettingsPage = lazy(() => import('@/pages/sales/ui/SalesSettingsPage'))
 const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
 const InsightsChatPage = lazy(() => import('@/pages/insights-chat/ui/InsightsChatPage').then(m => ({ default: m.InsightsChatPage })))
 const BenchmarksPage = lazy(() => import('@/pages/benchmarks/ui/BenchmarksPage').then(m => ({ default: m.BenchmarksPage })))
@@ -72,6 +81,8 @@ export default function App() {
         <Route path="/signup" element={<OrgRegisterPage />} />
         <Route path="/support/register/:token" element={<RegisterPage />} />
         <Route path="/register/:token" element={<RegisterPage />} />
+        {/* Публичная страница документа: открывает клиент, авторизация не нужна */}
+        <Route path="/d/:token" element={<PublicDocPage />} />
 
         <Route element={<MainLayout />}>
           <Route path="/overview" element={<DashboardPage />} />
@@ -83,6 +94,15 @@ export default function App() {
           <Route path="/health-legacy" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
           <Route path="/commitments" element={<CommitmentsPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/sales/queue" element={<SalesQueuePage />} />
+          <Route path="/sales/deals" element={<SalesDealsPage />} />
+          <Route path="/sales/deals/:id" element={<SalesDealPage />} />
+          <Route path="/sales/leads" element={<SalesLeadsPage />} />
+          <Route path="/sales/accounts" element={<SalesAccountsPage />} />
+          <Route path="/sales/partners" element={<SalesAccountsPage />} />
+          <Route path="/sales/accounts/:id" element={<SalesAccountPage />} />
+          <Route path="/sales/reports" element={<SalesReportsPage />} />
+          <Route path="/sales/settings" element={<SalesSettingsPage />} />
           <Route path="/sla-report" element={<Navigate to="/analytics?tab=detail" replace />} />
           <Route path="/sla-report-legacy" element={<Navigate to="/analytics?tab=detail" replace />} />
           <Route path="/benchmarks" element={<BenchmarksPage />} />

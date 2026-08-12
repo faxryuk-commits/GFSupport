@@ -94,3 +94,16 @@ h1, h2, h3, .font-display {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+
+/* Печать документа клиентом: «Скачать PDF» — это печать страницы в PDF
+   средствами браузера. Пока нет Google Docs, это самый короткий путь:
+   ничего не генерируем на сервере, вёрстка уже готова. */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; }
+  .doc-sheet { max-width: 100% !important; padding: 0 !important; }
+  .doc-sheet section, .doc-sheet header { break-inside: avoid; }
+  .doc-header { background: #002A47 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  a[href]:after { content: ""; }
+}

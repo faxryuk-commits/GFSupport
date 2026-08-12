@@ -69,7 +69,9 @@ export async function apiPost<T>(endpoint: string, body: unknown): Promise<T> {
   
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `API Error: ${res.status}`)
+    // У движка продаж отказ приходит с человеческим message («не заполнено: …»),
+    // и показать нужно именно его, а не «API Error: 422»
+    throw new Error(error.message || error.error || `API Error: ${res.status}`)
   }
   
   return res.json()
@@ -87,6 +89,22 @@ export async function apiPut<T>(endpoint: string, body: unknown): Promise<T> {
     throw new Error(error.error || `API Error: ${res.status}`)
   }
   
+  return res.json()
+}
+
+export async function apiPatch<T>(endpoint: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify(body)
+  })
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Unknown error' }))
+    // Сообщение движка (например, «не заполнено: ...») важнее кода ответа
+    throw new Error(error.message || error.error || `API Error: ${res.status}`)
+  }
+
   return res.json()
 }
 

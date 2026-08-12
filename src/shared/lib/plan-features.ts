@@ -26,9 +26,9 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: 10,
     maxChannels: 20,
     maxMessagesPerMonth: 20000,
-    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'settings'],
+    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'sales', 'settings'],
     // Редизайн (4 группы): Аналитика/Бенчмарки/Маршрутизация/Карта системы добавлены в меню.
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map', '/sales', '/sales/queue', '/sales/deals', '/sales/leads', '/sales/accounts', '/sales/reports', '/sales/settings'],
   },
   enterprise: {
     name: 'Enterprise',
@@ -36,8 +36,8 @@ const PLANS: Record<PlanType, PlanConfig> = {
     maxAgents: -1,
     maxChannels: -1,
     maxMessagesPerMonth: -1,
-    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'settings'],
-    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map'],
+    features: ['chats', 'channels', 'cases', 'health', 'commitments', 'sla-report', 'knowledge', 'docs', 'broadcast', 'whatsapp', 'ai-replies', 'ai-learning', 'ai-agent', 'insights-chat', 'analytics', 'benchmarks', 'routing', 'system-map', 'sales', 'settings'],
+    navPaths: ['/overview', '/chats', '/channels', '/cases', '/onboarding', '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent', '/routing', '/knowledge', '/broadcast', '/settings', '/system-map', '/sales', '/sales/queue', '/sales/deals', '/sales/leads', '/sales/accounts', '/sales/reports', '/sales/settings'],
   },
 }
 

@@ -1,4 +1,5 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
+import { handleSalesCallback, handleSalesCommand, handleVoiceNote } from '../lib/sales-bot.js'
 
 export const config = { runtime: 'edge' }
 
@@ -36,9 +37,21 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const update = await req.json()
+    const sqlEarly = getSQL()
+
+    // Продажи: нажатия на карточках лидов и команды сейлза обрабатываются
+    // раньше регистрации — это тот же бот, но другая роль (см. lib/sales-bot.ts)
+    if (update.callback_query) {
+      await handleSalesCallback(sqlEarly, update)
+      return json({ ok: true })
+    }
 
     const message = update.message
     if (!message) return json({ ok: true })
+
+    if (await handleSalesCommand(sqlEarly, message)) return json({ ok: true })
+    // Голосовое после звонка → поля сделки (замена телефонии)
+    if (await handleVoiceNote(sqlEarly, message)) return json({ ok: true })
 
     const chatId = message.chat?.id
     const fromUser = message.from

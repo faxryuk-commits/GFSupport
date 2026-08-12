@@ -93,6 +93,14 @@
     {
       "path": "/api/support/cron/problem-scan",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/support/cron/sales-tick",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/support/cron/amo-sync",
+      "schedule": "* * * * *"
     }
   ]
 }

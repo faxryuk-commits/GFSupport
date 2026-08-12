@@ -219,6 +219,17 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
+    label: 'Продажи',
+    items: [
+      { path: '/sales/queue', label: 'Очередь дня', icon: Target },
+      { path: '/sales/deals', label: 'Сделки', icon: Briefcase },
+      { path: '/sales/leads', label: 'Лиды', icon: MessageSquare },
+      { path: '/sales/accounts', label: 'Аккаунты', icon: Hash },
+      { path: '/sales/reports', label: 'Отчёты продаж', icon: BarChart3 },
+      { path: '/sales/settings', label: 'Справочники продаж', icon: Settings },
+    ],
+  },
+  {
     label: 'Операции',
     items: [
       { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
