@@ -63,6 +63,7 @@ export default async function handler(req: Request): Promise<Response> {
   const out = {
     mode, pagesScanned: 0, fetched: 0, imported: 0, alreadyThere: 0,
     garbageSkipped: 0, wrongMode: 0, errors: 0, lastPage: startPage - 1, hasMore: false,
+    interrupted: false,
     samples: [] as any[],
   }
 
@@ -84,7 +85,14 @@ export default async function handler(req: Request): Promise<Response> {
     const contacts = await fetchContacts(creds, [...ids])
 
     for (const lead of batch) {
-      if (Date.now() - started > TIME_BUDGET_MS) { out.hasMore = true; break }
+      // Страницу оборвали по времени — её нужно дочитать, а не перескакивать
+      // дальше: иначе часть сделок молча не переносится (так и случилось на
+      // первом боевом прогоне, 36 сделок остались за бортом)
+      if (Date.now() - started > TIME_BUDGET_MS) {
+        out.hasMore = true
+        out.interrupted = true
+        break
+      }
       try {
         if (!isAllowedPipeline(lead.pipeline_id)) { out.wrongMode++; continue }
         const st = statuses.get(lead.status_id)
@@ -194,10 +202,13 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
+  // Продолжать нужно с той же страницы, если её оборвали, и со следующей,
+  // если дочитали до конца
+  const resumePage = out.interrupted ? out.lastPage : out.lastPage + 1
   return json({
-    ok: true, dry, ...out,
+    ok: true, dry, ...out, resumePage,
     next: out.hasMore
-      ? `?mode=${mode}&page=${out.lastPage + 1}&pages=${pages}${dry ? '&dry=1' : ''}`
+      ? `?mode=${mode}&page=${resumePage}&pages=${pages}${dry ? '&dry=1' : ''}`
       : null,
   })
 }
