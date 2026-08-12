@@ -1,7 +1,7 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
-import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline } from '../lib/sales-amo.js'
+import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline, agentByAmoUser } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -169,7 +169,8 @@ export default async function handler(req: Request): Promise<Response> {
                                    title, deal_type, external_id, city, points, orders_per_day, pos,
                                    tariff, monthly_amount, currency, stage_since,
                                    won_at, lost_at, lost_reason_id, created_at, updated_at)
-          VALUES (${dealId}, ${ORG}, ${accountId}, ${stageIdByKey.get(stageKey) || ''}, NULL,
+          VALUES (${dealId}, ${ORG}, ${accountId}, ${stageIdByKey.get(stageKey) || ''},
+                  ${agentByAmoUser(lead.responsible_user_id)},
                   ${marketByPipeline(lead.pipeline_id)}, ${name || 'Без названия'}, 'new',
                   ${`amo_${lead.id}`}, ${cf(lead, 'Город') || null},
                   ${parseInt(cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || '0', 10) || null},

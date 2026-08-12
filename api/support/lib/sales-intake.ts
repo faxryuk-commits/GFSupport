@@ -30,6 +30,7 @@ export interface IntakePayload {
   aggregators?: string | null
   delivery_type?: string | null
   channel_key?: string | null   // внешний id диалога: ig-scoped id, chat_id
+  owner_hint?: string | null    // ответственный из системы-источника
   raw?: any
 }
 
@@ -130,8 +131,10 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   }
 
   // 4. Маршрутизация: зелёный уходит сейлзу с наименьшей загрузкой
-  let assignedAgentId: string | null = null
-  if (status === 'assigned') {
+  // Если в системе-источнике у обращения уже есть ответственный — уважаем его,
+  // иначе распределение перекинет лид на другого и сломает работу сейлза
+  let assignedAgentId: string | null = body.owner_hint || null
+  if (!assignedAgentId && status === 'assigned') {
     const [agent] = await sql`
       SELECT a.id
       FROM support_agents a

@@ -143,6 +143,7 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
     aggregators: cf(lead, 'Работает ли в агрегаторах') || null,
     delivery_type: cf(lead, 'Есть ли свои курьеры') || null,
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
+    owner_hint: agentByAmoUser(lead.responsible_user_id),
     raw: lead,
   }
 }
@@ -219,4 +220,20 @@ export function allowedPipelines(): number[] {
 export function isAllowedPipeline(pipelineId: number): boolean {
   const list = allowedPipelines()
   return list.length === 0 || list.includes(pipelineId)
+}
+
+/**
+ * Ответственный из Amo → сотрудник GFSupport.
+ *
+ * Сопоставление задаётся переменной AMO_USER_MAP в виде `10734270:agent_xxx,...`.
+ * Без него перенесённые сделки остаются без владельца: они не попадут ни в
+ * «Мои», ни в очередь дня, и сейлз их просто не увидит.
+ */
+export function agentByAmoUser(amoUserId: number | null | undefined): string | null {
+  if (!amoUserId) return null
+  for (const pair of (process.env.AMO_USER_MAP || '').split(',')) {
+    const [amo, agent] = pair.split(':')
+    if (amo && Number(amo.trim()) === Number(amoUserId)) return agent.trim()
+  }
+  return null
 }
