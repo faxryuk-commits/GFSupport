@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 
 export const config = {
@@ -33,6 +34,11 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
   await ensureSalesSchema(sql, orgId)
+
+  // Справочники — это устройство процесса продаж: этапы, нормативы, причины
+  // отказа. Наружу отдавать нечего, поэтому авторизация обязательна и на чтение
+  const ctx = await extractAgentContext(req)
+  if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
   if (req.method === 'GET') {
     const [stages, reasons, sources] = await Promise.all([
