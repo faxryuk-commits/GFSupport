@@ -97,7 +97,10 @@ export default async function handler(req: Request): Promise<Response> {
           .map((c: any) => contacts.get(c.id))
           .find((c: any) => c?.phone)
 
-        const name = cf(lead, 'Бренд') || lead.name || ''
+        const rawName = cf(lead, 'Бренд') || lead.name || ''
+        // Служебные имена Amo («Facebook №…», «Сделка #…») заменяем контактом
+        const name = /^(facebook|instagram|сделка|автосделка|lead)\s*[#№]?/i.test(rawName)
+          ? (contact?.name || rawName) : rawName
         const price = Number(lead.price || 0)
         // Брошенная карточка: ни имени клиента, ни телефона, ни внятной суммы
         const looksGarbage = (!name || /^(сделка|автосделка)/i.test(name))

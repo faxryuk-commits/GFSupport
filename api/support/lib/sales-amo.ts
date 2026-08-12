@@ -86,6 +86,19 @@ export async function fetchContacts(creds: AmoCreds, ids: number[]): Promise<Map
 }
 
 /** Поля сделки Amo → поля нашего лида. Названия полей взяты из боевой воронки. */
+/**
+ * Служебные названия Amo: заявке из «Неразобранного» она даёт имя вида
+ * «Facebook №1410923527616895», а созданной автоматически — «Сделка #30143187».
+ * В очереди сейлза это выглядит мусором, поэтому подставляем имя контакта.
+ * Проверено на боевых данных: таких 22 из первых 55 лидов.
+ */
+function readableName(lead: any, contactName?: string): string {
+  const raw = String(cf(lead, 'Бренд') || lead.name || '').trim()
+  const служебное = /^(facebook|instagram|сделка|автосделка|lead|leads)\s*[#№]?/i.test(raw)
+  if (raw && !служебное) return raw
+  return (contactName || '').trim() || raw || 'Без названия'
+}
+
 export function leadPayload(lead: any, contact?: { phone: string; name: string }) {
   const { source, formId } = sourceFromLead(lead)
   // Названия полей сверены с боевой воронкой: «Агрегаторы» в Amo называется
@@ -94,7 +107,7 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
   return {
     source,
     external_id: `amo_${lead.id}`,
-    name: cf(lead, 'Бренд') || lead.name || 'Без названия',
+    name: readableName(lead, contact?.name),
     phone: contact?.phone || null,
     contact_name: contact?.name || null,
     city: cf(lead, 'Город') || null,
