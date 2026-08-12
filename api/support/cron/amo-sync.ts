@@ -82,11 +82,18 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     // ─── 2. «Неразобранное»: заявки лид-форм лежат отдельно от сделок ─────────
+    // Внимание: у неразобранной заявки вложенная сделка приходит пустой —
+    // только id и ссылки. Воронка, форма и время лежат на верхнем уровне
+    // элемента, а имя и телефон — в контакте. Без этого все заявки с форм
+    // отсеивались проверкой воронки (обнаружено на проде 13.08.2026).
     const unsorted = await amoGet(creds, `/leads/unsorted?limit=100`)
     for (const u of unsorted?._embedded?.unsorted || []) {
       const lead = u._embedded?.leads?.[0]
       if (!lead) continue
       lead._unsorted_meta = u.metadata || null
+      lead.pipeline_id = lead.pipeline_id || u.pipeline_id
+      lead.name = lead.name || u.metadata?.form_name || u.source_name || null
+      lead.created_at = lead.created_at || u.created_at
       lead._embedded = { ...(lead._embedded || {}), contacts: u._embedded?.contacts || [] }
       leads.push(lead)
     }

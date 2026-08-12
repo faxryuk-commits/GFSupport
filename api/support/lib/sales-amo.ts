@@ -42,6 +42,11 @@ export function marketByPipeline(pipelineId: number): string | null {
  * и они переживают переименование сделки менеджером.
  */
 export function sourceFromLead(lead: any): { source: string; formId: string | null } {
+  // Заявка из «Неразобранного» несёт id формы в метаданных — это самый надёжный
+  // признак источника, надёжнее тегов и названия
+  const formIdMeta = lead?._unsorted_meta?.form_id
+  if (formIdMeta) return { source: 'meta_leadform', formId: String(formIdMeta) }
+
   const tags: string[] = ((lead._embedded?.tags || []) as any[])
     .map(t => String(t.name || '').toLowerCase())
 
