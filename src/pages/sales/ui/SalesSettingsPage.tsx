@@ -19,6 +19,7 @@ const TABS: Array<[string, string]> = [
 
 export function SalesSettingsPage() {
   const [tab, setTab] = useState('stages')
+  const [pipeline, setPipeline] = useState<'sales' | 'partner'>('sales')
   const [refs, setRefs] = useState<any>(null)
   const [catalog, setCatalog] = useState<any>(null)
   const [market, setMarket] = useState('uz')
@@ -59,7 +60,20 @@ export function SalesSettingsPage() {
       </div>
 
       {tab === 'stages' && (
-        <Card title="Этапы воронки" sub="одна воронка на все территории, фильтр по рынку — в сделках">
+        <Card
+          title="Этапы воронки"
+          sub="одна воронка на все территории, фильтр по рынку — в сделках"
+          right={
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+              {([['sales', 'Продажи'], ['partner', 'Партнёры']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setPipeline(k)}
+                  className={`text-[12px] px-3 py-1 ${pipeline === k ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          }
+        >
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-[12.5px]">
               <thead>
@@ -73,7 +87,7 @@ export function SalesSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {(refs.stages || []).map((s: any) => (
+                {(refs.stages || []).filter((s: any) => (s.pipeline || 'sales') === pipeline).map((s: any) => (
                   <tr key={s.id} className="border-b border-gray-100 align-top">
                     <td className="px-4 py-2.5">
                       <div className="font-medium text-gray-900">{s.label}</div>

@@ -92,16 +92,34 @@ export async function fetchContacts(creds: AmoCreds, ids: number[]): Promise<Map
 
 /** Поля сделки Amo → поля нашего лида. Названия полей взяты из боевой воронки. */
 /**
- * Служебные названия Amo: заявке из «Неразобранного» она даёт имя вида
- * «Facebook №1410923527616895», а созданной автоматически — «Сделка #30143187».
- * В очереди сейлза это выглядит мусором, поэтому подставляем имя контакта.
- * Проверено на боевых данных: таких 22 из первых 55 лидов.
+ * Служебные названия Amo. Заявке из «Неразобранного» она даёт имя формы
+ * («Facebook №1724015762190193»), диалогу из Instagram — «instagram_business:<id>»,
+ * автосделке — «Сделка #30143187». В списке аккаунтов это выглядит мусором,
+ * поэтому берём первое осмысленное: имя контакта, затем телефон, и только
+ * в крайнем случае — понятную подпись по каналу.
  */
-function readableName(lead: any, contactName?: string): string {
-  const raw = String(cf(lead, 'Бренд') || lead.name || '').trim()
-  const служебное = /^(facebook|instagram|сделка|автосделка|lead|leads)\s*[#№]?/i.test(raw)
-  if (raw && !служебное) return raw
-  return (contactName || '').trim() || raw || 'Без названия'
+const SERVICE_NAME = /^(instagram_business|facebook|instagram|telegram|сделка|автосделка|lead|leads|amocrm)\b|^[a-z_]+:\d+$/i
+
+function channelLabel(lead: any): string {
+  const meta = lead?._unsorted_meta
+  if (meta?.form_name && !SERVICE_NAME.test(String(meta.form_name))) return String(meta.form_name)
+  const raw = String(lead?.name || '')
+  if (/instagram/i.test(raw)) return 'Заявка из Instagram'
+  if (/telegram/i.test(raw)) return 'Заявка из Telegram'
+  if (/facebook|lead/i.test(raw)) return 'Заявка с рекламной формы'
+  return 'Заявка без названия'
+}
+
+function readableName(lead: any, contact?: { phone?: string; name?: string }): string {
+  const brand = String(cf(lead, 'Бренд') || '').trim()
+  if (brand) return brand
+  const raw = String(lead?.name || '').trim()
+  if (raw && !SERVICE_NAME.test(raw)) return raw
+  const contactName = String(contact?.name || '').trim()
+  if (contactName) return contactName
+  const phone = String(contact?.phone || '').trim()
+  if (phone) return phone
+  return channelLabel(lead)
 }
 
 export function leadPayload(lead: any, contact?: { phone: string; name: string }) {
@@ -112,7 +130,7 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
   return {
     source,
     external_id: `amo_${lead.id}`,
-    name: readableName(lead, contact?.name),
+    name: readableName(lead, contact),
     phone: contact?.phone || null,
     contact_name: contact?.name || null,
     city: cf(lead, 'Город') || null,
