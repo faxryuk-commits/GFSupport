@@ -151,7 +151,7 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   try {
     const [probe] = await sql`
       SELECT column_name FROM information_schema.columns
-      WHERE table_name = 'sales_documents' AND column_name = 'conditions'
+      WHERE table_name = 'sales_leads' AND column_name = 'city'
     `
     if (probe?.column_name) {
       ensuredOrgs.add(orgId)
@@ -268,6 +268,7 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       phone VARCHAR(50),
       phone_norm VARCHAR(20),
       contact_name VARCHAR(255),
+      city VARCHAR(100),
       market_id VARCHAR(50),
       campaign VARCHAR(255),
       form_id VARCHAR(80),
@@ -563,6 +564,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       PRIMARY KEY (org_id, kind, year)
     )
   `
+
+  // Догоняющие изменения для уже созданной схемы: CREATE TABLE IF NOT EXISTS
+  // существующую таблицу не трогает, поэтому новые колонки добавляются явно
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS city VARCHAR(100)`
 
   // ─── Индексы под запросы очереди, отчётов и склейки ──────────────────────────
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_accounts_org ON sales_accounts(org_id, lifecycle)`

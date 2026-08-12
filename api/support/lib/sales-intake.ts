@@ -155,11 +155,11 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   const [lead] = await sql`
     INSERT INTO sales_leads (
       id, org_id, source_id, external_id, account_id, name, phone, phone_norm,
-      contact_name, market_id, campaign, form_id, ad_id, text, raw,
+      contact_name, city, market_id, campaign, form_id, ad_id, text, raw,
       icp_score, icp_reasons, status, assigned_agent_id, assigned_at, sla_due_at
     ) VALUES (
       ${leadId}, ${orgId}, ${source.id}, ${externalId}, ${accountId}, ${name}, ${phone}, ${phoneNorm},
-      ${body.contact_name || null}, ${marketId}, ${body.campaign || null}, ${body.form_id || null},
+      ${body.contact_name || null}, ${city}, ${marketId}, ${body.campaign || null}, ${body.form_id || null},
       ${body.ad_id || null}, ${body.text || null}, ${JSON.stringify(body.raw ?? body)}::jsonb,
       ${icp.score}, ${JSON.stringify(icp.reasons)}::jsonb, ${finalStatus},
       ${assignedAgentId}, ${assignedAgentId ? new Date().toISOString() : null},
