@@ -56,6 +56,8 @@ export default async function handler(req: Request): Promise<Response> {
   const view = url.searchParams.get('view') || 'inbox'
   const source = url.searchParams.get('source')
   const q = url.searchParams.get('q') || ''
+  const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10))
+  const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
 
   const conds: string[] = ['l.org_id = $1']
   const params: any[] = [orgId]
@@ -86,9 +88,14 @@ export default async function handler(req: Request): Promise<Response> {
      LEFT JOIN support_agents ag ON ag.id = l.assigned_agent_id
      WHERE ${conds.join(' AND ')}
      ORDER BY l.created_at DESC
-     LIMIT 200`,
-    params,
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit + 1, offset],
   ) as any[]
+
+  // Берём на одну строку больше запрошенного: так узнаём, есть ли следующая
+  // страница, без второго запроса на подсчёт
+  const hasMore = rows.length > limit
+  if (hasMore) rows.pop()
 
   const [stats] = await sql`
     SELECT COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS today,
@@ -109,5 +116,5 @@ export default async function handler(req: Request): Promise<Response> {
     GROUP BY s.key, s.label ORDER BY leads DESC
   `
 
-  return json({ leads: rows, stats: stats || {}, sources, view })
+  return json({ leads: rows, stats: stats || {}, sources, view, hasMore, offset, limit })
 }

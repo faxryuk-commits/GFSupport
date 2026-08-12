@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
+import { Card, Chip, Empty, Pager, PageShell, Th, money } from './kit'
 
 /**
  * Список сделок: канбан и таблица над одними данными.
@@ -58,10 +59,6 @@ const VIEWS = [
   ['archive', 'Архив'],
 ] as const
 
-function money(v: any, currency = 'UZS') {
-  if (v === null || v === undefined || v === '') return '—'
-  return `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ${currency}`
-}
 
 function days(iso: string | null): number {
   if (!iso) return 0
@@ -82,15 +79,17 @@ export function SalesDealsPage() {
   const [mode, setMode] = useState<'kanban' | 'table'>('kanban')
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
+  const [offset, setOffset] = useState(0)
+  const LIMIT = 50
 
   const load = useCallback(() => {
-    const params = new URLSearchParams({ view })
+    const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
-  }, [view, owner, q])
+  }, [view, owner, q, offset])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)   // поиск не дёргает сервер на каждую букву
@@ -104,7 +103,7 @@ export function SalesDealsPage() {
   const byStage = (key: string) => data.deals.filter(d => d.stage_key === key)
 
   return (
-    <div className="p-5 space-y-4">
+    <PageShell header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Сделки</h1>
@@ -128,11 +127,12 @@ export function SalesDealsPage() {
           </button>
         </div>
       </div>
+    }>
 
       <div className="bg-white border border-gray-200 rounded-xl">
         <div className="flex gap-1 px-4 border-b border-gray-100 overflow-x-auto">
           {VIEWS.map(([key, label]) => (
-            <button key={key} onClick={() => setView(key)}
+            <button key={key} onClick={() => { setView(key); setOffset(0) }}
               className={`text-[12.5px] px-3 py-2.5 border-b-2 whitespace-nowrap ${
                 view === key ? 'border-blue-600 text-blue-600 font-semibold' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
               {label}
@@ -147,11 +147,11 @@ export function SalesDealsPage() {
         <div className="p-3 flex gap-2 flex-wrap items-center">
           <input
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onChange={e => { setQ(e.target.value); setOffset(0) }}
             placeholder="Поиск по бренду"
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-56"
           />
-          <select value={owner} onChange={e => setOwner(e.target.value)}
+          <select value={owner} onChange={e => { setOwner(e.target.value); setOffset(0) }}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
             <option value="">Все сейлзы</option>
             {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -212,13 +212,9 @@ export function SalesDealsPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[780px] text-[12.5px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2.5">Сделка</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Этап</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Сейлз</th>
-                  <th className="text-right font-semibold px-4 py-2.5">В месяц</th>
-                  <th className="text-right font-semibold px-4 py-2.5">На этапе</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Следующий шаг</th>
+                <tr className="text-[10px] uppercase tracking-wider text-gray-400">
+                  <Th>Сделка</Th><Th>Этап</Th><Th>Сейлз</Th>
+                  <Th align="right">В месяц</Th><Th align="right">На этапе</Th><Th>Следующий шаг</Th>
                 </tr>
               </thead>
               <tbody>
@@ -255,11 +251,20 @@ export function SalesDealsPage() {
               </tbody>
             </table>
           </div>
+          <Pager offset={offset} limit={LIMIT} count={data.deals.length} hasMore={data.hasMore}
+            onChange={setOffset} />
+        </div>
+      )}
+
+      {mode === 'kanban' && data.deals.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl">
+          <Pager offset={offset} limit={LIMIT} count={data.deals.length} hasMore={data.hasMore}
+            onChange={setOffset} />
         </div>
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
-    </div>
+    </PageShell>
   )
 }
 

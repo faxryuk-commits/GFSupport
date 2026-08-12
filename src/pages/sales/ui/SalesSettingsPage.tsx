@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPut } from '@/shared/services/api.service'
-import { Card, Chip, Tabs, money } from './kit'
+import { Card, Chip, Tabs, money, PageShell } from './kit'
 
 /**
  * Справочники продаж — здесь живёт движок.
@@ -47,13 +47,14 @@ export function SalesSettingsPage() {
   if (!refs) return <div className="p-6 text-sm text-gray-400">Загружаем справочники…</div>
 
   return (
-    <div className="p-5 space-y-4">
+    <PageShell header={
       <div>
         <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Справочники продаж</h1>
         <p className="text-[12.5px] text-gray-500 mt-0.5">
           Правила движка: обязательные поля этапа, каденции, нормативы, причины отказа и цены
         </p>
       </div>
+    }>
 
       <div className="bg-white border border-gray-200 rounded-xl">
         <Tabs items={TABS} value={tab} onChange={setTab} />
@@ -78,12 +79,12 @@ export function SalesSettingsPage() {
             <table className="w-full min-w-[900px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2">Этап</th>
-                  <th className="text-left font-semibold px-4 py-2">Владелец</th>
-                  <th className="text-right font-semibold px-4 py-2">Норматив</th>
-                  <th className="text-right font-semibold px-4 py-2">Вероятн.</th>
-                  <th className="text-left font-semibold px-4 py-2">Обязательные поля</th>
-                  <th className="text-left font-semibold px-4 py-2">Каденция</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Этап</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Владелец</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Норматив</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Вероятн.</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Обязательные поля</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Каденция</th>
                 </tr>
               </thead>
               <tbody>
@@ -182,10 +183,10 @@ export function SalesSettingsPage() {
             <table className="w-full min-w-[760px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2">Позиция</th>
-                  <th className="text-left font-semibold px-4 py-2">Тарификация</th>
-                  <th className="text-right font-semibold px-4 py-2">Включено заказов</th>
-                  <th className="text-right font-semibold px-4 py-2">Цена</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Позиция</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Тарификация</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Включено заказов</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Цена</th>
                 </tr>
               </thead>
               <tbody>
@@ -246,7 +247,7 @@ export function SalesSettingsPage() {
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
-    </div>
+    </PageShell>
   )
 }
 

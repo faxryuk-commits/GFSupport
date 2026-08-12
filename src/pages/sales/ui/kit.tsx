@@ -87,6 +87,55 @@ export const Tabs = ({ items, value, onChange, counts }: {
   </div>
 )
 
+/**
+ * Одностраничный режим: шапка страницы закреплена, скроллится только рабочая
+ * зона. Иначе на длинных списках теряются и заголовок, и панель фильтров —
+ * ровно то, на что жаловались после первого боевого дня.
+ *
+ * MainLayout отдаёт нам блок с overflow-auto, поэтому берём его высоту и
+ * гасим внешний скролл своим h-full + overflow-hidden.
+ */
+export const PageShell = ({ header, children }: { header: ReactNode; children: ReactNode }) => (
+  <div className="h-full flex flex-col overflow-hidden">
+    <div className="flex-none px-5 pt-5 pb-3 bg-[#f5f7fa] border-b border-gray-200">{header}</div>
+    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">{children}</div>
+  </div>
+)
+
+/** Шапка таблицы, которая не уезжает при прокрутке длинного списка. */
+export const Th = ({ children, align = 'left' }: { children?: ReactNode; align?: 'left' | 'right' }) => (
+  <th className={`text-${align} font-semibold px-4 py-2.5 sticky top-0 bg-white z-10 border-b border-gray-100`}>
+    {children}
+  </th>
+)
+
+/** Постраничная навигация: списки в проде уже по сотне строк. */
+export const Pager = ({ offset, limit, count, hasMore, onChange }: {
+  offset: number; limit: number; count: number; hasMore: boolean; onChange: (o: number) => void
+}) => (
+  <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50">
+    <span className="text-[11.5px] text-gray-500">
+      {count === 0 ? 'ничего не найдено' : `строки ${offset + 1}–${offset + count}`}
+    </span>
+    <div className="flex gap-2">
+      <button
+        disabled={offset === 0}
+        onClick={() => onChange(Math.max(0, offset - limit))}
+        className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40 hover:border-blue-500 hover:text-blue-600"
+      >
+        Назад
+      </button>
+      <button
+        disabled={!hasMore}
+        onClick={() => onChange(offset + limit)}
+        className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40 hover:border-blue-500 hover:text-blue-600"
+      >
+        Дальше
+      </button>
+    </div>
+  </div>
+)
+
 export const Empty = ({ title, hint }: { title: string; hint?: string }) => (
   <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
     <div className="text-[15px] font-medium text-gray-900">{title}</div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Empty, fmtDate, money } from './kit'
+import { Card, Chip, Empty, fmtDate, money, Pager, PageShell, Th } from './kit'
 
 /**
  * Список аккаунтов. Один экран для клиентов и партнёров — разница только в
@@ -19,12 +19,16 @@ export function SalesAccountsPage() {
   const [rows, setRows] = useState<any[] | null>(null)
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const LIMIT = 50
 
   const load = useCallback(() => {
-    apiGet<{ accounts: any[] }>(`/sales/accounts?type=${type}&q=${encodeURIComponent(q)}`, false)
-      .then(d => { setRows(d.accounts || []); setError(null) })
+    apiGet<{ accounts: any[]; hasMore: boolean }>(
+      `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}`, false)
+      .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить список'))
-  }, [type, q])
+  }, [type, q, offset])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -35,7 +39,7 @@ export function SalesAccountsPage() {
   if (!rows) return <div className="p-6 text-sm text-gray-400">Загружаем…</div>
 
   return (
-    <div className="p-5 space-y-4">
+    <PageShell header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">
@@ -52,10 +56,11 @@ export function SalesAccountsPage() {
             className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             {type === 'partner' ? 'К клиентам' : 'К партнёрам'}
           </Link>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Поиск по названию"
+          <input value={q} onChange={e => { setQ(e.target.value); setOffset(0) }} placeholder="Поиск по названию"
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-52" />
         </div>
       </div>
+    }>
 
       {rows.length === 0 ? (
         <Empty title="Здесь пусто" hint="Аккаунты появляются автоматически из входящих обращений." />
@@ -65,16 +70,10 @@ export function SalesAccountsPage() {
             <table className="w-full min-w-[760px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2.5">Название</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Статус</th>
-                  <th className="text-right font-semibold px-4 py-2.5">Сделок</th>
-                  <th className="text-right font-semibold px-4 py-2.5">Подписано</th>
-                  <th className="text-left font-semibold px-4 py-2.5">
-                    {type === 'partner' ? 'Программа' : 'merchant_id'}
-                  </th>
-                  <th className="text-right font-semibold px-4 py-2.5">
-                    {type === 'partner' ? 'Привёл' : 'Первый заказ'}
-                  </th>
+                  <Th>Название</Th><Th>Статус</Th>
+                  <Th align="right">Сделок</Th><Th align="right">Подписано</Th>
+                  <Th>{type === 'partner' ? 'Программа' : 'merchant_id'}</Th>
+                  <Th align="right">{type === 'partner' ? 'Привёл' : 'Первый заказ'}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -105,9 +104,10 @@ export function SalesAccountsPage() {
               </tbody>
             </table>
           </div>
+          <Pager offset={offset} limit={LIMIT} count={rows.length} hasMore={hasMore} onChange={setOffset} />
         </Card>
       )}
-    </div>
+    </PageShell>
   )
 }
 

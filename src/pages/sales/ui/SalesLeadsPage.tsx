@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { Card, Chip, Empty, Kpis, Tabs, fmtDate, pct } from './kit'
+import { Card, Chip, Empty, Kpis, Tabs, fmtDate, pct, Pager, PageShell, Th } from './kit'
 
 /**
  * Лиды — входящие обращения из всех каналов в одной таблице.
@@ -33,6 +33,7 @@ interface Lead {
 
 interface LeadsData {
   leads: Lead[]
+  hasMore: boolean
   stats: {
     today?: number; waiting?: number; unassigned?: number
     nurture?: number; in_sla?: number; touched?: number
@@ -60,16 +61,18 @@ export function SalesLeadsPage() {
   const [source, setSource] = useState('')
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [offset, setOffset] = useState(0)
+  const LIMIT = 50
   const [busy, setBusy] = useState<string | null>(null)
 
   const load = useCallback(() => {
-    const p = new URLSearchParams({ view })
+    const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (source) p.set('source', source)
     if (q) p.set('q', q)
     apiGet<LeadsData>(`/sales/leads?${p.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить лиды'))
-  }, [view, source, q])
+  }, [view, source, q, offset])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -94,7 +97,7 @@ export function SalesLeadsPage() {
   const s = data.stats || {}
 
   return (
-    <div className="p-5 space-y-4">
+    <PageShell header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Лиды</h1>
@@ -106,6 +109,7 @@ export function SalesLeadsPage() {
           Моя очередь
         </Link>
       </div>
+    }>
 
       <Kpis items={[
         ['Сегодня', String(s.today ?? 0), 'новых обращений'],
@@ -116,11 +120,11 @@ export function SalesLeadsPage() {
       ]} />
 
       <div className="bg-white border border-gray-200 rounded-xl">
-        <Tabs items={VIEWS} value={view} onChange={setView} />
+        <Tabs items={VIEWS} value={view} onChange={v => { setView(v); setOffset(0) }} />
         <div className="p-3 flex gap-2 flex-wrap items-center">
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Бренд или телефон"
+          <input value={q} onChange={e => { setQ(e.target.value); setOffset(0) }} placeholder="Бренд или телефон"
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-56" />
-          <select value={source} onChange={e => setSource(e.target.value)}
+          <select value={source} onChange={e => { setSource(e.target.value); setOffset(0) }}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
             <option value="">Все источники</option>
             {data.sources.map(src => (
@@ -144,12 +148,8 @@ export function SalesLeadsPage() {
             <table className="w-full min-w-[820px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2.5">Лид</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Источник</th>
-                  <th className="text-right font-semibold px-4 py-2.5">ICP</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Статус</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Аккаунт</th>
-                  <th className="text-right font-semibold px-4 py-2.5"></th>
+                  <Th>Лид</Th><Th>Источник</Th><Th align="right">ICP</Th>
+                  <Th>Статус</Th><Th>Аккаунт</Th><Th align="right"></Th>
                 </tr>
               </thead>
               <tbody>
@@ -211,11 +211,13 @@ export function SalesLeadsPage() {
               </tbody>
             </table>
           </div>
+          <Pager offset={offset} limit={LIMIT} count={data.leads.length} hasMore={data.hasMore}
+            onChange={setOffset} />
         </Card>
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
-    </div>
+    </PageShell>
   )
 }
 

@@ -109,6 +109,8 @@ export default async function handler(req: Request): Promise<Response> {
 
   const type = url.searchParams.get('type') || 'client'
   const q = url.searchParams.get('q') || ''
+  const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10))
+  const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
   const rows = await sql`
     SELECT a.id, a.name, a.city, a.lifecycle, a.account_type, a.partner_kind,
            a.merchant_id, a.first_order_at, a.created_at,
@@ -121,7 +123,9 @@ export default async function handler(req: Request): Promise<Response> {
     LEFT JOIN sales_partner_programs p ON p.id = a.partner_program_id
     WHERE a.org_id = ${orgId} AND a.account_type = ${type} AND a.archived_at IS NULL
       AND (${q} = '' OR a.name ILIKE ${'%' + q + '%'})
-    ORDER BY a.created_at DESC LIMIT 200
+    ORDER BY a.created_at DESC LIMIT ${limit + 1} OFFSET ${offset}
   `
-  return json({ accounts: rows, type })
+  const hasMore = rows.length > limit
+  if (hasMore) rows.pop()
+  return json({ accounts: rows, type, hasMore, offset, limit })
 }

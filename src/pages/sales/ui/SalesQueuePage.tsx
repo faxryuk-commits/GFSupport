@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
+import { PageShell } from './kit'
 
 /**
  * Очередь дня — главный экран сейлза.
@@ -157,7 +158,7 @@ export function SalesQueuePage() {
   const empty = data.total === 0
 
   return (
-    <div className="p-5 space-y-4">
+    <PageShell header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Очередь дня</h1>
@@ -174,6 +175,7 @@ export function SalesQueuePage() {
           </button>
         </div>
       </div>
+    }>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
         {[
@@ -310,7 +312,7 @@ export function SalesQueuePage() {
       {error && (
         <div className="text-[12.5px] text-red-600">{error}</div>
       )}
-    </div>
+    </PageShell>
   )
 }
 

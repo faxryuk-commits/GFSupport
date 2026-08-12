@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Kpis, money, pct } from './kit'
+import { Card, Chip, Kpis, money, pct, PageShell } from './kit'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -33,7 +33,7 @@ export function SalesReportsPage() {
   const launch = data.launch || {}
 
   return (
-    <div className="p-5 space-y-4">
+    <PageShell header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Отчёты</h1>
@@ -50,6 +50,7 @@ export function SalesReportsPage() {
           ))}
         </div>
       </div>
+    }>
 
       <Kpis items={[
         ['Пайплайн', money(totalPipeline, 'UZS'), 'сумма предложений в месяц'],
@@ -92,11 +93,11 @@ export function SalesReportsPage() {
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2">Этап</th>
-                  <th className="text-right font-semibold px-4 py-2">Сделок</th>
-                  <th className="text-right font-semibold px-4 py-2">В месяц</th>
-                  <th className="text-right font-semibold px-4 py-2">Вероятн.</th>
-                  <th className="text-right font-semibold px-4 py-2">Взвешенно</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Этап</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сделок</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">В месяц</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Вероятн.</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Взвешенно</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,11 +129,11 @@ export function SalesReportsPage() {
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2">Источник</th>
-                  <th className="text-right font-semibold px-4 py-2">Лидов</th>
-                  <th className="text-right font-semibold px-4 py-2">В работу</th>
-                  <th className="text-right font-semibold px-4 py-2">Выиграно</th>
-                  <th className="text-right font-semibold px-4 py-2">Конверсия</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Источник</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Лидов</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">В работу</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Выиграно</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Конверсия</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,10 +159,10 @@ export function SalesReportsPage() {
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2">POS клиента</th>
-                  <th className="text-right font-semibold px-4 py-2">Закрытых</th>
-                  <th className="text-right font-semibold px-4 py-2">Покупают</th>
-                  <th className="text-left font-semibold px-4 py-2"></th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">POS клиента</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Закрытых</th>
+                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Покупают</th>
+                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -196,13 +197,13 @@ export function SalesReportsPage() {
           <table className="w-full min-w-[720px] text-[12.5px]">
             <thead>
               <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                <th className="text-left font-semibold px-4 py-2">Сотрудник</th>
-                <th className="text-right font-semibold px-4 py-2">Сделок</th>
-                <th className="text-right font-semibold px-4 py-2">Выиграно</th>
-                <th className="text-right font-semibold px-4 py-2">Доля побед</th>
-                <th className="text-right font-semibold px-4 py-2">Квалифицировано</th>
-                <th className="text-right font-semibold px-4 py-2">Без след. шага</th>
-                <th className="text-right font-semibold px-4 py-2">Подписано</th>
+                <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сотрудник</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сделок</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Выиграно</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Доля побед</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Квалифицировано</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Без след. шага</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Подписано</th>
               </tr>
             </thead>
             <tbody>
@@ -230,7 +231,7 @@ export function SalesReportsPage() {
       </Card>
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
-    </div>
+    </PageShell>
   )
 }
 
