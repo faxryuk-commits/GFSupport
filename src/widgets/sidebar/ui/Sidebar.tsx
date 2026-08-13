@@ -229,6 +229,7 @@ const navGroups: NavGroup[] = [
       { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals' },
       { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads' },
       { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },
+      { path: '/sales/assistant', label: 'ИИ-ассистент', icon: Bot },
       { path: '/sales/reports', label: 'Отчёты продаж', icon: PieChart },
       { path: '/sales/settings', label: 'Справочники продаж', icon: SlidersHorizontal },
     ],

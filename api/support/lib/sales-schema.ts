@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.7-leadkind'
+const SCHEMA_VERSION = '2026-08-14.8-assistant'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -691,6 +691,36 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS landing_url TEXT`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS referrer TEXT`
 
+  // Что делает ассистент — видно построчно. Автоматика, работающая молча,
+  // через неделю становится чёрным ящиком: непонятно, кому он писал, что
+  // ответили и почему лид перестал греться
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_assistant_log (
+      id VARCHAR(64) PRIMARY KEY,
+      org_id VARCHAR(64) NOT NULL,
+      lead_id VARCHAR(64),
+      deal_id VARCHAR(64),
+      account_id VARCHAR(64),
+      action VARCHAR(40) NOT NULL,
+      channel VARCHAR(30),
+      step INT DEFAULT 0,
+      message TEXT,
+      reply TEXT,
+      status VARCHAR(20) DEFAULT 'sent',
+      error TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_sales_assistant_log_time
+            ON sales_assistant_log(org_id, created_at DESC)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_sales_assistant_log_lead
+            ON sales_assistant_log(org_id, lead_id)`
+
+  // Состояние прогрева у лида: на каком шаге цепочки и когда следующий
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS nurture_step INT DEFAULT 0`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS nurture_next_at TIMESTAMP`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS nurture_paused_at TIMESTAMP`
+
   // Путь клиента: одна лента касаний по всем каналам. Не хранить её означает
   // отвечать на «откуда он пришёл» догадками — сайт, бот, директ и звонок
   // живут в разных системах и по отдельности ничего не объясняют
@@ -779,7 +809,16 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
 
   // «Когда трогали в последний раз» — у лида не было вовсе, а без этого
   // непонятно, работа идёт или карточка лежит с марта
-  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`
+  // DEFAULT NOW() проставил бы всем старым лидам время миграции — «изменён
+  // сегодня, все в одну минуту». Поэтому колонка без умолчания, а прошлым
+  // записям ставим последнее реальное событие
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`
+  await sql`
+    UPDATE sales_leads
+    SET updated_at = GREATEST(created_at, COALESCE(first_touch_at, created_at),
+                              COALESCE(assigned_at, created_at))
+    WHERE org_id = ${orgId} AND updated_at IS NULL
+  `
 
   // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`

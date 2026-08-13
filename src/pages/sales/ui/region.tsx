@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useMarket, MARKET_CHANGED_EVENT } from '@/shared/hooks/useMarket'
 import { clearCache } from '@/shared/services/api.service'
 
@@ -47,6 +48,15 @@ export const RegionBadge = () => {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const region = useRegion()
+  // Список рисуем поверх страницы: внутри шапки его перекрывало меню слева
+  const [rect, setRect] = useState<{ top: number; right: number } | null>(null)
+
+  const place = useCallback(() => {
+    const el = box.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setRect({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+  }, [])
 
   useEffect(() => {
     const outside = (e: MouseEvent) => {
@@ -55,6 +65,17 @@ export const RegionBadge = () => {
     document.addEventListener('mousedown', outside)
     return () => document.removeEventListener('mousedown', outside)
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open, place])
 
   const label = region ? REGION_NAMES[region] || region.toUpperCase() : 'Все регионы'
 
@@ -77,8 +98,11 @@ export const RegionBadge = () => {
         {label}
         <span className="text-[9px] opacity-60">▾</span>
       </button>
-      {open && (
-        <div className="absolute z-30 right-0 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+      {open && rect && createPortal(
+        <div
+          style={{ position: 'fixed', top: rect.top, right: rect.right, zIndex: 60 }}
+          className="w-52 bg-white border border-gray-200 rounded-lg shadow-xl py-1"
+        >
           <button onClick={() => choose(null)}
             className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
               !selectedMarket ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
@@ -96,7 +120,8 @@ export const RegionBadge = () => {
               Рынки не заведены — добавьте их в настройках
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { getBotToken, tgSend, leadCard, leadKeyboard } from '../lib/sales-bot.js'
+import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../lib/sales-assistant.js'
 
 export const config = { runtime: 'edge' }
 
@@ -127,6 +128,76 @@ export default async function handler(req: Request): Promise<Response> {
     RETURNING id
   `
   out.abandoned = abandoned.length
+
+  // ─── 4b. Прогрев: ассистент пишет тем, до кого не дошли руки ────────────────
+  // Это единственное место, где система общается с клиентом сама. Работает
+  // узко: только лиды со статусом nurture, не чаще расписания, максимум четыре
+  // касания, и любой ответ клиента немедленно возвращает лид человеку.
+  const nurtured: string[] = []
+  try {
+    const due = await sql`
+      SELECT l.id, l.name, l.phone, l.city, l.text, l.raw, l.nurture_step, l.assigned_agent_id,
+             l.account_id, a.channel_id
+      FROM sales_leads l
+      LEFT JOIN sales_accounts a ON a.id = l.account_id
+      WHERE l.org_id = ${ORG} AND l.status = 'nurture' AND l.archived_at IS NULL
+        AND COALESCE(l.nurture_step, 0) < ${MAX_STEPS}
+        AND (l.nurture_next_at IS NULL OR l.nurture_next_at <= NOW())
+      ORDER BY l.created_at
+      LIMIT 10
+    ` as any[]
+
+    for (const lead of due) {
+      const step = Number(lead.nurture_step || 0)
+      const draft = await draftNurtureMessage(lead, step)
+      if (!draft) {
+        await logAssistant(sql, ORG, {
+          leadId: lead.id, action: 'draft_failed', step,
+          status: 'error', error: 'ключ OpenAI не настроен или модель не ответила',
+        })
+        continue
+      }
+
+      // Куда писать: канал клиента, если он привязан. Своего канала у
+      // ассистента нет — выдумывать доставку сообщений он не должен
+      const nextAt = new Date(Date.now() + (NURTURE_STEPS[Math.min(step + 1, MAX_STEPS - 1)].day
+        - NURTURE_STEPS[Math.min(step, MAX_STEPS - 1)].day || 3) * 86400000)
+
+      if (lead.channel_id && token) {
+        try {
+          await tgSend(token, lead.channel_id, draft.text)
+          await logAssistant(sql, ORG, {
+            leadId: lead.id, accountId: lead.account_id, action: 'nurture_sent',
+            channel: 'telegram', step, message: draft.text, status: 'sent',
+          })
+        } catch (e: any) {
+          await logAssistant(sql, ORG, {
+            leadId: lead.id, action: 'nurture_failed', step, message: draft.text,
+            status: 'error', error: String(e?.message || e),
+          })
+          continue
+        }
+      } else {
+        // Канала нет — не молчим: текст готов, отправить его должен человек.
+        // Черновик в журнале честнее, чем вид работающей автоматики
+        await logAssistant(sql, ORG, {
+          leadId: lead.id, accountId: lead.account_id, action: 'nurture_draft',
+          step, message: draft.text, status: 'draft',
+          error: 'канал клиента не привязан — отправьте вручную',
+        })
+      }
+
+      await sql`
+        UPDATE sales_leads
+        SET nurture_step = ${step + 1}, nurture_next_at = ${nextAt.toISOString()}, updated_at = NOW()
+        WHERE id = ${lead.id} AND org_id = ${ORG}
+      `
+      nurtured.push(lead.id)
+    }
+  } catch (e) {
+    // Прогрев не должен ронять остальной тик: SLA и задачи важнее
+    console.error('nurture error', e)
+  }
 
   // ─── 5. Реактивация: срок по причине отказа наступил ────────────────────────
   const revive = await sql`
