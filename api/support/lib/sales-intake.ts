@@ -24,6 +24,15 @@ export interface IntakePayload {
   form_id?: string | null
   ad_id?: string | null
   text?: string | null
+  // Метки рекламы: доезжают с формы и из бота, чтобы «откуда клиент» не был
+  // вопросом к памяти сейлза
+  utm_source?: string | null
+  utm_medium?: string | null
+  utm_campaign?: string | null
+  utm_content?: string | null
+  click_id?: string | null
+  landing_url?: string | null
+  referrer?: string | null
   orders_per_day?: string | number | null
   points?: string | number | null
   pos?: string | null
@@ -185,14 +194,18 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
     INSERT INTO sales_leads (
       id, org_id, source_id, external_id, account_id, name, phone, phone_norm,
       contact_name, city, market_id, campaign, form_id, ad_id, text, raw,
-      icp_score, icp_reasons, status, assigned_agent_id, assigned_at, sla_due_at
+      icp_score, icp_reasons, status, assigned_agent_id, assigned_at, sla_due_at,
+      utm_source, utm_medium, utm_campaign, utm_content, click_id, landing_url, referrer
     ) VALUES (
       ${leadId}, ${orgId}, ${source.id}, ${externalId}, ${accountId}, ${name}, ${phone}, ${phoneNorm},
       ${body.contact_name || null}, ${city}, ${marketId}, ${body.campaign || null}, ${body.form_id || null},
       ${body.ad_id || null}, ${body.text || null}, ${JSON.stringify(body.raw ?? body)}::jsonb,
       ${icp.score}, ${JSON.stringify(icp.reasons)}::jsonb, ${finalStatus},
       ${assignedAgentId}, ${assignedAgentId ? new Date().toISOString() : null},
-      ${slaMinutes ? new Date(Date.now() + slaMinutes * 60_000).toISOString() : null}
+      ${slaMinutes ? new Date(Date.now() + slaMinutes * 60_000).toISOString() : null},
+      ${body.utm_source || null}, ${body.utm_medium || null}, ${body.utm_campaign || null},
+      ${body.utm_content || null}, ${body.click_id || null}, ${body.landing_url || null},
+      ${body.referrer || null}
     )
     RETURNING *
   `

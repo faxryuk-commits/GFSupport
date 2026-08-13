@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.4-stagedesc'
+const SCHEMA_VERSION = '2026-08-14.6-journey'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -674,6 +674,62 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_field_options_field
             ON sales_field_options(org_id, field) WHERE is_active`
 
+  // Метки рекламы: без них «откуда клиент» отвечается по памяти сейлза.
+  // Пишем и первое касание, и последнее — заявку часто оставляют не с того
+  // перехода, с которого узнали
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS utm_source VARCHAR(120)`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(120)`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(200)`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS utm_content VARCHAR(200)`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS click_id VARCHAR(200)`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS landing_url TEXT`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS referrer TEXT`
+
+  // Путь клиента: одна лента касаний по всем каналам. Не хранить её означает
+  // отвечать на «откуда он пришёл» догадками — сайт, бот, директ и звонок
+  // живут в разных системах и по отдельности ничего не объясняют
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_touchpoints (
+      id VARCHAR(64) PRIMARY KEY,
+      org_id VARCHAR(64) NOT NULL,
+      account_id VARCHAR(64),
+      lead_id VARCHAR(64),
+      deal_id VARCHAR(64),
+      kind VARCHAR(40) NOT NULL,
+      channel VARCHAR(40),
+      title VARCHAR(300),
+      detail TEXT,
+      url TEXT,
+      identity VARCHAR(200),
+      meta JSONB DEFAULT '{}'::jsonb,
+      happened_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_sales_touchpoints_account
+            ON sales_touchpoints(org_id, account_id, happened_at DESC)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_sales_touchpoints_identity
+            ON sales_touchpoints(org_id, identity)`
+
+  // Воронки как сущность, а не строка в этапе: чтобы их можно было заводить,
+  // переименовывать и удалять из интерфейса, а не правкой кода
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_pipelines (
+      id VARCHAR(64) PRIMARY KEY,
+      org_id VARCHAR(64) NOT NULL,
+      key VARCHAR(50) NOT NULL,
+      label VARCHAR(120) NOT NULL,
+      market_id VARCHAR(10),
+      kind VARCHAR(20) DEFAULT 'sales',
+      description TEXT,
+      sort_order INT DEFAULT 0,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_pipelines_key
+            ON sales_pipelines(org_id, key)`
+
   // Что означает этап — словами. Названия «Квалифицирован» и «Демо проведено»
   // каждый понимает по-своему, а от этого зависит, куда сейлз кладёт сделку
   await sql`ALTER TABLE sales_stages ADD COLUMN IF NOT EXISTS description TEXT`
@@ -752,6 +808,23 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       STAGE_MEANING[st.key] || null,
     ])),
     '(org_id, pipeline, key)')
+
+  await seedBatch(sql, 'sales_pipelines',
+    ['id', 'org_id', 'key', 'label', 'market_id', 'kind', 'sort_order', 'description'],
+    [
+      ['spl_sales', orgId, 'sales', 'Общая воронка', null, 'sales', 0,
+        'Для сделок без территории и для тех, кто работает сразу по всем рынкам'],
+      ['spl_uz', orgId, 'sales_uz', 'Узбекистан', 'uz', 'sales', 1, null],
+      ['spl_kz', orgId, 'sales_kz', 'Казахстан', 'kz', 'sales', 2, null],
+      ['spl_kg', orgId, 'sales_kg', 'Кыргызстан', 'kg', 'sales', 3, null],
+      ['spl_az', orgId, 'sales_az', 'Азербайджан', 'az', 'sales', 4, null],
+      ['spl_ge', orgId, 'sales_ge', 'Грузия', 'ge', 'sales', 5, null],
+      ['spl_cy', orgId, 'sales_cy', 'Кипр', 'cy', 'sales', 6, null],
+      ['spl_ae', orgId, 'sales_ae', 'ОАЭ', 'ae', 'sales', 7, null],
+      ['spl_partner', orgId, 'partner', 'Партнёры', null, 'partner', 8,
+        'Дистрибьюторы, агенты и реселлеры: свой процесс, свои этапы'],
+    ],
+    '(org_id, key)')
 
   // Описание проставляем и уже существующим этапам: сид с ON CONFLICT DO
   // NOTHING их не трогает, а объяснение нужно всем

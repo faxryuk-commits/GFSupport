@@ -36,7 +36,14 @@ export default async function handler(req: Request): Promise<Response> {
   const fromTs = `${from}T00:00:00+05:00`
   const toTs = `${to}T23:59:59+05:00`
 
-  const [funnel, money, sources, icp, team, cohort] = await Promise.all([
+  // Прошлый период той же длины — чтобы цифра отвечала на «лучше или хуже»,
+  // а не висела в воздухе
+  const days = Math.max(1, Math.round(
+    (new Date(toTs).getTime() - new Date(fromTs).getTime()) / 86400000))
+  const prevFrom = new Date(new Date(fromTs).getTime() - days * 86400000).toISOString()
+  const prevTo = fromTs
+
+  const [funnel, money, sources, icp, team, cohort, daily, prev, byRegion] = await Promise.all([
     // Воронка по когорте: сделки, СОЗДАННЫЕ в периоде, доведённые до конца.
     // Считать «прошёл этап» надо по журналу, иначе сделка, проскочившая этап,
     // выпадет из статистики
@@ -121,10 +128,68 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
         AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
     `,
+    // Движение по дням: сколько заводили, выигрывали и теряли
+    sql`
+      SELECT day::date AS day,
+             COUNT(*) FILTER (WHERE kind = 'created')::int AS created,
+             COUNT(*) FILTER (WHERE kind = 'won')::int AS won,
+             COUNT(*) FILTER (WHERE kind = 'lost')::int AS lost,
+             COALESCE(SUM(amount) FILTER (WHERE kind = 'won'), 0) AS won_amount
+      FROM (
+        SELECT (d.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent') AS day,
+               'created' AS kind, 0::numeric AS amount
+        FROM sales_deals d
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+          AND (${market} = '' OR d.market_id = ${market})
+          AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        UNION ALL
+        SELECT (d.won_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'), 'won',
+               COALESCE(d.monthly_amount, 0)
+        FROM sales_deals d
+        WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
+          AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        UNION ALL
+        SELECT (d.lost_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'), 'lost', 0
+        FROM sales_deals d
+        WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
+          AND d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+      ) t
+      GROUP BY 1 ORDER BY 1
+    `,
+    // Тот же набор цифр за прошлый период
+    sql`
+      SELECT COUNT(*) FILTER (WHERE d.created_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz)::int AS created,
+             COUNT(*) FILTER (WHERE d.won_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz)::int AS won,
+             COUNT(*) FILTER (WHERE d.lost_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz)::int AS lost,
+             COALESCE(SUM(d.monthly_amount) FILTER (
+               WHERE d.won_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz), 0) AS won_amount,
+             (SELECT COUNT(*)::int FROM sales_leads l WHERE l.org_id = ${orgId}
+                AND (${market} = '' OR l.market_id = ${market})
+                AND l.created_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz) AS leads
+      FROM sales_deals d
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+        AND (${market} = '' OR d.market_id = ${market})
+    `,
+    // Разрез по регионам: одна таблица вместо семи переключений фильтра
+    sql`
+      SELECT COALESCE(d.market_id, '—') AS market,
+             COUNT(*) FILTER (WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL)::int AS open,
+             COUNT(*) FILTER (WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
+             COUNT(*) FILTER (WHERE d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS lost,
+             COALESCE(SUM(d.monthly_amount) FILTER (
+               WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz), 0) AS won_amount,
+             COALESCE(SUM(d.monthly_amount) FILTER (
+               WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL), 0) AS pipeline
+      FROM sales_deals d
+      WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner'
+      GROUP BY 1 ORDER BY won DESC
+    `,
   ])
 
   return json({
-    period: { from, to }, market,
+    period: { from, to, days }, market,
+    daily, byRegion,
+    prev: (prev as any[])[0] || {},
     funnel, money, sources, icp, team,
     launch: cohort[0] || {},
   })

@@ -12,6 +12,7 @@ import { REGION_NAMES } from './region'
  */
 
 const TABS: Array<[string, string]> = [
+  ['pipelines', 'Воронки'],
   ['stages', 'Этапы'],
   ['reasons', 'Причины отказа'],
   ['sources', 'Источники'],
@@ -47,6 +48,44 @@ export function SalesSettingsPage() {
   }, [market])
 
   useEffect(() => { load() }, [load])
+
+  const addPipeline = async () => {
+    const label = prompt('Название воронки (например «Партнёрские внедрения»):')
+    if (!label) return
+    const key = prompt('Ключ латиницей (например partner_impl):', 
+      label.toLowerCase().replace(/[^a-z0-9]+/g, '_'))
+    if (!key) return
+    const copyFrom = prompt('С какой воронки скопировать этапы? Ключ:', 'sales') || 'sales'
+    try {
+      await apiPost('/sales/refs', { kind: 'pipeline', key, label, copyFrom })
+      load()
+    } catch (e: any) { setError(e?.message || 'Не удалось создать воронку') }
+  }
+
+  const renamePipeline = async (p: any) => {
+    const label = prompt('Новое название воронки:', p.label)
+    if (!label || label === p.label) return
+    try {
+      await apiPut('/sales/refs', { kind: 'pipeline', id: p.id, label })
+      load()
+    } catch (e: any) { setError(e?.message || 'Не удалось переименовать') }
+  }
+
+  const removePipeline = async (p: any) => {
+    if (!confirm(`Удалить воронку «${p.label}» вместе с её этапами?`)) return
+    try {
+      await apiDelete(`/sales/refs?kind=pipeline&id=${p.id}`)
+      load()
+    } catch (e: any) {
+      // Сделки нельзя оставить без воронки — спрашиваем, куда их перенести
+      const moveTo = prompt(`${e?.message || ''}\n\nКлюч воронки, куда перенести сделки:`, 'sales')
+      if (!moveTo) return
+      try {
+        await apiDelete(`/sales/refs?kind=pipeline&id=${p.id}&moveTo=${moveTo}`)
+        load()
+      } catch (e2: any) { setError(e2?.message || 'Не удалось удалить') }
+    }
+  }
 
   const addOption = async () => {
     const value = newOption.trim()
@@ -101,6 +140,55 @@ export function SalesSettingsPage() {
         <Tabs items={TABS} value={tab} onChange={setTab} />
       </div>
 
+      {tab === 'pipelines' && (
+        <Card
+          title="Воронки"
+          sub="у каждой свой набор этапов: регион, партнёрский процесс или отдельное направление"
+          right={
+            <button onClick={addPipeline}
+              className="text-[12.5px] px-3 py-1.5 bg-blue-600 text-white rounded-lg">
+              + Воронка
+            </button>
+          }
+        >
+          <div className="divide-y divide-gray-100">
+            {(refs.pipelines || []).map((p: any) => (
+              <div key={p.id} className="px-4 py-3 flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="text-[13px] font-medium text-gray-900">{p.label}</div>
+                  <div className="text-[11px] text-gray-400">
+                    {[p.key, p.market_id ? `рынок ${p.market_id.toUpperCase()}` : null,
+                      `${p.stages} этапов`, `${p.deals} сделок`].filter(Boolean).join(' · ')}
+                  </div>
+                  {p.description && (
+                    <div className="text-[11.5px] text-gray-500 mt-0.5">{p.description}</div>
+                  )}
+                </div>
+                <button onClick={() => { setPipeline(p.key); setTab('stages') }}
+                  className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+                  Этапы
+                </button>
+                <button onClick={() => renamePipeline(p)}
+                  className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+                  Переименовать
+                </button>
+                <button onClick={() => removePipeline(p)}
+                  className="text-[12px] px-2.5 py-1 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+                  Удалить
+                </button>
+              </div>
+            ))}
+            {!(refs.pipelines || []).length && (
+              <div className="px-4 py-4 text-[12.5px] text-gray-400">Воронок пока нет</div>
+            )}
+          </div>
+          <div className="px-4 py-3 text-[11.5px] text-gray-400 border-t border-gray-100">
+            Удалить воронку со сделками нельзя молча: система спросит, куда их перенести,
+            и переложит по совпадающим ключам этапов.
+          </div>
+        </Card>
+      )}
+
       {tab === 'stages' && (
         <Card
           title="Этапы воронки"
@@ -109,15 +197,9 @@ export function SalesSettingsPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <select value={pipeline} onChange={e => setPipeline(e.target.value)}
                 className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12px]">
-                <optgroup label="Продажи">
-                  <option value="sales">Общая воронка</option>
-                  {Object.entries(REGION_NAMES).map(([code, name]) => (
-                    <option key={code} value={`sales_${code}`}>{name}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Прочее">
-                  <option value="partner">Партнёры</option>
-                </optgroup>
+                {(refs.pipelines || []).map((p: any) => (
+                  <option key={p.id} value={p.key}>{p.label}</option>
+                ))}
               </select>
               <span className="text-[11.5px] text-gray-400">
                 {(refs.stages || []).filter((s: any) => (s.pipeline || 'sales') === pipeline).length} этапов

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/services/api.service'
-import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField, Skeleton } from './kit'
+import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField, Skeleton , fmtDateTime } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
 
 /**
@@ -27,6 +27,8 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
   const [error, setError] = useState<string | null>(null)
   const [merchant, setMerchant] = useState('')
   const refs = useSalesRefs()
+  // Путь клиента: одна лента из обращений, переписки, документов и этапов
+  const [journey, setJourney] = useState<any>(null)
 
   const load = useCallback(() => {
     if (!id) return
@@ -36,6 +38,11 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!id) return
+    apiGet<any>(`/sales/journey?account=${id}`, false).then(setJourney).catch(() => {})
+  }, [id])
 
   const patch = async (field: string, value: string) => {
     if (!id) return
@@ -262,6 +269,40 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
         </div>
 
         <div className="space-y-4">
+          <Card
+            title="Путь клиента"
+            sub="все касания подряд: откуда пришёл, что смотрел, что ему отправляли"
+          >
+            {!journey?.timeline?.length ? (
+              <div className="px-4 py-4 text-[12.5px] text-gray-400">
+                Касаний пока нет — появятся с первым обращением или перепиской.
+              </div>
+            ) : (
+              <div className="px-4 py-3">
+                <ol className="relative border-l border-gray-200 ml-1.5">
+                  {journey.timeline.map((t: any, i: number) => (
+                    <li key={i} className="ml-4 pb-3 last:pb-0">
+                      <span className={`absolute -left-[5px] w-2.5 h-2.5 rounded-full mt-1.5 ${
+                        t.kind === 'lead' ? 'bg-blue-500'
+                        : t.kind === 'doc_open' ? 'bg-emerald-500'
+                        : t.kind === 'stage' ? 'bg-violet-500'
+                        : t.kind === 'chat' ? 'bg-amber-500'
+                        : 'bg-gray-300'}`} />
+                      <div className="text-[12.5px] text-gray-900">{t.title}</div>
+                      <div className="text-[11px] text-gray-400">
+                        {[fmtDateTime(t.at), t.detail].filter(Boolean).join(' · ')}
+                      </div>
+                      {t.url && (
+                        <a href={t.url} target="_blank" rel="noreferrer"
+                          className="text-[11px] text-blue-600 hover:underline">{t.url}</a>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </Card>
+
           <Card title="Профиль клиента" sub="значения из справочника: одно написание на всю базу">
             <div>
               <InlineField label="Название" value={a.name} onSave={v => patch('name', v)} />

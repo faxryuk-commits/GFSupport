@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet } from '@/shared/services/api.service'
 import { Card, Chip, Kpis, money, pct, PageShell, Skeleton } from './kit'
-import { RegionBadge, useRegion } from './region'
+import { RegionBadge, useRegion, REGION_NAMES } from './region'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -40,6 +40,16 @@ export function SalesReportsPage() {
   const totalWeighted = (data.money || []).reduce((s: number, m: any) => s + Number(m.weighted || 0), 0)
   const totalPipeline = (data.money || []).reduce((s: number, m: any) => s + Number(m.amount || 0), 0)
   const launch = data.launch || {}
+
+  /** «+12 к прошлому периоду» — иначе число висит без опоры. */
+  function delta(now: number, before: any): string {
+    const prev = Number(before || 0)
+    if (!prev && !now) return 'за период'
+    const diff = now - prev
+    if (!prev) return `было 0, стало ${now}`
+    const pct = Math.round((diff / prev) * 100)
+    return `${diff >= 0 ? '+' : ''}${diff} к прошлому периоду (${pct >= 0 ? '+' : ''}${pct}%)`
+  }
 
   return (
     <PageShell header={
@@ -206,16 +216,77 @@ export function SalesReportsPage() {
       )}
 
       {tab === 'sales' && <>
+      {/* Цифра без сравнения ничего не значит: рядом — тот же период до этого */}
       <Kpis items={[
         ['Пайплайн', money(totalPipeline, 'UZS'), 'сумма предложений в месяц'],
         ['Взвешенный прогноз', money(totalWeighted, 'UZS'), 'с учётом вероятности этапов'],
-        ['Выиграно', String(launch.won ?? 0), 'сделок за период'],
+        ['Выиграно', String(launch.won ?? 0), delta(launch.won ?? 0, data.prev?.won)],
         ['Дошли до первого заказа', pct(launch.launched ?? 0, launch.won ?? 0),
           `${launch.launched ?? 0} из ${launch.won ?? 0}`],
         ['Подпись → запуск', launch.avg_days ? `${Math.round(launch.avg_days)} дн` : '—', 'в среднем'],
       ]} />
 
       <div className="grid lg:grid-cols-2 gap-4 items-start">
+        <Card title="Движение по дням" sub="сколько заводили, выигрывали и теряли — по дням периода">
+          <div className="p-4">
+            {(data.daily || []).length === 0 ? (
+              <div className="text-[12.5px] text-gray-400">За период движения не было</div>
+            ) : (
+              <div className="flex items-end gap-1 h-28">
+                {(data.daily || []).map((d: any) => {
+                  const max = Math.max(...(data.daily || []).map((x: any) =>
+                    Math.max(x.created, x.won, x.lost)), 1)
+                  return (
+                    <div key={d.day} className="flex-1 flex flex-col justify-end items-center gap-0.5 min-w-[6px]"
+                      title={`${d.day}: заведено ${d.created}, выиграно ${d.won}, проиграно ${d.lost}`}>
+                      <div className="w-full bg-emerald-500 rounded-sm"
+                        style={{ height: `${(d.won / max) * 70}px` }} />
+                      <div className="w-full bg-blue-400 rounded-sm"
+                        style={{ height: `${(d.created / max) * 70}px` }} />
+                      <div className="w-full bg-red-300 rounded-sm"
+                        style={{ height: `${(d.lost / max) * 70}px` }} />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="flex gap-4 mt-3 text-[11.5px] text-gray-500">
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-400 mr-1.5" />заведено</span>
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500 mr-1.5" />выиграно</span>
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-red-300 mr-1.5" />проиграно</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="По регионам" sub="весь портфель сразу, без переключения фильтра">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                  <th className="text-left font-semibold px-4 py-2">Регион</th>
+                  <th className="text-right font-semibold px-4 py-2">В работе</th>
+                  <th className="text-right font-semibold px-4 py-2">Пайплайн</th>
+                  <th className="text-right font-semibold px-4 py-2">Выиграно</th>
+                  <th className="text-right font-semibold px-4 py-2">Проиграно</th>
+                  <th className="text-right font-semibold px-4 py-2">Подписано</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.byRegion || []).map((r: any) => (
+                  <tr key={r.market} className="border-b border-gray-100">
+                    <td className="px-4 py-2 text-gray-900">{REGION_NAMES[r.market] || r.market}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{r.open}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">{money(r.pipeline, 'UZS')}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-emerald-700">{r.won}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-red-600">{r.lost}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{money(r.won_amount, 'UZS')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
         <Card title="Воронка по когорте" sub="сделки, созданные в периоде, доведённые до конца">
           <div className="p-4 space-y-2">
             {funnel.length === 0 && <div className="text-[12.5px] text-gray-400">Данных за период нет</div>}
