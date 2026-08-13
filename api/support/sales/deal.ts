@@ -46,6 +46,8 @@ export default async function handler(req: Request): Promise<Response> {
         case 'aggregators': await sql`UPDATE sales_deals SET aggregators = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'delivery_type': await sql`UPDATE sales_deals SET delivery_type = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'pain': await sql`UPDATE sales_deals SET pain = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'segment': await sql`UPDATE sales_deals SET segment = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'dm_role': await sql`UPDATE sales_deals SET dm_role = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'dm_name': await sql`UPDATE sales_deals SET dm_name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'dm_confirmed': await sql`UPDATE sales_deals SET dm_confirmed = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'meeting_at': await sql`UPDATE sales_deals SET meeting_at = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break

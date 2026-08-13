@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/shared/services/api.service'
-import { Card, Chip, Tabs, money, PageShell } from './kit'
+import { Card, Chip, Tabs, money, PageShell, Skeleton } from './kit'
 import { REGION_NAMES } from './region'
 
 /**
@@ -85,7 +85,7 @@ export function SalesSettingsPage() {
   }
 
   if (error && !refs) return <div className="p-6 text-sm text-gray-900">{error}</div>
-  if (!refs) return <div className="p-6 text-sm text-gray-400">Загружаем справочники…</div>
+  if (!refs) return <Skeleton rows={7} kpis={false} />
 
   return (
     <PageShell header={

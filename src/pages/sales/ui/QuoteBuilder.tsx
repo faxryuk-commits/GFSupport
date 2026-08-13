@@ -102,11 +102,33 @@ export function QuoteBuilder({ deal, onClose, onDone }: {
           `${it.name}: включено ${it.includedOrders.toLocaleString('ru-RU')} заказов в месяц, ` +
           `сверх пакета — ${it.extraOrderPrice.toLocaleString('ru-RU')} ${currency} за заказ`)
       }
-      if (it.category === 'deposit') {
-        conditions.push(`${it.name}: расходуется помесячно в счёт оплаты, в ежемесячный платёж не входит`)
+    }
+
+    // Депозит — не «ещё один платёж», а предоплата абонентской платы: клиент
+    // вносит сумму, и она гасит ежемесячные счета по выбранному тарифу и
+    // модулям, пока не кончится. Считаем прямо здесь, чтобы в КП стояло не
+    // абстрактное «расходуется помесячно», а сколько месяцев это покрывает
+    if (deposit > 0) {
+      if (monthly > 0) {
+        const months = Math.floor(deposit / monthly)
+        const rest = deposit - months * monthly
+        const tail = rest > 0
+          ? `, остаток ${rest.toLocaleString('ru-RU')} ${currency} переходит на следующий месяц`
+          : ''
+        conditions.push(
+          `Депозит ${deposit.toLocaleString('ru-RU')} ${currency} расходуется на абонентскую плату ` +
+          `по выбранному тарифу и модулям (${monthly.toLocaleString('ru-RU')} ${currency} в месяц): ` +
+          `покрывает ${months} ${months === 1 ? 'месяц' : months < 5 ? 'месяца' : 'месяцев'}${tail}. ` +
+          `Списание идёт помесячно, отдельного счёта на эти месяцы не будет.`)
+      } else {
+        conditions.push(
+          `Депозит ${deposit.toLocaleString('ru-RU')} ${currency} расходуется на абонентскую плату ` +
+          `помесячно — выберите тариф, чтобы рассчитать, на сколько месяцев его хватит.`)
       }
     }
-    return { monthly, onetime, deposit, conditions }
+
+    const depositMonths = deposit > 0 && monthly > 0 ? deposit / monthly : 0
+    return { monthly, onetime, deposit, depositMonths, conditions }
   }, [selected, items, currency])
 
   const save = async () => {
@@ -265,6 +287,12 @@ export function QuoteBuilder({ deal, onClose, onDone }: {
               <div>
                 <div className="text-gray-400">Депозит</div>
                 <div className="text-[15px] font-medium text-gray-700 tabular-nums">{fmt(totals.deposit)}</div>
+                {/* Сразу видно, что клиент покупает этим депозитом */}
+                <div className="text-[11px] text-emerald-700">
+                  {totals.depositMonths
+                    ? `≈ ${Math.floor(totals.depositMonths)} мес абонплаты`
+                    : 'выберите тариф'}
+                </div>
               </div>
             )}
           </div>

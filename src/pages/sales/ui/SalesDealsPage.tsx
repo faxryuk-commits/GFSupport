@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
-         useAutoRefresh, fmtDateTime } from './kit'
+         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer } from './kit'
 import { RegionBadge, useRegion } from './region'
+import { SalesDealPage } from './SalesDealPage'
 import { useSalesRefs, optionsFor } from './refs'
 
 /**
@@ -122,6 +123,9 @@ export function SalesDealsPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(BLANK)
   // Перетаскивание: что тащим и над какой колонкой висим
+  // Карточка открывается панелью поверх списка: список остаётся прокрученным,
+  // фильтры выставленными, возвращаться некуда
+  const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overStage, setOverStage] = useState<string | null>(null)
   // Отменяемый перенос: промахнуться мышью проще, чем попасть
@@ -180,8 +184,8 @@ export function SalesDealsPage() {
       setCreating(false)
       setForm(BLANK)
       setError(null)
-      if (res?.id) navigate(`/sales/deals/${res.id}`)
-      else load()
+      load()
+      if (res?.id) setOpenDeal(res.id)
     } catch (e: any) {
       setError(e?.message || 'Не удалось завести сделку')
     } finally {
@@ -268,7 +272,7 @@ export function SalesDealsPage() {
   }
 
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
-  if (!data) return <div className="p-6 text-sm text-gray-400">Загружаем сделки…</div>
+  if (!data) return mode === 'kanban' ? <BoardSkeleton /> : <Skeleton rows={8} />
 
   const t = data.totals || {}
   const byStage = (key: string) => data.deals.filter(d => d.stage_key === key)
@@ -394,10 +398,10 @@ export function SalesDealsPage() {
                         problem ? 'border-l-red-500' : d.doc_opens ? 'border-l-emerald-500' : 'border-l-blue-500'}`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <Link to={`/sales/deals/${d.id}`}
-                          className="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 leading-tight">
+                        <button onClick={() => setOpenDeal(d.id)}
+                          className="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 leading-tight text-left">
                           {d.account || d.title}
-                        </Link>
+                        </button>
                         <Chip tone={tone}>{days(d.stage_since)} дн</Chip>
                       </div>
 
@@ -499,9 +503,10 @@ export function SalesDealsPage() {
                   return (
                     <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-2.5 whitespace-nowrap">
-                        <Link to={`/sales/deals/${d.id}`} className="font-semibold text-gray-900 hover:text-blue-600">
+                        <button onClick={() => setOpenDeal(d.id)}
+                          className="font-semibold text-gray-900 hover:text-blue-600 text-left">
                           {d.account || d.title}
-                        </Link>
+                        </button>
                         <div className="text-[11px] text-gray-400 whitespace-nowrap">
                           {[d.city, d.source, `создана ${fmtDateTime(d.created_at)}`].filter(Boolean).join(' · ')}
                         </div>
@@ -591,6 +596,15 @@ export function SalesDealsPage() {
           </div>
         </Modal>
       )}
+
+      <Drawer
+        open={!!openDeal}
+        onClose={() => { setOpenDeal(null); load() }}
+        title="Сделка"
+        fullLink={openDeal ? `/sales/deals/${openDeal}` : undefined}
+      >
+        {openDeal && <SalesDealPage dealId={openDeal} />}
+      </Drawer>
 
       {creating && (
         <Modal

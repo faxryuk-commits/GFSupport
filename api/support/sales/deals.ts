@@ -191,7 +191,7 @@ export default async function handler(req: Request): Promise<Response> {
   // независимо от фильтра вида, чтобы колонки не пустели при переключении.
   // Без выбранного региона колонки складываются по ключу этапа: воронки у
   // стран разные, но смысл этапов общий, иначе «Все регионы» показывали бы ноль
-  const summary = await sql`
+  const summaryQ = sql`
     SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
            MAX(s.probability) AS probability, MAX(s.sla_hours) AS sla_hours,
            COUNT(d.id)::int AS deals,
@@ -208,7 +208,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Закрытые этапы держим отдельной сводкой: тащить на доску 3400 проигранных
   // сделок незачем, но бросить карточку в «Выиграна» или «Проиграна» нужно
-  const closed = await sql`
+  const closedQ = sql`
     SELECT s.key, MIN(s.label) AS label, MIN(s.kind) AS kind,
            COUNT(d.id) FILTER (WHERE COALESCE(d.won_at, d.lost_at) > NOW() - INTERVAL '30 days')::int AS deals,
            COALESCE(SUM(d.monthly_amount) FILTER (
@@ -223,7 +223,7 @@ export default async function handler(req: Request): Promise<Response> {
     ORDER BY MIN(s.kind) DESC
   `
 
-  const [totals] = await sql`
+  const totalsQ = sql`
     SELECT COUNT(*)::int AS open_deals,
            COALESCE(SUM(monthly_amount), 0) AS pipeline_amount,
            COUNT(*) FILTER (WHERE stalled_at IS NOT NULL)::int AS stalled,
@@ -233,12 +233,20 @@ export default async function handler(req: Request): Promise<Response> {
       AND archived_at IS NULL AND (${market || ''} = '' OR market_id = ${market || ''})
   `
 
-  const owners = await sql`
+  const ownersQ = sql`
     SELECT DISTINCT ag.id, ag.name
     FROM sales_deals d JOIN support_agents ag ON ag.id = d.owner_agent_id
     WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner'
     ORDER BY ag.name
   `
 
-  return json({ deals: rows, summary, closed, totals: totals || {}, owners, hasMore, offset, limit })
+  // Четыре независимых запроса — одновременно, а не друг за другом: у neon по
+  // HTTP каждый рейс стоит десятки миллисекунд, и последовательность их
+  // складывала в задержку, заметную глазом
+  const [summary, closed, totalsRows, owners] = await Promise.all([summaryQ, closedQ, totalsQ, ownersQ])
+
+  return json({
+    deals: rows, summary, closed, totals: (totalsRows as any[])[0] || {},
+    owners, hasMore, offset, limit,
+  })
 }

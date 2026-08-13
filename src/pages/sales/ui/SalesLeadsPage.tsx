@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
-         Modal, Field, Btn, useAutoRefresh, slaTone, slaText } from './kit'
+         Modal, Field, Btn, useAutoRefresh, slaTone, slaText, Skeleton } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { useSalesRefs, optionsFor } from './refs'
 
@@ -122,7 +122,7 @@ export function SalesLeadsPage() {
   }
 
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
-  if (!data) return <div className="p-6 text-sm text-gray-400">Загружаем лиды…</div>
+  if (!data) return <Skeleton rows={8} />
 
   const s = data.stats || {}
 

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { formatDateTimeShort } from '@/shared/lib/time'
 import { useSalesRefs, optionsFor } from './refs'
-import { InlineField } from './kit'
+import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 
 /**
@@ -69,6 +69,26 @@ function money(v: any, currency = 'UZS') {
  */
 const fmtDate = (v: string | null) => formatDateTimeShort(v)
 
+/**
+ * Значение для календарного поля: наивная строка из базы хранит UTC, а input
+ * ждёт локальное время без зоны. Показываем рабочую зону — ту же, что и везде.
+ */
+function toLocalInput(v: string | null): string {
+  if (!v) return ''
+  const ts = v.includes('Z') || v.includes('+') ? v : v + 'Z'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const tashkent = new Date(d.getTime() + 5 * 3600000)
+  return tashkent.toISOString().slice(0, 16)
+}
+
+/** Быстрый срок: «завтра», «через неделю» — без ковыряния в календаре. */
+function inDays(days: number): string {
+  const d = new Date(Date.now() + days * 86400000 + 5 * 3600000)
+  d.setUTCHours(9, 0, 0, 0)
+  return d.toISOString().slice(0, 16)
+}
+
 const Card = ({ title, sub, right, children }: any) => (
   <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
     <header className="px-4 py-3 border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap">
@@ -82,8 +102,11 @@ const Card = ({ title, sub, right, children }: any) => (
   </section>
 )
 
-export function SalesDealPage() {
-  const { id } = useParams<{ id: string }>()
+export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
+  // id приходит либо из адреса, либо снаружи — когда карточку показывают
+  // боковой панелью прямо над списком
+  const { id: routeId } = useParams<{ id: string }>()
+  const id = dealId || routeId
   const [data, setData] = useState<DealData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<string | null>(null)
@@ -166,7 +189,7 @@ export function SalesDealPage() {
   if (error && !data) {
     return <div className="p-6 text-sm text-gray-900">{error}</div>
   }
-  if (!data) return <div className="p-6 text-sm text-gray-400">Загружаем сделку…</div>
+  if (!data) return <Skeleton rows={6} kpis={false} />
 
   const d = data.deal
   const openStages = data.stages.filter(s => s.kind === 'open')
@@ -389,9 +412,29 @@ export function SalesDealPage() {
                 {d.next_step_at && <span className="block text-[11px] opacity-80 mt-0.5">{fmtDate(d.next_step_at)}</span>}
               </div>
             </div>
-            <InlineField label="Что делаем" value={d.next_step} onSave={v => patch('next_step', v)} />
-            <InlineField label="Когда" value={d.next_step_at ? fmtDate(d.next_step_at) : ''} placeholder="2026-08-20"
-              onSave={v => patch('next_step_at', v)} />
+            {/* Действие — из списка типовых: свободная строка означала, что
+                «позвонить», «созвон» и «набрать» — три разных шага, и отчёт по
+                ним не собрать. Дата — календарём, а не строкой формата */}
+            <InlineField label="Что делаем" value={d.next_step} onSave={v => patch('next_step', v)}
+              options={optionsFor(refs, 'next_step')} />
+            <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
+              <span className="text-[12.5px] text-gray-500 flex-1">Когда</span>
+              <input
+                type="datetime-local"
+                value={toLocalInput(d.next_step_at)}
+                onChange={e => patch('next_step_at', e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1 text-[12.5px]"
+              />
+            </div>
+            <div className="px-4 py-2.5 flex flex-wrap gap-1.5 border-b border-dashed border-gray-100">
+              {[['Сегодня', 0], ['Завтра', 1], ['Через 3 дня', 3], ['Через неделю', 7]].map(([label, days]) => (
+                <button key={String(label)}
+                  onClick={() => patch('next_step_at', inDays(Number(days)))}
+                  className="text-[11.5px] px-2 py-1 border border-gray-200 rounded-lg text-gray-600 hover:border-blue-400 hover:text-blue-600">
+                  {label}
+                </button>
+              ))}
+            </div>
           </Card>
 
           <Card title="Задачи и каденция" sub="создаются автоматически при смене этапа">

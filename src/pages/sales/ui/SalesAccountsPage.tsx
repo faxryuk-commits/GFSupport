@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Empty, fmtDate, money, Pager, PageShell, Th } from './kit'
+import { Card, Chip, Empty, fmtDate, money, Pager, PageShell, Th, Skeleton , Drawer } from './kit'
 import { RegionBadge, useRegion } from './region'
+import { SalesAccountPage } from './SalesAccountPage'
 
 /**
  * Список аккаунтов. Один экран для клиентов и партнёров — разница только в
@@ -22,6 +23,7 @@ export function SalesAccountsPage() {
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [offset, setOffset] = useState(0)
+  const [openAccount, setOpenAccount] = useState<string | null>(null)
   const region = useRegion()
   const LIMIT = 50
 
@@ -38,7 +40,7 @@ export function SalesAccountsPage() {
   }, [load, q])
 
   if (error && !rows) return <div className="p-6 text-sm text-gray-900">{error}</div>
-  if (!rows) return <div className="p-6 text-sm text-gray-400">Загружаем…</div>
+  if (!rows) return <Skeleton rows={8} kpis={false} />
 
   return (
     <PageShell header={
@@ -85,9 +87,10 @@ export function SalesAccountsPage() {
                   return (
                     <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-2.5 whitespace-nowrap">
-                        <Link to={`/sales/accounts/${a.id}`} className="font-semibold text-gray-900 hover:text-blue-600">
+                        <button onClick={() => setOpenAccount(a.id)}
+                          className="font-semibold text-gray-900 hover:text-blue-600 text-left">
                           {a.name}
-                        </Link>
+                        </button>
                         <div className="text-[11px] text-gray-400">{a.city || '—'}</div>
                       </td>
                       <td className="px-4 py-2.5"><Chip tone={tone}>{label}</Chip></td>
@@ -110,6 +113,14 @@ export function SalesAccountsPage() {
           <Pager offset={offset} limit={LIMIT} count={rows.length} hasMore={hasMore} onChange={setOffset} />
         </Card>
       )}
+      <Drawer
+        open={!!openAccount}
+        onClose={() => { setOpenAccount(null); load() }}
+        title="Аккаунт"
+        fullLink={openAccount ? `/sales/accounts/${openAccount}` : undefined}
+      >
+        {openAccount && <SalesAccountPage accountId={openAccount} />}
+      </Drawer>
     </PageShell>
   )
 }

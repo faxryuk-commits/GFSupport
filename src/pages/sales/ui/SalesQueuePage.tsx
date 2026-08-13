@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText } from './kit'
+import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText, Skeleton } from './kit'
 
 /**
  * Очередь дня — главный экран сейлза.
@@ -157,7 +157,7 @@ export function SalesQueuePage() {
   }
 
   if (!data) {
-    return <div className="p-6 text-sm text-gray-400">Загружаем очередь…</div>
+    return <Skeleton rows={6} />
   }
 
   const s = data.stats || {}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Kpis, money, pct, PageShell } from './kit'
+import { Card, Chip, Kpis, money, pct, PageShell, Skeleton } from './kit'
 import { RegionBadge, useRegion } from './region'
 
 /**
@@ -26,7 +26,7 @@ export function SalesReportsPage() {
   useEffect(() => { load() }, [load])
 
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
-  if (!data) return <div className="p-6 text-sm text-gray-400">Считаем отчёты…</div>
+  if (!data) return <Skeleton rows={6} />
 
   const funnel = (data.funnel || []).filter((f: any) => f.reached > 0)
   const top = funnel[0]?.reached || 0

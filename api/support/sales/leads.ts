@@ -162,7 +162,7 @@ export default async function handler(req: Request): Promise<Response> {
   const hasMore = rows.length > limit
   if (hasMore) rows.pop()
 
-  const [stats] = await sql`
+  const statsQ = sql`
     SELECT COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS today,
            COUNT(*) FILTER (WHERE status = 'assigned' AND first_touch_at IS NULL)::int AS waiting,
            COUNT(*) FILTER (WHERE status = 'new')::int AS unassigned,
@@ -174,7 +174,7 @@ export default async function handler(req: Request): Promise<Response> {
       AND (${market} = '' OR market_id = ${market})
   `
 
-  const sources = await sql`
+  const sourcesQ = sql`
     SELECT s.key, s.label, COUNT(l.id)::int AS leads
     FROM sales_sources s
     LEFT JOIN sales_leads l ON l.source_id = s.id AND l.created_at > NOW() - INTERVAL '30 days'
@@ -183,5 +183,10 @@ export default async function handler(req: Request): Promise<Response> {
     GROUP BY s.key, s.label ORDER BY leads DESC
   `
 
-  return json({ leads: rows, stats: stats || {}, sources, view, hasMore, offset, limit, market })
+  const [statsRows, sources] = await Promise.all([statsQ, sourcesQ])
+
+  return json({
+    leads: rows, stats: (statsRows as any[])[0] || {}, sources,
+    view, hasMore, offset, limit, market,
+  })
 }

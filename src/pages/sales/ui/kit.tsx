@@ -230,7 +230,9 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
   onDone?: () => void
   align?: 'left' | 'right'
 }) {
-  const [open, setOpen] = useState(false)
+  // Поле, открытое по клику «заполнить», уже сфокусировано — второго клика
+  // никто не делает, поэтому список раскрываем сразу вместе с полем
+  const [open, setOpen] = useState(!!autoFocus)
   const [draft, setDraft] = useState(value ?? '')
   const box = useRef<HTMLDivElement>(null)
 
@@ -385,3 +387,110 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
   )
 }
 
+
+/**
+ * Скелетон вместо надписи «Загружаем…».
+ *
+ * Пустой экран с текстом читается как «ничего нет», а мигание при каждом
+ * автообновлении — как подвисание. Скелетон держит форму страницы, поэтому
+ * ожидание выглядит короче, чем оно есть.
+ */
+export const Skeleton = ({ rows = 6, kpis = true }: { rows?: number; kpis?: boolean }) => (
+  <div className="p-5 space-y-4 animate-pulse">
+    <div className="space-y-2">
+      <div className="h-5 w-48 bg-gray-200 rounded" />
+      <div className="h-3 w-72 bg-gray-100 rounded" />
+    </div>
+    {kpis && (
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="bg-white px-4 py-4 space-y-2">
+            <div className="h-2.5 w-16 bg-gray-100 rounded" />
+            <div className="h-5 w-12 bg-gray-200 rounded" />
+          </div>
+        ))}
+      </div>
+    )}
+    <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="px-4 py-3 flex items-center gap-3">
+          <div className="h-3 bg-gray-200 rounded flex-1" style={{ maxWidth: `${180 - i * 12}px` }} />
+          <div className="h-3 w-16 bg-gray-100 rounded" />
+          <div className="h-3 w-24 bg-gray-100 rounded ml-auto" />
+        </div>
+      ))}
+    </div>
+  </div>
+)
+
+/** Скелетон доски: те же колонки, что появятся после загрузки. */
+export const BoardSkeleton = () => (
+  <div className="p-5 flex gap-3 overflow-hidden animate-pulse">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <div key={i} className="flex-none w-[268px] bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+        <div className="h-2.5 w-24 bg-gray-200 rounded" />
+        <div className="h-2 w-16 bg-gray-100 rounded" />
+        {Array.from({ length: 3 - (i % 2) }).map((__, j) => (
+          <div key={j} className="border border-gray-100 rounded-lg p-2.5 space-y-2">
+            <div className="h-3 w-28 bg-gray-200 rounded" />
+            <div className="h-2.5 w-40 bg-gray-100 rounded" />
+            <div className="h-2.5 w-20 bg-gray-100 rounded" />
+          </div>
+        ))}
+      </div>
+    ))}
+  </div>
+)
+
+/**
+ * Боковая панель для карточек.
+ *
+ * Переход на отдельную страницу выбивает из работы: список прокручен, фильтры
+ * выставлены, а после «назад» всё это надо восстанавливать заново. Панель
+ * держит список на месте — сделку посмотрели, поправили, закрыли.
+ *
+ * Esc закрывает, клик по затемнению — тоже, адрес не меняется.
+ */
+export const Drawer = ({ open, onClose, title, fullLink, children }: {
+  open: boolean
+  onClose: () => void
+  title?: string
+  fullLink?: string
+  children: ReactNode
+}) => {
+  useEffect(() => {
+    if (!open) return
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end">
+      <div className="absolute inset-0 bg-gray-900/30" onClick={onClose} />
+      <aside
+        className="relative h-full w-full max-w-[880px] bg-[#f5f7fa] shadow-2xl flex flex-col
+                   animate-[slideIn_.16s_ease-out]"
+        style={{ animationName: 'none' }}
+      >
+        <header className="flex-none flex items-center justify-between gap-3 px-4 py-2.5 bg-white border-b border-gray-200">
+          <span className="text-[12.5px] text-gray-500 truncate">{title || 'Карточка'}</span>
+          <div className="flex items-center gap-2">
+            {fullLink && (
+              <a href={fullLink} className="text-[12px] text-gray-500 hover:text-blue-600">
+                Открыть страницей
+              </a>
+            )}
+            <button onClick={onClose} title="Закрыть (Esc)"
+              className="text-[12.5px] px-2.5 py-1 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+              Закрыть
+            </button>
+          </div>
+        </header>
+        <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
+      </aside>
+    </div>
+  )
+}

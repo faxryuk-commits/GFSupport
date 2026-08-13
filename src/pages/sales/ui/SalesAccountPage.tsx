@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiDelete } from '@/shared/services/api.service'
-import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField } from './kit'
+import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField, Skeleton } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
 
 /**
@@ -20,8 +20,9 @@ const LIFECYCLE: Record<string, [string, string]> = {
   churned: ['ушёл', 'red'],
 }
 
-export function SalesAccountPage() {
-  const { id } = useParams<{ id: string }>()
+export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
+  const { id: routeId } = useParams<{ id: string }>()
+  const id = accountId || routeId
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [merchant, setMerchant] = useState('')
@@ -62,7 +63,7 @@ export function SalesAccountPage() {
   }
 
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
-  if (!data) return <div className="p-6 text-sm text-gray-400">Загружаем аккаунт…</div>
+  if (!data) return <Skeleton rows={5} />
 
   const a = data.account
   const isPartner = a.account_type === 'partner'
