@@ -155,6 +155,8 @@ export default async function handler(req: Request): Promise<Response> {
   if (pos) add("l.raw->>'pos' = ?", pos)
   if (city) add('l.city = ?', city)
   if (load) add("l.raw->>'orders_per_day' = ?", load)
+  const kind = url.searchParams.get('kind')
+  if (kind) add('l.lead_kind = ?', kind)
   if (q) {
     params.push(`%${q}%`, `%${q}%`)
     conds.push(`(l.name ILIKE $${params.length - 1} OR l.phone ILIKE $${params.length})`)
@@ -168,6 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
   const rows = await sql.query(
     `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
             l.sla_due_at, l.first_touch_at, l.created_at, l.updated_at, l.campaign, l.text,
+            l.lead_kind,
             l.raw->>'pos' AS pos, l.raw->>'orders_per_day' AS orders_per_day,
             (l.raw->>'points')::text AS points,
             s.key AS source_key, s.label AS source,

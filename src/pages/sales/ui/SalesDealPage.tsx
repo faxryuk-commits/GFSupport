@@ -28,6 +28,11 @@ interface Stage {
 }
 
 interface DealData {
+  channelId?: string | null
+  messages?: Array<{
+    id: string; sender_name: string | null; is_from_client: boolean
+    text_content: string | null; content_type: string | null; created_at: string
+  }>
   deal: any
   account: any
   stages: Stage[]
@@ -257,6 +262,16 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             {[data.currentStage?.label, d.city, d.pos, d.points ? `${d.points} точек` : null]
               .filter(Boolean).join(' · ')}
           </p>
+          {/* Возраст сделки — первое, что спрашивают на разборе: когда завели,
+              когда трогали в последний раз и сколько висит на этапе */}
+          <p className="text-[11.5px] text-gray-400 mt-1">
+            {[
+              `создана ${fmtDate(d.created_at)}`,
+              d.updated_at ? `изменена ${fmtDate(d.updated_at)}` : null,
+              d.stage_since ? `на этапе ${Math.floor((Date.now() - new Date(
+                d.stage_since.includes('Z') ? d.stage_since : d.stage_since + 'Z').getTime()) / 86400000)} дн` : null,
+            ].filter(Boolean).join(' · ')}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="text-right mr-2">
@@ -473,6 +488,45 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                     <div className="text-[11px] text-gray-400">
                       {fmtDate(t.due_at)} · {t.kind === 'cadence' ? 'каденция' : 'задача'}
                       {t.channel ? ` · ${t.channel}` : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Переписка рядом со сделкой: иначе диалог читают в одном месте,
+              а работают в другом, и контекст теряется по дороге */}
+          <Card
+            title="Переписка"
+            sub={data.channelId
+              ? 'последние сообщения из чата клиента'
+              : 'чат не привязан — привяжите канал в карточке аккаунта'}
+            right={data.channelId ? (
+              <Link to={`/chats/${data.channelId}`} className="text-[12px] text-blue-600 hover:underline">
+                Открыть чат
+              </Link>
+            ) : null}
+          >
+            {!(data.messages || []).length ? (
+              <div className="px-4 py-4 text-[12.5px] text-gray-400">
+                {data.channelId
+                  ? 'Сообщений пока нет'
+                  : 'Сообщения появятся, когда аккаунт свяжут с каналом: чат из Telegram, WhatsApp или Instagram.'}
+              </div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                {(data.messages || []).map((m: any) => (
+                  <div key={m.id} className="px-4 py-2">
+                    <div className="flex justify-between gap-2">
+                      <span className={`text-[11px] font-semibold ${
+                        m.is_from_client ? 'text-blue-700' : 'text-gray-500'}`}>
+                        {m.is_from_client ? (m.sender_name || 'Клиент') : (m.sender_name || 'Мы')}
+                      </span>
+                      <span className="text-[10.5px] text-gray-400">{fmtDate(m.created_at)}</span>
+                    </div>
+                    <div className="text-[12px] text-gray-800 mt-0.5">
+                      {m.text_content || `[${m.content_type || 'вложение'}]`}
                     </div>
                   </div>
                 ))}

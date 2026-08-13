@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.6-journey'
+const SCHEMA_VERSION = '2026-08-14.7-leadkind'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -673,6 +673,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
             ON sales_field_options(org_id, field, value, COALESCE(market_id, ''))`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_field_options_field
             ON sales_field_options(org_id, field) WHERE is_active`
+
+  // Чем именно было обращение: заполненной формой, сообщением в директ,
+  // комментарием под постом или звонком. Источник отвечает «откуда», а это —
+  // «что человек сделал», и работа с ними разная: форму можно звонить сразу,
+  // комментарий сначала перевести в диалог
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS lead_kind VARCHAR(20)`
 
   // Метки рекламы: без них «откуда клиент» отвечается по памяти сейлза.
   // Пишем и первое касание, и последнее — заявку часто оставляют не с того

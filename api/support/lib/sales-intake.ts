@@ -24,6 +24,8 @@ export interface IntakePayload {
   form_id?: string | null
   ad_id?: string | null
   text?: string | null
+  /** form | message | comment | call | manual — что человек сделал. */
+  lead_kind?: string | null
   // Метки рекламы: доезжают с формы и из бота, чтобы «откуда клиент» не был
   // вопросом к памяти сейлза
   utm_source?: string | null
@@ -54,6 +56,20 @@ export interface IntakeResult {
   band?: string
   status?: string
   assigned_agent_id?: string | null
+}
+
+/**
+ * Что человек сделал, если система-источник не сказала явно. Заявка с формы,
+ * сообщение в директ и комментарий под постом — разные обращения, и путать их
+ * значит мерить конверсию по каше.
+ */
+function kindBySource(sourceKey: string): string {
+  if (/leadform|form|site/.test(sourceKey)) return 'form'
+  if (/comment/.test(sourceKey)) return 'comment'
+  if (/direct|telegram|whatsapp|chat/.test(sourceKey)) return 'message'
+  if (/call/.test(sourceKey)) return 'call'
+  if (/manual/.test(sourceKey)) return 'manual'
+  return 'other'
 }
 
 export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): Promise<IntakeResult> {
@@ -195,7 +211,8 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       id, org_id, source_id, external_id, account_id, name, phone, phone_norm,
       contact_name, city, market_id, campaign, form_id, ad_id, text, raw,
       icp_score, icp_reasons, status, assigned_agent_id, assigned_at, sla_due_at,
-      utm_source, utm_medium, utm_campaign, utm_content, click_id, landing_url, referrer
+      utm_source, utm_medium, utm_campaign, utm_content, click_id, landing_url, referrer,
+      lead_kind
     ) VALUES (
       ${leadId}, ${orgId}, ${source.id}, ${externalId}, ${accountId}, ${name}, ${phone}, ${phoneNorm},
       ${body.contact_name || null}, ${city}, ${marketId}, ${body.campaign || null}, ${body.form_id || null},
@@ -205,7 +222,8 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       ${slaMinutes ? new Date(Date.now() + slaMinutes * 60_000).toISOString() : null},
       ${body.utm_source || null}, ${body.utm_medium || null}, ${body.utm_campaign || null},
       ${body.utm_content || null}, ${body.click_id || null}, ${body.landing_url || null},
-      ${body.referrer || null}
+      ${body.referrer || null},
+      ${body.lead_kind || kindBySource(sourceKey)}
     )
     RETURNING *
   `

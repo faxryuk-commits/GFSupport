@@ -32,6 +32,7 @@ interface Lead {
   text: string | null
   source: string | null
   source_key: string | null
+  lead_kind: string | null
   account_id: string | null
   account_name: string | null
   account_created: string | null
@@ -55,6 +56,15 @@ const VIEWS: Array<[string, string]> = [
   ['nurture', 'На прогреве'],
   ['archived', 'Архив'],
 ]
+
+/** Что человек сделал: форма, сообщение, комментарий, звонок. */
+const KIND_LABEL: Record<string, string> = {
+  form: 'заявка с формы', message: 'написал в мессенджер', comment: 'комментарий',
+  call: 'звонок', manual: 'заведён вручную', other: 'обращение',
+}
+const KIND_TONE: Record<string, string> = {
+  form: 'green', message: 'violet', comment: 'amber', call: 'blue', manual: 'gray', other: 'gray',
+}
 
 const STATUS_TONE: Record<string, string> = {
   assigned: 'blue', converted: 'green', new: 'amber', nurture: 'gray', junk: 'gray',
@@ -138,7 +148,8 @@ export function SalesLeadsPage() {
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Лиды</h1>
           <p className="text-[12.5px] text-gray-500 mt-0.5">
-            Один вход для всех каналов: реклама, сайт, мессенджеры, звонки и ручной ввод
+            Обращение = один контакт от человека: заявка с формы, сообщение в директ,
+            комментарий или звонок. Источник говорит откуда, вид — что именно человек сделал.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -164,6 +175,18 @@ export function SalesLeadsPage() {
         <div className="p-3 flex gap-2 flex-wrap items-center">
           <input value={q} onChange={e => { setQ(e.target.value); setOffset(0) }} placeholder="Бренд или телефон"
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-56" />
+          {/* Вид обращения важнее источника: заявку с формы можно звонить
+              сразу, а комментарий сначала надо перевести в диалог */}
+          <select value={facets.kind || ''} onChange={e => { setFacets({ ...facets, kind: e.target.value }); setOffset(0) }}
+            className={`border rounded-lg px-2 py-1.5 text-[12.5px] ${
+              facets.kind ? 'border-blue-400 text-blue-700' : 'border-gray-300'}`}>
+            <option value="">Любое обращение</option>
+            <option value="form">Заявка с формы</option>
+            <option value="message">Написал в мессенджер</option>
+            <option value="comment">Комментарий</option>
+            <option value="call">Звонок</option>
+            <option value="manual">Заведён вручную</option>
+          </select>
           <select value={source} onChange={e => { setSource(e.target.value); setOffset(0) }}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
             <option value="">Все источники</option>
@@ -255,7 +278,10 @@ export function SalesLeadsPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5">
-                        <Chip tone="blue">{l.source || '—'}</Chip>
+                        <Chip tone={KIND_TONE[l.lead_kind || ''] || 'gray'}>
+                          {KIND_LABEL[l.lead_kind || ''] || 'обращение'}
+                        </Chip>
+                        <div className="mt-1"><Chip tone="blue">{l.source || '—'}</Chip></div>
                         {l.campaign && <div className="text-[11px] text-gray-400 mt-1">{l.campaign}</div>}
                       </td>
                       <td className="px-4 py-2.5 text-right">

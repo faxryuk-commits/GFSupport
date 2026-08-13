@@ -128,9 +128,30 @@ export default async function handler(req: Request): Promise<Response> {
     ? open[idx + 1]
     : stages.find((s: any) => s.kind === 'won') || null
 
+  // Переписка клиента: если аккаунт связан с каналом поддержки, показываем
+  // последние сообщения прямо в сделке. Иначе сейлз читает диалог в одном
+  // приложении, а работает в другом — и половина контекста теряется по дороге
+  let messages: any[] = []
+  const channelId = account[0]?.channel_id
+  if (channelId) {
+    try {
+      messages = await sql`
+        SELECT id, sender_name, is_from_client, text_content, content_type, created_at
+        FROM support_messages
+        WHERE channel_id = ${channelId} AND is_deleted IS NOT TRUE
+        ORDER BY created_at DESC LIMIT 20
+      ` as any[]
+      messages.reverse()
+    } catch {
+      messages = []
+    }
+  }
+
   return json({
     deal,
     account: account[0] || null,
+    messages,
+    channelId: channelId || null,
     stages,
     currentStage: stages.find((s: any) => s.id === deal.stage_id) || null,
     nextStage,
