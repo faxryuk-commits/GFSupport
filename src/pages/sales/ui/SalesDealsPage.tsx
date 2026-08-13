@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
-         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf } from './kit'
+         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { SalesDealPage } from './SalesDealPage'
 import { useSalesRefs, optionsFor } from './refs'
@@ -73,6 +73,7 @@ interface DealsData {
   }
   owners: Array<{ id: string; name: string }>
   hasMore: boolean
+  closedWindow: { from: string | null; to: string | null } | null
 }
 
 const BLANK = {
@@ -121,6 +122,9 @@ export function SalesDealsPage() {
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
   const [range, setRange] = useState(() => rangeOf('all'))
+  const [perStage, setPerStage] = useState(30)
+  // Срезы по признакам: касса, город, тип заведения, тариф, нагрузка, источник
+  const [facets, setFacets] = useState<Record<string, string>>({})
   const [offset, setOffset] = useState(0)
   const region = useRegion()
   const refs = useSalesRefs()
@@ -144,7 +148,8 @@ export function SalesDealsPage() {
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
-    if (mode === 'kanban') params.set('perStage', '30')
+    if (mode === 'kanban') params.set('perStage', String(perStage))
+    for (const [k, v] of Object.entries(facets)) if (v) params.set(k, v)
     if (range.from) params.set('from', range.from)
     if (range.to) params.set('to', range.to)
     if (owner) params.set('owner', owner)
@@ -152,7 +157,7 @@ export function SalesDealsPage() {
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
-  }, [view, owner, q, offset, region, mode, range])
+  }, [view, owner, q, offset, region, mode, range, perStage, facets])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)   // поиск не дёргает сервер на каждую букву
@@ -340,8 +345,32 @@ export function SalesDealsPage() {
             {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
           <RangePicker value={range} onChange={r => { setRange(r); setOffset(0) }} />
+          {/* Срезы по признакам: «покажи всех с IIKO в Ташкенте» — вопрос,
+              который сейлз задаёт каждый день, а раньше отвечал глазами */}
+          {([
+            ['pos', 'POS-система', optionsFor(refs, 'pos')],
+            ['city', 'Город', optionsFor(refs, 'city', region)],
+            ['segment', 'Тип заведения', optionsFor(refs, 'segment')],
+            ['tariff', 'Тариф', optionsFor(refs, 'tariff')],
+            ['orders_per_day', 'Заказов в день', optionsFor(refs, 'orders_per_day')],
+            ['source', 'Источник', (refs?.sources || []).map(x => x.label)],
+          ] as Array<[string, string, string[]]>).map(([key, label, opts]) => (
+            <select key={key} value={facets[key] || ''}
+              onChange={e => { setFacets({ ...facets, [key]: e.target.value }); setOffset(0) }}
+              className={`border rounded-lg px-2 py-1.5 text-[12.5px] ${
+                facets[key] ? 'border-blue-400 text-blue-700' : 'border-gray-300'}`}>
+              <option value="">{label}</option>
+              {opts.map(o => <option key={o} value={key === 'source'
+                ? (refs?.sources || []).find(x => x.label === o)?.key || o : o}>{o}</option>)}
+            </select>
+          ))}
+          {Object.values(facets).some(Boolean) && (
+            <button onClick={() => setFacets({})}
+              className="text-[11.5px] text-gray-400 hover:text-red-600">сбросить</button>
+          )}
           <span className="text-[11.5px] text-gray-400 ml-auto">
-            показано {data.deals.length}{data.hasMore ? '+' : ''}
+            показано {data.deals.length}
+            {mode === 'kanban' && t.open_deals ? ` из ${t.open_deals}` : data.hasMore ? '+' : ''}
           </span>
         </div>
       </div>
@@ -440,6 +469,19 @@ export function SalesDealsPage() {
                                 шаг не назначен
                               </span>}
                       </div>
+                      {/* Когда пришла, откуда и когда следующий контакт —
+                          без этого карточка не отвечает на «что с ней делать» */}
+                      <div className="flex items-center justify-between gap-2 mt-1 text-[10.5px] text-gray-400">
+                        <span className="truncate">
+                          {[d.source, `от ${fmtDateTime(d.created_at)}`].filter(Boolean).join(' · ')}
+                        </span>
+                        {d.next_step_at && (
+                          <span className={`whitespace-nowrap ${
+                            slaTone(d.next_step_at) === 'red' ? 'text-red-600 font-semibold' : ''}`}>
+                            {fmtDateTime(d.next_step_at)}
+                          </span>
+                        )}
+                      </div>
                       {d.doc_opens ? (
                         <div className="text-[10.5px] text-emerald-600 mt-1">КП открыто {d.doc_opens}×</div>
                       ) : null}
@@ -450,6 +492,14 @@ export function SalesDealsPage() {
                   <div className="text-[11.5px] text-gray-300 text-center py-3 border border-dashed border-gray-200 rounded-lg">
                     перетащите сюда
                   </div>
+                )}
+                {/* Колонка показывает срез, а не всё: честно говорим, сколько
+                    скрыто, вместо молчаливой обрезки */}
+                {byStage(st.key).length < st.deals && (
+                  <button onClick={() => setPerStage(p => p + 30)}
+                    className="text-[11.5px] text-blue-600 hover:underline py-1">
+                    показано {byStage(st.key).length} из {st.deals} · показать ещё
+                  </button>
                 )}
               </div>
             </section>
@@ -477,7 +527,9 @@ export function SalesDealsPage() {
                   {cl.label}
                 </span>
                 <div className="text-[11px] text-gray-400 mt-0.5 tabular-nums">
-                  {cl.deals} за 30 дней
+                  {cl.deals} {data.closedWindow
+                    ? `за период ${data.closedWindow.from || '…'} — ${data.closedWindow.to || '…'}`
+                    : 'за 30 дней'}
                 </div>
                 {cl.kind === 'won' && Number(cl.amount) ? (
                   <div className="text-[11px] text-emerald-700 tabular-nums">

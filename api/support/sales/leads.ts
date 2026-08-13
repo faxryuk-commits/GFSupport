@@ -134,6 +134,13 @@ export default async function handler(req: Request): Promise<Response> {
   if (from) add('l.created_at >= ?::timestamptz', `${from}T00:00:00+05:00`)
   if (to) add('l.created_at <= ?::timestamptz', `${to}T23:59:59+05:00`)
   if (source) add('s.key = ?', source)
+  // Те же срезы, что и в сделках: касса, город, нагрузка — лид ищут по ним же
+  const pos = url.searchParams.get('pos')
+  const city = url.searchParams.get('city')
+  const load = url.searchParams.get('orders_per_day')
+  if (pos) add("l.raw->>'pos' = ?", pos)
+  if (city) add('l.city = ?', city)
+  if (load) add("l.raw->>'orders_per_day' = ?", load)
   if (q) {
     params.push(`%${q}%`, `%${q}%`)
     conds.push(`(l.name ILIKE $${params.length - 1} OR l.phone ILIKE $${params.length})`)

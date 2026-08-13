@@ -114,7 +114,21 @@ export default async function handler(req: Request): Promise<Response> {
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')
 
+  // Срезы по признакам квалификации: «покажи всех с IIKO в Ташкенте»
+  const pos = url.searchParams.get('pos')
+  const city = url.searchParams.get('city')
+  const segment = url.searchParams.get('segment')
+  const tariff = url.searchParams.get('tariff')
+  const load = url.searchParams.get('orders_per_day')
+  const source = url.searchParams.get('source')
+
   if (stage) add('s.key = ?', stage)
+  if (pos) add('d.pos = ?', pos)
+  if (city) add('COALESCE(NULLIF(d.city, \'\'), a.city) = ?', city)
+  if (segment) add('d.segment = ?', segment)
+  if (tariff) add('d.tariff ILIKE ?', `${tariff}%`)
+  if (load) add('d.orders_per_day = ?', load)
+  if (source) add('src.key = ?', source)
   if (owner) add('d.owner_agent_id = ?', owner)
   if (market) add('d.market_id = ?', market)
   if (q) {
@@ -254,5 +268,7 @@ export default async function handler(req: Request): Promise<Response> {
   return json({
     deals: rows, summary, closed, totals: (totalsRows as any[])[0] || {},
     owners, hasMore, offset, limit,
+    // Чтобы подпись под колонками закрытия не врала про период
+    closedWindow: from || to ? { from, to } : null,
   })
 }

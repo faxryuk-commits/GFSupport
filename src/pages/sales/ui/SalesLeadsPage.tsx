@@ -73,6 +73,7 @@ export function SalesLeadsPage() {
   const region = useRegion()
   const [busy, setBusy] = useState<string | null>(null)
   const [range, setRange] = useState(() => rangeOf('all'))
+  const [facets, setFacets] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState(false)
   const refs = useSalesRefs()
   const blank = { name: '', phone: '', city: '', pos: '', orders_per_day: '', text: '', source: 'manual' }
@@ -83,11 +84,12 @@ export function SalesLeadsPage() {
     if (source) p.set('source', source)
     if (range.from) p.set('from', range.from)
     if (range.to) p.set('to', range.to)
+    for (const [k, v] of Object.entries(facets)) if (v) p.set(k, v)
     if (q) p.set('q', q)
     apiGet<LeadsData>(`/sales/leads?${p.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить лиды'))
-  }, [view, source, q, offset, region, range])
+  }, [view, source, q, offset, region, range, facets])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -169,6 +171,23 @@ export function SalesLeadsPage() {
             ))}
           </select>
           <RangePicker value={range} onChange={r => { setRange(r); setOffset(0) }} />
+          {([
+            ['pos', 'POS-система', optionsFor(refs, 'pos')],
+            ['city', 'Город', optionsFor(refs, 'city', region)],
+            ['orders_per_day', 'Заказов в день', optionsFor(refs, 'orders_per_day')],
+          ] as Array<[string, string, string[]]>).map(([key, label, opts]) => (
+            <select key={key} value={facets[key] || ''}
+              onChange={e => { setFacets({ ...facets, [key]: e.target.value }); setOffset(0) }}
+              className={`border rounded-lg px-2 py-1.5 text-[12.5px] ${
+                facets[key] ? 'border-blue-400 text-blue-700' : 'border-gray-300'}`}>
+              <option value="">{label}</option>
+              {opts.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          ))}
+          {Object.values(facets).some(Boolean) && (
+            <button onClick={() => setFacets({})}
+              className="text-[11.5px] text-gray-400 hover:text-red-600">сбросить</button>
+          )}
           <span className="text-[11.5px] text-gray-400 ml-auto">показано {data.leads.length}</span>
         </div>
       </div>
