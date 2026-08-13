@@ -144,6 +144,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const rows = await sql.query(
     `SELECT d.id, d.title, d.monthly_amount, d.onetime_amount, d.currency, d.points,
+            d.pos, d.orders_per_day, d.tariff, d.city AS deal_city,
             d.stage_since, d.stalled_at, d.next_step, d.next_step_at, d.expected_close_at,
             d.won_at, d.lost_at, d.created_at, d.market_id,
             s.key AS stage_key, s.label AS stage, s.probability, s.sla_hours,
@@ -172,7 +173,7 @@ export default async function handler(req: Request): Promise<Response> {
   // стран разные, но смысл этапов общий, иначе «Все регионы» показывали бы ноль
   const summary = await sql`
     SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
-           MAX(s.probability) AS probability,
+           MAX(s.probability) AS probability, MAX(s.sla_hours) AS sla_hours,
            COUNT(d.id)::int AS deals,
            COALESCE(SUM(d.monthly_amount), 0) AS amount
     FROM sales_stages s

@@ -32,6 +32,11 @@ interface Deal {
   owner_name: string | null
   source: string | null
   doc_opens: number | null
+  points: number | null
+  pos: string | null
+  orders_per_day: string | null
+  tariff: string | null
+  deal_city: string | null
 }
 
 interface Summary {
@@ -40,6 +45,7 @@ interface Summary {
   deals: number
   amount: string
   probability: number
+  sla_hours: string | null
 }
 
 interface DealsData {
@@ -71,7 +77,18 @@ const VIEWS = [
 
 function days(iso: string | null): number {
   if (!iso) return 0
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  const ts = iso.includes('Z') || iso.includes('+') ? iso : iso + 'Z'
+  return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000)
+}
+
+/** Цвет возраста считаем от норматива этапа: 3 дня на дозвоне и на договоре — разное. */
+function ageTone(d: Deal, slaHours: string | null): string {
+  const age = days(d.stage_since)
+  const norm = slaHours ? Number(slaHours) / 24 : 0
+  if (!norm) return 'gray'
+  if (age > norm) return 'red'
+  if (age >= norm - 1) return 'amber'
+  return 'gray'
 }
 
 /** Почему сделка в списке проблемных — человеческим языком, а не флагом в базе. */
@@ -95,6 +112,11 @@ export function SalesDealsPage() {
   const [creating, setCreating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(BLANK)
+  // Перетаскивание: что тащим и над какой колонкой висим
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overStage, setOverStage] = useState<string | null>(null)
+  // Отменяемый перенос: промахнуться мышью проще, чем попасть
+  const [undo, setUndo] = useState<{ id: string; from: string; title: string; to: string } | null>(null)
   const LIMIT = 50
 
   const load = useCallback(() => {
@@ -113,6 +135,18 @@ export function SalesDealsPage() {
 
   // Список живёт сам: раз в полминуты и при возврате на вкладку
   useAutoRefresh(load)
+
+  // Плашки не висят вечно: отмена переноса живёт 8 секунд, ошибка — 6
+  useEffect(() => {
+    if (!undo) return
+    const t = setTimeout(() => setUndo(null), 8000)
+    return () => clearTimeout(t)
+  }, [undo])
+  useEffect(() => {
+    if (!error) return
+    const t = setTimeout(() => setError(null), 6000)
+    return () => clearTimeout(t)
+  }, [error])
 
   const create = async () => {
     if (!form.title.trim()) { setError('Укажите название сделки'); return }
@@ -135,6 +169,31 @@ export function SalesDealsPage() {
     }
   }
 
+  /**
+   * Перенос карточки в колонку — тот же переход этапа, что и кнопкой в карточке:
+   * движок проверяет критерии выхода и объясняет отказ прямо здесь, а не после
+   * захода внутрь сделки.
+   */
+  const move = async (dealId: string, toStage: string, silent = false) => {
+    const deal = data?.deals.find(x => x.id === dealId)
+    if (!deal || deal.stage_key === toStage) return
+    setOverStage(null)
+    setDragId(null)
+    try {
+      await apiPost('/sales/stage', { dealId, toStage })
+      setError(null)
+      if (!silent) {
+        setUndo({ id: dealId, from: deal.stage_key, to: toStage, title: deal.account || deal.title })
+      }
+      load()
+    } catch (e: any) {
+      // 422 движка — не поломка, а несоблюдённое условие этапа
+      setError(e?.message || 'Переход заблокирован')
+    }
+  }
+
+  const drop = (toStage: string) => { if (dragId) move(dragId, toStage) }
+
   const archive = async (id: string, title: string) => {
     if (!confirm(`Убрать «${title}» в архив? Сделка исчезнет из списков, но останется в истории аккаунта.`)) return
     try {
@@ -150,6 +209,7 @@ export function SalesDealsPage() {
 
   const t = data.totals || {}
   const byStage = (key: string) => data.deals.filter(d => d.stage_key === key)
+  const maxInStage = Math.max(1, ...data.summary.map(x => x.deals))
 
   return (
     <PageShell header={
@@ -222,35 +282,99 @@ export function SalesDealsPage() {
       )}
 
       {mode === 'kanban' && data.deals.length > 0 && (
-        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${data.summary.length}, minmax(190px, 1fr))`, overflowX: 'auto' }}>
-          {data.summary.map(s => (
-            <div key={s.key} className="bg-gray-50 border border-gray-100 rounded-xl p-2 space-y-2">
-              <div className="flex justify-between items-baseline px-1">
-                <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-500">{s.label}</span>
-                <span className="text-[11px] text-gray-400 tabular-nums">{s.deals}</span>
+        <div className="flex gap-3 overflow-x-auto items-start pb-1">
+          {data.summary.map(st => (
+            <section
+              key={st.key}
+              onDragOver={e => { e.preventDefault(); setOverStage(st.key) }}
+              onDragLeave={() => setOverStage(o => (o === st.key ? null : o))}
+              onDrop={e => { e.preventDefault(); drop(st.key) }}
+              className={`flex-none w-[268px] bg-white border rounded-xl flex flex-col max-h-[560px] ${
+                overStage === st.key ? 'border-blue-500 ring-2 ring-blue-100' : 'border-gray-200'}`}
+            >
+              <header className="px-3 py-2.5 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
+                <div className="flex justify-between items-baseline gap-2">
+                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-600">{st.label}</span>
+                  <span className="text-[11.5px] text-gray-400 tabular-nums">{st.deals}</span>
+                </div>
+                <div className="text-[11px] text-gray-400 tabular-nums mt-0.5">
+                  {Number(st.amount) ? money(st.amount, 'UZS') : 'сумма не указана'}
+                  {st.sla_hours ? ` · норматив ${Math.round(Number(st.sla_hours) / 24) || 1} дн` : ''}
+                </div>
+                <div className="mt-2 h-[3px] rounded bg-gray-100 overflow-hidden">
+                  <span className="block h-full bg-blue-600"
+                    style={{ width: `${Math.round((st.deals / maxInStage) * 100)}%` }} />
+                </div>
+              </header>
+
+              <div className="p-2.5 flex flex-col gap-2 overflow-y-auto min-h-[76px]">
+                {byStage(st.key).map(d => {
+                  const problem = problemOf(d)
+                  const tone = ageTone(d, st.sla_hours)
+                  const facts = [
+                    d.city || d.deal_city,
+                    d.points ? `${d.points} точ.` : null,
+                    d.pos,
+                    d.orders_per_day ? `${d.orders_per_day} зак/день` : null,
+                  ].filter(Boolean) as string[]
+                  return (
+                    <article
+                      key={d.id}
+                      draggable
+                      onDragStart={() => setDragId(d.id)}
+                      onDragEnd={() => { setDragId(null); setOverStage(null) }}
+                      className={`bg-white border border-gray-200 rounded-lg p-2.5 border-l-[3px] cursor-grab
+                        active:cursor-grabbing hover:shadow-sm ${
+                        dragId === d.id ? 'opacity-40' : ''} ${
+                        problem ? 'border-l-red-500' : d.doc_opens ? 'border-l-emerald-500' : 'border-l-blue-500'}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <Link to={`/sales/deals/${d.id}`}
+                          className="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 leading-tight">
+                          {d.account || d.title}
+                        </Link>
+                        <Chip tone={tone}>{days(d.stage_since)} дн</Chip>
+                      </div>
+
+                      {/* Квалификация: по ней решают, брать ли сделку сегодня */}
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {facts.length
+                          ? facts.map(f => <Chip key={f} tone="gray">{f}</Chip>)
+                          : <Chip tone="gray">не квалифицирован</Chip>}
+                      </div>
+
+                      <div className={`text-[11px] mt-1.5 tabular-nums ${
+                        d.monthly_amount ? 'text-gray-600' : 'text-amber-600'}`}>
+                        {d.monthly_amount
+                          ? `${money(d.monthly_amount, d.currency)} в месяц${d.tariff ? ` · ${d.tariff}` : ''}`
+                          : 'сумма не указана'}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 mt-1.5 pt-1.5 border-t border-gray-100">
+                        <span className="text-[10.5px] text-gray-500 truncate">{d.owner_name || 'без сейлза'}</span>
+                        {problem
+                          ? <span className="text-[10.5px] font-semibold text-red-600 whitespace-nowrap">{problem}</span>
+                          : d.next_step
+                            ? <span className="text-[10.5px] text-gray-400 truncate max-w-[120px]" title={d.next_step}>
+                                {d.next_step}
+                              </span>
+                            : <span className="text-[10.5px] font-semibold text-amber-600 whitespace-nowrap">
+                                шаг не назначен
+                              </span>}
+                      </div>
+                      {d.doc_opens ? (
+                        <div className="text-[10.5px] text-emerald-600 mt-1">КП открыто {d.doc_opens}×</div>
+                      ) : null}
+                    </article>
+                  )
+                })}
+                {byStage(st.key).length === 0 && (
+                  <div className="text-[11.5px] text-gray-300 text-center py-3 border border-dashed border-gray-200 rounded-lg">
+                    перетащите сюда
+                  </div>
+                )}
               </div>
-              <div className="text-[11px] text-gray-400 px-1 -mt-1">{money(s.amount, 'UZS')}</div>
-              {byStage(s.key).map(d => {
-                const problem = problemOf(d)
-                return (
-                  <Link key={d.id} to={`/sales/deals/${d.id}`}
-                    className={`block bg-white border border-gray-200 rounded-lg p-2.5 border-l-[3px] hover:shadow-sm ${
-                      problem ? 'border-l-red-500' : d.doc_opens ? 'border-l-amber-500' : 'border-l-blue-500'}`}>
-                    <div className="text-[12px] font-semibold text-gray-900">{d.account || d.title}</div>
-                    <div className="text-[10.5px] text-gray-400 mt-0.5">
-                      {money(d.monthly_amount, d.currency)} · {days(d.stage_since)} дн
-                    </div>
-                    {problem && <div className="text-[10.5px] text-red-600 mt-1">{problem}</div>}
-                    {!problem && d.doc_opens ? (
-                      <div className="text-[10.5px] text-amber-600 mt-1">КП открыто {d.doc_opens}×</div>
-                    ) : null}
-                  </Link>
-                )
-              })}
-              {byStage(s.key).length === 0 && (
-                <div className="text-[11px] text-gray-300 text-center py-3">пусто</div>
-              )}
-            </div>
+            </section>
           ))}
         </div>
       )}
@@ -322,7 +446,27 @@ export function SalesDealsPage() {
         </div>
       )}
 
-      {error && <div className="text-[12.5px] text-red-600">{error}</div>}
+      {error && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-red-600 text-white text-[12.5px]
+                        px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3">
+          {error}
+          <button onClick={() => setError(null)} className="font-semibold">Понятно</button>
+        </div>
+      )}
+
+      {undo && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white text-[12.5px]
+                        px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3">
+          «{undo.title}» → {data.summary.find(x => x.key === undo.to)?.label || undo.to}
+          <button
+            onClick={() => { move(undo.id, undo.from, true); setUndo(null) }}
+            className="font-semibold text-blue-300 hover:text-blue-200"
+          >
+            Отменить
+          </button>
+          <button onClick={() => setUndo(null)} className="text-gray-400 hover:text-white">×</button>
+        </div>
+      )}
 
       {creating && (
         <Modal

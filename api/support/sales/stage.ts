@@ -43,9 +43,15 @@ export default async function handler(req: Request): Promise<Response> {
   `
   if (!deal) return json({ error: 'deal not found' }, 404)
 
+  // Этап ищем внутри воронки сделки: после разделения по регионам ключ 'kp'
+  // есть у каждой страны, и без этого условия сделка могла уехать в чужую
+  // воронку — по ключу совпало бы, по смыслу нет
+  const pipeline = deal.pipeline || 'sales'
   const [target] = await sql`
     SELECT * FROM sales_stages
     WHERE org_id = ${orgId} AND (key = ${String(body.toStage)} OR id = ${String(body.toStage)})
+      AND (pipeline = ${pipeline} OR id = ${String(body.toStage)})
+    ORDER BY (pipeline = ${pipeline}) DESC
     LIMIT 1
   `
   if (!target) return json({ error: 'stage not found' }, 404)
