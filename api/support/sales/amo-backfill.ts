@@ -30,7 +30,7 @@ const ORG = process.env.SALES_ORG || 'org_delever'
 const GARBAGE_MIN_PRICE = 500_000   // сум: ниже — брошенная карточка, а не сделка
 // Перенос идёт постранично и в edge-функции: за один вызов успеваем немного,
 // поэтому ответ всегда содержит ссылку next на продолжение
-const TIME_BUDGET_MS = 14_000
+const TIME_BUDGET_MS = 18_000
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
@@ -84,15 +84,19 @@ export default async function handler(req: Request): Promise<Response> {
     for (const l of batch) for (const c of l._embedded?.contacts || []) if (c.id) ids.add(c.id)
     const contacts = await fetchContacts(creds, [...ids])
 
+    // ─── Пакетная обработка страницы ────────────────────────────────────────
+    // Раньше каждая сделка писалась пятью отдельными запросами (поиск аккаунта,
+    // вставка аккаунта, контакта, сделки, события) — 8-10 сделок за вызов.
+    // Для трёх тысяч сделок это часы. Теперь страница пишется четырьмя
+    // запросами независимо от числа строк.
+    type Cand = {
+      lead: any; name: string; phone: string | null; phoneNorm: string | null
+      contactName: string | null; isWon: boolean; isLost: boolean; stageKey: string
+      reasonId: string | null; closedAt: string | null
+    }
+    const cands: Cand[] = []
+
     for (const lead of batch) {
-      // Страницу оборвали по времени — её нужно дочитать, а не перескакивать
-      // дальше: иначе часть сделок молча не переносится (так и случилось на
-      // первом боевом прогоне, 36 сделок остались за бортом)
-      if (Date.now() - started > TIME_BUDGET_MS) {
-        out.hasMore = true
-        out.interrupted = true
-        break
-      }
       try {
         if (!isAllowedPipeline(lead.pipeline_id)) { out.wrongMode++; continue }
         const st = statuses.get(lead.status_id)
@@ -106,60 +110,13 @@ export default async function handler(req: Request): Promise<Response> {
           .find((c: any) => c?.phone)
 
         const rawName = cf(lead, 'Бренд') || lead.name || ''
-        // Служебные имена Amo («Facebook №…», «Сделка #…») заменяем контактом
         const name = /^(facebook|instagram|сделка|автосделка|lead)\s*[#№]?/i.test(rawName)
           ? (contact?.name || rawName) : rawName
         const price = Number(lead.price || 0)
-        // Брошенная карточка: ни имени клиента, ни телефона, ни внятной суммы
         const looksGarbage = (!name || /^(сделка|автосделка)/i.test(name))
           && !contact?.phone && price < GARBAGE_MIN_PRICE
         if (looksGarbage) { out.garbageSkipped++; continue }
 
-        const [existing] = await sql`
-          SELECT id FROM sales_deals WHERE org_id = ${ORG} AND external_id = ${`amo_${lead.id}`} LIMIT 1
-        `
-        if (existing) { out.alreadyThere++; continue }
-
-        const stageKey = stageKeyByStatusName(st?.name || '', isWon, isLost)
-        const phone = contact?.phone || null
-        const phoneNorm = normPhone(phone)
-
-        if (dry) {
-          if (out.samples.length < 10) {
-            out.samples.push({ id: lead.id, name, bucket, stage: stageKey, price, phone: phoneNorm ? '•••' + phoneNorm.slice(-4) : null })
-          }
-          out.imported++
-          continue
-        }
-
-        // ─── Аккаунт: склейка по телефону, иначе новый ───────────────────────
-        let accountId: string | null = null
-        if (phoneNorm) {
-          const [c] = await sql`
-            SELECT account_id FROM sales_contacts WHERE org_id = ${ORG} AND phone_norm = ${phoneNorm} LIMIT 1
-          `
-          accountId = c?.account_id || null
-        }
-        if (!accountId) {
-          accountId = salesId('acc')
-          await sql`
-            INSERT INTO sales_accounts (id, org_id, name, market_id, city, lifecycle, created_at)
-            VALUES (${accountId}, ${ORG}, ${name || 'Без названия'},
-                    ${marketByPipeline(lead.pipeline_id)}, ${cf(lead, 'Город') || null},
-                    ${isWon ? 'customer' : 'lead'},
-                    ${new Date((lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()})
-          `
-          if (phone) {
-            await sql`
-              INSERT INTO sales_contacts (id, org_id, account_id, name, phone, phone_norm, is_primary)
-              VALUES (${salesId('sct')}, ${ORG}, ${accountId}, ${contact?.name || null}, ${phone}, ${phoneNorm}, true)
-            `
-          }
-        } else if (isWon) {
-          await sql`UPDATE sales_accounts SET lifecycle = 'customer' WHERE id = ${accountId}`
-        }
-
-        // ─── Причина отказа по названию из Amo ───────────────────────────────
         let reasonId: string | null = null
         if (isLost) {
           const lossName = String((lead._embedded?.loss_reason?.[0]?.name) || '').toLowerCase()
@@ -170,41 +127,110 @@ export default async function handler(req: Request): Promise<Response> {
           reasonId = found?.id || reasonRows.find((r: any) => r.code === 'other')?.id || null
         }
 
-        const closedAt = lead.closed_at ? new Date(lead.closed_at * 1000).toISOString() : null
-        const dealId = salesId('sd')
-        await sql`
-          INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                                   title, deal_type, external_id, city, points, orders_per_day, pos,
-                                   tariff, monthly_amount, currency, stage_since,
-                                   won_at, lost_at, lost_reason_id, created_at, updated_at)
-          VALUES (${dealId}, ${ORG}, ${accountId}, ${stageIdByKey.get(stageKey) || ''},
-                  ${agentByAmoUser(lead.responsible_user_id)},
-                  ${marketByPipeline(lead.pipeline_id)}, ${name || 'Без названия'}, 'new',
-                  ${`amo_${lead.id}`}, ${cf(lead, 'Город') || null},
-                  ${parseInt(cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || '0', 10) || null},
-                  ${cf(lead, 'Заказы в день') || null}, ${cf(lead, 'POS') || null},
-                  ${cf(lead, 'Тариф') || null}, ${price || null}, 'UZS',
-                  ${new Date((lead.updated_at || lead.created_at) * 1000).toISOString()},
-                  ${isWon ? closedAt : null}, ${isLost ? closedAt : null}, ${reasonId},
-                  ${new Date((lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()}, NOW())
-        `
-        // Одна запись в журнал, чтобы сделка не выглядела «без истории»
-        await sql`
-          INSERT INTO sales_deal_events (org_id, deal_id, old_stage_id, new_stage_id, changed_by, changed_at)
-          VALUES (${ORG}, ${dealId}, NULL, ${stageIdByKey.get(stageKey) || ''}, 'перенос из AmoCRM',
-                  ${new Date((lead.updated_at || lead.created_at) * 1000).toISOString()})
-        `
-        out.imported++
+        cands.push({
+          lead, name: name || 'Без названия',
+          phone: contact?.phone || null,
+          phoneNorm: normPhone(contact?.phone || null),
+          contactName: contact?.name || null,
+          isWon, isLost,
+          stageKey: stageKeyByStatusName(st?.name || '', isWon, isLost),
+          reasonId,
+          closedAt: lead.closed_at ? new Date(lead.closed_at * 1000).toISOString() : null,
+        })
       } catch (e) {
         out.errors++
-        console.error('[amo-backfill] lead failed:', lead?.id, e)
       }
     }
+
+    if (!cands.length) continue
+
+    // 1. Что уже перенесено
+    const extIds = cands.map(c => `amo_${c.lead.id}`)
+    const known = await sql.query(
+      `SELECT external_id FROM sales_deals WHERE org_id = $1 AND external_id = ANY($2)`,
+      [ORG, extIds],
+    ) as any[]
+    const knownSet = new Set(known.map(r => r.external_id))
+    const fresh = cands.filter(c => !knownSet.has(`amo_${c.lead.id}`))
+    out.alreadyThere += cands.length - fresh.length
+    if (!fresh.length) continue
+
+    if (dry) {
+      out.imported += fresh.length
+      for (const c of fresh.slice(0, Math.max(0, 10 - out.samples.length))) {
+        out.samples.push({ id: c.lead.id, name: c.name, bucket: c.isWon ? 'won' : c.isLost ? 'lost' : 'open',
+          stage: c.stageKey, price: Number(c.lead.price || 0) })
+      }
+      continue
+    }
+
+    // 2. Существующие аккаунты по телефону — одним запросом
+    const phones = [...new Set(fresh.map(c => c.phoneNorm).filter(Boolean))] as string[]
+    const accByPhone = new Map<string, string>()
+    if (phones.length) {
+      const rows = await sql.query(
+        `SELECT phone_norm, account_id FROM sales_contacts WHERE org_id = $1 AND phone_norm = ANY($2)`,
+        [ORG, phones],
+      ) as any[]
+      for (const r of rows) if (r.phone_norm && !accByPhone.has(r.phone_norm)) accByPhone.set(r.phone_norm, r.account_id)
+    }
+
+    // 3. Новые аккаунты и контакты — пачкой, с учётом склейки внутри страницы
+    const newAccounts: any[] = []
+    const newContacts: any[] = []
+    for (const c of fresh) {
+      let accountId = c.phoneNorm ? accByPhone.get(c.phoneNorm) : undefined
+      if (!accountId) {
+        accountId = salesId('acc')
+        if (c.phoneNorm) accByPhone.set(c.phoneNorm, accountId)
+        newAccounts.push([accountId, ORG, c.name, marketByPipeline(c.lead.pipeline_id),
+          cf(c.lead, 'Город') || null, c.isWon ? 'customer' : 'lead',
+          new Date((c.lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()])
+        if (c.phone) {
+          newContacts.push([salesId('sct'), ORG, accountId, c.contactName, c.phone, c.phoneNorm])
+        }
+      }
+      ;(c as any).accountId = accountId
+    }
+
+    const bulk = async (table: string, cols: string[], rows: any[][]) => {
+      if (!rows.length) return
+      const params: any[] = []
+      const values = rows.map(r => `(${r.map(v => { params.push(v); return `$${params.length}` }).join(',')})`)
+      await sql.query(`INSERT INTO ${table} (${cols.join(',')}) VALUES ${values.join(',')}`, params)
+    }
+
+    await bulk('sales_accounts', ['id','org_id','name','market_id','city','lifecycle','created_at'], newAccounts)
+    await bulk('sales_contacts', ['id','org_id','account_id','name','phone','phone_norm'],
+      newContacts.map(r => [...r]))
+
+    // 4. Сделки и журнал — тоже пачкой
+    const dealRows: any[][] = []
+    const eventRows: any[][] = []
+    for (const c of fresh as any[]) {
+      const dealId = salesId('sd')
+      const stageId = stageIdByKey.get(c.stageKey) || ''
+      const since = new Date((c.lead.updated_at || c.lead.created_at) * 1000).toISOString()
+      dealRows.push([dealId, ORG, c.accountId, stageId, agentByAmoUser(c.lead.responsible_user_id),
+        marketByPipeline(c.lead.pipeline_id), c.name, 'new', `amo_${c.lead.id}`,
+        cf(c.lead, 'Город') || null,
+        parseInt(cf(c.lead, 'Кол филиалов') || cf(c.lead, 'Филиалов') || '0', 10) || null,
+        cf(c.lead, 'Заказы в день') || null, cf(c.lead, 'POS') || null, cf(c.lead, 'Тариф') || null,
+        Number(c.lead.price || 0) || null, 'UZS', since,
+        c.isWon ? c.closedAt : null, c.isLost ? c.closedAt : null, c.reasonId,
+        new Date((c.lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()])
+      eventRows.push([ORG, dealId, stageId, 'перенос из AmoCRM', since])
+    }
+    await bulk('sales_deals',
+      ['id','org_id','account_id','stage_id','owner_agent_id','market_id','title','deal_type',
+       'external_id','city','points','orders_per_day','pos','tariff','monthly_amount','currency',
+       'stage_since','won_at','lost_at','lost_reason_id','created_at'], dealRows)
+    await bulk('sales_deal_events', ['org_id','deal_id','new_stage_id','changed_by','changed_at'], eventRows)
+    out.imported += dealRows.length
   }
 
-  // Продолжать нужно с той же страницы, если её оборвали, и со следующей,
-  // если дочитали до конца
-  const resumePage = out.interrupted ? out.lastPage : out.lastPage + 1
+  // Страница обрабатывается целиком, поэтому продолжаем со следующей
+  const resumePage = out.lastPage + 1
   return json({
     ok: true, dry, ...out, resumePage,
     next: out.hasMore
