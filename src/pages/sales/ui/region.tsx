@@ -14,7 +14,8 @@ import { clearCache } from '@/shared/services/api.service'
  */
 
 export const REGION_NAMES: Record<string, string> = {
-  uz: 'Узбекистан', kz: 'Казахстан', az: 'Азербайджан', ge: 'Грузия', ae: 'ОАЭ',
+  uz: 'Узбекистан', kz: 'Казахстан', kg: 'Кыргызстан', az: 'Азербайджан',
+  ge: 'Грузия', cy: 'Кипр', ae: 'ОАЭ',
 }
 
 /** Код текущего региона ('uz') или '' для режима «все рынки». */

@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-13.9-steps'
+const SCHEMA_VERSION = '2026-08-14.1-regions7'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -687,7 +687,8 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   // Воронка на каждый регион плюс общая: этапы одинаковые по смыслу, но строки
   // у рынков свои — нормативы и каденции настраиваются под страну, а списки
   // сделок разных стран не смешиваются
-  const PIPELINES = ['sales', 'sales_uz', 'sales_kz', 'sales_az', 'sales_ge', 'sales_ae']
+  const PIPELINES = ['sales', 'sales_uz', 'sales_kz', 'sales_kg', 'sales_az',
+                     'sales_ge', 'sales_cy', 'sales_ae']
   await seedBatch(sql, 'sales_stages',
     ['id', 'org_id', 'key', 'label', 'kind', 'owner_role', 'sla_hours',
      'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline'],
@@ -726,9 +727,16 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { field: 'city', market: 'kz', values: [
       'Алматы', 'Астана', 'Шымкент', 'Караганда', 'Актобе', 'Тараз', 'Павлодар',
       'Усть-Каменогорск', 'Семей', 'Атырау', 'Костанай', 'Кызылорда'] },
-    { field: 'city', market: 'az', values: ['Баку', 'Гянджа', 'Сумгаит'] },
-    { field: 'city', market: 'ge', values: ['Тбилиси', 'Батуми', 'Кутаиси'] },
-    { field: 'city', market: 'ae', values: ['Дубай', 'Абу-Даби', 'Шарджа'] },
+    { field: 'city', market: 'kg', values: [
+      'Бишкек', 'Ош', 'Джалал-Абад', 'Каракол', 'Токмок', 'Нарын', 'Талас', 'Баткен'] },
+    { field: 'city', market: 'az', values: [
+      'Баку', 'Гянджа', 'Сумгаит', 'Мингечевир', 'Ленкорань', 'Шеки', 'Нахичевань'] },
+    { field: 'city', market: 'ge', values: [
+      'Тбилиси', 'Батуми', 'Кутаиси', 'Рустави', 'Гори', 'Зугдиди', 'Поти'] },
+    { field: 'city', market: 'cy', values: [
+      'Лимассол', 'Никосия', 'Ларнака', 'Пафос', 'Айя-Напа', 'Протарас', 'Кирения'] },
+    { field: 'city', market: 'ae', values: [
+      'Дубай', 'Абу-Даби', 'Шарджа', 'Аджман', 'Рас-эль-Хайма', 'Фуджейра', 'Умм-эль-Кайвайн'] },
     { field: 'pos', values: [
       'Нет кассы', 'IIKO', 'Clopos', 'Alisa', 'Poster', 'R-Keeper', 'Paloma',
       'Jowi', 'Rezerv', 'Своя разработка', 'Другая'] },
@@ -741,8 +749,9 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { field: 'orders_per_day', values: [
       'до 10', '10-30', '30-50', '50-100', '100-300', 'больше 300'] },
     { field: 'tariff', values: ['Start', 'Medium', 'Big', 'Enterprise'] },
-    { field: 'country', values: ['Узбекистан', 'Казахстан', 'Азербайджан', 'Грузия', 'ОАЭ'] },
-    { field: 'currency', values: ['UZS', 'KZT', 'GEL', 'USD', 'AED'] },
+    { field: 'country', values: [
+      'Узбекистан', 'Казахстан', 'Кыргызстан', 'Азербайджан', 'Грузия', 'Кипр', 'ОАЭ'] },
+    { field: 'currency', values: ['UZS', 'KZT', 'KGS', 'GEL', 'EUR', 'USD', 'AED'] },
     // Тип заведения задаёт и разговор, и набор модулей: сети нужен другой
     // сценарий, чем одиночной чайхане
     { field: 'segment', values: [
@@ -791,10 +800,25 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   const MARKETS = [
     { market: 'uz', currency: 'UZS', entity: 'ООО «DELEVER»', tpl: 'contract' },
     { market: 'kz', currency: 'KZT', entity: 'Частная компания Delever Ltd.', tpl: 'contract' },
-    { market: 'ge', currency: 'GEL', entity: 'Delever (партнёр)', tpl: 'contract' },
-    { market: 'ae', currency: 'USD', entity: 'Delever', tpl: 'service_agreement' },
+    { market: 'kg', currency: 'KGS', entity: 'Delever', tpl: 'contract' },
     { market: 'az', currency: 'USD', entity: 'Delever', tpl: 'contract' },
+    { market: 'ge', currency: 'GEL', entity: 'Delever (партнёр)', tpl: 'contract' },
+    { market: 'cy', currency: 'EUR', entity: 'Delever', tpl: 'service_agreement' },
+    { market: 'ae', currency: 'USD', entity: 'Delever', tpl: 'service_agreement' },
   ]
+  // Реестр рынков общий для всей системы: пока страны там нет, её нельзя
+  // выбрать ни в шапке, ни в фильтрах — а работа в ней уже идёт
+  await seedBatch(sql, 'support_markets',
+    ['id', 'org_id', 'name', 'code', 'country', 'timezone', 'is_active'],
+    [
+      ['market_seed_kg', orgId, 'Кыргызстан', 'kg', 'Kyrgyzstan', 'Asia/Bishkek', true],
+      ['market_seed_az', orgId, 'Азербайджан', 'az', 'Azerbaijan', 'Asia/Baku', true],
+      ['market_seed_ge', orgId, 'Грузия', 'ge', 'Georgia', 'Asia/Tbilisi', true],
+      ['market_seed_cy', orgId, 'Кипр', 'cy', 'Cyprus', 'Asia/Nicosia', true],
+      ['market_seed_ae', orgId, 'ОАЭ', 'ae', 'United Arab Emirates', 'Asia/Dubai', true],
+    ],
+    '(id)')
+
   await seedBatch(sql, 'sales_market_settings',
     ['org_id', 'market_id', 'currency', 'legal_entity', 'contract_template_kind'],
     MARKETS.map(m => [orgId, m.market, m.currency, m.entity, m.tpl]),

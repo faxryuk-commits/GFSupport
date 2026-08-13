@@ -221,6 +221,8 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
               <InlineField label="Название" value={a.name} onSave={v => patch('name', v)} />
               <InlineField label="Страна" value={a.country} onSave={v => patch('country', v)}
                 options={optionsFor(refs, 'country')} />
+              {/* Города берём по стране аккаунта, а не общим списком: в карточке
+                  узбекского клиента незачем предлагать Лимассол */}
               <InlineField label="Город" value={a.city} onSave={v => patch('city', v)}
                 options={optionsFor(refs, 'city', a.market_id)} />
               <InlineField label="Тип заведения" value={a.segment} onSave={v => patch('segment', v)}
