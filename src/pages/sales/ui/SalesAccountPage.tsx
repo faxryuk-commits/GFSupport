@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { apiGet, apiPatch, apiDelete } from '@/shared/services/api.service'
+import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField, Skeleton } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
 
@@ -43,6 +43,42 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
       await apiPatch('/sales/accounts', { id, fields: { [field]: value } })
       load()
     } catch (e: any) { setError(e?.message || 'Не удалось сохранить') }
+  }
+
+  /**
+   * Склейка дублей: два написания одного бренда — обычное дело, когда лиды
+   * приходят из разных каналов. Всё переезжает на выбранный аккаунт.
+   */
+  const merge = async () => {
+    if (!id) return
+    const term = prompt('Название аккаунта, в который склеить (часть названия):')
+    if (!term) return
+    try {
+      const found = await apiGet<any>(`/sales/accounts?q=${encodeURIComponent(term)}&limit=10`, false)
+      const options = (found.accounts || []).filter((x: any) => x.id !== id)
+      if (!options.length) { setError('Аккаунт не найден'); return }
+      const list = options.map((x: any, i: number) => `${i + 1}. ${x.name}${x.city ? ` · ${x.city}` : ''}`).join('\n')
+      const pick = prompt(`В какой склеить «${data.account.name}»?\n\n${list}\n\nНомер:`)
+      const target = options[Number(pick) - 1]
+      if (!target) return
+      if (!confirm(`Все сделки, лиды, контакты и документы «${data.account.name}» переедут в «${target.name}», а этот аккаунт уйдёт в архив. Продолжить?`)) return
+      const res: any = await apiPost('/sales/accounts?action=merge', { from: id, into: target.id })
+      alert(`Склеено: сделок ${res.moved.deals}, лидов ${res.moved.leads}, контактов ${res.moved.contacts}`)
+      window.location.href = `/sales/accounts/${target.id}`
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось склеить')
+    }
+  }
+
+  const removeForever = async () => {
+    if (!id) return
+    if (!confirm(`Удалить «${data.account.name}» насовсем? Это нельзя отменить. Аккаунты со сделками удалить нельзя — их нужно склеивать.`)) return
+    try {
+      await apiDelete(`/sales/accounts?id=${id}&hard=1`)
+      window.location.href = '/sales/accounts'
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить')
+    }
   }
 
   const archive = async () => {
@@ -104,10 +140,20 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
               .filter(Boolean).join(' · ')}
           </p>
         </div>
-        <button onClick={archive} title="Убрать из списков, сохранив сделки и чаты"
-          className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
-          В архив
-        </button>
+        <div className="flex gap-2">
+          <button onClick={merge} title="Перенести всё в другой аккаунт: дубли по написанию названия"
+            className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+            Склеить с другим
+          </button>
+          <button onClick={archive} title="Убрать из списков, сохранив сделки и чаты"
+            className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+            В архив
+          </button>
+          <button onClick={removeForever} title="Удалить насовсем — только для пустых карточек"
+            className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+            Удалить
+          </button>
+        </div>
       </div>
 
       <Kpis items={[

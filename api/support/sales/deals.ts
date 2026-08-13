@@ -78,6 +78,23 @@ export default async function handler(req: Request): Promise<Response> {
     // Архив, а не удаление: сделка — часть истории аккаунта и отчётов
     const id = url.searchParams.get('id')
     if (!id) return json({ error: 'id is required' }, 400)
+    if (url.searchParams.get('hard') === '1') {
+      // Удаление насовсем — намеренное действие администратора. Выигранные и
+      // проигранные не трогаем: на них стоят отчёты и история аккаунта
+      if (!ctx.isOrgAdmin && !ctx.isGlobalAdmin) return json({ error: 'только администратор' }, 403)
+      const [deal] = await sql`
+        SELECT won_at, lost_at FROM sales_deals WHERE id = ${id} AND org_id = ${orgId}
+      ` as any[]
+      if (!deal) return json({ error: 'сделка не найдена' }, 404)
+      if (deal.won_at || deal.lost_at) {
+        return json({ error: 'Закрытую сделку удалить нельзя — она в отчётах. Уберите в архив.' }, 409)
+      }
+      await sql`DELETE FROM sales_deal_events WHERE deal_id = ${id} AND org_id = ${orgId}`
+      await sql`DELETE FROM sales_tasks WHERE deal_id = ${id} AND org_id = ${orgId}`
+      await sql`UPDATE sales_documents SET deal_id = NULL WHERE deal_id = ${id} AND org_id = ${orgId}`
+      await sql`DELETE FROM sales_deals WHERE id = ${id} AND org_id = ${orgId}`
+      return json({ ok: true, deleted: true })
+    }
     await sql`
       UPDATE sales_deals SET archived_at = NOW(), updated_at = NOW()
       WHERE id = ${id} AND org_id = ${orgId}
@@ -211,14 +228,28 @@ export default async function handler(req: Request): Promise<Response> {
   // независимо от фильтра вида, чтобы колонки не пустели при переключении.
   // Без выбранного региона колонки складываются по ключу этапа: воронки у
   // стран разные, но смысл этапов общий, иначе «Все регионы» показывали бы ноль
+  // Счётчики колонок считаем по тем же условиям, что и карточки. Раньше они
+  // жили своей жизнью: при фильтре «Сегодня» в колонке стояло «показано 0 из
+  // 28» — карточки отфильтрованы, а число нет
+  const fromTs = from ? `${from}T00:00:00+05:00` : null
+  const toTs = to ? `${to}T23:59:59+05:00` : null
   const summaryQ = sql`
     SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
            MAX(s.probability) AS probability, MAX(s.sla_hours) AS sla_hours,
+           MIN(s.description) AS description,
            COUNT(d.id)::int AS deals,
            COALESCE(SUM(d.monthly_amount), 0) AS amount
     FROM sales_stages s
     LEFT JOIN sales_deals d ON d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL
       AND d.org_id = s.org_id AND d.stage_id = s.id
+      AND (${market || ''} = '' OR d.market_id = ${market || ''})
+      AND (${owner || ''} = '' OR d.owner_agent_id = ${owner || ''})
+      AND (${pos || ''} = '' OR d.pos = ${pos || ''})
+      AND (${city || ''} = '' OR COALESCE(NULLIF(d.city, ''), '') = ${city || ''})
+      AND (${segment || ''} = '' OR d.segment = ${segment || ''})
+      AND (${load || ''} = '' OR d.orders_per_day = ${load || ''})
+      AND (${fromTs}::timestamptz IS NULL OR d.created_at >= ${fromTs}::timestamptz)
+      AND (${toTs}::timestamptz IS NULL OR d.created_at <= ${toTs}::timestamptz)
     WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
       AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
       AND s.pipeline <> 'partner'
@@ -251,6 +282,12 @@ export default async function handler(req: Request): Promise<Response> {
     FROM sales_deals
     WHERE org_id = ${orgId} AND pipeline <> 'partner' AND won_at IS NULL AND lost_at IS NULL
       AND archived_at IS NULL AND (${market || ''} = '' OR market_id = ${market || ''})
+      AND (${owner || ''} = '' OR owner_agent_id = ${owner || ''})
+      AND (${pos || ''} = '' OR pos = ${pos || ''})
+      AND (${segment || ''} = '' OR segment = ${segment || ''})
+      AND (${load || ''} = '' OR orders_per_day = ${load || ''})
+      AND (${fromTs}::timestamptz IS NULL OR created_at >= ${fromTs}::timestamptz)
+      AND (${toTs}::timestamptz IS NULL OR created_at <= ${toTs}::timestamptz)
   `
 
   const ownersQ = sql`

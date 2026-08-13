@@ -70,6 +70,19 @@ export default async function handler(req: Request): Promise<Response> {
       `
       return json({ ok: true })
     }
+    if (action === 'delete') {
+      // Лид удаляем насовсем только если он ни во что не превратился
+      if (!ctx.isOrgAdmin && !ctx.isGlobalAdmin) return json({ error: 'только администратор' }, 403)
+      const [{ deals }] = await sql`
+        SELECT COUNT(*)::int AS deals FROM sales_deals
+        WHERE source_lead_id = ${body.leadId} AND org_id = ${orgId}
+      ` as any[]
+      if (deals > 0) {
+        return json({ error: 'По лиду уже есть сделка — удалить нельзя, уберите в архив.' }, 409)
+      }
+      await sql`DELETE FROM sales_leads WHERE id = ${body.leadId} AND org_id = ${orgId}`
+      return json({ ok: true, deleted: true })
+    }
     if (action === 'restore') {
       await sql`
         UPDATE sales_leads SET archived_at = NULL, status = 'new', updated_at = NOW()

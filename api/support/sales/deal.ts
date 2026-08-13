@@ -92,7 +92,8 @@ export default async function handler(req: Request): Promise<Response> {
   const [account, stages, tasks, documents, events, contacts, reasons] = await Promise.all([
     sql`SELECT * FROM sales_accounts WHERE id = ${deal.account_id} LIMIT 1`,
     sql`
-      SELECT id, key, label, kind, owner_role, sla_hours, required_fields, probability, sort_order
+      SELECT id, key, label, kind, owner_role, sla_hours, required_fields, probability, sort_order,
+             description
       FROM sales_stages
       WHERE org_id = ${orgId} AND pipeline = ${deal.pipeline || 'sales'} AND is_active = true
       ORDER BY sort_order

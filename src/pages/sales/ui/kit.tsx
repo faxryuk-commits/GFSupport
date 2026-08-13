@@ -112,12 +112,21 @@ export const Th = ({ children, align = 'left' }: { children?: ReactNode; align?:
 )
 
 /** Постраничная навигация: списки в проде уже по сотне строк. */
-export const Pager = ({ offset, limit, count, hasMore, onChange }: {
-  offset: number; limit: number; count: number; hasMore: boolean; onChange: (o: number) => void
+export const Pager = ({ offset, limit, count, hasMore, total, onChange }: {
+  offset: number; limit: number; count: number; hasMore: boolean
+  /** Всего строк под фильтром — без него «Назад/Дальше» вслепую. */
+  total?: number
+  onChange: (o: number) => void
 }) => (
   <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50">
     <span className="text-[11.5px] text-gray-500">
-      {count === 0 ? 'ничего не найдено' : `строки ${offset + 1}–${offset + count}`}
+      {count === 0 ? 'ничего не найдено' : (
+        <>
+          строки {offset + 1}–{offset + count}
+          {total ? ` из ${total}` : ''}
+          {total ? ` · страница ${Math.floor(offset / limit) + 1} из ${Math.max(1, Math.ceil(total / limit))}` : ''}
+        </>
+      )}
     </span>
     <div className="flex gap-2">
       <button

@@ -277,10 +277,19 @@ export function SalesLeadsPage() {
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         {view === 'archived' ? (
-                          <button disabled={busy === l.id} onClick={() => act('restore', l.id)}
-                            className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg disabled:opacity-50">
-                            Вернуть
-                          </button>
+                          <>
+                            <button disabled={busy === l.id} onClick={() => act('restore', l.id)}
+                              className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg disabled:opacity-50">
+                              Вернуть
+                            </button>
+                            <button disabled={busy === l.id}
+                              onClick={() => {
+                                if (confirm(`Удалить «${l.name}» насовсем? Отменить нельзя.`)) act('delete', l.id)
+                              }}
+                              className="ml-1.5 text-[12px] px-2 py-1 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200 disabled:opacity-50">
+                              Удалить
+                            </button>
+                          </>
                         ) : l.status !== 'converted' && (
                           <>
                             <button disabled={busy === l.id} onClick={() => act('assign', l.id)}

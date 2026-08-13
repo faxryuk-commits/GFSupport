@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.3-siteanalytics'
+const SCHEMA_VERSION = '2026-08-14.4-stagedesc'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -124,6 +124,22 @@ const PARTNER_STAGE_SEED: Array<{
 ]
 
 /** Причины отказа из плейбука v0.1 (§9). Срок возврата запускает реактивацию. */
+/**
+ * Что означает этап — одной фразой. Это не украшение: пока «Квалифицирован»
+ * каждый понимает по-своему, воронка меряет не процесс, а разнобой.
+ */
+const STAGE_MEANING: Record<string, string> = {
+  new: 'Обращение пришло, но с клиентом ещё не говорили. Задача — дозвониться.',
+  attempting: 'Пытаемся связаться. Больше пяти касаний без ответа — в отказ с причиной «не отвечает».',
+  qualified: 'Поговорили и поняли, что клиент наш: есть доставка, объём заказов и человек, принимающий решение.',
+  meeting: 'Демо назначено на конкретное время и подтверждено клиентом.',
+  demo: 'Демо проведено, клиент видел систему. Дальше — предложение с цифрами.',
+  kp: 'КП отправлено. Считается отправленным, когда у документа есть сумма и клиент его получил.',
+  contract: 'Условия согласованы, готовим договор или оферту. Дальше — оплата.',
+  won: 'Клиент заплатил или подписал. Дальше работа уходит в «Подключения».',
+  lost: 'Сделка закрыта отказом с причиной — от неё зависит, когда вернёмся.',
+}
+
 const LOST_REASON_SEED: Array<{ code: string; label: string; days: number | null }> = [
   { code: 'not_icp', label: 'Не наш клиент', days: null },
   { code: 'no_response', label: 'Не отвечает после 5+ касаний', days: 90 },
@@ -658,6 +674,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_field_options_field
             ON sales_field_options(org_id, field) WHERE is_active`
 
+  // Что означает этап — словами. Названия «Квалифицирован» и «Демо проведено»
+  // каждый понимает по-своему, а от этого зависит, куда сейлз кладёт сделку
+  await sql`ALTER TABLE sales_stages ADD COLUMN IF NOT EXISTS description TEXT`
+
   // Сводка по сайту: её каждый день считает бот delever.io. Держим у себя,
   // потому что верх воронки и есть продажи: без него «лидов 0» — это загадка,
   // а с ним видно, пришли ли вообще люди и куда они смотрели.
@@ -725,12 +745,22 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
                      'sales_ge', 'sales_cy', 'sales_ae']
   await seedBatch(sql, 'sales_stages',
     ['id', 'org_id', 'key', 'label', 'kind', 'owner_role', 'sla_hours',
-     'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline'],
+     'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline', 'description'],
     PIPELINES.flatMap(pipeline => STAGE_SEED.map((st, i) => [
       salesId('sst'), orgId, st.key, st.label, st.kind, st.ownerRole, st.slaHours,
       JSON.stringify(st.requiredFields), JSON.stringify(st.cadence), i, st.probability, pipeline,
+      STAGE_MEANING[st.key] || null,
     ])),
     '(org_id, pipeline, key)')
+
+  // Описание проставляем и уже существующим этапам: сид с ON CONFLICT DO
+  // NOTHING их не трогает, а объяснение нужно всем
+  for (const [key, text] of Object.entries(STAGE_MEANING)) {
+    await sql`
+      UPDATE sales_stages SET description = ${text}
+      WHERE org_id = ${orgId} AND key = ${key} AND description IS NULL
+    `
+  }
   await seedBatch(sql, 'sales_stages',
     ['id', 'org_id', 'key', 'label', 'kind', 'owner_role', 'sla_hours',
      'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline'],

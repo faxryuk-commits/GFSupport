@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Empty, fmtDate, money, Pager, PageShell, Th, Skeleton , Drawer } from './kit'
+import { Card, Chip, Empty, fmtDate, money, Pager, PageShell, Th, Skeleton , Drawer , Kpis } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { SalesAccountPage } from './SalesAccountPage'
 
@@ -24,15 +24,18 @@ export function SalesAccountsPage() {
   const [hasMore, setHasMore] = useState(false)
   const [offset, setOffset] = useState(0)
   const [openAccount, setOpenAccount] = useState<string | null>(null)
+  const [stats, setStats] = useState<any>({})
+  const [lifecycle, setLifecycle] = useState('')
   const region = useRegion()
   const LIMIT = 50
 
   const load = useCallback(() => {
-    apiGet<{ accounts: any[]; hasMore: boolean }>(
-      `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}`, false)
-      .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setError(null) })
+    apiGet<{ accounts: any[]; hasMore: boolean; stats?: any }>(
+      `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}` +
+      (lifecycle ? `&lifecycle=${lifecycle}` : ''), false)
+      .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setStats(d.stats || {}); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить список'))
-  }, [type, q, offset, region])
+  }, [type, q, offset, region, lifecycle])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -66,6 +69,29 @@ export function SalesAccountsPage() {
         </div>
       </div>
     }>
+
+      <Kpis items={[
+        ['Всего', String(stats.total ?? rows.length), type === 'partner' ? 'партнёров' : 'аккаунтов'],
+        ['Лиды', String(stats.leads ?? 0), 'обращались, но не купили'],
+        ['Клиенты', String(stats.customers ?? 0), 'подписали'],
+        ['Запущены', String(stats.launched ?? 0), 'есть первый заказ'],
+        ['С merchant_id', String(stats.with_merchant ?? 0), 'связаны с админкой'],
+      ]} />
+
+      <div className="bg-white border border-gray-200 rounded-xl p-3 flex gap-2 flex-wrap items-center">
+        <select value={lifecycle} onChange={e => { setLifecycle(e.target.value); setOffset(0) }}
+          className={`border rounded-lg px-2 py-1.5 text-[12.5px] ${
+            lifecycle ? 'border-blue-400 text-blue-700' : 'border-gray-300'}`}>
+          <option value="">Все стадии</option>
+          <option value="lead">Лид</option>
+          <option value="opportunity">В работе</option>
+          <option value="customer">Клиент</option>
+          <option value="churned">Ушёл</option>
+        </select>
+        <span className="text-[11.5px] text-gray-400 ml-auto">
+          показано {rows.length} из {stats.total ?? rows.length}
+        </span>
+      </div>
 
       {rows.length === 0 ? (
         <Empty title="Здесь пусто" hint="Аккаунты появляются автоматически из входящих обращений." />

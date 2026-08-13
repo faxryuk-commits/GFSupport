@@ -52,6 +52,7 @@ interface Summary {
   amount: string
   probability: number
   sla_hours: string | null
+  description: string | null
 }
 
 interface ClosedStage {
@@ -401,7 +402,17 @@ export function SalesDealsPage() {
             >
               <header className="px-3 py-2.5 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
                 <div className="flex justify-between items-baseline gap-2">
-                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-600">{st.label}</span>
+                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-600 flex items-center gap-1">
+                    {st.label}
+                    {/* Что означает этап — иначе каждый кладёт сделки по-своему */}
+                    {st.description && (
+                      <span title={st.description}
+                        className="w-3.5 h-3.5 rounded-full border border-gray-300 text-gray-400
+                                   grid place-items-center text-[8px] font-bold cursor-help normal-case">
+                        ?
+                      </span>
+                    )}
+                  </span>
                   <span className="text-[11.5px] text-gray-400 tabular-nums">{st.deals}</span>
                 </div>
                 <div className="text-[11px] text-gray-400 tabular-nums mt-0.5">

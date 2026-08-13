@@ -16,6 +16,7 @@ import { QuoteBuilder } from './QuoteBuilder'
  */
 
 interface Stage {
+  description?: string | null
   id: string
   key: string
   label: string
@@ -130,6 +131,17 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  const removeForever = async () => {
+    if (!id) return
+    if (!confirm('Удалить сделку насовсем? Это нельзя отменить. Закрытые сделки удалить нельзя — они в отчётах.')) return
+    try {
+      await apiDelete(`/sales/deals?id=${id}&hard=1`)
+      window.location.href = '/sales/deals'
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить')
+    }
+  }
 
   const archive = async () => {
     if (!id) return
@@ -269,6 +281,10 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
             В архив
           </button>
+          <button onClick={removeForever} title="Удалить насовсем — только открытую сделку"
+            className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+            Удалить
+          </button>
         </div>
       </div>
 
@@ -276,7 +292,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
         <div className="flex gap-1 flex-wrap">
           {openStages.map((s, i) => (
             <div key={s.id}
-              className={`flex-1 min-w-[72px] rounded-lg px-2 py-1.5 border ${
+              title={s.description || undefined}
+              className={`flex-1 min-w-[72px] rounded-lg px-2 py-1.5 border cursor-help ${
                 i < curIdx ? 'bg-emerald-50 border-emerald-200' :
                 i === curIdx ? 'bg-blue-600 border-blue-600' : 'bg-gray-50 border-gray-200'}`}>
               <div className={`text-[9px] font-bold ${i === curIdx ? 'text-white/70' : 'text-gray-400'}`}>
