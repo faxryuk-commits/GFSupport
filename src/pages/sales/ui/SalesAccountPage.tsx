@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { apiGet, apiPatch } from '@/shared/services/api.service'
-import { Card, Chip, Empty, Kpis, fmtDate, money } from './kit'
+import { apiGet, apiPatch, apiDelete } from '@/shared/services/api.service'
+import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField } from './kit'
+import { useSalesRefs, optionsFor } from './refs'
 
 /**
  * Карточка аккаунта — сквозной объект: лиды, сделки, документы, проект
@@ -24,6 +25,7 @@ export function SalesAccountPage() {
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [merchant, setMerchant] = useState('')
+  const refs = useSalesRefs()
 
   const load = useCallback(() => {
     if (!id) return
@@ -33,6 +35,23 @@ export function SalesAccountPage() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  const patch = async (field: string, value: string) => {
+    if (!id) return
+    try {
+      await apiPatch('/sales/accounts', { id, fields: { [field]: value } })
+      load()
+    } catch (e: any) { setError(e?.message || 'Не удалось сохранить') }
+  }
+
+  const archive = async () => {
+    if (!id) return
+    if (!confirm(`Убрать «${data.account.name}» в архив? Аккаунт исчезнет из списков, сделки и чаты останутся.`)) return
+    try {
+      await apiDelete(`/sales/accounts?id=${id}`)
+      window.location.href = '/sales/accounts'
+    } catch (e: any) { setError(e?.message || 'Не удалось убрать в архив') }
+  }
 
   const saveMerchant = async () => {
     if (!id) return
@@ -84,6 +103,10 @@ export function SalesAccountPage() {
               .filter(Boolean).join(' · ')}
           </p>
         </div>
+        <button onClick={archive} title="Убрать из списков, сохранив сделки и чаты"
+          className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+          В архив
+        </button>
       </div>
 
       <Kpis items={[
@@ -192,6 +215,42 @@ export function SalesAccountPage() {
         </div>
 
         <div className="space-y-4">
+          <Card title="Профиль клиента" sub="значения из справочника: одно написание на всю базу">
+            <div>
+              <InlineField label="Название" value={a.name} onSave={v => patch('name', v)} />
+              <InlineField label="Страна" value={a.country} onSave={v => patch('country', v)}
+                options={optionsFor(refs, 'country')} />
+              <InlineField label="Город" value={a.city} onSave={v => patch('city', v)}
+                options={optionsFor(refs, 'city', a.market_id)} />
+              <InlineField label="Тип заведения" value={a.segment} onSave={v => patch('segment', v)}
+                options={optionsFor(refs, 'segment')} />
+              {isPartner && (
+                <>
+                  <InlineField label="Тип партнёра" value={a.partner_kind}
+                    onSave={v => patch('partner_kind', v)} options={optionsFor(refs, 'partner_kind')} />
+                  {/* Программа — ссылка на справочник, поэтому выбор, а не текст:
+                      от неё считается вознаграждение партнёра */}
+                  <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
+                    <span className="text-[12.5px] text-gray-500 flex-1">Программа</span>
+                    <select
+                      value={a.partner_program_id || ''}
+                      onChange={e => patch('partner_program_id', e.target.value)}
+                      className="border border-gray-300 rounded-md px-2 py-1 text-[12.5px] max-w-[190px]"
+                    >
+                      <option value="">не задана</option>
+                      {(data.programs || []).map((p: any) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.rate_pct ? ` · ${p.rate_pct}%` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+              <InlineField label="ИНН" value={a.inn} onSave={v => patch('inn', v)} />
+            </div>
+          </Card>
+
           <Card title="Связи" sub="внешние идентификаторы аккаунта">
             <div className="divide-y divide-gray-100">
               <div className="px-4 py-2.5 flex justify-between items-center gap-2">
@@ -207,7 +266,6 @@ export function SalesAccountPage() {
               </div>
               {[['Чат клиента', a.channel_id ? 'привязан' : 'нет'],
                 ['Проект внедрения', a.onboarding_brand_id ? 'привязан' : 'нет'],
-                ['ИНН', a.inn || 'нет'],
                 ['Территория', a.market_id || '—'],
                 ['Запуск', fmtDate(a.launched_at)],
                 ['Первый заказ', fmtDate(a.first_order_at)]].map(([k, v]) => (

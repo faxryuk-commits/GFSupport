@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-13.5-options'
+const SCHEMA_VERSION = '2026-08-13.7-profile'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -626,6 +626,13 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_field_options_field
             ON sales_field_options(org_id, field) WHERE is_active`
 
+  // Профиль клиента: тип заведения и роль ЛПР — то, что сейлз и так выясняет
+  // на звонке, но раньше записывал в свободный комментарий
+  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
+  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_role VARCHAR(50)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS country VARCHAR(50)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
+
   // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
@@ -718,6 +725,36 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { field: 'orders_per_day', values: [
       'до 10', '10-30', '30-50', '50-100', '100-300', 'больше 300'] },
     { field: 'tariff', values: ['Start', 'Medium', 'Big', 'Enterprise'] },
+    { field: 'country', values: ['Узбекистан', 'Казахстан', 'Азербайджан', 'Грузия', 'ОАЭ'] },
+    { field: 'currency', values: ['UZS', 'KZT', 'GEL', 'USD', 'AED'] },
+    // Тип заведения задаёт и разговор, и набор модулей: сети нужен другой
+    // сценарий, чем одиночной чайхане
+    { field: 'segment', values: [
+      'Ресторан', 'Кафе', 'Чайхана', 'Фастфуд', 'Кофейня', 'Пекарня',
+      'Дарк-китчен', 'Сеть заведений', 'Столовая', 'Кондитерская'] },
+    { field: 'products', values: [
+      'Мобильное приложение', 'Киоск самообслуживания', 'QR-меню',
+      'Курьерское приложение', 'KDS (экран кухни)', 'Маркетинг-модуль',
+      'Дашборд аналитики', 'Бронирование', 'Агрегатор (1 сервис)',
+      'Все агрегаторы', 'Курьерские сервисы'] },
+    { field: 'pain', values: [
+      'Высокая комиссия агрегаторов', 'Нет своей доставки', 'Нет учёта заказов',
+      'Долгая сборка заказа', 'Нет аналитики продаж', 'Курьеры не под контролем',
+      'Нет своего приложения', 'Заказы теряются между кассой и кухней',
+      'Нет повторных продаж'] },
+    { field: 'dm_role', values: [
+      'Владелец', 'Управляющий', 'Директор', 'Операционный директор',
+      'Маркетолог', 'IT-специалист', 'Бухгалтер'] },
+    // Партнёрская сторона: кто продаёт, кто рекомендует, кто поставляет
+    { field: 'partner_kind', values: [
+      'Дистрибьютор', 'Агент', 'Реселлер', 'Разовая рекомендация',
+      'Технологический партнёр', 'Интегратор'] },
+    { field: 'vendor', values: [
+      'Поставщик касс', 'Поставщик оборудования', 'Курьерская служба',
+      'Платёжный провайдер', 'Агрегатор доставки', 'Маркетинговое агентство',
+      'Подрядчик по разработке'] },
+    { field: 'term_months', values: ['1', '3', '6', '12', '24'] },
+    { field: 'discount_pct', values: ['0', '5', '10', '15', '20'] },
   ]
   for (const group of FIELD_OPTIONS) {
     for (let i = 0; i < group.values.length; i++) {

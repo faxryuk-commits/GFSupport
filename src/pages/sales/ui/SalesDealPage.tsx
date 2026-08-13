@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { formatDateTimeShort } from '@/shared/lib/time'
 import { useSalesRefs, optionsFor } from './refs'
+import { InlineField } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 
 /**
@@ -44,15 +45,16 @@ interface DealData {
 const MONEY_FIELDS = new Set(['monthly_amount', 'onetime_amount', 'budget_stated'])
 
 const QUAL_FIELDS = [
-  ['city', 'Город'], ['points', 'Точек'], ['orders_per_day', 'Заказов в день'],
-  ['pos', 'POS-система'], ['aggregators', 'Агрегаторы'], ['delivery_type', 'Тип доставки'],
-  ['dm_name', 'ЛПР'], ['pain', 'Боль клиента'],
+  ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
+  ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
+  ['aggregators', 'Агрегаторы'], ['delivery_type', 'Тип доставки'],
+  ['dm_name', 'ЛПР'], ['dm_role', 'Роль ЛПР'], ['pain', 'Боль клиента'],
 ] as const
 
 const COMMERCIAL_FIELDS = [
   ['budget_stated', 'Бюджет со слов'], ['tariff', 'Тариф'],
   ['monthly_amount', 'Подписка в месяц'], ['onetime_amount', 'Единоразово'],
-  ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'],
+  ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'], ['currency', 'Валюта'],
   ['valid_till', 'КП действует до'], ['expected_close_at', 'Ожидаемое закрытие'],
 ] as const
 
@@ -79,60 +81,6 @@ const Card = ({ title, sub, right, children }: any) => (
     {children}
   </section>
 )
-
-/**
- * Поле правится по месту: клик — ввод — Enter. Отдельная форма тут лишняя.
- *
- * Если у поля есть справочник (город, касса, тариф), ввод превращается в список
- * с подсказкой: свободный текст расходится в написании и ломает отчёты, но
- * запрещать своё значение нельзя — жизнь богаче справочника.
- */
-function InlineField({ label, value, onSave, placeholder, money: isMoney, options }: {
-  label: string; value: any; onSave: (v: string) => void; placeholder?: string
-  money?: boolean; options?: string[]
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-  const empty = value === null || value === undefined || value === ''
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
-        <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
-        <input
-          autoFocus
-          list={options?.length ? `dl-${label}` : undefined}
-          className="border border-blue-400 rounded-md px-2 py-1 text-[12.5px] w-44"
-          value={draft}
-          placeholder={placeholder || (options?.length ? 'выберите или впишите' : undefined)}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { onSave(draft); setEditing(false) }
-            if (e.key === 'Escape') setEditing(false)
-          }}
-          onBlur={() => { if (draft) onSave(draft); setEditing(false) }}
-        />
-        {options?.length ? (
-          <datalist id={`dl-${label}`}>
-            {options.map(o => <option key={o} value={o} />)}
-          </datalist>
-        ) : null}
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100 hover:bg-gray-50">
-      <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
-      <button
-        onClick={() => { setDraft(empty ? '' : String(value)); setEditing(true) }}
-        className={`text-[12.5px] text-right ${empty ? 'text-blue-600 hover:underline' : 'text-gray-900'}`}
-      >
-        {empty ? 'заполнить' : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
-      </button>
-    </div>
-  )
-}
 
 export function SalesDealPage() {
   const { id } = useParams<{ id: string }>()

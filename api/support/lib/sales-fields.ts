@@ -14,6 +14,8 @@ export const FIELD_LABELS: Record<string, string> = {
   aggregators: 'Агрегаторы',
   delivery_type: 'Тип доставки',
   pain: 'Боль клиента',
+  segment: 'Тип заведения',
+  dm_role: 'Роль ЛПР',
   dm_name: 'ЛПР',
   dm_confirmed: 'ЛПР подтверждён',
   budget_stated: 'Бюджет со слов клиента',
@@ -40,6 +42,7 @@ export const FIELD_LABELS: Record<string, string> = {
 /** Что разрешено менять через карточку сделки. Этап и владелец — не здесь. */
 export const EDITABLE_FIELDS = [
   'title', 'city', 'points', 'orders_per_day', 'pos', 'aggregators', 'delivery_type',
+  'segment', 'dm_role',
   'pain', 'dm_name', 'dm_confirmed', 'meeting_at', 'budget_stated', 'tariff',
   'monthly_amount', 'onetime_amount', 'discount_pct', 'term_months', 'valid_till',
   'kp_file', 'legal_name', 'start_date', 'paid_at', 'expected_close_at', 'probability',

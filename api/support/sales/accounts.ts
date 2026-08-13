@@ -78,7 +78,7 @@ export default async function handler(req: Request): Promise<Response> {
     `
     if (!account) return json({ error: 'not found' }, 404)
 
-    const [deals, contacts, documents, leads, referred] = await Promise.all([
+    const [deals, contacts, documents, leads, referred, programs] = await Promise.all([
       sql`
         SELECT d.id, d.title, d.monthly_amount, d.currency, d.deal_type, d.won_at, d.lost_at,
                d.created_at, s.label AS stage, ag.name AS owner_name
@@ -97,6 +97,9 @@ export default async function handler(req: Request): Promise<Response> {
       // Кого этот аккаунт привёл — для партнёров это главный отчёт
       sql`SELECT id, name, lifecycle, created_at FROM sales_accounts
           WHERE referred_by_account_id = ${id} ORDER BY created_at DESC LIMIT 20`,
+      // Партнёрские программы — список для выбора в профиле, а не свободный текст
+      sql`SELECT id, name, model, rate_pct FROM sales_partner_programs
+          WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order`,
     ])
 
     // Обращения в поддержку по тому же чату: связь есть только если канал привязан
@@ -114,7 +117,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    return json({ account, deals, contacts, documents, leads, referred, tickets })
+    return json({ account, deals, contacts, documents, leads, referred, programs, tickets })
   }
 
   const type = url.searchParams.get('type') || 'client'

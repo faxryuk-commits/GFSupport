@@ -48,9 +48,18 @@ interface Summary {
   sla_hours: string | null
 }
 
+interface ClosedStage {
+  key: string
+  label: string
+  kind: string
+  deals: number
+  amount: string
+}
+
 interface DealsData {
   deals: Deal[]
   summary: Summary[]
+  closed: ClosedStage[]
   totals: {
     open_deals?: number
     pipeline_amount?: string
@@ -117,6 +126,10 @@ export function SalesDealsPage() {
   const [overStage, setOverStage] = useState<string | null>(null)
   // Отменяемый перенос: промахнуться мышью проще, чем попасть
   const [undo, setUndo] = useState<{ id: string; from: string; title: string; to: string } | null>(null)
+  // Бросок в «Проиграна» открывает выбор причины: без неё закрывать нельзя —
+  // от причины зависит, когда сделка вернётся в работу
+  const [losing, setLosing] = useState<{ id: string; title: string; from: string } | null>(null)
+  const [reasons, setReasons] = useState<Array<{ id: string; code: string; label: string; reactivate_days: number | null }>>([])
   const LIMIT = 50
 
   const load = useCallback(() => {
@@ -135,6 +148,12 @@ export function SalesDealsPage() {
 
   // Список живёт сам: раз в полминуты и при возврате на вкладку
   useAutoRefresh(load)
+
+  useEffect(() => {
+    apiGet<any>('/sales/refs', false)
+      .then(r => setReasons((r.reasons || []).filter((x: any) => x.is_active !== false)))
+      .catch(() => {})
+  }, [])
 
   // Плашки не висят вечно: отмена переноса живёт 8 секунд, ошибка — 6
   useEffect(() => {
@@ -192,7 +211,30 @@ export function SalesDealsPage() {
     }
   }
 
-  const drop = (toStage: string) => { if (dragId) move(dragId, toStage) }
+  const drop = (toStage: string, kind?: string) => {
+    if (!dragId) return
+    if (kind === 'lost') {
+      const deal = data?.deals.find(x => x.id === dragId)
+      if (deal) setLosing({ id: deal.id, title: deal.account || deal.title, from: deal.stage_key })
+      setDragId(null)
+      setOverStage(null)
+      return
+    }
+    move(dragId, toStage)
+  }
+
+  const lose = async (code: string) => {
+    if (!losing) return
+    const { id, title, from } = losing
+    setLosing(null)
+    try {
+      await apiPost('/sales/stage', { dealId: id, toStage: 'lost', lostReasonCode: code })
+      setUndo({ id, from, to: 'lost', title })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось закрыть сделку')
+    }
+  }
 
   const archive = async (id: string, title: string) => {
     if (!confirm(`Убрать «${title}» в архив? Сделка исчезнет из списков, но останется в истории аккаунта.`)) return
@@ -376,6 +418,43 @@ export function SalesDealsPage() {
               </div>
             </section>
           ))}
+
+          {/* Закрытие — тоже перетаскиванием. Внутри не список сделок, а итог
+              за 30 дней: тащить на доску 3400 проигранных карточек незачем */}
+          {(data.closed || []).map(cl => (
+            <section
+              key={cl.key}
+              onDragOver={e => { e.preventDefault(); setOverStage(cl.key) }}
+              onDragLeave={() => setOverStage(o => (o === cl.key ? null : o))}
+              onDrop={e => { e.preventDefault(); drop(cl.key, cl.kind) }}
+              className={`flex-none w-[168px] rounded-xl border-2 border-dashed flex flex-col ${
+                overStage === cl.key
+                  ? cl.kind === 'won' ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'
+                  : 'border-gray-200 bg-gray-50'}`}
+            >
+              <header className="px-3 py-2.5">
+                <span className={`text-[10.5px] font-bold uppercase tracking-wider ${
+                  cl.kind === 'won' ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {cl.label}
+                </span>
+                <div className="text-[11px] text-gray-400 mt-0.5 tabular-nums">
+                  {cl.deals} за 30 дней
+                </div>
+                {cl.kind === 'won' && Number(cl.amount) ? (
+                  <div className="text-[11px] text-emerald-700 tabular-nums">
+                    {money(cl.amount, 'UZS')} в месяц
+                  </div>
+                ) : null}
+              </header>
+              <div className="flex-1 grid place-items-center px-3 pb-4 text-center">
+                <span className="text-[11px] text-gray-400">
+                  {cl.kind === 'won'
+                    ? 'перетащите, чтобы закрыть сделку победой'
+                    : 'перетащите — спросим причину отказа'}
+                </span>
+              </div>
+            </section>
+          ))}
         </div>
       )}
 
@@ -466,6 +545,32 @@ export function SalesDealsPage() {
           </button>
           <button onClick={() => setUndo(null)} className="text-gray-400 hover:text-white">×</button>
         </div>
+      )}
+
+      {losing && (
+        <Modal
+          title={`Почему «${losing.title}» не купили?`}
+          sub="от причины зависит, когда сделка вернётся в работу"
+          onClose={() => setLosing(null)}
+          footer={<Btn onClick={() => setLosing(null)}>Отмена</Btn>}
+        >
+          <div className="-mx-5 -mt-2 max-h-[50vh] overflow-y-auto">
+            {reasons.map(r => (
+              <button key={r.id} onClick={() => lose(r.code)}
+                className="w-full text-left px-5 py-2.5 border-b border-gray-100 hover:bg-gray-50">
+                <div className="text-[13px] text-gray-900">{r.label}</div>
+                <div className="text-[11px] text-gray-400">
+                  {r.reactivate_days ? `вернётся через ${r.reactivate_days} дней` : 'не возвращаемся'}
+                </div>
+              </button>
+            ))}
+            {reasons.length === 0 && (
+              <div className="px-5 py-4 text-[12.5px] text-gray-400">
+                Справочник причин пуст — заполните его в «Справочниках продаж».
+              </div>
+            )}
+          </div>
+        </Modal>
       )}
 
       {creating && (

@@ -186,6 +186,23 @@ export default async function handler(req: Request): Promise<Response> {
     ORDER BY MIN(s.sort_order)
   `
 
+  // Закрытые этапы держим отдельной сводкой: тащить на доску 3400 проигранных
+  // сделок незачем, но бросить карточку в «Выиграна» или «Проиграна» нужно
+  const closed = await sql`
+    SELECT s.key, MIN(s.label) AS label, MIN(s.kind) AS kind,
+           COUNT(d.id) FILTER (WHERE COALESCE(d.won_at, d.lost_at) > NOW() - INTERVAL '30 days')::int AS deals,
+           COALESCE(SUM(d.monthly_amount) FILTER (
+             WHERE d.won_at > NOW() - INTERVAL '30 days'), 0) AS amount
+    FROM sales_stages s
+    LEFT JOIN sales_deals d ON d.org_id = s.org_id AND d.stage_id = s.id AND d.archived_at IS NULL
+    WHERE s.org_id = ${orgId} AND s.kind IN ('won', 'lost') AND s.is_active = true
+      AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
+      AND s.pipeline <> 'partner'
+      AND (${market || ''} = '' OR d.market_id IS NULL OR d.market_id = ${market || ''})
+    GROUP BY s.key
+    ORDER BY MIN(s.kind) DESC
+  `
+
   const [totals] = await sql`
     SELECT COUNT(*)::int AS open_deals,
            COALESCE(SUM(monthly_amount), 0) AS pipeline_amount,
@@ -203,5 +220,5 @@ export default async function handler(req: Request): Promise<Response> {
     ORDER BY ag.name
   `
 
-  return json({ deals: rows, summary, totals: totals || {}, owners, hasMore, offset, limit })
+  return json({ deals: rows, summary, closed, totals: totals || {}, owners, hasMore, offset, limit })
 }

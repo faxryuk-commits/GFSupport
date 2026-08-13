@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 /** Общие мелочи страниц продаж: одни и те же чипы, карточки и форматы. */
@@ -250,3 +250,58 @@ export const Btn = ({ kind = 'ghost', children, ...rest }: any) => (
     {children}
   </button>
 )
+
+/**
+ * Поле правится по месту: клик — ввод — Enter. Отдельная форма тут лишняя.
+ *
+ * Если у поля есть справочник (город, касса, тариф), ввод превращается в список
+ * с подсказкой: свободный текст расходится в написании и ломает отчёты, но
+ * запрещать своё значение нельзя — жизнь богаче справочника.
+ */
+export function InlineField({ label, value, onSave, placeholder, money: isMoney, options }: {
+  label: string; value: any; onSave: (v: string) => void; placeholder?: string
+  money?: boolean; options?: string[]
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const empty = value === null || value === undefined || value === ''
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
+        <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+        <input
+          autoFocus
+          list={options?.length ? `dl-${label}` : undefined}
+          className="border border-blue-400 rounded-md px-2 py-1 text-[12.5px] w-44"
+          value={draft}
+          placeholder={placeholder || (options?.length ? 'выберите или впишите' : undefined)}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { onSave(draft); setEditing(false) }
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          onBlur={() => { if (draft) onSave(draft); setEditing(false) }}
+        />
+        {options?.length ? (
+          <datalist id={`dl-${label}`}>
+            {options.map(o => <option key={o} value={o} />)}
+          </datalist>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100 hover:bg-gray-50">
+      <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+      <button
+        onClick={() => { setDraft(empty ? '' : String(value)); setEditing(true) }}
+        className={`text-[12.5px] text-right ${empty ? 'text-blue-600 hover:underline' : 'text-gray-900'}`}
+      >
+        {empty ? 'заполнить' : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
+      </button>
+    </div>
+  )
+}
+

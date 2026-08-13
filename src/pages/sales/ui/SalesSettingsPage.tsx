@@ -31,8 +31,12 @@ export function SalesSettingsPage() {
   const [edit, setEdit] = useState<{ key: string; value: string } | null>(null)
   // Списки значений полей: город, касса, тип доставки, тариф
   const OPTION_FIELDS: Array<[string, string]> = [
-    ['city', 'Город'], ['pos', 'POS-система'], ['delivery_type', 'Тип доставки'],
-    ['aggregators', 'Агрегаторы'], ['orders_per_day', 'Заказов в день'], ['tariff', 'Тариф'],
+    ['country', 'Страна'], ['city', 'Город'], ['segment', 'Тип заведения'],
+    ['pos', 'POS-система'], ['delivery_type', 'Тип доставки'], ['aggregators', 'Агрегаторы'],
+    ['orders_per_day', 'Заказов в день'], ['pain', 'Боль клиента'], ['dm_role', 'Роль ЛПР'],
+    ['tariff', 'Тариф'], ['products', 'Продукты и модули'], ['currency', 'Валюта'],
+    ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'],
+    ['partner_kind', 'Тип партнёра'], ['vendor', 'Поставщики и подрядчики'],
   ]
   const [optField, setOptField] = useState('city')
   const [newOption, setNewOption] = useState('')
