@@ -212,10 +212,21 @@ export default async function handler(req: Request): Promise<Response> {
     GROUP BY s.key, s.label ORDER BY leads DESC
   `
 
-  const [statsRows, sources] = await Promise.all([statsQ, sourcesQ])
+  // Сколько всего под текущим фильтром — без этого «Назад/Дальше» вслепую
+  const totalQ = sql.query(
+    `SELECT COUNT(*)::int AS total
+     FROM sales_leads l
+     LEFT JOIN sales_sources s ON s.id = l.source_id
+     LEFT JOIN sales_accounts a ON a.id = l.account_id
+     WHERE ${conds.join(' AND ')}`,
+    params,
+  )
+
+  const [statsRows, sources, totalRows] = await Promise.all([statsQ, sourcesQ, totalQ])
 
   return json({
     leads: rows, stats: (statsRows as any[])[0] || {}, sources,
+    total: (totalRows as any[])[0]?.total ?? null,
     view, hasMore, offset, limit, market,
   })
 }

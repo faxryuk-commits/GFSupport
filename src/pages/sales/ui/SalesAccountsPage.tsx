@@ -78,7 +78,7 @@ export function SalesAccountsPage() {
         ['С merchant_id', String(stats.with_merchant ?? 0), 'связаны с админкой'],
       ]} />
 
-      <div className="bg-white border border-gray-200 rounded-xl p-3 flex gap-2 flex-wrap items-center">
+      <div className="bg-white border border-gray-200 rounded-xl p-3 flex gap-2 flex-wrap items-center sticky top-0 z-20 shadow-sm">
         <select value={lifecycle} onChange={e => { setLifecycle(e.target.value); setOffset(0) }}
           className={`border rounded-lg px-2 py-1.5 text-[12.5px] ${
             lifecycle ? 'border-blue-400 text-blue-700' : 'border-gray-300'}`}>

@@ -42,6 +42,7 @@ interface Lead {
 interface LeadsData {
   leads: Lead[]
   hasMore: boolean
+  total?: number | null
   stats: {
     today?: number; waiting?: number; unassigned?: number
     nurture?: number; in_sla?: number; touched?: number
@@ -170,7 +171,9 @@ export function SalesLeadsPage() {
         ['Касание за 15 мин', pct(s.in_sla ?? 0, s.touched ?? 0), 'за 30 дней'],
       ]} />
 
-      <div className="bg-white border border-gray-200 rounded-xl">
+      {/* Фильтры остаются на месте при прокрутке: искать их в конце списка —
+          то же самое, что не иметь фильтров */}
+      <div className="bg-white border border-gray-200 rounded-xl sticky top-0 z-20 shadow-sm">
         <Tabs items={VIEWS} value={view} onChange={v => { setView(v); setOffset(0) }} />
         <div className="p-3 flex gap-2 flex-wrap items-center">
           <input value={q} onChange={e => { setQ(e.target.value); setOffset(0) }} placeholder="Бренд или телефон"
@@ -212,7 +215,9 @@ export function SalesLeadsPage() {
             <button onClick={() => setFacets({})}
               className="text-[11.5px] text-gray-400 hover:text-red-600">сбросить</button>
           )}
-          <span className="text-[11.5px] text-gray-400 ml-auto">показано {data.leads.length}</span>
+          <span className="text-[11.5px] text-gray-400 ml-auto">
+            показано {data.leads.length}{data.total ? ` из ${data.total}` : ''}
+          </span>
         </div>
       </div>
 
@@ -343,7 +348,7 @@ export function SalesLeadsPage() {
             </table>
           </div>
           <Pager offset={offset} limit={LIMIT} count={data.leads.length} hasMore={data.hasMore}
-            onChange={setOffset} />
+            total={data.total ?? undefined} onChange={setOffset} />
         </Card>
       )}
 

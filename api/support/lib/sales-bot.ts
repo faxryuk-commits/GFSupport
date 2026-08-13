@@ -45,11 +45,13 @@ export async function tgSend(token: string, chatId: string | number, text: strin
   return res.ok
 }
 
-async function tgAnswer(token: string, callbackId: string, text: string) {
+async function tgAnswer(token: string, callbackId: string, text: string, alert = false) {
   await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callback_query_id: callbackId, text }),
+    // show_alert для отказов: всплывающая подсказка исчезает за секунду, а
+    // «не хватает полей» надо прочитать
+    body: JSON.stringify({ callback_query_id: callbackId, text, show_alert: alert }),
   })
 }
 
@@ -249,6 +251,64 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
     return true
   }
 
+  if (action === 'next') {
+    // Двигаем на следующий открытый этап той же воронки, если критерии выхода
+    // выполнены. Проверку не обходим: правило одно и в вебе, и в боте
+    const [deal] = await sql`
+      SELECT d.*, s.sort_order, s.pipeline FROM sales_deals d
+      JOIN sales_stages s ON s.id = d.stage_id
+      WHERE d.id = ${entityId} AND d.org_id = ${agent.org_id} LIMIT 1
+    `
+    if (!deal) {
+      if (token) await tgAnswer(token, cb.id, 'Сделка не найдена')
+      return true
+    }
+    const [next] = await sql`
+      SELECT id, key, label, required_fields FROM sales_stages
+      WHERE org_id = ${agent.org_id} AND pipeline = ${deal.pipeline || 'sales'}
+        AND kind = 'open' AND is_active = true AND sort_order > ${deal.sort_order}
+      ORDER BY sort_order LIMIT 1
+    `
+    if (!next) {
+      if (token) await tgAnswer(token, cb.id, 'Дальше только закрытие — сделайте это в системе')
+      return true
+    }
+    const required: string[] = Array.isArray(next.required_fields) ? next.required_fields : []
+    const missing = required.filter(f => deal[f] === null || deal[f] === undefined || deal[f] === '')
+    if (missing.length) {
+      if (token) {
+        await tgAnswer(token, cb.id, 'Не хватает полей', true)
+        await tgSend(token, cb.message.chat.id,
+          `Для этапа «${next.label}» не хватает: ${missing.join(', ')}.\n` +
+          'Наговорите голосовое — система заполнит пустые поля.')
+      }
+      return true
+    }
+    await sql`
+      UPDATE sales_deals SET stage_id = ${next.id}, stage_since = NOW(), stalled_at = NULL, updated_at = NOW()
+      WHERE id = ${entityId} AND org_id = ${agent.org_id}
+    `
+    await sql`
+      INSERT INTO sales_deal_events (org_id, deal_id, old_stage_id, new_stage_id, changed_by)
+      VALUES (${agent.org_id}, ${entityId}, ${deal.stage_id}, ${next.id}, ${agent.name + ' (бот)'})
+    `
+    if (token) await tgAnswer(token, cb.id, `Этап: ${next.label}`)
+    return true
+  }
+
+  if (action === 'step') {
+    const at = new Date(Date.now() + 86400000)
+    at.setUTCHours(4, 0, 0, 0)   // 9 утра по Ташкенту
+    await sql`
+      UPDATE sales_deals
+      SET next_step = COALESCE(next_step, 'Позвонить'), next_step_at = ${at.toISOString()},
+          stalled_at = NULL, updated_at = NOW()
+      WHERE id = ${entityId} AND org_id = ${agent.org_id}
+    `
+    if (token) await tgAnswer(token, cb.id, 'Шаг назначен на завтра, 9:00')
+    return true
+  }
+
   if (action === 'done') {
     await sql`
       UPDATE sales_tasks SET done_at = NOW(), done_result = 'done'
@@ -263,9 +323,44 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
 }
 
 /** Текстовые команды сейлза. true — команда обработана здесь. */
+/**
+ * Мои сделки в боте: список с кнопками, чтобы сейлз в поле мог двинуть этап и
+ * назначить следующий шаг, не открывая ноутбук. Показываем те, что горят:
+ * застряли или остались без шага — остальные подождут до стола.
+ */
+export async function dealsText(sql: SQL, orgId: string, agentId: string): Promise<
+  { text: string; deals: any[] }
+> {
+  const deals = await sql`
+    SELECT d.id, d.title, d.monthly_amount, d.currency, d.next_step, d.next_step_at,
+           d.stage_since, d.stalled_at, s.label AS stage, a.name AS account
+    FROM sales_deals d
+    LEFT JOIN sales_stages s ON s.id = d.stage_id
+    LEFT JOIN sales_accounts a ON a.id = d.account_id
+    WHERE d.org_id = ${orgId} AND d.owner_agent_id = ${agentId}
+      AND d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL
+    ORDER BY (d.next_step_at IS NULL) DESC, d.stage_since ASC
+    LIMIT 10
+  ` as any[]
+
+  if (!deals.length) return { text: 'Открытых сделок нет.', deals }
+
+  const lines = deals.map((d, i) => {
+    const days = Math.floor((Date.now() - new Date(
+      String(d.stage_since).includes('Z') ? d.stage_since : d.stage_since + 'Z').getTime()) / 86400000)
+    const money = d.monthly_amount
+      ? `${Number(d.monthly_amount).toLocaleString('ru-RU')} ${d.currency}/мес`
+      : 'сумма не указана'
+    const step = d.next_step ? `${d.next_step}` : '⚠️ шаг не назначен'
+    return `${i + 1}. <b>${d.account || d.title}</b>\n   ${d.stage} · ${days} дн · ${money}\n   ${step}`
+  })
+  return { text: `<b>Ваши сделки</b>\n\n${lines.join('\n\n')}`, deals }
+}
+
 export async function handleSalesCommand(sql: SQL, message: any): Promise<boolean> {
   const text = (message.text || '').trim().toLowerCase()
-  if (!['/queue', '/очередь', '/my', '/мои'].includes(text)) return false
+  const KNOWN = ['/queue', '/очередь', '/my', '/мои', '/deals', '/сделки', '/help', '/помощь']
+  if (!KNOWN.includes(text)) return false
 
   const telegramId = String(message.from?.id || '')
   const [agent] = await sql`
@@ -277,6 +372,30 @@ export async function handleSalesCommand(sql: SQL, message: any): Promise<boolea
     await tgSend(token, message.chat.id, 'Вы ещё не привязаны к сотруднику. Напишите /start и завершите регистрацию.')
     return true
   }
+  if (text === '/help' || text === '/помощь') {
+    await tgSend(token, message.chat.id,
+      '<b>Что умеет бот</b>\n\n' +
+      '/очередь — что горит сейчас: лиды по SLA и задачи на сегодня\n' +
+      '/сделки — ваши открытые сделки с кнопками «двинуть этап» и «шаг на завтра»\n\n' +
+      'Голосовое сообщение после звонка — система расшифрует и заполнит пустые ' +
+      'поля квалификации сделки. Заполненное руками не перезаписывается.\n\n' +
+      'Карточки новых лидов приходят сюда сами: «Беру» создаёт сделку и ' +
+      'останавливает таймер первого касания.')
+    return true
+  }
+
+  if (text === '/deals' || text === '/сделки') {
+    const { text: body, deals } = await dealsText(sql, agent.org_id, agent.id)
+    // Кнопки по одной на сделку: в Telegram список кнопок читается лучше,
+    // чем попытка уместить действия в строку текста
+    const keyboard: Keyboard = deals.slice(0, 8).map((d, i) => ([
+      { text: `${i + 1} → этап`, callback_data: `sl:next:${d.id}` },
+      { text: `${i + 1} шаг завтра`, callback_data: `sl:step:${d.id}` },
+    ]))
+    await tgSend(token, message.chat.id, body, keyboard.length ? keyboard : undefined)
+    return true
+  }
+
   await tgSend(token, message.chat.id, await queueText(sql, agent.org_id, agent.id))
   return true
 }
