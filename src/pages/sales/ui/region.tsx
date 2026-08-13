@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useMarket, MARKET_CHANGED_EVENT } from '@/shared/hooks/useMarket'
-import { clearCache } from '@/shared/services/api.service'
+import { useMarket } from '@/shared/hooks/useMarket'
 
 /**
- * Регион продаж берётся из общего переключателя рынка в шапке приложения.
+ * Регион — фильтр самого раздела, а не всей системы.
  *
- * Свой фильтр на каждой странице был ошибкой: их получалось шесть, они не
- * договаривались между собой и сбрасывались при переходах. Управление одно —
- * в шапке; страницы модуля только показывают, в каком регионе идёт работа.
- *
- * Переключатель хранит id рынка (market_1772…), а продажи всюду работают кодом
- * страны — перевод делает и клиент (для подписи), и сервер (для фильтра).
+ * Общий переключатель в меню менял область сразу всему: стоя в сделках по
+ * Узбекистану, нельзя было заглянуть в казахстанские лиды, не переключив
+ * заодно чаты и аналитику. Теперь у каждого раздела свой выбор, он
+ * запоминается отдельно и не тянет за собой соседей.
  */
 
 export const REGION_NAMES: Record<string, string> = {
@@ -19,36 +16,33 @@ export const REGION_NAMES: Record<string, string> = {
   ge: 'Грузия', cy: 'Кипр', ae: 'ОАЭ',
 }
 
-/** Код текущего региона ('uz') или '' для режима «все рынки». */
-export function useRegion(): string {
-  const { markets, selectedMarket } = useMarket()
-  const [, force] = useState(0)
+const key = (scope: string) => `sales_region_${scope}`
+const EVT = 'gfsupport:sales-region'
 
-  // Переключение рынка в шапке — событие на window: списки должны перезапроситься
-  useEffect(() => {
-    const bump = () => force(n => n + 1)
-    window.addEventListener(MARKET_CHANGED_EVENT, bump)
-    return () => window.removeEventListener(MARKET_CHANGED_EVENT, bump)
-  }, [])
-
-  if (!selectedMarket) return ''
-  const m = markets.find(x => x.id === selectedMarket)
-  return (m?.code || '').toLowerCase()
+export function getRegion(scope: string): string {
+  return localStorage.getItem(key(scope)) || ''
 }
 
-/**
- * Переключатель региона на странице.
- *
- * Он не заводит своё состояние: выбор пишется в тот же общий рынок, что и в
- * шапке приложения. То есть орган управления один, а доступен он из двух мест —
- * искать его в свёрнутом меню не приходится.
- */
-export const RegionBadge = () => {
-  const { markets, selectedMarket, setSelectedMarket } = useMarket()
+/** Код региона этого раздела ('uz') или '' — все регионы. */
+export function useRegion(scope: string): string {
+  const [region, setRegion] = useState(() => getRegion(scope))
+
+  useEffect(() => {
+    const sync = () => setRegion(getRegion(scope))
+    window.addEventListener(EVT, sync)
+    return () => window.removeEventListener(EVT, sync)
+  }, [scope])
+
+  return region
+}
+
+/** Переключатель региона в шапке раздела. */
+export const RegionBadge = ({ scope }: { scope: string }) => {
+  const { markets } = useMarket()
+  const region = useRegion(scope)
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  const region = useRegion()
-  // Список рисуем поверх страницы: внутри шапки его перекрывало меню слева
+  const menu = useRef<HTMLDivElement>(null)
   const [rect, setRect] = useState<{ top: number; right: number } | null>(null)
 
   const place = useCallback(() => {
@@ -58,9 +52,15 @@ export const RegionBadge = () => {
     setRect({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
   }, [])
 
+  // Список живёт в портале и физически лежит вне кнопки, поэтому в проверке
+  // «клик мимо» его надо учитывать отдельно — иначе mousedown по пункту
+  // считался кликом снаружи, меню закрывалось, и click по пункту уже некуда
+  // было попасть: выбор региона просто не срабатывал
   useEffect(() => {
     const outside = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (box.current?.contains(t) || menu.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', outside)
     return () => document.removeEventListener('mousedown', outside)
@@ -77,19 +77,23 @@ export const RegionBadge = () => {
     }
   }, [open, place])
 
-  const label = region ? REGION_NAMES[region] || region.toUpperCase() : 'Все регионы'
-
-  const choose = (id: string | null) => {
-    setSelectedMarket(id)
-    clearCache()
+  const choose = (code: string) => {
+    if (code) localStorage.setItem(key(scope), code)
+    else localStorage.removeItem(key(scope))
+    window.dispatchEvent(new CustomEvent(EVT))
     setOpen(false)
   }
+
+  // Список регионов берём из общего реестра рынков, но выбор — местный
+  const codes = markets.map(m => (m.code || '').toLowerCase()).filter(Boolean)
+  const list = codes.length ? codes : Object.keys(REGION_NAMES)
+  const label = region ? REGION_NAMES[region] || region.toUpperCase() : 'Все регионы'
 
   return (
     <div ref={box} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        title="Регион: тот же, что в шапке приложения"
+        title="Регион этого раздела"
         className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border ${
           region ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-white text-gray-600 border-gray-300'
         }`}
@@ -100,26 +104,22 @@ export const RegionBadge = () => {
       </button>
       {open && rect && createPortal(
         <div
+          ref={menu}
           style={{ position: 'fixed', top: rect.top, right: rect.right, zIndex: 60 }}
           className="w-52 bg-white border border-gray-200 rounded-lg shadow-xl py-1"
         >
-          <button onClick={() => choose(null)}
+          <button onMouseDown={e => { e.preventDefault(); choose('') }}
             className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
-              !selectedMarket ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
+              !region ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
             Все регионы
           </button>
-          {markets.map(m => (
-            <button key={m.id} onClick={() => choose(m.id)}
+          {list.map(code => (
+            <button key={code} onMouseDown={e => { e.preventDefault(); choose(code) }}
               className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
-                selectedMarket === m.id ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
-              {m.name}
+                region === code ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
+              {REGION_NAMES[code] || code.toUpperCase()}
             </button>
           ))}
-          {markets.length === 0 && (
-            <div className="px-3 py-2 text-[11.5px] text-gray-400">
-              Рынки не заведены — добавьте их в настройках
-            </div>
-          )}
         </div>,
         document.body,
       )}

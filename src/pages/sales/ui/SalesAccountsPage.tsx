@@ -26,13 +26,13 @@ export function SalesAccountsPage() {
   const [openAccount, setOpenAccount] = useState<string | null>(null)
   const [stats, setStats] = useState<any>({})
   const [lifecycle, setLifecycle] = useState('')
-  const region = useRegion()
+  const region = useRegion('accounts')
   const LIMIT = 50
 
   const load = useCallback(() => {
     apiGet<{ accounts: any[]; hasMore: boolean; stats?: any }>(
       `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}` +
-      (lifecycle ? `&lifecycle=${lifecycle}` : ''), false)
+      (lifecycle ? `&lifecycle=${lifecycle}` : '') + (region ? `&region=${region}` : ''), false)
       .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setStats(d.stats || {}); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить список'))
   }, [type, q, offset, region, lifecycle])
@@ -59,7 +59,7 @@ export function SalesAccountsPage() {
           </p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-          <RegionBadge />
+          <RegionBadge scope="accounts" />
           <Link to={type === 'partner' ? '/sales/accounts' : '/sales/partners'}
             className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             {type === 'partner' ? 'К клиентам' : 'К партнёрам'}

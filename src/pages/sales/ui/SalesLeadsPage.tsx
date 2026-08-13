@@ -82,7 +82,7 @@ export function SalesLeadsPage() {
   const [error, setError] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
   const LIMIT = 50
-  const region = useRegion()
+  const region = useRegion('leads')
   const [busy, setBusy] = useState<string | null>(null)
   const [range, setRange] = useState(() => rangeOf('all'))
   const [facets, setFacets] = useState<Record<string, string>>({})
@@ -98,6 +98,7 @@ export function SalesLeadsPage() {
 
   const load = useCallback(() => {
     const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
+    if (region) p.set('region', region)
     if (source) p.set('source', source)
     if (range.from) p.set('from', range.from)
     if (range.to) p.set('to', range.to)
@@ -160,7 +161,7 @@ export function SalesLeadsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <RegionBadge />
+          <RegionBadge scope="leads" />
           <Btn kind="primary" onClick={() => setCreating(true)}>+ Лид</Btn>
           <Link to="/sales/queue" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             Моя очередь

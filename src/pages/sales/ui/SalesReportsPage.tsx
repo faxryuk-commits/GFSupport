@@ -17,7 +17,7 @@ export function SalesReportsPage() {
   // Верх воронки: сводку по сайту присылает бот delever.io
   const [site, setSite] = useState<any>(null)
   const [tab, setTab] = useState<'sales' | 'site'>('sales')
-  const region = useRegion()
+  const region = useRegion('reports')
 
   // Номер запроса: при автообновлении и быстрой смене фильтров ответ старого
   // запроса приходил позже нового и перетирал список — со стороны это выглядит
@@ -27,7 +27,7 @@ export function SalesReportsPage() {
   const load = useCallback(() => {
     const from = new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10)
     const my = ++reqRef.current
-    apiGet<any>(`/sales/reports?from=${from}`, false)
+    apiGet<any>(`/sales/reports?from=${from}${region ? `&region=${region}` : ''}`, false)
       .then(d => { if (my !== reqRef.current) return; setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить отчёты'))
   }, [period, region])
@@ -87,7 +87,7 @@ export function SalesReportsPage() {
             </button>
           ))}
         </div>
-        <RegionBadge />
+        <RegionBadge scope="reports" />
         <div className="flex gap-1 border border-gray-300 rounded-lg overflow-hidden">
           {[['30', 'Месяц'], ['90', 'Квартал'], ['365', 'Год']].map(([v, l]) => (
             <button key={v} onClick={() => setPeriod(v)}

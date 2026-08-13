@@ -128,7 +128,7 @@ export function SalesDealsPage() {
   // Срезы по признакам: касса, город, тип заведения, тариф, нагрузка, источник
   const [facets, setFacets] = useState<Record<string, string>>({})
   const [offset, setOffset] = useState(0)
-  const region = useRegion()
+  const region = useRegion('deals')
   const refs = useSalesRefs()
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
@@ -159,6 +159,7 @@ export function SalesDealsPage() {
     for (const [k, v] of Object.entries(facets)) if (v) params.set(k, v)
     if (range.from) params.set('from', range.from)
     if (range.to) params.set('to', range.to)
+    if (region) params.set('region', region)
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
     const my = ++reqRef.current
@@ -311,7 +312,7 @@ export function SalesDealsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <RegionBadge />
+          <RegionBadge scope="deals" />
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
             {(['kanban', 'table'] as const).map(m => (
               <button key={m} onClick={() => setMode(m)}
