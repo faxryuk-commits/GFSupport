@@ -270,7 +270,7 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
           align === 'right' ? 'text-right' : ''}`}
       />
       <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
-      {open && shown.length > 0 && (
+      {open && (
         <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-gray-200
                         rounded-lg shadow-lg">
           {shown.map(o => (
@@ -285,6 +285,11 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
               className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-500 border-t border-gray-100">
               Своё значение: «{draft.trim()}»
             </button>
+          )}
+          {!shown.length && !typed && (
+            <div className="px-3 py-2 text-[11.5px] text-gray-400">
+              Список пуст — впишите значение, оно сохранится в сделке
+            </div>
           )}
         </div>
       )}
@@ -381,7 +386,11 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
         onClick={() => { setDraft(empty ? '' : String(value)); setEditing(true) }}
         className={`text-[12.5px] text-right ${empty ? 'text-blue-600 hover:underline' : 'text-gray-900'}`}
       >
-        {empty ? 'заполнить' : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
+        {/* У поля со справочником видно, что это выбор, а не свободный ввод —
+            иначе про список узнаёшь, только ткнув наугад */}
+        {empty
+          ? (options?.length ? 'выбрать ▾' : 'заполнить')
+          : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
       </button>
     </div>
   )
