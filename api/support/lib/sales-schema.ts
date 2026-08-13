@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-13.3-regions'
+const SCHEMA_VERSION = '2026-08-13.4-reasons'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -134,6 +134,10 @@ const LOST_REASON_SEED: Array<{ code: string; label: string; days: number | null
   { code: 'no_dm_access', label: 'Не дошли до ЛПР', days: 30 },
   { code: 'feature_gap', label: 'Не хватает функциональности', days: 120 },
   { code: 'internal_solution', label: 'Делают сами', days: 180 },
+  // Две формулировки, которыми отдел реально пользуется в Amo: без них
+  // половина отказов сваливалась в «Другое» и не давала повода для возврата
+  { code: 'need_gone', label: 'Пропала потребность', days: 120 },
+  { code: 'terms_rejected', label: 'Не устроили условия', days: 90 },
   { code: 'other', label: 'Другое', days: null },
 ]
 
@@ -615,16 +619,22 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_accounts_referrer ON sales_accounts(referred_by_account_id) WHERE referred_by_account_id IS NOT NULL`
 
   // ─── Сиды справочников: ON CONFLICT DO NOTHING — правки в UI не затираются ───
-  for (let i = 0; i < STAGE_SEED.length; i++) {
-    const s = STAGE_SEED[i]
-    await sql`
-      INSERT INTO sales_stages (id, org_id, key, label, kind, owner_role, sla_hours,
-                              required_fields, cadence, sort_order, probability)
-      VALUES (${salesId('sst')}, ${orgId}, ${s.key}, ${s.label}, ${s.kind}, ${s.ownerRole},
-              ${s.slaHours}, ${JSON.stringify(s.requiredFields)}::jsonb,
-              ${JSON.stringify(s.cadence)}::jsonb, ${i}, ${s.probability})
-      ON CONFLICT (org_id, key) DO NOTHING
-    `
+  // Воронка на каждый регион плюс общая: этапы одинаковые по смыслу, но строки
+  // у рынков свои — нормативы и каденции настраиваются под страну, а списки
+  // сделок разных стран не смешиваются
+  const PIPELINES = ['sales', 'sales_uz', 'sales_kz', 'sales_az', 'sales_ge', 'sales_ae']
+  for (const pipeline of PIPELINES) {
+    for (let i = 0; i < STAGE_SEED.length; i++) {
+      const s = STAGE_SEED[i]
+      await sql`
+        INSERT INTO sales_stages (id, org_id, key, label, kind, owner_role, sla_hours,
+                                  required_fields, cadence, sort_order, probability, pipeline)
+        VALUES (${salesId('sst')}, ${orgId}, ${s.key}, ${s.label}, ${s.kind}, ${s.ownerRole},
+                ${s.slaHours}, ${JSON.stringify(s.requiredFields)}::jsonb,
+                ${JSON.stringify(s.cadence)}::jsonb, ${i}, ${s.probability}, ${pipeline})
+        ON CONFLICT (org_id, pipeline, key) DO NOTHING
+      `
+    }
   }
   for (let i = 0; i < PARTNER_STAGE_SEED.length; i++) {
     const s = PARTNER_STAGE_SEED[i]
