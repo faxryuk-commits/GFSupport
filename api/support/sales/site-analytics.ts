@@ -31,10 +31,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   const auth = req.headers.get('authorization') || ''
   const byCron = Boolean(process.env.CRON_SECRET) && auth === `Bearer ${process.env.CRON_SECRET}`
+  // Тот же секрет, что у приёмника лидов: сайт шлёт и заявки, и сводку —
+  // заводить ради этого второй токен незачем
+  const intakeSecret = process.env.SALES_INTAKE_SECRET || null
+  const byIntake = Boolean(intakeSecret) && req.headers.get('X-Intake-Secret') === intakeSecret
   const ctx = await extractAgentContext(req)
 
   if (req.method === 'POST') {
-    if (!byCron && !ctx.isOrgAdmin && !ctx.isGlobalAdmin) {
+    if (!byCron && !byIntake && !ctx.isOrgAdmin && !ctx.isGlobalAdmin) {
       return json({ error: 'unauthorized' }, 401)
     }
     const body = await req.json().catch(() => null)
