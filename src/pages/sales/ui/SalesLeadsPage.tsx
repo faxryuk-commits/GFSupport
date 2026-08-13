@@ -49,14 +49,14 @@ const VIEWS: Array<[string, string]> = [
   ['inbox', 'Входящие'],
   ['queue', 'Ждут распределения'],
   ['dupes', 'Дубли и склейки'],
-  ['nurture', 'Nurture'],
+  ['nurture', 'На прогреве'],
 ]
 
 const STATUS_TONE: Record<string, string> = {
   assigned: 'blue', converted: 'green', new: 'amber', nurture: 'gray', junk: 'gray',
 }
 const STATUS_LABEL: Record<string, string> = {
-  assigned: 'назначен', converted: 'в работе', new: 'в очереди', nurture: 'nurture', junk: 'мусор',
+  assigned: 'назначен', converted: 'в работе', new: 'в очереди', nurture: 'на прогреве', junk: 'мусор',
 }
 
 export function SalesLeadsPage() {
@@ -124,7 +124,7 @@ export function SalesLeadsPage() {
         ['Сегодня', String(s.today ?? 0), 'новых обращений'],
         ['Ждут касания', String(s.waiting ?? 0), 'назначены, но не тронуты'],
         ['Без сейлза', String(s.unassigned ?? 0), 'в общей очереди'],
-        ['В nurture', String(s.nurture ?? 0), 'без участия человека'],
+        ['На прогреве', String(s.nurture ?? 0), 'греет бот, сейлз не занят'],
         ['Касание за 15 мин', pct(s.in_sla ?? 0, s.touched ?? 0), 'за 30 дней'],
       ]} />
 
@@ -149,10 +149,17 @@ export function SalesLeadsPage() {
           title="Здесь пусто"
           hint={view === 'dupes'
             ? 'Склеек за период не было — каждое обращение пришло от нового клиента.'
-            : 'Под выбранный фильтр обращений нет.'}
+            : view === 'nurture'
+              ? 'На прогреве никого: все обращения либо в работе, либо ещё ждут первого касания.'
+              : 'Под выбранный фильтр обращений нет.'}
         />
       ) : (
-        <Card title={VIEWS.find(v => v[0] === view)?.[1] || ''} sub="склейка по телефону выполняется на приёме">
+        <Card
+          title={VIEWS.find(v => v[0] === view)?.[1] || ''}
+          sub={view === 'nurture'
+            ? 'лид сейчас не готов покупать: его греют бот и рассылка, сейлз вернётся по сигналу'
+            : 'склейка по телефону выполняется на приёме'}
+        >
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-[12.5px]">
               <thead>
@@ -217,7 +224,7 @@ export function SalesLeadsPage() {
                             {l.status !== 'nurture' && (
                               <button disabled={busy === l.id} onClick={() => act('nurture', l.id)}
                                 className="ml-1.5 text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg disabled:opacity-50">
-                                В nurture
+                                На прогрев
                               </button>
                             )}
                           </>
