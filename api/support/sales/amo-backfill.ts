@@ -32,6 +32,13 @@ const GARBAGE_MIN_PRICE = 500_000   // сум: ниже — брошенная �
 // поэтому ответ всегда содержит ссылку next на продолжение
 const TIME_BUDGET_MS = 18_000
 
+/** Обрезка под длину колонки: в Amo поля свободные, у нас — VARCHAR. */
+const cut = (v: any, n: number): string | null => {
+  if (v === null || v === undefined) return null
+  const s = String(v).trim()
+  return s ? s.slice(0, n) : null
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
@@ -193,21 +200,35 @@ export default async function handler(req: Request): Promise<Response> {
       if (!accountId) {
         accountId = salesId('acc')
         if (c.phoneNorm) accByPhone.set(c.phoneNorm, accountId)
-        newAccounts.push([accountId, ORG, c.name, marketByPipeline(c.lead.pipeline_id),
-          cf(c.lead, 'Город') || null, c.isWon ? 'customer' : 'lead',
+        newAccounts.push([accountId, ORG, cut(c.name, 255) || 'Без названия', marketByPipeline(c.lead.pipeline_id),
+          cut(cf(c.lead, 'Город'), 100), c.isWon ? 'customer' : 'lead',
           new Date((c.lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()])
         if (c.phone) {
-          newContacts.push([salesId('sct'), ORG, accountId, c.contactName, c.phone, c.phoneNorm])
+          newContacts.push([salesId('sct'), ORG, accountId, cut(c.contactName, 255),
+            cut(c.phone, 50), cut(c.phoneNorm, 20)])
         }
       }
       ;(c as any).accountId = accountId
     }
 
+    // Пакетная вставка с подстраховкой: если пачка упала (например, значение
+    // не влезло в колонку), не теряем всю страницу, а пишем построчно и
+    // пропускаем только сбойные строки
     const bulk = async (table: string, cols: string[], rows: any[][]) => {
       if (!rows.length) return
-      const params: any[] = []
-      const values = rows.map(r => `(${r.map(v => { params.push(v); return `$${params.length}` }).join(',')})`)
-      await sql.query(`INSERT INTO ${table} (${cols.join(',')}) VALUES ${values.join(',')}`, params)
+      const insert = async (chunk: any[][]) => {
+        const params: any[] = []
+        const values = chunk.map(r => `(${r.map(v => { params.push(v); return `$${params.length}` }).join(',')})`)
+        await sql.query(`INSERT INTO ${table} (${cols.join(',')}) VALUES ${values.join(',')}`, params)
+      }
+      try {
+        await insert(rows)
+      } catch (e) {
+        console.error(`[amo-backfill] пачка ${table} упала, пишу построчно:`, e)
+        for (const r of rows) {
+          try { await insert([r]) } catch { out.errors++ }
+        }
+      }
     }
 
     await bulk('sales_accounts', ['id','org_id','name','market_id','city','lifecycle','created_at'], newAccounts)
@@ -222,10 +243,10 @@ export default async function handler(req: Request): Promise<Response> {
       const stageId = stageIdByKey.get(c.stageKey) || ''
       const since = new Date((c.lead.updated_at || c.lead.created_at) * 1000).toISOString()
       dealRows.push([dealId, ORG, c.accountId, stageId, agentByAmoUser(c.lead.responsible_user_id),
-        marketByPipeline(c.lead.pipeline_id), c.name, 'new', `amo_${c.lead.id}`,
-        cf(c.lead, 'Город') || null,
+        marketByPipeline(c.lead.pipeline_id), cut(c.name, 255) || 'Без названия', 'new', `amo_${c.lead.id}`,
+        cut(cf(c.lead, 'Город'), 100),
         parseInt(cf(c.lead, 'Кол филиалов') || cf(c.lead, 'Филиалов') || '0', 10) || null,
-        cf(c.lead, 'Заказы в день') || null, cf(c.lead, 'POS') || null, cf(c.lead, 'Тариф') || null,
+        cut(cf(c.lead, 'Заказы в день'), 50), cut(cf(c.lead, 'POS'), 100), cut(cf(c.lead, 'Тариф'), 50),
         Number(c.lead.price || 0) || null, 'UZS', since,
         c.isWon ? c.closedAt : null, c.isLost ? c.closedAt : null, c.reasonId,
         new Date((c.lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()])
