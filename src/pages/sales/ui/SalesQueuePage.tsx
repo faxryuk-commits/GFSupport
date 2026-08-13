@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiGet, apiPost } from '@/shared/services/api.service'
-import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText, Skeleton } from './kit'
+import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
+import { SalesDealPage } from './SalesDealPage'
+import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText, Skeleton , Drawer } from './kit'
 
 /**
  * Очередь дня — главный экран сейлза.
@@ -31,6 +32,12 @@ interface HotDeal {
   account: string | null
   stage_since: string
   doc_opens: number | null
+  phone: string | null
+  next_step: string | null
+  next_step_at: string | null
+  next_stage_key: string | null
+  next_stage_label: string | null
+  blockers: Array<{ field: string; label: string }>
 }
 
 interface Task {
@@ -95,9 +102,13 @@ const Chip = ({ tone = 'gray', children }: { tone?: string; children: React.Reac
   )
 }
 
-const SectionHead = ({ title, count }: { title: string; count: number }) => (
-  <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-    <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-500">{title}</span>
+const SectionHead = ({ title, count, hint }: { title: string; count: number; hint?: string }) => (
+  <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-between items-start gap-3">
+    <div>
+      <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-500">{title}</span>
+      {/* Заголовок раздела должен отвечать на «а что мне с этим делать» */}
+      {hint && <div className="text-[11px] text-gray-400 mt-0.5 normal-case">{hint}</div>}
+    </div>
     <span className="text-[11px] text-gray-400 tabular-nums">{count}</span>
   </div>
 )
@@ -106,6 +117,7 @@ export function SalesQueuePage() {
   const [data, setData] = useState<QueueData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [openDeal, setOpenDeal] = useState<string | null>(null)
 
   const load = useCallback(() => {
     apiGet<QueueData>('/sales/queue')
@@ -118,6 +130,33 @@ export function SalesQueuePage() {
   // Очередь дня обновляется сама — сейлзу незачем нажимать кнопку, чтобы
   // узнать, не прилетел ли новый лид
   useAutoRefresh(load, 20000)
+
+  /** Назначить следующий шаг на завтра — самое частое действие «потом». */
+  const planStep = async (dealId: string) => {
+    setBusy(dealId)
+    try {
+      const at = new Date(Date.now() + 86400000 + 5 * 3600000)
+      at.setUTCHours(9, 0, 0, 0)
+      await apiPatch('/sales/deal', {
+        id: dealId,
+        fields: { next_step: 'Позвонить', next_step_at: at.toISOString().slice(0, 16) },
+      })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось назначить шаг')
+    } finally { setBusy(null) }
+  }
+
+  /** Двинуть этап, не заходя в карточку: критерии уже проверены на сервере. */
+  const advance = async (dealId: string, toStage: string) => {
+    setBusy(dealId)
+    try {
+      await apiPost('/sales/stage', { dealId, toStage })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Переход заблокирован')
+    } finally { setBusy(null) }
+  }
 
   const takeLead = async (leadId: string) => {
     setBusy(leadId)
@@ -241,20 +280,62 @@ export function SalesQueuePage() {
 
           {data.hot.length > 0 && (
             <>
-              <SectionHead title="Деньги в одном шаге" count={data.hot.length} />
+              <SectionHead
+                title="Деньги в одном шаге"
+                count={data.hot.length}
+                hint="сделки на последних этапах: двинуть дальше или закрыть — рядом написано, чего не хватает"
+              />
               {data.hot.map(d => (
-                <div key={d.id} className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap hover:bg-gray-50">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 flex-none" />
-                  <div className="min-w-[180px] flex-1">
+                <div key={d.id} className="px-4 py-3 border-b border-gray-100 flex items-start gap-3 flex-wrap hover:bg-gray-50">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 flex-none mt-2" />
+                  <div className="min-w-[220px] flex-1">
                     <div className="text-[13px] font-semibold text-gray-900">{d.account || d.title}</div>
                     <div className="text-[11px] text-gray-400">
-                      {d.stage} · {money(d.monthly_amount, d.currency)} в месяц · {daysSince(d.stage_since)} дн на этапе
+                      {d.stage} · {daysSince(d.stage_since)} дн на этапе
+                      {d.phone ? ` · ${d.phone}` : ''}
+                    </div>
+                    {/* Деньги — суть блока: если их не проставили, это и есть
+                        первое дело, а не мелочь на потом */}
+                    <div className={`text-[11.5px] mt-0.5 ${
+                      d.monthly_amount ? 'text-gray-700' : 'text-amber-600 font-medium'}`}>
+                      {d.monthly_amount
+                        ? `${money(d.monthly_amount, d.currency)} в месяц`
+                        : 'сумма не указана — без неё сделку не закрыть'}
+                    </div>
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {d.doc_opens ? <Chip tone="green">КП открыто {d.doc_opens}×</Chip> : null}
+                      {d.next_step
+                        ? <Chip tone="gray">{d.next_step}{d.next_step_at ? ` · ${fmtDateTime(d.next_step_at)}` : ''}</Chip>
+                        : <Chip tone="amber">шаг не назначен</Chip>}
+                      {d.blockers.map(b => (
+                        <Chip key={b.field} tone="red">нет: {b.label.toLowerCase()}</Chip>
+                      ))}
                     </div>
                   </div>
-                  {d.doc_opens ? <Chip tone="blue">КП открыто {d.doc_opens}×</Chip> : null}
-                  <Link to={`/sales/deals/${d.id}`} className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-                    Открыть
-                  </Link>
+                  <div className="flex gap-1.5 flex-wrap justify-end">
+                    {d.phone && (
+                      <a href={`tel:${d.phone}`}
+                        className="text-[12px] px-2.5 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+                        Позвонить
+                      </a>
+                    )}
+                    {!d.next_step_at && (
+                      <button disabled={busy === d.id} onClick={() => planStep(d.id)}
+                        className="text-[12px] px-2.5 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600 disabled:opacity-50">
+                        Шаг на завтра
+                      </button>
+                    )}
+                    {d.next_stage_key && d.blockers.length === 0 && (
+                      <button disabled={busy === d.id} onClick={() => advance(d.id, d.next_stage_key!)}
+                        className="text-[12px] px-2.5 py-1.5 bg-blue-600 text-white rounded-lg disabled:opacity-50">
+                        → {d.next_stage_label}
+                      </button>
+                    )}
+                    <button onClick={() => setOpenDeal(d.id)}
+                      className="text-[12px] px-2.5 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+                      Открыть
+                    </button>
+                  </div>
                 </div>
               ))}
             </>
@@ -304,9 +385,9 @@ export function SalesQueuePage() {
                       Отказ «{r.reason || 'без причины'}» · {daysSince(r.lost_at)} дн назад — причина могла устареть
                     </div>
                   </div>
-                  <Link to={`/sales/deals/${r.id}`} className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+                  <button onClick={() => setOpenDeal(r.id)} className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
                     Открыть
-                  </Link>
+                  </button>
                 </div>
               ))}
             </>
@@ -317,6 +398,14 @@ export function SalesQueuePage() {
       {error && (
         <div className="text-[12.5px] text-red-600">{error}</div>
       )}
+      <Drawer
+        open={!!openDeal}
+        onClose={() => { setOpenDeal(null); load() }}
+        title="Сделка"
+        fullLink={openDeal ? `/sales/deals/${openDeal}` : undefined}
+      >
+        {openDeal && <SalesDealPage dealId={openDeal} />}
+      </Drawer>
     </PageShell>
   )
 }

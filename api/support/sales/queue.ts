@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
+import { missingFields } from '../lib/sales-fields.js'
 import { pipelineForMarket } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
@@ -92,8 +93,11 @@ export default async function handler(req: Request): Promise<Response> {
     `,
     // 2. Деньги в одном шаге: договор и КП, где клиент уже читал
     sql`
-      SELECT d.id, d.title, d.monthly_amount, d.currency, d.stage_since,
-             st.label AS stage, a.name AS account,
+      SELECT d.id, d.title, d.monthly_amount, d.currency, d.stage_since, d.pipeline,
+             d.next_step, d.next_step_at, d.city, d.pos, d.tariff,
+             st.key AS stage_key, st.label AS stage, st.sort_order, a.name AS account,
+             (SELECT phone FROM sales_contacts c WHERE c.account_id = d.account_id
+               ORDER BY c.is_primary DESC LIMIT 1) AS phone,
              (SELECT MAX(opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens
       FROM sales_deals d
       JOIN sales_stages st ON st.id = d.stage_id
@@ -143,9 +147,35 @@ export default async function handler(req: Request): Promise<Response> {
     `,
   ])
 
+  // Чего не хватает, чтобы двинуть сделку дальше. Считаем здесь, а не в
+  // браузере: правила этапов живут на сервере, и очередь должна говорить не
+  // «открой и разберись», а «не хватает суммы»
+  const stageRows = await sql`
+    SELECT id, key, label, kind, sort_order, required_fields, pipeline
+    FROM sales_stages WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order
+  ` as any[]
+  const dealRows = hot.length
+    ? await sql`SELECT * FROM sales_deals WHERE id = ANY(${hot.map((h: any) => h.id)})` as any[]
+    : []
+  const hotEnriched = (hot as any[]).map(h => {
+    const deal = dealRows.find(d => d.id === h.id) || {}
+    const pipeline = h.pipeline || 'sales'
+    const next = stageRows
+      .filter(st => (st.pipeline || 'sales') === pipeline && st.kind === 'open'
+        && st.sort_order > (h.sort_order ?? -1))
+      .sort((a, b) => a.sort_order - b.sort_order)[0]
+      || stageRows.find(st => (st.pipeline || 'sales') === pipeline && st.kind === 'won')
+    return {
+      ...h,
+      next_stage_key: next?.key || null,
+      next_stage_label: next?.label || null,
+      blockers: next ? missingFields(deal, next.required_fields) : [],
+    }
+  })
+
   return json({
     agentId,
-    sla, hot, tasks, revival,
+    sla, hot: hotEnriched, tasks, revival,
     stats: stats[0] || {},
     total: sla.length + hot.length + tasks.length + revival.length,
   })
