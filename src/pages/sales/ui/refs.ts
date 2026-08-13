@@ -30,13 +30,27 @@ let cache: SalesRefs | null = null
 let inflight: Promise<SalesRefs> | null = null
 const listeners = new Set<(r: SalesRefs) => void>()
 
-function fetchRefs(): Promise<SalesRefs> {
+/**
+ * Один сбой запроса не должен оставлять поля без списков до конца сессии:
+ * пустой справочник молча превращает выбор в обычный ввод — ровно так выглядел
+ * модуль во время простоя, и со стороны это читалось как «списков нет вовсе».
+ */
+function fetchRefs(attempt = 0): Promise<SalesRefs> {
   if (inflight) return inflight
   inflight = apiGet<SalesRefs>('/sales/refs', false)
     .then(r => {
       cache = r
       listeners.forEach(l => l(r))
       return r
+    })
+    .catch(e => {
+      inflight = null
+      if (attempt < 2) {
+        return new Promise<SalesRefs>(resolve => {
+          setTimeout(() => resolve(fetchRefs(attempt + 1)), 2000 * (attempt + 1))
+        })
+      }
+      throw e
     })
     .finally(() => { inflight = null })
   return inflight
