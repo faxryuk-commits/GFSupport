@@ -128,6 +128,11 @@ export default async function handler(req: Request): Promise<Response> {
   }
   const market = await resolveRegion(sql, orgId, url)
   if (market) add('l.market_id = ?', market)
+  // Период: даты приходят днями в рабочей зоне, поэтому и границы сдвинуты на +05
+  const from = url.searchParams.get('from')
+  const to = url.searchParams.get('to')
+  if (from) add('l.created_at >= ?::timestamptz', `${from}T00:00:00+05:00`)
+  if (to) add('l.created_at <= ?::timestamptz', `${to}T23:59:59+05:00`)
   if (source) add('s.key = ?', source)
   if (q) {
     params.push(`%${q}%`, `%${q}%`)

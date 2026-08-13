@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
-         Modal, Field, Btn, useAutoRefresh, slaTone, slaText, Skeleton } from './kit'
+         Modal, Field, Btn, useAutoRefresh, slaTone, slaText, Skeleton , RangePicker, rangeOf } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { useSalesRefs, optionsFor } from './refs'
 
@@ -72,6 +72,7 @@ export function SalesLeadsPage() {
   const LIMIT = 50
   const region = useRegion()
   const [busy, setBusy] = useState<string | null>(null)
+  const [range, setRange] = useState(() => rangeOf('all'))
   const [creating, setCreating] = useState(false)
   const refs = useSalesRefs()
   const blank = { name: '', phone: '', city: '', pos: '', orders_per_day: '', text: '', source: 'manual' }
@@ -80,11 +81,13 @@ export function SalesLeadsPage() {
   const load = useCallback(() => {
     const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (source) p.set('source', source)
+    if (range.from) p.set('from', range.from)
+    if (range.to) p.set('to', range.to)
     if (q) p.set('q', q)
     apiGet<LeadsData>(`/sales/leads?${p.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить лиды'))
-  }, [view, source, q, offset, region])
+  }, [view, source, q, offset, region, range])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -165,6 +168,7 @@ export function SalesLeadsPage() {
               <option key={src.key} value={src.key}>{src.label} · {src.leads}</option>
             ))}
           </select>
+          <RangePicker value={range} onChange={r => { setRange(r); setOffset(0) }} />
           <span className="text-[11.5px] text-gray-400 ml-auto">показано {data.leads.length}</span>
         </div>
       </div>

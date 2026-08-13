@@ -498,8 +498,79 @@ export const Drawer = ({ open, onClose, title, fullLink, children }: {
             </button>
           </div>
         </header>
-        <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
+        {/* Скроллится только эта область: внутренняя страница своей прокрутки
+            не заводит, иначе получаются два ползунка друг в друге */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">{children}</div>
       </aside>
+    </div>
+  )
+}
+
+/**
+ * Выбор периода: пресеты плюс свои даты.
+ *
+ * Списки продаж без периода — это «всё за два года» одной кучей: сейлз ищет
+ * сегодняшние обращения, а видит историю целиком.
+ */
+export type Range = { from: string; to: string; key: string }
+
+const dayKey = (d: Date) => {
+  // Считаем в рабочей зоне: «сегодня» у команды из разных стран должно
+  // означать один и тот же день, а не местную полночь каждого
+  const shifted = new Date(d.getTime() + 5 * 3600000)
+  return shifted.toISOString().slice(0, 10)
+}
+
+export function rangeOf(key: string): Range {
+  const now = new Date()
+  const day = 86400000
+  const to = dayKey(now)
+  switch (key) {
+    case 'today': return { key, from: to, to }
+    case 'yesterday': {
+      const y = dayKey(new Date(now.getTime() - day))
+      return { key, from: y, to: y }
+    }
+    case 'week': return { key, from: dayKey(new Date(now.getTime() - 7 * day)), to }
+    case 'month': return { key, from: dayKey(new Date(now.getTime() - 30 * day)), to }
+    case 'quarter': return { key, from: dayKey(new Date(now.getTime() - 90 * day)), to }
+    case 'year': return { key, from: dayKey(new Date(now.getTime() - 365 * day)), to }
+    default: return { key: 'all', from: '', to: '' }
+  }
+}
+
+const RANGE_PRESETS: Array<[string, string]> = [
+  ['all', 'Всё время'], ['today', 'Сегодня'], ['yesterday', 'Вчера'],
+  ['week', 'Неделя'], ['month', 'Месяц'], ['quarter', 'Квартал'], ['year', 'Год'],
+]
+
+export const RangePicker = ({ value, onChange }: { value: Range; onChange: (r: Range) => void }) => {
+  const [custom, setCustom] = useState(value.key === 'custom')
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <select
+        value={custom ? 'custom' : value.key}
+        onChange={e => {
+          const k = e.target.value
+          if (k === 'custom') { setCustom(true); onChange({ ...value, key: 'custom' }) }
+          else { setCustom(false); onChange(rangeOf(k)) }
+        }}
+        className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]"
+      >
+        {RANGE_PRESETS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        <option value="custom">Свой период</option>
+      </select>
+      {custom && (
+        <>
+          <input type="date" value={value.from}
+            onChange={e => onChange({ ...value, key: 'custom', from: e.target.value })}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-[12px]" />
+          <span className="text-[12px] text-gray-400">—</span>
+          <input type="date" value={value.to}
+            onChange={e => onChange({ ...value, key: 'custom', to: e.target.value })}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-[12px]" />
+        </>
+      )}
     </div>
   )
 }

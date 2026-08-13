@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
-         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer } from './kit'
+         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { SalesDealPage } from './SalesDealPage'
 import { useSalesRefs, optionsFor } from './refs'
@@ -30,6 +30,10 @@ interface Deal {
   next_step: string | null
   next_step_at: string | null
   created_at: string
+  won_at: string | null
+  lost_at: string | null
+  lost_reason: string | null
+  lost_comment: string | null
   owner_name: string | null
   source: string | null
   doc_opens: number | null
@@ -80,8 +84,9 @@ const VIEWS = [
   ['all', 'Все открытые'],
   ['mine', 'Мои'],
   ['attention', 'Требуют внимания'],
+  ['won', 'Выигранные'],
+  ['lost', 'Проигранные'],
   ['reactivation', 'Реактивация'],
-  ['archive', 'Архив'],
 ] as const
 
 
@@ -115,6 +120,7 @@ export function SalesDealsPage() {
   const [mode, setMode] = useState<'kanban' | 'table'>('kanban')
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
+  const [range, setRange] = useState(() => rangeOf('all'))
   const [offset, setOffset] = useState(0)
   const region = useRegion()
   const refs = useSalesRefs()
@@ -139,12 +145,14 @@ export function SalesDealsPage() {
   const load = useCallback(() => {
     const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (mode === 'kanban') params.set('perStage', '30')
+    if (range.from) params.set('from', range.from)
+    if (range.to) params.set('to', range.to)
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
-  }, [view, owner, q, offset, region, mode])
+  }, [view, owner, q, offset, region, mode, range])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)   // поиск не дёргает сервер на каждую букву
@@ -331,6 +339,7 @@ export function SalesDealsPage() {
             <option value="">Все сейлзы</option>
             {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
+          <RangePicker value={range} onChange={r => { setRange(r); setOffset(0) }} />
           <span className="text-[11.5px] text-gray-400 ml-auto">
             показано {data.deals.length}{data.hasMore ? '+' : ''}
           </span>
@@ -348,16 +357,16 @@ export function SalesDealsPage() {
         </div>
       )}
 
-      {mode === 'kanban' && data.deals.length > 0 && (
-        <div className="flex gap-3 overflow-x-auto items-start pb-1">
+      {mode === 'kanban' && view !== 'won' && view !== 'lost' && data.deals.length > 0 && (
+        <div className="flex gap-3 overflow-x-auto items-start pb-2 -mx-1 px-1">
           {data.summary.map(st => (
             <section
               key={st.key}
               onDragOver={e => { e.preventDefault(); setOverStage(st.key) }}
               onDragLeave={() => setOverStage(o => (o === st.key ? null : o))}
               onDrop={e => { e.preventDefault(); drop(st.key) }}
-              className={`flex-none w-[268px] bg-white border rounded-xl flex flex-col max-h-[560px]
-                transition-colors duration-150 ${
+              className={`flex-none w-[268px] bg-white border rounded-xl flex flex-col
+                max-h-[calc(100vh-290px)] transition-colors duration-150 ${
                 overStage === st.key ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/40' : 'border-gray-200'}`}
             >
               <header className="px-3 py-2.5 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
@@ -454,7 +463,9 @@ export function SalesDealsPage() {
               onDragOver={e => { e.preventDefault(); setOverStage(cl.key) }}
               onDragLeave={() => setOverStage(o => (o === cl.key ? null : o))}
               onDrop={e => { e.preventDefault(); drop(cl.key, cl.kind) }}
-              className={`flex-none w-[168px] rounded-xl border-2 border-dashed flex flex-col
+              onClick={() => { setView(cl.kind === 'won' ? 'won' : 'lost'); setMode('table'); setOffset(0) }}
+              title="Открыть список закрытых сделок"
+              className={`flex-none w-[168px] rounded-xl border-2 border-dashed flex flex-col cursor-pointer
                 transition-colors duration-150 ${
                 overStage === cl.key
                   ? cl.kind === 'won' ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'
@@ -477,8 +488,9 @@ export function SalesDealsPage() {
               <div className="flex-1 grid place-items-center px-3 pb-4 text-center">
                 <span className="text-[11px] text-gray-400">
                   {cl.kind === 'won'
-                    ? 'перетащите, чтобы закрыть сделку победой'
-                    : 'перетащите — спросим причину отказа'}
+                    ? 'перетащите, чтобы закрыть победой'
+                    : 'перетащите — спросим причину'}
+                  <span className="block mt-1 text-blue-600">нажмите, чтобы открыть список</span>
                 </span>
               </div>
             </section>
@@ -522,11 +534,24 @@ export function SalesDealsPage() {
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{days(d.stage_since)} дн</td>
                       <td className="px-4 py-2.5">
-                        {problem
-                          ? <span className="text-[11px] text-red-600">{problem}</span>
-                          : <span className="text-gray-600">{d.next_step || '—'}</span>}
-                        {d.next_step_at && (
-                          <div className="text-[11px] text-gray-400">{fmtDateTime(d.next_step_at)}</div>
+                        {d.won_at ? (
+                          <span className="text-emerald-700">выиграна {fmtDateTime(d.won_at)}</span>
+                        ) : d.lost_at ? (
+                          <>
+                            <span className="text-red-600">{d.lost_reason || 'причина не указана'}</span>
+                            <div className="text-[11px] text-gray-400">
+                              {[d.lost_comment, fmtDateTime(d.lost_at)].filter(Boolean).join(' · ')}
+                            </div>
+                          </>
+                        ) : problem ? (
+                          <span className="text-[11px] text-red-600">{problem}</span>
+                        ) : (
+                          <>
+                            <span className="text-gray-600">{d.next_step || '—'}</span>
+                            {d.next_step_at && (
+                              <div className="text-[11px] text-gray-400">{fmtDateTime(d.next_step_at)}</div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">

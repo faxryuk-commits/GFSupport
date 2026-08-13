@@ -137,6 +137,10 @@ export default async function handler(req: Request): Promise<Response> {
   }
   if (view === 'reactivation') conds.push('d.reactivate_at IS NOT NULL AND d.reactivate_at <= NOW()')
   if (view === 'archive') conds.push('(d.won_at IS NOT NULL OR d.lost_at IS NOT NULL)')
+  // Закрытые сделки: выигранные и проигранные смотрят отдельно и почти всегда
+  // за период — «все 3400 проигранных» никому не нужны
+  if (view === 'won') conds.push('d.won_at IS NOT NULL')
+  if (view === 'lost') conds.push('d.lost_at IS NOT NULL')
   if (view === 'all') conds.push('d.won_at IS NULL AND d.lost_at IS NULL')
 
   const where = conds.join(' AND ')
@@ -156,6 +160,7 @@ export default async function handler(req: Request): Promise<Response> {
             a.name AS account, a.city,
             ag.name AS owner_name,
             src.label AS source,
+            lr.label AS lost_reason, d.lost_comment,
             (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens`
 
   const FROM_JOINS = `FROM sales_deals d
@@ -163,7 +168,8 @@ export default async function handler(req: Request): Promise<Response> {
      LEFT JOIN sales_accounts a ON a.id = d.account_id
      LEFT JOIN support_agents ag ON ag.id = d.owner_agent_id
      LEFT JOIN sales_leads l ON l.id = d.source_lead_id
-     LEFT JOIN sales_sources src ON src.id = l.source_id`
+     LEFT JOIN sales_sources src ON src.id = l.source_id
+     LEFT JOIN sales_lost_reasons lr ON lr.id = d.lost_reason_id`
 
   const rows = perStage
     ? await sql.query(

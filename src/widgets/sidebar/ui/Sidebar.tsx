@@ -20,7 +20,9 @@ import {
   Bot,
   Waypoints,
 } from 'lucide-react'
-import { BarChart3, Plug } from 'lucide-react'
+import {
+  BarChart3, Plug, ListChecks, Handshake, Inbox, Building2, PieChart, SlidersHorizontal,
+} from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
 // CSS for coin flip and shine animations
@@ -221,12 +223,14 @@ const navGroups: NavGroup[] = [
   {
     label: 'Продажи',
     items: [
-      { path: '/sales/queue', label: 'Очередь дня', icon: Target },
-      { path: '/sales/deals', label: 'Сделки', icon: Briefcase },
-      { path: '/sales/leads', label: 'Лиды', icon: MessageSquare },
-      { path: '/sales/accounts', label: 'Аккаунты', icon: Hash },
-      { path: '/sales/reports', label: 'Отчёты продаж', icon: BarChart3 },
-      { path: '/sales/settings', label: 'Справочники продаж', icon: Settings },
+      // Иконки у продаж свои: раньше «Лиды» и «Чаты» делили один значок, а
+      // «Аккаунты» и «Каналы» — решётку, и в свёрнутом меню они были неразличимы
+      { path: '/sales/queue', label: 'Очередь дня', icon: ListChecks, badgeKey: 'salesQueue' },
+      { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals' },
+      { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads' },
+      { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },
+      { path: '/sales/reports', label: 'Отчёты продаж', icon: PieChart },
+      { path: '/sales/settings', label: 'Справочники продаж', icon: SlidersHorizontal },
     ],
   },
   {
@@ -275,6 +279,43 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
     return saved === 'true'
   })
   
+  // Свёрнутые разделы запоминаем: у каждого своя половина системы, и каждый
+  // раз сворачивать чужое заново — раздражение на ровном месте
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('sidebar_collapsed_groups') || '[]') } catch { return [] }
+  })
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups(prev => {
+      const next = prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]
+      localStorage.setItem('sidebar_collapsed_groups', JSON.stringify(next))
+      return next
+    })
+  }
+
+  // Счётчики продаж: сколько ждёт лично тебя, а не сколько всего в системе
+  const [salesBadges, setSalesBadges] = useState<Record<string, number>>({})
+  useEffect(() => {
+    let alive = true
+    const load = () => {
+      const token = localStorage.getItem('support_agent_token')
+      if (!token || document.visibilityState === 'hidden') return
+      fetch('/api/support/sales/queue', { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (!alive || !d) return
+          setSalesBadges({
+            salesQueue: (d.sla?.length || 0) + (d.tasks?.length || 0),
+            salesDeals: d.stats?.hot_deals ?? 0,
+            salesLeads: d.stats?.new_leads ?? 0,
+          })
+        })
+        .catch(() => {})
+    }
+    load()
+    const timer = setInterval(load, 60000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+
   // Track animated badges
   const [animatingBadges, setAnimatingBadges] = useState<Set<string>>(new Set())
   const prevUpdatedRef = useRef(0) // Трекаем последний timestamp обновления
@@ -307,7 +348,8 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
   const badges: Record<string, number> = {
     unreadChats,
     openCases,
-    pendingCommitments
+    pendingCommitments,
+    ...salesBadges,
   }
 
   // Trigger animation when data is updated (every 30 seconds)
@@ -494,21 +536,46 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
 
       {/* Main Navigation — 4 группы (Операции / Аналитика / Автоматизация / Система) */}
       <nav className="flex-1 px-3 overflow-y-auto py-2">
-        {visibleGroups.map((group, gi) => (
-          <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
-            {!isCollapsed && (
-              <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-[#5d6f96]">
-                {group.label}
-              </div>
-            )}
-            {isCollapsed && gi > 0 && <div className="my-2 mx-3 border-t border-white/10" />}
-            <div className="space-y-0.5">
-              {group.items.map(item => (
-                <NavItem key={item.path} {...item} />
-              ))}
+        {visibleGroups.map((group, gi) => {
+          // Раздел с активной страницей раскрыт всегда: свернуть то, в чём
+          // сейчас работаешь, — способ потерять себя в меню
+          const hasActive = group.items.some(i => location.pathname.startsWith(i.path))
+          const open = hasActive || !collapsedGroups.includes(group.label)
+          // Сумма по разделу: свёрнутый раздел не должен прятать, что там горит
+          const groupCount = group.items.reduce(
+            (sum, i) => sum + (i.badgeKey ? badges[i.badgeKey] || 0 : 0), 0)
+
+          return (
+            <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+              {!isCollapsed && (
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className="w-full flex items-center gap-1.5 px-3 pb-1.5 text-[10px] font-bold
+                             uppercase tracking-[0.09em] text-[#5d6f96] hover:text-[#8fa3c8]"
+                >
+                  <ChevronDown
+                    className={`w-3 h-3 transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
+                  />
+                  <span>{group.label}</span>
+                  {groupCount > 0 && (
+                    <span className={`ml-auto min-w-[18px] text-center text-[10px] font-bold px-1.5 py-0.5
+                                     rounded-full ${open ? 'bg-white/10 text-[#8fa3c8]' : 'bg-blue-600 text-white'}`}>
+                      {groupCount > 99 ? '99+' : groupCount}
+                    </span>
+                  )}
+                </button>
+              )}
+              {isCollapsed && gi > 0 && <div className="my-2 mx-3 border-t border-white/10" />}
+              {(open || isCollapsed) && (
+                <div className="space-y-0.5">
+                  {group.items.map(item => (
+                    <NavItem key={item.path} {...item} />
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </nav>
 
       {/* Bottom — пользователь */}

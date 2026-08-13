@@ -132,7 +132,14 @@ export default async function handler(req: Request): Promise<Response> {
         (SELECT COUNT(*) FROM sales_tasks t WHERE t.org_id = ${orgId}
            AND t.assignee_agent_id = ${agentId} AND t.done_at IS NULL AND t.due_at < NOW()) AS overdue_tasks,
         (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
-           AND d.owner_agent_id = ${agentId} AND d.won_at >= date_trunc('month', NOW())) AS won_this_month
+           AND d.owner_agent_id = ${agentId} AND d.won_at >= date_trunc('month', NOW())) AS won_this_month,
+        -- Для значков в меню: что горит лично у этого сейлза
+        (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
+           AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
+           AND d.archived_at IS NULL
+           AND (d.stalled_at IS NOT NULL OR d.next_step_at IS NULL)) AS hot_deals,
+        (SELECT COUNT(*) FROM sales_leads l WHERE l.org_id = ${orgId}
+           AND l.archived_at IS NULL AND l.status = 'new') AS new_leads
     `,
   ])
 
