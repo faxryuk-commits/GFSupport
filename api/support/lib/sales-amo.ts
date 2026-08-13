@@ -136,12 +136,14 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
     city: cf(lead, 'Город') || null,
     market: marketByPipeline(lead.pipeline_id),
     form_id: formId || lead._unsorted_meta?.form_id || null,
-    text: lead.name || null,
     orders_per_day: cf(lead, 'Заказы в день') || null,
     points: cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || null,
     pos: cf(lead, 'POS') || null,
     aggregators: cf(lead, 'Работает ли в агрегаторах') || null,
     delivery_type: cf(lead, 'Есть ли свои курьеры') || null,
+    // Реально заполняемые менеджерами поля — по ним сейлз понимает, что за лид
+    text: [cf(lead, 'Направление'), cf(lead, 'Источник лида'), cf(lead, 'Модули')]
+      .filter(Boolean).join(' · ') || lead.name || null,
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
     owner_hint: agentByAmoUser(lead.responsible_user_id),
     raw: lead,

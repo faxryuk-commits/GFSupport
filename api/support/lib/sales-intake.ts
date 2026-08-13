@@ -72,10 +72,36 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       LIMIT 1
     `
     if (existing) {
+      // Лид приезжает почти пустым, а менеджер заполняет поля в Amo позже.
+      // Поэтому при повторной доставке обновляем то, что могло уточниться, и
+      // пересчитываем оценку — иначе в карточке навсегда остаётся первый снимок
+      // с названием вида «Заявка с рекламной формы».
+      const icpFresh = scoreIcp({
+        ordersPerDay: body.orders_per_day, points: body.points, pos: body.pos,
+        aggregators: body.aggregators, deliveryType: body.delivery_type,
+        city: body.city, text: body.text,
+      })
+      const betterName = name && !/^Заявка (с|из)|^Без названия$/i.test(name) ? name : null
       await sql`
-        UPDATE sales_leads SET raw = ${JSON.stringify(body.raw ?? body)}::jsonb
+        UPDATE sales_leads SET
+          raw = ${JSON.stringify(body.raw ?? body)}::jsonb,
+          name = COALESCE(${betterName}, name),
+          city = COALESCE(${body.city || null}, city),
+          phone = COALESCE(${phone}, phone),
+          phone_norm = COALESCE(${phoneNorm}, phone_norm),
+          campaign = COALESCE(${body.campaign || null}, campaign),
+          text = COALESCE(${body.text || null}, text),
+          icp_score = ${icpFresh.score},
+          icp_reasons = ${JSON.stringify(icpFresh.reasons)}::jsonb
         WHERE id = ${existing.id}
       `
+      // Название аккаунта тоже подтягиваем: именно оно видно в списках
+      if (betterName && existing.account_id) {
+        await sql`
+          UPDATE sales_accounts SET name = ${betterName}, city = COALESCE(${body.city || null}, city)
+          WHERE id = ${existing.account_id} AND (name ~* '^(Заявка |Без названия)' OR name = '')
+        `
+      }
       return { ok: true, lead_id: existing.id, account_id: existing.account_id, deduped: true }
     }
   }

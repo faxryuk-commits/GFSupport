@@ -79,6 +79,8 @@ export default async function handler(req: Request): Promise<Response> {
   const rows = await sql.query(
     `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
             l.sla_due_at, l.first_touch_at, l.created_at, l.campaign, l.text,
+            l.raw->>'pos' AS pos, l.raw->>'orders_per_day' AS orders_per_day,
+            (l.raw->>'points')::text AS points,
             s.key AS source_key, s.label AS source,
             a.id AS account_id, a.name AS account_name, a.created_at AS account_created,
             ag.name AS agent_name

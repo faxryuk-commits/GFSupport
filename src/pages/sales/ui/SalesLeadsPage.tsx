@@ -15,6 +15,9 @@ interface Lead {
   name: string
   phone: string | null
   city: string | null
+  pos?: string | null
+  orders_per_day?: string | null
+  points?: number | null
   icp_score: number | null
   icp_reasons: Array<{ label: string; points: number }> | null
   status: string
@@ -162,6 +165,15 @@ export function SalesLeadsPage() {
                         <div className="text-[11px] text-gray-400">
                           {[l.city, l.phone, fmtDate(l.created_at)].filter(Boolean).join(' · ')}
                         </div>
+                        {/* Качественные признаки лида: по ним сейлз решает,
+                            брать ли, не открывая карточку */}
+                        {(l.pos || l.orders_per_day || l.points) && (
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {l.pos && <Chip tone="violet">POS {l.pos}</Chip>}
+                            {l.orders_per_day && <Chip tone="green">{l.orders_per_day} зак/день</Chip>}
+                            {l.points ? <Chip tone="blue">{l.points} точек</Chip> : null}
+                          </div>
+                        )}
                         {l.text && (
                           <div className="text-[11px] text-gray-500 mt-1 max-w-[320px] line-clamp-2">
                             «{l.text.slice(0, 140)}»
