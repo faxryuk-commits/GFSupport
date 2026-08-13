@@ -1,89 +1,54 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useMarket, MARKET_CHANGED_EVENT } from '@/shared/hooks/useMarket'
 
 /**
- * Регион продаж — сквозной разделитель всех страниц модуля.
+ * Регион продаж берётся из общего переключателя рынка в шапке приложения.
  *
- * У каждого рынка своя воронка со своими этапами, своя валюта и своё юрлицо,
- * поэтому смешанные списки из разных стран — каша, в которой сейлз не понимает,
- * чью сделку он видит. Выбор живёт в localStorage и переживает переходы между
- * страницами: ушёл в «Сделки» — остался в том же регионе.
+ * Свой фильтр на каждой странице был ошибкой: их получалось шесть, они не
+ * договаривались между собой и сбрасывались при переходах. Управление одно —
+ * в шапке; страницы модуля только показывают, в каком регионе идёт работа.
  *
- * Это не то же самое, что рынок в шапке приложения: тот хранит id рынка
- * поддержки (market_1772…) и знает только про страны, где есть каналы. Регионов
- * продаж больше, поэтому у модуля свой переключатель. На бэке region главнее.
+ * Переключатель хранит id рынка (market_1772…), а продажи всюду работают кодом
+ * страны — перевод делает и клиент (для подписи), и сервер (для фильтра).
  */
 
-const KEY = 'sales_region'
-const EVT = 'gfsupport:sales-region'
-
-export const REGIONS: Array<[string, string, string]> = [
-  ['uz', 'Узбекистан', '🇺🇿'],
-  ['kz', 'Казахстан', '🇰🇿'],
-  ['az', 'Азербайджан', '🇦🇿'],
-  ['ge', 'Грузия', '🇬🇪'],
-  ['ae', 'ОАЭ', '🇦🇪'],
-]
-
-export function regionLabel(code: string): string {
-  const r = REGIONS.find(x => x[0] === code)
-  return r ? `${r[2]} ${r[1]}` : code
+export const REGION_NAMES: Record<string, string> = {
+  uz: 'Узбекистан', kz: 'Казахстан', az: 'Азербайджан', ge: 'Грузия', ae: 'ОАЭ',
 }
 
-export function getRegion(): string {
-  return localStorage.getItem(KEY) || ''
-}
+/** Код текущего региона ('uz') или '' для режима «все рынки». */
+export function useRegion(): string {
+  const { markets, selectedMarket } = useMarket()
+  const [, force] = useState(0)
 
-/** Добавляет регион к адресу запроса — один и тот же приём на всех страницах. */
-export function withRegion(path: string): string {
-  const region = getRegion()
-  if (!region) return path
-  return `${path}${path.includes('?') ? '&' : '?'}region=${region}`
-}
-
-export function useRegion(): [string, (v: string) => void] {
-  const [region, setState] = useState(getRegion)
-
+  // Переключение рынка в шапке — событие на window: списки должны перезапроситься
   useEffect(() => {
-    const sync = () => setState(getRegion())
-    window.addEventListener(EVT, sync)
-    return () => window.removeEventListener(EVT, sync)
+    const bump = () => force(n => n + 1)
+    window.addEventListener(MARKET_CHANGED_EVENT, bump)
+    return () => window.removeEventListener(MARKET_CHANGED_EVENT, bump)
   }, [])
 
-  const set = useCallback((v: string) => {
-    if (v) localStorage.setItem(KEY, v)
-    else localStorage.removeItem(KEY)
-    setState(v)
-    window.dispatchEvent(new CustomEvent(EVT))
-  }, [])
-
-  return [region, set]
+  if (!selectedMarket) return ''
+  const m = markets.find(x => x.id === selectedMarket)
+  return (m?.code || '').toLowerCase()
 }
 
-/** Переключатель регионов в шапке страницы. */
-export const RegionSwitch = ({ counts }: { counts?: Record<string, number> }) => {
-  const [region, setRegion] = useRegion()
+/**
+ * Подпись, а не второй орган управления: показывает, в каком регионе вы
+ * работаете, и отправляет менять его туда, где переключатель один.
+ */
+export const RegionBadge = () => {
+  const region = useRegion()
+  const label = region ? REGION_NAMES[region] || region.toUpperCase() : 'Все регионы'
   return (
-    <div className="inline-flex items-center rounded-lg border border-gray-300 overflow-hidden bg-white">
-      {([['', 'Все регионы', '🌍'], ...REGIONS] as Array<[string, string, string]>).map(([code, name, flag]) => (
-        <button
-          key={code || 'all'}
-          onClick={() => setRegion(code)}
-          title={name}
-          className={`text-[12px] px-2.5 py-1.5 border-r border-gray-200 last:border-r-0 whitespace-nowrap ${
-            region === code ? 'bg-blue-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <span className="mr-1">{flag}</span>
-          {name}
-          {counts?.[code] ? (
-            <span className={`ml-1.5 text-[10.5px] px-1.5 py-0.5 rounded ${
-              region === code ? 'bg-white/20' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {counts[code]}
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
+    <span
+      title="Регион переключается в шапке слева — один на всю систему"
+      className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg ${
+        region ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${region ? 'bg-blue-600' : 'bg-gray-400'}`} />
+      {label}
+    </span>
   )
 }

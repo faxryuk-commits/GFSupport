@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 /** Общие мелочи страниц продаж: одни и те же чипы, карточки и форматы. */
@@ -141,4 +142,111 @@ export const Empty = ({ title, hint }: { title: string; hint?: string }) => (
     <div className="text-[15px] font-medium text-gray-900">{title}</div>
     {hint && <p className="text-[13px] text-gray-500 mt-1">{hint}</p>}
   </div>
+)
+
+/**
+ * Дата с временем в рабочей зоне. Раньше на карточках стояла только дата, и
+ * «сегодня» невозможно было отличить от «сегодня утром» — а для SLA в 15 минут
+ * это и есть вся информация.
+ */
+export { formatDateTimeShort as fmtDateTime, formatDateShort } from '@/shared/lib/time'
+
+/**
+ * Тон срока: сколько осталось до дедлайна. Считаем в минутах, потому что у
+ * первого касания норматив 15 минут, а у этапа — дни; одна шкала на оба случая.
+ */
+export function slaTone(due: string | null | undefined): 'gray' | 'green' | 'amber' | 'red' {
+  if (!due) return 'gray'
+  const left = (new Date(due.includes('Z') || due.includes('+') ? due : due + 'Z').getTime() - Date.now()) / 60000
+  if (left < 0) return 'red'
+  if (left < 60) return 'amber'
+  return 'green'
+}
+
+/** «через 12 мин» / «просрочено на 2 ч» — человеку понятнее, чем таймстамп. */
+export function slaText(due: string | null | undefined): string {
+  if (!due) return '—'
+  const left = (new Date(due.includes('Z') || due.includes('+') ? due : due + 'Z').getTime() - Date.now()) / 60000
+  const abs = Math.abs(left)
+  const unit = abs < 60 ? `${Math.round(abs)} мин`
+    : abs < 1440 ? `${Math.round(abs / 60)} ч`
+    : `${Math.round(abs / 1440)} дн`
+  return left < 0 ? `просрочено на ${unit}` : `через ${unit}`
+}
+
+/**
+ * Списки обновляются сами: раз в 30 секунд и при возврате на вкладку.
+ * Кнопка «Обновить» — просьба к человеку делать работу машины, поэтому её нет.
+ */
+export function useAutoRefresh(load: () => void, ms = 30000) {
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load()
+    }, ms)
+    const onFocus = () => { if (document.visibilityState === 'visible') load() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [load, ms])
+}
+
+/** Модальное окно для форм заведения и подтверждений. */
+export const Modal = ({ title, sub, onClose, children, footer }: {
+  title: string; sub?: string; onClose: () => void; children: ReactNode; footer?: ReactNode
+}) => (
+  <div className="fixed inset-0 z-50 flex items-start justify-center bg-gray-900/40 p-4 overflow-y-auto"
+       onClick={onClose}>
+    <div className="bg-white rounded-xl w-full max-w-lg mt-16 shadow-xl" onClick={e => e.stopPropagation()}>
+      <header className="px-5 py-4 border-b border-gray-100">
+        <h3 className="text-[15px] font-semibold text-gray-900">{title}</h3>
+        {sub && <p className="text-[12px] text-gray-500 mt-0.5">{sub}</p>}
+      </header>
+      <div className="px-5 py-4 space-y-3">{children}</div>
+      <footer className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">{footer}</footer>
+    </div>
+  </div>
+)
+
+/** Поле формы: либо свободный ввод, либо список значений из справочника. */
+export const Field = ({ label, value, onChange, options, placeholder, hint, type = 'text' }: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options?: string[]
+  placeholder?: string
+  hint?: string
+  type?: string
+}) => (
+  <label className="block">
+    <span className="text-[11.5px] font-medium text-gray-600">{label}</span>
+    {options?.length ? (
+      <>
+        {/* Список подсказывает норму написания, но не запрещает своё значение */}
+        <input list={`opt-${label}`} value={value} onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]" />
+        <datalist id={`opt-${label}`}>
+          {options.map(o => <option key={o} value={o} />)}
+        </datalist>
+      </>
+    ) : (
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]" />
+    )}
+    {hint && <span className="text-[11px] text-gray-400 mt-0.5 block">{hint}</span>}
+  </label>
+)
+
+export const Btn = ({ kind = 'ghost', children, ...rest }: any) => (
+  <button {...rest}
+    className={`text-[12.5px] px-3 py-1.5 rounded-lg disabled:opacity-50 ${
+      kind === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700'
+      : kind === 'danger' ? 'border border-red-200 text-red-600 hover:bg-red-50'
+      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:text-blue-600'}`}>
+    {children}
+  </button>
 )

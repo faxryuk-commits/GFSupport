@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { Card, Chip, Empty, Kpis, Tabs, fmtDate, pct, Pager, PageShell, Th } from './kit'
-import { RegionSwitch, useRegion } from './region'
+import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
+         Modal, Field, Btn, useAutoRefresh, slaTone, slaText } from './kit'
+import { RegionBadge, useRegion } from './region'
+import { useSalesRefs, optionsFor } from './refs'
 
 /**
  * Лиды — входящие обращения из всех каналов в одной таблице.
@@ -50,6 +52,7 @@ const VIEWS: Array<[string, string]> = [
   ['queue', 'Ждут распределения'],
   ['dupes', 'Дубли и склейки'],
   ['nurture', 'На прогреве'],
+  ['archived', 'Архив'],
 ]
 
 const STATUS_TONE: Record<string, string> = {
@@ -67,12 +70,15 @@ export function SalesLeadsPage() {
   const [error, setError] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
   const LIMIT = 50
-  const [region] = useRegion()
+  const region = useRegion()
   const [busy, setBusy] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const refs = useSalesRefs()
+  const blank = { name: '', phone: '', city: '', pos: '', orders_per_day: '', text: '', source: 'manual' }
+  const [form, setForm] = useState(blank)
 
   const load = useCallback(() => {
     const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
-    if (region) p.set('region', region)
     if (source) p.set('source', source)
     if (q) p.set('q', q)
     apiGet<LeadsData>(`/sales/leads?${p.toString()}`, false)
@@ -84,6 +90,24 @@ export function SalesLeadsPage() {
     const t = setTimeout(load, q ? 350 : 0)
     return () => clearTimeout(t)
   }, [load, q])
+
+  useAutoRefresh(load)
+
+  const create = async () => {
+    if (!form.name && !form.phone) { setError('Укажите бренд или телефон'); return }
+    setBusy('new')
+    try {
+      await apiPost('/sales/leads?action=create', { ...form, market: region || undefined })
+      setCreating(false)
+      setForm(blank)
+      setError(null)
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось завести лид')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const act = async (action: string, leadId: string) => {
     setBusy(leadId)
@@ -112,9 +136,10 @@ export function SalesLeadsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <RegionSwitch />
+          <RegionBadge />
+          <Btn kind="primary" onClick={() => setCreating(true)}>+ Лид</Btn>
           <Link to="/sales/queue" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-          Моя очередь
+            Моя очередь
           </Link>
         </div>
       </div>
@@ -176,8 +201,17 @@ export function SalesLeadsPage() {
                       <td className="px-4 py-2.5">
                         <div className="font-semibold text-gray-900">{l.name}</div>
                         <div className="text-[11px] text-gray-400">
-                          {[l.city, l.phone, fmtDate(l.created_at)].filter(Boolean).join(' · ')}
+                          {[l.city, l.phone, fmtDateTime(l.created_at)].filter(Boolean).join(' · ')}
                         </div>
+                        {/* Норматив первого касания — 15 минут: без срока рядом
+                            со строкой он существует только в отчёте задним числом */}
+                        {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
+                          <div className="mt-1">
+                            <Chip tone={slaTone(l.sla_due_at)}>
+                              первое касание {slaText(l.sla_due_at)}
+                            </Chip>
+                          </div>
+                        )}
                         {/* Качественные признаки лида: по ним сейлз решает,
                             брать ли, не открывая карточку */}
                         {(l.pos || l.orders_per_day || l.points) && (
@@ -215,7 +249,12 @@ export function SalesLeadsPage() {
                         {merged && <div className="text-[11px] text-emerald-600 mt-0.5">приклеен к существующему</div>}
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                        {l.status !== 'converted' && (
+                        {view === 'archived' ? (
+                          <button disabled={busy === l.id} onClick={() => act('restore', l.id)}
+                            className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg disabled:opacity-50">
+                            Вернуть
+                          </button>
+                        ) : l.status !== 'converted' && (
                           <>
                             <button disabled={busy === l.id} onClick={() => act('assign', l.id)}
                               className="text-[12px] px-2.5 py-1 bg-blue-600 text-white rounded-lg disabled:opacity-50">
@@ -227,6 +266,11 @@ export function SalesLeadsPage() {
                                 На прогрев
                               </button>
                             )}
+                            <button disabled={busy === l.id} onClick={() => act('archive', l.id)}
+                              title="Убрать из списка, сохранив в истории"
+                              className="ml-1.5 text-[12px] px-2 py-1 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200 disabled:opacity-50">
+                              В архив
+                            </button>
                           </>
                         )}
                       </td>
@@ -242,6 +286,51 @@ export function SalesLeadsPage() {
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
+
+      {creating && (
+        <Modal
+          title="Новый лид"
+          sub="звонок, выставка, рекомендация — всё, что пришло мимо рекламы"
+          onClose={() => setCreating(false)}
+          footer={
+            <>
+              <Btn onClick={() => setCreating(false)}>Отмена</Btn>
+              <Btn kind="primary" disabled={busy === 'new'} onClick={create}>
+                {busy === 'new' ? 'Заводим…' : 'Завести и взять себе'}
+              </Btn>
+            </>
+          }
+        >
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Бренд" value={form.name} onChange={v => setForm({ ...form, name: v })}
+              placeholder="Чайхана Хадия" />
+            <Field label="Телефон" value={form.phone} onChange={v => setForm({ ...form, phone: v })}
+              placeholder="+998 90 123 45 67" hint="по нему идёт склейка с существующим клиентом" />
+            <Field label="Город" value={form.city} onChange={v => setForm({ ...form, city: v })}
+              options={optionsFor(refs, 'city', region)} />
+            <Field label="POS-система" value={form.pos} onChange={v => setForm({ ...form, pos: v })}
+              options={optionsFor(refs, 'pos')} />
+            <Field label="Заказов в день" value={form.orders_per_day}
+              onChange={v => setForm({ ...form, orders_per_day: v })}
+              options={optionsFor(refs, 'orders_per_day')} />
+            <label className="block">
+              <span className="text-[11.5px] font-medium text-gray-600">Источник</span>
+              <select value={form.source} onChange={e => setForm({ ...form, source: e.target.value })}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]">
+                {(refs?.sources || []).filter(x => x.is_active !== false).map(x => (
+                  <option key={x.key} value={x.key}>{x.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-[11.5px] font-medium text-gray-600">Что просит</span>
+            <textarea value={form.text} onChange={e => setForm({ ...form, text: e.target.value })}
+              rows={2} placeholder="Своими словами: что нужно клиенту"
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]" />
+          </label>
+        </Modal>
+      )}
     </PageShell>
   )
 }

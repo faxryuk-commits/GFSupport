@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet } from '@/shared/services/api.service'
 import { Card, Chip, Kpis, money, pct, PageShell } from './kit'
-import { RegionSwitch, useRegion, withRegion } from './region'
+import { RegionBadge, useRegion } from './region'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -14,11 +14,11 @@ export function SalesReportsPage() {
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState('90')
-  const [region] = useRegion()
+  const region = useRegion()
 
   const load = useCallback(() => {
     const from = new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10)
-    apiGet<any>(withRegion(`/sales/reports?from=${from}`), false)
+    apiGet<any>(`/sales/reports?from=${from}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить отчёты'))
   }, [period, region])
@@ -44,7 +44,7 @@ export function SalesReportsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-        <RegionSwitch />
+        <RegionBadge />
         <div className="flex gap-1 border border-gray-300 rounded-lg overflow-hidden">
           {[['30', 'Месяц'], ['90', 'Квартал'], ['365', 'Год']].map(([v, l]) => (
             <button key={v} onClick={() => setPeriod(v)}

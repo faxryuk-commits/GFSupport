@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Empty, Pager, PageShell, Th, money } from './kit'
-import { RegionSwitch, useRegion } from './region'
+import { Link, useNavigate } from 'react-router-dom'
+import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
+import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
+         useAutoRefresh, fmtDateTime } from './kit'
+import { RegionBadge, useRegion } from './region'
+import { useSalesRefs, optionsFor } from './refs'
 
 /**
  * Список сделок: канбан и таблица над одними данными.
@@ -26,6 +28,7 @@ interface Deal {
   stalled_at: string | null
   next_step: string | null
   next_step_at: string | null
+  created_at: string
   owner_name: string | null
   source: string | null
   doc_opens: number | null
@@ -50,6 +53,11 @@ interface DealsData {
   }
   owners: Array<{ id: string; name: string }>
   hasMore: boolean
+}
+
+const BLANK = {
+  title: '', city: '', pos: '', ordersPerDay: '', points: '',
+  tariff: '', monthlyAmount: '', dealType: 'new',
 }
 
 const VIEWS = [
@@ -81,14 +89,18 @@ export function SalesDealsPage() {
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
   const [offset, setOffset] = useState(0)
-  const [region] = useRegion()
+  const region = useRegion()
+  const refs = useSalesRefs()
+  const navigate = useNavigate()
+  const [creating, setCreating] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState(BLANK)
   const LIMIT = 50
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
-    if (region) params.set('region', region)
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
@@ -98,6 +110,40 @@ export function SalesDealsPage() {
     const t = setTimeout(load, q ? 350 : 0)   // поиск не дёргает сервер на каждую букву
     return () => clearTimeout(t)
   }, [load, q])
+
+  // Список живёт сам: раз в полминуты и при возврате на вкладку
+  useAutoRefresh(load)
+
+  const create = async () => {
+    if (!form.title.trim()) { setError('Укажите название сделки'); return }
+    setSaving(true)
+    try {
+      const res: any = await apiPost('/sales/deals', {
+        ...form,
+        market: region || undefined,
+        monthlyAmount: form.monthlyAmount ? Number(form.monthlyAmount.replace(/\s/g, '')) : null,
+      })
+      setCreating(false)
+      setForm(BLANK)
+      setError(null)
+      if (res?.id) navigate(`/sales/deals/${res.id}`)
+      else load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось завести сделку')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const archive = async (id: string, title: string) => {
+    if (!confirm(`Убрать «${title}» в архив? Сделка исчезнет из списков, но останется в истории аккаунта.`)) return
+    try {
+      await apiDelete(`/sales/deals?id=${id}`)
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось убрать в архив')
+    }
+  }
 
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
   if (!data) return <div className="p-6 text-sm text-gray-400">Загружаем сделки…</div>
@@ -117,7 +163,7 @@ export function SalesDealsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <RegionSwitch />
+          <RegionBadge />
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
             {(['kanban', 'table'] as const).map(m => (
               <button key={m} onClick={() => setMode(m)}
@@ -126,9 +172,7 @@ export function SalesDealsPage() {
               </button>
             ))}
           </div>
-          <button onClick={load} className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-            Обновить
-          </button>
+          <Btn kind="primary" onClick={() => setCreating(true)}>+ Сделка</Btn>
         </div>
       </div>
     }>
@@ -219,6 +263,7 @@ export function SalesDealsPage() {
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400">
                   <Th>Сделка</Th><Th>Этап</Th><Th>Сейлз</Th>
                   <Th align="right">В месяц</Th><Th align="right">На этапе</Th><Th>Следующий шаг</Th>
+                  <Th align="right"></Th>
                 </tr>
               </thead>
               <tbody>
@@ -231,7 +276,7 @@ export function SalesDealsPage() {
                           {d.account || d.title}
                         </Link>
                         <div className="text-[11px] text-gray-400 whitespace-nowrap">
-                          {[d.city, d.source].filter(Boolean).join(' · ')}
+                          {[d.city, d.source, `создана ${fmtDateTime(d.created_at)}`].filter(Boolean).join(' · ')}
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
@@ -248,6 +293,16 @@ export function SalesDealsPage() {
                         {problem
                           ? <span className="text-[11px] text-red-600">{problem}</span>
                           : <span className="text-gray-600">{d.next_step || '—'}</span>}
+                        {d.next_step_at && (
+                          <div className="text-[11px] text-gray-400">{fmtDateTime(d.next_step_at)}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button onClick={() => archive(d.id, d.account || d.title)}
+                          title="Убрать в архив"
+                          className="text-[11.5px] px-2 py-1 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+                          В архив
+                        </button>
                       </td>
                     </tr>
                   )
@@ -268,6 +323,48 @@ export function SalesDealsPage() {
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
+
+      {creating && (
+        <Modal
+          title="Новая сделка"
+          sub="допродажа, рекомендация, разговор на выставке — то, что пришло без лида"
+          onClose={() => setCreating(false)}
+          footer={
+            <>
+              <Btn onClick={() => setCreating(false)}>Отмена</Btn>
+              <Btn kind="primary" disabled={saving} onClick={create}>
+                {saving ? 'Заводим…' : 'Завести и открыть'}
+              </Btn>
+            </>
+          }
+        >
+          <Field label="Название" value={form.title} onChange={v => setForm({ ...form, title: v })}
+            placeholder="Чайхана Хадия" hint="аккаунт с таким названием создастся автоматически" />
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Город" value={form.city} onChange={v => setForm({ ...form, city: v })}
+              options={optionsFor(refs, 'city', region)} />
+            <Field label="POS-система" value={form.pos} onChange={v => setForm({ ...form, pos: v })}
+              options={optionsFor(refs, 'pos')} />
+            <Field label="Точек" value={form.points} onChange={v => setForm({ ...form, points: v })} />
+            <Field label="Заказов в день" value={form.ordersPerDay}
+              onChange={v => setForm({ ...form, ordersPerDay: v })}
+              options={optionsFor(refs, 'orders_per_day')} />
+            <Field label="Тариф" value={form.tariff} onChange={v => setForm({ ...form, tariff: v })}
+              options={optionsFor(refs, 'tariff')} />
+            <Field label="Подписка в месяц" value={form.monthlyAmount}
+              onChange={v => setForm({ ...form, monthlyAmount: v })} placeholder="1 300 000" />
+          </div>
+          <label className="block">
+            <span className="text-[11.5px] font-medium text-gray-600">Тип</span>
+            <select value={form.dealType} onChange={e => setForm({ ...form, dealType: e.target.value })}
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]">
+              <option value="new">Новый клиент</option>
+              <option value="upsell">Допродажа</option>
+              <option value="renewal">Продление</option>
+            </select>
+          </label>
+        </Modal>
+      )}
     </PageShell>
   )
 }

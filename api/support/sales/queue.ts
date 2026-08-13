@@ -83,11 +83,11 @@ export default async function handler(req: Request): Promise<Response> {
   const [sla, hot, tasks, revival, stats] = await Promise.all([
     // 1. Горит SLA первого касания
     sql`
-      SELECT l.id, l.name, l.icp_score, l.city, l.phone, l.sla_due_at, s.label AS source
+      SELECT l.id, l.name, l.icp_score, l.city, l.phone, l.sla_due_at, l.created_at, s.label AS source
       FROM sales_leads l
       LEFT JOIN sales_sources s ON s.id = l.source_id
       WHERE l.org_id = ${orgId} AND l.assigned_agent_id = ${agentId}
-        AND l.first_touch_at IS NULL AND l.status = 'assigned'
+        AND l.first_touch_at IS NULL AND l.status = 'assigned' AND l.archived_at IS NULL
       ORDER BY l.sla_due_at ASC LIMIT 20
     `,
     // 2. Деньги в одном шаге: договор и КП, где клиент уже читал

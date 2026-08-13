@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
 import { Card, Chip, Empty, fmtDate, money, Pager, PageShell, Th } from './kit'
-import { RegionSwitch, useRegion, withRegion } from './region'
+import { RegionBadge, useRegion } from './region'
 
 /**
  * Список аккаунтов. Один экран для клиентов и партнёров — разница только в
@@ -22,12 +22,12 @@ export function SalesAccountsPage() {
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [offset, setOffset] = useState(0)
-  const [region] = useRegion()
+  const region = useRegion()
   const LIMIT = 50
 
   const load = useCallback(() => {
     apiGet<{ accounts: any[]; hasMore: boolean }>(
-      withRegion(`/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}`), false)
+      `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}`, false)
       .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить список'))
   }, [type, q, offset, region])
@@ -54,7 +54,7 @@ export function SalesAccountsPage() {
           </p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-          <RegionSwitch />
+          <RegionBadge />
           <Link to={type === 'partner' ? '/sales/accounts' : '/sales/partners'}
             className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             {type === 'partner' ? 'К клиентам' : 'К партнёрам'}

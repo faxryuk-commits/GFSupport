@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Link } from 'react-router-dom'
-import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
+import { formatDateTimeShort } from '@/shared/lib/time'
+import { useSalesRefs, optionsFor } from './refs'
 import { QuoteBuilder } from './QuoteBuilder'
 
 /**
@@ -59,10 +61,11 @@ function money(v: any, currency = 'UZS') {
   return `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ${currency}`
 }
 
-function fmtDate(v: string | null) {
-  if (!v) return '—'
-  return new Date(v).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: '2-digit' })
-}
+/**
+ * Даты показываем со временем и в одной рабочей зоне: «сегодня» и «сегодня в
+ * 9:40» — разная информация, когда норматив этапа считается в часах.
+ */
+const fmtDate = (v: string | null) => formatDateTimeShort(v)
 
 const Card = ({ title, sub, right, children }: any) => (
   <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -77,9 +80,16 @@ const Card = ({ title, sub, right, children }: any) => (
   </section>
 )
 
-/** Поле правится по месту: клик — ввод — Enter. Отдельная форма тут лишняя. */
-function InlineField({ label, value, onSave, placeholder, money: isMoney }: {
-  label: string; value: any; onSave: (v: string) => void; placeholder?: string; money?: boolean
+/**
+ * Поле правится по месту: клик — ввод — Enter. Отдельная форма тут лишняя.
+ *
+ * Если у поля есть справочник (город, касса, тариф), ввод превращается в список
+ * с подсказкой: свободный текст расходится в написании и ломает отчёты, но
+ * запрещать своё значение нельзя — жизнь богаче справочника.
+ */
+function InlineField({ label, value, onSave, placeholder, money: isMoney, options }: {
+  label: string; value: any; onSave: (v: string) => void; placeholder?: string
+  money?: boolean; options?: string[]
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -91,9 +101,10 @@ function InlineField({ label, value, onSave, placeholder, money: isMoney }: {
         <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
         <input
           autoFocus
+          list={options?.length ? `dl-${label}` : undefined}
           className="border border-blue-400 rounded-md px-2 py-1 text-[12.5px] w-44"
           value={draft}
-          placeholder={placeholder}
+          placeholder={placeholder || (options?.length ? 'выберите или впишите' : undefined)}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter') { onSave(draft); setEditing(false) }
@@ -101,6 +112,11 @@ function InlineField({ label, value, onSave, placeholder, money: isMoney }: {
           }}
           onBlur={() => { if (draft) onSave(draft); setEditing(false) }}
         />
+        {options?.length ? (
+          <datalist id={`dl-${label}`}>
+            {options.map(o => <option key={o} value={o} />)}
+          </datalist>
+        ) : null}
       </div>
     )
   }
@@ -126,6 +142,7 @@ export function SalesDealPage() {
   const [busy, setBusy] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const refs = useSalesRefs()
 
   const load = useCallback(() => {
     if (!id) return
@@ -135,6 +152,17 @@ export function SalesDealPage() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  const archive = async () => {
+    if (!id) return
+    if (!confirm('Убрать сделку в архив? Она исчезнет из списков и отчётов по воронке, но останется в истории аккаунта.')) return
+    try {
+      await apiDelete(`/sales/deals?id=${id}`)
+      window.location.href = '/sales/deals'
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось убрать в архив')
+    }
+  }
 
   const patch = async (field: string, value: string) => {
     if (!id) return
@@ -222,8 +250,18 @@ export function SalesDealPage() {
               </>
             )}
           </div>
-          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">
+          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight flex items-center gap-2">
             {data.account?.name || d.title}
+            <button
+              title="Переименовать сделку"
+              onClick={() => {
+                const next = prompt('Название сделки', d.title || '')
+                if (next && next.trim() && next !== d.title) patch('title', next.trim())
+              }}
+              className="text-[12px] font-normal text-gray-400 hover:text-blue-600"
+            >
+              переименовать
+            </button>
           </h1>
           <p className="text-[12.5px] text-gray-500 mt-0.5">
             {[data.currentStage?.label, d.city, d.pos, d.points ? `${d.points} точек` : null]
@@ -249,6 +287,10 @@ export function SalesDealPage() {
               </button>
             </>
           )}
+          <button onClick={archive} title="Убрать из списков, сохранив в истории аккаунта"
+            className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
+            В архив
+          </button>
         </div>
       </div>
 
@@ -301,6 +343,7 @@ export function SalesDealPage() {
                       label={miss?.label || data.labels?.[f] || f}
                       value={d[f]}
                       money={MONEY_FIELDS.has(f)}
+                      options={optionsFor(refs, f, d.market_id)}
                       onSave={v => patch(f, v)}
                     />
                   )
@@ -320,7 +363,8 @@ export function SalesDealPage() {
           <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
             <div className="grid sm:grid-cols-2">
               {QUAL_FIELDS.map(([f, label]) => (
-                <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)} />
+                <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)}
+                  options={optionsFor(refs, f, d.market_id)} />
               ))}
             </div>
           </Card>
@@ -329,7 +373,7 @@ export function SalesDealPage() {
             <div className="grid sm:grid-cols-2">
               {COMMERCIAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} money={MONEY_FIELDS.has(f)}
-                  onSave={v => patch(f, v)} />
+                  onSave={v => patch(f, v)} options={optionsFor(refs, f, d.market_id)} />
               ))}
             </div>
             {Number(d.discount_pct || 0) > 15 && (

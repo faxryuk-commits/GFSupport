@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { PageShell } from './kit'
+import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText } from './kit'
 
 /**
  * Очередь дня — главный экран сейлза.
@@ -18,6 +18,7 @@ interface Lead {
   city: string | null
   phone: string | null
   sla_due_at: string | null
+  created_at: string
   source: string | null
 }
 
@@ -64,13 +65,14 @@ interface QueueData {
   total: number
 }
 
-function minutesLeft(iso: string | null): number | null {
-  if (!iso) return null
-  return Math.round((new Date(iso).getTime() - Date.now()) / 60000)
-}
-
+/**
+ * Сроки считаем через общий помощник: он дописывает Z к наивным строкам из
+ * базы. Локальный парсинг «2026-08-13 04:20:00» уводил срок на пять часов —
+ * лид выглядел просроченным, хотя минуты ещё были.
+ */
 function daysSince(iso: string): number {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  const ts = iso.includes('Z') || iso.includes('+') ? iso : iso + 'Z'
+  return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000)
 }
 
 function money(v: string | number | null | undefined, currency = 'UZS') {
@@ -112,6 +114,10 @@ export function SalesQueuePage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Очередь дня обновляется сама — сейлзу незачем нажимать кнопку, чтобы
+  // узнать, не прилетел ли новый лид
+  useAutoRefresh(load, 20000)
 
   const takeLead = async (leadId: string) => {
     setBusy(leadId)
@@ -170,9 +176,6 @@ export function SalesQueuePage() {
           <Link to="/sales/deals" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             Все сделки
           </Link>
-          <button onClick={load} className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-            Обновить
-          </button>
         </div>
       </div>
     }>
@@ -207,7 +210,6 @@ export function SalesQueuePage() {
             <>
               <SectionHead title="Горит SLA — система переназначит сама" count={data.sla.length} />
               {data.sla.map(l => {
-                const left = minutesLeft(l.sla_due_at)
                 return (
                   <div key={l.id} className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap hover:bg-gray-50">
                     <span className="w-2 h-2 rounded-full bg-red-500 flex-none" />
@@ -218,9 +220,12 @@ export function SalesQueuePage() {
                       </div>
                     </div>
                     <Chip tone={l.icp_score && l.icp_score >= 50 ? 'green' : 'gray'}>ICP {l.icp_score ?? 0}</Chip>
-                    <Chip tone={left !== null && left <= 0 ? 'red' : 'amber'}>
-                      {left === null ? 'без срока' : left > 0 ? `${left} мин осталось` : 'просрочено'}
+                    <Chip tone={slaTone(l.sla_due_at)}>
+                      {l.sla_due_at ? slaText(l.sla_due_at) : 'без срока'}
                     </Chip>
+                    <span className="text-[11px] text-gray-400 whitespace-nowrap">
+                      пришёл {fmtDateTime(l.created_at)}
+                    </span>
                     <button
                       disabled={busy === l.id}
                       onClick={() => takeLead(l.id)}
