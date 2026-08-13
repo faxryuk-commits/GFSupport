@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
+import { pipelineForMarket } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -41,17 +42,19 @@ export default async function handler(req: Request): Promise<Response> {
       if (!lead) return json({ error: 'lead not found' }, 404)
       if (lead.status === 'converted') return json({ error: 'лид уже взят' }, 409)
 
+      // Сделка попадает в воронку своего рынка: у каждого региона свои этапы
+      const pipeline = pipelineForMarket(lead.market_id)
       const [stage] = await sql`
         SELECT id FROM sales_stages
-        WHERE org_id = ${orgId} AND pipeline = 'sales' AND kind = 'open' AND is_active = true
+        WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND kind = 'open' AND is_active = true
         ORDER BY sort_order OFFSET 1 LIMIT 1
       `
       const dealId = salesId('sd')
       await sql`
         INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                                 title, deal_type, source_lead_id)
+                                 title, deal_type, source_lead_id, pipeline)
         VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${stage?.id || ''}, ${ctx.agentId},
-                ${lead.market_id}, ${lead.name}, 'new', ${lead.id})
+                ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${pipeline})
       `
       await sql`
         INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)

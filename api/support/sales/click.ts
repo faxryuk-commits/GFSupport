@@ -49,8 +49,11 @@ export default async function handler(req: any, res: any) {
   await ensureSalesSchema(sql, ORG)
 
   const [doc] = await sql`
-    SELECT id, deal_id, account_id, total, currency, status, paid_at
-    FROM sales_documents WHERE id = ${docId} AND org_id = ${ORG} LIMIT 1
+    SELECT d.id, d.deal_id, d.account_id, d.total, d.currency, d.status, d.paid_at,
+           COALESCE(sd.pipeline, 'sales') AS pipeline
+    FROM sales_documents d
+    LEFT JOIN sales_deals sd ON sd.id = d.deal_id
+    WHERE d.id = ${docId} AND d.org_id = ${ORG} LIMIT 1
   `
   if (!doc) {
     res.status(200).json({ error: ERR.NOT_FOUND, error_note: 'Document not found' })
@@ -95,7 +98,7 @@ export default async function handler(req: any, res: any) {
     if (doc.deal_id) {
       const [wonStage] = await sql`
         SELECT id FROM sales_stages
-        WHERE org_id = ${ORG} AND pipeline = 'sales' AND kind = 'won' LIMIT 1
+        WHERE org_id = ${ORG} AND pipeline = ${doc.pipeline} AND kind = 'won' LIMIT 1
       `
       await sql`
         UPDATE sales_deals

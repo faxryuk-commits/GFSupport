@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPut } from '@/shared/services/api.service'
 import { Card, Chip, Tabs, money, PageShell } from './kit'
+import { REGIONS } from './region'
 
 /**
  * Справочники продаж — здесь живёт движок.
@@ -19,7 +20,9 @@ const TABS: Array<[string, string]> = [
 
 export function SalesSettingsPage() {
   const [tab, setTab] = useState('stages')
-  const [pipeline, setPipeline] = useState<'sales' | 'partner'>('sales')
+  // Воронка = регион: этапы, нормативы и каденции у каждой страны свои,
+  // плюс общая (для сделок без территории) и партнёрская
+  const [pipeline, setPipeline] = useState('sales')
   const [refs, setRefs] = useState<any>(null)
   const [catalog, setCatalog] = useState<any>(null)
   const [market, setMarket] = useState('uz')
@@ -63,15 +66,24 @@ export function SalesSettingsPage() {
       {tab === 'stages' && (
         <Card
           title="Этапы воронки"
-          sub="одна воронка на все территории, фильтр по рынку — в сделках"
+          sub="у каждого региона своя воронка: нормативы и каденции настраиваются под страну"
           right={
-            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-              {([['sales', 'Продажи'], ['partner', 'Партнёры']] as const).map(([k, l]) => (
-                <button key={k} onClick={() => setPipeline(k)}
-                  className={`text-[12px] px-3 py-1 ${pipeline === k ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
-                  {l}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={pipeline} onChange={e => setPipeline(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12px]">
+                <optgroup label="Продажи">
+                  <option value="sales">Общая воронка</option>
+                  {REGIONS.map(([code, name, flag]) => (
+                    <option key={code} value={`sales_${code}`}>{flag} {name}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Прочее">
+                  <option value="partner">Партнёры</option>
+                </optgroup>
+              </select>
+              <span className="text-[11.5px] text-gray-400">
+                {(refs.stages || []).filter((s: any) => (s.pipeline || 'sales') === pipeline).length} этапов
+              </span>
             </div>
           }
         >

@@ -41,11 +41,11 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
   if (req.method === 'GET') {
-    const [stages, reasons, sources] = await Promise.all([
+    const [stages, reasons, sources, markets] = await Promise.all([
       sql`
         SELECT id, key, label, kind, owner_role, sla_hours, required_fields, cadence,
-               sort_order, probability, is_active
-        FROM sales_stages WHERE org_id = ${orgId} ORDER BY sort_order
+               sort_order, probability, is_active, COALESCE(pipeline, 'sales') AS pipeline
+        FROM sales_stages WHERE org_id = ${orgId} ORDER BY pipeline, sort_order
       `,
       sql`
         SELECT id, code, label, reactivate_days, sort_order, is_active
@@ -55,8 +55,16 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT id, key, label, kind, sort_order, is_active
         FROM sales_sources WHERE org_id = ${orgId} ORDER BY sort_order
       `,
+      ,
+      // Регионы: у каждого своя воронка, своя валюта и своё юрлицо
+      sql`
+        SELECT m.market_id, m.currency, m.legal_entity,
+               (SELECT COUNT(*) FROM sales_deals d
+                 WHERE d.org_id = m.org_id AND d.market_id = m.market_id)::int AS deals
+        FROM sales_market_settings m WHERE m.org_id = ${orgId} ORDER BY deals DESC
+      `,
     ])
-    return json({ stages, reasons, sources })
+    return json({ stages, reasons, sources, markets })
   }
 
   if (req.method === 'PUT') {
@@ -130,19 +138,21 @@ export default async function handler(req: Request): Promise<Response> {
 
       if (kind === 'stage') {
         const { key, label, ownerRole = 'ae', slaHours = null, probability = 0,
-                requiredFields = [], cadence = [], stageKind = 'open' } = body
+                requiredFields = [], cadence = [], stageKind = 'open',
+                pipeline = 'sales' } = body
         if (!key || !label) return json({ error: 'key and label are required' }, 400)
         const [{ max }] = await sql`
-          SELECT COALESCE(MAX(sort_order), -1)::int AS max FROM sales_stages WHERE org_id = ${orgId}
+          SELECT COALESCE(MAX(sort_order), -1)::int AS max FROM sales_stages
+          WHERE org_id = ${orgId} AND pipeline = ${pipeline}
         `
         const id = salesId('sst')
         await sql`
           INSERT INTO sales_stages (id, org_id, key, label, kind, owner_role, sla_hours,
-                                  required_fields, cadence, sort_order, probability)
+                                  required_fields, cadence, sort_order, probability, pipeline)
           VALUES (${id}, ${orgId}, ${key}, ${label}, ${stageKind}, ${ownerRole}, ${slaHours},
                   ${JSON.stringify(requiredFields)}::jsonb, ${JSON.stringify(cadence)}::jsonb,
-                  ${max + 1}, ${probability})
-          ON CONFLICT (org_id, key) DO NOTHING
+                  ${max + 1}, ${probability}, ${pipeline})
+          ON CONFLICT (org_id, pipeline, key) DO NOTHING
         `
         return json({ success: true, id })
       }

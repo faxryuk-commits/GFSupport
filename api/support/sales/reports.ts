@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { resolveRegion } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -29,6 +30,9 @@ export default async function handler(req: Request): Promise<Response> {
   // По умолчанию — 90 дней: короче окно не даёт статистики по закрытым сделкам
   const from = url.searchParams.get('from') || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
   const to = url.searchParams.get('to') || new Date().toISOString().slice(0, 10)
+  // Регион из переключателя в шапке: пусто — сводка по всем рынкам
+  const market = await resolveRegion(sql, orgId, url)
+  const pipeline = market ? `sales_${market}` : 'sales'
   const fromTs = `${from}T00:00:00+05:00`
   const toTs = `${to}T23:59:59+05:00`
 
@@ -39,14 +43,15 @@ export default async function handler(req: Request): Promise<Response> {
     sql`
       WITH scope AS (
         SELECT d.id FROM sales_deals d
-        WHERE d.org_id = ${orgId} AND d.pipeline = 'sales'
+        WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner'
+          AND (${market} = '' OR d.market_id = ${market})
           AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       )
       SELECT s.key, s.label, s.sort_order,
              COUNT(DISTINCT e.deal_id)::int AS reached
       FROM sales_stages s
       LEFT JOIN sales_deal_events e ON e.new_stage_id = s.id AND e.deal_id IN (SELECT id FROM scope)
-      WHERE s.org_id = ${orgId} AND s.pipeline = 'sales' AND s.is_active = true
+      WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline} AND s.is_active = true
       GROUP BY s.key, s.label, s.sort_order ORDER BY s.sort_order
     `,
     // Деньги в воронке: суммы предложений по этапам и взвешенный прогноз
@@ -56,7 +61,8 @@ export default async function handler(req: Request): Promise<Response> {
              COALESCE(SUM(d.monthly_amount * s.probability / 100.0), 0) AS weighted
       FROM sales_stages s
       LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.won_at IS NULL AND d.lost_at IS NULL
-      WHERE s.org_id = ${orgId} AND s.pipeline = 'sales' AND s.kind = 'open' AND s.is_active = true
+        AND (${market} = '' OR d.market_id = ${market})
+      WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline} AND s.kind = 'open' AND s.is_active = true
       GROUP BY s.key, s.label, s.probability, s.sort_order ORDER BY s.sort_order
     `,
     // Источники: сколько лидов, сколько дошло до сделки и до победы
@@ -67,6 +73,7 @@ export default async function handler(req: Request): Promise<Response> {
              COUNT(d.id) FILTER (WHERE d.won_at IS NOT NULL)::int AS won
       FROM sales_sources s
       LEFT JOIN sales_leads l ON l.source_id = s.id
+        AND (${market} = '' OR l.market_id = ${market})
         AND l.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       LEFT JOIN sales_deals d ON d.source_lead_id = l.id
       WHERE s.org_id = ${orgId}
@@ -80,6 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
              COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int AS won
       FROM sales_deals d
       WHERE d.org_id = ${orgId} AND (d.won_at IS NOT NULL OR d.lost_at IS NOT NULL)
+        AND (${market} = '' OR d.market_id = ${market})
       GROUP BY 1 HAVING COUNT(*) >= 3
       ORDER BY COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::float / COUNT(*) DESC
       LIMIT 12
@@ -97,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM sales_deals d
       JOIN support_agents ag ON ag.id = d.owner_agent_id
       WHERE d.org_id = ${orgId}
+        AND (${market} = '' OR d.market_id = ${market})
         AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       GROUP BY ag.name ORDER BY won DESC
     `,
@@ -109,12 +118,13 @@ export default async function handler(req: Request): Promise<Response> {
                FILTER (WHERE a.first_order_at IS NOT NULL) AS avg_days
       FROM sales_deals d
       JOIN sales_accounts a ON a.id = d.account_id
-      WHERE d.org_id = ${orgId} AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+      WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
+        AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
     `,
   ])
 
   return json({
-    period: { from, to },
+    period: { from, to }, market,
     funnel, money, sources, icp, team,
     launch: cohort[0] || {},
   })

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDate, pct, Pager, PageShell, Th } from './kit'
+import { RegionSwitch, useRegion } from './region'
 
 /**
  * Лиды — входящие обращения из всех каналов в одной таблице.
@@ -66,16 +67,18 @@ export function SalesLeadsPage() {
   const [error, setError] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
   const LIMIT = 50
+  const [region] = useRegion()
   const [busy, setBusy] = useState<string | null>(null)
 
   const load = useCallback(() => {
     const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
+    if (region) p.set('region', region)
     if (source) p.set('source', source)
     if (q) p.set('q', q)
     apiGet<LeadsData>(`/sales/leads?${p.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить лиды'))
-  }, [view, source, q, offset])
+  }, [view, source, q, offset, region])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -108,9 +111,12 @@ export function SalesLeadsPage() {
             Один вход для всех каналов: реклама, сайт, мессенджеры, звонки и ручной ввод
           </p>
         </div>
-        <Link to="/sales/queue" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+        <div className="flex items-center gap-2">
+          <RegionSwitch />
+          <Link to="/sales/queue" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
           Моя очередь
-        </Link>
+          </Link>
+        </div>
       </div>
     }>
 

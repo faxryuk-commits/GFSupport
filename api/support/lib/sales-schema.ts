@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-13.2'
+const SCHEMA_VERSION = '2026-08-13.3-regions'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -598,7 +598,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_events_deal ON sales_deal_events(deal_id, changed_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_activities_deal ON sales_activities(deal_id, happened_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_tasks_due ON sales_tasks(org_id, assignee_agent_id, due_at) WHERE done_at IS NULL`
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_stages_key ON sales_stages(org_id, key)`
+  // Ключ уникален внутри воронки, а не организации: у каждого региона своя
+  // воронка с теми же ключами этапов — так их можно сравнивать между странами
+  await sql`DROP INDEX IF EXISTS uq_sales_stages_key`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_stages_pipeline_key ON sales_stages(org_id, pipeline, key)`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_reasons_code ON sales_lost_reasons(org_id, code)`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_sources_key ON sales_sources(org_id, key)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_docs_deal ON sales_documents(deal_id, created_at)`
@@ -631,7 +634,7 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       VALUES (${salesId('sst')}, ${orgId}, ${s.key}, ${s.label}, ${s.kind}, 'ae',
               ${s.slaHours}, ${JSON.stringify(s.requiredFields)}::jsonb,
               ${JSON.stringify(s.cadence)}::jsonb, ${i}, ${s.probability}, 'partner')
-      ON CONFLICT (org_id, key) DO NOTHING
+      ON CONFLICT (org_id, pipeline, key) DO NOTHING
     `
   }
   for (let i = 0; i < LOST_REASON_SEED.length; i++) {

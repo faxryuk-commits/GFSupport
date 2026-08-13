@@ -239,3 +239,36 @@ export function agentByAmoUser(amoUserId: number | null | undefined): string | n
   }
   return null
 }
+
+/** Воронка по территории: у каждого рынка своя, без рынка — общая. */
+export function pipelineForMarket(market?: string | null): string {
+  return market ? `sales_${market}` : 'sales'
+}
+
+/**
+ * Территория запроса в кодах продаж ('uz', 'kz', …).
+ *
+ * Тонкость: глобальный переключатель в шапке приложения хранит id рынка
+ * (market_1772…), а продажи всюду работают кодом страны. Плюс регионов продаж
+ * больше, чем рынков поддержки (Азербайджан, Грузия, ОАЭ), поэтому у модуля
+ * есть собственный параметр region — он и главнее.
+ */
+const marketCodes = new Map<string, string | null>()
+export async function resolveRegion(sql: any, orgId: string, url: URL): Promise<string> {
+  const region = (url.searchParams.get('region') || '').trim().toLowerCase()
+  if (region && region !== 'all') return region
+
+  const market = (url.searchParams.get('market') || '').trim()
+  if (!market) return ''
+  if (!market.startsWith('market_')) return market.toLowerCase()
+
+  if (marketCodes.has(market)) return marketCodes.get(market) || ''
+  try {
+    const [row] = await sql`SELECT code FROM support_markets WHERE id = ${market} LIMIT 1`
+    const code = (row?.code || '').toLowerCase() || null
+    marketCodes.set(market, code)
+    return code || ''
+  } catch {
+    return ''
+  }
+}

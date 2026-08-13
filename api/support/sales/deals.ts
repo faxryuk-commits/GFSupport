@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { resolveRegion } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -29,14 +30,22 @@ export default async function handler(req: Request): Promise<Response> {
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
-  const pipeline = url.searchParams.get('pipeline') || 'sales'
+  // Рынок приходит из переключателя в шапке приложения. Выбран — работаем с
+  // его воронкой, «все рынки» — показываем всё, но колонки берём из общей
+  const market = await resolveRegion(sql, orgId, url)
+  const pipeline = url.searchParams.get('pipeline')
+    || (market ? `sales_${market}` : null)
   const view = url.searchParams.get('view') || 'all'
   const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '100', 10))
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
 
   // Динамический WHERE через параметризованный запрос — как в журнале «Подключений»
-  const conds: string[] = ['d.org_id = $1', 'd.pipeline = $2']
-  const params: any[] = [orgId, pipeline]
+  const conds: string[] = ['d.org_id = $1', "d.pipeline <> 'partner'"]
+  const params: any[] = [orgId]
+  if (pipeline) {
+    params.push(pipeline)
+    conds.push(`d.pipeline = $${params.length}`)
+  }
   const add = (cond: string, value: any) => {
     params.push(value)
     conds.push(cond.replace('?', `$${params.length}`))
@@ -44,7 +53,6 @@ export default async function handler(req: Request): Promise<Response> {
 
   const stage = url.searchParams.get('stage')
   const owner = url.searchParams.get('owner')
-  const market = url.searchParams.get('market')
   const q = url.searchParams.get('q')
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')
@@ -108,8 +116,10 @@ export default async function handler(req: Request): Promise<Response> {
            COUNT(d.id)::int AS deals,
            COALESCE(SUM(d.monthly_amount), 0) AS amount
     FROM sales_stages s
-    LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.won_at IS NULL AND d.lost_at IS NULL
-    WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline} AND s.kind = 'open' AND s.is_active = true
+    LEFT JOIN sales_deals d ON d.won_at IS NULL AND d.lost_at IS NULL
+      AND d.org_id = s.org_id AND d.stage_id = s.id
+    WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline || 'sales'}
+      AND s.kind = 'open' AND s.is_active = true
     GROUP BY s.key, s.label, s.sort_order, s.probability
     ORDER BY s.sort_order
   `
@@ -120,13 +130,14 @@ export default async function handler(req: Request): Promise<Response> {
            COUNT(*) FILTER (WHERE stalled_at IS NOT NULL)::int AS stalled,
            COUNT(*) FILTER (WHERE next_step_at IS NULL)::int AS no_next_step
     FROM sales_deals
-    WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND won_at IS NULL AND lost_at IS NULL
+    WHERE org_id = ${orgId} AND pipeline <> 'partner' AND won_at IS NULL AND lost_at IS NULL
+      AND (${market || ''} = '' OR market_id = ${market || ''})
   `
 
   const owners = await sql`
     SELECT DISTINCT ag.id, ag.name
     FROM sales_deals d JOIN support_agents ag ON ag.id = d.owner_agent_id
-    WHERE d.org_id = ${orgId} AND d.pipeline = ${pipeline}
+    WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner'
     ORDER BY ag.name
   `
 

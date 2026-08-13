@@ -1,7 +1,7 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
-import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline, agentByAmoUser } from '../lib/sales-amo.js'
+import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline, agentByAmoUser, pipelineForMarket } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -63,8 +63,10 @@ export default async function handler(req: Request): Promise<Response> {
   await ensureSalesSchema(sql, ORG)
 
   const statuses = await fetchStatuses(creds)
-  const stageRows = await sql`SELECT id, key FROM sales_stages WHERE org_id = ${ORG}`
-  const stageIdByKey = new Map<string, string>(stageRows.map((s: any) => [s.key, s.id]))
+  // Этап ищем внутри воронки региона: ключи одинаковые, строки разные
+  const stageRows = await sql`SELECT id, key, pipeline FROM sales_stages WHERE org_id = ${ORG}`
+  const stageIdByKey = new Map<string, string>(
+    stageRows.map((s: any) => [`${s.pipeline || 'sales'}|${s.key}`, s.id]))
   const reasonRows = await sql`SELECT id, code, label FROM sales_lost_reasons WHERE org_id = ${ORG}`
 
   const out = {
@@ -240,22 +242,26 @@ export default async function handler(req: Request): Promise<Response> {
     const eventRows: any[][] = []
     for (const c of fresh as any[]) {
       const dealId = salesId('sd')
-      const stageId = stageIdByKey.get(c.stageKey) || ''
+      const market = marketByPipeline(c.lead.pipeline_id)
+      const pipeline = pipelineForMarket(market)
+      const stageId = stageIdByKey.get(`${pipeline}|${c.stageKey}`)
+        || stageIdByKey.get(`sales|${c.stageKey}`) || ''
       const since = new Date((c.lead.updated_at || c.lead.created_at) * 1000).toISOString()
       dealRows.push([dealId, ORG, c.accountId, stageId, agentByAmoUser(c.lead.responsible_user_id),
-        marketByPipeline(c.lead.pipeline_id), cut(c.name, 255) || 'Без названия', 'new', `amo_${c.lead.id}`,
+        market, cut(c.name, 255) || 'Без названия', 'new', `amo_${c.lead.id}`,
         cut(cf(c.lead, 'Город'), 100),
         parseInt(cf(c.lead, 'Кол филиалов') || cf(c.lead, 'Филиалов') || '0', 10) || null,
         cut(cf(c.lead, 'Заказы в день'), 50), cut(cf(c.lead, 'POS'), 100), cut(cf(c.lead, 'Тариф'), 50),
         Number(c.lead.price || 0) || null, 'UZS', since,
         c.isWon ? c.closedAt : null, c.isLost ? c.closedAt : null, c.reasonId,
-        new Date((c.lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()])
+        new Date((c.lead.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+        pipeline])
       eventRows.push([ORG, dealId, stageId, 'перенос из AmoCRM', since])
     }
     await bulk('sales_deals',
       ['id','org_id','account_id','stage_id','owner_agent_id','market_id','title','deal_type',
        'external_id','city','points','orders_per_day','pos','tariff','monthly_amount','currency',
-       'stage_since','won_at','lost_at','lost_reason_id','created_at'], dealRows)
+       'stage_since','won_at','lost_at','lost_reason_id','created_at','pipeline'], dealRows)
     await bulk('sales_deal_events', ['org_id','deal_id','new_stage_id','changed_by','changed_at'], eventRows)
     out.imported += dealRows.length
   }

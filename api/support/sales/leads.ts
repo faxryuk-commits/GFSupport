@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { resolveRegion } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -65,6 +66,8 @@ export default async function handler(req: Request): Promise<Response> {
     params.push(value)
     conds.push(cond.replace('?', `$${params.length}`))
   }
+  const market = await resolveRegion(sql, orgId, url)
+  if (market) add('l.market_id = ?', market)
   if (source) add('s.key = ?', source)
   if (q) {
     params.push(`%${q}%`, `%${q}%`)
@@ -108,15 +111,17 @@ export default async function handler(req: Request): Promise<Response> {
              AND first_touch_at <= created_at + INTERVAL '15 minutes')::int AS in_sla,
            COUNT(*) FILTER (WHERE first_touch_at IS NOT NULL)::int AS touched
     FROM sales_leads WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '30 days'
+      AND (${market} = '' OR market_id = ${market})
   `
 
   const sources = await sql`
     SELECT s.key, s.label, COUNT(l.id)::int AS leads
     FROM sales_sources s
     LEFT JOIN sales_leads l ON l.source_id = s.id AND l.created_at > NOW() - INTERVAL '30 days'
+      AND (${market} = '' OR l.market_id = ${market})
     WHERE s.org_id = ${orgId} AND s.is_active = true
     GROUP BY s.key, s.label ORDER BY leads DESC
   `
 
-  return json({ leads: rows, stats: stats || {}, sources, view, hasMore, offset, limit })
+  return json({ leads: rows, stats: stats || {}, sources, view, hasMore, offset, limit, market })
 }

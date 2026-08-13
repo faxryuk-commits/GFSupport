@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { resolveRegion } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
 
@@ -108,6 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const type = url.searchParams.get('type') || 'client'
+  const market = await resolveRegion(sql, orgId, url)
   const q = url.searchParams.get('q') || ''
   const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10))
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
@@ -122,10 +124,11 @@ export default async function handler(req: Request): Promise<Response> {
     FROM sales_accounts a
     LEFT JOIN sales_partner_programs p ON p.id = a.partner_program_id
     WHERE a.org_id = ${orgId} AND a.account_type = ${type} AND a.archived_at IS NULL
+      AND (${market} = '' OR a.market_id = ${market})
       AND (${q} = '' OR a.name ILIKE ${'%' + q + '%'})
     ORDER BY a.created_at DESC LIMIT ${limit + 1} OFFSET ${offset}
   `
   const hasMore = rows.length > limit
   if (hasMore) rows.pop()
-  return json({ accounts: rows, type, hasMore, offset, limit })
+  return json({ accounts: rows, type, hasMore, offset, limit, market })
 }

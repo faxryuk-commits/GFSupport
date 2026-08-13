@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money } from './kit'
+import { RegionSwitch, useRegion } from './region'
 
 /**
  * Список сделок: канбан и таблица над одними данными.
@@ -80,16 +81,18 @@ export function SalesDealsPage() {
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
   const [offset, setOffset] = useState(0)
+  const [region] = useRegion()
   const LIMIT = 50
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
+    if (region) params.set('region', region)
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
-  }, [view, owner, q, offset])
+  }, [view, owner, q, offset, region])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)   // поиск не дёргает сервер на каждую букву
@@ -114,6 +117,7 @@ export function SalesDealsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <RegionSwitch />
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
             {(['kanban', 'table'] as const).map(m => (
               <button key={m} onClick={() => setMode(m)}
