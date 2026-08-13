@@ -134,12 +134,13 @@ export function SalesDealsPage() {
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
+    if (mode === 'kanban') params.set('perStage', '30')
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
-  }, [view, owner, q, offset, region])
+  }, [view, owner, q, offset, region, mode])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)   // поиск не дёргает сервер на каждую букву
@@ -194,19 +195,39 @@ export function SalesDealsPage() {
    * захода внутрь сделки.
    */
   const move = async (dealId: string, toStage: string, silent = false) => {
-    const deal = data?.deals.find(x => x.id === dealId)
+    if (!data) return
+    const deal = data.deals.find(x => x.id === dealId)
     if (!deal || deal.stage_key === toStage) return
     setOverStage(null)
     setDragId(null)
+
+    // Карточка переезжает сразу, не дожидаясь ответа: сеть занимает доли
+    // секунды, но за это время доска успевает моргнуть, и перенос выглядит
+    // сорвавшимся. Если сервер откажет — вернём на место
+    const snapshot = data
+    const nextStage = data.summary.find(x => x.key === toStage)
+    setData({
+      ...data,
+      deals: data.deals.map(x => x.id === dealId
+        ? { ...x, stage_key: toStage, stage: nextStage?.label || x.stage, stage_since: new Date().toISOString(), stalled_at: null }
+        : x),
+      summary: data.summary.map(x =>
+        x.key === toStage ? { ...x, deals: x.deals + 1 }
+        : x.key === deal.stage_key ? { ...x, deals: Math.max(0, x.deals - 1) }
+        : x),
+    })
+
     try {
       await apiPost('/sales/stage', { dealId, toStage })
       setError(null)
       if (!silent) {
         setUndo({ id: dealId, from: deal.stage_key, to: toStage, title: deal.account || deal.title })
       }
-      load()
+      // Догоняем сервер спокойно: срез по этапам вернёт карточку на месте
+      setTimeout(load, 400)
     } catch (e: any) {
       // 422 движка — не поломка, а несоблюдённое условие этапа
+      setData(snapshot)
       setError(e?.message || 'Переход заблокирован')
     }
   }
@@ -331,8 +352,9 @@ export function SalesDealsPage() {
               onDragOver={e => { e.preventDefault(); setOverStage(st.key) }}
               onDragLeave={() => setOverStage(o => (o === st.key ? null : o))}
               onDrop={e => { e.preventDefault(); drop(st.key) }}
-              className={`flex-none w-[268px] bg-white border rounded-xl flex flex-col max-h-[560px] ${
-                overStage === st.key ? 'border-blue-500 ring-2 ring-blue-100' : 'border-gray-200'}`}
+              className={`flex-none w-[268px] bg-white border rounded-xl flex flex-col max-h-[560px]
+                transition-colors duration-150 ${
+                overStage === st.key ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/40' : 'border-gray-200'}`}
             >
               <header className="px-3 py-2.5 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
                 <div className="flex justify-between items-baseline gap-2">
@@ -366,8 +388,9 @@ export function SalesDealsPage() {
                       onDragStart={() => setDragId(d.id)}
                       onDragEnd={() => { setDragId(null); setOverStage(null) }}
                       className={`bg-white border border-gray-200 rounded-lg p-2.5 border-l-[3px] cursor-grab
-                        active:cursor-grabbing hover:shadow-sm ${
-                        dragId === d.id ? 'opacity-40' : ''} ${
+                        active:cursor-grabbing hover:shadow-md hover:-translate-y-px
+                        transition-all duration-150 ease-out ${
+                        dragId === d.id ? 'opacity-30 scale-[0.98]' : ''} ${
                         problem ? 'border-l-red-500' : d.doc_opens ? 'border-l-emerald-500' : 'border-l-blue-500'}`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -427,7 +450,8 @@ export function SalesDealsPage() {
               onDragOver={e => { e.preventDefault(); setOverStage(cl.key) }}
               onDragLeave={() => setOverStage(o => (o === cl.key ? null : o))}
               onDrop={e => { e.preventDefault(); drop(cl.key, cl.kind) }}
-              className={`flex-none w-[168px] rounded-xl border-2 border-dashed flex flex-col ${
+              className={`flex-none w-[168px] rounded-xl border-2 border-dashed flex flex-col
+                transition-colors duration-150 ${
                 overStage === cl.key
                   ? cl.kind === 'won' ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'
                   : 'border-gray-200 bg-gray-50'}`}
@@ -518,12 +542,7 @@ export function SalesDealsPage() {
         </div>
       )}
 
-      {mode === 'kanban' && data.deals.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl">
-          <Pager offset={offset} limit={LIMIT} count={data.deals.length} hasMore={data.hasMore}
-            onChange={setOffset} />
-        </div>
-      )}
+
 
       {error && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-red-600 text-white text-[12.5px]

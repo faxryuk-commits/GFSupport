@@ -140,10 +140,15 @@ export default async function handler(req: Request): Promise<Response> {
   if (view === 'all') conds.push('d.won_at IS NULL AND d.lost_at IS NULL')
 
   const where = conds.join(' AND ')
-  params.push(limit + 1, offset)
 
-  const rows = await sql.query(
-    `SELECT d.id, d.title, d.monthly_amount, d.onetime_amount, d.currency, d.points,
+  // Канбан берёт срез по каждому этапу, а не общий постраничный список.
+  //
+  // Общий LIMIT с сортировкой по времени входа на этап приводил к тому, что
+  // только что перенесённая карточка исчезала с доски: у неё самый свежий
+  // stage_since, значит она уезжала в конец списка и не попадала на страницу.
+  const perStage = Math.min(50, parseInt(url.searchParams.get('perStage') || '0', 10))
+
+  const SELECT_FIELDS = `d.id, d.title, d.monthly_amount, d.onetime_amount, d.currency, d.points,
             d.pos, d.orders_per_day, d.tariff, d.city AS deal_city,
             d.stage_since, d.stalled_at, d.next_step, d.next_step_at, d.expected_close_at,
             d.won_at, d.lost_at, d.created_at, d.market_id,
@@ -151,20 +156,35 @@ export default async function handler(req: Request): Promise<Response> {
             a.name AS account, a.city,
             ag.name AS owner_name,
             src.label AS source,
-            (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens
-     FROM sales_deals d
+            (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens`
+
+  const FROM_JOINS = `FROM sales_deals d
      LEFT JOIN sales_stages s ON s.id = d.stage_id
      LEFT JOIN sales_accounts a ON a.id = d.account_id
      LEFT JOIN support_agents ag ON ag.id = d.owner_agent_id
      LEFT JOIN sales_leads l ON l.id = d.source_lead_id
-     LEFT JOIN sales_sources src ON src.id = l.source_id
-     WHERE ${where}
-     ORDER BY d.stage_since ASC
-     LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params,
-  ) as any[]
+     LEFT JOIN sales_sources src ON src.id = l.source_id`
 
-  const hasMore = rows.length > limit
+  const rows = perStage
+    ? await sql.query(
+        `SELECT * FROM (
+           SELECT ${SELECT_FIELDS},
+                  ROW_NUMBER() OVER (PARTITION BY s.key ORDER BY d.stage_since ASC) AS rn
+           ${FROM_JOINS}
+           WHERE ${where}
+         ) t WHERE rn <= $${params.length + 1}`,
+        [...params, perStage],
+      ) as any[]
+    : await sql.query(
+        `SELECT ${SELECT_FIELDS}
+         ${FROM_JOINS}
+         WHERE ${where}
+         ORDER BY d.stage_since ASC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit + 1, offset],
+      ) as any[]
+
+  const hasMore = !perStage && rows.length > limit
   if (hasMore) rows.pop()
 
   // Сводка по этапам для канбана — по всем открытым сделкам воронки,

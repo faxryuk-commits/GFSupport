@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 /** Общие мелочи страниц продаж: одни и те же чипы, карточки и форматы. */
@@ -211,6 +211,85 @@ export const Modal = ({ title, sub, onClose, children, footer }: {
   </div>
 )
 
+
+/**
+ * Выбор из справочника.
+ *
+ * Раньше здесь был datalist: список открывался только после того, как человек
+ * начинал печатать, — снаружи это выглядело как обычное неактивное поле, и
+ * выбора будто не было вовсе. Теперь список раскрывается по клику, ищет по
+ * подстроке и разрешает своё значение: справочник задаёт норму, но не запрещает
+ * жизнь.
+ */
+export function Combo({ value, options, onChange, placeholder, autoFocus, onDone, align = 'left' }: {
+  value: string
+  options: string[]
+  onChange: (v: string) => void
+  placeholder?: string
+  autoFocus?: boolean
+  onDone?: () => void
+  align?: 'left' | 'right'
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(value ?? '')
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setDraft(value ?? '') }, [value])
+
+  useEffect(() => {
+    const outside = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); onDone?.() }
+    }
+    document.addEventListener('mousedown', outside)
+    return () => document.removeEventListener('mousedown', outside)
+  }, [onDone])
+
+  const typed = draft.trim().toLowerCase()
+  const shown = typed && typed !== (value || '').toLowerCase()
+    ? options.filter(o => o.toLowerCase().includes(typed))
+    : options
+
+  const pick = (v: string) => { setDraft(v); onChange(v); setOpen(false); onDone?.() }
+
+  return (
+    <div ref={box} className="relative">
+      <input
+        autoFocus={autoFocus}
+        value={draft}
+        placeholder={placeholder || 'выберите или впишите'}
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
+        onChange={e => { setDraft(e.target.value); setOpen(true) }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { onChange(draft); setOpen(false); onDone?.() }
+          if (e.key === 'Escape') { setOpen(false); onDone?.() }
+        }}
+        className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px] pr-7 ${
+          align === 'right' ? 'text-right' : ''}`}
+      />
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
+      {open && shown.length > 0 && (
+        <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-gray-200
+                        rounded-lg shadow-lg">
+          {shown.map(o => (
+            <button key={o} type="button" onMouseDown={e => { e.preventDefault(); pick(o) }}
+              className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
+                o === value ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
+              {o}
+            </button>
+          ))}
+          {typed && !options.some(o => o.toLowerCase() === typed) && (
+            <button type="button" onMouseDown={e => { e.preventDefault(); pick(draft.trim()) }}
+              className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-500 border-t border-gray-100">
+              Своё значение: «{draft.trim()}»
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Поле формы: либо свободный ввод, либо список значений из справочника. */
 export const Field = ({ label, value, onChange, options, placeholder, hint, type = 'text' }: {
   label: string
@@ -224,15 +303,9 @@ export const Field = ({ label, value, onChange, options, placeholder, hint, type
   <label className="block">
     <span className="text-[11.5px] font-medium text-gray-600">{label}</span>
     {options?.length ? (
-      <>
-        {/* Список подсказывает норму написания, но не запрещает своё значение */}
-        <input list={`opt-${label}`} value={value} onChange={e => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]" />
-        <datalist id={`opt-${label}`}>
-          {options.map(o => <option key={o} value={o} />)}
-        </datalist>
-      </>
+      <div className="mt-1">
+        <Combo value={value} options={options} onChange={onChange} placeholder={placeholder} />
+      </div>
     ) : (
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]" />
@@ -270,24 +343,31 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
     return (
       <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
         <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
-        <input
-          autoFocus
-          list={options?.length ? `dl-${label}` : undefined}
-          className="border border-blue-400 rounded-md px-2 py-1 text-[12.5px] w-44"
-          value={draft}
-          placeholder={placeholder || (options?.length ? 'выберите или впишите' : undefined)}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { onSave(draft); setEditing(false) }
-            if (e.key === 'Escape') setEditing(false)
-          }}
-          onBlur={() => { if (draft) onSave(draft); setEditing(false) }}
-        />
         {options?.length ? (
-          <datalist id={`dl-${label}`}>
-            {options.map(o => <option key={o} value={o} />)}
-          </datalist>
-        ) : null}
+          <div className="w-52">
+            <Combo
+              value={draft}
+              options={options}
+              autoFocus
+              align="right"
+              onChange={v => { setDraft(v); onSave(v) }}
+              onDone={() => setEditing(false)}
+            />
+          </div>
+        ) : (
+          <input
+            autoFocus
+            className="border border-blue-400 rounded-md px-2 py-1 text-[12.5px] w-44"
+            value={draft}
+            placeholder={placeholder}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { onSave(draft); setEditing(false) }
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            onBlur={() => { if (draft) onSave(draft); setEditing(false) }}
+          />
+        )}
       </div>
     )
   }
