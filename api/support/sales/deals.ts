@@ -110,18 +110,22 @@ export default async function handler(req: Request): Promise<Response> {
   if (hasMore) rows.pop()
 
   // Сводка по этапам для канбана — по всем открытым сделкам воронки,
-  // независимо от фильтра вида, чтобы колонки не пустели при переключении
+  // независимо от фильтра вида, чтобы колонки не пустели при переключении.
+  // Без выбранного региона колонки складываются по ключу этапа: воронки у
+  // стран разные, но смысл этапов общий, иначе «Все регионы» показывали бы ноль
   const summary = await sql`
-    SELECT s.key, s.label, s.sort_order, s.probability,
+    SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
+           MAX(s.probability) AS probability,
            COUNT(d.id)::int AS deals,
            COALESCE(SUM(d.monthly_amount), 0) AS amount
     FROM sales_stages s
     LEFT JOIN sales_deals d ON d.won_at IS NULL AND d.lost_at IS NULL
       AND d.org_id = s.org_id AND d.stage_id = s.id
-    WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline || 'sales'}
-      AND s.kind = 'open' AND s.is_active = true
-    GROUP BY s.key, s.label, s.sort_order, s.probability
-    ORDER BY s.sort_order
+    WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
+      AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
+      AND s.pipeline <> 'partner'
+    GROUP BY s.key
+    ORDER BY MIN(s.sort_order)
   `
 
   const [totals] = await sql`
