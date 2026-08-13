@@ -14,6 +14,9 @@ export function SalesReportsPage() {
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState('90')
+  // Верх воронки: сводку по сайту присылает бот delever.io
+  const [site, setSite] = useState<any>(null)
+  const [tab, setTab] = useState<'sales' | 'site'>('sales')
   const region = useRegion()
 
   const load = useCallback(() => {
@@ -24,6 +27,10 @@ export function SalesReportsPage() {
   }, [period, region])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    apiGet<any>(`/sales/site-analytics?days=${period}`, false).then(setSite).catch(() => {})
+  }, [period])
 
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
   if (!data) return <Skeleton rows={6} />
@@ -44,6 +51,14 @@ export function SalesReportsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+          {([['sales', 'Продажи'], ['site', 'Сайт']] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`text-[12.5px] px-3 py-1.5 ${tab === k ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
         <RegionBadge />
         <div className="flex gap-1 border border-gray-300 rounded-lg overflow-hidden">
           {[['30', 'Месяц'], ['90', 'Квартал'], ['365', 'Год']].map(([v, l]) => (
@@ -57,6 +72,140 @@ export function SalesReportsPage() {
       </div>
     }>
 
+
+      {tab === 'site' && (
+        <>
+          {!site?.days?.length ? (
+            <Card title="Аналитика сайта" sub="сводку присылает бот delever.io">
+              <div className="px-4 py-5 text-[12.5px] text-gray-500 space-y-2">
+                <p>Данных пока нет. Бот должен присылать дневную сводку сюда:</p>
+                <code className="block bg-gray-50 border border-gray-200 rounded-lg p-3 text-[11.5px] text-gray-700 whitespace-pre-wrap">
+                  POST /api/support/sales/site-analytics{'\n'}
+                  Authorization: Bearer &lt;CRON_SECRET&gt;{'\n'}
+                  {'{'} "text": "📊 Аналитика delever.io — 12.08.2026 …" {'}'}
+                </code>
+                <p>
+                  Принимается тот же текст, что бот шлёт в Telegram, — переписывать его формат не нужно.
+                  Повторная присылка за ту же дату обновляет день, а не плодит дубли.
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <>
+              <Kpis items={[
+                ['Просмотры', String(site.totals.views), `за ${site.totals.days} дн`],
+                ['Уникальные', String(site.totals.uniques), 'посетителей'],
+                ['Сессии', String(site.totals.sessions), 'визитов'],
+                ['Лидов с сайта', String(site.totals.leads), 'из формы'],
+                ['Медианное время', `${Math.floor(site.totals.avgMedianSeconds / 60)}м ${site.totals.avgMedianSeconds % 60}с`,
+                  'в среднем по дням'],
+              ]} />
+
+              <div className="grid lg:grid-cols-2 gap-4">
+                <Card title="По дням" sub="просмотры, уникальные, лиды">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[12.5px]">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                          <th className="text-left font-semibold px-4 py-2">День</th>
+                          <th className="text-right font-semibold px-4 py-2">Просмотры</th>
+                          <th className="text-right font-semibold px-4 py-2">Уники</th>
+                          <th className="text-right font-semibold px-4 py-2">Лиды</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {site.days.slice(0, 14).map((d: any) => (
+                          <tr key={d.day} className="border-b border-gray-100">
+                            <td className="px-4 py-2 text-gray-700">{d.day}</td>
+                            <td className="px-4 py-2 text-right tabular-nums">{d.views ?? '—'}</td>
+                            <td className="px-4 py-2 text-right tabular-nums">{d.uniques ?? '—'}</td>
+                            <td className={`px-4 py-2 text-right tabular-nums ${d.leads ? 'text-emerald-700 font-semibold' : 'text-gray-400'}`}>
+                              {d.leads ?? 0}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+
+                <Card title="Горячие посетители" sub="ходили по тарифам и интеграциям — верх воронки, который стоит ловить">
+                  <div className="divide-y divide-gray-100">
+                    {(site.latest?.hot_visitors || []).map((h: any, i: number) => (
+                      <div key={i} className="px-4 py-2.5">
+                        <div className="flex justify-between gap-2">
+                          <span className="text-[12.5px] text-gray-900">{h.country} · {h.signal}</span>
+                          <span className="text-[11.5px] font-semibold text-amber-600">score {h.score}</span>
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate">{h.path}</div>
+                      </div>
+                    ))}
+                    {!(site.latest?.hot_visitors || []).length && (
+                      <div className="px-4 py-4 text-[12.5px] text-gray-400">В последней сводке горячих не было</div>
+                    )}
+                  </div>
+                </Card>
+
+                <Card title="Источники трафика" sub="последний день">
+                  <div className="divide-y divide-gray-100">
+                    {(site.latest?.sources || []).map((x: any, i: number) => (
+                      <div key={i} className="px-4 py-2 flex justify-between text-[12.5px]">
+                        <span className="text-gray-700">{x.label}</span>
+                        <span className="tabular-nums text-gray-900">{x.hits}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                <Card title="Топ страниц" sub="последний день">
+                  <div className="divide-y divide-gray-100">
+                    {(site.latest?.top_pages || []).map((x: any, i: number) => (
+                      <div key={i} className="px-4 py-2 flex justify-between gap-3 text-[12.5px]">
+                        <span className="text-gray-700 truncate">{x.path}</span>
+                        <span className="tabular-nums text-gray-900">{x.hits}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                <Card title="Страны и языки" sub="последний день">
+                  <div className="px-4 py-3 flex flex-wrap gap-1.5">
+                    {(site.latest?.countries || []).map((c: any) => (
+                      <span key={c.code} className="text-[11.5px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md">
+                        {c.code} {c.hits}
+                      </span>
+                    ))}
+                    {Object.entries(site.latest?.langs || {}).map(([k, v]) => (
+                      <span key={k} className="text-[11.5px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
+                        {k} {String(v)}
+                      </span>
+                    ))}
+                  </div>
+                </Card>
+
+                <Card title="A/B тесты" sub="последний день">
+                  <div className="divide-y divide-gray-100">
+                    {(site.latest?.ab_tests || []).map((t: any, i: number) => (
+                      <div key={i} className="px-4 py-2 flex justify-between gap-3 text-[12.5px]">
+                        <span className="text-gray-700">{t.name} · {t.variant}</span>
+                        <span className="tabular-nums text-gray-600">
+                          {t.visits} → {t.conversions}
+                          {t.visits ? ` (${Math.round((t.conversions / t.visits) * 100)}%)` : ''}
+                        </span>
+                      </div>
+                    ))}
+                    {!(site.latest?.ab_tests || []).length && (
+                      <div className="px-4 py-4 text-[12.5px] text-gray-400">Тестов в сводке нет</div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {tab === 'sales' && <>
       <Kpis items={[
         ['Пайплайн', money(totalPipeline, 'UZS'), 'сумма предложений в месяц'],
         ['Взвешенный прогноз', money(totalWeighted, 'UZS'), 'с учётом вероятности этапов'],
@@ -236,6 +385,7 @@ export function SalesReportsPage() {
       </Card>
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
+      </>}
     </PageShell>
   )
 }

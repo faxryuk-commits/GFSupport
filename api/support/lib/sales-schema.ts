@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.2-services'
+const SCHEMA_VERSION = '2026-08-14.3-siteanalytics'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -657,6 +657,36 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
             ON sales_field_options(org_id, field, value, COALESCE(market_id, ''))`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_field_options_field
             ON sales_field_options(org_id, field) WHERE is_active`
+
+  // Сводка по сайту: её каждый день считает бот delever.io. Держим у себя,
+  // потому что верх воронки и есть продажи: без него «лидов 0» — это загадка,
+  // а с ним видно, пришли ли вообще люди и куда они смотрели.
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_site_analytics (
+      org_id VARCHAR(64) NOT NULL,
+      day DATE NOT NULL,
+      views INT,
+      uniques INT,
+      sessions INT,
+      median_seconds INT,
+      leads INT,
+      new_visitors INT,
+      returning_visitors INT,
+      devices JSONB DEFAULT '{}'::jsonb,
+      os JSONB DEFAULT '{}'::jsonb,
+      langs JSONB DEFAULT '{}'::jsonb,
+      top_pages JSONB DEFAULT '[]'::jsonb,
+      interests JSONB DEFAULT '[]'::jsonb,
+      sources JSONB DEFAULT '[]'::jsonb,
+      countries JSONB DEFAULT '[]'::jsonb,
+      engagement JSONB DEFAULT '[]'::jsonb,
+      hot_visitors JSONB DEFAULT '[]'::jsonb,
+      ab_tests JSONB DEFAULT '[]'::jsonb,
+      raw TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (org_id, day)
+    )
+  `
 
   // Профиль клиента: тип заведения и роль ЛПР — то, что сейлз и так выясняет
   // на звонке, но раньше записывал в свободный комментарий
