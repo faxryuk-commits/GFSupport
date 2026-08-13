@@ -17,7 +17,7 @@ export const config = { runtime: 'edge' }
  * Ради этой карточки модуль и живёт внутри GFSupport: в отдельной CRM половина
  * блоков была бы недоступна.
  */
-const EDITABLE = ['merchant_id', 'inn', 'channel_id', 'city', 'account_type',
+const EDITABLE = ['name', 'merchant_id', 'inn', 'channel_id', 'city', 'account_type',
   'partner_kind', 'partner_program_id', 'referred_by_account_id', 'notes', 'owner_agent_id']
 
 export default async function handler(req: Request): Promise<Response> {
@@ -38,6 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (!EDITABLE.includes(k)) continue
       const v: any = raw === '' ? null : raw
       switch (k) {
+        case 'name': await sql`UPDATE sales_accounts SET name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'merchant_id': await sql`UPDATE sales_accounts SET merchant_id = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'inn': await sql`UPDATE sales_accounts SET inn = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'channel_id': await sql`UPDATE sales_accounts SET channel_id = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
@@ -51,6 +52,14 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
     return json({ ok: true })
+  }
+
+  if (req.method === 'DELETE') {
+    // Аккаунт живёт в чатах, подключениях и сделках — только в архив
+    const delId = url.searchParams.get('id')
+    if (!delId) return json({ error: 'id is required' }, 400)
+    await sql`UPDATE sales_accounts SET archived_at = NOW() WHERE id = ${delId} AND org_id = ${orgId}`
+    return json({ ok: true, archived: true })
   }
 
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)

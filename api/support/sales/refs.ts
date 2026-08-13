@@ -17,7 +17,7 @@ export const config = {
  * DELETE - ?kind=...&id=... мягко (is_active=false): этап или причина могут
  *          использоваться в закрытых сделках, физически удалять нельзя
  *
- * kind: stage | reason | source
+ * kind: stage | reason | source | option (значения полей: город, касса, тариф…)
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -41,7 +41,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
   if (req.method === 'GET') {
-    const [stages, reasons, sources, markets] = await Promise.all([
+    const [stages, reasons, sources, markets, options] = await Promise.all([
       sql`
         SELECT id, key, label, kind, owner_role, sla_hours, required_fields, cadence,
                sort_order, probability, is_active, COALESCE(pipeline, 'sales') AS pipeline
@@ -63,8 +63,14 @@ export default async function handler(req: Request): Promise<Response> {
                  WHERE d.org_id = m.org_id AND d.market_id = m.market_id)::int AS deals
         FROM sales_market_settings m WHERE m.org_id = ${orgId} ORDER BY deals DESC
       `,
+      ,
+      sql`
+        SELECT id, field, value, label, market_id, sort_order, is_active
+        FROM sales_field_options WHERE org_id = ${orgId}
+        ORDER BY field, sort_order
+      `,
     ])
-    return json({ stages, reasons, sources, markets })
+    return json({ stages, reasons, sources, markets, options })
   }
 
   if (req.method === 'PUT') {
@@ -110,6 +116,18 @@ export default async function handler(req: Request): Promise<Response> {
             WHERE id = ${id} AND org_id = ${orgId}
           `
         }
+        return json({ success: true })
+      }
+
+      if (kind === 'option') {
+        const { label, value, isActive } = body
+        await sql`
+          UPDATE sales_field_options SET
+            label = COALESCE(${label ?? null}, label),
+            value = COALESCE(${value ?? null}, value),
+            is_active = COALESCE(${isActive ?? null}, is_active)
+          WHERE id = ${id} AND org_id = ${orgId}
+        `
         return json({ success: true })
       }
 
@@ -172,6 +190,22 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ success: true, id })
       }
 
+      if (kind === 'option') {
+        const { field, value, label, market = null } = body
+        if (!field || !value) return json({ error: 'field and value are required' }, 400)
+        const [{ max }] = await sql`
+          SELECT COALESCE(MAX(sort_order), -1)::int AS max FROM sales_field_options
+          WHERE org_id = ${orgId} AND field = ${field}
+        `
+        const id = salesId('sfo')
+        await sql`
+          INSERT INTO sales_field_options (id, org_id, field, value, label, market_id, sort_order)
+          VALUES (${id}, ${orgId}, ${field}, ${value}, ${label || value}, ${market}, ${max + 1})
+          ON CONFLICT (org_id, field, value, COALESCE(market_id, '')) DO NOTHING
+        `
+        return json({ success: true, id })
+      }
+
       if (kind === 'source') {
         const { key, label, sourceKind = 'inbound' } = body
         if (!key || !label) return json({ error: 'key and label are required' }, 400)
@@ -210,6 +244,12 @@ export default async function handler(req: Request): Promise<Response> {
     if (kind === 'source') {
       await sql`UPDATE sales_sources SET is_active = false WHERE id = ${id} AND org_id = ${orgId}`
       return json({ success: true, soft: true })
+    }
+    // Значение поля — единственное, что удаляется физически: оно нигде не
+    // хранится по ссылке, в сделке лежит сама строка, история не пострадает
+    if (kind === 'option') {
+      await sql`DELETE FROM sales_field_options WHERE id = ${id} AND org_id = ${orgId}`
+      return json({ success: true })
     }
     return json({ error: 'unknown kind' }, 400)
   }

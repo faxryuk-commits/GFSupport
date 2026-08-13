@@ -3,6 +3,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { resolveRegion } from '../lib/sales-amo.js'
+import { acceptLead } from '../lib/sales-intake.js'
 
 export const config = { runtime: 'edge' }
 
@@ -30,7 +31,64 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     const action = url.searchParams.get('action')
     const body = await req.json().catch(() => null)
+
+    // Лид с улицы: позвонили, встретили на выставке, привёл знакомый. Без этого
+    // сейлз заводит такие обращения «в голове», и они не попадают в отчёты
+    if (action === 'create') {
+      if (!body?.name && !body?.phone) {
+        return json({ error: 'нужно указать бренд или телефон' }, 400)
+      }
+      const res = await acceptLead(sql, orgId, {
+        source: body.source || 'manual',
+        name: body.name || null,
+        phone: body.phone || null,
+        city: body.city || null,
+        market: body.market || (await resolveRegion(sql, orgId, url)) || null,
+        text: body.text || null,
+        pos: body.pos || null,
+        orders_per_day: body.orders_per_day || null,
+        points: body.points || null,
+        owner_hint: ctx.agentId,
+      })
+      if (!res.ok) return json({ error: res.error }, 400)
+      // Завёл сам — сам и ведёшь: иначе лид повиснет в общей очереди
+      await sql`
+        UPDATE sales_leads
+        SET assigned_agent_id = ${ctx.agentId}, assigned_at = NOW(), status = 'assigned',
+            sla_due_at = NOW() + INTERVAL '15 minutes'
+        WHERE id = ${res.lead_id} AND org_id = ${orgId}
+      `
+      return json({ ok: true, lead_id: res.lead_id, account_id: res.account_id })
+    }
+
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
+
+    if (action === 'archive') {
+      await sql`
+        UPDATE sales_leads SET archived_at = NOW(), status = 'junk'
+        WHERE id = ${body.leadId} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
+    if (action === 'restore') {
+      await sql`
+        UPDATE sales_leads SET archived_at = NULL, status = 'new'
+        WHERE id = ${body.leadId} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
+    if (action === 'update') {
+      const f = body.fields || {}
+      await sql`
+        UPDATE sales_leads SET
+          name = COALESCE(${f.name ?? null}, name),
+          phone = COALESCE(${f.phone ?? null}, phone),
+          city = COALESCE(${f.city ?? null}, city),
+          text = COALESCE(${f.text ?? null}, text)
+        WHERE id = ${body.leadId} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
 
     if (action === 'assign') {
       const agentId = body.agentId || ctx.agentId
@@ -61,6 +119,8 @@ export default async function handler(req: Request): Promise<Response> {
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
 
   const conds: string[] = ['l.org_id = $1']
+  if (view !== 'archived') conds.push('l.archived_at IS NULL')
+  else conds.push('l.archived_at IS NOT NULL')
   const params: any[] = [orgId]
   const add = (cond: string, value: any) => {
     params.push(value)

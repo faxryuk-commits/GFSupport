@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { resolveRegion } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
@@ -20,7 +20,6 @@ export const config = { runtime: 'edge' }
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
-  if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   const sql = getSQL()
   const url = new URL(req.url)
@@ -29,6 +28,64 @@ export default async function handler(req: Request): Promise<Response> {
 
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
+
+  // Сделка без лида: пришли по знакомству, допродажа существующему клиенту,
+  // разговор на выставке. Раньше такую можно было завести только через лид
+  if (req.method === 'POST') {
+    const body = await req.json().catch(() => null)
+    const title = String(body?.title || '').trim()
+    if (!title) return json({ error: 'нужно название сделки' }, 400)
+
+    const market = String(body?.market || '').trim() || null
+    const pipeline = market ? `sales_${market}` : 'sales'
+
+    // Аккаунт: либо указанный, либо новый под тем же названием
+    let accountId: string | null = body?.accountId || null
+    if (!accountId) {
+      accountId = salesId('sa')
+      await sql`
+        INSERT INTO sales_accounts (id, org_id, name, market_id, city, lifecycle, owner_agent_id)
+        VALUES (${accountId}, ${orgId}, ${title.slice(0, 255)}, ${market},
+                ${body?.city || null}, 'lead', ${ctx.agentId})
+      `
+    }
+
+    const [stage] = await sql`
+      SELECT id FROM sales_stages
+      WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND kind = 'open' AND is_active = true
+      ORDER BY sort_order LIMIT 1
+    `
+    const dealId = salesId('sd')
+    await sql`
+      INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
+                               title, deal_type, pipeline, city, monthly_amount, currency,
+                               tariff, pos, orders_per_day, points, stage_since)
+      VALUES (${dealId}, ${orgId}, ${accountId}, ${stage?.id || ''},
+              ${body?.ownerAgentId || ctx.agentId}, ${market}, ${title.slice(0, 255)},
+              ${body?.dealType || 'new'}, ${pipeline}, ${body?.city || null},
+              ${body?.monthlyAmount || null}, ${body?.currency || 'UZS'},
+              ${body?.tariff || null}, ${body?.pos || null},
+              ${body?.ordersPerDay || null}, ${body?.points || null}, NOW())
+    `
+    await sql`
+      INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
+      VALUES (${orgId}, ${dealId}, ${stage?.id || null}, 'заведена вручную')
+    `
+    return json({ ok: true, id: dealId, account_id: accountId })
+  }
+
+  if (req.method === 'DELETE') {
+    // Архив, а не удаление: сделка — часть истории аккаунта и отчётов
+    const id = url.searchParams.get('id')
+    if (!id) return json({ error: 'id is required' }, 400)
+    await sql`
+      UPDATE sales_deals SET archived_at = NOW(), updated_at = NOW()
+      WHERE id = ${id} AND org_id = ${orgId}
+    `
+    return json({ ok: true, archived: true })
+  }
+
+  if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   // Рынок приходит из переключателя в шапке приложения. Выбран — работаем с
   // его воронкой, «все рынки» — показываем всё, но колонки берём из общей
@@ -40,7 +97,7 @@ export default async function handler(req: Request): Promise<Response> {
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
 
   // Динамический WHERE через параметризованный запрос — как в журнале «Подключений»
-  const conds: string[] = ['d.org_id = $1', "d.pipeline <> 'partner'"]
+  const conds: string[] = ['d.org_id = $1', "d.pipeline <> 'partner'", 'd.archived_at IS NULL']
   const params: any[] = [orgId]
   if (pipeline) {
     params.push(pipeline)
@@ -119,7 +176,7 @@ export default async function handler(req: Request): Promise<Response> {
            COUNT(d.id)::int AS deals,
            COALESCE(SUM(d.monthly_amount), 0) AS amount
     FROM sales_stages s
-    LEFT JOIN sales_deals d ON d.won_at IS NULL AND d.lost_at IS NULL
+    LEFT JOIN sales_deals d ON d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL
       AND d.org_id = s.org_id AND d.stage_id = s.id
     WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
       AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
@@ -135,7 +192,7 @@ export default async function handler(req: Request): Promise<Response> {
            COUNT(*) FILTER (WHERE next_step_at IS NULL)::int AS no_next_step
     FROM sales_deals
     WHERE org_id = ${orgId} AND pipeline <> 'partner' AND won_at IS NULL AND lost_at IS NULL
-      AND (${market || ''} = '' OR market_id = ${market || ''})
+      AND archived_at IS NULL AND (${market || ''} = '' OR market_id = ${market || ''})
   `
 
   const owners = await sql`

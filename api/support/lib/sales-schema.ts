@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-13.4-reasons'
+const SCHEMA_VERSION = '2026-08-13.5-options'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -604,6 +604,32 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_tasks_due ON sales_tasks(org_id, assignee_agent_id, due_at) WHERE done_at IS NULL`
   // Ключ уникален внутри воронки, а не организации: у каждого региона своя
   // воронка с теми же ключами этапов — так их можно сравнивать между странами
+  // Готовые списки для полей сделки: город, касса, тип доставки и прочее.
+  // Свободный ввод в этих полях расходится в написании («Ташкент», «Тошкент»,
+  // «ташкент») и убивает любую отчётность, поэтому значения — справочник,
+  // редактируемый в UI. market_id пуст = список общий для всех регионов.
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_field_options (
+      id VARCHAR(64) PRIMARY KEY,
+      org_id VARCHAR(64) NOT NULL,
+      field VARCHAR(50) NOT NULL,
+      value VARCHAR(120) NOT NULL,
+      label VARCHAR(120) NOT NULL,
+      market_id VARCHAR(10),
+      sort_order INT DEFAULT 0,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_field_options
+            ON sales_field_options(org_id, field, value, COALESCE(market_id, ''))`
+  await sql`CREATE INDEX IF NOT EXISTS idx_sales_field_options_field
+            ON sales_field_options(org_id, field) WHERE is_active`
+
+  // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
+  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
+
   await sql`DROP INDEX IF EXISTS uq_sales_stages_key`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_stages_pipeline_key ON sales_stages(org_id, pipeline, key)`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_reasons_code ON sales_lost_reasons(org_id, code)`
@@ -664,6 +690,46 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     `
   }
 
+
+  // ─── Значения полей: списки вместо свободного ввода ──────────────────────────
+  // Списки собраны из того, что отдел реально писал в Amo (город, касса), плюс
+  // недостающее. Свои значения по-прежнему можно ввести руками — список только
+  // подсказывает норму написания, а не запрещает новое.
+  const FIELD_OPTIONS: Array<{ field: string; market?: string; values: string[] }> = [
+    { field: 'city', market: 'uz', values: [
+      'Ташкент', 'Ташкентская область', 'Самарканд', 'Фергана', 'Андижан', 'Бухара',
+      'Наманган', 'Кашкадарья', 'Хорезм', 'Джизак', 'Навои', 'Сурхандарья',
+      'Сырдарья', 'Каракалпакстан'] },
+    { field: 'city', market: 'kz', values: [
+      'Алматы', 'Астана', 'Шымкент', 'Караганда', 'Актобе', 'Тараз', 'Павлодар',
+      'Усть-Каменогорск', 'Семей', 'Атырау', 'Костанай', 'Кызылорда'] },
+    { field: 'city', market: 'az', values: ['Баку', 'Гянджа', 'Сумгаит'] },
+    { field: 'city', market: 'ge', values: ['Тбилиси', 'Батуми', 'Кутаиси'] },
+    { field: 'city', market: 'ae', values: ['Дубай', 'Абу-Даби', 'Шарджа'] },
+    { field: 'pos', values: [
+      'Нет кассы', 'IIKO', 'Clopos', 'Alisa', 'Poster', 'R-Keeper', 'Paloma',
+      'Jowi', 'Rezerv', 'Своя разработка', 'Другая'] },
+    { field: 'delivery_type', values: [
+      'Свои курьеры', 'Только агрегаторы', 'Свои курьеры и агрегаторы',
+      'Самовывоз', 'Доставки нет'] },
+    { field: 'aggregators', values: [
+      'Не работает с агрегаторами', 'Yandex Eats', 'Uzum Tezkor', 'Wolt', 'Glovo',
+      'Bolt Food', 'Несколько агрегаторов'] },
+    { field: 'orders_per_day', values: [
+      'до 10', '10-30', '30-50', '50-100', '100-300', 'больше 300'] },
+    { field: 'tariff', values: ['Start', 'Medium', 'Big', 'Enterprise'] },
+  ]
+  for (const group of FIELD_OPTIONS) {
+    for (let i = 0; i < group.values.length; i++) {
+      const v = group.values[i]
+      await sql`
+        INSERT INTO sales_field_options (id, org_id, field, value, label, market_id, sort_order)
+        VALUES (${salesId('sfo')}, ${orgId}, ${group.field}, ${v}, ${v},
+                ${group.market || null}, ${i})
+        ON CONFLICT (org_id, field, value, COALESCE(market_id, '')) DO NOTHING
+      `
+    }
+  }
 
   // ─── Прайс из каталога сайта и генератора КП ─────────────────────────────────
   // Тарифы считаются по заказам в месяц, а не по точкам. Цена в каждой валюте
