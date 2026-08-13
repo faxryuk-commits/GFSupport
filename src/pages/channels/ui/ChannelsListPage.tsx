@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { Link } from 'react-router-dom'
 import { 
   Search, Plus, RefreshCw, MessageSquare, Activity,
@@ -219,6 +220,7 @@ export function ChannelsListPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold text-slate-800">Телеграм каналы</h1>
+              <MarketFilter scope="channels" />
               {channels.length > 0 && (
                 <PageHint
                   title="Управление каналами"

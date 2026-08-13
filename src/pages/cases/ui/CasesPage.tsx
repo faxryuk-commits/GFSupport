@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, Users, X, ChevronDown, Archive, Briefcase, Clock, CheckCircle, TrendingUp, Zap, Timer, Inbox, LayoutGrid, ArrowUpDown } from 'lucide-react'
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
@@ -914,6 +915,8 @@ export function CasesPage() {
               </div>
               <p className="text-slate-500 mt-0.5">Управление обращениями</p>
             </div>
+            {/* Регион этого раздела: выбор запоминается отдельно от других */}
+            <MarketFilter scope="cases" />
             
             {/* Переключатель Активные / Архив */}
             <div className="flex bg-slate-100 rounded-lg p-1">

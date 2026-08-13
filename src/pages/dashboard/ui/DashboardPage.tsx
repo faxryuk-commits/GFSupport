@@ -22,6 +22,7 @@ import { ChannelSourceSummary, type SourceFilter } from './ChannelSourceSummary'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
 import { useMarket } from '@/shared/hooks/useMarket'
+import { MarketFilter, useScopeMarket } from '@/shared/ui/MarketFilter'
 
 function mapDashboardPeriod(range: string): FetchMetricParams['period'] {
   switch (range) {
@@ -57,7 +58,9 @@ export function DashboardPage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
 
   const [responseTimeModal, setResponseTimeModal] = useState<ResponseTimeModalData | null>(null)
-  const { selectedMarket, selectedMarketInfo } = useMarket()
+  const { selectedMarketInfo } = useMarket()
+  // Регион этого раздела: выбор свой и не тянет за собой соседние экраны
+  const { id: selectedMarket } = useScopeMarket('dashboard')
 
   const loadData = useCallback(async () => {
     try {
@@ -176,14 +179,14 @@ export function DashboardPage() {
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {selectedMarketInfo && (
-          <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-            Фильтр по рынку: <span className="font-medium text-slate-700">
-              {selectedMarketInfo.name}
+        <div className="flex items-center gap-3 flex-wrap">
+          <MarketFilter scope="dashboard" />
+          {selectedMarketInfo && (
+            <span className="text-xs text-slate-500">
+              статистика только по каналам этого рынка
             </span>
-            {' '}— статистика только по каналам этого рынка
-          </div>
-        )}
+          )}
+        </div>
 
         <CustomerHealthBanner
           period={mapDashboardPeriod(dateRange)}

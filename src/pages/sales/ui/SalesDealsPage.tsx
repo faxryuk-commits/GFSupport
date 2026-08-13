@@ -159,7 +159,7 @@ export function SalesDealsPage() {
     for (const [k, v] of Object.entries(facets)) if (v) params.set(k, v)
     if (range.from) params.set('from', range.from)
     if (range.to) params.set('to', range.to)
-    if (region) params.set('region', region)
+    params.set('region', region || 'all')
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
     const my = ++reqRef.current

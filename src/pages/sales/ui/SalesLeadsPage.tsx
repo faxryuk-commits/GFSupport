@@ -98,7 +98,7 @@ export function SalesLeadsPage() {
 
   const load = useCallback(() => {
     const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
-    if (region) p.set('region', region)
+    p.set('region', region || 'all')
     if (source) p.set('source', source)
     if (range.from) p.set('from', range.from)
     if (range.to) p.set('to', range.to)

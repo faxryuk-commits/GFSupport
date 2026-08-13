@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList, Eye, CheckCheck, MessageSquare } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
@@ -858,6 +859,8 @@ export function ChatsPage() {
               <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                 {channels.filter(c => c.unread > 0).length} непрочитанных
               </span>
+              {/* Регион этого раздела: свой выбор, не общий на всю систему */}
+              <MarketFilter scope="chats" />
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

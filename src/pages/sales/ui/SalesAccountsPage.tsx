@@ -32,7 +32,7 @@ export function SalesAccountsPage() {
   const load = useCallback(() => {
     apiGet<{ accounts: any[]; hasMore: boolean; stats?: any }>(
       `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}` +
-      (lifecycle ? `&lifecycle=${lifecycle}` : '') + (region ? `&region=${region}` : ''), false)
+      (lifecycle ? `&lifecycle=${lifecycle}` : '') + `&region=${region || 'all'}`, false)
       .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setStats(d.stats || {}); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить список'))
   }, [type, q, offset, region, lifecycle])

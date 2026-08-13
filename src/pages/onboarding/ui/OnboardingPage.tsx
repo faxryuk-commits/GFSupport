@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
+import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { formatDateTimeShort, formatDateShort } from '@/shared/lib'
@@ -432,6 +433,7 @@ export function OnboardingPage() {
         <div className="flex items-center gap-2">
           <Plug className="w-6 h-6 text-blue-600" />
           <h1 className="text-xl font-semibold text-gray-900">Подключения</h1>
+          <MarketFilter scope="onboarding" />
           {refreshing && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </div>
         <div className="flex items-center gap-2">

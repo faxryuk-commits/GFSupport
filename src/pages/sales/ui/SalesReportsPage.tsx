@@ -27,7 +27,7 @@ export function SalesReportsPage() {
   const load = useCallback(() => {
     const from = new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10)
     const my = ++reqRef.current
-    apiGet<any>(`/sales/reports?from=${from}${region ? `&region=${region}` : ''}`, false)
+    apiGet<any>(`/sales/reports?from=${from}&region=${region || 'all'}`, false)
       .then(d => { if (my !== reqRef.current) return; setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить отчёты'))
   }, [period, region])

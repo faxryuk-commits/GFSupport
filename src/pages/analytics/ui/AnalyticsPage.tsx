@@ -10,6 +10,7 @@
  */
 
 import { useState, useMemo } from 'react'
+import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { useSearchParams } from 'react-router-dom'
 import { Activity, Heart, FileSpreadsheet, LayoutGrid, ScrollText, Cpu, ServerCrash } from 'lucide-react'
 import { RoleFilter, defaultRoleFilter, type RoleFilterValue } from '@/features/analytics'
@@ -110,6 +111,7 @@ export function AnalyticsPage() {
       <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Аналитика</h1>
+          <MarketFilter scope="analytics" />
           <p className="text-sm text-slate-500 mt-0.5">
             Pulse → Diagnosis → Detail — от сводки к причинам и построчным данным.
           </p>
