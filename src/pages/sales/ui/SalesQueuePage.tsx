@@ -208,7 +208,8 @@ export function SalesQueuePage() {
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Очередь дня</h1>
           <p className="text-[12.5px] text-gray-500 mt-0.5">
-            Порядок задаёт система: сначала горящее по SLA, затем сделки ближе всего к закрытию
+            Список дел на сегодня, собранный за вас: что просрочено, что в шаге от денег,
+            кому обещали перезвонить. Пусто — значит на сегодня всё.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -238,7 +239,9 @@ export function SalesQueuePage() {
         <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
           <div className="text-[15px] font-medium text-gray-900">Очередь пуста</div>
           <p className="text-[13px] text-gray-500 mt-1">
-            Все касания сделаны, новых лидов нет. Хорошее время для холодных звонков.
+            Все касания сделаны, новых лидов нет — на сегодня чисто.
+            Сюда попадают: новые лиды с нормативом 15 минут, сделки на последних этапах,
+            запланированные касания и вернувшиеся из отказа. Хорошее время для холодных звонков.
           </p>
         </div>
       )}

@@ -30,6 +30,7 @@ interface Deal {
   next_step: string | null
   next_step_at: string | null
   created_at: string
+  updated_at: string | null
   won_at: string | null
   lost_at: string | null
   lost_reason: string | null
@@ -472,8 +473,9 @@ export function SalesDealsPage() {
                       {/* Когда пришла, откуда и когда следующий контакт —
                           без этого карточка не отвечает на «что с ней делать» */}
                       <div className="flex items-center justify-between gap-2 mt-1 text-[10.5px] text-gray-400">
-                        <span className="truncate">
-                          {[d.source, `от ${fmtDateTime(d.created_at)}`].filter(Boolean).join(' · ')}
+                        <span className="truncate" title={`создана ${fmtDateTime(d.created_at)}`}>
+                          {[d.source, `изм. ${fmtDateTime(d.updated_at || d.created_at)}`]
+                            .filter(Boolean).join(' · ')}
                         </span>
                         {d.next_step_at && (
                           <span className={`whitespace-nowrap ${
@@ -572,7 +574,9 @@ export function SalesDealsPage() {
                           {d.account || d.title}
                         </button>
                         <div className="text-[11px] text-gray-400 whitespace-nowrap">
-                          {[d.city, d.source, `создана ${fmtDateTime(d.created_at)}`].filter(Boolean).join(' · ')}
+                          {[d.city, d.source, `создана ${fmtDateTime(d.created_at)}`,
+                            d.updated_at ? `изменена ${fmtDateTime(d.updated_at)}` : null]
+                            .filter(Boolean).join(' · ')}
                         </div>
                       </td>
                       <td className="px-4 py-2.5">

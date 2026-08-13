@@ -44,6 +44,13 @@ interface DealData {
 /** Денежные поля показываем разрядами: «7 370 000», а не «7370000». */
 const MONEY_FIELDS = new Set(['monthly_amount', 'onetime_amount', 'budget_stated'])
 
+/**
+ * Поля, где значений может быть несколько: ресторан работает сразу с Yandex
+ * Eats и Uzum Tezkor, а в сделку берут два-три модуля. Хранится строкой через
+ * запятую — так же, как приходило из Amo.
+ */
+const MULTI_FIELDS = new Set(['aggregators', 'products', 'pain'])
+
 const QUAL_FIELDS = [
   ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
   ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
@@ -335,7 +342,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             <div className="grid sm:grid-cols-2">
               {QUAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)}
-                  options={optionsFor(refs, f, d.market_id)} />
+                  options={optionsFor(refs, f, d.market_id)}
+                  multiple={MULTI_FIELDS.has(f)} />
               ))}
             </div>
           </Card>

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 
 /** Общие мелочи страниц продаж: одни и те же чипы, карточки и форматы. */
@@ -221,7 +222,7 @@ export const Modal = ({ title, sub, onClose, children, footer }: {
  * подстроке и разрешает своё значение: справочник задаёт норму, но не запрещает
  * жизнь.
  */
-export function Combo({ value, options, onChange, placeholder, autoFocus, onDone, align = 'left' }: {
+export function Combo({ value, options, onChange, placeholder, autoFocus, onDone, align = 'left', multiple }: {
   value: string
   options: string[]
   onChange: (v: string) => void
@@ -229,12 +230,35 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
   autoFocus?: boolean
   onDone?: () => void
   align?: 'left' | 'right'
+  /** Несколько значений через запятую: агрегаторы, модули, услуги. */
+  multiple?: boolean
 }) {
   // Поле, открытое по клику «заполнить», уже сфокусировано — второго клика
   // никто не делает, поэтому список раскрываем сразу вместе с полем
   const [open, setOpen] = useState(!!autoFocus)
   const [draft, setDraft] = useState(value ?? '')
   const box = useRef<HTMLDivElement>(null)
+  // Координаты списка считаем от поля и рисуем его в body: карточки в модуле
+  // скруглённые и с overflow-hidden, из-за чего выпадающий список обрезался
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const place = useCallback(() => {
+    const el = box.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setRect({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 220) })
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open, place])
 
   useEffect(() => { setDraft(value ?? '') }, [value])
 
@@ -246,12 +270,29 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
     return () => document.removeEventListener('mousedown', outside)
   }, [onDone])
 
-  const typed = draft.trim().toLowerCase()
+  // При множественном выборе печатаем только последнюю часть после запятой
+  const parts = multiple ? draft.split(',').map(x => x.trim()).filter(Boolean) : []
+  const tail = multiple ? (draft.split(',').pop() || '').trim().toLowerCase() : draft.trim().toLowerCase()
+  const typed = tail
   const shown = typed && typed !== (value || '').toLowerCase()
     ? options.filter(o => o.toLowerCase().includes(typed))
     : options
 
-  const pick = (v: string) => { setDraft(v); onChange(v); setOpen(false); onDone?.() }
+  const pick = (v: string) => {
+    if (multiple) {
+      // Уже выбранное — снимаем: список работает как набор галочек
+      const next = parts.includes(v) ? parts.filter(x => x !== v) : [...parts.filter(x => x), v]
+      const joined = next.join(', ')
+      setDraft(joined)
+      onChange(joined)
+      place()
+      return
+    }
+    setDraft(v)
+    onChange(v)
+    setOpen(false)
+    onDone?.()
+  }
 
   return (
     <div ref={box} className="relative">
@@ -270,16 +311,28 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
           align === 'right' ? 'text-right' : ''}`}
       />
       <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
-      {open && (
-        <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-gray-200
-                        rounded-lg shadow-lg">
-          {shown.map(o => (
-            <button key={o} type="button" onMouseDown={e => { e.preventDefault(); pick(o) }}
-              className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
-                o === value ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
-              {o}
-            </button>
-          ))}
+      {open && rect && createPortal(
+        <div
+          style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, zIndex: 60 }}
+          className="max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl"
+          onMouseDown={e => e.preventDefault()}
+        >
+          {shown.map(o => {
+            const chosen = multiple ? parts.includes(o) : o === value
+            return (
+              <button key={o} type="button" onMouseDown={e => { e.preventDefault(); pick(o) }}
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 flex items-center gap-2 ${
+                  chosen ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
+                {multiple && (
+                  <span className={`w-3.5 h-3.5 rounded border flex-none grid place-items-center text-[9px] ${
+                    chosen ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'}`}>
+                    {chosen ? '✓' : ''}
+                  </span>
+                )}
+                {o}
+              </button>
+            )
+          })}
           {typed && !options.some(o => o.toLowerCase() === typed) && (
             <button type="button" onMouseDown={e => { e.preventDefault(); pick(draft.trim()) }}
               className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-500 border-t border-gray-100">
@@ -291,7 +344,15 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
               Список пуст — впишите значение, оно сохранится в сделке
             </div>
           )}
-        </div>
+          {multiple && (
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-100 px-3 py-1.5 flex justify-between">
+              <span className="text-[11px] text-gray-400">выбрано: {parts.length}</span>
+              <button type="button" onMouseDown={e => { e.preventDefault(); setOpen(false); onDone?.() }}
+                className="text-[11.5px] font-semibold text-blue-600">Готово</button>
+            </div>
+          )}
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -338,9 +399,9 @@ export const Btn = ({ kind = 'ghost', children, ...rest }: any) => (
  * с подсказкой: свободный текст расходится в написании и ломает отчёты, но
  * запрещать своё значение нельзя — жизнь богаче справочника.
  */
-export function InlineField({ label, value, onSave, placeholder, money: isMoney, options }: {
+export function InlineField({ label, value, onSave, placeholder, money: isMoney, options, multiple }: {
   label: string; value: any; onSave: (v: string) => void; placeholder?: string
-  money?: boolean; options?: string[]
+  money?: boolean; options?: string[]; multiple?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -357,6 +418,7 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
               options={options}
               autoFocus
               align="right"
+              multiple={multiple}
               onChange={v => { setDraft(v); onSave(v) }}
               onDone={() => setEditing(false)}
             />

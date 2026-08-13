@@ -27,6 +27,7 @@ interface Lead {
   sla_due_at: string | null
   first_touch_at: string | null
   created_at: string
+  updated_at: string | null
   campaign: string | null
   text: string | null
   source: string | null
@@ -224,7 +225,10 @@ export function SalesLeadsPage() {
                       <td className="px-4 py-2.5">
                         <div className="font-semibold text-gray-900">{l.name}</div>
                         <div className="text-[11px] text-gray-400">
-                          {[l.city, l.phone, fmtDateTime(l.created_at)].filter(Boolean).join(' · ')}
+                          {[l.city, l.phone, `создан ${fmtDateTime(l.created_at)}`,
+                            l.updated_at && l.updated_at !== l.created_at
+                              ? `изменён ${fmtDateTime(l.updated_at)}` : null]
+                            .filter(Boolean).join(' · ')}
                         </div>
                         {/* Норматив первого касания — 15 минут: без срока рядом
                             со строкой он существует только в отчёте задним числом */}

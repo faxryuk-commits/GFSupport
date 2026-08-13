@@ -169,7 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
   const SELECT_FIELDS = `d.id, d.title, d.monthly_amount, d.onetime_amount, d.currency, d.points,
             d.pos, d.orders_per_day, d.tariff, d.city AS deal_city,
             d.stage_since, d.stalled_at, d.next_step, d.next_step_at, d.expected_close_at,
-            d.won_at, d.lost_at, d.created_at, d.market_id,
+            d.won_at, d.lost_at, d.created_at, d.updated_at, d.market_id,
             s.key AS stage_key, s.label AS stage, s.probability, s.sla_hours,
             a.name AS account, a.city,
             ag.name AS owner_name,

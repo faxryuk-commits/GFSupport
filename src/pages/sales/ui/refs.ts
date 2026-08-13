@@ -91,8 +91,7 @@ const DEFAULTS: Record<string, string[]> = {
     'Rezerv', 'Своя разработка', 'Другая'],
   delivery_type: ['Свои курьеры', 'Только агрегаторы', 'Свои курьеры и агрегаторы',
     'Самовывоз', 'Доставки нет'],
-  aggregators: ['Не работает с агрегаторами', 'Yandex Eats', 'Uzum Tezkor', 'Wolt',
-    'Glovo', 'Bolt Food', 'Несколько агрегаторов'],
+  aggregators: ['Не работает с агрегаторами'],
   orders_per_day: ['до 10', '10-30', '30-50', '50-100', '100-300', 'больше 300'],
   pain: ['Высокая комиссия агрегаторов', 'Нет своей доставки', 'Нет учёта заказов',
     'Долгая сборка заказа', 'Нет аналитики продаж', 'Курьеры не под контролем',
@@ -100,10 +99,15 @@ const DEFAULTS: Record<string, string[]> = {
   dm_role: ['Владелец', 'Управляющий', 'Директор', 'Операционный директор', 'Маркетолог',
     'IT-специалист', 'Бухгалтер'],
   tariff: ['Start', 'Medium', 'Big', 'Enterprise'],
-  products: ['Мобильное приложение', 'Киоск самообслуживания', 'QR-меню',
-    'Курьерское приложение', 'KDS (экран кухни)', 'Маркетинг-модуль',
-    'Дашборд аналитики', 'Бронирование', 'Агрегатор (1 сервис)', 'Все агрегаторы',
-    'Курьерские сервисы'],
+  products: ['Платформа доставки', 'Сайт заказа', 'Мобильное приложение',
+    'Приложение по подписке (white label)', 'Telegram-бот заказа', 'QR-меню',
+    'Киоск самообслуживания', 'Приложение официанта', 'Курьерское приложение',
+    'KDS (экран кухни)', 'Складской учёт', 'Программа лояльности', 'Маркетинг-модуль',
+    'Push и рассылки', 'Дашборд аналитики', 'Бронирование столов',
+    'Колл-центр и телефония', 'Интеграция с POS', 'Интеграция с агрегаторами',
+    'Интеграция с курьерскими службами', 'Интеграция с платёжными системами',
+    'Интеграция с 1С', 'API и вебхуки', 'Установка и запуск', 'Обучение персонала',
+    'Индивидуальная доработка'],
   currency: ['UZS', 'KZT', 'KGS', 'GEL', 'EUR', 'USD', 'AED'],
   term_months: ['1', '3', '6', '12', '24'],
   discount_pct: ['0', '5', '10', '15', '20'],
@@ -135,6 +139,17 @@ const CITIES: Record<string, string[]> = {
   ae: ['Дубай', 'Абу-Даби', 'Шарджа', 'Аджман', 'Рас-эль-Хайма', 'Фуджейра', 'Умм-эль-Кайвайн'],
 }
 
+/** Агрегаторы по странам: в Ташкенте нет Talabat, в Дубае нет Uzum Tezkor. */
+const AGGREGATORS: Record<string, string[]> = {
+  uz: ['Uzum Tezkor', 'Yandex Eats', 'Express24', 'Wolt', 'MyTaxi Food', 'Bek Delivery'],
+  kz: ['Wolt', 'Yandex Eats', 'Glovo', 'Chocofood', 'inDrive Food'],
+  kg: ['Namba Food', 'Glovo', 'Yandex Eats', 'inDrive Food'],
+  az: ['Wolt', 'Bolt Food', 'Yandex Eats', 'Pashapay Food'],
+  ge: ['Wolt', 'Glovo', 'Bolt Food', 'Yandex Eats'],
+  cy: ['Wolt', 'Bolt Food', 'Foody', 'Deliveroo'],
+  ae: ['Talabat', 'Deliveroo', 'Careem Now', 'Noon Food', 'Zomato'],
+}
+
 /** Страна по коду рынка — для подписи и связки «страна ↔ города». */
 export const COUNTRY_BY_MARKET: Record<string, string> = {
   uz: 'Узбекистан', kz: 'Казахстан', kg: 'Кыргызстан', az: 'Азербайджан',
@@ -154,6 +169,11 @@ export function optionsFor(refs: SalesRefs | null, field: string, market?: strin
   if (field === 'city') {
     const code = (market || '').toLowerCase()
     return CITIES[code] || Object.values(CITIES).flat()
+  }
+  if (field === 'aggregators') {
+    const code = (market || '').toLowerCase()
+    const local = AGGREGATORS[code] || [...new Set(Object.values(AGGREGATORS).flat())]
+    return ['Не работает с агрегаторами', ...local]
   }
   return DEFAULTS[field] || []
 }

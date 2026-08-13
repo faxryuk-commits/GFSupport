@@ -65,14 +65,14 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (action === 'archive') {
       await sql`
-        UPDATE sales_leads SET archived_at = NOW(), status = 'junk'
+        UPDATE sales_leads SET archived_at = NOW(), status = 'junk', updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })
     }
     if (action === 'restore') {
       await sql`
-        UPDATE sales_leads SET archived_at = NULL, status = 'new'
+        UPDATE sales_leads SET archived_at = NULL, status = 'new', updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })
@@ -84,7 +84,8 @@ export default async function handler(req: Request): Promise<Response> {
           name = COALESCE(${f.name ?? null}, name),
           phone = COALESCE(${f.phone ?? null}, phone),
           city = COALESCE(${f.city ?? null}, city),
-          text = COALESCE(${f.text ?? null}, text)
+          text = COALESCE(${f.text ?? null}, text),
+          updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })
@@ -95,14 +96,14 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE sales_leads
         SET assigned_agent_id = ${agentId}, assigned_at = NOW(), status = 'assigned',
-            sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes')
+            sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes'), updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })
     }
     if (action === 'nurture') {
       await sql`
-        UPDATE sales_leads SET status = 'nurture', sla_due_at = NULL
+        UPDATE sales_leads SET status = 'nurture', sla_due_at = NULL, updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })
@@ -153,7 +154,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   const rows = await sql.query(
     `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
-            l.sla_due_at, l.first_touch_at, l.created_at, l.campaign, l.text,
+            l.sla_due_at, l.first_touch_at, l.created_at, l.updated_at, l.campaign, l.text,
             l.raw->>'pos' AS pos, l.raw->>'orders_per_day' AS orders_per_day,
             (l.raw->>'points')::text AS points,
             s.key AS source_key, s.label AS source,

@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.1-regions7'
+const SCHEMA_VERSION = '2026-08-14.2-services'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -665,6 +665,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS country VARCHAR(50)`
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
 
+  // «Когда трогали в последний раз» — у лида не было вовсе, а без этого
+  // непонятно, работа идёт или карточка лежит с марта
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`
+
   // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
@@ -742,10 +746,24 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       'Jowi', 'Rezerv', 'Своя разработка', 'Другая'] },
     { field: 'delivery_type', values: [
       'Свои курьеры', 'Только агрегаторы', 'Свои курьеры и агрегаторы',
-      'Самовывоз', 'Доставки нет'] },
-    { field: 'aggregators', values: [
-      'Не работает с агрегаторами', 'Yandex Eats', 'Uzum Tezkor', 'Wolt', 'Glovo',
-      'Bolt Food', 'Несколько агрегаторов'] },
+      'Курьерская служба на аутсорсе', 'Самовывоз', 'Доставки нет'] },
+    // Агрегаторы — свои в каждой стране: в Ташкенте нет Talabat, в Дубае нет
+    // Uzum Tezkor. Общий список приводил к тому, что сейлз выбирал наугад
+    { field: 'aggregators', values: ['Не работает с агрегаторами'] },
+    { field: 'aggregators', market: 'uz', values: [
+      'Uzum Tezkor', 'Yandex Eats', 'Express24', 'Wolt', 'MyTaxi Food', 'Bek Delivery'] },
+    { field: 'aggregators', market: 'kz', values: [
+      'Wolt', 'Yandex Eats', 'Glovo', 'Chocofood', 'inDrive Food'] },
+    { field: 'aggregators', market: 'kg', values: [
+      'Namba Food', 'Glovo', 'Yandex Eats', 'inDrive Food'] },
+    { field: 'aggregators', market: 'az', values: [
+      'Wolt', 'Bolt Food', 'Yandex Eats', 'Pashapay Food'] },
+    { field: 'aggregators', market: 'ge', values: [
+      'Wolt', 'Glovo', 'Bolt Food', 'Yandex Eats'] },
+    { field: 'aggregators', market: 'cy', values: [
+      'Wolt', 'Bolt Food', 'Foody', 'Deliveroo'] },
+    { field: 'aggregators', market: 'ae', values: [
+      'Talabat', 'Deliveroo', 'Careem Now', 'Noon Food', 'Zomato'] },
     { field: 'orders_per_day', values: [
       'до 10', '10-30', '30-50', '50-100', '100-300', 'больше 300'] },
     { field: 'tariff', values: ['Start', 'Medium', 'Big', 'Enterprise'] },
@@ -757,11 +775,18 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { field: 'segment', values: [
       'Ресторан', 'Кафе', 'Чайхана', 'Фастфуд', 'Кофейня', 'Пекарня',
       'Дарк-китчен', 'Сеть заведений', 'Столовая', 'Кондитерская'] },
+    // Полный пул того, что продаём: платформа, каналы заказа, операционные
+    // модули, интеграции и работы. Выбор множественный — в сделку берут набор
     { field: 'products', values: [
-      'Мобильное приложение', 'Киоск самообслуживания', 'QR-меню',
-      'Курьерское приложение', 'KDS (экран кухни)', 'Маркетинг-модуль',
-      'Дашборд аналитики', 'Бронирование', 'Агрегатор (1 сервис)',
-      'Все агрегаторы', 'Курьерские сервисы'] },
+      'Платформа доставки', 'Сайт заказа', 'Мобильное приложение',
+      'Приложение по подписке (white label)', 'Telegram-бот заказа',
+      'QR-меню', 'Киоск самообслуживания', 'Приложение официанта',
+      'Курьерское приложение', 'KDS (экран кухни)', 'Складской учёт',
+      'Программа лояльности', 'Маркетинг-модуль', 'Push и рассылки',
+      'Дашборд аналитики', 'Бронирование столов', 'Колл-центр и телефония',
+      'Интеграция с POS', 'Интеграция с агрегаторами', 'Интеграция с курьерскими службами',
+      'Интеграция с платёжными системами', 'Интеграция с 1С', 'API и вебхуки',
+      'Установка и запуск', 'Обучение персонала', 'Индивидуальная доработка'] },
     { field: 'pain', values: [
       'Высокая комиссия агрегаторов', 'Нет своей доставки', 'Нет учёта заказов',
       'Долгая сборка заказа', 'Нет аналитики продаж', 'Курьеры не под контролем',
