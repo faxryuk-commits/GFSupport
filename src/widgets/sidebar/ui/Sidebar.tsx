@@ -538,10 +538,9 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       {/* Main Navigation — 4 группы (Операции / Аналитика / Автоматизация / Система) */}
       <nav className="flex-1 px-3 overflow-y-auto py-2">
         {visibleGroups.map((group, gi) => {
-          // Раздел с активной страницей раскрыт всегда: свернуть то, в чём
-          // сейчас работаешь, — способ потерять себя в меню
-          const hasActive = group.items.some(i => location.pathname.startsWith(i.path))
-          const open = hasActive || !collapsedGroups.includes(group.label)
+          // Сворачивается любой раздел, включая тот, где открыта страница:
+          // запрет выглядел поломкой — по клику ничего не происходило
+          const open = !collapsedGroups.includes(group.label)
           // Сумма по разделу: свёрнутый раздел не должен прятать, что там горит
           const groupCount = group.items.reduce(
             (sum, i) => sum + (i.badgeKey ? badges[i.badgeKey] || 0 : 0), 0)

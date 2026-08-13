@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
@@ -91,6 +91,11 @@ export function SalesLeadsPage() {
   const blank = { name: '', phone: '', city: '', pos: '', orders_per_day: '', text: '', source: 'manual' }
   const [form, setForm] = useState(blank)
 
+  // Номер запроса: при автообновлении и быстрой смене фильтров ответ старого
+  // запроса приходил позже нового и перетирал список — со стороны это выглядит
+  // как «фильтр не применился»
+  const reqRef = useRef(0)
+
   const load = useCallback(() => {
     const p = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (source) p.set('source', source)
@@ -98,8 +103,9 @@ export function SalesLeadsPage() {
     if (range.to) p.set('to', range.to)
     for (const [k, v] of Object.entries(facets)) if (v) p.set(k, v)
     if (q) p.set('q', q)
+    const my = ++reqRef.current
     apiGet<LeadsData>(`/sales/leads?${p.toString()}`, false)
-      .then(d => { setData(d); setError(null) })
+      .then(d => { if (my !== reqRef.current) return; setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить лиды'))
   }, [view, source, q, offset, region, range, facets])
 

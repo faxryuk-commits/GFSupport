@@ -68,6 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
              COALESCE(SUM(d.monthly_amount * s.probability / 100.0), 0) AS weighted
       FROM sales_stages s
       LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.won_at IS NULL AND d.lost_at IS NULL
+        AND d.archived_at IS NULL
         AND (${market} = '' OR d.market_id = ${market})
       WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline} AND s.kind = 'open' AND s.is_active = true
       GROUP BY s.key, s.label, s.probability, s.sort_order ORDER BY s.sort_order
@@ -111,7 +112,7 @@ export default async function handler(req: Request): Promise<Response> {
              COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.won_at IS NOT NULL), 0) AS won_amount
       FROM sales_deals d
       JOIN support_agents ag ON ag.id = d.owner_agent_id
-      WHERE d.org_id = ${orgId}
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
         AND (${market} = '' OR d.market_id = ${market})
         AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       GROUP BY ag.name ORDER BY won DESC
@@ -181,7 +182,7 @@ export default async function handler(req: Request): Promise<Response> {
              COALESCE(SUM(d.monthly_amount) FILTER (
                WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL), 0) AS pipeline
       FROM sales_deals d
-      WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner'
+      WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner' AND d.archived_at IS NULL
       GROUP BY 1 ORDER BY won DESC
     `,
   ])

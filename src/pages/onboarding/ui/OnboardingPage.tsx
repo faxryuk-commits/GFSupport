@@ -1964,27 +1964,30 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
   const brands = board.brands.filter(b => !b.archivedAt)
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+    // Матрица широкая и длинная: без закреплённой шапки на середине списка
+    // непонятно, в какой ты колонке, а без закреплённого первого столбца —
+    // чей это ряд
+    <div className="overflow-auto max-h-[70vh] rounded-lg border border-gray-200 bg-white">
       <table className="min-w-full text-sm border-collapse">
         <thead>
-          <tr className="bg-gray-100/80 border-b border-gray-200">
-            <th className="sticky left-0 bg-gray-100 z-10 px-3 py-1.5" />
+          <tr className="bg-gray-100/80 border-b border-gray-200 sticky top-0 z-30">
+            <th className="sticky left-0 bg-gray-100 z-40 px-3 py-1.5" />
             {groups.map(g => (
               <th
                 key={g.label}
                 colSpan={g.types.length}
-                className="text-left font-medium text-[10px] uppercase tracking-wide text-gray-500 px-2 py-1.5 border-l border-gray-200 whitespace-nowrap"
+                className="text-left font-medium text-[10px] uppercase tracking-wide text-gray-500 px-2 py-1.5 border-l border-gray-200 whitespace-nowrap bg-gray-100"
               >
                 {g.label}
               </th>
             ))}
           </tr>
-          <tr className="border-b border-gray-200 bg-gray-50">
-            <th className="sticky left-0 bg-gray-50 z-10 text-left font-medium text-gray-600 px-3 py-2 min-w-[150px] text-xs">Проект</th>
+          <tr className="border-b border-gray-200 bg-gray-50 sticky top-[29px] z-30">
+            <th className="sticky left-0 bg-gray-50 z-40 text-left font-medium text-gray-600 px-3 py-2 min-w-[150px] text-xs">Проект</th>
             {groups.flatMap((g, gi) => g.types.map((t, ti) => (
               <th
                 key={t.id}
-                className={`text-left font-medium text-gray-500 px-2 py-2 whitespace-nowrap text-[11px] ${ti === 0 && gi > 0 ? 'border-l border-gray-200' : ''}`}
+                className={`text-left font-medium text-gray-500 px-2 py-2 whitespace-nowrap text-[11px] bg-gray-50 ${ti === 0 && gi > 0 ? 'border-l border-gray-200' : ''}`}
               >
                 {t.label}
               </th>

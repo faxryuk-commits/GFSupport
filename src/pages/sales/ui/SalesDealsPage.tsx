@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
@@ -148,6 +148,11 @@ export function SalesDealsPage() {
   const [reasons, setReasons] = useState<Array<{ id: string; code: string; label: string; reactivate_days: number | null }>>([])
   const LIMIT = 50
 
+  // Номер запроса: при автообновлении и быстрой смене фильтров ответ старого
+  // запроса приходил позже нового и перетирал список — со стороны это выглядит
+  // как «фильтр не применился»
+  const reqRef = useRef(0)
+
   const load = useCallback(() => {
     const params = new URLSearchParams({ view, limit: String(LIMIT), offset: String(offset) })
     if (mode === 'kanban') params.set('perStage', String(perStage))
@@ -156,8 +161,9 @@ export function SalesDealsPage() {
     if (range.to) params.set('to', range.to)
     if (owner) params.set('owner', owner)
     if (q) params.set('q', q)
+    const my = ++reqRef.current
     apiGet<DealsData>(`/sales/deals?${params.toString()}`, false)
-      .then(d => { setData(d); setError(null) })
+      .then(d => { if (my !== reqRef.current) return; setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделки'))
   }, [view, owner, q, offset, region, mode, range, perStage, facets])
 

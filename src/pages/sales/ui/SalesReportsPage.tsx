@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { apiGet } from '@/shared/services/api.service'
 import { Card, Chip, Kpis, money, pct, PageShell, Skeleton } from './kit'
 import { RegionBadge, useRegion, REGION_NAMES } from './region'
@@ -19,10 +19,16 @@ export function SalesReportsPage() {
   const [tab, setTab] = useState<'sales' | 'site'>('sales')
   const region = useRegion()
 
+  // Номер запроса: при автообновлении и быстрой смене фильтров ответ старого
+  // запроса приходил позже нового и перетирал список — со стороны это выглядит
+  // как «фильтр не применился»
+  const reqRef = useRef(0)
+
   const load = useCallback(() => {
     const from = new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10)
+    const my = ++reqRef.current
     apiGet<any>(`/sales/reports?from=${from}`, false)
-      .then(d => { setData(d); setError(null) })
+      .then(d => { if (my !== reqRef.current) return; setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить отчёты'))
   }, [period, region])
 
@@ -40,6 +46,18 @@ export function SalesReportsPage() {
   const totalWeighted = (data.money || []).reduce((s: number, m: any) => s + Number(m.weighted || 0), 0)
   const totalPipeline = (data.money || []).reduce((s: number, m: any) => s + Number(m.amount || 0), 0)
   const launch = data.launch || {}
+
+  /**
+   * Подпись под заголовком блока: за какой период он посчитан и по какому
+   * региону. Раньше каждый блок молчал о своих границах, и цифры выглядели
+   * несовместимыми — на деле часть была снимком «сейчас», часть за период.
+   */
+  const scope = (kind: 'period' | 'now') => {
+    const region = data.market ? `регион ${REGION_NAMES[data.market] || data.market}` : 'все регионы'
+    return kind === 'now'
+      ? `на сейчас · ${region}`
+      : `${data.period?.from} — ${data.period?.to} · ${region}`
+  }
 
   /** «+12 к прошлому периоду» — иначе число висит без опоры. */
   function delta(now: number, before: any): string {
@@ -227,7 +245,7 @@ export function SalesReportsPage() {
       ]} />
 
       <div className="grid lg:grid-cols-2 gap-4 items-start">
-        <Card title="Движение по дням" sub="сколько заводили, выигрывали и теряли — по дням периода">
+        <Card title="Движение по дням" sub={`сколько заводили, выигрывали и теряли · ${scope('period')}`}>
           <div className="p-4">
             {(data.daily || []).length === 0 ? (
               <div className="text-[12.5px] text-gray-400">За период движения не было</div>
@@ -258,7 +276,7 @@ export function SalesReportsPage() {
           </div>
         </Card>
 
-        <Card title="По регионам" sub="весь портфель сразу, без переключения фильтра">
+        <Card title="По регионам" sub={`выигрыши и потери за период, портфель — на сейчас · ${data.period?.from} — ${data.period?.to}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
@@ -287,7 +305,7 @@ export function SalesReportsPage() {
           </div>
         </Card>
 
-        <Card title="Воронка по когорте" sub="сделки, созданные в периоде, доведённые до конца">
+        <Card title="Воронка по когорте" sub={`сделки, созданные в периоде, доведённые до конца · ${scope('period')}`}>
           <div className="p-4 space-y-2">
             {funnel.length === 0 && <div className="text-[12.5px] text-gray-400">Данных за период нет</div>}
             {funnel.map((f: any, i: number) => {
@@ -313,7 +331,7 @@ export function SalesReportsPage() {
           </div>
         </Card>
 
-        <Card title="Деньги в воронке" sub="обещания, а не выручка">
+        <Card title="Деньги в воронке" sub={`обещания, а не выручка · ${scope('now')}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
@@ -349,7 +367,7 @@ export function SalesReportsPage() {
           </div>
         </Card>
 
-        <Card title="Источники" sub="атрибуция приходит с лидом, а не восстанавливается по тегам">
+        <Card title="Источники" sub={`атрибуция приходит с лидом · ${scope('period')}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
@@ -379,7 +397,7 @@ export function SalesReportsPage() {
           </div>
         </Card>
 
-        <Card title="Портрет покупателя" sub="по POS-системе — самый сильный признак покупки">
+        <Card title="Портрет покупателя" sub={`по POS-системе, все закрытые сделки · ${data.market ? `регион ${REGION_NAMES[data.market] || data.market}` : 'все регионы'}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
