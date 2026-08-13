@@ -72,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
     // самых старых, и открытые оказываются на двадцатой странице. Проверено на
     // боевых данных: первые 1300 сделок — сплошь закрытые.
     const data = await amoGet(creds,
-      `/leads?with=contacts&limit=250&page=${page}&order[updated_at]=desc`)
+      `/leads?with=contacts,loss_reason&limit=250&page=${page}&order[updated_at]=desc`)
     const batch: any[] = data?._embedded?.leads || []
     out.pagesScanned++
     out.lastPage = page
@@ -119,12 +119,22 @@ export default async function handler(req: Request): Promise<Response> {
 
         let reasonId: string | null = null
         if (isLost) {
-          const lossName = String((lead._embedded?.loss_reason?.[0]?.name) || '').toLowerCase()
-          const found = reasonRows.find((r: any) => {
-            const l = String(r.label).toLowerCase()
-            return lossName && (l.includes(lossName.slice(0, 8)) || lossName.includes(l.slice(0, 8)))
-          })
-          reasonId = found?.id || reasonRows.find((r: any) => r.code === 'other')?.id || null
+          // В Amo причина живёт в двух местах: системное поле loss_reason и
+          // свой список «Причины отказа». Берём первое непустое
+          const lossName = String(
+            (lead._embedded?.loss_reason?.[0]?.name) || cf(lead, 'Причины отказа') || ''
+          ).toLowerCase()
+          const byCode = (code: string) => reasonRows.find((r: any) => r.code === code)?.id || null
+          reasonId =
+            /не отвеч|не подн|недоступ|тишин/.test(lossName) ? byCode('no_response') :
+            /дорог|бюджет|цена|qimmat/.test(lossName) ? byCode('too_expensive') :
+            /конкурент|выбрал друг/.test(lossName) ? byCode('competitor') :
+            /не сейчас|позже|занят|отлож/.test(lossName) ? byCode('bad_timing') :
+            /не наш|не подход|не целев|мелк/.test(lossName) ? byCode('not_icp') :
+            /сво(я|и) разработ|сами|внутрен/.test(lossName) ? byCode('internal_solution') :
+            /лпр|руководител|не дошли/.test(lossName) ? byCode('no_dm_access') :
+            /функци|не хватает|возможност/.test(lossName) ? byCode('feature_gap') :
+            byCode('other')
         }
 
         cands.push({
