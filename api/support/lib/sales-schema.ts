@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-13.7-profile'
+const SCHEMA_VERSION = '2026-08-13.8-batched'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -157,6 +157,38 @@ const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
   { key: 'outbound', label: 'Исходящий холодный', kind: 'outbound' },
   { key: 'import', label: 'Импорт базы', kind: 'outbound' },
 ]
+
+/**
+ * Пакетная вставка сидов: один запрос вместо запроса на строку.
+ *
+ * Справочники модуля — это больше двухсот строк, а neon по HTTP делает отдельный
+ * рейс на каждый запрос. Поштучные INSERT растягивали проверку схемы до 36
+ * секунд: edge-функция столько не живёт, обрывалась и запускалась заново на
+ * следующем запросе — то есть модуль ложился в вечный цикл миграции.
+ */
+async function seedBatch(
+  sql: SQL,
+  table: string,
+  columns: string[],
+  rows: any[][],
+  conflict: string,
+): Promise<void> {
+  if (!rows.length) return
+  const params: any[] = []
+  const chunks: string[] = []
+  for (const row of rows) {
+    const marks = row.map(v => {
+      params.push(v)
+      return `$${params.length}`
+    })
+    chunks.push(`(${marks.join(', ')})`)
+  }
+  await sql.query(
+    `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${chunks.join(', ')}
+     ON CONFLICT ${conflict} DO NOTHING`,
+    params,
+  )
+}
 
 export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> {
   if (ensuredOrgs.has(orgId)) return
@@ -656,46 +688,30 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   // у рынков свои — нормативы и каденции настраиваются под страну, а списки
   // сделок разных стран не смешиваются
   const PIPELINES = ['sales', 'sales_uz', 'sales_kz', 'sales_az', 'sales_ge', 'sales_ae']
-  for (const pipeline of PIPELINES) {
-    for (let i = 0; i < STAGE_SEED.length; i++) {
-      const s = STAGE_SEED[i]
-      await sql`
-        INSERT INTO sales_stages (id, org_id, key, label, kind, owner_role, sla_hours,
-                                  required_fields, cadence, sort_order, probability, pipeline)
-        VALUES (${salesId('sst')}, ${orgId}, ${s.key}, ${s.label}, ${s.kind}, ${s.ownerRole},
-                ${s.slaHours}, ${JSON.stringify(s.requiredFields)}::jsonb,
-                ${JSON.stringify(s.cadence)}::jsonb, ${i}, ${s.probability}, ${pipeline})
-        ON CONFLICT (org_id, pipeline, key) DO NOTHING
-      `
-    }
-  }
-  for (let i = 0; i < PARTNER_STAGE_SEED.length; i++) {
-    const s = PARTNER_STAGE_SEED[i]
-    await sql`
-      INSERT INTO sales_stages (id, org_id, key, label, kind, owner_role, sla_hours,
-                                required_fields, cadence, sort_order, probability, pipeline)
-      VALUES (${salesId('sst')}, ${orgId}, ${s.key}, ${s.label}, ${s.kind}, 'ae',
-              ${s.slaHours}, ${JSON.stringify(s.requiredFields)}::jsonb,
-              ${JSON.stringify(s.cadence)}::jsonb, ${i}, ${s.probability}, 'partner')
-      ON CONFLICT (org_id, pipeline, key) DO NOTHING
-    `
-  }
-  for (let i = 0; i < LOST_REASON_SEED.length; i++) {
-    const r = LOST_REASON_SEED[i]
-    await sql`
-      INSERT INTO sales_lost_reasons (id, org_id, code, label, reactivate_days, sort_order)
-      VALUES (${salesId('slr')}, ${orgId}, ${r.code}, ${r.label}, ${r.days}, ${i})
-      ON CONFLICT (org_id, code) DO NOTHING
-    `
-  }
-  for (let i = 0; i < SOURCE_SEED.length; i++) {
-    const s = SOURCE_SEED[i]
-    await sql`
-      INSERT INTO sales_sources (id, org_id, key, label, kind, sort_order)
-      VALUES (${salesId('ssrc')}, ${orgId}, ${s.key}, ${s.label}, ${s.kind}, ${i})
-      ON CONFLICT (org_id, key) DO NOTHING
-    `
-  }
+  await seedBatch(sql, 'sales_stages',
+    ['id', 'org_id', 'key', 'label', 'kind', 'owner_role', 'sla_hours',
+     'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline'],
+    PIPELINES.flatMap(pipeline => STAGE_SEED.map((st, i) => [
+      salesId('sst'), orgId, st.key, st.label, st.kind, st.ownerRole, st.slaHours,
+      JSON.stringify(st.requiredFields), JSON.stringify(st.cadence), i, st.probability, pipeline,
+    ])),
+    '(org_id, pipeline, key)')
+  await seedBatch(sql, 'sales_stages',
+    ['id', 'org_id', 'key', 'label', 'kind', 'owner_role', 'sla_hours',
+     'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline'],
+    PARTNER_STAGE_SEED.map((st, i) => [
+      salesId('sst'), orgId, st.key, st.label, st.kind, 'ae', st.slaHours,
+      JSON.stringify(st.requiredFields), JSON.stringify(st.cadence), i, st.probability, 'partner',
+    ]),
+    '(org_id, pipeline, key)')
+  await seedBatch(sql, 'sales_lost_reasons',
+    ['id', 'org_id', 'code', 'label', 'reactivate_days', 'sort_order'],
+    LOST_REASON_SEED.map((r, i) => [salesId('slr'), orgId, r.code, r.label, r.days, i]),
+    '(org_id, code)')
+  await seedBatch(sql, 'sales_sources',
+    ['id', 'org_id', 'key', 'label', 'kind', 'sort_order'],
+    SOURCE_SEED.map((src, i) => [salesId('ssrc'), orgId, src.key, src.label, src.kind, i]),
+    '(org_id, key)')
 
 
   // ─── Значения полей: списки вместо свободного ввода ──────────────────────────
@@ -756,17 +772,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { field: 'term_months', values: ['1', '3', '6', '12', '24'] },
     { field: 'discount_pct', values: ['0', '5', '10', '15', '20'] },
   ]
-  for (const group of FIELD_OPTIONS) {
-    for (let i = 0; i < group.values.length; i++) {
-      const v = group.values[i]
-      await sql`
-        INSERT INTO sales_field_options (id, org_id, field, value, label, market_id, sort_order)
-        VALUES (${salesId('sfo')}, ${orgId}, ${group.field}, ${v}, ${v},
-                ${group.market || null}, ${i})
-        ON CONFLICT (org_id, field, value, COALESCE(market_id, '')) DO NOTHING
-      `
-    }
-  }
+  await seedBatch(sql, 'sales_field_options',
+    ['id', 'org_id', 'field', 'value', 'label', 'market_id', 'sort_order'],
+    FIELD_OPTIONS.flatMap(group => group.values.map((v, i) => [
+      salesId('sfo'), orgId, group.field, v, v, group.market || null, i,
+    ])),
+    "(org_id, field, value, COALESCE(market_id, ''))")
 
   // ─── Прайс из каталога сайта и генератора КП ─────────────────────────────────
   // Тарифы считаются по заказам в месяц, а не по точкам. Цена в каждой валюте
@@ -778,13 +789,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { market: 'ae', currency: 'USD', entity: 'Delever', tpl: 'service_agreement' },
     { market: 'az', currency: 'USD', entity: 'Delever', tpl: 'contract' },
   ]
-  for (const m of MARKETS) {
-    await sql`
-      INSERT INTO sales_market_settings (org_id, market_id, currency, legal_entity, contract_template_kind)
-      VALUES (${orgId}, ${m.market}, ${m.currency}, ${m.entity}, ${m.tpl})
-      ON CONFLICT (org_id, market_id) DO NOTHING
-    `
-  }
+  await seedBatch(sql, 'sales_market_settings',
+    ['org_id', 'market_id', 'currency', 'legal_entity', 'contract_template_kind'],
+    MARKETS.map(m => [orgId, m.market, m.currency, m.entity, m.tpl]),
+    '(org_id, market_id)')
 
   const PRICE_ITEMS: Array<{
     key: string; name: string; desc: string; cat: string; kind: string; unit: string; rec: string
@@ -854,17 +862,15 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       kind: 'flat', cat: 'deposit', unit: 'при подключении', rec: 'deposit',
       prices: { UZS: 3900000, USD: 450, KZT: 225000, GEL: 2100 } },
   ]
-  for (let i = 0; i < PRICE_ITEMS.length; i++) {
-    const it = PRICE_ITEMS[i]
-    await sql`
-      INSERT INTO sales_price_items (id, org_id, key, name, description, category, unit, unit_kind,
-                                     recurring, prices, included_orders, extra_order_price, sort_order)
-      VALUES (${salesId('spi')}, ${orgId}, ${it.key}, ${it.name}, ${it.desc}, ${it.cat}, ${it.unit}, ${it.kind},
-              ${it.rec}, ${JSON.stringify(it.prices)}::jsonb, ${it.orders ?? null},
-              ${it.extra ? JSON.stringify(it.extra) : null}::jsonb, ${i})
-      ON CONFLICT (org_id, key) DO NOTHING
-    `
-  }
+  await seedBatch(sql, 'sales_price_items',
+    ['id', 'org_id', 'key', 'name', 'description', 'category', 'unit', 'unit_kind',
+     'recurring', 'prices', 'included_orders', 'extra_order_price', 'sort_order'],
+    PRICE_ITEMS.map((it, i) => [
+      salesId('spi'), orgId, it.key, it.name, it.desc, it.cat, it.unit, it.kind,
+      it.rec, JSON.stringify(it.prices), it.orders ?? null,
+      it.extra ? JSON.stringify(it.extra) : null, i,
+    ]),
+    '(org_id, key)')
 
   // Отправная сетка: четыре модели вместо индивидуальных договорённостей.
   // Ставки — предмет вашего решения, правятся в интерфейсе без деплоя.
@@ -888,19 +894,15 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       rate: 35, bounty: null, cur: null, months: null, attr: null, excl: true, minDeals: 5,
       notes: 'Эксклюзив по территории при выполнении плана. Скидка плюс маркетинговая поддержка.' },
   ]
-  for (let i = 0; i < PARTNER_PROGRAMS.length; i++) {
-    const p = PARTNER_PROGRAMS[i]
-    await sql`
-      INSERT INTO sales_partner_programs (id, org_id, key, name, model, rate_pct,
-                                          bounty_amount, bounty_currency, duration_months,
-                                          payout_rule, attribution_days,
-                                          exclusive_territory, min_deals_per_quarter, notes, sort_order)
-      VALUES (${salesId('spp')}, ${orgId}, ${p.key}, ${p.name}, ${p.model}, ${p.rate},
-              ${p.bounty}, ${p.cur}, ${p.months}, ${p.payout}, ${p.attr},
-              ${p.excl}, ${p.minDeals}, ${p.notes}, ${i})
-      ON CONFLICT (org_id, key) DO NOTHING
-    `
-  }
+  await seedBatch(sql, 'sales_partner_programs',
+    ['id', 'org_id', 'key', 'name', 'model', 'rate_pct', 'bounty_amount', 'bounty_currency',
+     'duration_months', 'payout_rule', 'attribution_days', 'exclusive_territory',
+     'min_deals_per_quarter', 'notes', 'sort_order'],
+    PARTNER_PROGRAMS.map((p, i) => [
+      salesId('spp'), orgId, p.key, p.name, p.model, p.rate, p.bounty, p.cur, p.months,
+      p.payout, p.attr, p.excl, p.minDeals, p.notes, i,
+    ]),
+    '(org_id, key)')
 
   // Действующие редакции правовых документов Delever
   const LEGAL = [
@@ -917,16 +919,13 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { kind: 'terms_of_service', market: null, lang: 'ru', title: 'Оферта и условия использования',
       url: 'https://docs.google.com/document/d/1xRaG7W8hdPwNmGVCwt7jOiHUFLNqweg0_BSi7_yruGM/edit' },
   ]
-  for (const d of LEGAL) {
-    const [ex] = await sql`
-      SELECT id FROM sales_legal_docs WHERE org_id = ${orgId} AND url = ${d.url} LIMIT 1
-    `
-    if (ex) continue
-    await sql`
-      INSERT INTO sales_legal_docs (id, org_id, kind, market_id, lang, title, url)
-      VALUES (${salesId('sld')}, ${orgId}, ${d.kind}, ${d.market}, ${d.lang}, ${d.title}, ${d.url})
-    `
-  }
+  // Уникальность по URL: одна редакция документа — одна строка
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_legal_docs_url
+            ON sales_legal_docs(org_id, url)`
+  await seedBatch(sql, 'sales_legal_docs',
+    ['id', 'org_id', 'kind', 'market_id', 'lang', 'title', 'url'],
+    LEGAL.map(d => [salesId('sld'), orgId, d.kind, d.market, d.lang, d.title, d.url]),
+    '(org_id, url)')
 
   // ─── Шаблоны договоров: по одному на юрлицо и территорию ────────────────────
   // Структура снята с боевых договоров: Узбекистан — ООО «DELEVER», номер вида
@@ -1037,23 +1036,19 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     },
   ]
 
-  for (const t of TEMPLATES) {
-    const [exists] = await sql`
-      SELECT id FROM sales_doc_templates
-      WHERE org_id = ${orgId} AND kind = ${t.kind}
-        AND COALESCE(market_id, '') = ${t.market || ''}
-      LIMIT 1
-    `
-    if (exists) continue
-    await sql`
-      INSERT INTO sales_doc_templates (id, org_id, kind, market_id, pipeline, entity,
-                                       number_format, name, body, is_default)
-      VALUES (${salesId('sdt')}, ${orgId}, ${t.kind}, ${t.market}, 
-              ${t.kind === 'partner_contract' ? 'partner' : 'sales'},
-              ${t.entity ? JSON.stringify(t.entity) : null}::jsonb,
-              ${t.numberFormat}, ${t.name}, ${t.body}, true)
-    `
-  }
+  // Шаблон один на пару «вид документа + территория»
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_doc_templates_kind
+            ON sales_doc_templates(org_id, kind, COALESCE(market_id, ''))`
+  await seedBatch(sql, 'sales_doc_templates',
+    ['id', 'org_id', 'kind', 'market_id', 'pipeline', 'entity',
+     'number_format', 'name', 'body', 'is_default'],
+    TEMPLATES.map(t => [
+      salesId('sdt'), orgId, t.kind, t.market,
+      t.kind === 'partner_contract' ? 'partner' : 'sales',
+      t.entity ? JSON.stringify(t.entity) : null,
+      t.numberFormat, t.name, t.body, true,
+    ]),
+    "(org_id, kind, COALESCE(market_id, ''))")
 
   // Версию пишем последней: упавший на середине прогон повторится в следующий
   // раз, а не будет считаться выполненным
