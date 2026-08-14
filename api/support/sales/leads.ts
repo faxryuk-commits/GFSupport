@@ -170,7 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
   const rows = await sql.query(
     `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
             l.sla_due_at, l.first_touch_at, l.created_at, l.updated_at, l.campaign, l.text,
-            l.lead_kind,
+            l.lead_kind, l.contact_name, l.raw,
             l.raw->>'pos' AS pos, l.raw->>'orders_per_day' AS orders_per_day,
             (l.raw->>'points')::text AS points,
             s.key AS source_key, s.label AS source,
@@ -223,6 +223,53 @@ export default async function handler(req: Request): Promise<Response> {
   )
 
   const [statsRows, sources, totalRows] = await Promise.all([statsQ, sourcesQ, totalQ])
+
+  // Поля заявки — то, что человек реально заполнил в форме. Они лежат в raw
+  // по-разному: у Amo это custom_fields_values, у неразобранных — _unsorted_meta,
+  // у формы сайта — плоский объект. Разбираем здесь, чтобы список показывал
+  // суть заявки, а не одинаковые строки «Ташкент · сумма не указана»
+  const SKIP = new Set(['id', 'name', '_links', '_embedded', 'created_at', 'updated_at',
+    'pipeline_id', 'status_id', 'account_id', 'created_by', 'updated_by', 'is_deleted',
+    'labor_cost', 'score', 'price', 'group_id', 'closest_task_at', 'responsible_user_id',
+    'price_with_minor_units', 'custom_fields_values', '_unsorted_meta', 'loss_reason_id',
+    'closed_at', 'raw', 'utm', 'visitorId', 'sessionId'])
+
+  for (const row of rows) {
+    const raw = row.raw || {}
+    const details: Array<{ label: string; value: string }> = []
+
+    for (const f of raw.custom_fields_values || []) {
+      const v = f?.values?.[0]?.value
+      const text = typeof v === 'object' && v ? v.name : v
+      if (f?.field_name && text !== undefined && text !== null && String(text).trim()) {
+        details.push({ label: String(f.field_name), value: String(text).slice(0, 80) })
+      }
+    }
+
+    const meta = raw._unsorted_meta
+    if (meta) {
+      if (meta.form_name) details.push({ label: 'Форма', value: String(meta.form_name).slice(0, 80) })
+      if (meta.client?.name) details.push({ label: 'Профиль', value: String(meta.client.name).slice(0, 80) })
+      if (meta.form_page) details.push({ label: 'Страница', value: String(meta.form_page).slice(0, 80) })
+    }
+
+    // Форма сайта кладёт поля плоско: имя, компания, страна, точки, сообщение
+    const LABELS: Record<string, string> = {
+      company: 'Компания', firstName: 'Имя', lastName: 'Фамилия', email: 'Почта',
+      country: 'Страна', locations: 'Точек', message: 'Сообщение', tag: 'Кнопка',
+      source: 'Откуда узнал', language: 'Язык', formType: 'Форма', pos: 'POS',
+      orders_per_day: 'Заказов в день', points: 'Точек',
+    }
+    for (const [k, v] of Object.entries(raw)) {
+      if (SKIP.has(k) || v === null || v === undefined || typeof v === 'object') continue
+      const text = String(v).trim()
+      if (!text || text === 'null') continue
+      details.push({ label: LABELS[k] || k, value: text.slice(0, 80) })
+    }
+
+    row.details = details.slice(0, 10)
+    delete row.raw
+  }
 
   return json({
     leads: rows, stats: (statsRows as any[])[0] || {}, sources,

@@ -37,6 +37,9 @@ interface Lead {
   account_name: string | null
   account_created: string | null
   agent_name: string | null
+  contact_name: string | null
+  /** Поля, которые человек заполнил в форме: бренд, направление, точки и т.д. */
+  details: Array<{ label: string; value: string }>
 }
 
 interface LeadsData {
@@ -259,11 +262,14 @@ export function SalesLeadsPage() {
                     <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50 align-top">
                       <td className="px-4 py-2.5">
                         <div className="font-semibold text-gray-900">{l.name}</div>
+                        {/* Кто именно обратился и как с ним связаться */}
+                        {(l.contact_name || l.phone) && (
+                          <div className="text-[11.5px] text-gray-600">
+                            {[l.contact_name, l.phone].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
                         <div className="text-[11px] text-gray-400">
-                          {[l.city, l.phone, `создан ${fmtDateTime(l.created_at)}`,
-                            l.updated_at && l.updated_at !== l.created_at
-                              ? `изменён ${fmtDateTime(l.updated_at)}` : null]
-                            .filter(Boolean).join(' · ')}
+                          {[l.city, `создан ${fmtDateTime(l.created_at)}`].filter(Boolean).join(' · ')}
                         </div>
                         {/* Норматив первого касания — 15 минут: без срока рядом
                             со строкой он существует только в отчёте задним числом */}
@@ -276,11 +282,17 @@ export function SalesLeadsPage() {
                         )}
                         {/* Качественные признаки лида: по ним сейлз решает,
                             брать ли, не открывая карточку */}
-                        {(l.pos || l.orders_per_day || l.points) && (
-                          <div className="flex gap-1 mt-1 flex-wrap">
-                            {l.pos && <Chip tone="violet">POS {l.pos}</Chip>}
-                            {l.orders_per_day && <Chip tone="green">{l.orders_per_day} зак/день</Chip>}
-                            {l.points ? <Chip tone="blue">{l.points} точек</Chip> : null}
+                        {/* То, что человек заполнил в форме: без этого все заявки
+                            выглядят одинаково — «город и сумма не указана» */}
+                        {(l.details || []).length > 0 && (
+                          <div className="flex gap-1 mt-1.5 flex-wrap max-w-[420px]">
+                            {l.details.map((d, i) => (
+                              <span key={i}
+                                className="text-[10.5px] bg-gray-50 border border-gray-200 rounded-md px-1.5 py-0.5">
+                                <span className="text-gray-400">{d.label}:</span>{' '}
+                                <span className="text-gray-700 font-medium">{d.value}</span>
+                              </span>
+                            ))}
                           </div>
                         )}
                         {l.text && (

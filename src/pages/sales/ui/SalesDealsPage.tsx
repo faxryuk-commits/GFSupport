@@ -99,6 +99,17 @@ function days(iso: string | null): number {
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000)
 }
 
+/** «2 ч», «вчера», «5 дн» — в карточке важна свежесть, а не точная дата. */
+function ago(iso: string | null): string {
+  if (!iso) return ''
+  const ts = iso.includes('Z') || iso.includes('+') ? iso : iso + 'Z'
+  const min = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000))
+  if (min < 60) return `${min} мин`
+  if (min < 1440) return `${Math.round(min / 60)} ч`
+  if (min < 2880) return 'вчера'
+  return `${Math.round(min / 1440)} дн`
+}
+
 /** Цвет возраста считаем от норматива этапа: 3 дня на дозвоне и на договоре — разное. */
 function ageTone(d: Deal, slaHours: string | null): string {
   const age = days(d.stage_since)
@@ -441,6 +452,7 @@ export function SalesDealsPage() {
                     d.points ? `${d.points} точ.` : null,
                     d.pos,
                     d.orders_per_day ? `${d.orders_per_day} зак/день` : null,
+                    d.source,
                   ].filter(Boolean) as string[]
                   return (
                     <article
@@ -462,46 +474,49 @@ export function SalesDealsPage() {
                         <Chip tone={tone}>{days(d.stage_since)} дн</Chip>
                       </div>
 
-                      {/* Квалификация: по ней решают, брать ли сделку сегодня */}
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {facts.length
-                          ? facts.map(f => <Chip key={f} tone="gray">{f}</Chip>)
-                          : <Chip tone="gray">не квалифицирован</Chip>}
-                      </div>
+                      {/* Квалификация: только то, что заполнено. Пустые поля не
+                          занимают строку — иначе карточки выглядят одинаково */}
+                      {facts.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {facts.map(f => <Chip key={f} tone="gray">{f}</Chip>)}
+                        </div>
+                      )}
 
-                      <div className={`text-[11px] mt-1.5 tabular-nums ${
-                        d.monthly_amount ? 'text-gray-600' : 'text-amber-600'}`}>
-                        {d.monthly_amount
-                          ? `${money(d.monthly_amount, d.currency)} в месяц${d.tariff ? ` · ${d.tariff}` : ''}`
-                          : 'сумма не указана'}
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 mt-1.5 pt-1.5 border-t border-gray-100">
-                        <span className="text-[10.5px] text-gray-500 truncate">{d.owner_name || 'без сейлза'}</span>
-                        {problem
-                          ? <span className="text-[10.5px] font-semibold text-red-600 whitespace-nowrap">{problem}</span>
-                          : d.next_step
-                            ? <span className="text-[10.5px] text-gray-400 truncate max-w-[120px]" title={d.next_step}>
-                                {d.next_step}
-                              </span>
-                            : <span className="text-[10.5px] font-semibold text-amber-600 whitespace-nowrap">
-                                шаг не назначен
-                              </span>}
-                      </div>
-                      {/* Когда пришла, откуда и когда следующий контакт —
-                          без этого карточка не отвечает на «что с ней делать» */}
-                      <div className="flex items-center justify-between gap-2 mt-1 text-[10.5px] text-gray-400">
-                        <span className="truncate" title={`создана ${fmtDateTime(d.created_at)}`}>
-                          {[d.source, `изм. ${fmtDateTime(d.updated_at || d.created_at)}`]
-                            .filter(Boolean).join(' · ')}
+                      <div className="flex items-center justify-between gap-2 mt-1.5">
+                        <span className={`text-[11px] tabular-nums ${
+                          d.monthly_amount ? 'text-gray-700 font-medium' : 'text-amber-600'}`}>
+                          {d.monthly_amount
+                            ? `${money(d.monthly_amount, d.currency)}${d.tariff ? ` · ${d.tariff}` : ''}`
+                            : 'сумма не указана'}
                         </span>
-                        {d.next_step_at && (
-                          <span className={`whitespace-nowrap ${
-                            slaTone(d.next_step_at) === 'red' ? 'text-red-600 font-semibold' : ''}`}>
-                            {fmtDateTime(d.next_step_at)}
-                          </span>
-                        )}
+                        {/* Владелец — инициалами: имя целиком повторялось в каждой
+                            карточке колонки и съедало строку */}
+                        <span
+                          title={d.owner_name || 'без сейлза'}
+                          className="w-5 h-5 rounded-full bg-gray-200 text-gray-600 text-[9px] font-bold
+                                     grid place-items-center flex-none"
+                        >
+                          {(d.owner_name || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                        </span>
                       </div>
+
+                      {/* Проблема и следующий шаг — одной строкой, значками */}
+                      <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-gray-100 text-[10.5px]">
+                        {problem
+                          ? <span className="text-red-600 font-semibold whitespace-nowrap">{problem}</span>
+                          : d.next_step
+                            ? <span className="text-gray-500 truncate" title={d.next_step}>
+                                {d.next_step}{d.next_step_at ? ` · ${fmtDateTime(d.next_step_at)}` : ''}
+                              </span>
+                            : <span className="text-amber-600 font-semibold">шаг не назначен</span>}
+                        <span className="ml-auto text-gray-300 whitespace-nowrap" title={
+                          `создана ${fmtDateTime(d.created_at)}` +
+                          (d.updated_at ? `, изменена ${fmtDateTime(d.updated_at)}` : '')
+                        }>
+                          {ago(d.updated_at || d.created_at)}
+                        </span>
+                      </div>
+
                       {d.doc_opens ? (
                         <div className="text-[10.5px] text-emerald-600 mt-1">КП открыто {d.doc_opens}×</div>
                       ) : null}
