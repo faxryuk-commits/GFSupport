@@ -645,3 +645,91 @@ export const RangePicker = ({ value, onChange }: { value: Range; onChange: (r: R
     </div>
   )
 }
+
+/**
+ * Постраничная навигация с номерами.
+ *
+ * «Назад / Дальше» не отвечают на вопрос «сколько ещё» и не дают прыгнуть в
+ * конец. Номера отвечают: видно, где ты и сколько всего.
+ */
+export const PageNumbers = ({ offset, limit, total, onChange }: {
+  offset: number; limit: number; total: number; onChange: (o: number) => void
+}) => {
+  const pages = Math.max(1, Math.ceil(total / limit))
+  const current = Math.floor(offset / limit) + 1
+  if (pages <= 1) return null
+
+  // Показываем края и окно вокруг текущей: 1 … 7 8 [9] 10 11 … 99
+  const nums: Array<number | '…'> = []
+  const push = (n: number) => { if (!nums.includes(n)) nums.push(n) }
+  push(1)
+  if (current > 4) nums.push('…')
+  for (let i = Math.max(2, current - 2); i <= Math.min(pages - 1, current + 2); i++) push(i)
+  if (current < pages - 3) nums.push('…')
+  if (pages > 1) push(pages)
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      <button disabled={current === 1} onClick={() => onChange((current - 2) * limit)}
+        className="text-[12px] px-2 py-1 border border-gray-300 rounded-md disabled:opacity-40">‹</button>
+      {nums.map((n, i) => n === '…' ? (
+        <span key={`d${i}`} className="text-[12px] text-gray-400 px-1">…</span>
+      ) : (
+        <button key={n} onClick={() => onChange((n - 1) * limit)}
+          className={`text-[12px] min-w-[26px] px-1.5 py-1 rounded-md border ${
+            n === current ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                          : 'border-gray-300 text-gray-600 hover:border-blue-400'}`}>
+          {n}
+        </button>
+      ))}
+      <button disabled={current === pages} onClick={() => onChange(current * limit)}
+        className="text-[12px] px-2 py-1 border border-gray-300 rounded-md disabled:opacity-40">›</button>
+    </div>
+  )
+}
+
+/**
+ * Панель фильтров, свёрнутая по умолчанию.
+ *
+ * Развёрнутые фильтры занимают две строки и отодвигают сам список — а нужны
+ * они пару раз в день. В свёрнутом виде показываем, что уже выбрано: иначе
+ * человек не поймёт, почему список короткий.
+ */
+export const FilterBar = ({ active, children, right }: {
+  active: string[]; children: ReactNode; right?: ReactNode
+}) => {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border-b border-gray-100">
+      <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
+        <button onClick={() => setOpen(o => !o)}
+          className={`text-[12px] px-2.5 py-1.5 rounded-lg border ${
+            active.length ? 'border-blue-400 text-blue-700 bg-blue-50' : 'border-gray-300 text-gray-600'}`}>
+          Фильтры{active.length ? ` · ${active.length}` : ''} {open ? '▴' : '▾'}
+        </button>
+        {!open && active.map(a => (
+          <span key={a} className="text-[11.5px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{a}</span>
+        ))}
+        {right}
+      </div>
+      {open && <div className="px-4 pb-3 flex gap-2 flex-wrap items-center">{children}</div>}
+    </div>
+  )
+}
+
+/**
+ * Панель массовых действий: появляется, когда что-то отмечено.
+ * Отмечать по одному и повторять действие двадцать раз — не работа.
+ */
+export const BulkBar = ({ count, onClear, children }: {
+  count: number; onClear: () => void; children: ReactNode
+}) => {
+  if (!count) return null
+  return (
+    <div className="sticky bottom-0 z-20 bg-gray-900 text-white px-4 py-2.5 flex items-center gap-2 flex-wrap">
+      <span className="text-[12.5px] font-semibold">Выбрано: {count}</span>
+      <div className="flex gap-1.5 flex-wrap ml-2">{children}</div>
+      <button onClick={onClear} className="ml-auto text-[12px] text-gray-300 hover:text-white">снять выделение</button>
+    </div>
+  )
+}

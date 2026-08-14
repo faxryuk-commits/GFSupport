@@ -61,7 +61,68 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ ok: true, lead_id: res.lead_id, account_id: res.account_id })
     }
 
+    // Массовые действия: отмечать по одному и повторять двадцать раз — не работа
+    if (action === 'bulk') {
+      const ids: string[] = Array.isArray(body?.ids) ? body.ids : []
+      if (!ids.length) return json({ error: 'нечего менять' }, 400)
+      const op = String(body?.op || '')
+
+      if (op === 'assign') {
+        const target = body.agentId || ctx.agentId
+        await sql`
+          UPDATE sales_leads
+          SET assigned_agent_id = ${target}, assigned_at = NOW(), status = 'assigned',
+              sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes'), updated_at = NOW()
+          WHERE id = ANY(${ids}) AND org_id = ${orgId}
+        `
+        return json({ ok: true, changed: ids.length })
+      }
+      if (op === 'nurture') {
+        await sql`
+          UPDATE sales_leads SET status = 'nurture', sla_due_at = NULL, updated_at = NOW()
+          WHERE id = ANY(${ids}) AND org_id = ${orgId}
+        `
+        return json({ ok: true, changed: ids.length })
+      }
+      if (op === 'archive') {
+        await sql`
+          UPDATE sales_leads SET archived_at = NOW(), status = 'junk', updated_at = NOW()
+          WHERE id = ANY(${ids}) AND org_id = ${orgId}
+        `
+        return json({ ok: true, changed: ids.length })
+      }
+      if (op === 'delete') {
+        if (!ctx.isOrgAdmin && !ctx.isGlobalAdmin) return json({ error: 'только администратор' }, 403)
+        // Лиды, из которых уже выросли сделки, не трогаем: удалить их значит
+        // оторвать сделку от истории обращения
+        const kept = await sql`
+          SELECT DISTINCT source_lead_id FROM sales_deals
+          WHERE org_id = ${orgId} AND source_lead_id = ANY(${ids})
+        ` as any[]
+        const protectedIds = kept.map(k => k.source_lead_id)
+        const toDelete = ids.filter(id => !protectedIds.includes(id))
+        if (toDelete.length) {
+          await sql`DELETE FROM sales_leads WHERE id = ANY(${toDelete}) AND org_id = ${orgId}`
+        }
+        return json({ ok: true, deleted: toDelete.length, skipped: protectedIds.length })
+      }
+      return json({ error: 'unknown op' }, 400)
+    }
+
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
+
+    // Передача лида другому сейлзу: у уходящего в отпуск остаются десятки
+    if (action === 'reassign') {
+      if (!body.agentId) return json({ error: 'нужен сотрудник' }, 400)
+      await sql`
+        UPDATE sales_leads
+        SET assigned_agent_id = ${body.agentId}, assigned_at = NOW(),
+            status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END,
+            updated_at = NOW()
+        WHERE id = ${body.leadId} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
 
     if (action === 'archive') {
       await sql`
@@ -222,7 +283,13 @@ export default async function handler(req: Request): Promise<Response> {
     params,
   )
 
-  const [statsRows, sources, totalRows] = await Promise.all([statsQ, sourcesQ, totalQ])
+  const agentsQ = sql`
+    SELECT id, name FROM support_agents
+    WHERE org_id = ${orgId} AND is_active = true AND (department = 'sales' OR role = 'admin')
+    ORDER BY name
+  `
+
+  const [statsRows, sources, totalRows, agents] = await Promise.all([statsQ, sourcesQ, totalQ, agentsQ])
 
   // Поля заявки — то, что человек реально заполнил в форме. Они лежат в raw
   // по-разному: у Amo это custom_fields_values, у неразобранных — _unsorted_meta,
@@ -274,6 +341,7 @@ export default async function handler(req: Request): Promise<Response> {
   return json({
     leads: rows, stats: (statsRows as any[])[0] || {}, sources,
     total: (totalRows as any[])[0]?.total ?? null,
+    agents,
     view, hasMore, offset, limit, market,
   })
 }

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
-         Modal, Field, Btn, useAutoRefresh, slaTone, slaText, Skeleton , RangePicker, rangeOf } from './kit'
+         Modal, Field, Btn, useAutoRefresh, slaTone, slaText, Skeleton , RangePicker, rangeOf , PageNumbers, FilterBar, BulkBar } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { useSalesRefs, optionsFor } from './refs'
+import { parsePhone } from '@/shared/lib/phone'
 
 /**
  * Лиды — входящие обращения из всех каналов в одной таблице.
@@ -44,6 +45,7 @@ interface Lead {
 
 interface LeadsData {
   leads: Lead[]
+  agents?: Array<{ id: string; name: string }>
   hasMore: boolean
   total?: number | null
   stats: {
@@ -89,6 +91,9 @@ export function SalesLeadsPage() {
   const region = useRegion('leads')
   const [busy, setBusy] = useState<string | null>(null)
   const [range, setRange] = useState(() => rangeOf('all'))
+  // Отметки для массовых действий
+  const [picked, setPicked] = useState<string[]>([])
+  const toggle = (id: string) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   const [facets, setFacets] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState(false)
   const refs = useSalesRefs()
@@ -135,6 +140,40 @@ export function SalesLeadsPage() {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** Массовое действие: одно нажатие вместо двадцати одинаковых. */
+  const bulk = async (op: string, agentId?: string) => {
+    if (!picked.length) return
+    const names: Record<string, string> = {
+      assign: 'взять в работу', nurture: 'отправить на прогрев',
+      archive: 'убрать в архив', delete: 'удалить насовсем',
+    }
+    if (op === 'delete' && !confirm(`Удалить ${picked.length} лидов насовсем? Те, из которых выросли сделки, будут пропущены.`)) return
+    if (op !== 'delete' && !confirm(`${names[op] || op}: ${picked.length} лидов?`)) return
+    setBusy('bulk')
+    try {
+      const res: any = await apiPost('/sales/leads?action=bulk', { op, ids: picked, agentId })
+      if (res?.skipped) setError(`Пропущено ${res.skipped}: по ним уже есть сделки`)
+      setPicked([])
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Действие не выполнено')
+    } finally { setBusy(null) }
+  }
+
+  const reassign = async (leadId: string, name: string) => {
+    const list = (data?.agents || []).map((a, i) => `${i + 1}. ${a.name}`).join('\n')
+    const pick = prompt(`Кому передать «${name}»?\n\n${list}\n\nНомер:`)
+    const agent = (data?.agents || [])[Number(pick) - 1]
+    if (!agent) return
+    setBusy(leadId)
+    try {
+      await apiPost('/sales/leads?action=reassign', { leadId, agentId: agent.id })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось передать')
+    } finally { setBusy(null) }
   }
 
   const act = async (action: string, leadId: string) => {
@@ -186,7 +225,22 @@ export function SalesLeadsPage() {
           то же самое, что не иметь фильтров */}
       <div className="bg-white border border-gray-200 rounded-xl sticky top-0 z-20 shadow-sm">
         <Tabs items={VIEWS} value={view} onChange={v => { setView(v); setOffset(0) }} />
-        <div className="p-3 flex gap-2 flex-wrap items-center">
+        <FilterBar
+          active={[
+            q && `поиск: ${q}`,
+            facets.kind && 'вид обращения',
+            source && 'источник',
+            range.key !== 'all' && 'период',
+            facets.pos && `POS: ${facets.pos}`,
+            facets.city && facets.city,
+            facets.orders_per_day && `${facets.orders_per_day} зак/день`,
+          ].filter(Boolean) as string[]}
+          right={
+            <span className="text-[11.5px] text-gray-400 ml-auto">
+              показано {data.leads.length}{data.total ? ` из ${data.total}` : ''}
+            </span>
+          }
+        >
           <input value={q} onChange={e => { setQ(e.target.value); setOffset(0) }} placeholder="Бренд или телефон"
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-56" />
           {/* Вид обращения важнее источника: заявку с формы можно звонить
@@ -231,7 +285,7 @@ export function SalesLeadsPage() {
           <span className="text-[11.5px] text-gray-400 ml-auto">
             показано {data.leads.length}{data.total ? ` из ${data.total}` : ''}
           </span>
-        </div>
+                </FilterBar>
       </div>
 
       {data.leads.length === 0 ? (
@@ -254,21 +308,56 @@ export function SalesLeadsPage() {
             <table className="w-full min-w-[820px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                  <Th>
+                    <input type="checkbox"
+                      checked={picked.length > 0 && picked.length === data.leads.length}
+                      onChange={e => setPicked(e.target.checked ? data.leads.map(l => l.id) : [])} />
+                  </Th>
+                  <Th>№</Th>
                   <Th>Лид</Th><Th>Источник</Th><Th align="right">ICP</Th>
                   <Th>Статус</Th><Th>Аккаунт</Th><Th align="right"></Th>
                 </tr>
               </thead>
               <tbody>
-                {data.leads.map(l => {
+                {data.leads.map((l, idx) => {
                   const merged = l.account_created && new Date(l.account_created) < new Date(l.created_at)
+                  const phone = parsePhone(l.phone)
                   return (
-                    <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50 align-top">
+                    <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 align-top ${
+                      picked.includes(l.id) ? 'bg-blue-50/50' : ''}`}>
+                      <td className="px-4 py-2.5">
+                        <input type="checkbox" checked={picked.includes(l.id)}
+                          onChange={() => toggle(l.id)} />
+                      </td>
+                      {/* Номер строки: «сколько ещё осталось» видно без счёта пальцем */}
+                      <td className="px-2 py-2.5 text-[11px] text-gray-400 tabular-nums">
+                        {offset + idx + 1}
+                      </td>
                       <td className="px-4 py-2.5">
                         <div className="font-semibold text-gray-900">{l.name}</div>
                         {/* Кто именно обратился и как с ним связаться */}
                         {(l.contact_name || l.phone) && (
                           <div className="text-[11.5px] text-gray-600">
-                            {[l.contact_name, l.phone].filter(Boolean).join(' · ')}
+                            {l.contact_name}
+                            {l.contact_name && l.phone ? ' · ' : ''}
+                            {/* Номер в едином виде, с оператором: на городской не
+                                напишешь в мессенджер, а кривой номер — причина
+                                половины «недозвонов» */}
+                            {l.phone && (
+                              <span title={[phone.countryName, phone.operator, phone.problem]
+                                .filter(Boolean).join(' · ')}>
+                                {phone.valid ? phone.pretty : l.phone}
+                                {phone.operator && (
+                                  <span className={`ml-1 text-[10.5px] ${
+                                    phone.kind === 'landline' ? 'text-amber-600' : 'text-gray-400'}`}>
+                                    {phone.kind === 'landline' ? 'городской' : phone.operator}
+                                  </span>
+                                )}
+                                {!phone.valid && (
+                                  <span className="ml-1 text-[10.5px] text-red-600">номер странный</span>
+                                )}
+                              </span>
+                            )}
                           </div>
                         )}
                         <div className="text-[11px] text-gray-400">
@@ -363,6 +452,11 @@ export function SalesLeadsPage() {
                                 На прогрев
                               </button>
                             )}
+                            <button disabled={busy === l.id} onClick={() => reassign(l.id, l.name)}
+                              title="Передать другому сейлзу"
+                              className="ml-1.5 text-[12px] px-2 py-1 border border-gray-300 rounded-lg disabled:opacity-50">
+                              Передать
+                            </button>
                             <button disabled={busy === l.id} onClick={() => act('archive', l.id)}
                               title="Убрать из списка, сохранив в истории"
                               className="ml-1.5 text-[12px] px-2 py-1 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200 disabled:opacity-50">
@@ -377,8 +471,25 @@ export function SalesLeadsPage() {
               </tbody>
             </table>
           </div>
-          <Pager offset={offset} limit={LIMIT} count={data.leads.length} hasMore={data.hasMore}
-            total={data.total ?? undefined} onChange={setOffset} />
+          <BulkBar count={picked.length} onClear={() => setPicked([])}>
+            <Btn onClick={() => bulk('assign')}>Взять себе</Btn>
+            <Btn onClick={() => {
+              const list = (data.agents || []).map((a, i) => `${i + 1}. ${a.name}`).join('\n')
+              const pick = prompt(`Кому передать ${picked.length} лидов?\n\n${list}\n\nНомер:`)
+              const agent = (data.agents || [])[Number(pick) - 1]
+              if (agent) bulk('assign', agent.id)
+            }}>Передать</Btn>
+            <Btn onClick={() => bulk('nurture')}>На прогрев</Btn>
+            <Btn onClick={() => bulk('archive')}>В архив</Btn>
+            <Btn kind="danger" onClick={() => bulk('delete')}>Удалить</Btn>
+          </BulkBar>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50 flex-wrap">
+            <span className="text-[11.5px] text-gray-500">
+              строки {offset + 1}–{offset + data.leads.length}{data.total ? ` из ${data.total}` : ''}
+            </span>
+            <PageNumbers offset={offset} limit={LIMIT} total={data.total || data.leads.length}
+              onChange={setOffset} />
+          </div>
         </Card>
       )}
 

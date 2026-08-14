@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
-         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone } from './kit'
+         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone , PageNumbers, FilterBar } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { SalesDealPage } from './SalesDealPage'
 import { useSalesRefs, optionsFor } from './refs'
@@ -352,7 +352,20 @@ export function SalesDealsPage() {
             </button>
           ))}
         </div>
-        <div className="p-3 flex gap-2 flex-wrap items-center">
+        <FilterBar
+          active={[
+            q && `поиск: ${q}`,
+            owner && 'сейлз',
+            range.key !== 'all' && 'период',
+            ...Object.entries(facets).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`),
+          ].filter(Boolean) as string[]}
+          right={
+            <span className="text-[11.5px] text-gray-400 ml-auto">
+              показано {data.deals.length}
+              {mode === 'kanban' && t.open_deals ? ` из ${t.open_deals}` : data.hasMore ? '+' : ''}
+            </span>
+          }
+        >
           <input
             value={q}
             onChange={e => { setQ(e.target.value); setOffset(0) }}
@@ -392,7 +405,7 @@ export function SalesDealsPage() {
             показано {data.deals.length}
             {mode === 'kanban' && t.open_deals ? ` из ${t.open_deals}` : data.hasMore ? '+' : ''}
           </span>
-        </div>
+                </FilterBar>
       </div>
 
       {data.deals.length === 0 && (
@@ -591,16 +604,17 @@ export function SalesDealsPage() {
             <table className="w-full min-w-[780px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400">
-                  <Th>Сделка</Th><Th>Этап</Th><Th>Сейлз</Th>
+                  <Th>№</Th><Th>Сделка</Th><Th>Этап</Th><Th>Сейлз</Th>
                   <Th align="right">В месяц</Th><Th align="right">На этапе</Th><Th>Следующий шаг</Th>
                   <Th align="right"></Th>
                 </tr>
               </thead>
               <tbody>
-                {data.deals.map(d => {
+                {data.deals.map((d, idx) => {
                   const problem = problemOf(d)
                   return (
                     <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="px-2 py-2.5 text-[11px] text-gray-400 tabular-nums">{offset + idx + 1}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <button onClick={() => setOpenDeal(d.id)}
                           className="font-semibold text-gray-900 hover:text-blue-600 text-left">
@@ -656,8 +670,14 @@ export function SalesDealsPage() {
               </tbody>
             </table>
           </div>
-          <Pager offset={offset} limit={LIMIT} count={data.deals.length} hasMore={data.hasMore}
-            onChange={setOffset} />
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50 flex-wrap">
+            <span className="text-[11.5px] text-gray-500">
+              строки {offset + 1}–{offset + data.deals.length}
+              {t.open_deals ? ` из ${t.open_deals}` : ''}
+            </span>
+            <PageNumbers offset={offset} limit={LIMIT} total={t.open_deals || data.deals.length}
+              onChange={setOffset} />
+          </div>
         </div>
       )}
 
