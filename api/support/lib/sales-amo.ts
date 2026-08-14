@@ -130,7 +130,8 @@ export async function fetchContacts(creds: AmoCreds, ids: number[]): Promise<Map
  * поэтому берём первое осмысленное: имя контакта, затем телефон, и только
  * в крайнем случае — понятную подпись по каналу.
  */
-const SERVICE_NAME = /^(instagram_business|facebook|instagram|telegram|сделка|автосделка|lead|leads|amocrm)\b|^[a-z_]+:\d+$/i
+// Строки, которые подставляет не человек, а система: по ним клиента не узнать
+const SERVICE_NAME = /^(instagram_business|facebook|instagram|telegram|сделка|автосделка|lead|leads|amocrm|company|заявка)\b|^[a-z_]+:\d+$|^новая заявка|^без названия$/i
 
 function channelLabel(lead: any): string {
   const meta = lead?._unsorted_meta
@@ -143,8 +144,10 @@ function channelLabel(lead: any): string {
 }
 
 function readableName(lead: any, contact?: { phone?: string; name?: string }): string {
-  const brand = String(cf(lead, 'Бренд') || '').trim()
-  if (brand) return brand
+  // Бренд — то, как клиент называет себя сам. Всё остальное подставляет система
+  const brand = String(cf(lead, 'Бренд') || cf(lead, 'Название компании')
+    || cf(lead, 'Компания') || '').trim()
+  if (brand && !SERVICE_NAME.test(brand)) return brand
   const raw = String(lead?.name || '').trim()
   if (raw && !SERVICE_NAME.test(raw)) return raw
   // Имя профиля из мессенджера: «Nexus Club» вместо

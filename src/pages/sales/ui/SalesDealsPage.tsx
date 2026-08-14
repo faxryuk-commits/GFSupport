@@ -312,7 +312,7 @@ export function SalesDealsPage() {
   const maxInStage = Math.max(1, ...data.summary.map(x => x.deals))
 
   return (
-    <PageShell header={
+    <PageShell fill header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Сделки</h1>
@@ -420,7 +420,7 @@ export function SalesDealsPage() {
       )}
 
       {mode === 'kanban' && view !== 'won' && view !== 'lost' && data.deals.length > 0 && (
-        <div className="flex gap-3 overflow-x-auto items-start pb-2 -mx-1 px-1">
+        <div className="flex-1 min-h-0 flex gap-3 overflow-x-auto items-start pb-2 -mx-1 px-1">
           {data.summary.map(st => (
             <section
               key={st.key}
@@ -428,7 +428,7 @@ export function SalesDealsPage() {
               onDragLeave={() => setOverStage(o => (o === st.key ? null : o))}
               onDrop={e => { e.preventDefault(); drop(st.key) }}
               className={`flex-none w-[268px] bg-white border rounded-xl flex flex-col
-                max-h-[calc(100vh-290px)] transition-colors duration-150 ${
+                max-h-full transition-colors duration-150 ${
                 overStage === st.key ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/40' : 'border-gray-200'}`}
             >
               <header className="px-3 py-2.5 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
@@ -599,8 +599,8 @@ export function SalesDealsPage() {
       )}
 
       {mode === 'table' && data.deals.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full min-w-[780px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400">

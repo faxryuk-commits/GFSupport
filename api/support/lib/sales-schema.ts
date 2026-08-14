@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.11-leadkey'
+const SCHEMA_VERSION = '2026-08-14.12-account'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -822,6 +822,11 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_role VARCHAR(50)`
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS country VARCHAR(50)`
+  // Как клиента найти снаружи: сайт и соцсети. Сейлз всё равно их ищет перед
+  // звонком — пусть лежат в карточке, а не в переписке
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS website VARCHAR(200)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS instagram VARCHAR(120)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS telegram VARCHAR(120)`
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
 
   // «Когда трогали в последний раз» — у лида не было вовсе, а без этого

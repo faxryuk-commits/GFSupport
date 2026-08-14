@@ -164,16 +164,52 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
       </div>
 
       <Kpis items={[
-        ['Статус', a.first_order_at ? 'Работает' : a.onboarding_brand_id ? 'Внедрение' : 'В продаже',
-          a.first_order_at ? `первый заказ ${fmtDate(a.first_order_at)}` : 'первого заказа ещё нет'],
-        ['Сделок', String((data.deals || []).length),
-          `${(data.deals || []).filter((d: any) => d.won_at).length} выиграно`],
-        ['Подписано', money(wonAmount, 'UZS'), 'в месяц по выигранным'],
-        ['Обращений', String((data.tickets || []).length), 'в поддержку'],
-        [isPartner ? 'Привёл клиентов' : 'Привёл партнёр',
-          isPartner ? String((data.referred || []).length) : (a.referrer_name || '—'),
-          isPartner ? (a.program_name || 'программа не задана') : 'источник аккаунта'],
+        ['Статус', a.first_order_at ? 'Работает' : a.onboarding_brand_id ? 'Внедрение'
+          : data.money?.won ? 'Подписан' : 'В продаже',
+          a.first_order_at ? `первый заказ ${fmtDate(a.first_order_at)}`
+            : data.money?.last_won_at ? `подписал ${fmtDate(data.money.last_won_at)}`
+            : 'первого заказа ещё нет'],
+        ['Подписано', money(data.money?.signed_monthly, 'UZS'),
+          data.money?.signed_onetime
+            ? `плюс ${money(data.money.signed_onetime, 'UZS')} разово`
+            : 'в месяц по выигранным'],
+        ['Оплачено', money(data.payments?.paid_amount, 'UZS'),
+          data.payments?.last_paid_at
+            ? `последний платёж ${fmtDate(data.payments.last_paid_at)}`
+            : 'через Click оплат нет'],
+        ['Сделки', `${data.money?.open ?? 0} / ${data.money?.won ?? 0} / ${data.money?.lost ?? 0}`,
+          'в работе / выиграно / проиграно'],
+        ['Обращений', String(data.activity?.leads_total ?? 0),
+          data.activity?.first_touch_at
+            ? `первое ${fmtDate(data.activity.first_touch_at)}`
+            : 'обращений не было'],
       ]} />
+
+      {/* Здоровье клиента: поддержка и давность контакта — по ним видно риск */}
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex gap-5 flex-wrap text-[12.5px]">
+        <span className="text-gray-500">
+          Последняя активность:{' '}
+          <span className="text-gray-900 font-medium">
+            {fmtDate(data.activity?.last_deal_at || data.activity?.last_lead_at || a.created_at)}
+          </span>
+        </span>
+        <span className="text-gray-500">
+          Обращений в поддержку: <span className="text-gray-900 font-medium">{(data.tickets || []).length}</span>
+        </span>
+        {isPartner ? (
+          <span className="text-gray-500">
+            Привёл клиентов: <span className="text-gray-900 font-medium">{(data.referred || []).length}</span>
+            {a.program_name ? ` · программа «${a.program_name}»` : ' · программа не задана'}
+          </span>
+        ) : (
+          <span className="text-gray-500">
+            Привёл: <span className="text-gray-900 font-medium">{a.referrer_name || 'сами пришли'}</span>
+          </span>
+        )}
+        {a.onboarding_brand_id && (
+          <Link to="/onboarding" className="text-blue-600 hover:underline">проект внедрения →</Link>
+        )}
+      </div>
 
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div className="space-y-4">
@@ -338,6 +374,10 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
                 </>
               )}
               <InlineField label="ИНН" value={a.inn} onSave={v => patch('inn', v)} />
+              {/* Где клиента найти снаружи: сейлз всё равно ищет это перед звонком */}
+              <InlineField label="Сайт" value={a.website} onSave={v => patch('website', v)} />
+              <InlineField label="Instagram" value={a.instagram} onSave={v => patch('instagram', v)} />
+              <InlineField label="Telegram" value={a.telegram} onSave={v => patch('telegram', v)} />
             </div>
           </Card>
 

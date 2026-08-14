@@ -334,7 +334,19 @@ export default async function handler(req: Request): Promise<Response> {
       details.push({ label: LABELS[k] || k, value: text.slice(0, 80) })
     }
 
-    row.details = details.slice(0, 10)
+    // Убираем повторы: у рекламной формы «Форма», «Страница» и название лида
+    // часто одно и то же — «Facebook №2668813440199987» трижды подряд
+    const seen = new Set<string>()
+    const name = String(row.name || '').toLowerCase()
+    row.details = details
+      .filter(d => {
+        const v = d.value.trim().toLowerCase()
+        if (!v || v === name) return false
+        if (seen.has(v)) return false
+        seen.add(v)
+        return true
+      })
+      .slice(0, 10)
     delete row.raw
   }
 

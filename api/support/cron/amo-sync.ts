@@ -95,6 +95,24 @@ export default async function handler(req: Request): Promise<Response> {
       lead.name = lead.name || u.metadata?.form_name || u.source_name || null
       lead.created_at = lead.created_at || u.created_at
       lead._embedded = { ...(lead._embedded || {}), contacts: u._embedded?.contacts || [] }
+      // У «Неразобранного» вложенная сделка почти пустая: ни бренда, ни города,
+      // ни направления. Из-за этого лид назывался «Заявка с рекламной формы», а
+      // поля пустовали. Догружаем карточку целиком — это один запрос на лид,
+      // и он окупается: сейлз видит, кто обратился, не открывая Amo
+      if (lead.id && !lead.custom_fields_values) {
+        try {
+          const full = await amoGet(creds, `/leads/${lead.id}`)
+          if (full?.id) {
+            lead.custom_fields_values = full.custom_fields_values
+            lead.name = full.name || lead.name
+            lead.price = full.price ?? lead.price
+            lead.status_id = full.status_id ?? lead.status_id
+            lead.responsible_user_id = full.responsible_user_id ?? lead.responsible_user_id
+          }
+        } catch {
+          // Не догрузилось — работаем с тем, что есть: лид важнее полноты
+        }
+      }
       leads.push(lead)
     }
 

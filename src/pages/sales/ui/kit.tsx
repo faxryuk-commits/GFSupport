@@ -39,10 +39,13 @@ export const Chip = ({ tone = 'gray', children }: { tone?: string; children: Rea
   </span>
 )
 
-export const Card = ({ title, sub, right, children }: {
+export const Card = ({ title, sub, right, children, fill }: {
   title: string; sub?: string; right?: ReactNode; children: ReactNode
+  /** Растянуть на всю доступную высоту: для списков в режиме одного окна. */
+  fill?: boolean
 }) => (
-  <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+  <section className={`bg-white border border-gray-200 rounded-xl overflow-hidden ${
+    fill ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
     <header className="px-4 py-3 border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap">
       <div>
         <h3 className="text-[13.5px] font-semibold text-gray-900">{title}</h3>
@@ -97,10 +100,23 @@ export const Tabs = ({ items, value, onChange, counts }: {
  * MainLayout отдаёт нам блок с overflow-auto, поэтому берём его высоту и
  * гасим внешний скролл своим h-full + overflow-hidden.
  */
-export const PageShell = ({ header, children }: { header: ReactNode; children: ReactNode }) => (
+export const PageShell = ({ header, children, fill }: {
+  header: ReactNode
+  children: ReactNode
+  /**
+   * Режим одного окна: страница занимает высоту экрана целиком, а прокрутка
+   * живёт внутри списка. Иначе шапка со сводкой и фильтрами уезжает наверх,
+   * и человек листает страницу вместо того, чтобы листать данные.
+   */
+  fill?: boolean
+}) => (
   <div className="h-full flex flex-col overflow-hidden">
     <div className="flex-none px-5 pt-5 pb-3 bg-[#f5f7fa] border-b border-gray-200">{header}</div>
-    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">{children}</div>
+    <div className={fill
+      ? 'flex-1 min-h-0 flex flex-col gap-4 px-5 py-4 overflow-hidden'
+      : 'flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4'}>
+      {children}
+    </div>
   </div>
 )
 

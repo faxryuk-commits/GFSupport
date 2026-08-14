@@ -18,6 +18,7 @@ export const config = { runtime: 'edge' }
  * блоков была бы недоступна.
  */
 const EDITABLE = ['name', 'merchant_id', 'inn', 'channel_id', 'city', 'account_type',
+  'website', 'instagram', 'telegram', 'country', 'segment',
   'partner_kind', 'partner_program_id', 'referred_by_account_id', 'notes', 'owner_agent_id']
 
 export default async function handler(req: Request): Promise<Response> {
@@ -39,6 +40,11 @@ export default async function handler(req: Request): Promise<Response> {
       const v: any = raw === '' ? null : raw
       switch (k) {
         case 'name': await sql`UPDATE sales_accounts SET name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'website': await sql`UPDATE sales_accounts SET website = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'instagram': await sql`UPDATE sales_accounts SET instagram = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'telegram': await sql`UPDATE sales_accounts SET telegram = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'country': await sql`UPDATE sales_accounts SET country = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'segment': await sql`UPDATE sales_accounts SET segment = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'merchant_id': await sql`UPDATE sales_accounts SET merchant_id = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'inn': await sql`UPDATE sales_accounts SET inn = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'channel_id': await sql`UPDATE sales_accounts SET channel_id = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
@@ -182,7 +188,39 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    return json({ account, deals, contacts, documents, leads, referred, programs, tickets })
+    // Деньги и здоровье: то, что спрашивают про клиента в первую очередь
+    const [money] = await sql`
+      SELECT
+        COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.won_at IS NOT NULL), 0) AS signed_monthly,
+        COALESCE(SUM(d.onetime_amount) FILTER (WHERE d.won_at IS NOT NULL), 0) AS signed_onetime,
+        COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int AS won,
+        COUNT(*) FILTER (WHERE d.lost_at IS NOT NULL)::int AS lost,
+        COUNT(*) FILTER (WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL)::int AS open,
+        MIN(d.created_at) AS first_deal_at,
+        MAX(d.won_at) AS last_won_at
+      FROM sales_deals d WHERE d.account_id = ${id} AND d.org_id = ${orgId}
+    ` as any[]
+
+    const [activity] = await sql`
+      SELECT
+        (SELECT MIN(created_at) FROM sales_leads WHERE account_id = ${id}) AS first_touch_at,
+        (SELECT MAX(created_at) FROM sales_leads WHERE account_id = ${id}) AS last_lead_at,
+        (SELECT MAX(updated_at) FROM sales_deals WHERE account_id = ${id}) AS last_deal_at,
+        (SELECT COUNT(*)::int FROM sales_leads WHERE account_id = ${id}) AS leads_total
+    ` as any[]
+
+    // Оплаты по офертам: то, что реально пришло через Click
+    const [payments] = await sql`
+      SELECT COUNT(*) FILTER (WHERE paid_at IS NOT NULL)::int AS paid_docs,
+             COALESCE(SUM(total) FILTER (WHERE paid_at IS NOT NULL), 0) AS paid_amount,
+             MAX(paid_at) AS last_paid_at
+      FROM sales_documents WHERE account_id = ${id} AND org_id = ${orgId}
+    ` as any[]
+
+    return json({
+      account, deals, contacts, documents, leads, referred, programs, tickets,
+      money: money || {}, activity: activity || {}, payments: payments || {},
+    })
   }
 
   const type = url.searchParams.get('type') || 'client'

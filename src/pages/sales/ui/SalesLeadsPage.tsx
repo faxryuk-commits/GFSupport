@@ -194,7 +194,7 @@ export function SalesLeadsPage() {
   const s = data.stats || {}
 
   return (
-    <PageShell header={
+    <PageShell fill header={
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Лиды</h1>
@@ -298,13 +298,15 @@ export function SalesLeadsPage() {
               : 'Под выбранный фильтр обращений нет.'}
         />
       ) : (
+        <div className="flex-1 min-h-0 flex flex-col">
         <Card
+          fill
           title={VIEWS.find(v => v[0] === view)?.[1] || ''}
           sub={view === 'nurture'
             ? 'лид сейчас не готов покупать: его греют бот и рассылка, сейлз вернётся по сигналу'
             : 'склейка по телефону выполняется на приёме'}
         >
-          <div className="overflow-x-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full min-w-[820px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
@@ -491,6 +493,7 @@ export function SalesLeadsPage() {
               onChange={setOffset} />
           </div>
         </Card>
+        </div>
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
