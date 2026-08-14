@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.8-assistant'
+const SCHEMA_VERSION = '2026-08-14.9-sources'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -167,6 +167,9 @@ const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
   { key: 'call', label: 'Входящий звонок', kind: 'inbound' },
   { key: 'referral', label: 'Реферал', kind: 'referral' },
   { key: 'manual', label: 'Заведён вручную', kind: 'referral' },
+  // Отдельная строка вместо тихой подмены на «вручную»: неопознанный источник
+  // должен быть видно в отчёте, а не прятаться за чужим ярлыком
+  { key: 'unknown', label: 'Источник не определён', kind: 'inbound' },
   { key: 'upsell', label: 'Допродажа клиенту', kind: 'referral' },
   { key: 'partner_lead', label: 'Лид от партнёра', kind: 'referral' },
   { key: 'partner_apply', label: 'Заявка в партнёры', kind: 'inbound' },

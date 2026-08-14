@@ -42,10 +42,28 @@ export function marketByPipeline(pipelineId: number): string | null {
  * и они переживают переименование сделки менеджером.
  */
 export function sourceFromLead(lead: any): { source: string; formId: string | null } {
-  // Заявка из «Неразобранного» несёт id формы в метаданных — это самый надёжный
-  // признак источника, надёжнее тегов и названия
-  const formIdMeta = lead?._unsorted_meta?.form_id
-  if (formIdMeta) return { source: 'meta_leadform', formId: String(formIdMeta) }
+  const meta = lead?._unsorted_meta || {}
+
+  // У «Неразобранного» из мессенджеров источник написан прямо: service —
+  // instagram_business, telegram, whatsapp. Это надёжнее любых тегов, и без
+  // этой ветки диалоги из директа падали в «заведено вручную»
+  const service = String(meta.service || '').toLowerCase()
+  const nameLower = String(lead?.name || '').toLowerCase()
+  if (service.includes('instagram') || nameLower.startsWith('instagram_business:')) {
+    return { source: 'instagram_direct', formId: null }
+  }
+  if (service.includes('whatsapp')) return { source: 'whatsapp', formId: null }
+
+  // Форма с осмысленным именем — не рекламная лид-форма: «telegram-chatbot»
+  // это наш бот на сайте, и называть его Meta-формой значит врать в отчёте
+  const formIdMeta = meta.form_id ? String(meta.form_id) : null
+  if (formIdMeta) {
+    const f = formIdMeta.toLowerCase()
+    if (f.includes('telegram') || service.includes('telegram')) return { source: 'telegram', formId: formIdMeta }
+    if (f.includes('site') || f.includes('web')) return { source: 'site', formId: formIdMeta }
+    return { source: 'meta_leadform', formId: formIdMeta }
+  }
+  if (service.includes('telegram')) return { source: 'telegram', formId: null }
 
   const tags: string[] = ((lead._embedded?.tags || []) as any[])
     .map(t => String(t.name || '').toLowerCase())
@@ -69,9 +87,10 @@ export function sourceFromLead(lead: any): { source: string; formId: string | nu
   const name = String(lead.name || '').toLowerCase()
   if (name.includes('facebook') || name.includes('leads |')) return { source: 'meta_leadform', formId: null }
   if (name.includes('сайт')) return { source: 'site', formId: null }
-  // Заведено руками — отдельный источник. Сваливать это в «рефералы» нельзя:
-  // именно так в Amo сегодня смешаны рефералы, допродажи и ручной ввод
-  return { source: 'manual', formId: null }
+  // Источник не опознан. Раньше здесь стояло «заведено вручную» — и обращения
+  // из директа выглядели так, будто их набрал сейлз. Честнее сказать «не
+  // определён»: это видно в отчёте и чинится правилом, а не догадкой
+  return { source: 'unknown', formId: null }
 }
 
 /** Телефоны и имена контактов одним запросом на всю пачку — лимиты Amo жёсткие. */
@@ -115,6 +134,11 @@ function readableName(lead: any, contact?: { phone?: string; name?: string }): s
   if (brand) return brand
   const raw = String(lead?.name || '').trim()
   if (raw && !SERVICE_NAME.test(raw)) return raw
+  // Имя профиля из мессенджера: «Nexus Club» вместо
+  // «instagram_business:17841448182331145»
+  const profile = String(lead?._unsorted_meta?.client?.name
+    || lead?._unsorted_meta?.from || '').trim()
+  if (profile) return profile
   const contactName = String(contact?.name || '').trim()
   if (contactName) return contactName
   const phone = String(contact?.phone || '').trim()
@@ -136,6 +160,10 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
     city: cf(lead, 'Город') || null,
     market: marketByPipeline(lead.pipeline_id),
     form_id: formId || lead._unsorted_meta?.form_id || null,
+    lead_kind: source === 'instagram_direct' || source === 'telegram' || source === 'whatsapp'
+      ? 'message'
+      : source === 'meta_leadform' || source === 'site' ? 'form'
+      : source === 'call' ? 'call' : null,
     orders_per_day: cf(lead, 'Заказы в день') || null,
     points: cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || null,
     pos: cf(lead, 'POS') || null,
