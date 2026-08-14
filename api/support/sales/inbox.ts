@@ -27,8 +27,10 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
-  const secret = req.headers.get('X-Intake-Secret')
-  const expected = process.env.SALES_INTAKE_SECRET || null
+  // Секрет сравниваем по обрезанным значениям: переменные окружения легко
+  // сохраняются с переводом строки на конце, и тогда верный ключ отвергается
+  const secret = (req.headers.get('X-Intake-Secret') || '').trim()
+  const expected = (process.env.SALES_INTAKE_SECRET || '').trim()
   if (!expected || secret !== expected) return json({ error: 'unauthorized' }, 401)
 
   const sql = getSQL()

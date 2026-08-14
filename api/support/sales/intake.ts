@@ -28,8 +28,8 @@ export default async function handler(req: Request): Promise<Response> {
   const rl = checkRateLimit(`sales-intake:${ip}`, 120, 60_000)
   if (!rl.allowed) return json({ error: 'rate limited', retryAfterMs: rl.retryAfterMs }, 429)
 
-  const secret = req.headers.get('X-Intake-Secret')
-  const expected = process.env.SALES_INTAKE_SECRET || null
+  const secret = (req.headers.get('X-Intake-Secret') || '').trim()
+  const expected = (process.env.SALES_INTAKE_SECRET || '').trim()
   let authorized = Boolean(expected && secret === expected)
   if (!authorized) {
     const ctx = await extractAgentContext(req)

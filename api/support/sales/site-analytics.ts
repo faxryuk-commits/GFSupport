@@ -33,8 +33,9 @@ export default async function handler(req: Request): Promise<Response> {
   const byCron = Boolean(process.env.CRON_SECRET) && auth === `Bearer ${process.env.CRON_SECRET}`
   // Тот же секрет, что у приёмника лидов: сайт шлёт и заявки, и сводку —
   // заводить ради этого второй токен незачем
-  const intakeSecret = process.env.SALES_INTAKE_SECRET || null
-  const byIntake = Boolean(intakeSecret) && req.headers.get('X-Intake-Secret') === intakeSecret
+  const intakeSecret = (process.env.SALES_INTAKE_SECRET || '').trim()
+  const byIntake = Boolean(intakeSecret)
+    && (req.headers.get('X-Intake-Secret') || '').trim() === intakeSecret
   const ctx = await extractAgentContext(req)
 
   if (req.method === 'POST') {
