@@ -71,11 +71,13 @@ export function SalesAccountsPage() {
     }>
 
       <Kpis items={[
-        ['Всего', String(stats.total ?? rows.length), type === 'partner' ? 'партнёров' : 'аккаунтов'],
-        ['Лиды', String(stats.leads ?? 0), 'обращались, но не купили'],
-        ['Клиенты', String(stats.customers ?? 0), 'подписали'],
-        ['Запущены', String(stats.launched ?? 0), 'есть первый заказ'],
-        ['С merchant_id', String(stats.with_merchant ?? 0), 'связаны с админкой'],
+        ['Всего', String(stats.total ?? rows.length), type === 'partner' ? 'партнёров' : 'карточек клиентов'],
+        ['Обращались', String(stats.leads ?? 0), 'но до сделки не дошли'],
+        ['Клиенты', String(stats.customers ?? 0), 'подписали договор'],
+        ['Запущены', String(stats.launched ?? 0),
+          stats.launched ? 'есть первый заказ' : 'связь с админкой не настроена'],
+        ['С merchant_id', String(stats.with_merchant ?? 0),
+          stats.with_merchant ? 'связаны с админкой' : 'связь пока не заполняли'],
       ]} />
 
       <div className="bg-white border border-gray-200 rounded-xl p-3 flex gap-2 flex-wrap items-center sticky top-0 z-20 shadow-sm">
@@ -96,15 +98,18 @@ export function SalesAccountsPage() {
       {rows.length === 0 ? (
         <Empty title="Здесь пусто" hint="Аккаунты появляются автоматически из входящих обращений." />
       ) : (
-        <Card title={`Всего ${rows.length}`} sub="аккаунт живёт от первого лида и не удаляется">
+        <Card
+          title={type === 'partner' ? 'Партнёры' : 'Клиенты и обращавшиеся'}
+          sub="сверху те, с кем что-то происходило недавно; аккаунт живёт от первого обращения и не удаляется"
+        >
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-[12.5px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <Th>Название</Th><Th>Статус</Th>
-                  <Th align="right">Сделок</Th><Th align="right">Подписано</Th>
-                  <Th>{type === 'partner' ? 'Программа' : 'merchant_id'}</Th>
-                  <Th align="right">{type === 'partner' ? 'Привёл' : 'Первый заказ'}</Th>
+                  <Th>Название</Th><Th>Статус</Th><Th>Первый канал</Th>
+                  <Th align="right">Обращений</Th><Th align="right">Сделок</Th>
+                  <Th align="right">Подписано</Th>
+                  <Th align="right">Последняя активность</Th>
                 </tr>
               </thead>
               <tbody>
@@ -117,18 +122,25 @@ export function SalesAccountsPage() {
                           className="font-semibold text-gray-900 hover:text-blue-600 text-left">
                           {a.name}
                         </button>
-                        <div className="text-[11px] text-gray-400">{a.city || '—'}</div>
+                        {/* Телефон и город — то, по чему аккаунт узнают в списке */}
+                        <div className="text-[11px] text-gray-400">
+                          {[a.city, a.phone].filter(Boolean).join(' · ') || 'контактов нет'}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5"><Chip tone={tone}>{label}</Chip></td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{a.deals}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">{money(a.won_amount, 'UZS')}</td>
                       <td className="px-4 py-2.5 text-gray-600">
-                        {type === 'partner'
-                          ? (a.program_name || <span className="text-amber-600">не задана</span>)
-                          : (a.merchant_id || <span className="text-gray-300">нет</span>)}
+                        {a.first_source || <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-gray-600">
-                        {type === 'partner' ? a.referred : fmtDate(a.first_order_at)}
+                      <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{a.leads ?? 0}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{a.deals}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {Number(a.won_amount) ? money(a.won_amount, 'UZS') : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">
+                        {fmtDate(a.last_activity_at)}
+                        {a.merchant_id && (
+                          <div className="text-[10.5px] text-emerald-600">merchant {a.merchant_id}</div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -136,7 +148,8 @@ export function SalesAccountsPage() {
               </tbody>
             </table>
           </div>
-          <Pager offset={offset} limit={LIMIT} count={rows.length} hasMore={hasMore} onChange={setOffset} />
+          <Pager offset={offset} limit={LIMIT} count={rows.length} hasMore={hasMore}
+            total={stats.total} onChange={setOffset} />
         </Card>
       )}
       <Drawer

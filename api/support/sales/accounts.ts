@@ -195,6 +195,18 @@ export default async function handler(req: Request): Promise<Response> {
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10))
   const rows = await sql`
     SELECT a.id, a.name, a.city, a.lifecycle, a.account_type, a.partner_kind,
+           -- Когда последний раз что-то происходило: без этого список
+           -- отсортирован по заведению и наверху висят самые древние карточки
+           GREATEST(
+             a.created_at,
+             COALESCE((SELECT MAX(d.updated_at) FROM sales_deals d WHERE d.account_id = a.id), a.created_at),
+             COALESCE((SELECT MAX(l.created_at) FROM sales_leads l WHERE l.account_id = a.id), a.created_at)
+           ) AS last_activity_at,
+           (SELECT COUNT(*)::int FROM sales_leads l WHERE l.account_id = a.id) AS leads,
+           (SELECT s.label FROM sales_leads l JOIN sales_sources s ON s.id = l.source_id
+             WHERE l.account_id = a.id ORDER BY l.created_at LIMIT 1) AS first_source,
+           (SELECT c.phone FROM sales_contacts c WHERE c.account_id = a.id
+             ORDER BY c.is_primary DESC LIMIT 1) AS phone,
            a.merchant_id, a.first_order_at, a.created_at,
            p.name AS program_name,
            (SELECT COUNT(*) FROM sales_deals d WHERE d.account_id = a.id)::int AS deals,
@@ -208,7 +220,7 @@ export default async function handler(req: Request): Promise<Response> {
       AND (${lifecycle} = '' OR a.lifecycle = ${lifecycle})
       AND (${city} = '' OR a.city = ${city})
       AND (${q} = '' OR a.name ILIKE ${'%' + q + '%'})
-    ORDER BY a.created_at DESC LIMIT ${limit + 1} OFFSET ${offset}
+    ORDER BY last_activity_at DESC LIMIT ${limit + 1} OFFSET ${offset}
   `
   const hasMore = rows.length > limit
   if (hasMore) rows.pop()
