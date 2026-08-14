@@ -192,7 +192,9 @@ export default async function handler(req: Request): Promise<Response> {
             ag.name AS owner_name,
             src.label AS source,
             lr.label AS lost_reason, d.lost_comment,
-            (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens`
+            (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens,
+            (SELECT c.phone FROM sales_contacts c WHERE c.account_id = d.account_id
+              ORDER BY c.is_primary DESC LIMIT 1) AS phone`
 
   const FROM_JOINS = `FROM sales_deals d
      LEFT JOIN sales_stages s ON s.id = d.stage_id

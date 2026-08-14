@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
          useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone , PageNumbers, FilterBar } from './kit'
 import { RegionBadge, useRegion } from './region'
@@ -38,6 +38,7 @@ interface Deal {
   owner_name: string | null
   source: string | null
   doc_opens: number | null
+  phone: string | null
   points: number | null
   pos: string | null
   orders_per_day: string | null
@@ -150,6 +151,7 @@ export function SalesDealsPage() {
   // фильтры выставленными, возвращаться некуда
   const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
+  const [acting, setActing] = useState<string | null>(null)
   const [overStage, setOverStage] = useState<string | null>(null)
   // Отменяемый перенос: промахнуться мышью проще, чем попасть
   const [undo, setUndo] = useState<{ id: string; from: string; title: string; to: string } | null>(null)
@@ -267,6 +269,22 @@ export function SalesDealsPage() {
       setData(snapshot)
       setError(e?.message || 'Переход заблокирован')
     }
+  }
+
+  /** Назначить следующий шаг на завтра, не открывая сделку. */
+  const planStep = async (dealId: string) => {
+    setActing(dealId)
+    try {
+      const at = new Date(Date.now() + 86400000 + 5 * 3600000)
+      at.setUTCHours(9, 0, 0, 0)
+      await apiPatch('/sales/deal', {
+        id: dealId,
+        fields: { next_step: 'Позвонить', next_step_at: at.toISOString().slice(0, 16) },
+      })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось назначить шаг')
+    } finally { setActing(null) }
   }
 
   const drop = (toStage: string, kind?: string) => {
