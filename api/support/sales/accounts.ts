@@ -108,6 +108,36 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ ok: true, moved, into, from })
   }
 
+  // Подсказки чатов: имя аккаунта и имя группы почти никогда не совпадают
+  // дословно («Sezam» и «Sezam Delever × Rkeeper»), поэтому точные связи
+  // ставятся автоматически, а похожие предлагаются человеку — ошибиться тут
+  // дорого: привяжешь чужой чат и покажешь сейлзу чужую переписку
+  if (req.method === 'GET' && url.searchParams.get('action') === 'channel-suggest') {
+    const forId = url.searchParams.get('id')
+    if (!forId) return json({ error: 'id is required' }, 400)
+    const [acc] = await sql`SELECT name FROM sales_accounts WHERE id = ${forId} AND org_id = ${orgId}`
+    if (!acc) return json({ error: 'not found' }, 404)
+
+    const clean = String(acc.name || '')
+      .replace(/delever|заказы|поддержка|support|чат/gi, '')
+      .replace(/[^\wа-яА-Я0-9 ]+/g, ' ')
+      .trim()
+    const word = clean.split(/\s+/).filter(w => w.length >= 4)[0] || clean
+    if (!word || word.length < 3) return json({ suggestions: [] })
+
+    const suggestions = await sql`
+      SELECT c.id, c.name, c.type, c.last_message_at,
+             (SELECT COUNT(*)::int FROM support_messages m WHERE m.channel_id = c.id) AS messages,
+             EXISTS (SELECT 1 FROM sales_accounts a2 WHERE a2.channel_id = c.id AND a2.org_id = ${orgId}) AS taken
+      FROM support_channels c
+      WHERE c.org_id = ${orgId} AND c.is_active
+        AND c.name ILIKE ${'%' + word + '%'}
+      ORDER BY c.last_message_at DESC NULLS LAST
+      LIMIT 8
+    `
+    return json({ suggestions, matchedBy: word })
+  }
+
   if (req.method === 'DELETE') {
     // Аккаунт живёт в чатах, подключениях и сделках — только в архив
     const delId = url.searchParams.get('id')

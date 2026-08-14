@@ -29,6 +29,9 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
   const refs = useSalesRefs()
   // Путь клиента: одна лента из обращений, переписки, документов и этапов
   const [journey, setJourney] = useState<any>(null)
+  // Подсказки чатов: привязка открывает переписку в карточке и даёт ассистенту
+  // канал, через который он вообще может написать
+  const [suggests, setSuggests] = useState<any[] | null>(null)
 
   const load = useCallback(() => {
     if (!id) return
@@ -56,6 +59,25 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
    * Склейка дублей: два написания одного бренда — обычное дело, когда лиды
    * приходят из разных каналов. Всё переезжает на выбранный аккаунт.
    */
+  const linkChannel = async () => {
+    if (!id) return
+    try {
+      const res = await apiGet<any>(`/sales/accounts?action=channel-suggest&id=${id}`, false)
+      const list = res.suggestions || []
+      if (!list.length) { setError('Похожих чатов не нашлось — привяжите вручную по названию группы'); return }
+      setSuggests(list)
+    } catch (e: any) { setError(e?.message || 'Не удалось подобрать чат') }
+  }
+
+  const chooseChannel = async (channelId: string) => {
+    if (!id) return
+    try {
+      await apiPatch('/sales/accounts', { id, fields: { channel_id: channelId } })
+      setSuggests(null)
+      load()
+    } catch (e: any) { setError(e?.message || 'Не удалось привязать') }
+  }
+
   const merge = async () => {
     if (!id) return
     const term = prompt('Название аккаунта, в который склеить (часть названия):')
@@ -381,7 +403,37 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
             </div>
           </Card>
 
-          <Card title="Связи" sub="внешние идентификаторы аккаунта">
+          {suggests && (
+            <Card title="Какой чат принадлежит клиенту?" sub="привязка открывает переписку прямо в карточке">
+              <div className="divide-y divide-gray-100">
+                {suggests.map((c: any) => (
+                  <button key={c.id} disabled={c.taken} onClick={() => chooseChannel(c.id)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 disabled:opacity-40">
+                    <div className="text-[12.5px] text-gray-900">{c.name}</div>
+                    <div className="text-[11px] text-gray-400">
+                      {[`${c.messages} сообщений`, c.type,
+                        c.last_message_at ? `последнее ${fmtDate(c.last_message_at)}` : null,
+                        c.taken ? 'уже привязан к другому клиенту' : null].filter(Boolean).join(' · ')}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="px-4 py-2 border-t border-gray-100">
+                <button onClick={() => setSuggests(null)} className="text-[12px] text-gray-500">закрыть</button>
+              </div>
+            </Card>
+          )}
+
+          <Card
+            title="Связи"
+            sub="внешние идентификаторы аккаунта"
+            right={!a.channel_id ? (
+              <button onClick={linkChannel}
+                className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+                Найти чат клиента
+              </button>
+            ) : null}
+          >
             <div className="divide-y divide-gray-100">
               <div className="px-4 py-2.5 flex justify-between items-center gap-2">
                 <span className="text-[12.5px] text-gray-500">merchant_id в админке</span>
