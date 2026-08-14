@@ -49,11 +49,16 @@ export default async function handler(req: Request): Promise<Response> {
   const phone = body?.phone ? String(body.phone) : null
 
   // 1. Канал разговора. Ключ — внешний id чата: один диалог = один канал,
-  //    сколько бы сообщений ни пришло
+  //    сколько бы сообщений ни пришло.
+  //    telegram_chat_id в базе числовой, а id чата из виджета сайта — строка,
+  //    поэтому сравниваем его только когда он действительно число
   const externalId = `${source}:${chatId}`
+  const numericChatId = /^-?\d+$/.test(chatId) ? chatId : null
   let [channel] = await sql`
     SELECT id FROM support_channels
-    WHERE org_id = ${orgId} AND (external_chat_id = ${externalId} OR telegram_chat_id = ${chatId})
+    WHERE org_id = ${orgId}
+      AND (external_chat_id = ${externalId}
+           OR (${numericChatId}::bigint IS NOT NULL AND telegram_chat_id = ${numericChatId}::bigint))
     LIMIT 1
   ` as any[]
 
@@ -63,7 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
       INSERT INTO support_channels (id, org_id, name, type, source, external_chat_id,
                                     telegram_chat_id, is_active, created_at, last_message_at)
       VALUES (${channelId}, ${orgId}, ${name}, 'client', ${source}, ${externalId},
-              ${source.startsWith('telegram') ? chatId : null}, true, NOW(), NOW())
+              ${source.startsWith('telegram') ? numericChatId : null}::bigint, true, NOW(), NOW())
     `
     channel = { id: channelId }
   }
