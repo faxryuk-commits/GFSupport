@@ -313,14 +313,16 @@ export function SalesDealsPage() {
 
   return (
     <PageShell fill header={
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Сделки</h1>
-          <p className="text-[12.5px] text-gray-500 mt-0.5">
-            {t.open_deals ?? 0} в работе на {money(t.pipeline_amount, 'UZS')} в месяц
-            {t.stalled ? ` · ${t.stalled} застряло` : ''}
-            {t.no_next_step ? ` · ${t.no_next_step} без следующего шага` : ''}
-          </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight">Сделки</h1>
+          {/* Итоги строкой: место на экране принадлежит сделкам, а не плиткам */}
+          <div className="flex items-center gap-3 text-[11.5px] text-gray-500 flex-wrap">
+            <span>в работе <b className="text-gray-900">{t.open_deals ?? 0}</b></span>
+            <span>на <b className="text-gray-900">{money(t.pipeline_amount, 'UZS')}</b> в месяц</span>
+            {t.stalled ? <span>застряло <b className="text-red-600">{t.stalled}</b></span> : null}
+            {t.no_next_step ? <span>без шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <RegionBadge scope="deals" />

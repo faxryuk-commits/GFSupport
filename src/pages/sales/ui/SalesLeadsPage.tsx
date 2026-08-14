@@ -195,13 +195,27 @@ export function SalesLeadsPage() {
 
   return (
     <PageShell fill header={
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">Лиды</h1>
-          <p className="text-[12.5px] text-gray-500 mt-0.5">
-            Обращение = один контакт от человека: заявка с формы, сообщение в директ,
-            комментарий или звонок. Источник говорит откуда, вид — что именно человек сделал.
-          </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight">Лиды</h1>
+          {/* Счётчики строкой, а не плитками: пять чисел не стоят четверти экрана */}
+          <div className="flex items-center gap-3 text-[11.5px] text-gray-500 flex-wrap">
+            <span title="новых обращений сегодня">
+              сегодня <b className="text-gray-900">{s.today ?? 0}</b>
+            </span>
+            <span title="назначены, но не тронуты">
+              ждут касания <b className={s.waiting ? 'text-amber-600' : 'text-gray-900'}>{s.waiting ?? 0}</b>
+            </span>
+            <span title="в общей очереди, без сейлза">
+              без сейлза <b className={s.unassigned ? 'text-red-600' : 'text-gray-900'}>{s.unassigned ?? 0}</b>
+            </span>
+            <span title="греет ассистент, сейлз не занят">
+              на прогреве <b className="text-gray-900">{s.nurture ?? 0}</b>
+            </span>
+            <span title="доля первых касаний в норматив 15 минут за 30 дней">
+              касание за 15 мин <b className="text-gray-900">{pct(s.in_sla ?? 0, s.touched ?? 0)}</b>
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <RegionBadge scope="leads" />
@@ -213,13 +227,7 @@ export function SalesLeadsPage() {
       </div>
     }>
 
-      <Kpis compact items={[
-        ['Сегодня', String(s.today ?? 0), 'новых обращений'],
-        ['Ждут касания', String(s.waiting ?? 0), 'назначены, но не тронуты'],
-        ['Без сейлза', String(s.unassigned ?? 0), 'в общей очереди'],
-        ['На прогреве', String(s.nurture ?? 0), 'греет бот, сейлз не занят'],
-        ['Касание за 15 мин', pct(s.in_sla ?? 0, s.touched ?? 0), 'за 30 дней'],
-      ]} />
+
 
       {/* Фильтры остаются на месте при прокрутке: искать их в конце списка —
           то же самое, что не иметь фильтров */}
@@ -299,13 +307,7 @@ export function SalesLeadsPage() {
         />
       ) : (
         <div className="flex-1 min-h-0 flex flex-col">
-        <Card
-          fill
-          title={VIEWS.find(v => v[0] === view)?.[1] || ''}
-          sub={view === 'nurture'
-            ? 'лид сейчас не готов покупать: его греют бот и рассылка, сейлз вернётся по сигналу'
-            : 'склейка по телефону выполняется на приёме'}
-        >
+        <Card fill title="" >
           <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full min-w-[820px] text-[12.5px]">
               <thead>

@@ -46,6 +46,7 @@ export const Card = ({ title, sub, right, children, fill }: {
 }) => (
   <section className={`bg-white border border-gray-200 rounded-xl overflow-hidden ${
     fill ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+    {(title || sub || right) && (
     <header className="px-4 py-3 border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap">
       <div>
         <h3 className="text-[13.5px] font-semibold text-gray-900">{title}</h3>
@@ -53,6 +54,7 @@ export const Card = ({ title, sub, right, children, fill }: {
       </div>
       {right}
     </header>
+    )}
     {children}
   </section>
 )
@@ -117,9 +119,9 @@ export const PageShell = ({ header, children, fill }: {
   fill?: boolean
 }) => (
   <div className="h-full flex flex-col overflow-hidden">
-    <div className="flex-none px-5 pt-5 pb-3 bg-[#f5f7fa] border-b border-gray-200">{header}</div>
+    <div className="flex-none px-5 pt-3 pb-2.5 bg-[#f5f7fa] border-b border-gray-200">{header}</div>
     <div className={fill
-      ? 'flex-1 min-h-0 flex flex-col gap-4 px-5 py-4 overflow-hidden'
+      ? 'flex-1 min-h-0 flex flex-col gap-2.5 px-5 py-3 overflow-hidden'
       : 'flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4'}>
       {children}
     </div>
