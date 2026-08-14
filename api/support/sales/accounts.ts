@@ -257,6 +257,7 @@ export default async function handler(req: Request): Promise<Response> {
   const market = await resolveRegion(sql, orgId, url)
   // Те же срезы, что и везде: без них список аккаунтов — просто длинная простыня
   const lifecycle = url.searchParams.get('lifecycle') || ''
+  const chat = url.searchParams.get('chat') || ''
   const city = url.searchParams.get('city') || ''
   const q = url.searchParams.get('q') || ''
   const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10))
@@ -287,6 +288,8 @@ export default async function handler(req: Request): Promise<Response> {
       AND (${market} = '' OR a.market_id = ${market})
       AND (${lifecycle} = '' OR a.lifecycle = ${lifecycle})
       AND (${city} = '' OR a.city = ${city})
+      AND (${chat} = '' OR (${chat} = 'yes' AND a.channel_id IS NOT NULL)
+                       OR (${chat} = 'no' AND a.channel_id IS NULL))
       AND (${q} = '' OR a.name ILIKE ${'%' + q + '%'})
     ORDER BY last_activity_at DESC LIMIT ${limit + 1} OFFSET ${offset}
   `
@@ -298,7 +301,8 @@ export default async function handler(req: Request): Promise<Response> {
            COUNT(*) FILTER (WHERE lifecycle = 'lead')::int AS leads,
            COUNT(*) FILTER (WHERE lifecycle = 'customer')::int AS customers,
            COUNT(*) FILTER (WHERE merchant_id IS NOT NULL)::int AS with_merchant,
-           COUNT(*) FILTER (WHERE first_order_at IS NOT NULL)::int AS launched
+           COUNT(*) FILTER (WHERE first_order_at IS NOT NULL)::int AS launched,
+           COUNT(*) FILTER (WHERE channel_id IS NOT NULL)::int AS with_chat
     FROM sales_accounts
     WHERE org_id = ${orgId} AND account_type = ${type} AND archived_at IS NULL
       AND (${market} = '' OR market_id = ${market})

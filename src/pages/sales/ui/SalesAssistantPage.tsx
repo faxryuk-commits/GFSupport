@@ -26,6 +26,7 @@ export function SalesAssistantPage() {
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
 
   const load = useCallback(() => {
     apiGet<any>('/sales/assistant', false)
@@ -135,6 +136,20 @@ export function SalesAssistantPage() {
                 {r.message && (
                   <div className="text-[12px] text-gray-700 mt-1 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5">
                     {r.message}
+                    {/* Черновик без канала — не тупик: текст готов, отправить
+                        его человек может сам, не переписывая */}
+                    {r.action === 'nurture_draft' && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard?.writeText(r.message)
+                          setCopied(r.id)
+                          setTimeout(() => setCopied(null), 1500)
+                        }}
+                        className="ml-2 text-[11px] text-blue-600 hover:underline"
+                      >
+                        {copied === r.id ? 'скопировано' : 'скопировать'}
+                      </button>
+                    )}
                   </div>
                 )}
                 {r.reply && (

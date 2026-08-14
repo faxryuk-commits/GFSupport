@@ -137,9 +137,13 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const due = await sql`
       SELECT l.id, l.name, l.phone, l.city, l.text, l.raw, l.nurture_step, l.assigned_agent_id,
-             l.account_id, a.channel_id
+             l.account_id, a.channel_id,
+             -- Писать нужно в Telegram-чат, а не в наш внутренний id канала:
+             -- это разные вещи, и с внутренним отправка молча не доходит
+             ch.telegram_chat_id
       FROM sales_leads l
       LEFT JOIN sales_accounts a ON a.id = l.account_id
+      LEFT JOIN support_channels ch ON ch.id = a.channel_id
       WHERE l.org_id = ${ORG} AND l.status = 'nurture' AND l.archived_at IS NULL
         AND COALESCE(l.nurture_step, 0) < ${MAX_STEPS}
         AND (l.nurture_next_at IS NULL OR l.nurture_next_at <= NOW())
@@ -163,9 +167,12 @@ export default async function handler(req: Request): Promise<Response> {
       const nextAt = new Date(Date.now() + (NURTURE_STEPS[Math.min(step + 1, MAX_STEPS - 1)].day
         - NURTURE_STEPS[Math.min(step, MAX_STEPS - 1)].day || 3) * 86400000)
 
-      if (lead.channel_id && token) {
+      // Отправляем ботом, который сидит в этих чатах: платформенный бот
+      // (@gfsupport_robot) в клиентские группы не добавлен и написать туда не может
+      const chatToken = process.env.TELEGRAM_BOT_TOKEN || token
+      if (lead.telegram_chat_id && chatToken) {
         try {
-          await tgSend(token, lead.channel_id, draft.text)
+          await tgSend(chatToken, lead.telegram_chat_id, draft.text)
           await logAssistant(sql, ORG, {
             leadId: lead.id, accountId: lead.account_id, action: 'nurture_sent',
             channel: 'telegram', step, message: draft.text, status: 'sent',

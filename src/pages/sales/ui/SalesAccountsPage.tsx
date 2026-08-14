@@ -26,16 +26,18 @@ export function SalesAccountsPage() {
   const [openAccount, setOpenAccount] = useState<string | null>(null)
   const [stats, setStats] = useState<any>({})
   const [lifecycle, setLifecycle] = useState('')
+  const [chat, setChat] = useState('')
   const region = useRegion('accounts')
   const LIMIT = 50
 
   const load = useCallback(() => {
     apiGet<{ accounts: any[]; hasMore: boolean; stats?: any }>(
       `/sales/accounts?type=${type}&q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offset}` +
-      (lifecycle ? `&lifecycle=${lifecycle}` : '') + `&region=${region || 'all'}`, false)
+      (lifecycle ? `&lifecycle=${lifecycle}` : '') + (chat ? `&chat=${chat}` : '') +
+      `&region=${region || 'all'}`, false)
       .then(d => { setRows(d.accounts || []); setHasMore(Boolean(d.hasMore)); setStats(d.stats || {}); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить список'))
-  }, [type, q, offset, region, lifecycle])
+  }, [type, q, offset, region, lifecycle, chat])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -90,8 +92,18 @@ export function SalesAccountsPage() {
           <option value="customer">Клиент</option>
           <option value="churned">Ушёл</option>
         </select>
+        {/* Кого ещё связывать с чатом: без этого фильтра список из пяти тысяч
+            строк не даёт понять, где работа осталась */}
+        <select value={chat} onChange={e => { setChat(e.target.value); setOffset(0) }}
+          className={`border rounded-lg px-2 py-1.5 text-[12.5px] ${
+            chat ? 'border-blue-400 text-blue-700' : 'border-gray-300'}`}>
+          <option value="">Чат: неважно</option>
+          <option value="yes">С чатом</option>
+          <option value="no">Без чата</option>
+        </select>
         <span className="text-[11.5px] text-gray-400 ml-auto">
           показано {rows.length} из {stats.total ?? rows.length}
+          {stats.with_chat != null ? ` · с чатом ${stats.with_chat}` : ''}
         </span>
       </div>
 
