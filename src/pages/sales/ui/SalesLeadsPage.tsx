@@ -213,7 +213,7 @@ export function SalesLeadsPage() {
       </div>
     }>
 
-      <Kpis items={[
+      <Kpis compact items={[
         ['Сегодня', String(s.today ?? 0), 'новых обращений'],
         ['Ждут касания', String(s.waiting ?? 0), 'назначены, но не тронуты'],
         ['Без сейлза', String(s.unassigned ?? 0), 'в общей очереди'],
@@ -223,7 +223,7 @@ export function SalesLeadsPage() {
 
       {/* Фильтры остаются на месте при прокрутке: искать их в конце списка —
           то же самое, что не иметь фильтров */}
-      <div className="bg-white border border-gray-200 rounded-xl sticky top-0 z-20 shadow-sm">
+      <div className="bg-white border border-gray-200 rounded-xl flex-none">
         <Tabs items={VIEWS} value={view} onChange={v => { setView(v); setOffset(0) }} />
         <FilterBar
           active={[

@@ -57,13 +57,19 @@ export const Card = ({ title, sub, right, children, fill }: {
   </section>
 )
 
-export const Kpis = ({ items }: { items: Array<[string, string, string?]> }) => (
-  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
+export const Kpis = ({ items, compact }: {
+  items: Array<[string, string, string?]>
+  /** Плотный вид для списков: экран закреплён, и место нужно строкам, а не цифрам. */
+  compact?: boolean
+}) => (
+  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden flex-none">
     {items.map(([k, v, d]) => (
-      <div key={k} className="bg-white px-4 py-3">
+      <div key={k} className={`bg-white ${compact ? 'px-3 py-1.5' : 'px-4 py-3'}`}>
         <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{k}</div>
-        <div className="text-[20px] text-gray-900 tabular-nums mt-1 tracking-tight">{v}</div>
-        {d && <div className="text-[11px] text-gray-500 mt-0.5">{d}</div>}
+        <div className={`text-gray-900 tabular-nums tracking-tight ${
+          compact ? 'text-[15px] leading-tight' : 'text-[20px] mt-1'}`}>{v}</div>
+        {d && !compact && <div className="text-[11px] text-gray-500 mt-0.5">{d}</div>}
+        {d && compact && <div className="text-[10.5px] text-gray-400 truncate" title={d}>{d}</div>}
       </div>
     ))}
   </div>

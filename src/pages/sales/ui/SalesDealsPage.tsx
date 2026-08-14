@@ -337,7 +337,7 @@ export function SalesDealsPage() {
       </div>
     }>
 
-      <div className="bg-white border border-gray-200 rounded-xl sticky top-0 z-20 shadow-sm">
+      <div className="bg-white border border-gray-200 rounded-xl flex-none">
         <div className="flex gap-1 px-4 border-b border-gray-100 overflow-x-auto">
           {VIEWS.map(([key, label]) => (
             <button key={key} onClick={() => { setView(key); setOffset(0) }}
