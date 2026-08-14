@@ -64,10 +64,11 @@ const VIEWS: Array<[string, string]> = [
 /** Что человек сделал: форма, сообщение, комментарий, звонок. */
 const KIND_LABEL: Record<string, string> = {
   form: 'заявка с формы', message: 'написал в мессенджер', comment: 'комментарий',
-  call: 'звонок', manual: 'заведён вручную', other: 'обращение',
+  call: 'звонок', email: 'письмо', manual: 'заведён вручную', other: 'источник не определён',
 }
 const KIND_TONE: Record<string, string> = {
-  form: 'green', message: 'violet', comment: 'amber', call: 'blue', manual: 'gray', other: 'gray',
+  form: 'green', message: 'violet', comment: 'amber', call: 'blue',
+  email: 'blue', manual: 'gray', other: 'red',
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -198,7 +199,9 @@ export function SalesLeadsPage() {
             <option value="message">Написал в мессенджер</option>
             <option value="comment">Комментарий</option>
             <option value="call">Звонок</option>
+            <option value="email">Письмо</option>
             <option value="manual">Заведён вручную</option>
+            <option value="other">Источник не определён</option>
           </select>
           <select value={source} onChange={e => { setSource(e.target.value); setOffset(0) }}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">

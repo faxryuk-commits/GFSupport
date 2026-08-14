@@ -43,53 +43,66 @@ export function marketByPipeline(pipelineId: number): string | null {
  */
 export function sourceFromLead(lead: any): { source: string; formId: string | null } {
   const meta = lead?._unsorted_meta || {}
-
-  // У «Неразобранного» из мессенджеров источник написан прямо: service —
-  // instagram_business, telegram, whatsapp. Это надёжнее любых тегов, и без
-  // этой ветки диалоги из директа падали в «заведено вручную»
   const service = String(meta.service || '').toLowerCase()
-  const nameLower = String(lead?.name || '').toLowerCase()
-  if (service.includes('instagram') || nameLower.startsWith('instagram_business:')) {
+  const formId = meta.form_id ? String(meta.form_id) : null
+  const formName = String(meta.form_name || '').toLowerCase()
+  const page = String(meta.form_page || meta.referer || '').toLowerCase()
+  const name = String(lead?.name || '').toLowerCase()
+  const tags: string[] = ((lead._embedded?.tags || []) as any[])
+    .map(t => String(t.name || '').toLowerCase())
+
+  // 1. Мессенджеры: у «Неразобранного» канал написан прямо в service. Это
+  //    надёжнее любых тегов — раньше без этой ветки директ падал в «вручную»
+  if (service.includes('instagram') || name.startsWith('instagram_business:')) {
     return { source: 'instagram_direct', formId: null }
   }
   if (service.includes('whatsapp')) return { source: 'whatsapp', formId: null }
 
-  // Форма с осмысленным именем — не рекламная лид-форма: «telegram-chatbot»
-  // это наш бот на сайте, и называть его Meta-формой значит врать в отчёте
-  const formIdMeta = meta.form_id ? String(meta.form_id) : null
-  if (formIdMeta) {
-    const f = formIdMeta.toLowerCase()
-    if (f.includes('telegram') || service.includes('telegram')) return { source: 'telegram', formId: formIdMeta }
-    if (f.includes('site') || f.includes('web')) return { source: 'site', formId: formIdMeta }
-    return { source: 'meta_leadform', formId: formIdMeta }
+  // 2. Telegram-бот заявок и личные сообщения — разные вещи: бот стоит на
+  //    сайте и в рекламе, личка приходит от знакомых
+  if (page.includes('t.me/') || formId?.toLowerCase().includes('telegram')
+      || formName.includes('чат-бот') || formName.includes('telegram')) {
+    return { source: 'telegram_bot', formId }
   }
   if (service.includes('telegram')) return { source: 'telegram', formId: null }
 
-  const tags: string[] = ((lead._embedded?.tags || []) as any[])
-    .map(t => String(t.name || '').toLowerCase())
-
+  // 3. Рекламные лид-формы Meta: числовой id формы или метка объявления.
+  //    Именованная форма («telegram-chatbot») сюда не относится
+  if (formId && /^\d+$/.test(formId)) return { source: 'meta_leadform', formId }
   for (const t of tags) {
     if (t.startsWith('fb') && /^\d+$/.test(t.slice(2))) return { source: 'meta_leadform', formId: t.slice(2) }
-    if (t === '#facebook_lead') return { source: 'meta_leadform', formId: null }
+    if (t === '#facebook_lead' || t.includes('lead ad')) return { source: 'meta_leadform', formId }
   }
+  if (name.includes('facebook') || name.includes('leads |')) return { source: 'meta_leadform', formId }
+
+  // 4. Сайт: форма и чат — разный разговор, чат уже начат
+  if (formName.includes('чат') || formId?.toLowerCase().includes('chat')) {
+    return { source: 'site_chat', formId }
+  }
+  if (page.includes('delever.io') || formId?.toLowerCase().includes('website')
+      || formId?.toLowerCase().includes('site') || formName) {
+    return { source: 'site', formId }
+  }
+
   for (const t of tags) {
     if (t === 'сайт' || t.includes('tilda')) return { source: 'site', formId: null }
     if (t.includes('instagram') || t.includes('инстаграм')) return { source: 'instagram_direct', formId: null }
-    if (t.includes('исходящ')) return { source: 'outbound', formId: null }
+    if (t.includes('коммент')) return { source: 'instagram_comment', formId: null }
+    if (t.includes('почт') || t.includes('mail')) return { source: 'email', formId: null }
+    if (t.includes('исходящ') || t.includes('холодн')) return { source: 'outbound', formId: null }
     if (t.startsWith('импорт')) return { source: 'import', formId: null }
   }
-  // Теги телефонии проверяем последними: на лиде с рекламной меткой «входящий» —
-  // это залогированный звонок-обработка, а не источник
+  // Телефония последней: на лиде с рекламной меткой «входящий» — это отметка
+  // о звонке-обработке, а не источник обращения
   for (const t of tags) {
-    if (t === 'входящий' || t === 'пропущенный') return { source: 'call', formId: null }
+    if (t === 'входящий' || t === 'пропущенный' || t.includes('звонок')) {
+      return { source: 'call', formId: null }
+    }
   }
-
-  const name = String(lead.name || '').toLowerCase()
-  if (name.includes('facebook') || name.includes('leads |')) return { source: 'meta_leadform', formId: null }
   if (name.includes('сайт')) return { source: 'site', formId: null }
+
   // Источник не опознан. Раньше здесь стояло «заведено вручную» — и обращения
-  // из директа выглядели так, будто их набрал сейлз. Честнее сказать «не
-  // определён»: это видно в отчёте и чинится правилом, а не догадкой
+  // из директа выглядели так, будто их набрал сейлз
   return { source: 'unknown', formId: null }
 }
 
@@ -146,6 +159,17 @@ function readableName(lead: any, contact?: { phone?: string; name?: string }): s
   return channelLabel(lead)
 }
 
+/** Что человек сделал: заполнил форму, написал, прокомментировал, позвонил. */
+export function kindOfSource(source: string): string {
+  if (['instagram_direct', 'telegram', 'telegram_bot', 'whatsapp', 'site_chat'].includes(source)) return 'message'
+  if (['meta_leadform', 'site', 'partner_apply'].includes(source)) return 'form'
+  if (source === 'instagram_comment') return 'comment'
+  if (source === 'call') return 'call'
+  if (source === 'email') return 'email'
+  if (source === 'manual') return 'manual'
+  return 'other'
+}
+
 export function leadPayload(lead: any, contact?: { phone: string; name: string }) {
   const { source, formId } = sourceFromLead(lead)
   // Названия полей сверены с боевой воронкой: «Агрегаторы» в Amo называется
@@ -160,10 +184,7 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
     city: cf(lead, 'Город') || null,
     market: marketByPipeline(lead.pipeline_id),
     form_id: formId || lead._unsorted_meta?.form_id || null,
-    lead_kind: source === 'instagram_direct' || source === 'telegram' || source === 'whatsapp'
-      ? 'message'
-      : source === 'meta_leadform' || source === 'site' ? 'form'
-      : source === 'call' ? 'call' : null,
+    lead_kind: kindOfSource(source),
     orders_per_day: cf(lead, 'Заказы в день') || null,
     points: cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || null,
     pos: cf(lead, 'POS') || null,

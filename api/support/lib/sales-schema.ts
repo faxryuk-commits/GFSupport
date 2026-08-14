@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.9-sources'
+const SCHEMA_VERSION = '2026-08-14.11-leadkey'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -159,10 +159,19 @@ const LOST_REASON_SEED: Array<{ code: string; label: string; days: number | null
 
 /** Источники лидов. kind нужен для отчёта: платное / входящее / исходящее / реферальное. */
 const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
-  { key: 'meta_leadform', label: 'Meta лид-форма', kind: 'paid' },
-  { key: 'site', label: 'Сайт delever.io', kind: 'inbound' },
+  // Каналы разведены до того уровня, на котором отличается работа: заявку с
+  // рекламной формы звонят сразу, диалог в директе сначала переводят в разговор,
+  // а письмо требует ответа текстом. Смешивать их в «инстаграм» или «сайт»
+  // означает считать конверсию по каше
+  { key: 'meta_leadform', label: 'Meta лид-форма (реклама)', kind: 'paid' },
+  { key: 'meta_ads_click', label: 'Переход из рекламы Meta', kind: 'paid' },
+  { key: 'site', label: 'Форма на сайте', kind: 'inbound' },
+  { key: 'site_chat', label: 'Чат на сайте', kind: 'inbound' },
+  { key: 'telegram_bot', label: 'Telegram-бот заявок', kind: 'inbound' },
+  { key: 'email', label: 'Письмо на почту', kind: 'inbound' },
   { key: 'instagram_direct', label: 'Instagram Direct', kind: 'inbound' },
-  { key: 'telegram', label: 'Telegram', kind: 'inbound' },
+  { key: 'instagram_comment', label: 'Комментарий в Instagram', kind: 'inbound' },
+  { key: 'telegram', label: 'Telegram — личное сообщение', kind: 'inbound' },
   { key: 'whatsapp', label: 'WhatsApp', kind: 'inbound' },
   { key: 'call', label: 'Входящий звонок', kind: 'inbound' },
   { key: 'referral', label: 'Реферал', kind: 'referral' },
@@ -643,7 +652,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_leads_status ON sales_leads(org_id, status, created_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_leads_sla ON sales_leads(org_id, sla_due_at) WHERE first_touch_at IS NULL`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_leads_phone ON sales_leads(org_id, phone_norm)`
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_leads_external ON sales_leads(org_id, source_id, external_id) WHERE external_id IS NOT NULL`
+  // Обращение уникально по внешнему id, а не по паре «источник + id».
+  // Иначе смена классификации источника плодит дубли: тот же лид из Amo
+  // приезжает заново и считается новым. Так и случилось при уточнении каналов
+  await sql`DROP INDEX IF EXISTS uq_sales_leads_external`
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_leads_external_id
+            ON sales_leads(org_id, external_id) WHERE external_id IS NOT NULL`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_deals_stage ON sales_deals(org_id, stage_id, stage_since)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_deals_owner ON sales_deals(org_id, owner_agent_id)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_deals_account ON sales_deals(account_id)`

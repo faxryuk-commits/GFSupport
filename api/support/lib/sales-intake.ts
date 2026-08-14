@@ -2,6 +2,7 @@ import type { NeonQueryFunction } from '@neondatabase/serverless'
 import { salesId, normPhone } from './sales-schema.js'
 import { scoreIcp, routeByBand, FIRST_TOUCH_SLA_MIN } from './sales-icp.js'
 import { notifyLeadAssigned } from './sales-bot.js'
+import { kindOfSource } from './sales-amo.js'
 
 type SQL = NeonQueryFunction<false, false>
 
@@ -64,12 +65,7 @@ export interface IntakeResult {
  * значит мерить конверсию по каше.
  */
 function kindBySource(sourceKey: string): string {
-  if (/leadform|form|site/.test(sourceKey)) return 'form'
-  if (/comment/.test(sourceKey)) return 'comment'
-  if (/direct|telegram|whatsapp|chat/.test(sourceKey)) return 'message'
-  if (/call/.test(sourceKey)) return 'call'
-  if (/manual/.test(sourceKey)) return 'manual'
-  return 'other'
+  return kindOfSource(sourceKey)
 }
 
 export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): Promise<IntakeResult> {
@@ -93,7 +89,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   if (externalId) {
     const [existing] = await sql`
       SELECT id, account_id FROM sales_leads
-      WHERE org_id = ${orgId} AND source_id = ${source.id} AND external_id = ${externalId}
+      WHERE org_id = ${orgId} AND external_id = ${externalId}
       LIMIT 1
     `
     if (existing) {
@@ -109,6 +105,10 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       const betterName = name && !/^Заявка (с|из)|^Без названия$/i.test(name) ? name : null
       await sql`
         UPDATE sales_leads SET
+          -- Источник уточняем при каждой доставке: классификация каналов
+          -- меняется, и лид не должен оставаться с прежним ярлыком
+          source_id = ${source.id},
+          lead_kind = COALESCE(${body.lead_kind || null}, lead_kind),
           raw = ${JSON.stringify(body.raw ?? body)}::jsonb,
           name = COALESCE(${betterName}, name),
           city = COALESCE(${body.city || null}, city),
