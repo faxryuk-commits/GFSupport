@@ -353,3 +353,50 @@ export async function resolveRegion(sql: any, orgId: string, url: URL): Promise<
     return ''
   }
 }
+
+/**
+ * Примечания сделки Amo — там прячется содержимое заявки.
+ *
+ * Заявка с лид-формы Meta приезжает в Amo почти пустой: в полях только бренд,
+ * а телефон и ответы на вопросы формы падают отдельным примечанием. Мы их не
+ * читали, и в карточке стояло «телефон не оставил» у человека, который его
+ * оставил (проверено на проде 16.08.2026: у трети свежих заявок телефон был
+ * только в примечании).
+ */
+export async function fetchNotes(creds: AmoCreds, leadId: number): Promise<string[]> {
+  const data = await amoGet(creds, `/leads/${leadId}/notes?limit=50`)
+  const out: string[] = []
+  for (const n of data?._embedded?.notes || []) {
+    const t = n?.params?.text || n?.params?.message || ''
+    if (t && typeof t === 'string') out.push(t.trim())
+  }
+  return out
+}
+
+/**
+ * Телефон и человеческий текст из примечаний.
+ *
+ * Отдельная строка с одним телефоном — это ответ на поле формы, а не
+ * сообщение; в текст обращения она не идёт, иначе карточка показывала бы
+ * «клиент написал: +998901234567».
+ */
+export function parseNotes(notes: string[]): { phone: string | null; text: string | null } {
+  let phone: string | null = null
+  const lines: string[] = []
+  for (const raw of notes) {
+    const note = raw.replace(/\s+/g, ' ').trim()
+    if (!note) continue
+    const digits = note.replace(/\D/g, '')
+    const onlyPhone = /^\+?[\d\s()\-]{9,20}$/.test(note) && digits.length >= 9
+    if (onlyPhone) {
+      if (!phone) phone = note
+      continue
+    }
+    const found = note.match(/\+?\d[\d\s()\-]{8,18}\d/)
+    if (found && !phone) phone = found[0]
+    // Подчёркивания вместо пробелов — это ответ на вопрос формы
+    // («нет_канала_для_онлайн-продаж»), читаем его как фразу
+    lines.push(note.replace(/_/g, ' '))
+  }
+  return { phone, text: lines.length ? lines.join('\n').slice(0, 2000) : null }
+}

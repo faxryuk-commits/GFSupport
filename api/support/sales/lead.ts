@@ -25,6 +25,9 @@ const RAW_SKIP = new Set([
   'created_at', 'updated_at', 'pipeline_id', 'status_id', 'responsible_user_id',
 ])
 
+/** Как Amo сама называет записи: это не данные человека, а её служебный ярлык. */
+const SERVICE_VALUE = /^(Facebook|Instagram|instagram_business|WhatsApp|Telegram)\s*(№|#|:)|^Сделка\s*#|^Заявка (с|из)|^Без названия$/i
+
 /** Человеческие подписи для того, что приходит из форм и ботов. */
 const RAW_LABELS: Record<string, string> = {
   name: 'Имя', phone: 'Телефон', email: 'Почта', city: 'Город',
@@ -46,12 +49,22 @@ const RAW_LABELS: Record<string, string> = {
 function readableRaw(raw: any): Array<{ label: string; value: string }> {
   if (!raw || typeof raw !== 'object') return []
   const out: Array<{ label: string; value: string }> = []
+  const seen = new Set<string>()
   const push = (key: string, value: any) => {
     if (value === null || value === undefined || value === '') return
     if (typeof value === 'object') return
+    const text = String(value).slice(0, 500)
+    // Служебное имя Amo — не заполненное поле, а как система назвала запись.
+    // «Имя: Facebook №1608321444249697» в карточке выглядит данными, хотя это
+    // ярлык самой Amo
+    if (SERVICE_VALUE.test(text)) return
+    // Одно и то же значение приходит и как имя, и как название формы, и как
+    // страница — трижды одна строка читается как три разных факта
+    if (seen.has(text)) return
     const label = RAW_LABELS[key] || key
     if (out.some(o => o.label === label)) return
-    out.push({ label, value: String(value).slice(0, 500) })
+    seen.add(text)
+    out.push({ label, value: text })
   }
 
   for (const [k, v] of Object.entries(raw)) {

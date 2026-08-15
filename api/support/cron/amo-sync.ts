@@ -1,7 +1,8 @@
 import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead } from '../lib/sales-intake.js'
-import { amoGet, fetchContacts, leadPayload, isAllowedPipeline } from '../lib/sales-amo.js'
+import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
+         fetchNotes, parseNotes } from '../lib/sales-amo.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
@@ -90,7 +91,7 @@ export default async function handler(req: Request): Promise<Response> {
     ? parseInt(cursorRow.value, 10)
     : Math.floor(Date.now() / 1000) - FIRST_RUN_WINDOW_H * 3600
 
-  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, closed: 0, errors: 0, deferred: 0 }
+  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, closed: 0, notes: 0, errors: 0, deferred: 0 }
   let maxUpdated = since
 
   try {
@@ -181,6 +182,41 @@ export default async function handler(req: Request): Promise<Response> {
     for (const l of leads) for (const c of l._embedded?.contacts || []) if (c.id) contactIds.add(c.id)
     const contacts = await fetchContacts(creds, [...contactIds])
 
+    // ─── Примечания: там прячется содержимое заявки ───────────────────────────
+    // Заявка с лид-формы Meta приезжает почти пустой — в полях только бренд,
+    // а телефон и ответы на вопросы формы Amo кладёт отдельным примечанием.
+    // Из-за этого в карточке стояло «телефон не оставил» у человека, который
+    // его оставил: на проде так было у трети свежих заявок.
+    //
+    // Читаем примечания только там, где нам не хватает телефона: это запрос
+    // на лид, и тянуть их для всех подряд значит вернуть ту же проблему с
+    // бюджетом, из-за которой синхронизация уже вставала.
+    const needNotes = leads.filter(l => {
+      if (!l.id) return false
+      const linked = (l._embedded?.contacts || []).map((c: any) => contacts.get(c.id)).filter(Boolean)
+      return !linked.some((c: any) => c?.phone)
+    })
+    const knownPhones = needNotes.length
+      ? await sql`
+          SELECT external_id FROM sales_leads
+          WHERE org_id = ${ORG} AND phone IS NOT NULL
+            AND external_id = ANY(${needNotes.map((l: any) => `amo_${l.id}`)})
+        ` as any[]
+      : []
+    const settled = new Set(knownPhones.map(r => r.external_id))
+
+    for (const lead of needNotes) {
+      if (settled.has(`amo_${lead.id}`)) continue
+      if (Date.now() - started > FETCH_BUDGET_MS + 4_000) { out.deferred++; break }
+      try {
+        const parsed = parseNotes(await fetchNotes(creds, lead.id))
+        if (parsed.phone) { lead._note_phone = parsed.phone; out.notes++ }
+        if (parsed.text) lead._note_text = parsed.text
+      } catch {
+        // Примечания — дополнение, а не условие: без них лид всё равно нужен
+      }
+    }
+
     // ─── 3. В приёмник — тем же путём, что сайт и Instagram ───────────────────
     let processed = 0
     for (const lead of leads) {
@@ -203,7 +239,13 @@ export default async function handler(req: Request): Promise<Response> {
           .filter(Boolean)
         const contact = linked.find((c: any) => c?.phone) || linked[0]
 
-        const res = await acceptLead(sql, ORG, leadPayload(lead, contact))
+        // Телефон из примечания равноценен телефону из контакта: по нему
+        // склеиваются аккаунты и по нему звонят
+        const payload = leadPayload(lead, contact)
+        if (!payload.phone && lead._note_phone) payload.phone = lead._note_phone
+        if (!payload.text && lead._note_text) payload.text = lead._note_text
+
+        const res = await acceptLead(sql, ORG, payload)
         if (!res.ok) { out.skipped++; continue }
         if (res.deduped) out.deduped++
         else out.created++
