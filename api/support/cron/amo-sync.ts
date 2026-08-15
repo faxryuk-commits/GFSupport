@@ -30,9 +30,23 @@ const CURSOR_KEY = 'sales_amo_cursor'
 // с суточным окном упирается в таймаут (проверено на проде 13.08.2026).
 const MAX_PAGES = 2
 const MAX_LEADS_PER_RUN = 60
-const TIME_BUDGET_MS = 14_000
+// Выборка из Amo обязана уложиться в свой бюджет: раньше её ничто не
+// ограничивало, и проход умирал по таймауту ещё до записи курсора —
+// синхронизация вставала намертво (найдено на проде 15.08.2026)
+const FETCH_BUDGET_MS = 10_000
+const TIME_BUDGET_MS = 18_000
 const SCHEMA_BUDGET_MS = 8_000
 const FIRST_RUN_WINDOW_H = 24  // первый запуск не тянет архив, для этого есть backfill
+
+/** Двигаем курсор только вперёд: назад он не должен уезжать ни при какой ошибке. */
+async function saveCursor(sql: any, maxUpdated: number, since: number) {
+  if (!(maxUpdated > since)) return
+  await sql`
+    INSERT INTO support_platform_settings (key, value, updated_at)
+    VALUES (${CURSOR_KEY}, ${String(maxUpdated)}, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = ${String(maxUpdated)}, updated_at = NOW()
+  `
+}
 
 export default async function handler(req: Request): Promise<Response> {
   const ua = req.headers.get('user-agent') || ''
@@ -79,6 +93,7 @@ export default async function handler(req: Request): Promise<Response> {
       const batch = data?._embedded?.leads || []
       leads.push(...batch)
       if (batch.length < 250) break
+      if (Date.now() - started > FETCH_BUDGET_MS) break
     }
 
     // ─── 2. «Неразобранное»: заявки лид-форм лежат отдельно от сделок ─────────
@@ -87,9 +102,27 @@ export default async function handler(req: Request): Promise<Response> {
     // элемента, а имя и телефон — в контакте. Без этого все заявки с форм
     // отсеивались проверкой воронки (обнаружено на проде 13.08.2026).
     const unsorted = await amoGet(creds, `/leads/unsorted?limit=100`)
-    for (const u of unsorted?._embedded?.unsorted || []) {
+    const items = unsorted?._embedded?.unsorted || []
+
+    // Заявка живёт в «Неразобранном», пока её не разберут в Amo, поэтому один
+    // и тот же список приезжает каждую минуту. Раньше мы честно догружали
+    // карточку каждой — по запросу на заявку, три десятка запросов на проход,
+    // и весь бюджет вызова уходил на пересборку того, что уже лежит в базе.
+    // Спрашиваем базу один раз и знакомые заявки не трогаем: если такую
+    // разберут в Amo, она приедет обычной сделкой по курсору и обновится там.
+    const ids = items.map((u: any) => u._embedded?.leads?.[0]?.id).filter(Boolean)
+    const knownRows = ids.length
+      ? await sql`
+          SELECT external_id FROM sales_leads
+          WHERE org_id = ${ORG} AND external_id = ANY(${ids.map((id: number) => `amo_${id}`)})
+        ` as any[]
+      : []
+    const known = new Set(knownRows.map(r => r.external_id))
+
+    for (const u of items) {
       const lead = u._embedded?.leads?.[0]
       if (!lead) continue
+      if (known.has(`amo_${lead.id}`)) { out.deduped++; continue }
       lead._unsorted_meta = u.metadata || null
       lead.pipeline_id = lead.pipeline_id || u.pipeline_id
       lead.name = lead.name || u.metadata?.form_name || u.source_name || null
@@ -99,7 +132,7 @@ export default async function handler(req: Request): Promise<Response> {
       // ни направления. Из-за этого лид назывался «Заявка с рекламной формы», а
       // поля пустовали. Догружаем карточку целиком — это один запрос на лид,
       // и он окупается: сейлз видит, кто обратился, не открывая Amo
-      if (lead.id && !lead.custom_fields_values) {
+      if (lead.id && !lead.custom_fields_values && Date.now() - started < FETCH_BUDGET_MS) {
         try {
           const full = await amoGet(creds, `/leads/${lead.id}`)
           if (full?.id) {
@@ -150,17 +183,22 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    // Курсор двигаем только после успешного прохода: упали — на следующем заходе
-    // заберём тот же диапазон, идемпотентность приёмника это выдержит
-    await sql`
-      INSERT INTO support_platform_settings (key, value, updated_at)
-      VALUES (${CURSOR_KEY}, ${String(maxUpdated)}, NOW())
-      ON CONFLICT (key) DO UPDATE SET value = ${String(maxUpdated)}, updated_at = NOW()
-    `
+    await saveCursor(sql, maxUpdated, since)
   } catch (e: any) {
     console.error('[amo-sync] failed:', e)
-    return json({ ok: false, error: e?.message || 'sync failed', ...out }, 200)
+    // Курсор сохраняем и после сбоя: обработанное обработано, а начинать
+    // каждый раз с того же места — это и есть вставшая синхронизация
+    await saveCursor(sql, maxUpdated, since).catch(() => {})
+    return json({ ok: false, error: e?.message || 'sync failed', cursor: maxUpdated, ...out }, 200)
   }
 
-  return json({ ok: true, since, cursor: maxUpdated, ...out })
+  // Отметка живости: курсор стоит на месте, когда в Amo просто ничего не
+  // менялось, и по нему не отличить тишину от вставшего крона
+  await sql`
+    INSERT INTO support_platform_settings (key, value, updated_at)
+    VALUES (${'sales_amo_last_run'}, ${JSON.stringify({ ...out, ms: Date.now() - started })}, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `
+
+  return json({ ok: true, since, cursor: maxUpdated, ms: Date.now() - started, ...out })
 }
