@@ -204,8 +204,8 @@ export default async function handler(req: Request): Promise<Response> {
      LEFT JOIN sales_sources src ON src.id = l.source_id
      LEFT JOIN sales_lost_reasons lr ON lr.id = d.lost_reason_id`
 
-  const rows = perStage
-    ? await sql.query(
+  const rowsQ = perStage
+    ? sql.query(
         `SELECT * FROM (
            SELECT ${SELECT_FIELDS},
                   ROW_NUMBER() OVER (PARTITION BY s.key
@@ -214,18 +214,15 @@ export default async function handler(req: Request): Promise<Response> {
            WHERE ${where}
          ) t WHERE rn <= $${params.length + 1}`,
         [...params, perStage],
-      ) as any[]
-    : await sql.query(
+      )
+    : sql.query(
         `SELECT ${SELECT_FIELDS}
          ${FROM_JOINS}
          WHERE ${where}
          ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, limit + 1, offset],
-      ) as any[]
-
-  const hasMore = !perStage && rows.length > limit
-  if (hasMore) rows.pop()
+      )
 
   // Сводка по этапам для канбана — по всем открытым сделкам воронки,
   // независимо от фильтра вида, чтобы колонки не пустели при переключении.
@@ -300,10 +297,15 @@ export default async function handler(req: Request): Promise<Response> {
     ORDER BY ag.name
   `
 
-  // Четыре независимых запроса — одновременно, а не друг за другом: у neon по
-  // HTTP каждый рейс стоит десятки миллисекунд, и последовательность их
-  // складывала в задержку, заметную глазом
-  const [summary, closed, totalsRows, owners] = await Promise.all([summaryQ, closedQ, totalsQ, ownersQ])
+  // Все выборки экрана — ОДНОЙ пачкой. Стоимость здесь не в работе базы
+  // (единицы миллисекунд на запрос), а в дороге до неё: функция и база стоят
+  // на разных концах света, каждый заход ~190 мс. Пять заходов подряд — почти
+  // секунда ожидания на ровном месте, пачка обходится в один
+  const [rows, summary, closed, totalsRows, owners] =
+    await sql.transaction([rowsQ, summaryQ, closedQ, totalsQ, ownersQ]) as any[]
+
+  const hasMore = !perStage && rows.length > limit
+  if (hasMore) rows.pop()
 
   return json({
     deals: rows, summary, closed, totals: (totalsRows as any[])[0] || {},

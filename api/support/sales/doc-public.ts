@@ -2,9 +2,6 @@ import { getSQL, json } from '../lib/db.js'
 import { checkRateLimit } from '../lib/rate-limit.js'
 
 export const config = { runtime: 'edge' }
-// Проба: функция рядом с базой. База во Франкфурте, а функции Vercel выбрал
-// в Гонконге — каждый запрос к базе идёт кругосветкой в 190 мс
-export const preferredRegion = 'fra1'
 
 /**
  * Публичная страница документа: то, что открывает клиент по ссылке /d/<token>.

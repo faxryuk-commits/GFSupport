@@ -228,7 +228,7 @@ export default async function handler(req: Request): Promise<Response> {
   // Склейка: у лида есть аккаунт, созданный раньше самого лида
   if (view === 'dupes') conds.push('a.created_at < l.created_at - INTERVAL \'1 minute\'')
 
-  const rows = await sql.query(
+  const rowsQ = sql.query(
     `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
             l.sla_due_at, l.first_touch_at, l.created_at, l.updated_at, l.campaign, l.text,
             l.lead_kind, l.contact_name, l.raw,
@@ -245,12 +245,7 @@ export default async function handler(req: Request): Promise<Response> {
      ORDER BY l.created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit + 1, offset],
-  ) as any[]
-
-  // Берём на одну строку больше запрошенного: так узнаём, есть ли следующая
-  // страница, без второго запроса на подсчёт
-  const hasMore = rows.length > limit
-  if (hasMore) rows.pop()
+  )
 
   const statsQ = sql`
     SELECT COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS today,
@@ -289,7 +284,16 @@ export default async function handler(req: Request): Promise<Response> {
     ORDER BY name
   `
 
-  const [statsRows, sources, totalRows, agents] = await Promise.all([statsQ, sourcesQ, totalQ, agentsQ])
+  // Одной пачкой вместо пяти заходов: функция и база стоят на разных концах
+  // света, каждый заход стоит ~190 мс дороги — именно из них и складывалось
+  // ожидание, а не из работы базы
+  const [rows, statsRows, sources, totalRows, agents] =
+    await sql.transaction([rowsQ, statsQ, sourcesQ, totalQ, agentsQ]) as any[]
+
+  // Берём на одну строку больше запрошенного: так узнаём, есть ли следующая
+  // страница, без второго запроса на подсчёт
+  const hasMore = rows.length > limit
+  if (hasMore) rows.pop()
 
   // Поля заявки — то, что человек реально заполнил в форме. Они лежат в raw
   // по-разному: у Amo это custom_fields_values, у неразобранных — _unsorted_meta,
