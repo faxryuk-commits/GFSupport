@@ -226,6 +226,10 @@ const navGroups: NavGroup[] = [
       // Иконки у продаж свои: раньше «Лиды» и «Чаты» делили один значок, а
       // «Аккаунты» и «Каналы» — решётку, и в свёрнутом меню они были неразличимы
       { path: '/sales/queue', label: 'Очередь дня', icon: ListChecks, badgeKey: 'salesQueue' },
+      // Новый общий экран: обращения и сделки вместе. Старые разделы пока на
+      // месте — пусть новое докажет себя на живой работе, прежде чем ломать
+      // привычную навигацию
+      { path: '/sales/funnel', label: 'Воронка', icon: Waypoints },
       { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals' },
       { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads' },
       { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },

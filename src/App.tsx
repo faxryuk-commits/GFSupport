@@ -37,6 +37,7 @@ const SalesAccountPage = lazy(() => import('@/pages/sales/ui/SalesAccountPage'))
 const SalesReportsPage = lazy(() => import('@/pages/sales/ui/SalesReportsPage'))
 const SalesSettingsPage = lazy(() => import('@/pages/sales/ui/SalesSettingsPage'))
 const SalesAssistantPage = lazy(() => import('@/pages/sales/ui/SalesAssistantPage'))
+const SalesFunnelPage = lazy(() => import('@/pages/sales/ui/SalesFunnelPage'))
 const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
 const InsightsChatPage = lazy(() => import('@/pages/insights-chat/ui/InsightsChatPage').then(m => ({ default: m.InsightsChatPage })))
 const BenchmarksPage = lazy(() => import('@/pages/benchmarks/ui/BenchmarksPage').then(m => ({ default: m.BenchmarksPage })))
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="/sales/partners" element={<SalesAccountsPage />} />
           <Route path="/sales/accounts/:id" element={<SalesAccountPage />} />
           <Route path="/sales/reports" element={<SalesReportsPage />} />
+          <Route path="/sales/funnel" element={<SalesFunnelPage />} />
           <Route path="/sales/assistant" element={<SalesAssistantPage />} />
           <Route path="/sales/settings" element={<SalesSettingsPage />} />
           <Route path="/sla-report" element={<Navigate to="/analytics?tab=detail" replace />} />

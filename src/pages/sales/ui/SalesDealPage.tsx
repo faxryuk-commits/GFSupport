@@ -216,7 +216,16 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   if (!data) return <Skeleton rows={6} kpis={false} />
 
   const d = data.deal
-  const openStages = data.stages.filter(s => s.kind === 'open')
+  // Списки берём защищённо: карточка открывается панелью поверх доски, и один
+  // неожиданный ответ сервера не должен уносить весь экран в ошибку
+  const stages = data.stages || []
+  const missing = data.missing || []
+  const documents = data.documents || []
+  const tasks = data.tasks || []
+  const contacts = data.contacts || []
+  const events = data.events || []
+  const reasons = data.reasons || []
+  const openStages = stages.filter(s => s.kind === 'open')
   const curIdx = openStages.findIndex(s => s.id === d.stage_id)
   const closed = Boolean(d.won_at || d.lost_at)
 
@@ -339,14 +348,14 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               sub={data.nextStage ? `владелец: ${data.nextStage.owner_role.toUpperCase()} · вероятность ${data.nextStage.probability}%` : ''}
               right={
                 <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
-                  data.missing.length ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {(data.nextStage?.required_fields?.length || 0) - data.missing.length} из {data.nextStage?.required_fields?.length || 0}
+                  missing.length ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {(data.nextStage?.required_fields?.length || 0) - missing.length} из {data.nextStage?.required_fields?.length || 0}
                 </span>
               }
             >
               <div>
                 {(data.nextStage?.required_fields || []).map(f => {
-                  const miss = data.missing.find(m => m.field === f)
+                  const miss = missing.find(m => m.field === f)
                   return (
                     <InlineField
                       key={f}
@@ -404,11 +413,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               </button>
             }
           >
-            {data.documents.length === 0 ? (
+            {documents.length === 0 ? (
               <div className="px-4 py-4 text-[12.5px] text-gray-400">Документов пока нет</div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {data.documents.map(doc => (
+                {documents.map(doc => (
                   <div key={doc.id} className="px-4 py-3 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-[160px]">
                       <div className="text-[12.5px] font-medium text-gray-900">
@@ -478,11 +487,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           </Card>
 
           <Card title="Задачи и каденция" sub="создаются автоматически при смене этапа">
-            {data.tasks.filter(t => !t.done_at).length === 0 ? (
+            {tasks.filter(t => !t.done_at).length === 0 ? (
               <div className="px-4 py-4 text-[12.5px] text-gray-400">Активных задач нет</div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {data.tasks.filter(t => !t.done_at).map(t => (
+                {tasks.filter(t => !t.done_at).map(t => (
                   <div key={t.id} className="px-4 py-2.5">
                     <div className="text-[12.5px] text-gray-900">{t.title}</div>
                     <div className="text-[11px] text-gray-400">
@@ -535,11 +544,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           </Card>
 
           <Card title="Контакты" sub="по телефону идёт склейка обращений">
-            {data.contacts.length === 0 ? (
+            {contacts.length === 0 ? (
               <div className="px-4 py-4 text-[12.5px] text-gray-400">Контактов нет</div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {data.contacts.map((c, i) => (
+                {contacts.map((c, i) => (
                   <div key={i} className="px-4 py-2.5 flex justify-between gap-3">
                     <div>
                       <div className="text-[12.5px] text-gray-900">{c.name || 'Без имени'}</div>
@@ -554,7 +563,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
           <Card title="История этапов" sub="каждое движение — событие">
             <div className="divide-y divide-gray-100">
-              {data.events.slice(0, 8).map((e, i) => (
+              {events.slice(0, 8).map((e, i) => (
                 <div key={i} className="px-4 py-2.5">
                   <div className="text-[12.5px] text-gray-900">
                     {e.from_stage ? `${e.from_stage} → ` : ''}{e.to_stage}
@@ -564,7 +573,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                   </div>
                 </div>
               ))}
-              {data.events.length === 0 && (
+              {events.length === 0 && (
                 <div className="px-4 py-4 text-[12.5px] text-gray-400">История пуста</div>
               )}
             </div>
@@ -582,7 +591,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               </p>
             </div>
             <div className="max-h-[50vh] overflow-y-auto">
-              {data.reasons.map(r => (
+              {reasons.map(r => (
                 <button key={r.id} onClick={() => lose(r.code)} disabled={busy}
                   className="w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 disabled:opacity-50">
                   <div className="text-[13px] text-gray-900">{r.label}</div>
