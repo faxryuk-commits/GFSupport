@@ -53,6 +53,8 @@ function readableRaw(raw: any): Array<{ label: string; value: string }> {
   const push = (key: string, value: any) => {
     if (value === null || value === undefined || value === '') return
     if (typeof value === 'object') return
+    // Ноль в «сумме» — это не заполненное поле, а умолчание Amo
+    if (key === 'price' && (value === 0 || value === '0')) return
     const text = String(value).slice(0, 500)
     // Служебное имя Amo — не заполненное поле, а как система назвала запись.
     // «Имя: Facebook №1608321444249697» в карточке выглядит данными, хотя это
@@ -77,19 +79,20 @@ function readableRaw(raw: any): Array<{ label: string; value: string }> {
       out.push({ label: f.field_name || f.field_code || 'Поле', value: String(v).slice(0, 500) })
     }
   }
-  // Ответы на вопросы лид-формы: Meta кладёт их в контакт, и это самое
-  // содержательное, что о человеке известно до первого разговора
-  for (const f of raw._contact_fields || []) {
-    if (!f?.value) continue
-    out.unshift({ label: f.name, value: String(f.value).replace(/_/g, ' ').slice(0, 500) })
-  }
   const meta = raw._unsorted_meta
   if (meta) {
     push('form_name', meta.form_name)
     push('referrer', meta.referer || meta.referrer)
     push('page', meta.form_page)
   }
-  return out.slice(0, 24)
+  // Ответы на вопросы лид-формы идут первыми и в том порядке, в каком человек
+  // на них отвечал: Meta кладёт их в контакт, и это самое содержательное, что
+  // о человеке известно до первого разговора
+  const answers = (raw._contact_fields || [])
+    .filter((f: any) => f?.value)
+    .map((f: any) => ({ label: f.name, value: String(f.value).replace(/_/g, ' ').slice(0, 500) }))
+
+  return [...answers, ...out].slice(0, 24)
 }
 
 export default async function handler(req: Request): Promise<Response> {
