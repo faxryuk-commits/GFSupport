@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
+import { formatDateTimeShort, formatDateDMY, toDateInput, fromDateInput } from '@/shared/lib/time'
 
 /** Общие мелочи страниц продаж: одни и те же чипы, карточки и форматы. */
 
@@ -432,13 +433,39 @@ export const Btn = ({ kind = 'ghost', children, ...rest }: any) => (
  * с подсказкой: свободный текст расходится в написании и ломает отчёты, но
  * запрещать своё значение нельзя — жизнь богаче справочника.
  */
-export function InlineField({ label, value, onSave, placeholder, money: isMoney, options, multiple }: {
+export function InlineField({ label, value, onSave, placeholder, money: isMoney, options, multiple, when }: {
   label: string; value: any; onSave: (v: string) => void; placeholder?: string
   money?: boolean; options?: string[]; multiple?: boolean
+  /** Поле с датой: 'date' — только день, 'datetime' — день и время. */
+  when?: 'date' | 'datetime'
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const empty = value === null || value === undefined || value === ''
+  const withTime = when === 'datetime'
+
+  // Дату вводят календарём, а не строкой: «дата демо» в свободном поле
+  // превращается в «завтра в 3», и по такой записи не построить ни
+  // напоминание, ни отчёт
+  if (editing && when) {
+    return (
+      <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
+        <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+        <input
+          autoFocus
+          type={withTime ? 'datetime-local' : 'date'}
+          className="border border-blue-400 rounded-md px-2 py-1 text-[12.5px]"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { onSave(fromDateInput(draft, withTime)); setEditing(false) }
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          onBlur={() => { if (draft) onSave(fromDateInput(draft, withTime)); setEditing(false) }}
+        />
+      </div>
+    )
+  }
 
   if (editing) {
     return (
@@ -478,13 +505,17 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
     <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100 hover:bg-gray-50">
       <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
       <button
-        onClick={() => { setDraft(empty ? '' : String(value)); setEditing(true) }}
+        onClick={() => {
+          setDraft(when ? toDateInput(value, withTime) : empty ? '' : String(value))
+          setEditing(true)
+        }}
         className={`text-[12.5px] text-right ${empty ? 'text-blue-600 hover:underline' : 'text-gray-900'}`}
       >
         {/* У поля со справочником видно, что это выбор, а не свободный ввод —
             иначе про список узнаёшь, только ткнув наугад */}
         {empty
-          ? (options?.length ? 'выбрать ▾' : 'заполнить')
+          ? (when ? 'выбрать дату 🗓' : options?.length ? 'выбрать ▾' : 'заполнить')
+          : when ? (withTime ? formatDateTimeShort(value) : formatDateDMY(value))
           : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
       </button>
     </div>
@@ -609,11 +640,18 @@ export const Drawer = ({ open, onClose, title, fullLink, children }: {
  */
 export type Range = { from: string; to: string; key: string }
 
-const dayKey = (d: Date) => {
-  // Считаем в рабочей зоне: «сегодня» у команды из разных стран должно
-  // означать один и тот же день, а не местную полночь каждого
-  const shifted = new Date(d.getTime() + 5 * 3600000)
-  return shifted.toISOString().slice(0, 10)
+// Считаем в рабочей зоне: «сегодня» у команды из разных стран должно
+// означать один и тот же день, а не местную полночь каждого
+const dayKey = (d: Date) => toDateInput(d.toISOString())
+
+/**
+ * «Завтра в девять» и прочие быстрые сроки — по рабочей зоне.
+ * Час собирался руками через setUTCHours сразу на трёх экранах, и всюду
+ * одинаково мимо: обещанное утро приходилось на послеобеденное время.
+ */
+export function workMorningIn(days: number): string {
+  const day = toDateInput(new Date(Date.now() + days * 86400000).toISOString())
+  return fromDateInput(`${day}T09:00`, true)
 }
 
 export function rangeOf(key: string): Range {

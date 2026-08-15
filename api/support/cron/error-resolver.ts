@@ -21,6 +21,7 @@
  * Защита эндпоинта: Vercel cron (user-agent) или CRON_SECRET. Расписание: каждые 30 минут.
  */
 import { getSQL, json } from '../lib/db.js'
+import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -80,11 +81,8 @@ const PLAYBOOK: Record<string, { name: string; concentrated: Mode; spread: Mode 
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null)
-  const ua = req.headers.get('user-agent') || ''
-  const auth = req.headers.get('authorization') || ''
-  if (!ua.includes('vercel-cron') && !(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`)) {
-    return json({ error: 'Unauthorized' }, 401)
-  }
+  const denied = assertCron(req)
+  if (denied) return denied
 
   const sql = getSQL()
   try {

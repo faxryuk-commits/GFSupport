@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { SalesDealPage } from './SalesDealPage'
-import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText, Skeleton , Drawer } from './kit'
+import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText, Skeleton , Drawer , workMorningIn } from './kit'
 
 /**
  * Очередь дня — главный экран сейлза.
@@ -135,11 +135,9 @@ export function SalesQueuePage() {
   const planStep = async (dealId: string) => {
     setBusy(dealId)
     try {
-      const at = new Date(Date.now() + 86400000 + 5 * 3600000)
-      at.setUTCHours(9, 0, 0, 0)
       await apiPatch('/sales/deal', {
         id: dealId,
-        fields: { next_step: 'Позвонить', next_step_at: at.toISOString().slice(0, 16) },
+        fields: { next_step: 'Позвонить', next_step_at: workMorningIn(1) },
       })
       load()
     } catch (e: any) {

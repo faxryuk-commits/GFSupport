@@ -135,7 +135,8 @@ export default async function handler(req: Request): Promise<Response> {
                  ORDER BY c.is_primary DESC LIMIT 1) AS phone,
                (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens,
                s.key AS stage_key,
-               ROW_NUMBER() OVER (PARTITION BY s.key ORDER BY d.stage_since ASC) AS rn
+               ROW_NUMBER() OVER (PARTITION BY s.key
+                 ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC) AS rn
         FROM sales_deals d
         JOIN sales_stages s ON s.id = d.stage_id
         LEFT JOIN sales_accounts a ON a.id = d.account_id

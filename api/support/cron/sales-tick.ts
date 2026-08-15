@@ -2,6 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { getBotToken, tgSend, leadCard, leadKeyboard } from '../lib/sales-bot.js'
 import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../lib/sales-assistant.js'
+import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -25,11 +26,8 @@ const ORG = process.env.SALES_ORG || 'org_delever'
 const ABANDON_HOURS = 48
 
 export default async function handler(req: Request): Promise<Response> {
-  const ua = req.headers.get('user-agent') || ''
-  const auth = req.headers.get('authorization') || ''
-  if (!ua.includes('vercel-cron') && !(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`)) {
-    return json({ error: 'unauthorized' }, 401)
-  }
+  const denied = assertCron(req)
+  if (denied) return denied
 
   const sql = getSQL()
   await ensureSalesSchema(sql, ORG)

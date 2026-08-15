@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
-import { formatDateTimeShort } from '@/shared/lib/time'
+import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/time'
 import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
@@ -57,6 +57,16 @@ const MONEY_FIELDS = new Set(['monthly_amount', 'onetime_amount', 'budget_stated
  */
 const MULTI_FIELDS = new Set(['aggregators', 'products', 'pain'])
 
+/**
+ * Поля с датой. Вводятся календарём, а не строкой: «дата демо», набранная
+ * руками, превращается в «завтра в 3» — по такой записи не построить ни
+ * напоминание, ни отчёт, и критерий выхода этапа проверить тоже нечем.
+ */
+const DATE_FIELDS: Record<string, 'date' | 'datetime'> = {
+  meeting_at: 'datetime', next_step_at: 'datetime', paid_at: 'datetime',
+  valid_till: 'date', start_date: 'date', expected_close_at: 'date',
+}
+
 const QUAL_FIELDS = [
   ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
   ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
@@ -83,23 +93,13 @@ function money(v: any, currency = 'UZS') {
 const fmtDate = (v: string | null) => formatDateTimeShort(v)
 
 /**
- * Значение для календарного поля: наивная строка из базы хранит UTC, а input
- * ждёт локальное время без зоны. Показываем рабочую зону — ту же, что и везде.
+ * Быстрый срок: «завтра», «через неделю» — без ковыряния в календаре.
+ * Девять утра именно по рабочей зоне: раньше час собирался руками через
+ * setUTCHours, и «завтра» оказывалось на два часа позже обеда.
  */
-function toLocalInput(v: string | null): string {
-  if (!v) return ''
-  const ts = v.includes('Z') || v.includes('+') ? v : v + 'Z'
-  const d = new Date(ts)
-  if (Number.isNaN(d.getTime())) return ''
-  const tashkent = new Date(d.getTime() + 5 * 3600000)
-  return tashkent.toISOString().slice(0, 16)
-}
-
-/** Быстрый срок: «завтра», «через неделю» — без ковыряния в календаре. */
 function inDays(days: number): string {
-  const d = new Date(Date.now() + days * 86400000 + 5 * 3600000)
-  d.setUTCHours(9, 0, 0, 0)
-  return d.toISOString().slice(0, 16)
+  const day = toDateInput(new Date(Date.now() + days * 86400000).toISOString(), true).slice(0, 10)
+  return fromDateInput(`${day}T09:00`, true)
 }
 
 const Card = ({ title, sub, right, children }: any) => (
@@ -362,6 +362,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                       label={miss?.label || data.labels?.[f] || f}
                       value={d[f]}
                       money={MONEY_FIELDS.has(f)}
+                      when={DATE_FIELDS[f]}
                       options={optionsFor(refs, f, d.market_id)}
                       onSave={v => patch(f, v)}
                     />
@@ -383,7 +384,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             <div className="grid sm:grid-cols-2">
               {QUAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)}
-                  options={optionsFor(refs, f, d.market_id)}
+                  options={optionsFor(refs, f, d.market_id)} when={DATE_FIELDS[f]}
                   multiple={MULTI_FIELDS.has(f)} />
               ))}
             </div>
@@ -393,7 +394,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             <div className="grid sm:grid-cols-2">
               {COMMERCIAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} money={MONEY_FIELDS.has(f)}
-                  onSave={v => patch(f, v)} options={optionsFor(refs, f, d.market_id)} />
+                  onSave={v => patch(f, v)} when={DATE_FIELDS[f]}
+                  options={optionsFor(refs, f, d.market_id)} />
               ))}
             </div>
             {Number(d.discount_pct || 0) > 15 && (
@@ -468,10 +470,12 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               options={optionsFor(refs, 'next_step')} />
             <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
               <span className="text-[12.5px] text-gray-500 flex-1">Когда</span>
+              {/* Показывали в рабочей зоне, а сохраняли выбранное как есть —
+                  время уезжало вперёд на пять часов при каждой правке */}
               <input
                 type="datetime-local"
-                value={toLocalInput(d.next_step_at)}
-                onChange={e => patch('next_step_at', e.target.value)}
+                value={toDateInput(d.next_step_at, true)}
+                onChange={e => patch('next_step_at', fromDateInput(e.target.value, true))}
                 className="border border-gray-300 rounded-md px-2 py-1 text-[12.5px]"
               />
             </div>

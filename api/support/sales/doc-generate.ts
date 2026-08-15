@@ -106,6 +106,14 @@ export default async function handler(req: Request): Promise<Response> {
     UPDATE sales_documents SET file_url = ${result.url}, updated_at = NOW()
     WHERE id = ${doc.id}
   `
+  // Сгенерированный файл сам встаёт в поле сделки: критерий выхода этапа
+  // спрашивает ровно про него, и переспрашивать человека не о чем
+  if (doc.kind === 'quote' && doc.deal_id) {
+    await sql`
+      UPDATE sales_deals SET kp_file = ${result.url}, updated_at = NOW()
+      WHERE id = ${doc.deal_id} AND org_id = ${orgId}
+    `
+  }
 
   return json({ ok: true, url: result.url, pdfUrl: result.pdfUrl, documentId: result.documentId })
 }

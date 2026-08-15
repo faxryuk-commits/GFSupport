@@ -17,6 +17,7 @@
  */
 
 import { getSQL, json, getOrgBotToken } from '../lib/db.js'
+import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -27,15 +28,8 @@ const ALERT_COOLDOWN_MINUTES = 60
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null)
 
-  // Vercel cron шлёт с заголовком user-agent 'vercel-cron'.
-  // Также допускаем ручной вызов с CRON_SECRET.
-  const ua = req.headers.get('user-agent') || ''
-  const auth = req.headers.get('authorization') || ''
-  const isVercelCron = ua.includes('vercel-cron')
-  const hasSecret = process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`
-  if (!isVercelCron && !hasSecret) {
-    return json({ error: 'Unauthorized' }, 401)
-  }
+  const denied = assertCron(req)
+  if (denied) return denied
 
   const sql = getSQL()
 

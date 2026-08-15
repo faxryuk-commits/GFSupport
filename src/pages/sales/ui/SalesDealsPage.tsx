@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
-         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone , PageNumbers, FilterBar } from './kit'
+         useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone , PageNumbers, FilterBar , workMorningIn } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { SalesDealPage } from './SalesDealPage'
 import { useSalesRefs, optionsFor } from './refs'
@@ -275,11 +275,9 @@ export function SalesDealsPage() {
   const planStep = async (dealId: string) => {
     setActing(dealId)
     try {
-      const at = new Date(Date.now() + 86400000 + 5 * 3600000)
-      at.setUTCHours(9, 0, 0, 0)
       await apiPatch('/sales/deal', {
         id: dealId,
-        fields: { next_step: 'Позвонить', next_step_at: at.toISOString().slice(0, 16) },
+        fields: { next_step: 'Позвонить', next_step_at: workMorningIn(1) },
       })
       load()
     } catch (e: any) {

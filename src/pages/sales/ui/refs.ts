@@ -161,7 +161,9 @@ export const COUNTRY_BY_MARKET: Record<string, string> = {
  * смысла показывать Алматы. Значения без региона общие для всех.
  */
 export function optionsFor(refs: SalesRefs | null, field: string, market?: string | null): string[] {
-  const fromServer = (refs?.options || [])
+  // Справочник — вспомогательная вещь: неожиданный ответ сервера должен
+  // ронять список вариантов, а не всю карточку сделки
+  const fromServer = (Array.isArray(refs?.options) ? refs!.options : [])
     .filter(o => o.field === field && o.is_active !== false)
     .filter(o => !o.market_id || !market || o.market_id === market)
     .map(o => o.label || o.value)

@@ -157,3 +157,62 @@ export function formatRelativeTime(dateStr: string | null | undefined): string {
   if (minutes > 0) return `${minutes}м назад`
   return 'только что'
 }
+
+/**
+ * ──────────────────────────────────────────────────────────────────────────
+ * Ввод дат: календарь браузера работает со «стенным временем», а мы храним
+ * моменты. Обе функции ниже переводят одно в другое строго через рабочую
+ * зону — иначе сейлз в Ташкенте ставит демо на 15:00, а в базу уезжает 10:00.
+ */
+
+/** Смещение рабочей зоны в минутах на конкретный момент. */
+function workOffsetMinutes(at: Date): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: WORK_TZ, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(at).map(p => [p.type, p.value]),
+  ) as Record<string, string>
+  // «Который час в Ташкенте» минус «который час по UTC» = смещение
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day,
+    +parts.hour === 24 ? 0 : +parts.hour, +parts.minute, +parts.second)
+  return Math.round((asUtc - at.getTime()) / 60000)
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/**
+ * Значение из БД → значение для <input type="date|datetime-local">.
+ * Пустое или нераспознанное отдаём пустой строкой: календарь молча
+ * игнорирует мусор, и поле выглядит сломанным без объяснения.
+ */
+export function toDateInput(value: string | null | undefined, withTime = false): string {
+  const d = parseTs(value)
+  if (!d) return ''
+  const shifted = new Date(d.getTime() + workOffsetMinutes(d) * 60000)
+  const date = `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+  return withTime ? `${date}T${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}` : date
+}
+
+/**
+ * Значение из календаря → значение для API.
+ *
+ * Дата остаётся датой: у «Срока действия КП» времени нет и быть не должно.
+ * Дата со временем уезжает с явным смещением рабочей зоны, чтобы момент
+ * сохранился тем же, каким его выбрал человек.
+ */
+export function fromDateInput(value: string, withTime = false): string {
+  if (!value) return ''
+  if (!withTime) return value.slice(0, 10)
+  const [datePart, timePart = '00:00'] = value.split('T')
+  const [y, m, d] = datePart.split('-').map(Number)
+  const [hh, mm] = timePart.split(':').map(Number)
+  // Смещение берём на выбранный момент, а не на сегодня: страны с переводом
+  // часов ещё появятся в списке регионов
+  const guess = new Date(Date.UTC(y, m - 1, d, hh, mm))
+  const off = workOffsetMinutes(new Date(guess.getTime() - workOffsetMinutes(guess) * 60000))
+  const sign = off >= 0 ? '+' : '-'
+  const abs = Math.abs(off)
+  return `${datePart}T${pad(hh)}:${pad(mm)}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+}

@@ -10,6 +10,7 @@
  * Защита: Vercel cron (user-agent) или CRON_SECRET.
  */
 import { getSQL, json, getOpenAIKey } from '../lib/db.js'
+import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['iad1'], maxDuration: 60 }
 
@@ -38,11 +39,8 @@ async function classify(apiKey: string, reply: string, followups: string): Promi
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null)
-  const ua = req.headers.get('user-agent') || ''
-  const auth = req.headers.get('authorization') || ''
-  if (!ua.includes('vercel-cron') && !(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`)) {
-    return json({ error: 'Unauthorized' }, 401)
-  }
+  const denied = assertCron(req)
+  if (denied) return denied
   const sql = getSQL()
   try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS feedback VARCHAR(20)` } catch {}
   try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS feedback_note TEXT` } catch {}

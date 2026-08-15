@@ -243,10 +243,21 @@ export default async function handler(req: Request): Promise<Response> {
           sent_at = COALESCE(sent_at, NOW()), updated_at = NOW()
       WHERE id = ${doc.id}
     `
-    return json({
-      ok: true, number, token,
-      url: `${url.origin}/d/${token}`,
-    })
+    // Критерий выхода на «КП отправлено» требует файл КП — а он вот, только что
+    // отправлен. Заставлять сейлза копировать ссылку в поле руками значит
+    // получить этап, заблокированный на работе, которая уже сделана
+    const link = `${url.origin}/d/${token}`
+    if (doc.kind === 'quote' && doc.deal_id) {
+      await sql`
+        UPDATE sales_deals
+        SET kp_file = ${link},
+            valid_till = COALESCE(valid_till, ${doc.valid_till || null}),
+            updated_at = NOW()
+        WHERE id = ${doc.deal_id} AND org_id = ${orgId}
+      `
+    }
+
+    return json({ ok: true, number, token, url: link })
   }
 
   // ─── Новая версия: старая остаётся в истории со своей статистикой ───────────

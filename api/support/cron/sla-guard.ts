@@ -21,6 +21,7 @@
 import { getSQL, json, getOpenAIKey } from '../lib/db.js'
 import { loadSla, businessMinutesBetween } from '../lib/sla.js'
 import { sendNotification } from '../lib/notifications.js'
+import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -70,11 +71,8 @@ async function gate(apiKey: string, tail: string): Promise<boolean> {
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null)
-  const ua = req.headers.get('user-agent') || ''
-  const auth = req.headers.get('authorization') || ''
-  if (!ua.includes('vercel-cron') && !(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`)) {
-    return json({ error: 'Unauthorized' }, 401)
-  }
+  const denied = assertCron(req)
+  if (denied) return denied
 
   const sql = getSQL()
   // колонки состояния SLA (идемпотентно)

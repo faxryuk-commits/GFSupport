@@ -2,6 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead } from '../lib/sales-intake.js'
 import { amoGet, fetchContacts, leadPayload, isAllowedPipeline } from '../lib/sales-amo.js'
+import { assertCron, cronSecured } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
 
@@ -38,6 +39,20 @@ const TIME_BUDGET_MS = 18_000
 const SCHEMA_BUDGET_MS = 8_000
 const FIRST_RUN_WINDOW_H = 24  // первый запуск не тянет архив, для этого есть backfill
 
+/**
+ * Закрыта ли сделка в Amo. 142 и 143 — системные статусы «успешно реализовано»
+ * и «закрыто и не реализовано», они одинаковы во всех воронках аккаунта.
+ * Свои закрывающие статусы можно дописать переменными: в боевых воронках
+ * оплата живёт отдельными названиями вроде «Оплачено».
+ */
+function closedKind(statusId: number | undefined): 'won' | 'lost' | null {
+  if (!statusId) return null
+  const extra = (s: string) => (process.env[s] || '').split(',').map(x => Number(x.trim())).filter(Boolean)
+  if (statusId === 143 || extra('AMO_LOST_STATUSES').includes(statusId)) return 'lost'
+  if (statusId === 142 || extra('AMO_WON_STATUSES').includes(statusId)) return 'won'
+  return null
+}
+
 /** Двигаем курсор только вперёд: назад он не должен уезжать ни при какой ошибке. */
 async function saveCursor(sql: any, maxUpdated: number, since: number) {
   if (!(maxUpdated > since)) return
@@ -49,11 +64,8 @@ async function saveCursor(sql: any, maxUpdated: number, since: number) {
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  const ua = req.headers.get('user-agent') || ''
-  const auth = req.headers.get('authorization') || ''
-  if (!ua.includes('vercel-cron') && !(process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`)) {
-    return json({ error: 'unauthorized' }, 401)
-  }
+  const denied = assertCron(req)
+  if (denied) return denied
 
   const domain = process.env.AMO_DOMAIN
   const token = process.env.AMO_TOKEN
@@ -78,7 +90,7 @@ export default async function handler(req: Request): Promise<Response> {
     ? parseInt(cursorRow.value, 10)
     : Math.floor(Date.now() / 1000) - FIRST_RUN_WINDOW_H * 3600
 
-  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, errors: 0, deferred: 0 }
+  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, closed: 0, errors: 0, deferred: 0 }
   let maxUpdated = since
 
   try {
@@ -192,9 +204,25 @@ export default async function handler(req: Request): Promise<Response> {
         const contact = linked.find((c: any) => c?.phone) || linked[0]
 
         const res = await acceptLead(sql, ORG, leadPayload(lead, contact))
-        if (!res.ok) out.skipped++
-        else if (res.deduped) out.deduped++
+        if (!res.ok) { out.skipped++; continue }
+        if (res.deduped) out.deduped++
         else out.created++
+
+        // Сделка, закрытая в Amo, не должна вставать к сейлзу как живое
+        // обращение: он потратит касание на то, что уже решено. Закрытую
+        // сразу отправляем к своим — не реализованную в отказ, выигранную
+        // в конверсию; на доске такие не показываются
+        const closed = closedKind(lead.status_id)
+        if (closed && res.lead_id) {
+          await sql`
+            UPDATE sales_leads
+            SET status = ${closed === 'lost' ? 'junk' : 'converted'},
+                archived_at = COALESCE(archived_at, NOW()),
+                updated_at = NOW()
+            WHERE id = ${res.lead_id} AND org_id = ${ORG} AND status <> ${closed === 'lost' ? 'junk' : 'converted'}
+          `
+          out.closed++
+        }
       } catch (e) {
         out.errors++
         console.error('[amo-sync] lead failed:', lead?.id, e)
@@ -218,5 +246,5 @@ export default async function handler(req: Request): Promise<Response> {
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
   `
 
-  return json({ ok: true, since, cursor: maxUpdated, ms: Date.now() - started, ...out })
+  return json({ ok: true, secured: cronSecured(), since, cursor: maxUpdated, ms: Date.now() - started, ...out })
 }

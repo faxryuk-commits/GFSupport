@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { Chip, PageShell, Skeleton, money, fmtDateTime, slaTone, slaText,
-         useAutoRefresh, Drawer, FilterBar } from './kit'
+         useAutoRefresh, Drawer, FilterBar , workMorningIn } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
@@ -133,11 +133,9 @@ export function SalesFunnelPage() {
   const planStep = async (dealId: string) => {
     setBusy(dealId)
     try {
-      const at = new Date(Date.now() + 86400000 + 5 * 3600000)
-      at.setUTCHours(9, 0, 0, 0)
       await apiPatch('/sales/deal', {
         id: dealId,
-        fields: { next_step: 'Позвонить', next_step_at: at.toISOString().slice(0, 16) },
+        fields: { next_step: 'Позвонить', next_step_at: workMorningIn(1) },
       })
       load()
     } catch (e: any) {
@@ -268,6 +266,12 @@ export function SalesFunnelPage() {
                         {[l.city, phone.valid ? phone.pretty : l.phone, l.source]
                           .filter(Boolean).join(' · ')}
                       </div>
+                      {/* Когда обращение пришло — цифра, по которой сейлз решает,
+                          звонить сейчас или это вчерашний хвост. «Просрочено на
+                          19 ч» говорит о нормативе, но не о времени события */}
+                      <div className="text-[10px] text-gray-400 tabular-nums">
+                        {fmtDateTime(l.created_at)}
+                      </div>
                       <div className="flex gap-1 mt-1.5">
                         <button
                           disabled={busy === l.id}
@@ -380,6 +384,11 @@ export function SalesFunnelPage() {
                           ? `${d.next_step}${d.next_step_at ? ` · ${fmtDateTime(d.next_step_at)}` : ''}`
                           : 'шаг не назначен'}
                         {d.owner_name ? ` · ${d.owner_name}` : ''}
+                      </div>
+                      {/* Карточки стоят по времени последнего движения, значит
+                          это время должно быть видно — иначе порядок необъясним */}
+                      <div className="text-[10px] text-gray-400 tabular-nums">
+                        изменена {fmtDateTime(d.updated_at || d.stage_since)}
                       </div>
                       <div className="flex gap-1 mt-1.5">
                         {!d.next_step_at && (

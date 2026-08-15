@@ -208,7 +208,8 @@ export default async function handler(req: Request): Promise<Response> {
     ? await sql.query(
         `SELECT * FROM (
            SELECT ${SELECT_FIELDS},
-                  ROW_NUMBER() OVER (PARTITION BY s.key ORDER BY d.stage_since ASC) AS rn
+                  ROW_NUMBER() OVER (PARTITION BY s.key
+                    ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC) AS rn
            ${FROM_JOINS}
            WHERE ${where}
          ) t WHERE rn <= $${params.length + 1}`,
@@ -218,7 +219,7 @@ export default async function handler(req: Request): Promise<Response> {
         `SELECT ${SELECT_FIELDS}
          ${FROM_JOINS}
          WHERE ${where}
-         ORDER BY d.stage_since ASC
+         ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, limit + 1, offset],
       ) as any[]
