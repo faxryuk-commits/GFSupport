@@ -1,0 +1,299 @@
+import { useCallback, useEffect, useState } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { apiGet, apiPost } from '@/shared/services/api.service'
+import { formatDateTimeShort, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
+import { parsePhone } from '@/shared/lib/phone'
+import { Chip, Skeleton, slaTone, slaText } from './kit'
+
+/**
+ * Карточка обращения: кто написал, откуда и что именно сказал.
+ *
+ * В списке видна строка с именем и обрезанным текстом, и на вопрос «что это
+ * за заявка» приходилось идти в Amo или в чат. Здесь собрано то, что известно
+ * на момент первого касания: заполненные человеком поля, переписка целиком,
+ * работа ассистента и во что обращение вылилось.
+ *
+ * Открывается и панелью с доски, и отдельным адресом — ссылку на обращение
+ * нужно уметь послать коллеге.
+ */
+
+interface LeadData {
+  lead: any
+  fields: Array<{ label: string; value: string }>
+  touchpoints: Array<{ kind: string; channel: string | null; title: string | null
+    detail: string | null; url: string | null; identity: string | null; happened_at: string }>
+  assistant: Array<{ action: string; channel: string | null; step: number
+    message: string | null; reply: string | null; status: string; error: string | null; created_at: string }>
+  deals: Array<{ id: string; title: string; stage: string | null; monthly_amount: string | null
+    currency: string; won_at: string | null; lost_at: string | null; created_at: string }>
+  messages: Array<{ id: string; sender_name: string | null; is_from_client: boolean
+    text_content: string | null; content_type: string | null; created_at: string }>
+}
+
+const KIND_LABEL: Record<string, string> = {
+  form: 'заявка с формы', message: 'написал в мессенджер', comment: 'комментарий',
+  call: 'звонок', email: 'письмо', manual: 'заведён вручную', other: 'канал не определён',
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  new: 'Новое', assigned: 'Назначено', nurture: 'На прогреве',
+  converted: 'Стало сделкой', junk: 'Отказ', duplicate: 'Дубль',
+}
+
+const ASSISTANT_ACTION: Record<string, string> = {
+  draft: 'подготовил сообщение', sent: 'отправил сообщение',
+  reply: 'получен ответ', stop: 'прогрев остановлен', skip: 'шаг пропущен',
+}
+
+const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="flex gap-3 py-1.5 px-4 border-b border-dashed border-gray-100 last:border-0">
+    <span className="text-[12px] text-gray-500 w-40 flex-none">{label}</span>
+    <span className="text-[12.5px] text-gray-900 break-words min-w-0">{children}</span>
+  </div>
+)
+
+const Block = ({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) => (
+  <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <header className="px-4 py-2.5 border-b border-gray-100">
+      <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
+      {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
+    </header>
+    {children}
+  </section>
+)
+
+export function SalesLeadPage({ leadId }: { leadId?: string }) {
+  const params = useParams()
+  const id = leadId || params.id
+  const [data, setData] = useState<LeadData | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    if (!id) return
+    apiGet<LeadData>(`/sales/lead?id=${id}`, false)
+      .then(d => { setData(d); setError(null) })
+      .catch(e => setError(e?.message || 'Не удалось открыть обращение'))
+  }, [id])
+
+  useEffect(() => { load() }, [load])
+
+  const act = async (action: string) => {
+    setBusy(true)
+    try {
+      await apiPost(`/sales/leads?action=${action}`, { leadId: id })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Действие не выполнено')
+    } finally { setBusy(false) }
+  }
+
+  if (error && !data) return <div className="p-6 text-[13px] text-gray-900">{error}</div>
+  if (!data) return <Skeleton rows={5} kpis={false} />
+
+  const l = data.lead
+  const phone = parsePhone(l.phone)
+  const open = ['new', 'assigned', 'nurture'].includes(l.status)
+
+  // День разговора подписываем один раз: сплошная лента одинаковых дат
+  // читается хуже, чем разговор с разделителями
+  let lastDay = ''
+
+  return (
+    <div className="p-4 space-y-3">
+      <header className="space-y-1.5">
+        <div className="text-[11px] text-gray-400">
+          <Link to="/sales/leads" className="hover:text-blue-600">Обращения</Link>
+          {' / '}{l.name}
+        </div>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <h1 className="text-[19px] font-semibold text-gray-900 tracking-tight">
+            {l.contact_name || l.name}
+          </h1>
+          {l.contact_name && l.name !== l.contact_name && (
+            <span className="text-[13px] text-gray-500">{l.name}</span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <Chip tone="violet">{KIND_LABEL[l.lead_kind || ''] || 'обращение'}</Chip>
+          <Chip tone={l.status === 'junk' ? 'red' : l.status === 'converted' ? 'green' : 'gray'}>
+            {STATUS_LABEL[l.status] || l.status}
+          </Chip>
+          {l.sla_due_at && !l.first_touch_at && open && (
+            <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
+          )}
+          <span className="text-[11.5px] text-gray-400 tabular-nums">
+            пришло {formatDateTimeShort(l.created_at)}
+          </span>
+        </div>
+        {open && (
+          <div className="flex gap-2 pt-1">
+            <button disabled={busy} onClick={() => act('assign')}
+              className="text-[12px] px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:brightness-110 disabled:opacity-50">
+              Беру в работу
+            </button>
+            {l.status !== 'nurture' && (
+              <button disabled={busy} onClick={() => act('nurture')}
+                className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400">
+                На прогрев
+              </button>
+            )}
+            <button disabled={busy} onClick={() => act('archive')}
+              className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600">
+              В отказ
+            </button>
+          </div>
+        )}
+        {error && <div className="text-[12px] text-red-600">{error}</div>}
+      </header>
+
+      <Block title="Кто обратился">
+        <div>
+          {l.contact_name && <Row label="Контакт">{l.contact_name}</Row>}
+          <Row label="Телефон">
+            {l.phone
+              ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">
+                  {phone.valid ? phone.pretty : l.phone}
+                </a>
+              : <span className="text-gray-400">не оставил</span>}
+            {phone.valid && phone.operator && (
+              <span className="text-gray-400 text-[11.5px]"> · {phone.operator}</span>
+            )}
+          </Row>
+          {l.city && <Row label="Город">{l.city}</Row>}
+          <Row label="Компания">
+            {l.account_id
+              ? <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
+                  {l.account_name}
+                </Link>
+              : <span className="text-gray-400">аккаунт не заведён</span>}
+          </Row>
+          {(l.instagram || l.telegram || l.website) && (
+            <Row label="Профили">
+              {[l.instagram, l.telegram, l.website].filter(Boolean).join(' · ')}
+            </Row>
+          )}
+        </div>
+      </Block>
+
+      <Block title="Откуда пришло" sub="канал, кампания и метки перехода">
+        <div>
+          <Row label="Источник">{l.source || 'не определён'}</Row>
+          {l.campaign && <Row label="Кампания">{l.campaign}</Row>}
+          {l.agent_name && <Row label="Ответственный">{l.agent_name}</Row>}
+          {l.icp_score !== null && l.icp_score !== undefined && (
+            <Row label="Оценка соответствия">{l.icp_score}</Row>
+          )}
+          {l.external_id && <Row label="Идентификатор">{l.external_id}</Row>}
+        </div>
+      </Block>
+
+      {l.text && (
+        <Block title="Что написал">
+          <p className="px-4 py-3 text-[12.5px] text-gray-800 whitespace-pre-wrap">{l.text}</p>
+        </Block>
+      )}
+
+      {data.fields.length > 0 && (
+        <Block title="Что заполнил" sub="поля формы и карточки как есть">
+          <div>{data.fields.map(f => <Row key={f.label} label={f.label}>{f.value}</Row>)}</div>
+        </Block>
+      )}
+
+      {data.messages.length > 0 && (
+        <Block title="Переписка" sub={`${data.messages.length} сообщений в канале`}>
+          <div className="max-h-96 overflow-y-auto p-3 space-y-1.5">
+            {data.messages.map(m => {
+              const day = formatDayLabel(m.created_at)
+              const divider = day !== lastDay ? (lastDay = day) : null
+              return (
+                <div key={m.id}>
+                  {divider && (
+                    <div className="text-center text-[10.5px] text-gray-400 py-1">{divider}</div>
+                  )}
+                  <div className={`flex ${m.is_from_client ? 'justify-start' : 'justify-end'}`}>
+                    <div className={`max-w-[75%] rounded-xl px-3 py-1.5 ${
+                      m.is_from_client ? 'bg-gray-100 text-gray-900' : 'bg-blue-50 text-blue-900'}`}>
+                      <div className="text-[10px] opacity-70">
+                        {m.sender_name || (m.is_from_client ? 'Клиент' : 'Команда')} · {formatTimeHM(m.created_at)}
+                      </div>
+                      <div className="text-[12.5px] whitespace-pre-wrap break-words">
+                        {m.text_content || `[${m.content_type || 'вложение'}]`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Block>
+      )}
+
+      {data.assistant.length > 0 && (
+        <Block title="Работа ассистента" sub="что и когда он написал вместо человека">
+          <div>
+            {data.assistant.map((a, i) => (
+              <div key={i} className="px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
+                <div className="flex justify-between gap-2 text-[11.5px]">
+                  <span className="text-gray-700">
+                    {ASSISTANT_ACTION[a.action] || a.action}
+                    {a.step ? ` · шаг ${a.step}` : ''}
+                    {a.channel ? ` · ${a.channel}` : ''}
+                  </span>
+                  <span className="text-gray-400 tabular-nums flex-none">
+                    {formatDateTimeShort(a.created_at)}
+                  </span>
+                </div>
+                {a.message && <div className="text-[12px] text-gray-600 mt-0.5">«{a.message}»</div>}
+                {a.reply && <div className="text-[12px] text-emerald-700 mt-0.5">ответ: «{a.reply}»</div>}
+                {a.error && <div className="text-[12px] text-red-600 mt-0.5">{a.error}</div>}
+              </div>
+            ))}
+          </div>
+        </Block>
+      )}
+
+      {data.touchpoints.length > 0 && (
+        <Block title="История касаний">
+          <div>
+            {data.touchpoints.map((t, i) => (
+              <div key={i} className="flex gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
+                <span className="text-[11.5px] text-gray-400 w-28 flex-none tabular-nums">
+                  {formatDateTimeShort(t.happened_at)}
+                </span>
+                <span className="text-[12.5px] text-gray-800 min-w-0">
+                  {t.title || t.kind}
+                  {t.channel && <span className="text-gray-400"> · {t.channel}</span>}
+                  {t.detail && <div className="text-[11.5px] text-gray-500">{t.detail}</div>}
+                  {t.url && (
+                    <a href={t.url} target="_blank" rel="noreferrer"
+                       className="text-[11.5px] text-blue-600 hover:underline break-all">{t.url}</a>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Block>
+      )}
+
+      {data.deals.length > 0 && (
+        <Block title="Во что вылилось">
+          <div>
+            {data.deals.map(d => (
+              <Link key={d.id} to={`/sales/deals/${d.id}`}
+                className="flex justify-between gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50">
+                <span className="text-[12.5px] text-blue-600">{d.title}</span>
+                <span className="text-[11.5px] text-gray-500">
+                  {d.won_at ? 'выиграна' : d.lost_at ? 'проиграна' : d.stage || 'в работе'}
+                  {d.monthly_amount ? ` · ${Number(d.monthly_amount).toLocaleString('ru-RU')} ${d.currency}` : ''}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </Block>
+      )}
+    </div>
+  )
+}
+
+export default SalesLeadPage

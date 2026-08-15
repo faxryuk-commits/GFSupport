@@ -340,20 +340,21 @@ export function SalesLeadsPage() {
                         {/* Порядок: кто написал → откуда компания → что сказал →
                             когда. Название и текст не повторяем: раньше одно и
                             то же значение стояло в трёх местах строки */}
-                        {/* Имя ведёт в карточку клиента — отдельный столбец
-                            «Аккаунт» повторял то же название и занимал место */}
-                        {l.account_id ? (
-                          <Link to={`/sales/accounts/${l.account_id}`}
-                            className="text-[13px] font-semibold text-blue-600 hover:underline">
-                            {l.contact_name || l.name}
-                          </Link>
-                        ) : (
-                          <span className="text-[13px] font-semibold text-gray-900">
-                            {l.contact_name || l.name}
-                          </span>
-                        )}
+                        {/* Имя ведёт в карточку самого обращения: строка — это
+                            обращение, а не компания. Раньше клик уводил в
+                            аккаунт, и «что это за заявка» оставалось без ответа.
+                            Компания рядом остаётся ссылкой на аккаунт */}
+                        <Link to={`/sales/leads/${l.id}`}
+                          className="text-[13px] font-semibold text-blue-600 hover:underline">
+                          {l.contact_name || l.name}
+                        </Link>
                         {l.contact_name && l.name !== l.contact_name && (
-                          <span className="text-[12px] text-gray-600"> · {l.name}</span>
+                          l.account_id ? (
+                            <Link to={`/sales/accounts/${l.account_id}`}
+                              className="text-[12px] text-gray-600 hover:text-blue-600 hover:underline"> · {l.name}</Link>
+                          ) : (
+                            <span className="text-[12px] text-gray-600"> · {l.name}</span>
+                          )
                         )}
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
                           <Chip tone={KIND_TONE[l.lead_kind || ''] || 'gray'}>

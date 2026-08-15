@@ -5,6 +5,7 @@ import { Chip, PageShell, Skeleton, money, fmtDateTime, slaTone, slaText,
 import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
+import { SalesLeadPage } from './SalesLeadPage'
 
 /**
  * Единая воронка: обращения и сделки на одном экране.
@@ -63,6 +64,7 @@ export function SalesFunnelPage() {
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
   const [openDeal, setOpenDeal] = useState<string | null>(null)
+  const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const region = useRegion('funnel')
 
@@ -244,9 +246,15 @@ export function SalesFunnelPage() {
                                   p-2 cursor-grab active:cursor-grabbing hover:shadow-md transition-all
                                   ${drag?.id === l.id ? 'opacity-30' : ''}`}
                     >
-                      <div className="text-[12px] font-semibold text-gray-900 leading-tight">
+                      {/* Имя — вход в карточку: «кто это и что просит» нельзя
+                          понять по строке из двух слов */}
+                      <button
+                        onClick={() => setOpenLead(l.id)}
+                        className="text-[12px] font-semibold text-gray-900 leading-tight text-left
+                                   hover:text-violet-700"
+                      >
                         {l.contact_name || l.name}
-                      </div>
+                      </button>
                       {l.contact_name && l.name !== l.contact_name && (
                         <div className="text-[10.5px] text-gray-500">{l.name}</div>
                       )}
@@ -468,6 +476,15 @@ export function SalesFunnelPage() {
         fullLink={openDeal ? `/sales/deals/${openDeal}` : undefined}
       >
         {openDeal && <SalesDealPage dealId={openDeal} />}
+      </Drawer>
+
+      <Drawer
+        open={!!openLead}
+        onClose={() => { setOpenLead(null); load() }}
+        title="Обращение"
+        fullLink={openLead ? `/sales/leads/${openLead}` : undefined}
+      >
+        {openLead && <SalesLeadPage leadId={openLead} />}
       </Drawer>
     </PageShell>
   )
