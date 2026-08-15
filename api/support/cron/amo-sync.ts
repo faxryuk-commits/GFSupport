@@ -181,9 +181,15 @@ export default async function handler(req: Request): Promise<Response> {
         if (lead.updated_at && lead.updated_at > maxUpdated) maxUpdated = lead.updated_at
         // В аккаунте девять воронок: Instagram comments и Onboarding в CRM продаж не нужны
         if (!isAllowedPipeline(lead.pipeline_id)) { out.skipped++; continue }
-        const contact = (lead._embedded?.contacts || [])
+        // Телефон нужен для склейки, но он есть не всегда: у обращений из
+        // Instagram и Telegram его нет вовсе, а имя контакта — единственное,
+        // что о человеке известно. Раньше мы искали контакт строго с телефоном
+        // и без него теряли имя: лид назывался «Заявка без названия», хотя в
+        // Amo рядом лежит «ZaydAslam» (найдено на проде 15.08.2026)
+        const linked = (lead._embedded?.contacts || [])
           .map((c: any) => contacts.get(c.id))
-          .find((c: any) => c?.phone)
+          .filter(Boolean)
+        const contact = linked.find((c: any) => c?.phone) || linked[0]
 
         const res = await acceptLead(sql, ORG, leadPayload(lead, contact))
         if (!res.ok) out.skipped++
