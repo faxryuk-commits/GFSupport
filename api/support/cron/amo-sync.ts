@@ -132,7 +132,11 @@ export default async function handler(req: Request): Promise<Response> {
       // ни направления. Из-за этого лид назывался «Заявка с рекламной формы», а
       // поля пустовали. Догружаем карточку целиком — это один запрос на лид,
       // и он окупается: сейлз видит, кто обратился, не открывая Amo
-      if (lead.id && !lead.custom_fields_values && Date.now() - started < FETCH_BUDGET_MS) {
+      if (lead.id && !lead.custom_fields_values) {
+        // Бюджет вышел — откладываем до следующей минуты. Записать заявку без
+        // карточки хуже, чем не записать: в базу ляжет «Заявка без названия»
+        // без телефона, а следующий проход уже сочтёт её знакомой и не вернётся
+        if (Date.now() - started > FETCH_BUDGET_MS) { out.deferred++; continue }
         try {
           const full = await amoGet(creds, `/leads/${lead.id}`)
           if (full?.id) {
@@ -145,7 +149,10 @@ export default async function handler(req: Request): Promise<Response> {
             lead.responsible_user_id = full.responsible_user_id ?? lead.responsible_user_id
           }
         } catch {
-          // Не догрузилось — работаем с тем, что есть: лид важнее полноты
+          // Не догрузилось — тоже откладываем: заявка останется в
+          // «Неразобранном» и приедет целой на следующем проходе
+          out.errors++
+          continue
         }
       }
       leads.push(lead)
