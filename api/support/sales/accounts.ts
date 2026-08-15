@@ -19,7 +19,11 @@ export const config = { runtime: 'edge' }
  */
 const EDITABLE = ['name', 'merchant_id', 'inn', 'channel_id', 'city', 'account_type',
   'website', 'instagram', 'telegram', 'country', 'segment',
-  'partner_kind', 'partner_program_id', 'referred_by_account_id', 'notes', 'owner_agent_id']
+  'partner_kind', 'partner_program_id', 'referred_by_account_id', 'notes', 'owner_agent_id',
+  // Реквизиты: без них договор выходит с пустыми местами, а заполнять их
+  // приходится ровно там, где сидит вся остальная информация о клиенте
+  'legal_name', 'legal_address', 'tax_code', 'bank_name', 'bank_code', 'bank_account',
+  'signer_name', 'signer_title', 'signer_basis']
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })

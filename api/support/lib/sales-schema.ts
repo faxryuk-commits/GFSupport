@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-14.12-account'
+const SCHEMA_VERSION = '2026-08-16.13-requisites'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -841,6 +841,49 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
                               COALESCE(assigned_at, created_at))
     WHERE org_id = ${orgId} AND updated_at IS NULL
   `
+
+  // ─── Реквизиты ───────────────────────────────────────────────────────────
+  // Договор без них не собрать: шаблон спрашивает юрлицо, банк, счёт и
+  // подписанта, а в базе был один ИНН. Держим прямо на аккаунте, а не в
+  // отдельной таблице: у ресторана одно юрлицо, и лишний уровень означал бы
+  // выбор «какие из реквизитов» там, где выбирать не из чего
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS legal_name VARCHAR(255)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS legal_address TEXT`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS bank_code VARCHAR(30)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS bank_account VARCHAR(50)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS tax_code VARCHAR(30)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS signer_name VARCHAR(255)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS signer_title VARCHAR(120)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS signer_basis VARCHAR(120)`
+
+  // Наша сторона договора. Юрлиц несколько — по стране, и подставлять их
+  // руками в каждый договор значит однажды подписать узбекский договор
+  // казахстанским юрлицом
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_legal_entities (
+      id VARCHAR(50) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      market_id VARCHAR(50),
+      name VARCHAR(255) NOT NULL,
+      legal_name VARCHAR(255),
+      legal_address TEXT,
+      tax_code VARCHAR(30),
+      bank_name VARCHAR(255),
+      bank_code VARCHAR(30),
+      bank_account VARCHAR(50),
+      signer_name VARCHAR(255),
+      signer_title VARCHAR(120),
+      signer_basis VARCHAR(120),
+      requisites TEXT,
+      is_default BOOLEAN NOT NULL DEFAULT false,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_sales_legal_entities_org
+            ON sales_legal_entities(org_id, market_id)`
 
   // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`

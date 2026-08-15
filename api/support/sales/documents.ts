@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
+import { contractValues, renderTemplate, missingRequisites } from '../lib/sales-requisites.js'
 
 export const config = { runtime: 'edge' }
 
@@ -294,13 +295,18 @@ export default async function handler(req: Request): Promise<Response> {
   if (!deal) return json({ error: 'deal not found' }, 404)
 
   const [account] = await sql`
-    SELECT name, inn, city FROM sales_accounts WHERE id = ${deal.account_id} LIMIT 1
+    SELECT name, inn, city, legal_name, legal_address, tax_code,
+           bank_name, bank_code, bank_account, signer_name, signer_title, signer_basis
+    FROM sales_accounts WHERE id = ${deal.account_id} LIMIT 1
   `
 
   // Шаблон выбирается по территории сделки: у Узбекистана и Казахстана разные
   // юрлица, реквизиты и нумерация. Нет шаблона под территорию — берём общий.
   let templateBody: string | null = null
   let templateId: string | null = null
+  let docNumber: string | null = null
+  // Чего не хватает в реквизитах — говорим сразу, а не после подписи
+  let missing: Array<{ field: string; label: string }> = []
   if (kind !== 'quote') {
     const [tpl] = await sql`
       SELECT id, body FROM sales_doc_templates
@@ -311,6 +317,27 @@ export default async function handler(req: Request): Promise<Response> {
     `
     templateBody = tpl?.body || null
     templateId = tpl?.id || null
+
+    // Договор собираем сразу готовым. Раньше в базу ложился шаблон как есть,
+    // и клиент по публичной ссылке видел «{{client_legal}}» вместо своего
+    // юрлица — документ приходилось доделывать в Word, где номер, дата и
+    // суммы неизбежно расходились со сделкой
+    if (templateBody) {
+      const [entity] = await sql`
+        SELECT * FROM sales_legal_entities
+        WHERE org_id = ${orgId} AND is_active = true
+          AND (market_id = ${deal.market_id || ''} OR market_id IS NULL)
+        ORDER BY (market_id = ${deal.market_id || ''}) DESC, is_default DESC
+        LIMIT 1
+      `
+      const [tplFmt] = await sql`
+        SELECT number_format FROM sales_doc_templates WHERE id = ${templateId || ''} LIMIT 1
+      `
+      docNumber = await nextNumber(sql, orgId, kind, tplFmt?.number_format)
+      missing = missingRequisites(account)
+      templateBody = renderTemplate(templateBody,
+        contractValues({ deal, account, entity, number: docNumber }))
+    }
   }
 
   const built = kind === 'quote'
@@ -329,19 +356,31 @@ export default async function handler(req: Request): Promise<Response> {
   const id = salesId('sdoc')
 
   await sql`
-    INSERT INTO sales_documents (id, org_id, deal_id, account_id, kind, status, title,
+    INSERT INTO sales_documents (id, org_id, deal_id, account_id, kind, status, title, number,
                                  lines, conditions, requisites, body, total, currency, valid_till,
                                  discount_pct, template_id, created_by)
     VALUES (${id}, ${orgId}, ${deal.id}, ${deal.account_id}, ${kind}, 'draft',
             ${`${kind === 'quote' ? 'КП' : kind === 'offer' ? 'Оферта' : 'Договор'} — ${account?.name || deal.title || ''}`},
+            ${docNumber},
             ${JSON.stringify(lines)}::jsonb, ${JSON.stringify(built.conditions)}::jsonb,
-            ${JSON.stringify({ legal_name: deal.legal_name, inn: account?.inn, city: account?.city })}::jsonb,
+            -- Реквизиты фиксируем на момент создания: договор — снимок
+            -- договорённости, а не окно в текущую карточку клиента
+            ${JSON.stringify({
+              legal_name: account?.legal_name || deal.legal_name,
+              tax_code: account?.tax_code || account?.inn,
+              legal_address: account?.legal_address,
+              bank_name: account?.bank_name, bank_code: account?.bank_code,
+              bank_account: account?.bank_account,
+              signer_name: account?.signer_name, signer_title: account?.signer_title,
+              signer_basis: account?.signer_basis, city: account?.city,
+            })}::jsonb,
             ${templateBody}, ${total || deal.monthly_amount || null}, ${built.currency},
             ${deal.valid_till}, ${deal.discount_pct}, ${templateId}, ${ctx.agentId})
   `
 
   return json({
     ok: true, id, kind, lines, currency: built.currency, conditions: built.conditions,
+    number: docNumber, missingRequisites: missing,
     totals: { monthly: monthlyTotal, onetime: onetimeTotal, deposit: depositTotal },
   })
 }

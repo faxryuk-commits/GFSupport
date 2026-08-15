@@ -18,6 +18,21 @@ const TABS: Array<[string, string]> = [
   ['sources', 'Источники'],
   ['prices', 'Прайс'],
   ['options', 'Значения полей'],
+  ['entities', 'Наши реквизиты'],
+]
+
+/** Наша сторона договора: то, что шаблон подставляет как «Лицензиар». */
+const ENTITY_FIELDS: Array<[string, string]> = [
+  ['name', 'Название'],
+  ['legal_name', 'Юридическое название'],
+  ['tax_code', 'ИНН / БИН'],
+  ['legal_address', 'Юридический адрес'],
+  ['bank_name', 'Банк'],
+  ['bank_code', 'МФО / БИК'],
+  ['bank_account', 'Расчётный счёт'],
+  ['signer_name', 'Подписант'],
+  ['signer_title', 'Должность подписанта'],
+  ['signer_basis', 'Действует на основании'],
 ]
 
 export function SalesSettingsPage() {
@@ -27,6 +42,7 @@ export function SalesSettingsPage() {
   const [pipeline, setPipeline] = useState('sales')
   const [refs, setRefs] = useState<any>(null)
   const [catalog, setCatalog] = useState<any>(null)
+  const [entities, setEntities] = useState<any[] | null>(null)
   const [market, setMarket] = useState('uz')
   const [error, setError] = useState<string | null>(null)
   const [edit, setEdit] = useState<{ key: string; value: string } | null>(null)
@@ -45,9 +61,26 @@ export function SalesSettingsPage() {
   const load = useCallback(() => {
     apiGet<any>('/sales/refs', false).then(setRefs).catch(e => setError(e?.message || 'Ошибка загрузки'))
     apiGet<any>(`/sales/catalog?market=${market}`, false).then(setCatalog).catch(() => {})
+    apiGet<any>('/sales/legal-entity', false).then(d => setEntities(d.entities)).catch(() => {})
   }, [market])
 
   useEffect(() => { load() }, [load])
+
+  /**
+   * Реквизиты сохраняем по уходу из поля, без кнопки «Сохранить»: их правят
+   * раз в год, и лишний шаг здесь означает забытую половину формы.
+   */
+  const saveEntity = async (marketId: string, field: string, value: string) => {
+    const current = entities?.find(e => e.market_id === marketId)
+    if ((current?.[field] || '') === value) return
+    try {
+      await apiPut('/sales/legal-entity', { market_id: marketId, [field]: value })
+      const d = await apiGet<any>('/sales/legal-entity', false)
+      setEntities(d.entities)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось сохранить реквизиты')
+    }
+  }
 
   const addPipeline = async () => {
     const label = prompt('Название воронки (например «Партнёрские внедрения»):')
@@ -256,6 +289,44 @@ export function SalesSettingsPage() {
           </div>
           <div className="px-4 py-3 text-[11.5px] text-gray-400 border-t border-gray-100">
             Пока поле в списке обязательных — сделка не уйдёт дальше этого этапа. Это и есть движок.
+          </div>
+        </Card>
+      )}
+
+      {tab === 'entities' && (
+        <Card title="Наши реквизиты"
+              sub="подставляются в договор как наша сторона — по стране сделки">
+          <div className="divide-y divide-gray-100">
+            {(entities || []).map((e: any) => (
+              <div key={e.market_id} className="p-4">
+                <div className="flex items-baseline gap-2 mb-2">
+                  <span className="text-[13px] font-semibold text-gray-900">
+                    {REGION_NAMES[e.market_id] || e.market_id}
+                  </span>
+                  {e.empty && <Chip tone="amber">не заполнено</Chip>}
+                </div>
+                <div className="grid sm:grid-cols-2 gap-x-6">
+                  {ENTITY_FIELDS.map(([f, label]) => (
+                    <label key={f} className="flex items-center gap-2 py-1">
+                      <span className="text-[11.5px] text-gray-500 w-44 flex-none">{label}</span>
+                      <input
+                        defaultValue={e[f] || ''}
+                        onBlur={ev => saveEntity(e.market_id, f, ev.target.value)}
+                        className="flex-1 min-w-0 border border-gray-200 rounded-md px-2 py-1 text-[12px]
+                                   focus:border-blue-400 outline-none"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!entities?.length && (
+              <div className="px-4 py-6 text-[12.5px] text-gray-400">Рынки ещё не заведены</div>
+            )}
+          </div>
+          <div className="px-4 py-3 text-[11.5px] text-gray-400 border-t border-gray-100">
+            Незаполненное поле не мешает создать договор — оно встанет прочерком, который
+            видно до подписи.
           </div>
         </Card>
       )}

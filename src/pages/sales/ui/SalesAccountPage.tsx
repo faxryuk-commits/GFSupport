@@ -20,6 +20,29 @@ const LIFECYCLE: Record<string, [string, string]> = {
   churned: ['ушёл', 'red'],
 }
 
+/**
+ * Реквизиты клиента. Порядок такой же, как в договоре: сверху юрлицо и налоговый
+ * номер, ниже банк, в конце тот, кто подписывает.
+ */
+const REQUISITE_FIELDS: Array<[string, string]> = [
+  ['legal_name', 'Юридическое название'],
+  ['tax_code', 'ИНН / БИН'],
+  ['legal_address', 'Юридический адрес'],
+  ['bank_name', 'Банк'],
+  ['bank_code', 'МФО / БИК'],
+  ['bank_account', 'Расчётный счёт'],
+  ['signer_name', 'Подписант'],
+  ['signer_title', 'Должность подписанта'],
+  ['signer_basis', 'Действует на основании'],
+]
+
+/** Без этих четырёх договор выходит с прочерками в существенных местах. */
+const REQUISITE_REQUIRED = ['legal_name', 'tax_code', 'legal_address', 'signer_name']
+
+const SIGNER_TITLES = ['Директор', 'Генеральный директор', 'Руководитель', 'Учредитель',
+  'Индивидуальный предприниматель', 'Представитель по доверенности']
+const SIGNER_BASIS = ['Устава', 'Доверенности', 'Свидетельства о регистрации ИП']
+
 export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
   const { id: routeId } = useParams<{ id: string }>()
   const id = accountId || routeId
@@ -357,6 +380,26 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
                     </li>
                   ))}
                 </ol>
+              </div>
+            )}
+          </Card>
+
+          {/* Реквизиты держим рядом с профилем, а не в отдельном разделе:
+              заполняют их один раз перед договором, и искать для этого другой
+              экран — лишний повод отложить */}
+          <Card title="Реквизиты" sub="из них собирается договор">
+            <div>
+              {REQUISITE_FIELDS.map(([f, label]) => (
+                <InlineField key={f} label={label} value={a[f]} onSave={v => patch(f, v)}
+                  options={f === 'signer_title' ? SIGNER_TITLES
+                         : f === 'signer_basis' ? SIGNER_BASIS : undefined} />
+              ))}
+            </div>
+            {REQUISITE_REQUIRED.some(f => !a[f]) && (
+              <div className="px-4 py-2 text-[11.5px] text-amber-700 bg-amber-50 border-t border-amber-100">
+                Договор соберётся, но в нём останутся пустые места:{' '}
+                {REQUISITE_FIELDS.filter(([f]) => REQUISITE_REQUIRED.includes(f) && !a[f])
+                  .map(([, l]) => l.toLowerCase()).join(', ')}
               </div>
             )}
           </Card>
