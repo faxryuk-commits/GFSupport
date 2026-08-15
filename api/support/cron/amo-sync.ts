@@ -125,6 +125,11 @@ export default async function handler(req: Request): Promise<Response> {
       if (known.has(`amo_${lead.id}`)) { out.deduped++; continue }
       lead._unsorted_meta = u.metadata || null
       lead.pipeline_id = lead.pipeline_id || u.pipeline_id
+      // Воронку проверяем здесь, а не в общем цикле: заявка из чужой воронки
+      // в базу не попадёт, значит знакомой никогда не станет — и мы вечно
+      // догружали её карточку каждую минуту, чтобы тут же выбросить.
+      // Двадцать таких заявок съедали всю выборку (проверено 15.08.2026)
+      if (!isAllowedPipeline(lead.pipeline_id)) { out.skipped++; continue }
       lead.name = lead.name || u.metadata?.form_name || u.source_name || null
       lead.created_at = lead.created_at || u.created_at
       lead._embedded = { ...(lead._embedded || {}), contacts: u._embedded?.contacts || [] }
