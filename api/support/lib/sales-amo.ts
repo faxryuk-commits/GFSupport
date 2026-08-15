@@ -107,17 +107,54 @@ export function sourceFromLead(lead: any): { source: string; formId: string | nu
 }
 
 /** Телефоны и имена контактов одним запросом на всю пачку — лимиты Amo жёсткие. */
-export async function fetchContacts(creds: AmoCreds, ids: number[]): Promise<Map<number, { phone: string; name: string }>> {
-  const map = new Map<number, { phone: string; name: string }>()
+/**
+ * Ответы формы одной строкой: «Вопрос: ответ» через перенос.
+ *
+ * Подчёркивания Meta присылает вместо пробелов («restoran_uchun_maxsus_ilova»),
+ * читаем их как фразу — иначе ответ выглядит машинным кодом.
+ */
+export function answersText(contact?: Partial<AmoContact>): string | null {
+  const fields = contact?.fields || []
+  if (!fields.length) return null
+  return fields
+    .map(f => `${f.name}: ${String(f.value).replace(/_/g, ' ')}`)
+    .join('\n')
+    .slice(0, 2000)
+}
+
+export interface AmoContact {
+  phone: string
+  name: string
+  /** Ответы человека на вопросы формы — они лежат в полях контакта. */
+  fields: Array<{ name: string; value: string }>
+}
+
+/**
+ * Контакты Amo вместе с их полями.
+ *
+ * Раньше отсюда брались только имя и телефон, а всё остальное выбрасывалось —
+ * и вместе с ним ответы лида на вопросы лид-формы: сколько доставок в день,
+ * какая кухня, есть ли доставка сейчас. Meta кладёт их именно в контакт, а не
+ * в сделку, поэтому карточка обращения выглядела пустой у людей, которые
+ * ответили на четыре вопроса (найдено на проде 16.08.2026).
+ */
+export async function fetchContacts(creds: AmoCreds, ids: number[]): Promise<Map<number, AmoContact>> {
+  const map = new Map<number, AmoContact>()
   if (!ids.length) return map
   const query = ids.slice(0, 250).map(id => `filter[id][]=${id}`).join('&')
   const data = await amoGet(creds, `/contacts?${query}&limit=250`)
   for (const c of data?._embedded?.contacts || []) {
     let phone = ''
+    const fields: Array<{ name: string; value: string }> = []
     for (const f of c.custom_fields_values || []) {
-      if (f.field_code === 'PHONE') { phone = String(f.values?.[0]?.value || ''); break }
+      const value = f.values?.[0]?.value
+      if (f.field_code === 'PHONE' && !phone) { phone = String(value || ''); continue }
+      // Служебные коды каналов в карточке не нужны: человек их не заполнял
+      if (f.field_code && ['EMAIL', 'IM', 'POSITION'].includes(f.field_code)) continue
+      if (value === undefined || value === null || typeof value === 'object') continue
+      fields.push({ name: f.field_name || f.field_code || 'Поле', value: String(value) })
     }
-    map.set(c.id, { phone, name: c.name || '' })
+    map.set(c.id, { phone, name: c.name || '', fields })
   }
   return map
 }
@@ -198,7 +235,7 @@ function firstMessage(lead: any): string | null {
   return null
 }
 
-export function leadPayload(lead: any, contact?: { phone: string; name: string }) {
+export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
   const { source, formId } = sourceFromLead(lead)
   // Названия полей сверены с боевой воронкой: «Агрегаторы» в Amo называется
   // «Работает ли в агрегаторах», тип доставки — «Есть ли свои курьеры»,
@@ -221,13 +258,20 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
     // Что показывать в строке: сперва само сообщение человека, потом
     // заполненные менеджером поля. Служебное название сделки из Amo сюда не
     // попадает — оно и так стоит в заголовке и ничего не добавляет
+    // Что человек на самом деле сказал: сперва его сообщение, затем ответы на
+    // вопросы формы — они лежат в полях контакта и раньше терялись целиком,
+    // и карточка выглядела пустой у людей, ответивших на четыре вопроса.
+    // Служебное название сделки из Amo сюда не попадает: оно и так в заголовке
     text: firstMessage(lead)
+      || answersText(contact)
       || [cf(lead, 'Направление'), cf(lead, 'Источник лида'), cf(lead, 'Модули')]
         .filter(Boolean).join(' · ')
       || null,
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
     owner_hint: agentByAmoUser(lead.responsible_user_id),
-    raw: lead,
+    // Поля контакта кладём рядом с сырой сделкой: карточка обращения
+    // показывает их как заполненное человеком, а не как наш домысел
+    raw: contact?.fields?.length ? { ...lead, _contact_fields: contact.fields } : lead,
   }
 }
 

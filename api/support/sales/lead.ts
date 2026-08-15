@@ -77,6 +77,12 @@ function readableRaw(raw: any): Array<{ label: string; value: string }> {
       out.push({ label: f.field_name || f.field_code || 'Поле', value: String(v).slice(0, 500) })
     }
   }
+  // Ответы на вопросы лид-формы: Meta кладёт их в контакт, и это самое
+  // содержательное, что о человеке известно до первого разговора
+  for (const f of raw._contact_fields || []) {
+    if (!f?.value) continue
+    out.unshift({ label: f.name, value: String(f.value).replace(/_/g, ' ').slice(0, 500) })
+  }
   const meta = raw._unsorted_meta
   if (meta) {
     push('form_name', meta.form_name)
