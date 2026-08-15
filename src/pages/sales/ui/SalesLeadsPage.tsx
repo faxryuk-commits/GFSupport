@@ -318,8 +318,7 @@ export function SalesLeadsPage() {
                       onChange={e => setPicked(e.target.checked ? data.leads.map(l => l.id) : [])} />
                   </Th>
                   <Th>№</Th>
-                  <Th>Лид</Th><Th>Источник</Th><Th align="right">ICP</Th>
-                  <Th>Статус</Th><Th>Аккаунт</Th><Th align="right"></Th>
+                  <Th>Обращение</Th><Th align="right">ICP</Th><Th align="right"></Th>
                 </tr>
               </thead>
               <tbody>
@@ -341,16 +340,42 @@ export function SalesLeadsPage() {
                         {/* Порядок: кто написал → откуда компания → что сказал →
                             когда. Название и текст не повторяем: раньше одно и
                             то же значение стояло в трёх местах строки */}
-                        <div className="font-semibold text-gray-900">
-                          {l.contact_name || l.name}
-                        </div>
-                        {l.contact_name && l.name !== l.contact_name && (
-                          <div className="text-[11.5px] text-gray-600">{l.name}</div>
+                        {/* Имя ведёт в карточку клиента — отдельный столбец
+                            «Аккаунт» повторял то же название и занимал место */}
+                        {l.account_id ? (
+                          <Link to={`/sales/accounts/${l.account_id}`}
+                            className="text-[13px] font-semibold text-blue-600 hover:underline">
+                            {l.contact_name || l.name}
+                          </Link>
+                        ) : (
+                          <span className="text-[13px] font-semibold text-gray-900">
+                            {l.contact_name || l.name}
+                          </span>
                         )}
-                        <div className="text-[11px] text-gray-400">
-                          {[l.city, phone.valid ? phone.pretty : l.phone,
-                            phone.operator && phone.kind === 'landline' ? 'городской' : phone.operator]
-                            .filter(Boolean).join(' · ')}
+                        {l.contact_name && l.name !== l.contact_name && (
+                          <span className="text-[12px] text-gray-600"> · {l.name}</span>
+                        )}
+                        <div className="flex gap-1 mt-1 flex-wrap items-center">
+                          <Chip tone={KIND_TONE[l.lead_kind || ''] || 'gray'}>
+                            {KIND_LABEL[l.lead_kind || ''] || 'обращение'}
+                          </Chip>
+                          <Chip tone="blue">{l.source || 'источник не определён'}</Chip>
+                          <Chip tone={STATUS_TONE[l.status] || 'gray'}>
+                            {STATUS_LABEL[l.status] || l.status}
+                          </Chip>
+                          {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
+                            <Chip tone={slaTone(l.sla_due_at)}>
+                              первое касание {slaText(l.sla_due_at)}
+                            </Chip>
+                          )}
+                          {l.city && <Chip tone="gray">{l.city}</Chip>}
+                          {l.phone && (
+                            <Chip tone="gray">
+                              {phone.valid ? phone.pretty : l.phone}
+                              {phone.operator ? ` · ${phone.kind === 'landline' ? 'городской' : phone.operator}` : ''}
+                            </Chip>
+                          )}
+                          {l.agent_name && <Chip tone="violet">{l.agent_name}</Chip>}
                         </div>
 
                         {/* Превью сообщения — то, ради чего сейлз вообще смотрит
@@ -368,14 +393,6 @@ export function SalesLeadsPage() {
                           {fmtDateTime(l.created_at)}
                         </div>
 
-                        {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
-                          <div className="mt-1">
-                            <Chip tone={slaTone(l.sla_due_at)}>
-                              первое касание {slaText(l.sla_due_at)}
-                            </Chip>
-                          </div>
-                        )}
-
                         {(l.details || []).length > 0 && (
                           <div className="flex gap-1 mt-1.5 flex-wrap max-w-[420px]">
                             {l.details.map((d, i) => (
@@ -388,33 +405,10 @@ export function SalesLeadsPage() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <Chip tone={KIND_TONE[l.lead_kind || ''] || 'gray'}>
-                          {KIND_LABEL[l.lead_kind || ''] || 'обращение'}
-                        </Chip>
-                        <div className="mt-1"><Chip tone="blue">{l.source || '—'}</Chip></div>
-                        {l.campaign && <div className="text-[11px] text-gray-400 mt-1">{l.campaign}</div>}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-4 py-2.5 text-right align-top">
                         <Chip tone={(l.icp_score ?? 0) >= 50 ? 'green' : (l.icp_score ?? 0) >= 20 ? 'amber' : 'red'}>
                           {l.icp_score ?? 0}
                         </Chip>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <Chip tone={STATUS_TONE[l.status] || 'gray'}>{STATUS_LABEL[l.status] || l.status}</Chip>
-                        {l.agent_name && <div className="text-[11px] text-gray-400 mt-1">{l.agent_name}</div>}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {l.account_id ? (
-                          <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
-                            {/* Если карточка клиента называется так же, как лид,
-                                не повторяем название — пишем, куда ведёт ссылка */}
-                            {l.account_name && l.account_name !== l.name && l.account_name !== l.contact_name
-                              ? l.account_name
-                              : 'карточка клиента'}
-                          </Link>
-                        ) : <span className="text-gray-400">—</span>}
-                        {merged && <div className="text-[11px] text-emerald-600 mt-0.5">приклеен к существующему</div>}
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         {view === 'archived' ? (
