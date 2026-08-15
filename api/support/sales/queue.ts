@@ -103,7 +103,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN sales_stages st ON st.id = d.stage_id
       LEFT JOIN sales_accounts a ON a.id = d.account_id
       WHERE d.org_id = ${orgId} AND d.owner_agent_id = ${agentId}
-        AND d.won_at IS NULL AND d.lost_at IS NULL
+        AND d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL
         AND st.probability >= 40
       ORDER BY st.probability DESC, d.stage_since ASC LIMIT 20
     `,
@@ -123,16 +123,19 @@ export default async function handler(req: Request): Promise<Response> {
       LEFT JOIN sales_lost_reasons r ON r.id = d.lost_reason_id
       LEFT JOIN sales_accounts a ON a.id = d.account_id
       WHERE d.org_id = ${orgId} AND d.owner_agent_id = ${agentId}
-        AND d.lost_at IS NOT NULL AND d.reactivate_at IS NOT NULL AND d.reactivate_at <= NOW()
+        AND d.lost_at IS NOT NULL AND d.archived_at IS NULL
+        AND d.reactivate_at IS NOT NULL AND d.reactivate_at <= NOW()
       ORDER BY d.reactivate_at ASC LIMIT 10
     `,
     // Счётчики шапки
     sql`
       SELECT
         (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
-           AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL) AS active_deals,
+           AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
+           AND d.archived_at IS NULL) AS active_deals,
         (SELECT COALESCE(SUM(d.monthly_amount), 0) FROM sales_deals d WHERE d.org_id = ${orgId}
-           AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL) AS pipeline_amount,
+           AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
+           AND d.archived_at IS NULL) AS pipeline_amount,
         (SELECT COUNT(*) FROM sales_tasks t WHERE t.org_id = ${orgId}
            AND t.assignee_agent_id = ${agentId} AND t.done_at IS NULL AND t.due_at < NOW()) AS overdue_tasks,
         (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
