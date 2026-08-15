@@ -130,8 +130,19 @@ export async function fetchContacts(creds: AmoCreds, ids: number[]): Promise<Map
  * поэтому берём первое осмысленное: имя контакта, затем телефон, и только
  * в крайнем случае — понятную подпись по каналу.
  */
-// Строки, которые подставляет не человек, а система: по ним клиента не узнать
-const SERVICE_NAME = /^(instagram_business|facebook|instagram|telegram|сделка|автосделка|lead|leads|amocrm|company|заявка)\b|^[a-z_]+:\d+$|^новая заявка|^без названия$/i
+/**
+ * Строки, которые подставляет не человек, а система: по ним клиента не узнать.
+ *
+ * Без \b намеренно: в JS этот якорь опирается на латинский \w, поэтому
+ * «сделка\b» не срабатывал на «Сделка #30194251» — и служебное имя из Amo
+ * проходило как настоящее название клиента.
+ */
+const SERVICE_NAME = new RegExp(
+  '^(instagram_business|facebook|instagram|telegram|whatsapp|сделка|автосделка|lead|leads'
+  + '|amocrm|company|заявка|обращение|новая заявка|без названия|клиент|посетитель сайта)'
+  + '|^[a-z_]+:\\d+$',
+  'i',
+)
 
 function channelLabel(lead: any): string {
   const meta = lead?._unsorted_meta
@@ -173,6 +184,20 @@ export function kindOfSource(source: string): string {
   return 'other'
 }
 
+/** Текст первого сообщения из «Неразобранного»: то, что человек реально написал. */
+function firstMessage(lead: any): string | null {
+  const meta = lead?._unsorted_meta || {}
+  const direct = meta.text || meta.last_message || meta.message
+  if (typeof direct === 'string' && direct.trim()) return direct.trim().slice(0, 500)
+  const msgs = lead?._embedded?.messages || meta.messages
+  if (Array.isArray(msgs)) {
+    const first = msgs.find((m: any) => m?.text || m?.message)
+    const text = first?.text || first?.message
+    if (typeof text === 'string' && text.trim()) return text.trim().slice(0, 500)
+  }
+  return null
+}
+
 export function leadPayload(lead: any, contact?: { phone: string; name: string }) {
   const { source, formId } = sourceFromLead(lead)
   // Названия полей сверены с боевой воронкой: «Агрегаторы» в Amo называется
@@ -193,9 +218,13 @@ export function leadPayload(lead: any, contact?: { phone: string; name: string }
     pos: cf(lead, 'POS') || null,
     aggregators: cf(lead, 'Работает ли в агрегаторах') || null,
     delivery_type: cf(lead, 'Есть ли свои курьеры') || null,
-    // Реально заполняемые менеджерами поля — по ним сейлз понимает, что за лид
-    text: [cf(lead, 'Направление'), cf(lead, 'Источник лида'), cf(lead, 'Модули')]
-      .filter(Boolean).join(' · ') || lead.name || null,
+    // Что показывать в строке: сперва само сообщение человека, потом
+    // заполненные менеджером поля. Служебное название сделки из Amo сюда не
+    // попадает — оно и так стоит в заголовке и ничего не добавляет
+    text: firstMessage(lead)
+      || [cf(lead, 'Направление'), cf(lead, 'Источник лида'), cf(lead, 'Модули')]
+        .filter(Boolean).join(' · ')
+      || null,
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
     owner_hint: agentByAmoUser(lead.responsible_user_id),
     raw: lead,

@@ -104,7 +104,9 @@ export default async function handler(req: Request): Promise<Response> {
           const full = await amoGet(creds, `/leads/${lead.id}`)
           if (full?.id) {
             lead.custom_fields_values = full.custom_fields_values
-            lead.name = full.name || lead.name
+            // Имя из полной карточки берём только вместо пустого: у Amo это
+            // «Сделка #30194251», а у нас уже может лежать имя профиля из директа
+            lead.name = lead.name || full.name
             lead.price = full.price ?? lead.price
             lead.status_id = full.status_id ?? lead.status_id
             lead.responsible_user_id = full.responsible_user_id ?? lead.responsible_user_id

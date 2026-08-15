@@ -338,37 +338,36 @@ export function SalesLeadsPage() {
                         {offset + idx + 1}
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className="font-semibold text-gray-900">{l.name}</div>
-                        {/* Кто именно обратился и как с ним связаться */}
-                        {(l.contact_name || l.phone) && (
-                          <div className="text-[11.5px] text-gray-600">
-                            {l.contact_name}
-                            {l.contact_name && l.phone ? ' · ' : ''}
-                            {/* Номер в едином виде, с оператором: на городской не
-                                напишешь в мессенджер, а кривой номер — причина
-                                половины «недозвонов» */}
-                            {l.phone && (
-                              <span title={[phone.countryName, phone.operator, phone.problem]
-                                .filter(Boolean).join(' · ')}>
-                                {phone.valid ? phone.pretty : l.phone}
-                                {phone.operator && (
-                                  <span className={`ml-1 text-[10.5px] ${
-                                    phone.kind === 'landline' ? 'text-amber-600' : 'text-gray-400'}`}>
-                                    {phone.kind === 'landline' ? 'городской' : phone.operator}
-                                  </span>
-                                )}
-                                {!phone.valid && (
-                                  <span className="ml-1 text-[10.5px] text-red-600">номер странный</span>
-                                )}
-                              </span>
-                            )}
-                          </div>
+                        {/* Порядок: кто написал → откуда компания → что сказал →
+                            когда. Название и текст не повторяем: раньше одно и
+                            то же значение стояло в трёх местах строки */}
+                        <div className="font-semibold text-gray-900">
+                          {l.contact_name || l.name}
+                        </div>
+                        {l.contact_name && l.name !== l.contact_name && (
+                          <div className="text-[11.5px] text-gray-600">{l.name}</div>
                         )}
                         <div className="text-[11px] text-gray-400">
-                          {[l.city, `создан ${fmtDateTime(l.created_at)}`].filter(Boolean).join(' · ')}
+                          {[l.city, phone.valid ? phone.pretty : l.phone,
+                            phone.operator && phone.kind === 'landline' ? 'городской' : phone.operator]
+                            .filter(Boolean).join(' · ')}
                         </div>
-                        {/* Норматив первого касания — 15 минут: без срока рядом
-                            со строкой он существует только в отчёте задним числом */}
+
+                        {/* Превью сообщения — то, ради чего сейлз вообще смотрит
+                            в строку. Если текста нет, честно говорим об этом
+                            коротко, а не абзацем */}
+                        {l.text && l.text !== l.name ? (
+                          <div className="text-[12px] text-gray-700 mt-1 max-w-[420px] line-clamp-2">
+                            «{l.text}»
+                          </div>
+                        ) : l.lead_kind === 'message' ? (
+                          <div className="text-[11.5px] text-gray-400 mt-1">текст сообщения не пришёл</div>
+                        ) : null}
+
+                        <div className="text-[11px] text-gray-400 mt-1">
+                          {fmtDateTime(l.created_at)}
+                        </div>
+
                         {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
                           <div className="mt-1">
                             <Chip tone={slaTone(l.sla_due_at)}>
@@ -376,18 +375,7 @@ export function SalesLeadsPage() {
                             </Chip>
                           </div>
                         )}
-                        {/* Качественные признаки лида: по ним сейлз решает,
-                            брать ли, не открывая карточку */}
-                        {/* Диалог без единого поля и без телефона — это чаще
-                            служебное уведомление мессенджера (отметка на фото,
-                            приглашение), а не заявка. Говорим об этом прямо */}
-                        {l.lead_kind === 'message' && !l.phone && !(l.details || []).some(d => d.label !== 'Профиль') && (
-                          <div className="text-[11px] text-gray-500 mt-1">
-                            Только профиль, без сообщения и телефона — возможно, служебное уведомление
-                          </div>
-                        )}
-                        {/* То, что человек заполнил в форме: без этого все заявки
-                            выглядят одинаково — «город и сумма не указана» */}
+
                         {(l.details || []).length > 0 && (
                           <div className="flex gap-1 mt-1.5 flex-wrap max-w-[420px]">
                             {l.details.map((d, i) => (
@@ -397,11 +385,6 @@ export function SalesLeadsPage() {
                                 <span className="text-gray-700 font-medium">{d.value}</span>
                               </span>
                             ))}
-                          </div>
-                        )}
-                        {l.text && (
-                          <div className="text-[11px] text-gray-500 mt-1 max-w-[320px] line-clamp-2">
-                            «{l.text.slice(0, 140)}»
                           </div>
                         )}
                       </td>
@@ -424,7 +407,11 @@ export function SalesLeadsPage() {
                       <td className="px-4 py-2.5">
                         {l.account_id ? (
                           <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
-                            {l.account_name}
+                            {/* Если карточка клиента называется так же, как лид,
+                                не повторяем название — пишем, куда ведёт ссылка */}
+                            {l.account_name && l.account_name !== l.name && l.account_name !== l.contact_name
+                              ? l.account_name
+                              : 'карточка клиента'}
                           </Link>
                         ) : <span className="text-gray-400">—</span>}
                         {merged && <div className="text-[11px] text-emerald-600 mt-0.5">приклеен к существующему</div>}
