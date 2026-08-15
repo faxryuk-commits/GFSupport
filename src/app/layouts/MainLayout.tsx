@@ -42,36 +42,19 @@ export function MainLayout() {
 
       const headers = { Authorization: `Bearer ${token}` }
 
-      const [channelsRes, casesRes, commitmentsRes, agentsRes] = await Promise.all([
-        fetch('/api/support/channels?active=true&limit=1000', { headers }),
-        fetch('/api/support/cases?status=detected,in_progress,waiting,blocked&limit=500', { headers }),
-        fetch('/api/support/commitments?status=pending', { headers }),
-        fetch('/api/support/agents', { headers }),
-      ])
+      // Четыре числа берём одним запросом. Раньше фронт вытаскивал ради них
+      // четыре полных списка — тысячу каналов (55 кБ), пятьсот кейсов, все
+      // обещания и всех агентов: 65 килобайт и до 2,8 секунды на каждой
+      // странице каждые полминуты. Считать это должна база
+      const market = localStorage.getItem('selected_market') || ''
+      const res = await fetch(`/api/support/counters${market ? `?market=${market}` : ''}`, { headers })
+      if (!res.ok) return
+      const data = await res.json()
+      setUnreadChats(data.unreadChats || 0)
+      setOpenCases(data.openCases || 0)
+      setPendingCommitments(data.pendingCommitments || 0)
+      setOnlineAgentsCount(data.onlineAgents || 0)
 
-      if (channelsRes.ok) {
-        const data = await channelsRes.json()
-        const unread = data.channels?.reduce((sum: number, ch: { unreadCount?: number }) => 
-          sum + (ch.unreadCount || 0), 0) || 0
-        setUnreadChats(unread)
-      }
-
-      if (casesRes.ok) {
-        const data = await casesRes.json()
-        setOpenCases(data.cases?.length || 0)
-      }
-      
-      if (commitmentsRes.ok) {
-        const data = await commitmentsRes.json()
-        setPendingCommitments(data.stats?.pending || data.commitments?.length || 0)
-      }
-      
-      if (agentsRes.ok) {
-        const data = await agentsRes.json()
-        const online = data.agents?.filter((a: { status?: string }) => a.status === 'online').length || 0
-        setOnlineAgentsCount(online)
-      }
-      
       setLastUpdated(Date.now())
     } catch {
       // Игнорируем ошибки - покажем нули

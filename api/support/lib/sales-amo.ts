@@ -382,6 +382,10 @@ const marketCodes = new Map<string, string | null>()
 export async function resolveRegion(sql: any, orgId: string, url: URL): Promise<string> {
   const region = (url.searchParams.get('region') || '').trim().toLowerCase()
   if (region && region !== 'all') return region
+  // «Все регионы» — это выбор человека, а не отсутствие выбора. Дальше стоит
+  // параметр market, который клиент дописывает ко ВСЕМ запросам из ранее
+  // выбранного рынка, и он забивал явное «все»: раздел показывал один регион
+  if (region === 'all') return ''
 
   const market = (url.searchParams.get('market') || '').trim()
   if (!market) return ''

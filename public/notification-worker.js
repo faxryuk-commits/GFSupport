@@ -1,7 +1,18 @@
-// Web Worker for background polling - not throttled by browser
+// Фоновый опрос уведомлений: воркер не тормозится браузером, поэтому за ним
+// нужно следить самим.
+//
+// Раньше он дёргал полный список каналов каждые 3 секунды — 1200 запросов в
+// час на каждого открытого сотрудника, круглосуточно, и каждый лез в базу.
+// Это не только тратило её ресурсы, но и конкурировало с запросами, которых
+// человек реально ждёт.
 let pollInterval = null
 let apiBase = ''
 let authToken = ''
+let paused = false
+
+// Уведомление, опоздавшее на пятнадцать секунд, никого не подводит; запрос,
+// отнявший время у открывающейся страницы, — подводит
+const POLL_MS = 15000
 
 self.onmessage = function(e) {
   const { type, data } = e.data
@@ -15,6 +26,9 @@ self.onmessage = function(e) {
   } else if (type === 'updateToken') {
     // Allow updating token without restarting
     authToken = data.token || ''
+  } else if (type === 'visibility') {
+    // Вкладка скрыта — уведомления некому показывать, и опрос смысла не имеет
+    paused = data.hidden === true
   }
 }
 
@@ -37,7 +51,7 @@ function startPolling() {
   
   // Poll every 3 seconds - Web Workers are not throttled
   pollInterval = setInterval(async () => {
-    if (!authToken) return // Skip if token was cleared
+    if (!authToken || paused) return
     
     try {
       const response = await fetch(`${apiBase}/api/support/channels?limit=50`, {
@@ -53,7 +67,7 @@ function startPolling() {
     } catch (e) {
       // Silent fail
     }
-  }, 3000)
+  }, POLL_MS)
   
   // Immediate first poll
   fetch(`${apiBase}/api/support/channels?limit=50`, {

@@ -30,6 +30,9 @@ function getHeaders(): HeadersInit {
 }
 
 function appendMarketParam(endpoint: string): string {
+  // У раздела свой фильтр региона — он главнее глобального выбора. Дописывать
+  // сюда ещё и market значит спорить с тем, что человек только что выбрал
+  if (/[?&]region=/.test(endpoint)) return endpoint
   const market = localStorage.getItem(MARKET_KEY)
   if (!market) return endpoint
   const sep = endpoint.includes('?') ? '&' : '?'

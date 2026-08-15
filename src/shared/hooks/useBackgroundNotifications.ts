@@ -97,9 +97,21 @@ export function useBackgroundNotifications() {
         }
       }
       window.addEventListener('storage', handleStorageChange)
-      
+
+      // Скрытая вкладка не показывает уведомлений, а опрашивать продолжала:
+      // у человека обычно открыто несколько вкладок, и все они били по базе
+      const handleVisibility = () => {
+        worker.postMessage({
+          type: 'visibility',
+          data: { hidden: document.visibilityState === 'hidden' },
+        })
+      }
+      document.addEventListener('visibilitychange', handleVisibility)
+      handleVisibility()
+
       return () => {
         window.removeEventListener('storage', handleStorageChange)
+        document.removeEventListener('visibilitychange', handleVisibility)
         worker.postMessage({ type: 'stop' })
         worker.terminate()
       }
