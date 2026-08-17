@@ -23,6 +23,9 @@ const RAW_SKIP = new Set([
   'closest_task_at', 'is_deleted', 'custom_fields_values', '_links', '_embedded',
   'score', 'labor_cost', 'is_price_modified_by_robot', 'request_id',
   'created_at', 'updated_at', 'pipeline_id', 'status_id', 'responsible_user_id',
+  // Служебные суммы Amo: их никто не заполнял, а в списке полей они выглядят
+  // как ответ человека
+  'price_with_minor_units', 'is_price_modified_by_robot', 'source_id',
 ])
 
 /** Как Amo сама называет записи: это не данные человека, а её служебный ярлык. */

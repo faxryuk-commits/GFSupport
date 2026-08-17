@@ -237,6 +237,7 @@ function firstMessage(lead: any): string | null {
 
 export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
   const { source, formId } = sourceFromLead(lead)
+  const answers = answersToQualification(contact?.fields)
   // Названия полей сверены с боевой воронкой: «Агрегаторы» в Amo называется
   // «Работает ли в агрегаторах», тип доставки — «Есть ли свои курьеры»,
   // а филиалы встречаются в двух полях сразу
@@ -250,11 +251,13 @@ export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
     market: marketByPipeline(lead.pipeline_id),
     form_id: formId || lead._unsorted_meta?.form_id || null,
     lead_kind: kindOfSource(source),
-    orders_per_day: cf(lead, 'Заказы в день') || null,
+    // Поле Amo заполняет менеджер после разговора — оно точнее выбранной в
+    // анкете категории. Анкета идёт запасным вариантом, когда разговора ещё не было
+    orders_per_day: cf(lead, 'Заказы в день') || answers.ordersPerDay || null,
     points: cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || null,
     pos: cf(lead, 'POS') || null,
     aggregators: cf(lead, 'Работает ли в агрегаторах') || null,
-    delivery_type: cf(lead, 'Есть ли свои курьеры') || null,
+    delivery_type: cf(lead, 'Есть ли свои курьеры') || answers.deliveryType || null,
     // Что показывать в строке: сперва само сообщение человека, потом
     // заполненные менеджером поля. Служебное название сделки из Amo сюда не
     // попадает — оно и так стоит в заголовке и ничего не добавляет
@@ -264,8 +267,9 @@ export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
     // Служебное название сделки из Amo сюда не попадает: оно и так в заголовке
     text: firstMessage(lead)
       || answersText(contact)
-      || [cf(lead, 'Направление'), cf(lead, 'Источник лида'), cf(lead, 'Модули')]
-        .filter(Boolean).join(' · ')
+      // «Источник лида» сюда не идёт: это служебная пометка Amo вроде
+      // «Исходящий», и в карточке она читалась как сообщение клиента
+      || [cf(lead, 'Направление'), cf(lead, 'Модули')].filter(Boolean).join(' · ')
       || null,
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
     owner_hint: agentByAmoUser(lead.responsible_user_id),
@@ -447,4 +451,38 @@ export function parseNotes(notes: string[]): { phone: string | null; text: strin
     lines.push(note.replace(/_/g, ' '))
   }
   return { phone, text: lines.length ? lines.join('\n').slice(0, 2000) : null }
+}
+
+/**
+ * Ответы формы → поля квалификации.
+ *
+ * Человек в лид-форме отвечает ровно на то, что нужно скорингу: сколько
+ * доставок в день, есть ли доставка сейчас, чем занимается. Мы складывали эти
+ * ответы в текст и не показывали их оценке — из-за чего лид с заполненной
+ * анкетой получал ноль «данных нет» либо оценивался по устаревшему полю Amo.
+ *
+ * Вопросы распознаём по смыслу, а не по точному тексту: формы заводят
+ * маркетологи, и завтра тот же вопрос будет сформулирован иначе.
+ */
+export function answersToQualification(fields?: Array<{ name: string; value: string }>) {
+  const out: { ordersPerDay?: string; deliveryType?: string; segment?: string; interest?: string } = {}
+  for (const f of fields || []) {
+    const q = (f.name || '').toLowerCase()
+    const a = String(f.value || '').replace(/_/g, ' ').trim()
+    if (!a) continue
+
+    // «Kuniga nechta dostavkasi bor», «сколько заказов в день»
+    if ((/nechta|necha|qancha/.test(q) && /dostavka|buyurtma|zakaz/.test(q))
+        || /сколько.*(заказ|доставок)|заказов в день/.test(q)) {
+      out.ordersPerDay = a
+      continue
+    }
+    // «Hozir dostavka bormi?» — есть ли доставка сейчас
+    if (/dostavka\s*bor|бормi|есть ли.*доставк/.test(q)) { out.deliveryType = a; continue }
+    // «Qaysi yonalishda faoliyat olib borishadi» — направление заведения
+    if (/yonalish|yo'nalish|направлен|кухн/.test(q)) { out.segment = a; continue }
+    // «Qaysi xizmatimiz haqida ma'lumot olmoqchi» — что именно интересует
+    if (/xizmat|услуг|интересует/.test(q)) { out.interest = a; continue }
+  }
+  return out
 }

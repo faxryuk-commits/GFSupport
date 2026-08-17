@@ -25,7 +25,8 @@ export interface IcpResult {
 
 const KNOWN_POS = ['iiko', 'айко', 'jowi', 'жови', 'rkeeper', 'r-keeper', 'ркипер',
   'poster', 'постер', 'syrve', 'сюрв', 'paloma', 'палома', 'clopos', 'клопос',
-  'alipos', '1с', '1c']
+  // Alisa стоит у 32 клиентов в боевой базе и не распознавалась
+  'alisa', 'алиса', 'alipos', '1с', '1c']
 
 const EMPTY_POS = ['нет', 'yo\'q', 'yoq', 'другое', 'other', 'не знаю', '-']
 
@@ -39,6 +40,28 @@ export function parseFirstNumber(raw: string | number | null | undefined): numbe
     else if (num) break
   }
   return num ? parseInt(num, 10) : 0
+}
+
+/**
+ * Ответ из анкеты — это категория, а не число.
+ *
+ * Лид-форма предлагает выбрать «1-3», «3-7», «7-15», «15+», и «15+» означает
+ * верхний вариант шкалы: у человека может быть и двадцать заказов, и триста.
+ * Читать его как ровно пятнадцать и штрафовать за «мало» — значит наказывать
+ * клиента за то, что в форме не было варианта крупнее.
+ */
+function ordersFromAnswer(raw: string): { label: string; points: number } | null {
+  const s = raw.trim()
+  if (!/^\s*\d+\s*(\+|-|–|—)?\s*\d*\s*$/.test(s)) return null
+  const open = /[+]/.test(s)
+  const nums = (s.match(/\d+/g) || []).map(Number)
+  if (!nums.length) return null
+  const top = Math.max(...nums)
+  // Верхняя категория шкалы: поток есть, но точного числа мы не знаем —
+  // даём умеренный плюс, а не оценку по порогам
+  if (open) return { label: `${top}+ заказов/день по анкете`, points: top >= 15 ? 8 : 0 }
+  if (top >= 15) return { label: `${nums[0]}–${top} заказов/день по анкете`, points: 2 }
+  return { label: `${nums[0]}–${top} заказов/день по анкете`, points: -5 }
 }
 
 export function scoreIcp(input: IcpInput): IcpResult {
@@ -56,8 +79,12 @@ export function scoreIcp(input: IcpInput): IcpResult {
   else if (points >= 2) add(`${points} филиала`, 15)
   else if (points === 1) add('1 точка', 2)
 
-  // Поток заказов: порог ICP из плейбука — 30 в день
-  const orders = parseFirstNumber(input.ordersPerDay)
+  // Поток заказов: порог ICP из плейбука — 30 в день.
+  // Категорию из анкеты («15+», «3-7») по этим порогам мерить нельзя
+  const rawOrders = String(input.ordersPerDay ?? '').trim()
+  const fromAnswer = /[+]|[-–—]/.test(rawOrders) ? ordersFromAnswer(rawOrders) : null
+  const orders = fromAnswer ? 0 : parseFirstNumber(input.ordersPerDay)
+  if (fromAnswer) add(fromAnswer.label, fromAnswer.points)
   if (orders >= 200) add(`${orders} заказов/день`, 25)
   else if (orders >= 100) add(`${orders} заказов/день`, 22)
   else if (orders >= 50) add(`${orders} заказов/день`, 18)

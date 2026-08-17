@@ -182,7 +182,20 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           {l.campaign && <Row label="Кампания">{l.campaign}</Row>}
           {l.agent_name && <Row label="Ответственный">{l.agent_name}</Row>}
           {l.icp_score !== null && l.icp_score !== undefined && (
-            <Row label="Оценка соответствия">{l.icp_score}</Row>
+            <Row label="Оценка соответствия">
+              <span className={l.icp_score >= 50 ? 'text-emerald-700 font-semibold'
+                : l.icp_score >= 20 ? 'text-amber-700' : 'text-gray-900'}>
+                {l.icp_score}
+              </span>
+              {/* Голая цифра «0» читается как «не посчитали». Причины показывают,
+                  что оценка сделана и на чём основана */}
+              {Array.isArray(l.icp_reasons) && l.icp_reasons.length > 0 && (
+                <span className="block text-[11.5px] text-gray-500 mt-0.5">
+                  {l.icp_reasons.map((r: any) =>
+                    `${r.label}${r.points ? ` (${r.points > 0 ? '+' : ''}${r.points})` : ''}`).join(' · ')}
+                </span>
+              )}
+            </Row>
           )}
           {l.external_id && <Row label="Идентификатор">{l.external_id}</Row>}
         </div>
