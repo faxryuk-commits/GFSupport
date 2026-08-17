@@ -68,6 +68,8 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   const [data, setData] = useState<LeadData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [reasons, setReasons] = useState<Array<{ id: string; label: string }>>([])
 
   const load = useCallback(() => {
     if (!id) return
@@ -78,14 +80,29 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
   useEffect(() => { load() }, [load])
 
-  const act = async (action: string) => {
+  const act = async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true)
     try {
-      await apiPost(`/sales/leads?action=${action}`, { leadId: id })
+      await apiPost(`/sales/leads?action=${action}`, { leadId: id, ...extra })
+      setAsking(false)
       load()
     } catch (e: any) {
       setError(e?.message || 'Действие не выполнено')
     } finally { setBusy(false) }
+  }
+
+  /**
+   * Отказ спрашивает причину. Самый частый исход воронки уходил в тишину:
+   * две с половиной тысячи отказов и ни одной причины — то есть на вопрос
+   * «почему мы их теряем» ответить было нечем.
+   */
+  const askReason = async () => {
+    setAsking(true)
+    if (reasons.length) return
+    try {
+      const d = await apiGet<any>('/sales/refs', false)
+      setReasons(d.reasons || [])
+    } catch { /* без справочника отказ всё равно можно оформить */ }
   }
 
   if (error && !data) return <div className="p-6 text-[13px] text-gray-900">{error}</div>
@@ -138,10 +155,33 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                 На прогрев
               </button>
             )}
-            <button disabled={busy} onClick={() => act('archive')}
+            <button disabled={busy} onClick={askReason}
               className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600">
               В отказ
             </button>
+          </div>
+        )}
+        {asking && (
+          <div className="border border-gray-200 rounded-xl p-3 bg-white space-y-2">
+            <div className="text-[12.5px] text-gray-900">Почему не наш клиент?</div>
+            <div className="flex flex-wrap gap-1.5">
+              {reasons.map(r => (
+                <button key={r.id} disabled={busy}
+                  onClick={() => act('archive', { reasonId: r.id })}
+                  className="text-[11.5px] px-2.5 py-1 rounded-lg border border-gray-200 text-gray-700
+                             hover:border-red-400 hover:text-red-600 disabled:opacity-50">
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-0.5">
+              <button disabled={busy} onClick={() => act('archive')}
+                className="text-[11.5px] text-gray-400 hover:text-gray-700">
+                причина неизвестна
+              </button>
+              <button onClick={() => setAsking(false)}
+                className="text-[11.5px] text-gray-400 hover:text-gray-700">отмена</button>
+            </div>
           </div>
         )}
         {error && <div className="text-[12px] text-red-600">{error}</div>}

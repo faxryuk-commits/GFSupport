@@ -2,6 +2,7 @@ import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../l
 import { getOpenAIKey, getOrgBotToken, getSQL, json } from '../lib/db.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
 import OpenAI from 'openai'
+import { markSalesTouch } from '../lib/sales-assistant.js'
 
 export const config = {
   runtime: 'edge',
@@ -1661,6 +1662,12 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Update channel stats with preview
     await updateChannelStats(sql, channelId, orgId, identification.role === 'client', user.fullName, messagePreview)
+
+    // Ответ команды — момент первого касания для обращения, которое ведёт
+    // сейлз. Без этой отметки норматив «15 минут» не измерялся ничем
+    if (identification.role !== 'client') {
+      await markSalesTouch(sql, orgId, channelId, user.fullName)
+    }
 
     // Update response time tracking
     if (identification.role === 'client' && responseTimeMs) {

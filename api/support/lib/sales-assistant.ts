@@ -138,3 +138,48 @@ export async function stopNurtureOnReply(
     message: 'Клиент ответил — прогрев остановлен, лид возвращён сейлзу с нормативом 15 минут',
   })
 }
+
+/**
+ * Ответ команды клиенту — это и есть первое касание.
+ *
+ * До сих пор время касания проставлялось только в очереди дня и при
+ * конвертации в сделку, поэтому в базе оно стояло у двух обращений из 2741:
+ * норматив «15 минут» был написан, но не измерялся ничем. Считать касанием
+ * нажатие «беру в работу» нельзя — это взятие ответственности, а не разговор
+ * с человеком. Настоящее касание видно там, где команда написала в канал.
+ *
+ * Вызывается из вебхуков на исходящем сообщении. Работает тихо: сбой здесь не
+ * должен ломать приём сообщений.
+ */
+export async function markSalesTouch(
+  sql: any,
+  orgId: string,
+  channelId: string,
+  agentName?: string | null,
+): Promise<void> {
+  try {
+    const leads = await sql`
+      UPDATE sales_leads SET first_touch_at = NOW(), updated_at = NOW()
+      WHERE org_id = ${orgId}
+        AND first_touch_at IS NULL
+        AND archived_at IS NULL
+        AND status IN ('new', 'assigned', 'nurture')
+        AND account_id IN (SELECT id FROM sales_accounts WHERE org_id = ${orgId} AND channel_id = ${channelId})
+      RETURNING id, account_id
+    ` as any[]
+    if (!leads.length) return
+
+    // Касание записываем событием: по нему считается, сколько внимания
+    // потрачено на обращение до того, как оно стало сделкой
+    for (const lead of leads) {
+      await sql`
+        INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel, title, identity)
+        VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${orgId},
+                ${lead.account_id}, ${lead.id}, 'reply', 'chat',
+                ${'Команда ответила клиенту'}, ${agentName || null})
+      `
+    }
+  } catch {
+    // Тишина намеренная: приём сообщений важнее статистики
+  }
+}

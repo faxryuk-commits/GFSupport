@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-16.13-requisites'
+const SCHEMA_VERSION = '2026-08-17.14-lead-reason'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -884,6 +884,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   `
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_legal_entities_org
             ON sales_legal_entities(org_id, market_id)`
+
+  // Почему отказали обращению. У сделок причина есть с самого начала, а
+  // обращения уходили в отказ молча: 2510 отказов и ни одной причины — то
+  // есть самый частый исход воронки был неизвестен
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS lost_reason_id VARCHAR(50)`
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS lost_comment TEXT`
 
   // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`

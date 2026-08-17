@@ -125,8 +125,15 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     if (action === 'archive') {
+      // Причина отказа обязательна по смыслу, но не по форме: заставлять
+      // выбирать её в разгар разбора очереди значит получить «Другое» на всём.
+      // Спрашиваем, принимаем и без неё — но тогда честно видно, что не знаем
       await sql`
-        UPDATE sales_leads SET archived_at = NOW(), status = 'junk', updated_at = NOW()
+        UPDATE sales_leads
+        SET archived_at = NOW(), status = 'junk',
+            lost_reason_id = COALESCE(${body.reasonId || null}, lost_reason_id),
+            lost_comment = COALESCE(${body.comment || null}, lost_comment),
+            updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })
