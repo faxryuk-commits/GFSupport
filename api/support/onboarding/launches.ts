@@ -1,4 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
+import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureOnboardingSchema } from '../lib/onboarding-schema.js'
 
@@ -24,6 +25,12 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
+
+  // Доска подключений — это список клиентов, кто их ведёт и что о них написано
+  // в комментариях. Ручка отдавала всё это без токена любому, кто знает адрес
+  // (найдено 22.08.2026)
+  const ctx = await extractAgentContext(req)
+  if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
   await ensureOnboardingSchema(sql, orgId)
 
   // Финальный шаг ищем по смыслу, а не по порядковому номеру: список шагов
