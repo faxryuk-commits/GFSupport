@@ -11,6 +11,7 @@ import type { Agent } from '@/shared/types'
 import {
   fetchOnboardingBoard, fetchOnboardingStats, createBrand, createIntake, updateBrand, deleteBrand,
   setTaskStatus, setTaskAssignee, setTaskOption, setTaskWaitingOn, addProviderTask, deleteTask, fetchOnboardingEvents,
+  fetchOnboardingLaunches, type ObLaunches,
   fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
@@ -2445,6 +2446,94 @@ function SectionCard({ icon, iconCls, title, right, children }: {
 
 type StatsPeriod = 'day' | 'week' | 'month' | 'custom'
 
+/**
+ * Запуски: сколько брендов подключено и кто именно.
+ *
+ * Первый вопрос про онбординг — «сколько запустили», и раньше на него в
+ * модуле не было ответа: были видны те, кто подключается сейчас, и где они
+ * застряли. Цифра без названий бесполезна — «за месяц три» ничего не значит,
+ * пока не видно, какие это три и сколько каждый шёл.
+ */
+function LaunchesCard() {
+  const [data, setData] = useState<ObLaunches | null>(null)
+  const [period, setPeriod] = useState('month')
+
+  useEffect(() => { fetchOnboardingLaunches().then(setData).catch(() => setData(null)) }, [])
+
+  if (!data) return null
+  const current = data.periods.find(p => p.key === period) || data.periods[0]
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[12px] bg-emerald-50 text-emerald-600">🚀</span>
+        <span className="text-[13px] font-medium text-gray-900">Запущенные бренды</span>
+        {data.avgDays !== null && (
+          <span className="text-[11px] text-gray-400">в среднем {data.avgDays} дн от старта до запуска</span>
+        )}
+      </div>
+
+      {/* Периоды показываем все сразу: важен не только выбранный отрезок, но и
+          то, как он смотрится рядом с остальными */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-gray-200 border border-gray-200 rounded-lg overflow-hidden mb-3">
+        {data.periods.map(p => (
+          <button key={p.key} onClick={() => setPeriod(p.key)}
+            className={`px-3 py-2 text-left transition-colors ${
+              period === p.key ? 'bg-emerald-50' : 'bg-white hover:bg-gray-50'}`}>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{p.label}</div>
+            <div className={`text-[19px] tabular-nums leading-tight ${
+              p.brands.length ? 'text-gray-900' : 'text-gray-300'}`}>{p.brands.length}</div>
+          </button>
+        ))}
+      </div>
+
+      {current.brands.length === 0 ? (
+        <div className="text-[12px] text-gray-400 py-3 text-center border border-dashed border-gray-200 rounded-lg">
+          {current.label.toLowerCase()} запусков не было
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {current.brands.map(b => (
+            <div key={b.name + b.launchedAt} className="py-2 flex items-baseline justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[12.5px] text-gray-900 truncate">{b.name}</div>
+                {(b.tariff || b.owner) && (
+                  <div className="text-[11px] text-gray-400 truncate">
+                    {[b.tariff, b.owner].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+              </div>
+              <div className="text-right flex-none">
+                <div className="text-[11.5px] text-gray-600 tabular-nums">{formatDateShort(b.launchedAt)}</div>
+                {b.days !== null && (
+                  <div className="text-[10.5px] text-gray-400 tabular-nums">подключали {b.days} дн</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.inProgress.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="text-[11px] text-gray-400 mb-1.5">
+            Сейчас подключается — {data.inProgress.length}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {data.inProgress.map(b => (
+              <span key={b.name}
+                className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 whitespace-nowrap">
+                {b.name}
+                <span className="text-gray-400 tabular-nums"> {b.done}/{b.total}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<string, ObStatus> }) {
   const [stats, setStats] = useState<ObStats | null>(null)
   const [events, setEvents] = useState<ObEvent[] | null>(null)
@@ -2588,6 +2677,10 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
 
   return (
     <div className="space-y-3">
+      {/* Запуски идут первыми: это результат работы модуля, всё остальное —
+          объяснение, почему он такой */}
+      <LaunchesCard />
+
       {/* Период */}
       <div className="flex flex-wrap items-center gap-1.5">
         {([['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц'], ['custom', 'Свой период']] as const).map(([key, label]) => (

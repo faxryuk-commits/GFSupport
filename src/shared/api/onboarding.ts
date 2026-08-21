@@ -189,6 +189,26 @@ export function fetchOnboardingStats(): Promise<ObStats> {
   return apiGet('/onboarding/stats', false)
 }
 
+export interface ObLaunch {
+  name: string
+  launchedAt: string
+  startedAt: string | null
+  days: number | null
+  tariff: string | null
+  owner: string | null
+}
+
+export interface ObLaunches {
+  periods: Array<{ key: string; label: string; from: string | null; brands: ObLaunch[] }>
+  inProgress: Array<{ name: string; started_at: string; owner_name: string | null; done: number; total: number }>
+  avgDays: number | null
+}
+
+/** Сколько брендов запущено и кто именно — по календарным периодам. */
+export function fetchOnboardingLaunches(): Promise<ObLaunches> {
+  return apiGet('/onboarding/launches', false)
+}
+
 export function createBrand(data: {
   name: string
   posId?: string | null
