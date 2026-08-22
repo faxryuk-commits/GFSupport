@@ -109,6 +109,42 @@ export default async function handler(req: Request): Promise<Response> {
     const idx = await indexFeed(sql, ORG)
     const spikes = await detectSpikes(sql)
     const partner = await scanPartnerGroups(sql, process.env.OPENAI_API_KEY)
+
+    // ─── Сторож живости агента ────────────────────────────────────────────
+    // Урок Kebab House: агент молча перестал решать, клиенты писали, и никто
+    // не заметил до вопроса владельца. Теперь тишина при живом потоке — сама
+    // по себе инцидент: клиентских сообщений много, решений агента ноль
+    try {
+      const [alive] = await sql`
+        SELECT
+          (SELECT COUNT(*)::int FROM support_messages
+            WHERE is_from_client = true AND created_at > NOW() - INTERVAL '2 hours'
+              AND LENGTH(text_content) > 2) AS msgs,
+          (SELECT COUNT(*)::int FROM support_agent_decisions
+            WHERE created_at > NOW() - INTERVAL '2 hours') AS decisions
+      ` as any[]
+      if (alive.msgs >= 10 && alive.decisions === 0) {
+        const [open] = await sql`
+          SELECT id FROM system_incidents
+          WHERE status = 'open' AND kind = 'watchdog' AND system = 'ai-агент' LIMIT 1
+        ` as any[]
+        if (!open) {
+          await sql`
+            INSERT INTO system_incidents (id, kind, system, title, status, first_seen, last_seen, sample, source_ref)
+            VALUES (${'inc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)},
+                    'watchdog', 'ai-агент', 'агент молчит при живом потоке', 'open', NOW(), NOW(),
+                    ${'за 2 часа: сообщений ' + alive.msgs + ', решений агента 0'}, 'сторож живости')
+          `
+          await logEvent(sql, 'Сторож', 'агент молчит',
+            `клиентских сообщений за 2 часа: ${alive.msgs}, решений агента: 0 — проверьте тракт вызова`)
+        }
+      } else if (alive.decisions > 0) {
+        await sql`
+          UPDATE system_incidents SET status = 'resolved', resolved_at = NOW()
+          WHERE status = 'open' AND kind = 'watchdog' AND system = 'ai-агент'
+        `
+      }
+    } catch { /* сторож не должен ломать сводку */ }
     if (partner.events > 0) {
       await logEvent(sql, 'Сводка аварий', 'сигнал из партнёрских групп',
         `распознано событий: ${partner.events} из ${partner.scanned} сообщений`)
