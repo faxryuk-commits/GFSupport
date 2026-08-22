@@ -9,6 +9,9 @@ import {
 } from './ai-agent-data.js'
 
 const TOGETHER_API = 'https://api.together.xyz/v1/chat/completions'
+import { ensureErrorFeedSchema, activeIncidents, recentErrorsForChannel } from './error-feed.js'
+import { similarExamples } from './reply-examples.js'
+
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'
 // Провайдер выбирается по имени модели: gpt-*/o* → OpenAI, иначе Together.
 const isOpenAIModel = (m: string) => /^(gpt-|o[0-9]|chatgpt)/i.test(m)
@@ -215,6 +218,39 @@ ${historyBlock}${casesBlock}${overdueBlock}${feedbackBlock}
 Прими решение.`
 }
 
+/**
+ * Живые знания: сводка аварий, свежие ошибки ресторана, примеры ответов
+ * команды на похожие вопросы. Именно этого не хватало агенту: человек знал,
+ * что iiko лежит, из партнёрской группы, а модель гадала вслепую.
+ */
+function buildKnowledgeBlock(incidents: any[], channelErrors: any[], examples: any[]): string {
+  const parts: string[] = []
+  if (incidents.length) {
+    parts.push('\n═══ АВАРИИ ПРЯМО СЕЙЧАС (сводка) ═══\n' + incidents.map((i: any) =>
+      `• ${i.system}: ${String(i.title || i.kind).slice(0, 80)} — с ${new Date(i.first_seen).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })}, повторов ${i.count} (${i.source_ref || ''})`).join('\n')
+      + '\nЕсли проблема клиента похожа на аварию — назови её причиной и скажи, что чинится. НЕ обещай сроков, которых не знаешь.')
+  }
+  if (channelErrors.length) {
+    parts.push('\n═══ ОШИБКИ ЭТОГО РЕСТОРАНА ЗА 6 ЧАСОВ (из фида) ═══\n' + channelErrors.slice(0, 5).map((e: any) =>
+      `• ${new Date(e.msg_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })} [${e.source}] ${String(e.error_text).slice(0, 110)}`).join('\n')
+      + '\nЭто судьба его заказов — используй как факт при ответе про заказы.')
+  }
+  if (examples.length) {
+    parts.push('\n═══ КАК КОМАНДА ОТВЕЧАЛА НА ПОХОЖЕЕ (реальные ответы) ═══\n' + examples.map((x: any, i: number) =>
+      `${i + 1}. Клиент: «${String(x.client_text).slice(0, 90)}» → ${String(x.human_reply).slice(0, 140)}`).join('\n')
+      + '\nЭто образцы стиля и сути, не шаблоны для копирования.')
+  }
+  parts.push(`\n═══ ЗОНЫ ОТВЕТСТВЕННОСТИ ═══
+В общих группах с партнёрами (iiko, Wolt, Yandex, Uzum) вопрос может быть адресован НЕ нам:
+доступы к iiko, кабинет Wolt, выплаты агрегатора — зона партнёра. Тогда action="wait" и не отвечай по сути.
+Если вопрос задан партнёру, но причина в нашей интеграции (видно по ошибкам выше) — перехватывай и отвечай.
+
+═══ ХОД 0 — УТОЧНИ, ЕСЛИ ДАННЫХ НЕТ ═══
+Команда в 77% случаев сначала спрашивает: номер заказа, филиал, скрин. Если жалоба расплывчата и в
+ошибках ресторана пусто — задай ОДИН уточняющий вопрос темы вместо пустого ответа.`)
+  return parts.join('\n')
+}
+
 export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDecision; skipped?: boolean; reason?: string } | null> {
   const settings = await getAgentSettings(ctx.orgId, DEFAULT_MODEL)
   if (!settings.enabled) return { decision: null as any, skipped: true, reason: 'agent_disabled' }
@@ -247,7 +283,19 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     fetchOverdueCommitments(ctx.orgId, ctx.channelId),
   ])
 
+  // ─── Знания в момент ответа — то, чем человек побеждал модель ─────────────
+  // Сводка аварий, судьба заказов этого ресторана и примеры настоящих ответов
+  // команды. Ошибка любого из источников не роняет агента: знание — усилитель,
+  // а не условие
+  const [incidents, channelErrors, examples] = await Promise.all([
+    ensureErrorFeedSchema(getSQL()).then(() => activeIncidents(getSQL())).catch(() => []),
+    recentErrorsForChannel(getSQL(), ctx.channelName, 6).catch(() => []),
+    similarExamples(getSQL(), ctx.incomingMessage, 3).catch(() => []),
+  ])
+
+  const knowledgeBlock = buildKnowledgeBlock(incidents, channelErrors, examples)
   const systemPrompt = buildSystemPrompt(agents, workHours, docs, settings.customInstructions, topCategories, teamExamples, settings.rules)
+    + knowledgeBlock
   const userPrompt = buildUserPrompt(ctx, messages, history, cases, profile, feedback, overdueCommitments)
 
   try {
