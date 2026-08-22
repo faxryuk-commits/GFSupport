@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { ensureErrorFeedSchema, indexFeed, detectSpikes } from '../lib/error-feed.js'
+import { logEvent } from '../lib/system-journal.js'
 
 export const config = { runtime: 'edge' }
 
@@ -108,6 +109,10 @@ export default async function handler(req: Request): Promise<Response> {
     const idx = await indexFeed(sql, ORG)
     const spikes = await detectSpikes(sql)
     const partner = await scanPartnerGroups(sql, process.env.OPENAI_API_KEY)
+    if (partner.events > 0) {
+      await logEvent(sql, 'Сводка аварий', 'сигнал из партнёрских групп',
+        `распознано событий: ${partner.events} из ${partner.scanned} сообщений`)
+    }
     return json({ ok: true, secured: cronSecured(), ms: Date.now() - started, ...idx, ...spikes, partner })
   } catch (e: any) {
     console.error('[incident-watch] failed:', e)

@@ -4,6 +4,7 @@ import { acceptLead } from '../lib/sales-intake.js'
 import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
          fetchNotes, parseNotes, statusMap, applyAmoStage } from '../lib/sales-amo.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
+import { logEvent } from '../lib/system-journal.js'
 
 export const config = { runtime: 'edge' }
 
@@ -287,6 +288,13 @@ export default async function handler(req: Request): Promise<Response> {
     // каждый раз с того же места — это и есть вставшая синхронизация
     await saveCursor(sql, maxUpdated, since).catch(() => {})
     return json({ ok: false, error: e?.message || 'sync failed', cursor: maxUpdated, ...out }, 200)
+  }
+
+  if (out.created > 0 || out.staged > 0) {
+    await logEvent(sql, 'Синк Amo', 'проход',
+      [out.created ? `новых лидов: ${out.created}` : '',
+       out.staged ? `этапов перенесено: ${out.staged}` : '',
+       out.closed ? `закрыто: ${out.closed}` : ''].filter(Boolean).join(' · '))
   }
 
   // Отметка живости: курсор стоит на месте, когда в Amo просто ничего не

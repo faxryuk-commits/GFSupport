@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { classifyCases } from '../lib/case-topics.js'
+import { logEvent } from '../lib/system-journal.js'
 
 export const config = { runtime: 'edge' }
 
@@ -65,5 +66,8 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ ok: false, error: e?.message || 'failed', ...out }, 200)
   }
 
+  if (out.classified > 0) {
+    await logEvent(sql, 'Темы тикетов', 'разметка', `определены темы у ${out.classified} обращений`)
+  }
   return json({ ok: true, secured: cronSecured(), ...out })
 }

@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { ensureReplyExamplesSchema, addExample } from '../lib/reply-examples.js'
+import { logEvent } from '../lib/system-journal.js'
 
 export const config = { runtime: 'edge' }
 
@@ -93,6 +94,11 @@ export default async function handler(req: Request): Promise<Response> {
       if (ok) out.added++
     }
 
+    if (out.added > 0) {
+      await logEvent(sql, 'Учитель', 'новые примеры',
+        `база пополнена: +${out.added} пар «вопрос → ответ команды»`
+        + (out.broadcast ? `, отсеяно рассылок: ${out.broadcast}` : ''))
+    }
     const maxAt = pairs[pairs.length - 1].created_at
     await sql`
       INSERT INTO support_platform_settings (key, value, updated_at)

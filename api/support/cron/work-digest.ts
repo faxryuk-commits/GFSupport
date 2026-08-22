@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { ensureWorkSchema, workDigest } from '../lib/work-items.js'
+import { logEvent } from '../lib/system-journal.js'
 
 export const config = { runtime: 'edge' }
 
@@ -24,6 +25,11 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     await ensureWorkSchema(sql)
     const out = await workDigest(sql, ORG, dry)
+    if (!dry && out.sent > 0) {
+      await logEvent(sql, 'Сверка задач', 'дайджест отправлен',
+        `вопросов: ${out.sent}, получателей: ${out.plan.length}`
+        + ((out as any).noTelegram ? `, без Telegram: ${(out as any).noTelegram}` : ''))
+    }
     return json({ ok: true, secured: cronSecured(), dry, ...out })
   } catch (e: any) {
     console.error('[work-digest] failed:', e)
