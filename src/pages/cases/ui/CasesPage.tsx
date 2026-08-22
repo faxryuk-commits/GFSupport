@@ -4,7 +4,6 @@ import { Search, Plus, Filter, User, AlertTriangle, Loader2, Calendar, Tag, User
 import { Modal, ConfirmDialog, useNotification } from '@/shared/ui'
 import { CaseCard, NewCaseForm, CaseDetailModal, type CaseCardData, type CaseDetail } from '@/features/cases/ui'
 import { CasesInboxView } from './CasesInboxView'
-import { CasesReportView } from './CasesReportView'
 import { takeNextCase } from '@/shared/api'
 import {
   isOnActiveBoard,
@@ -173,7 +172,7 @@ export function CasesPage() {
   const [resolvedTodayCount, setResolvedTodayCount] = useState(0)
 
   // Режим просмотра: активные или архив
-  const [viewMode, setViewMode] = useState<'active' | 'archive' | 'report'>('active')
+  const [viewMode, setViewMode] = useState<'active' | 'archive'>('active')
   // Layout активных: inbox (default) или kanban. Сохраняется в localStorage.
   const [activeLayout, setActiveLayout] = useState<'inbox' | 'kanban'>(() => {
     try {
@@ -953,17 +952,6 @@ export function CasesPage() {
                   {archiveStatusCount}
                 </span>
               </button>
-              <button
-                onClick={() => setViewMode('report')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'report'
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <TrendingUp className="w-4 h-4" />
-                Отчёт
-              </button>
             </div>
 
             {/* Layout toggle для активных: Inbox / Канбан */}
@@ -1168,10 +1156,6 @@ export function CasesPage() {
               onClick: () => setIsCreateModalOpen(true),
             }}
           />
-        ) : viewMode === 'report' ? (
-          /* Отчёт — отдельный режим, а не фильтр над доской: он отвечает не на
-             «что горит сейчас», а на «как мы отработали период» */
-          <CasesReportView />
         ) : viewMode === 'active' && activeLayout === 'inbox' ? (
           <CasesInboxView
             cases={activeCases}

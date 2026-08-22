@@ -12,6 +12,7 @@ import {
   PulseStrip,
   CustomerHealthBanner,
   WorkloadTable,
+  TicketsReport,
 } from '@/features/analytics'
 import type { FetchMetricParams } from '@/shared/api'
 import { CommitmentsPanel } from '@/features/commitments/ui'
@@ -199,6 +200,20 @@ export function DashboardPage() {
           source={sourceFilter === 'all' ? undefined : sourceFilter}
           marketKey={selectedMarket}
         />
+
+        {/* Итог недели по тикетам: сколько пришло, о чём, за сколько закрыли и
+            кто. Стоит сразу под пульсом: это ответ на «как у нас дела», а не
+            частность. Раньше жил внутри кейсов — там разбирают очередь, а не
+            смотрят итоги, и отчёт никто не открывал */}
+        <div className="bg-white rounded-xl border border-[#e8edf3] overflow-hidden">
+          <div className="px-5 pt-4">
+            <h3 className="font-semibold text-slate-800">Тикеты за период</h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              сколько пришло, о чём, сколько решили, за какое время и кто
+            </p>
+          </div>
+          <TicketsReport />
+        </div>
 
         <ChannelSourceSummary
           channels={channels}
