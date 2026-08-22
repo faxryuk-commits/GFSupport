@@ -101,6 +101,10 @@
     {
       "path": "/api/support/cron/amo-sync",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/support/cron/case-topics",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

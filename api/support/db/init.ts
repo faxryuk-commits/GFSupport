@@ -90,7 +90,13 @@ export default async function handler(req: Request): Promise<Response> {
     created.push('support_channels')
 
     // Индексы для channels
-    await sql`CREATE INDEX IF NOT EXISTS idx_channels_telegram ON support_channels(telegram_chat_id)`
+    // Тема обращения по тексту. Отдельно от category: та заполнялась при
+  // создании и в четырёх случаях из пяти оказывалась «general», а здесь
+  // закрытый продуктовый справочник — по нему видно, что чинить в системе
+  await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS topic VARCHAR(40)`
+  await sql`CREATE INDEX IF NOT EXISTS idx_support_cases_topic ON support_cases(org_id, topic, created_at)`
+
+  await sql`CREATE INDEX IF NOT EXISTS idx_channels_telegram ON support_channels(telegram_chat_id)`
     await sql`CREATE INDEX IF NOT EXISTS idx_channels_company ON support_channels(company_id)`
     await sql`CREATE INDEX IF NOT EXISTS idx_channels_type ON support_channels(type)`
 
