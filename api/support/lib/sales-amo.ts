@@ -486,3 +486,115 @@ export function answersToQualification(fields?: Array<{ name: string; value: str
   }
   return out
 }
+
+/**
+ * Статусы Amo — карта на время жизни инстанса.
+ *
+ * Их девять воронок по десятку статусов, меняются они раз в квартал. Тянуть
+ * список на каждом проходе крона — лишний рейс к Amo каждую минуту.
+ */
+let statusCache: { at: number; map: Map<number, { name: string; isWon: boolean; isLost: boolean; pipelineId: number }> } | null = null
+const STATUS_TTL_MS = 15 * 60_000
+
+export async function statusMap(creds: AmoCreds) {
+  if (statusCache && Date.now() - statusCache.at < STATUS_TTL_MS) return statusCache.map
+  const map = await fetchStatuses(creds)
+  statusCache = { at: Date.now(), map }
+  return map
+}
+
+/**
+ * Перенос статуса сделки из Amo в наш этап.
+ *
+ * Пока команда работает в Amo, источник истины там: сделка, закрытая утром в
+ * Amo, не должна до вечера висеть у нас открытой и портить и доску, и отчёт
+ * по деньгам. Возвращает описание перехода или null, если ничего не изменилось.
+ *
+ * Ручную работу в нашей CRM это затирает намеренно — двух источников истины
+ * не бывает, и выбран Amo. Когда команда переедет к нам, синк выключается
+ * снятием AMO_TOKEN.
+ */
+export async function applyAmoStage(
+  sql: any,
+  orgId: string,
+  lead: any,
+  statuses: Map<number, { name: string; isWon: boolean; isLost: boolean; pipelineId: number }>,
+): Promise<{ deal: string; from: string; to: string } | null> {
+  const [deal] = await sql`
+    SELECT d.id, d.stage_id, d.won_at, d.lost_at, d.pipeline, s.key AS stage_key
+    FROM sales_deals d
+    LEFT JOIN sales_stages s ON s.id = d.stage_id
+    WHERE d.org_id = ${orgId} AND d.external_id = ${`amo_${lead.id}`} AND d.archived_at IS NULL
+    LIMIT 1
+  ` as any[]
+  if (!deal) return null
+
+  const st = statuses.get(lead.status_id)
+  if (!st) return null
+  const key = stageKeyByStatusName(st.name, st.isWon, st.isLost)
+  if (key === deal.stage_key) return null
+
+  // Этап ищем в воронке самой сделки: у стран разные воронки, и «Договор»
+  // Узбекистана не тот же ряд, что «Договор» Казахстана
+  const [target] = await sql`
+    SELECT id, key, label, kind FROM sales_stages
+    WHERE org_id = ${orgId} AND pipeline = ${deal.pipeline || 'sales'} AND key = ${key}
+    LIMIT 1
+  ` as any[]
+  if (!target) return null
+
+  const won = target.kind === 'won'
+  const lost = target.kind === 'lost'
+  // Закрываем с причиной: отказ без причины бесполезен для разбора, а у нас
+  // она проставлена у всех остальных проигранных
+  let reasonId: string | null = null
+  if (lost) {
+    const rows = await sql`
+      SELECT id, code FROM sales_lost_reasons WHERE org_id = ${orgId} AND is_active = true
+    ` as any[]
+    reasonId = lostReasonId(lead, rows)
+  }
+  await sql`
+    UPDATE sales_deals SET
+      stage_id = ${target.id}, stage_since = NOW(), stalled_at = NULL, updated_at = NOW(),
+      won_at = ${won ? new Date().toISOString() : null},
+      lost_at = ${lost ? new Date().toISOString() : null},
+      lost_reason_id = ${lost ? reasonId : null}
+    WHERE id = ${deal.id} AND org_id = ${orgId}
+  `
+  await sql`
+    INSERT INTO sales_deal_events (org_id, deal_id, old_stage_id, new_stage_id, changed_by)
+    VALUES (${orgId}, ${deal.id}, ${deal.stage_id}, ${target.id}, ${`синхронизация с Amo: ${st.name}`})
+  `
+  return { deal: deal.id, from: deal.stage_key || '—', to: target.key }
+}
+
+/**
+ * Причина отказа Amo → наш справочник.
+ *
+ * В Amo она живёт в двух местах: системное поле loss_reason и собственный
+ * список «Причины отказа». Берём первое непустое и раскладываем по смыслу —
+ * формулировки там свободные и у каждой воронки свои.
+ *
+ * Та же логика лежала внутри разового импорта; синк статусов без неё закрывал
+ * сделки молча, и у трёх десятков отказов не осталось причины — то есть самый
+ * ценный для разбора столбец пустел с каждым проходом.
+ */
+export function lostReasonId(lead: any, reasonRows: Array<{ id: string; code: string }>): string | null {
+  const raw = String(
+    (lead?._embedded?.loss_reason?.[0]?.name) || cf(lead, 'Причины отказа') || ''
+  ).toLowerCase()
+  const by = (code: string) => reasonRows.find(r => r.code === code)?.id || null
+  if (!raw) return by('other')
+  return (
+    /не отвеч|не подн|недоступ|тишин/.test(raw) ? by('no_response') :
+    /дорог|бюджет|цена|qimmat/.test(raw) ? by('too_expensive') :
+    /конкурент|выбрал друг/.test(raw) ? by('competitor') :
+    /не сейчас|позже|занят|отлож/.test(raw) ? by('bad_timing') :
+    /не наш|не подход|не целев|мелк/.test(raw) ? by('not_icp') :
+    /сво(я|и) разработ|сами|внутрен/.test(raw) ? by('internal_solution') :
+    /лпр|руководител|не дошли/.test(raw) ? by('no_dm_access') :
+    /функци|не хватает|возможност/.test(raw) ? by('feature_gap') :
+    by('other')
+  )
+}

@@ -2,7 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead } from '../lib/sales-intake.js'
 import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
-         fetchNotes, parseNotes } from '../lib/sales-amo.js'
+         fetchNotes, parseNotes, statusMap, applyAmoStage } from '../lib/sales-amo.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
@@ -91,7 +91,7 @@ export default async function handler(req: Request): Promise<Response> {
     ? parseInt(cursorRow.value, 10)
     : Math.floor(Date.now() / 1000) - FIRST_RUN_WINDOW_H * 3600
 
-  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, closed: 0, notes: 0, errors: 0, deferred: 0 }
+  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, closed: 0, notes: 0, staged: 0, errors: 0, deferred: 0 }
   let maxUpdated = since
 
   try {
@@ -217,6 +217,11 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    // В Amo лид и сделка — одна запись, поэтому изменившиеся статусы уже лежат
+    // в выборке: остаётся применить их к нашим сделкам. Без этого сделка,
+    // закрытая утром в Amo, висела у нас открытой и портила и доску, и деньги
+    const statuses = await statusMap(creds)
+
     // ─── 3. В приёмник — тем же путём, что сайт и Instagram ───────────────────
     let processed = 0
     for (const lead of leads) {
@@ -254,6 +259,10 @@ export default async function handler(req: Request): Promise<Response> {
         // обращение: он потратит касание на то, что уже решено. Закрытую
         // сразу отправляем к своим — не реализованную в отказ, выигранную
         // в конверсию; на доске такие не показываются
+        // Перенос этапа делаем до разбора лида: сделка важнее, она про деньги
+        const moved = await applyAmoStage(sql, ORG, lead, statuses)
+        if (moved) out.staged++
+
         const closed = closedKind(lead.status_id)
         if (closed && res.lead_id) {
           await sql`
