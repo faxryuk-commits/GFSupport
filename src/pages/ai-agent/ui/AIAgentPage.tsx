@@ -40,7 +40,7 @@ export function AIAgentPage() {
         </div>
         <div>
           <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">AI Агент</h1>
-          <p className="text-sm text-slate-500">Автономный агент на базе Qwen 2.5 — анализирует, отвечает, эскалирует</p>
+          <p className="text-sm text-slate-500">Автономный агент — анализирует, отвечает, эскалирует. Модель выбирается в настройках</p>
         </div>
       </div>
 
