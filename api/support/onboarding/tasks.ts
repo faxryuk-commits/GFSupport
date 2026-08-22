@@ -32,6 +32,12 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   await ensureOnboardingSchema(sql, orgId)
 
+  // Читать доску может только вошедший: журнал и карточка — это клиенты,
+  // задачи и переписка по ним. Проверка стояла лишь на записи, а GET отдавал
+  // всё это без токена (найдено 22.08.2026)
+  const ctx = await extractAgentContext(req)
+  if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
+
   if (req.method === 'GET') {
     try {
       const brandId = url.searchParams.get('brandId')
@@ -107,7 +113,6 @@ export default async function handler(req: Request): Promise<Response> {
       `
       if (!task) return json({ error: 'Task not found' }, 404)
 
-      const ctx = await extractAgentContext(req)
       const actorName = await resolveAgentName(sql, ctx.agentId)
       await addParticipant(sql, orgId, task.brand_id, ctx.agentId, actorName)
 
@@ -191,7 +196,6 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND kind = 'todo' AND is_active = true
         ORDER BY sort_order LIMIT 1
       `
-      const ctx = await extractAgentContext(req)
       const actorName = await resolveAgentName(sql, ctx.agentId)
       await addParticipant(sql, orgId, brandId, ctx.agentId, actorName)
 
