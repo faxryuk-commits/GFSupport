@@ -290,7 +290,9 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const [incidents, channelErrors, examples] = await Promise.all([
     ensureErrorFeedSchema(getSQL()).then(() => activeIncidents(getSQL())).catch(() => []),
     recentErrorsForChannel(getSQL(), ctx.channelName, 6).catch(() => []),
-    similarExamples(getSQL(), ctx.incomingMessage, 3).catch(() => []),
+    similarExamples(getSQL(), ctx.incomingMessage, 4)
+      .then(rows => (rows as any[]).filter(r => Number(r.sim) >= 0.35).slice(0, 3))
+      .catch(() => []),
   ])
 
   const knowledgeBlock = buildKnowledgeBlock(incidents, channelErrors, examples)
@@ -335,7 +337,7 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
       return { decision: null as any, skipped: true, reason: `Ошибка парсинга: ${clean.slice(0, 100)}` }
     }
 
-    await logDecision(ctx, decision, messages.length, history.length, docs.length)
+    await logDecision(ctx, decision, messages.length, history.length, docs.length, { incidents: incidents.length, errors: channelErrors.length, examples: examples.length })
     return { decision }
   } catch (e: any) {
     console.error('[AI Agent] Error:', e.message)
@@ -343,10 +345,15 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   }
 }
 
-async function logDecision(ctx: AgentContext, d: AgentDecision, msgCount: number, historyCount: number, docsCount: number) {
+async function logDecision(ctx: AgentContext, d: AgentDecision, msgCount: number, historyCount: number, docsCount: number,
+  knowledge?: { incidents: number; errors: number; examples: number }) {
   const sql = getSQL()
   const id = `ad_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   try {
+    // Что из знаний реально сработало в этом решении. Без этого Фазу 1 не
+    // оценить: офлайн-реплей не воспроизводит аварий и судьбы заказов,
+    // измерять можно только по бою
+    await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS knowledge JSONB`
     await sql`
       INSERT INTO support_agent_decisions (
         id, org_id, channel_id, channel_name, source, incoming_message, sender_name,
@@ -361,6 +368,9 @@ async function logDecision(ctx: AgentContext, d: AgentDecision, msgCount: number
         ${d.casePriority || null}, ${d.caseTitle || null},
         ${d.reasoning}, ${d.confidence}, ${msgCount}, ${historyCount}, NOW()
       )
+    `
+    if (knowledge) await sql`
+      UPDATE support_agent_decisions SET knowledge = ${JSON.stringify(knowledge)}::jsonb WHERE id = ${id}
     `
   } catch (e: any) { console.error('[AI Agent] Log error:', e.message) }
 }
