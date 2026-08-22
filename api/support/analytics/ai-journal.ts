@@ -38,7 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   let agentRows: any[] = []
   try {
     agentRows = await sql`
-      SELECT id, channel_name, incoming_message, action, reply_text, reasoning, confidence, feedback, created_at
+      SELECT id, channel_name, incoming_message, action, reply_text, reasoning, confidence, feedback, knowledge, created_at
       FROM support_agent_decisions
       WHERE org_id = ${orgId}
       ORDER BY created_at DESC LIMIT 60` as any[]

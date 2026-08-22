@@ -8,6 +8,7 @@ interface FeedItem {
   channel: string | null
   title: string
   reasoning: string | null
+  knowledge?: { incidents?: number; errors?: number; examples?: number } | null
   action?: string
   confidence?: number
   reply?: string | null
@@ -134,6 +135,17 @@ export function AIJournalTab() {
               {f.reasoning && <div className="text-sm text-slate-500 mt-0.5">🧠 {f.reasoning}</div>}
               <div className="flex items-center gap-3 mt-1 text-xs">
                 {f.action && <span className="text-slate-600">⚡ {f.action}</span>}
+                {/* Какими знаниями пользовалось решение: слой Фазы 1 виден
+                    в каждом решении, а не только в хронике */}
+                {f.knowledge && (f.knowledge.incidents || f.knowledge.errors || f.knowledge.examples) ? (
+                  <span className="inline-flex gap-1.5 flex-wrap">
+                    {f.knowledge.incidents ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">📡 аварии: {f.knowledge.incidents}</span> : null}
+                    {f.knowledge.errors ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">🔍 ошибки ресторана: {f.knowledge.errors}</span> : null}
+                    {f.knowledge.examples ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">🎓 примеры команды: {f.knowledge.examples}</span> : null}
+                  </span>
+                ) : f.knowledge ? (
+                  <span className="text-[11px] text-slate-400">без знаний — типовой случай</span>
+                ) : null}
                 {typeof f.confidence === 'number' && (
                   <span className={f.confidence >= 0.8 ? 'text-green-600' : 'text-amber-600'}>уверенность {f.confidence}</span>
                 )}

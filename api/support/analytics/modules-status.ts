@@ -149,5 +149,62 @@ export default async function handler(req: Request): Promise<Response> {
     })
   } catch { modules.push({ key: 'error_feed', name: 'Фид ошибок заказов', status: 'idle', lastRunAt: null, schedule: 'постоянно', summary: 'Нет данных' }) }
 
+
+  // ─── Новый слой: знания и учёба (Фазы 1–2 контура поддержки) ──────────────
+
+  // 10. Сводка аварий: индекс канала ошибок + инциденты
+  try {
+    const [cur] = await sql`SELECT updated_at FROM support_platform_settings WHERE key='error_feed_indexed_at'` as any[]
+    const [oe] = await sql`SELECT COUNT(*) FILTER (WHERE msg_at > NOW()-INTERVAL '1 hour')::int h1 FROM order_errors` as any[]
+    const [inc] = await sql`SELECT COUNT(*) FILTER (WHERE status='open')::int open,
+      COUNT(*) FILTER (WHERE resolved_at > NOW()-INTERVAL '24 hours')::int closed24 FROM system_incidents` as any[]
+    modules.push({
+      key: 'incident_watch', name: 'Сводка аварий',
+      status: cur?.updated_at ? staleAfterMin(cur.updated_at, 10) : 'idle',
+      lastRunAt: cur?.updated_at || null, schedule: 'каждые 2 мин',
+      summary: `Живых инцидентов: ${inc?.open ?? 0} · закрыто за сутки: ${inc?.closed24 ?? 0} · ошибок проиндексировано за час: ${oe?.h1 ?? 0}`,
+    })
+  } catch { modules.push({ key: 'incident_watch', name: 'Сводка аварий', status: 'idle', lastRunAt: null, schedule: 'каждые 2 мин', summary: 'Нет данных' }) }
+
+  // 11. Учитель: база примеров пополняется ответами команды
+  try {
+    const [cur] = await sql`SELECT updated_at FROM support_platform_settings WHERE key='teacher_cursor'` as any[]
+    const [ex] = await sql`SELECT COUNT(*)::int total,
+      COUNT(*) FILTER (WHERE source='teacher' AND created_at > NOW()-INTERVAL '24 hours')::int d1
+      FROM support_reply_examples` as any[]
+    modules.push({
+      key: 'teacher', name: 'Учитель (база примеров)',
+      status: cur?.updated_at ? staleAfterMin(cur.updated_at, 45) : 'idle',
+      lastRunAt: cur?.updated_at || null, schedule: 'каждые 30 мин',
+      summary: `Примеров: ${ex?.total ?? 0} · добавлено за сутки: ${ex?.d1 ?? 0}`,
+    })
+  } catch { modules.push({ key: 'teacher', name: 'Учитель (база примеров)', status: 'idle', lastRunAt: null, schedule: 'каждые 30 мин', summary: 'Нет данных' }) }
+
+  // 12. Учётчик задач + вечерняя сверка
+  try {
+    const [w] = await sql`SELECT COUNT(*) FILTER (WHERE status IN ('phantom','in_progress'))::int live,
+      COUNT(*) FILTER (WHERE status='awaiting_confirm')::int awaiting,
+      COUNT(*) FILTER (WHERE confirmed_at > NOW()-INTERVAL '24 hours')::int confirmed24,
+      MAX(updated_at) last FROM work_items` as any[]
+    modules.push({
+      key: 'work_items', name: 'Учёт работы (задачи)',
+      status: w?.last ? staleAfterMin(w.last, 30) : 'idle',
+      lastRunAt: w?.last || null, schedule: 'тик 10 мин · сверка 18:00',
+      summary: `В работе: ${w?.live ?? 0} · ждут сверки: ${w?.awaiting ?? 0} · подтверждено за сутки: ${w?.confirmed24 ?? 0}`,
+    })
+  } catch { modules.push({ key: 'work_items', name: 'Учёт работы (задачи)', status: 'idle', lastRunAt: null, schedule: 'тик 10 мин', summary: 'Нет данных' }) }
+
+  // 13. Темы тикетов
+  try {
+    const [t] = await sql`SELECT COUNT(*)::int total, COUNT(topic)::int tagged,
+      MAX(updated_at) FILTER (WHERE topic IS NOT NULL) last FROM support_cases WHERE org_id=${orgId}` as any[]
+    modules.push({
+      key: 'case_topics', name: 'Темы тикетов',
+      status: t?.last ? staleAfterMin(t.last, 24 * 60) : 'idle',
+      lastRunAt: t?.last || null, schedule: 'каждые 5 мин',
+      summary: `Размечено ${t?.tagged ?? 0} из ${t?.total ?? 0}`,
+    })
+  } catch { modules.push({ key: 'case_topics', name: 'Темы тикетов', status: 'idle', lastRunAt: null, schedule: 'каждые 5 мин', summary: 'Нет данных' }) }
+
   return json({ modules, fetchedAt: new Date().toISOString() })
 }
