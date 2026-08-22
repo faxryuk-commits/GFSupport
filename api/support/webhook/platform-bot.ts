@@ -1,5 +1,6 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { handleSalesCallback, handleSalesCommand, handleVoiceNote } from '../lib/sales-bot.js'
+import { handleWorkCallback } from '../lib/work-items.js'
 
 export const config = { runtime: 'edge' }
 
@@ -42,6 +43,8 @@ export default async function handler(req: Request): Promise<Response> {
     // Продажи: нажатия на карточках лидов и команды сейлза обрабатываются
     // раньше регистрации — это тот же бот, но другая роль (см. lib/sales-bot.ts)
     if (update.callback_query) {
+      // Сверка задач (wi:) и карточки продаж (sl:) — один бот, разные роли
+      if (await handleWorkCallback(sqlEarly, update)) return json({ ok: true })
       await handleSalesCallback(sqlEarly, update)
       return json({ ok: true })
     }
