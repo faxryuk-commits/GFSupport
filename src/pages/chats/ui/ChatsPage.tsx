@@ -15,6 +15,7 @@ import { playMessageSoundIfEnabled, formatTimeHM, formatDayLabel, workDayKey } f
 import type { Channel } from '@/entities/channel'
 import type { Message } from '@/entities/message'
 import type { Agent } from '@/entities/agent'
+import { apiGet } from '@/shared/services/api.service'
 
 // Форматирование размера файла
 function formatFileSize(bytes: number): string {
@@ -447,6 +448,25 @@ export function ChatsPage() {
       const context = await fetchAIContext(channelId)
       setAiContext(context)
       
+      // Черновик со знаниями — асинхронно, первой подсказкой. Слой Фазы 1
+      // (судьба заказов, сводка аварий, примеры команды) доносится до чата
+      // именно здесь: сотрудник жмёт ✨ и получает готовый текст с основанием
+      apiGet<{ draft: string; basis: string; knowledge: { incidents: number; errors: number; examples: number } }>(
+        `/ai/draft?channelId=${channelId}`, false)
+        .then(d => {
+          if (!d?.draft) return
+          const k = d.knowledge || { incidents: 0, errors: 0, examples: 0 }
+          const kLabel = [k.incidents ? `аварии ${k.incidents}` : '', k.errors ? `ошибки ${k.errors}` : '',
+            k.examples ? `примеры ${k.examples}` : ''].filter(Boolean).join(' · ')
+          setAiSuggestions(prev => [{
+            id: 'knowledge-draft',
+            label: `Черновик со знаниями${kLabel ? ` (${kLabel})` : ''}${d.basis ? ` — ${d.basis.slice(0, 60)}` : ''}`,
+            text: d.draft,
+            source: 'ai' as const,
+          }, ...prev.filter(p => p.id !== 'knowledge-draft')])
+        })
+        .catch(() => { /* черновик — усилитель, не условие */ })
+
       // Обновляем подсказки
       if (context?.suggestions && context.suggestions.length > 0) {
         setAiSuggestions(context.suggestions)
