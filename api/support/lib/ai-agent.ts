@@ -276,6 +276,20 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     return { decision: null as any, skipped: true, reason: 'staff_sender' }
   }
 
+  // Сотрудник с личного аккаунта выдаёт себя охватом: клиент живёт в 1-2
+  // группах, свой — в десятках («Amina from Delever»: 55 каналов, а «delever»
+  // в имени могло и не быть). Порог 5 каналов с запасом отделяет своих
+  if (ctx.senderName) {
+    try {
+      const [spread] = await getSQL()`
+        SELECT COUNT(DISTINCT channel_id)::int AS chans FROM support_messages
+        WHERE org_id = ${ctx.orgId} AND sender_name = ${ctx.senderName}` as any[]
+      if (Number(spread?.chans || 0) >= 5) {
+        return { decision: null as any, skipped: true, reason: 'staff_sender_spread' }
+      }
+    } catch {}
+  }
+
   // Служебная реплика — не вопрос. «Ответил в лс» от СЭМ получал развёрнутый
   // ответ агента: люди координируются между собой, а модель влезала в разговор.
   // Короткий отчёт о действии без вопроса не требует ни ответа, ни решения
