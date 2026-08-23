@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react'
 import { Settings, Save, Eye, EyeOff, Loader2, Shield, Key, Sparkles } from 'lucide-react'
 import { fetchAgentSettings, updateAgentSettings, type AgentSettings } from '@/shared/api'
 
+// Список обязан включать боевую модель: селект без неё показывал первый
+// пункт (Qwen), и «Сохранить» молча откатывал прод с gpt-4o
 const MODELS = [
-  { id: 'Qwen/Qwen3-235B-A22B-Instruct', label: 'Qwen 3 235B (рекомендуем)' },
+  { id: 'gpt-4o', label: 'GPT-4o (боевая — понимает контекст)' },
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini (дешёвая)' },
+  { id: 'Qwen/Qwen3-235B-A22B-Instruct', label: 'Qwen 3 235B (Together)' },
   { id: 'Qwen/Qwen2.5-7B-Instruct-Turbo', label: 'Qwen 2.5 7B Turbo (быстрый)' },
   { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B Turbo' },
   { id: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8', label: 'Llama 4 Maverick' },
