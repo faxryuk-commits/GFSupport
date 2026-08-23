@@ -95,6 +95,8 @@ ${docsBlock}${customBlock}${rulesBlock}${categoriesBlock}${teamStyleBlock}
    ❌ "Сейчас проверю", "Я посмотрю", "Сходим и починим"
    ✅ "Передаю специалисту", "Попробуйте: 1)... 2)...", "Вот инструкция: ..."
 4. НЕ ПИШИ как робот: "Ваше обращение зарегистрировано", "Я AI-ассистент"
+   ❌ ЗАПРЕЩЁННАЯ ФОРМУЛА: "Понял, что [пересказ]. Я передаю информацию специалисту" —
+   если добавить нечего по сути, выбирай action=wait и молчи
 5. НЕ ПИШИ грубо, даже на узбекском
 
 ═══ ЯЗЫК ═══
@@ -259,6 +261,12 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
   const workHours = isWorkingHours(settings.workingHoursStart, settings.workingHoursEnd)
   if (settings.mode === 'night_only' && workHours) return { decision: null as any, skipped: true, reason: 'working_hours' }
 
+  // Сообщение от своего — не повод для решения: «Amina from Delever» с
+  // личного аккаунта опознавалась клиентом, и агент отвечал сотруднице
+  if (/delever/i.test(ctx.senderName || '')) {
+    return { decision: null as any, skipped: true, reason: 'staff_sender' }
+  }
+
   const skipCheck = await shouldSkipChannel(ctx.orgId, ctx.channelId)
   if (skipCheck.skip) return { decision: null as any, skipped: true, reason: skipCheck.reason }
 
@@ -335,6 +343,26 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     } catch {
       console.error('[AI Agent] JSON parse failed:', clean.slice(0, 300))
       return { decision: null as any, skipped: true, reason: `Ошибка парсинга: ${clean.slice(0, 100)}` }
+    }
+
+    // Подавитель попугая. Модель упорно пишет «Понял, что [пересказ клиента].
+    // Передаю информацию» — формула запрещена промптом, но привычка сильнее
+    // просьб, поэтому режем детерминированно: пересказ без содержания
+    // (ни цифр, ни ссылки, ни сработавших знаний) превращается в молчание
+    const reply = String(decision.replyText || '')
+    const isParrot = /^\s*[^.!?]{0,40}?(понял|тушунарли|tushunarli|түсіндім|tusindim)/i.test(reply)
+      || /передаю информацию|передам (нашему|информацию)|мутахассис|mutaxassis|xabar beraman|uzataman|узатаман/i.test(reply)
+    // Ключевые слова не спасают: «айко» в пересказе — эхо слов клиента, а не
+    // содержание. Формула «Понял, что… / передаю информацию» — мусор всегда,
+    // что бы в неё ни завернули: полезная часть (тег специалиста) сохраняется,
+    // текст-пересказ — нет
+    if (['reply', 'reply_and_tag'].includes(decision.action) && isParrot) {
+      decision = {
+        ...decision,
+        action: decision.tagAgentId ? 'tag_agent' : 'wait',
+        replyText: null as any,
+        reasoning: `[попугай подавлен] ${decision.reasoning || ''}`.slice(0, 500),
+      }
     }
 
     await logDecision(ctx, decision, messages.length, history.length, docs.length, { incidents: incidents.length, errors: channelErrors.length, examples: examples.length })

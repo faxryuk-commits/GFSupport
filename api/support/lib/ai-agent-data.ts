@@ -348,6 +348,25 @@ export async function shouldSkipChannel(orgId: string, channelId: string): Promi
       }
     }
 
+    // Человек уже ведёт диалог — агент молчит. Ловушка, найденная на живом
+    // канале: сотрудница писала с личного аккаунта, опознавалась как клиент,
+    // и для системы диалог выглядел «команда молчит» — агент влезал в каждый
+    // ход. Сотрудника узнаём по роли, по имени из справочника и по «Delever»
+    // в подписи — так подписываются все, кто пишет от компании
+    const [engaged] = await sql`
+      SELECT 1 AS x FROM support_messages m
+      WHERE m.channel_id = ${channelId} AND m.org_id = ${orgId}
+        AND m.created_at > NOW() - INTERVAL '45 minutes'
+        AND (
+          (m.is_from_client = false AND m.sender_role = 'support')
+          OR m.sender_name ILIKE '%delever%'
+          OR EXISTS (SELECT 1 FROM support_agents a
+                     WHERE a.org_id = ${orgId} AND a.is_active = true AND a.name = m.sender_name)
+        )
+      LIMIT 1
+    `
+    if (engaged) return { skip: true, reason: 'human_engaged' }
+
     const [lastAgentReply] = await sql`
       SELECT created_at FROM support_agent_decisions
       WHERE channel_id = ${channelId} AND org_id = ${orgId}
@@ -357,7 +376,7 @@ export async function shouldSkipChannel(orgId: string, channelId: string): Promi
     if (lastAgentReply?.created_at) {
       const agentTime = new Date(lastAgentReply.created_at).getTime()
       const minsSinceAgent = (Date.now() - agentTime) / 60000
-      if (minsSinceAgent < 5) {
+      if (minsSinceAgent < 30) {
         return { skip: true, reason: `agent_replied_${Math.round(minsSinceAgent)}m_ago` }
       }
     }
