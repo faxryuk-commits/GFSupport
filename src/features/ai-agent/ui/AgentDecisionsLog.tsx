@@ -79,6 +79,17 @@ function DecisionRow({ d, onFeedback }: { d: AgentDecisionItem; onFeedback: (id:
             {d.tagAgentName && <InfoBlock label="Тег сотрудника" value={d.tagAgentName} />}
             {d.caseTitle && <InfoBlock label="Кейс" value={`[${d.casePriority}] ${d.caseTitle}`} />}
           </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {d.knowledge && (d.knowledge.incidents > 0 || d.knowledge.errors > 0 || d.knowledge.examples > 0) ? (
+              <>
+                {d.knowledge.incidents > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">📡 аварии: {d.knowledge.incidents}</span>}
+                {d.knowledge.errors > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">🔍 ошибки ресторана: {d.knowledge.errors}</span>}
+                {d.knowledge.examples > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">🎓 примеры: {d.knowledge.examples}</span>}
+              </>
+            ) : d.knowledge ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200">без знаний — типовой случай</span>
+            ) : null}
+          </div>
           <div className="text-xs text-slate-400">
             Источник: {d.source} | Контекст: {d.contextMessagesCount} сообщений | Похожая история: {d.similarHistoryCount}
           </div>

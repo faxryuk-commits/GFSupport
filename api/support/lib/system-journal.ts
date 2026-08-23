@@ -108,6 +108,15 @@ export async function fetchJournal(sql: any, orgId: string, limit = 120): Promis
     )
     UNION ALL
     (
+      SELECT g.created_at AS at, 'SLA-страж' AS actor, COALESCE(g.kind, 'алерт') AS action,
+             COALESCE(g.channel_name, '') || ': ' || LEFT(COALESCE(g.reasoning, ''), 110) AS summary,
+             NULL AS ref
+      FROM support_ai_events g
+      WHERE g.org_id = ${orgId}
+      ORDER BY g.created_at DESC LIMIT 40
+    )
+    UNION ALL
+    (
       SELECT e.changed_at AS at, 'Синк Amo' AS actor, 'этап сделки' AS action,
              COALESCE(d2.title, e.deal_id) || ': ' || REPLACE(e.changed_by, 'синхронизация с Amo: ', '→ ') AS summary,
              e.deal_id AS ref

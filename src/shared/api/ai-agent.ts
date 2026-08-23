@@ -21,6 +21,7 @@ export interface AgentDecisionItem {
   feedback?: 'correct' | 'wrong' | null
   feedbackNote?: string
   executedActions?: string[]
+  knowledge?: { incidents: number; errors: number; examples: number } | null
   createdAt: string
 }
 

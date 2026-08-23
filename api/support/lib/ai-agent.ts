@@ -48,6 +48,7 @@ function buildSystemPrompt(agents: any[], isWorkHours: boolean, docs: any[], cus
   const primary = agents.find((a: any) => a.isChannelPrimary)
   const agentLines = agents.map((a: any) => {
     const parts = [`${a.name} (${a.role}, ${a.status === 'online' ? 'онлайн' : 'занят'})`]
+    if (a.inChannel) parts.push('пишет в этой группе')
     if (a.specializations?.length) parts.push(`темы: ${a.specializations.join(', ')}`)
     if (a.isChannelPrimary) parts.push('★ ОСНОВНОЙ МЕНЕДЖЕР КАНАЛА')
     return `- ${parts.join(' | ')}: id=${a.id}`
@@ -132,6 +133,10 @@ ${docsBlock}${customBlock}${rulesBlock}${categoriesBlock}${teamStyleBlock}
 2. Сотрудник по специализации ("темы" в списке)
 3. Если никто не подходит → admin
 
+ЖЁСТКО: тегай только тех, кто ОНЛАЙН и «пишет в этой группе». Тег того, кого
+в группе нет или кто офлайн — пустой звук: сообщение до него не дойдёт.
+Если подходящих нет → create_case, а не бессмысленный тег.
+
 ═══ РЕШЕНИЯ ═══
 
 1. ESCALATE — клиент злится, повторная жалоба, критический сбой, потеря денег.
@@ -147,6 +152,10 @@ ${docsBlock}${customBlock}${rulesBlock}${categoriesBlock}${teamStyleBlock}
 5. CREATE_CASE — новая проблема. critical если массовый сбой.
 
 6. WAIT — не срочно, лучше дождаться специалиста.
+   ТАКЖЕ wait, когда сообщение вообще не требует ответа: внутренняя координация
+   («ответил в лс», «пробили вручную», «готово», «сделали»), сотрудники или
+   менеджеры переговариваются между собой, отчёт о выполненном действии.
+   Влезать в чужой рабочий разговор = спам.
 
 JSON:
 {
@@ -267,6 +276,16 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     return { decision: null as any, skipped: true, reason: 'staff_sender' }
   }
 
+  // Служебная реплика — не вопрос. «Ответил в лс» от СЭМ получал развёрнутый
+  // ответ агента: люди координируются между собой, а модель влезала в разговор.
+  // Короткий отчёт о действии без вопроса не требует ни ответа, ни решения
+  // \b не дружит с кириллицей в JS — вместо него lookahead на разделитель
+  const trimmedMsg = (ctx.incomingMessage || '').trim()
+  if (trimmedMsg.length < 60 && !trimmedMsg.includes('?') &&
+      /^(ответил[аи]?|отправил[аи]?|перезвонил[аи]?|пробил[аи]?|сделал[аи]?|готово|принял[аи]?|ок|окей|хорошо|спасибо|рахмат|ra[hx]mat|xop|хоп|ok|качественно)(?=$|[\s,.!:;)])/i.test(trimmedMsg)) {
+    return { decision: null as any, skipped: true, reason: 'status_update' }
+  }
+
   const skipCheck = await shouldSkipChannel(ctx.orgId, ctx.channelId)
   if (skipCheck.skip) return { decision: null as any, skipped: true, reason: skipCheck.reason }
 
@@ -350,8 +369,14 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
     // просьб, поэтому режем детерминированно: пересказ без содержания
     // (ни цифр, ни ссылки, ни сработавших знаний) превращается в молчание
     const reply = String(decision.replyText || '')
-    const isParrot = /^\s*[^.!?]{0,40}?(понял|тушунарли|tushunarli|түсіндім|tusindim)/i.test(reply)
-      || /передаю информацию|передам (нашему|информацию)|мутахассис|mutaxassis|xabar beraman|uzataman|узатаман/i.test(reply)
+    // Формула проброса — мусор всегда. «Понял…» в начале (в т.ч. после
+    // «Доброе утро!» — прежний префикс [^.!?] не пропускал «!» и формула
+    // с приветствием проскакивала) — мусор, если дальше нет ни вопроса,
+    // ни ссылки, ни шагов: живой ответ команды почти всегда ими заканчивается
+    const isFormula = /передаю информацию|передам (нашему|информацию)|мутахассис|mutaxassis|xabar beraman|uzataman|узатаман|ожидайте (обновлений|ответа)/i.test(reply)
+    const parrotStart = /^[\s\S]{0,60}?(понял|тушунарли|tushunarli|түсіндім|tusindim)/i.test(reply)
+    const hasSubstance = /\?|https?:\/\/|\b[12][).]\s/.test(reply)
+    const isParrot = isFormula || (parrotStart && !hasSubstance)
     // Ключевые слова не спасают: «айко» в пересказе — эхо слов клиента, а не
     // содержание. Формула «Понял, что… / передаю информацию» — мусор всегда,
     // что бы в неё ни завернули: полезная часть (тег специалиста) сохраняется,
@@ -362,6 +387,34 @@ export async function runAgent(ctx: AgentContext): Promise<{ decision: AgentDeci
         action: decision.tagAgentId ? 'tag_agent' : 'wait',
         replyText: null as any,
         reasoning: `[попугай подавлен] ${decision.reasoning || ''}`.slice(0, 500),
+      }
+    }
+
+    // Тег должен достигать человека. Офлайн-сотрудник или тот, кого в группе
+    // нет — тег в пустоту (кейс Canteen & Glovo). Переключаем на живого:
+    // онлайн и пишет в группе → онлайн → иначе кейс вместо тега
+    if (decision.tagAgentId) {
+      const tagged = agents.find((a: any) => a.id === decision.tagAgentId)
+      if (!tagged || tagged.status !== 'online' || !tagged.inChannel) {
+        const fallback = agents.find((a: any) => a.status === 'online' && a.inChannel && a.isChannelPrimary)
+          || agents.find((a: any) => a.status === 'online' && a.inChannel)
+          || agents.find((a: any) => a.status === 'online')
+        if (fallback && fallback.id !== decision.tagAgentId) {
+          const oldName = decision.tagAgentName
+          if (decision.replyText && oldName) decision.replyText = decision.replyText.split(`@${oldName}`).join(`@${fallback.name}`)
+          decision = {
+            ...decision, tagAgentId: fallback.id, tagAgentName: fallback.name,
+            reasoning: `[тег переключён: ${oldName || '?'} недоступен → ${fallback.name}] ${decision.reasoning || ''}`.slice(0, 500),
+          }
+        } else if (!fallback) {
+          decision = {
+            ...decision,
+            action: decision.action === 'reply_and_tag' && decision.replyText ? 'reply' : 'create_case',
+            tagAgentId: undefined, tagAgentName: undefined,
+            caseTitle: decision.caseTitle || ctx.incomingMessage.slice(0, 80),
+            reasoning: `[никто не онлайн — тег снят] ${decision.reasoning || ''}`.slice(0, 500),
+          }
+        }
       }
     }
 

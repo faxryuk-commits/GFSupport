@@ -5,20 +5,22 @@ import { AgentSettingsPanel, AgentDecisionsLog, AgentTestPanel, AgentRulesSandbo
 import { AutoReplySettings, type AutoReplySettingsData } from '@/features/settings/ui'
 import { fetchChannels } from '@/shared/api'
 
-type Tab = 'log' | 'rules' | 'settings' | 'autoreply' | 'test'
+// «Автоответы» влиты в «Настройки»: две вкладки настроек на одной странице —
+// лишний инструмент. Всё про поведение агента теперь в одном месте
+type Tab = 'log' | 'rules' | 'settings' | 'test'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'log', label: 'Журнал решений' },
   { id: 'rules', label: 'Правила' },
   { id: 'settings', label: 'Настройки' },
-  { id: 'autoreply', label: 'Автоответы' },
   { id: 'test', label: 'Тестирование' },
 ]
 
 export function AIAgentPage() {
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab')
-  const tab: Tab = (['log', 'rules', 'settings', 'autoreply', 'test'] as const).includes(rawTab as Tab) ? (rawTab as Tab) : 'log'
+  const tab: Tab = rawTab === 'autoreply' ? 'settings'
+    : (['log', 'rules', 'settings', 'test'] as const).includes(rawTab as Tab) ? (rawTab as Tab) : 'log'
   const setTab = (t: Tab) => { const m = new URLSearchParams(params); m.set('tab', t); setParams(m, { replace: true }) }
   const [channels, setChannels] = useState<{ id: string; name: string }[]>([])
   const [autoReply, setAutoReply] = useState<AutoReplySettingsData>({ enabled: true, greetingEnabled: true, gratitudeEnabled: true, faqEnabled: true, delaySeconds: 1 })
@@ -60,8 +62,12 @@ export function AIAgentPage() {
 
       {tab === 'log' && <AgentDecisionsLog />}
       {tab === 'rules' && <AgentRulesSandbox />}
-      {tab === 'settings' && <AgentSettingsPanel />}
-      {tab === 'autoreply' && <AutoReplySettings settings={autoReply} onSettingsChange={setAutoReply} />}
+      {tab === 'settings' && (
+        <div className="space-y-6">
+          <AgentSettingsPanel />
+          <AutoReplySettings settings={autoReply} onSettingsChange={setAutoReply} />
+        </div>
+      )}
       {tab === 'test' && <AgentTestPanel channels={channels} />}
     </div>
   )

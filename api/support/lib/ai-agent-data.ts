@@ -82,17 +82,22 @@ export async function fetchAvailableAgents(orgId: string, channelId?: string) {
     ORDER BY CASE WHEN status = 'online' THEN 0 ELSE 1 END, name
   `
 
+  // Кто реально пишет в этом канале. Тег сотрудника, которого в группе нет,
+  // — пустой звук (кейс Canteen & Glovo: агент тегал Дониёра, которого в
+  // WhatsApp-группе не было). Первый в списке — основной менеджер канала
   let channelTopAgent: string | null = null
+  let channelSenders: string[] = []
   if (channelId) {
     try {
-      const [top] = await sql`
+      const tops = await sql`
         SELECT sender_name, COUNT(*)::int as cnt
         FROM support_messages
         WHERE channel_id = ${channelId} AND org_id = ${orgId} AND is_from_client = false
           AND sender_name IS NOT NULL AND LENGTH(sender_name) > 1
-        GROUP BY sender_name ORDER BY cnt DESC LIMIT 1
+        GROUP BY sender_name ORDER BY cnt DESC LIMIT 12
       `
-      if (top?.sender_name) channelTopAgent = top.sender_name
+      channelSenders = (tops as any[]).map((t: any) => String(t.sender_name).toLowerCase())
+      if (tops[0]?.sender_name) channelTopAgent = tops[0].sender_name
     } catch {}
   }
 
@@ -115,14 +120,19 @@ export async function fetchAvailableAgents(orgId: string, channelId?: string) {
     }
   } catch {}
 
-  return agents.map((a: any) => ({
-    id: a.id,
-    name: a.name,
-    role: a.role,
-    status: a.status,
-    specializations: agentSpecs[a.name] || [],
-    isChannelPrimary: channelTopAgent ? a.name === channelTopAgent : false,
-  }))
+  return agents.map((a: any) => {
+    const nm = String(a.name || '').toLowerCase()
+    return {
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      status: a.status,
+      specializations: agentSpecs[a.name] || [],
+      isChannelPrimary: channelTopAgent ? a.name === channelTopAgent : false,
+      // писал ли в этом канале (имя в WhatsApp может отличаться — сверяем в обе стороны)
+      inChannel: channelSenders.some(s => s === nm || s.includes(nm) || nm.includes(s)),
+    }
+  })
 }
 
 export async function fetchSimilarHistory(orgId: string, query: string) {

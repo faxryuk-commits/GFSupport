@@ -183,6 +183,8 @@ function formatDecision(d: any) {
     feedback: d.feedback,
     feedbackNote: d.feedback_note,
     executedActions: d.executed_actions,
+    // какие знания сработали в момент решения (аварии / ошибки ресторана / примеры)
+    knowledge: d.knowledge || null,
     createdAt: d.created_at,
   }
 }

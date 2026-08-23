@@ -12,18 +12,19 @@
 import { useState, useMemo } from 'react'
 import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, Heart, FileSpreadsheet, LayoutGrid, ScrollText, Cpu, ServerCrash, History } from 'lucide-react'
+import { Activity, Heart, FileSpreadsheet, LayoutGrid, Cpu, ServerCrash, History } from 'lucide-react'
 import { RoleFilter, defaultRoleFilter, type RoleFilterValue } from '@/features/analytics'
 import { PulseTab } from './PulseTab'
 import { DiagnosisTab } from './DiagnosisTab'
 import { DetailTab } from './DetailTab'
 import { IssueStructureTab } from './IssueStructureTab'
-import { AIJournalTab } from './AIJournalTab'
 import { ModulesStatusTab } from './ModulesStatusTab'
 import { ErrorFeedTab } from './ErrorFeedTab'
 import { ChronicleTab } from './ChronicleTab'
 
-type Tab = 'pulse' | 'diagnosis' | 'structure' | 'journal' | 'chronicle' | 'modules' | 'errors' | 'detail'
+// «Журнал ИИ» удалён как дубль: решения агента живут в AI Агент → Журнал
+// решений (там же оценка Верно/Ошибка), SLA-страж влит в Хронику
+type Tab = 'pulse' | 'diagnosis' | 'structure' | 'chronicle' | 'modules' | 'errors' | 'detail'
 type Period = '7d' | '30d' | '90d'
 type Source = 'all' | 'telegram' | 'whatsapp'
 
@@ -47,16 +48,10 @@ const TABS: Array<{ key: Tab; label: string; icon: React.ReactNode; hint: string
     hint: 'Таксономия обращений снизу-вверх (текст + медиа): домены, подтипы, автоматизируемость.',
   },
   {
-    key: 'journal',
-    label: 'Журнал ИИ',
-    icon: <ScrollText className="w-4 h-4" />,
-    hint: 'Что решают AI-агент и SLA-страж: что подумали, что сделали, сработало ли.',
-  },
-  {
     key: 'chronicle',
     label: 'Хроника',
     icon: <History className="w-4 h-4" />,
-    hint: 'Все автоматы в одной ленте: сводка аварий, учётчик задач, учитель, синк Amo — что, как и когда.',
+    hint: 'Все автоматы в одной ленте: решения AI-агента, SLA-страж, сводка аварий, учётчик задач, учитель, синк Amo.',
   },
   {
     key: 'modules',
@@ -94,7 +89,8 @@ export function AnalyticsPage() {
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab')
   const tab: Tab = useMemo(() => {
-    if (rawTab === 'pulse' || rawTab === 'diagnosis' || rawTab === 'structure' || rawTab === 'journal' || rawTab === 'chronicle' || rawTab === 'modules' || rawTab === 'errors' || rawTab === 'detail') return rawTab
+    if (rawTab === 'journal') return 'chronicle' // старые ссылки на «Журнал ИИ»
+    if (rawTab === 'pulse' || rawTab === 'diagnosis' || rawTab === 'structure' || rawTab === 'chronicle' || rawTab === 'modules' || rawTab === 'errors' || rawTab === 'detail') return rawTab
     return 'pulse'
   }, [rawTab])
   const [period, setPeriod] = useState<Period>(() => {
@@ -179,7 +175,6 @@ export function AnalyticsPage() {
       )}
       {tab === 'diagnosis' && <DiagnosisTab period={period} source={sourceFilter} />}
       {tab === 'structure' && <IssueStructureTab />}
-      {tab === 'journal' && <AIJournalTab />}
       {tab === 'chronicle' && <ChronicleTab />}
       {tab === 'modules' && <ModulesStatusTab />}
       {tab === 'errors' && <ErrorFeedTab period={period} />}
