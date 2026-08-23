@@ -112,7 +112,8 @@ export async function fetchJournal(sql: any, orgId: string, limit = 120): Promis
              COALESCE(g.channel_name, '') || ': ' || LEFT(COALESCE(g.reasoning, ''), 110) AS summary,
              NULL AS ref
       FROM support_ai_events g
-      WHERE g.org_id = ${orgId}
+      -- только события, не пульс: cycle/triage/detect — 50К строк «проверил, ничего»
+      WHERE g.org_id = ${orgId} AND g.kind IN ('alert', 'solution_card', 'incident')
       ORDER BY g.created_at DESC LIMIT 40
     )
     UNION ALL
