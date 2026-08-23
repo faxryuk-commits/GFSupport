@@ -18,7 +18,7 @@ import { PulseTab } from './PulseTab'
 import { DiagnosisTab } from './DiagnosisTab'
 import { DetailTab } from './DetailTab'
 import { IssueStructureTab } from './IssueStructureTab'
-import { ModulesStatusTab } from './ModulesStatusTab'
+import { SystemMapTab } from './SystemMapTab'
 import { ErrorFeedTab } from './ErrorFeedTab'
 import { ChronicleTab } from './ChronicleTab'
 
@@ -55,9 +55,9 @@ const TABS: Array<{ key: Tab; label: string; icon: React.ReactNode; hint: string
   },
   {
     key: 'modules',
-    label: 'Модули',
+    label: 'Карта',
     icon: <Cpu className="w-4 h-4" />,
-    hint: 'Реал-тайм статус модулей: WhatsApp-мост, SLA-страж, самообучение, таксономия, AI-агент.',
+    hint: 'Живая карта системы: топология, счётчики дня, импульсы событий, паспорта узлов. Заменила «Модули».',
   },
   {
     key: 'errors',
@@ -176,7 +176,7 @@ export function AnalyticsPage() {
       {tab === 'diagnosis' && <DiagnosisTab period={period} source={sourceFilter} />}
       {tab === 'structure' && <IssueStructureTab />}
       {tab === 'chronicle' && <ChronicleTab />}
-      {tab === 'modules' && <ModulesStatusTab />}
+      {tab === 'modules' && <SystemMapTab />}
       {tab === 'errors' && <ErrorFeedTab period={period} />}
       {tab === 'detail' && (
         <DetailTab period={period} source={sourceFilter} roles={roleFilter.roles} />
