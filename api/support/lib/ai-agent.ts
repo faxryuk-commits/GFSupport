@@ -523,22 +523,21 @@ export async function executeDecision(
     try {
       const { sendNotification } = await import('./notifications.js')
       if (decision.tagAgentId) {
+        // Человеческий текст: сначала зачем, потом цитата. Копию всем админам
+        // убрали — она заваливала владельца чужими тегами (след и так есть
+        // в журнале решений и Хронике)
         await sendNotification({
           orgId: ctx.orgId, type: 'tag',
-          title: `Вас тегнул AI-агент`,
-          body: `Клиент "${ctx.senderName}": "${ctx.incomingMessage.slice(0, 150)}"\nПричина: ${decision.reasoning?.slice(0, 150) || ''}`,
+          title: `Вопрос ждёт вас · ${ctx.channelName || 'чат клиента'}`.slice(0, 120),
+          body: [
+            decision.reasoning ? `Почему вы: ${decision.reasoning.slice(0, 140)}` : '',
+            `Клиент ${ctx.senderName || ''}: «${ctx.incomingMessage.slice(0, 120)}»`,
+          ].filter(Boolean).join('\n'),
           channelId: ctx.channelId, channelName: ctx.channelName, senderName: ctx.senderName,
           priority: 'high', targetAgentIds: [decision.tagAgentId],
         })
+        executed.push('notification_sent')
       }
-      await sendNotification({
-        orgId: ctx.orgId, type: 'tag',
-        title: `AI тегнул ${decision.tagAgentName}`,
-        body: `${ctx.channelName}: "${ctx.incomingMessage.slice(0, 150)}"`,
-        channelId: ctx.channelId, channelName: ctx.channelName, senderName: ctx.senderName,
-        priority: 'high', targetRoles: ['admin'],
-      })
-      executed.push('notification_sent')
     } catch (e: any) { console.error('[AI Agent] Tag notification failed:', e.message) }
   }
 

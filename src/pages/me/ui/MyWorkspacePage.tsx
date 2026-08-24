@@ -19,7 +19,7 @@ type Workspace = {
   unansweredMentions: number
   workItems: Array<{ id: string; title: string; client_name: string; status: string; started_at: string }>
   cases: Array<{ id: string; ticket_number: string; title: string; status: string; hours_open: number }>
-  commitments: Array<{ id: string; commitment_text: string; due_date: string | null; status: string; channel_name: string | null; channel_id: string | null }>
+  commitments: Array<{ id: string; commitment_text: string; context: string | null; due_date: string | null; status: string; channel_name: string | null; channel_id: string | null }>
   onboarding: Array<{ id: string; step: string; brand: string; status: string; kind: string; status_since: string }>
   week: { confirmed_week?: number; cases_week?: number; kept_week?: number }
 }
@@ -88,9 +88,9 @@ export function MyWorkspacePage() {
   const unanswered = ws.mentions.filter(m => m.unanswered)
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      {/* Шапка закреплена: скроллится рабочая зона, а не страница целиком */}
-      <div className="flex-none px-6 pt-5 pb-3 bg-[#f8fafc] border-b border-[#eef2f7] flex items-start justify-between flex-wrap gap-3 sticky top-0 z-10">
+    <div>
+      {/* Шапка закреплена в скролле раздела; секции скроллятся внутри себя */}
+      <div className="px-6 pt-5 pb-3 bg-[#f8fafc] border-b border-[#eef2f7] flex items-start justify-between flex-wrap gap-3 sticky top-0 z-10">
         <div>
           <h1 className="font-display text-[22px] font-extrabold text-slate-900 tracking-tight">Моё пространство</h1>
           <p className="text-sm text-slate-500 mt-0.5">
@@ -104,7 +104,7 @@ export function MyWorkspacePage() {
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+      <div className="px-6 py-4 space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
           <Section icon={Bell} title="Уведомления" count={notifs.length} tone="red">
             {notifs.length === 0 ? <Empty text="непрочитанных нет — бот не побеспокоит" /> : (
@@ -195,11 +195,11 @@ export function MyWorkspacePage() {
                   <li key={c.id}>
                     <button className="text-left w-full text-[13px] text-slate-700 hover:bg-slate-50 rounded px-1 -mx-1"
                       onClick={() => setDetail({
-                        title: `Обещание: «${c.commitment_text?.slice(0, 60)}»`,
-                        rows: [['Статус', c.status === 'overdue' ? 'просрочено' : 'в силе'], ['Срок', c.due_date ? formatDateTimeShort(c.due_date) : 'не задан'], ['Канал', c.channel_name || '—']],
+                        title: `Обещание · ${c.channel_name || 'без канала'}`,
+                        rows: [['Что сказали', c.context || c.commitment_text || '—'], ['Ключевая фраза', c.commitment_text || '—'], ['Статус', c.status === 'overdue' ? 'просрочено' : 'в силе'], ['Срок', c.due_date ? formatDateTimeShort(c.due_date) : 'не задан']],
                         linkTo: c.channel_id ? `/chats/${c.channel_id}` : undefined, linkLabel: 'Открыть чат',
                       })}>
-                      <span className={c.status === 'overdue' ? 'text-red-600 font-medium' : ''}>«{c.commitment_text?.slice(0, 90)}»</span>
+                      <span className={c.status === 'overdue' ? 'text-red-600 font-medium' : ''}>«{(c.context || c.commitment_text || '').slice(0, 90)}»</span>
                       <span className="text-xs text-slate-400"> {c.channel_name ? `· ${c.channel_name}` : ''}{c.due_date ? ` · до ${formatDateTimeShort(c.due_date)}` : ''}</span>
                     </button>
                   </li>

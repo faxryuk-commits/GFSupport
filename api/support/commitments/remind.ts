@@ -25,7 +25,7 @@ async function sendCommitmentNotification(
       title: isOverdue
         ? `⚠️ Просроченное обязательство`
         : `⏰ Напоминание об обязательстве`,
-      body: `"${(commitment.commitment_text || '').slice(0, 200)}"\n\nОтветственный: ${commitment.agent_name || 'не указан'}\nСрок: ${dueDate}\nКанал: ${commitment.channel_name || 'N/A'}${isOverdue ? '\n\n❗ Срок истёк!' : ''}`,
+      body: `«${(commitment.context || commitment.commitment_text || '').slice(0, 160)}»\nСрок: ${dueDate} · ${commitment.channel_name || 'канал не указан'}${isOverdue ? '\n❗ Срок истёк — клиент ждёт' : ''}`,
       channelId: commitment.channel_id,
       channelName: commitment.channel_name,
       priority: isOverdue ? 'high' : 'medium',
@@ -69,9 +69,11 @@ export default async function handler(req: Request): Promise<Response> {
       // 2. reminder_at has passed
       // 3. reminder_sent is false
       const dueCommitments = await sql`
-        SELECT c.*, ch.telegram_chat_id, ch.name as channel_name
+        SELECT c.*, ch.telegram_chat_id, ch.name as channel_name,
+               LEFT(m.text_content, 160) AS context
         FROM support_commitments c
         LEFT JOIN support_channels ch ON c.channel_id = ch.id
+        LEFT JOIN support_messages m ON m.id = c.message_id
         WHERE c.status IN ('pending', 'overdue')
           AND c.reminder_sent = false
           AND c.reminder_at IS NOT NULL

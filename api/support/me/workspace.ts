@@ -81,12 +81,15 @@ export default async function handler(req: Request): Promise<Response> {
         AND resolved_at IS NULL AND status NOT IN ('closed', 'cancelled')
       ORDER BY created_at LIMIT 15
     `,
-    // Мои обещания: кому, что и когда истекает
+    // Мои обещания: суть — полное предложение из переписки, а не слово-триггер
+    // («hozir» ничего не говорит, «Hozir tekshirib koraman» — говорит всё)
     sql`
       SELECT sc.id, sc.commitment_text, sc.due_date, sc.status, sc.created_at,
-             ch.name AS channel_name, ch.id AS channel_id
+             ch.name AS channel_name, ch.id AS channel_id,
+             LEFT(m.text_content, 160) AS context
       FROM support_commitments sc
       LEFT JOIN support_channels ch ON ch.id = sc.channel_id
+      LEFT JOIN support_messages m ON m.id = sc.message_id
       WHERE sc.org_id = ${orgId} AND sc.agent_id = ${ctx.agentId}
         AND sc.status IN ('pending', 'overdue')
       ORDER BY sc.due_date NULLS LAST LIMIT 15
