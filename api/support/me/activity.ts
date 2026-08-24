@@ -84,10 +84,43 @@ export default async function handler(req: Request): Promise<Response> {
   const total = Object.values(parts).reduce((s, p) => s + p.cur, 0)
   const prevTotal = Object.values(parts).reduce((s, p) => s + p.prev, 0)
 
+  // Активное время: кластеры событий (пауза <15 мин = одна сессия).
+  // Для года не считаем — слишком много точек, и смысл там в тренде, не в часах
+  let activeMinutesPerDay: number | null = null
+  if (days <= 31) {
+    const tq = (body: string, params: any[]) => sql.query(body, params)
+    const [t1, t2, t3] = await sql.transaction([
+      tq(`SELECT created_at AS ts FROM support_messages
+          WHERE org_id = $1 AND is_from_client = false AND sender_name = $2
+            AND created_at > ${since} ORDER BY created_at LIMIT 3000`, [orgId, me.name]),
+      tq(`SELECT changed_at AS ts FROM onboarding_task_events
+          WHERE org_id = $1 AND changed_by = $2 AND changed_at > ${since}
+          ORDER BY changed_at LIMIT 2000`, [orgId, me.name]),
+      tq(`SELECT changed_at AS ts FROM sales_deal_events
+          WHERE org_id = $1 AND changed_by = $2 AND changed_at > ${since}
+          ORDER BY changed_at LIMIT 2000`, [orgId, me.name]),
+    ]) as any[]
+    const stamps = [...(t1 as any[]), ...(t2 as any[]), ...(t3 as any[])]
+      .map((r: any) => new Date(String(r.ts).includes('Z') || String(r.ts).includes('+') ? r.ts : r.ts + 'Z').getTime())
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b)
+    let minutes = 0
+    const GAP = 15 * 60_000
+    const activeDays = new Set<string>()
+    for (let i = 0; i < stamps.length; i++) {
+      activeDays.add(new Date(stamps[i] + 5 * 3600_000).toISOString().slice(0, 10))
+      minutes += i > 0 && stamps[i] - stamps[i - 1] < GAP
+        ? (stamps[i] - stamps[i - 1]) / 60_000
+        : 5 // одиночное событие = минимум 5 минут работы вокруг него
+    }
+    activeMinutesPerDay = activeDays.size ? Math.round(minutes / activeDays.size) : 0
+  }
+
   return json({
     days,
     total,
     prevTotal,
+    activeMinutesPerDay,
     perDay,
     split: {
       messages: parts.messages.cur,
