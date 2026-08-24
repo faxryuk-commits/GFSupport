@@ -3,6 +3,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
 import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
 import { inferBrandMarket } from '../lib/region-detect.js'
+import { autoLinkBrandChannel } from '../lib/onboarding-alerts.js'
 
 export const config = {
   runtime: 'edge',
@@ -165,6 +166,11 @@ export default async function handler(req: Request): Promise<Response> {
           touchedOwners.set(tt.owner_agent_id, own)
         }
       }
+    }
+
+    // Группа клиента: если родитель-канал не задан — ищем канал по имени бренда
+    if (!parentChannelId) {
+      await autoLinkBrandChannel(sql, orgId, brandId, String(name).trim())
     }
 
     // Выбранная POS — сразу в ячейку «POS-интеграция»: бренд знает свою POS,

@@ -13,7 +13,7 @@ import {
   fetchOnboardingBoard, fetchOnboardingStats, createBrand, createIntake, updateBrand, deleteBrand,
   setTaskStatus, setTaskAssignee, setTaskOption, setTaskWaitingOn, addProviderTask, deleteTask, fetchOnboardingEvents,
   fetchOnboardingLaunches, type ObLaunches,
-  fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant,
+  fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant, fetchBrandRequirements,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
   type ObBoard, type ObBrand, type ObStatus, type ObEvent, type ObStats, type ObTaskType,
@@ -1417,6 +1417,21 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
             <span className="text-xs text-gray-900 block">Сотруднику{brand.assigneeName ? ` — ${brand.assigneeName}` : ''}</span>
             <span className="text-[11px] text-gray-400 block">создаст задачу «{reminderText.slice(0, 40)}…»</span>
           </button>
+          {brand.channelId && !clientMode && (
+            <button
+              onClick={async () => {
+                try {
+                  const r = await fetchBrandRequirements(brand.id)
+                  setClientText(r.text)
+                  setClientMode(true)
+                } catch {}
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50 border-t border-gray-100"
+            >
+              <span className="text-xs text-gray-900 block">📋 Требования по ТЗ — в группу</span>
+              <span className="text-[11px] text-gray-400 block">система соберёт список из заявки, отправите сами</span>
+            </button>
+          )}
           {brand.channelId ? (
             clientMode ? (
               <div className="px-3 py-2 border-t border-gray-100">

@@ -269,6 +269,11 @@ export function createIntake(data: {
   return apiPost('/onboarding/intake', data)
 }
 
+/** Список требований к клиенту из ТЗ проекта — текст для отправки в группу */
+export function fetchBrandRequirements(brandId: string): Promise<{ brand: { id: string; name: string }; items: string[]; text: string }> {
+  return apiGet(`/onboarding/requirements?brandId=${encodeURIComponent(brandId)}`, false)
+}
+
 export function deleteBrand(id: string): Promise<{ success: boolean }> {
   return apiDelete(`/onboarding?id=${encodeURIComponent(id)}`)
 }

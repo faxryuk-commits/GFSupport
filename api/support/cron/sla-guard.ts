@@ -21,6 +21,7 @@
 import { getSQL, json, getOpenAIKey } from '../lib/db.js'
 import { loadSla, businessMinutesBetween } from '../lib/sla.js'
 import { sendNotification, escalateStaleNotifications } from '../lib/notifications.js'
+import { notifyClientStuck } from '../lib/onboarding-alerts.js'
 import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
@@ -212,6 +213,13 @@ export default async function handler(req: Request): Promise<Response> {
     escalated = await escalateStaleNotifications(ORG)
   } catch (e: any) {
     console.error('[sla-guard] escalation failed:', e?.message)
+  }
+
+  // Зависло на клиенте: пороги 2/4/7/14 дней → напоминание ответственному
+  try {
+    escalated += await notifyClientStuck(sql, ORG)
+  } catch (e: any) {
+    console.error('[sla-guard] client-stuck failed:', e?.message)
   }
 
   console.log(`[sla-guard:${LIVE ? 'LIVE' : 'SHADOW'}] ${JSON.stringify(stat)} escalated=${escalated}`)

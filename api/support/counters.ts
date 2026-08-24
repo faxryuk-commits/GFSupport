@@ -28,7 +28,21 @@ export default async function handler(req: Request): Promise<Response> {
   // обязан считать ровно то, что человек увидит, открыв раздел
   const market = url.searchParams.get('market') || ''
 
-  const [chats, cases, commitments, agents] = await sql.transaction([
+  // Счётчики — естественный пульс: приложение зовёт их каждые полминуты,
+  // пока вкладка открыта. Отмечаем активность звонящего и гасим протухший
+  // «онлайн» (статус ставился при входе и жил вечно — в сети «были» 13
+  // человек при одном реальном). Правдивый статус чинит заодно и теги
+  // агента: «онлайн» в списках снова значит «в сети сейчас»
+  const [, , chats, cases, commitments, agents] = await sql.transaction([
+    sql`
+      UPDATE support_agents SET last_active_at = NOW(), status = 'online'
+      WHERE id = ${ctx.agentId} AND org_id = ${orgId}
+    `,
+    sql`
+      UPDATE support_agents SET status = 'offline'
+      WHERE org_id = ${orgId} AND status <> 'offline'
+        AND (last_active_at IS NULL OR last_active_at < NOW() - INTERVAL '15 minutes')
+    `,
     sql`
       SELECT COALESCE(SUM(unread_count), 0)::int AS unread
       FROM support_channels
