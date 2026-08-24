@@ -926,7 +926,10 @@ function FocusTab({ board, agents, statusById, selectedBrand, showArchived, onTo
     .filter(b => (filter === 'archive' ? !!b.archivedAt : !b.archivedAt))
     .map(brand => ({ brand, a: analyzeBrand(brand, statusById, typeById) })), [board.brands, statusById, typeById, filter])
 
-  const stuckTotal = analyzed.reduce((s, x) => s + x.a.inFlightTasks.filter(t => t.stuck).length, 0)
+  // Чип и фильтр обязаны считать одно и то же: фильтр показывает БРЕНДЫ с полки
+  // «требуют действия», значит и число на чипе — бренды, не застрявшие задачи
+  // (у одного бренда их бывает несколько — чип показывал 10 при 6 строках)
+  const stuckTotal = analyzed.filter(x => x.a.shelf === 'attention').length
 
   const filtered = analyzed.filter(({ brand, a }) => {
     if (filter === 'stuck') return a.shelf === 'attention'
