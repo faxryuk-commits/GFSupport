@@ -21,18 +21,19 @@ export async function notifyClientStuck(sql: any, orgId: string): Promise<number
     JOIN onboarding_brands b ON b.id = t.brand_id AND b.archived_at IS NULL
     JOIN onboarding_statuses s ON s.id = t.status_id AND s.kind = 'waiting'
     WHERE t.org_id = ${orgId} AND t.waiting_on = 'client'
-      AND FLOOR(EXTRACT(EPOCH FROM (NOW() - t.status_since)) / 86400) IN (2, 4, 7, 14)
+      AND t.status_since < NOW() - INTERVAL '2 days'
     LIMIT 20
   ` as any[]
 
   let sent = 0
   for (const t of stuck) {
     if (!t.notify_agent) continue
-    // не чаще раза в сутки на задачу: свежая напоминалка уже есть — молчим
+    // не чаще раза в двое суток на задачу: жёсткие пороги «ровно 2/4/7 дней»
+    // пропускали уже зависшее (13 дней — между порогами, тишина до 14-го)
     const [dup] = await sql`
       SELECT id FROM support_notifications
       WHERE org_id = ${orgId} AND decision_id = ${t.id}
-        AND created_at > NOW() - INTERVAL '20 hours' LIMIT 1
+        AND created_at > NOW() - INTERVAL '44 hours' LIMIT 1
     ` as any[]
     if (dup) continue
 

@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
+import { extractAgentContext } from '../lib/auth.js'
 
 export const config = { runtime: 'edge', regions: ['iad1'] }
 
@@ -15,36 +16,30 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
+  // Уведомления строго личные: адресат — из токена, а не из параметра.
+  // Без agentId ручка отдавала ВСЮ организацию — «Моё» показывало чужое
+  const ctx = await extractAgentContext(req)
+  if (!ctx.agentId) return json({ error: 'Unauthorized' }, 401)
+
   if (req.method === 'GET') {
-    const agentId = url.searchParams.get('agentId')
+    const agentId = ctx.agentId
     const unreadOnly = url.searchParams.get('unread') === 'true'
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '30'), 100)
 
     try {
-      let notifications
-      if (agentId && unreadOnly) {
-        notifications = await sql`
-          SELECT * FROM support_notifications
-          WHERE org_id = ${orgId} AND agent_id = ${agentId} AND is_read = false
-          ORDER BY created_at DESC LIMIT ${limit}
-        `
-      } else if (agentId) {
-        notifications = await sql`
-          SELECT * FROM support_notifications
-          WHERE org_id = ${orgId} AND agent_id = ${agentId}
-          ORDER BY created_at DESC LIMIT ${limit}
-        `
-      } else {
-        notifications = await sql`
-          SELECT * FROM support_notifications
-          WHERE org_id = ${orgId}
-          ORDER BY created_at DESC LIMIT ${limit}
-        `
-      }
+      const notifications = unreadOnly
+        ? await sql`
+            SELECT * FROM support_notifications
+            WHERE org_id = ${orgId} AND agent_id = ${agentId} AND is_read = false
+            ORDER BY created_at DESC LIMIT ${limit}
+          `
+        : await sql`
+            SELECT * FROM support_notifications
+            WHERE org_id = ${orgId} AND agent_id = ${agentId}
+            ORDER BY created_at DESC LIMIT ${limit}
+          `
 
-      const [unreadCount] = agentId
-        ? await sql`SELECT COUNT(*)::int as cnt FROM support_notifications WHERE org_id = ${orgId} AND agent_id = ${agentId} AND is_read = false`
-        : await sql`SELECT COUNT(*)::int as cnt FROM support_notifications WHERE org_id = ${orgId} AND is_read = false`
+      const [unreadCount] = await sql`SELECT COUNT(*)::int as cnt FROM support_notifications WHERE org_id = ${orgId} AND agent_id = ${agentId} AND is_read = false`
 
       return json({
         notifications: notifications.map((n: any) => ({
@@ -70,12 +65,14 @@ export default async function handler(req: Request): Promise<Response> {
     const body = await req.json()
 
     if (body.action === 'read' && body.notificationId) {
-      await sql`UPDATE support_notifications SET is_read = true, read_at = NOW() WHERE id = ${body.notificationId} AND org_id = ${orgId}`
+      await sql`UPDATE support_notifications SET is_read = true, read_at = NOW()
+        WHERE id = ${body.notificationId} AND org_id = ${orgId} AND agent_id = ${ctx.agentId}`
       return json({ success: true })
     }
 
-    if (body.action === 'read_all' && body.agentId) {
-      await sql`UPDATE support_notifications SET is_read = true, read_at = NOW() WHERE agent_id = ${body.agentId} AND org_id = ${orgId} AND is_read = false`
+    if (body.action === 'read_all') {
+      await sql`UPDATE support_notifications SET is_read = true, read_at = NOW()
+        WHERE agent_id = ${ctx.agentId} AND org_id = ${orgId} AND is_read = false`
       return json({ success: true })
     }
 

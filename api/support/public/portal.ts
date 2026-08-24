@@ -82,7 +82,11 @@ export default async function handler(req: Request): Promise<Response> {
     byCat.get(t.cat)!.push(t)
   }
   const needs: any[] = []
-  const days = (since: string) => Math.max(0, Math.floor((Date.now() - new Date(since + 'Z').getTime()) / 864e5))
+  const days = (since: any) => {
+    const s = String(since)
+    const t = new Date(s.includes('Z') || s.includes('+') ? s : s + 'Z').getTime()
+    return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 864e5)) : 0
+  }
   for (const [cat, rows] of byCat) {
     const tpl = ASKS.find(([re]) => re.test(cat))
     if (!tpl) continue
