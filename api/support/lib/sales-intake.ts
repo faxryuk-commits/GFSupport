@@ -3,6 +3,7 @@ import { salesId, normPhone } from './sales-schema.js'
 import { scoreIcp, routeByBand, FIRST_TOUCH_SLA_MIN } from './sales-icp.js'
 import { notifyLeadAssigned } from './sales-bot.js'
 import { kindOfSource } from './sales-amo.js'
+import { marketByPhoneCity } from './region-detect.js'
 
 type SQL = NeonQueryFunction<false, false>
 
@@ -145,8 +146,10 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
     }
   }
 
-  const marketId = body.market ? String(body.market) : null
+  // Регион: явный из источника, иначе выводим по телефону и городу — лиды из
+  // WhatsApp и Instagram приходили без market и оставались вне региональных срезов
   const city = body.city ? String(body.city).slice(0, 100) : null
+  const marketId = body.market ? String(body.market) : marketByPhoneCity(phoneNorm, city)
 
   if (!accountId) {
     accountId = salesId('acc')

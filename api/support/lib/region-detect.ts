@@ -78,6 +78,71 @@ export async function autoAssignChannelMarkets(sql: any, orgId: string): Promise
 }
 
 /**
+ * Регион продаж по телефону и городу. Продажи работают кодами стран
+ * ('uz'/'kz'/...), не id рынков. Телефон — сильнейший сигнал: код страны
+ * или местный формат (9 цифр без кода — узбекский мобильный, база
+ * узбекистан-центрична). Город — второй эшелон, включая литералы «UZ»,
+ * которые приёмник уже пишет в city.
+ */
+export function marketByPhoneCity(phone?: string | null, city?: string | null): string | null {
+  const p = String(phone || '').replace(/\D/g, '')
+  if (/^998\d{9}$/.test(p) || /^[3-9]\d{8}$/.test(p)) return 'uz'
+  if (/^7[67]\d{9}$/.test(p) || /^87\d{9}$/.test(p)) return 'kz'
+  if (/^994\d{9}$/.test(p)) return 'az'
+  if (/^996\d{9}$/.test(p)) return 'kg'
+  if (/^971\d{8,9}$/.test(p)) return 'ae'
+  if (/^995\d{9}$/.test(p)) return 'ge'
+  const c = String(city || '').trim().toLowerCase()
+  if (!c) return null
+  if (/^uz$|узбекистан|uzbekistan|ташкент|tashkent|самарканд|samarkand|бухара|наманган|андижан|фергана/.test(c)) return 'uz'
+  if (/^kz$|казахстан|kazakhstan|алматы|almaty|астана|astana|шымкент|shymkent|караганда/.test(c)) return 'kz'
+  if (/^az$|азербайджан|баку|baku/.test(c)) return 'az'
+  if (/^kg$|кыргызстан|бишкек|bishkek/.test(c)) return 'kg'
+  if (/^ae$|дубай|dubai|эмират/.test(c)) return 'ae'
+  if (/^ge$|грузия|тбилиси|tbilisi/.test(c)) return 'ge'
+  return null
+}
+
+/**
+ * Ночная уборка продаж: лиды и аккаунты без региона получают его по телефону
+ * и городу; аккаунт без сигналов наследует регион своего лида. Только пустые
+ * записи, каждое назначение — в Хронику.
+ */
+export async function autoAssignSalesRegions(sql: any, orgId: string): Promise<number> {
+  let assigned = 0
+  const leads = await sql`
+    SELECT id, name, phone_norm, city FROM sales_leads
+    WHERE org_id = ${orgId} AND market_id IS NULL LIMIT 200
+  ` as any[]
+  for (const l of leads) {
+    const code = marketByPhoneCity(l.phone_norm, l.city)
+    if (!code) continue
+    await sql`UPDATE sales_leads SET market_id = ${code} WHERE id = ${l.id} AND market_id IS NULL`
+    await logEvent(sql, 'Регионовед', 'лид распределён',
+      `${(l.name || l.id).slice(0, 60)} → ${code.toUpperCase()}: телефон/город`, l.id)
+    assigned++
+  }
+  // DISTINCT ON: у аккаунта может быть несколько лидов — иначе дубли строк
+  // и двойные записи в Хронике
+  const accs = await sql`
+    SELECT DISTINCT ON (a.id) a.id, a.name, a.city, l.market_id AS lead_market, l.phone_norm
+    FROM sales_accounts a
+    LEFT JOIN sales_leads l ON l.account_id = a.id AND l.market_id IS NOT NULL
+    WHERE a.org_id = ${orgId} AND a.market_id IS NULL
+    ORDER BY a.id LIMIT 200
+  ` as any[]
+  for (const a of accs) {
+    const code = marketByPhoneCity(a.phone_norm, a.city) || a.lead_market || null
+    if (!code) continue
+    await sql`UPDATE sales_accounts SET market_id = ${code} WHERE id = ${a.id} AND market_id IS NULL`
+    await logEvent(sql, 'Регионовед', 'аккаунт распределён',
+      `${(a.name || a.id).slice(0, 60)} → ${String(code).toUpperCase()}: ${a.lead_market && !marketByPhoneCity(a.phone_norm, a.city) ? 'по своему лиду' : 'телефон/город'}`, a.id)
+    assigned++
+  }
+  return assigned
+}
+
+/**
  * Регион бренда по выбранным инструментам заявки: если все размеченные
  * поставщики из ТЗ принадлежат одному региону — это и есть регион бренда.
  */

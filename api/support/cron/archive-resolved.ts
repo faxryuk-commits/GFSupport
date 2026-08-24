@@ -15,7 +15,7 @@
  */
 import { getSQL, json } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
-import { autoAssignChannelMarkets } from '../lib/region-detect.js'
+import { autoAssignChannelMarkets, autoAssignSalesRegions } from '../lib/region-detect.js'
 
 export const config = { runtime: 'edge' }
 
@@ -54,6 +54,7 @@ export default async function handler(req: Request): Promise<Response> {
     let regionsAssigned = 0
     try {
       regionsAssigned = await autoAssignChannelMarkets(sql, ORG)
+      regionsAssigned += await autoAssignSalesRegions(sql, ORG)
     } catch (e: any) {
       console.error('[archive-resolved] region assign failed:', e?.message)
     }
