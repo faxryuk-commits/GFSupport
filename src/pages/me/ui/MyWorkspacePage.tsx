@@ -27,6 +27,20 @@ type Workspace = {
 /** Попап деталей: поля + ссылка на раздел — страница «Моё» не теряется */
 type Detail = { title: string; rows: Array<[string, string]>; linkTo?: string; linkLabel?: string }
 
+type Activity = {
+  days: number; total: number; prevTotal: number
+  perDay: Array<{ date: string; c: number }>
+  split: { messages: number; onboarding: number; cases: number; tasks: number; sales: number }
+}
+const SPLIT_LABELS: Array<[keyof Activity['split'], string, string]> = [
+  ['messages', 'Ответы клиентам', '#2563eb'],
+  ['onboarding', 'Шаги онбординга', '#7c3aed'],
+  ['cases', 'Решённые тикеты', '#d97706'],
+  ['tasks', 'Подтверждённые задачи', '#059669'],
+  ['sales', 'События сделок', '#0369a1'],
+]
+const PERIODS: Array<[number, string]> = [[1, 'День'], [7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]
+
 function Section({ icon: Icon, title, count, tone, children }: {
   icon: typeof Bell; title: string; count?: number; tone?: 'red' | 'amber'
   children: ReactNode
@@ -53,6 +67,8 @@ export function MyWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [detail, setDetail] = useState<Detail | null>(null)
+  const [actDays, setActDays] = useState(7)
+  const [act, setAct] = useState<Activity | null>(null)
 
   const load = useCallback((silent = false) => {
     if (!silent) setLoading(true)
@@ -70,6 +86,10 @@ export function MyWorkspacePage() {
     const t = setInterval(() => load(true), 60000)
     return () => clearInterval(t)
   }, [load])
+
+  useEffect(() => {
+    apiGet<Activity>(`/me/activity?days=${actDays}`).then(setAct).catch(() => {})
+  }, [actDays])
 
   const readNotif = async (id: string) => {
     await markNotificationRead(id).catch(() => {})
@@ -105,6 +125,61 @@ export function MyWorkspacePage() {
       </div>
 
       <div className="px-6 py-4 space-y-4">
+        {/* Этап 1 «Моё 2.0»: активность из журналов — действия, дни, разрез по модулям */}
+        <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <h3 className="text-sm font-semibold text-slate-800">⚡ Моя активность</h3>
+            <div className="ml-auto flex gap-1 bg-slate-100 rounded-lg p-0.5">
+              {PERIODS.map(([d, l]) => (
+                <button key={d} onClick={() => setActDays(d)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium ${actDays === d ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {!act ? <p className="text-[13px] text-slate-400">считаю…</p> : (
+            <div className="flex gap-6 flex-wrap items-end">
+              <div>
+                <b className="block font-mono text-2xl font-bold tabular-nums">{act.total}</b>
+                <span className="text-[11px] text-slate-500">действий за период</span>
+                {act.prevTotal > 0 && (
+                  <span className={`block text-[11px] font-bold ${act.total >= act.prevTotal ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {act.total >= act.prevTotal ? '▲' : '▼'} {Math.abs(Math.round(((act.total - act.prevTotal) / act.prevTotal) * 100))}% к прошлому периоду
+                  </span>
+                )}
+              </div>
+              <div className="flex items-end gap-[3px] h-16 flex-1 min-w-[220px]">
+                {(() => {
+                  const buckets: number[] = []
+                  const per = act.perDay
+                  const size = Math.ceil(per.length / 31)
+                  for (let i = 0; i < per.length; i += size)
+                    buckets.push(per.slice(i, i + size).reduce((s2, x) => s2 + x.c, 0))
+                  const max = Math.max(1, ...buckets)
+                  return buckets.map((c, i) => (
+                    <div key={i} title={`${c} действий`} className="flex-1 rounded-t"
+                      style={{ height: `${Math.max(4, (c / max) * 100)}%`, background: c ? '#2563eb' : '#e2e8f0' }} />
+                  ))
+                })()}
+              </div>
+              <div className="min-w-[220px] space-y-1">
+                {SPLIT_LABELS.map(([k, label, color]) => {
+                  const v = act.split[k]
+                  const tot = Math.max(1, act.total)
+                  return (
+                    <div key={k} className="grid grid-cols-[130px_1fr_34px] items-center gap-2 text-[11.5px] text-slate-600">
+                      <span>{label}</span>
+                      <span className="h-1.5 rounded bg-slate-100 overflow-hidden">
+                        <i className="block h-full rounded" style={{ width: `${(v / tot) * 100}%`, background: color }} />
+                      </span>
+                      <b className="font-mono text-right tabular-nums">{v}</b>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="grid md:grid-cols-2 gap-4">
           <Section icon={Bell} title="Уведомления" count={notifs.length} tone="red">
             {notifs.length === 0 ? <Empty text="непрочитанных нет — бот не побеспокоит" /> : (
