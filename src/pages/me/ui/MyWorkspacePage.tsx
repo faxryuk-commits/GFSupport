@@ -225,7 +225,8 @@ export function MyWorkspacePage() {
   return (
     <div>
       {/* Шапка как в прототипе: имя + итог недели + ПЕРИОД, закреплена */}
-      <div className="px-6 pt-4 pb-3 bg-[#f8fafc] border-b border-[#eef2f7] flex items-center justify-between flex-wrap gap-3 sticky top-0 z-10">
+      <div className="bg-[#f8fafc] border-b border-[#eef2f7] sticky top-0 z-10">
+        <div className="max-w-[1240px] mx-auto px-6 pt-4 pb-3 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-[20px] font-extrabold text-slate-900 tracking-tight">Моё пространство</h1>
           <p className="text-[13px] text-slate-500 mt-0.5">
@@ -245,12 +246,13 @@ export function MyWorkspacePage() {
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+        </div>
       </div>
 
-      <div className="px-6 py-4 space-y-4">
+      <div className="max-w-[1240px] mx-auto px-6 py-4 space-y-4">
         {/* Пульс + рейтинг — двумя карточками, как в прототипе */}
-        <div className="grid lg:grid-cols-[1.25fr_.75fr] gap-4">
-          <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
+        <div className="grid lg:grid-cols-5 gap-4">
+          <div className="bg-white rounded-xl border border-[#e8edf3] p-4 lg:col-span-3">
             <h3 className="text-sm font-semibold text-slate-800 mb-3">⚡ Моя активность</h3>
             {!act ? <p className="text-[13px] text-slate-400">считаю…</p> : (
               <>
@@ -304,7 +306,7 @@ export function MyWorkspacePage() {
             )}
           </div>
 
-          <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
+          <div className="bg-white rounded-xl border border-[#e8edf3] p-4 lg:col-span-2">
             <h3 className="text-sm font-semibold text-slate-800 mb-3">🏆 Мой рейтинг</h3>
             {!rating ? <p className="text-[13px] text-slate-400">считаю…</p> : rating.of === 0 ? <p className="text-[13px] text-slate-400">пока нет данных за период</p> : (
               <>
@@ -374,9 +376,9 @@ export function MyWorkspacePage() {
                 return (
                   <li key={n.id}>
                     {n.linkTo && !n.detail ? (
-                      <Link to={n.linkTo} className="flex items-baseline gap-2 py-1.5 px-1 -mx-1 rounded hover:bg-slate-50">{inner}</Link>
+                      <Link to={n.linkTo} className="flex items-baseline gap-2 py-1.5 px-1.5 rounded hover:bg-slate-50">{inner}</Link>
                     ) : (
-                      <button onClick={() => n.detail && setDetail(n.detail)} className="w-full text-left flex items-baseline gap-2 py-1.5 px-1 -mx-1 rounded hover:bg-slate-50">{inner}</button>
+                      <button onClick={() => n.detail && setDetail(n.detail)} className="w-full text-left flex items-baseline gap-2 py-1.5 px-1.5 rounded hover:bg-slate-50">{inner}</button>
                     )}
                   </li>
                 )
