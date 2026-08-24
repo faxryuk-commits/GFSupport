@@ -133,9 +133,15 @@ export default async function handler(req: Request): Promise<Response> {
     const tzSkipped: string[] = []
     const touchedOwners = new Map<string, { name: string; labels: string[] }>()
 
+    // Автозаявка из выигранной сделки приходит вовсе без selections: это не
+    // «клиенту ничего не нужно», а «ТЗ ещё не снято» — блоки остаются
+    // «Не начато», онбординг уточнит. «Не требуется» ставится только когда
+    // человек осознанно пропустил блок в конструкторе
+    const anySelections = Object.values(selections).some(v => (v || []).length > 0)
+
     for (const tt of taskTypes) {
       const selected = (selections[tt.id] || []).filter(oid => optionLabels[oid])
-      if (tt.option_category_id && selected.length === 0) {
+      if (tt.option_category_id && selected.length === 0 && anySelections) {
         // категория есть, но ничего не выбрано → «Не требуется»
         await sql`
           INSERT INTO onboarding_tasks (id, org_id, brand_id, task_type_id, status_id)
