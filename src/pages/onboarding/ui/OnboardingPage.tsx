@@ -566,6 +566,42 @@ function AddProjectButton({ board, onCreated }: {
   const fitsMarket = (o: { markets: string | null }) =>
     !marketId || !o.markets || o.markets.split(',').includes(marketId)
 
+  // Тип подключения: свой состав секций. Апсейл требует исходный бренд клиента
+  const [connType, setConnType] = useState('delivery')
+  const [parentId, setParentId] = useState('')
+  const [allBrands, setAllBrands] = useState<ObBrand[] | null>(null)
+  useEffect(() => {
+    if (connType !== 'upsell' || allBrands) return
+    fetchOnboardingBoard(true).then(b => setAllBrands(b.brands)).catch(() => setAllBrands([]))
+  }, [connType, allBrands])
+  const catLabelById = useMemo(
+    () => Object.fromEntries(board.optionCategories.map(c => [c.id, c.label])),
+    [board.optionCategories])
+  const hiddenCats = new Set(HIDDEN_CATEGORIES[connType] || [])
+  const pickType = (t: string) => {
+    setConnType(t)
+    if (t !== 'upsell') setParentId('')
+    // выбор в скрытых секциях не должен уехать в ТЗ незаметно
+    const hide = new Set(HIDDEN_CATEGORIES[t] || [])
+    setSelections(prev => {
+      const next: Record<string, string[]> = {}
+      for (const [typeId, oids] of Object.entries(prev)) {
+        const tt = board.taskTypes.find(x => x.id === typeId)
+        const cat = tt?.optionCategoryId ? catLabelById[tt.optionCategoryId] : ''
+        if (!hide.has(cat || '')) next[typeId] = oids
+      }
+      // киоск — сразу тапаем канал «Киоск самообслуживания»
+      if (t === 'kiosk') {
+        const chanType = board.taskTypes.find(x => x.optionCategoryId && catLabelById[x.optionCategoryId] === 'Каналы продаж')
+        const kioskOpt = board.options.find(o => chanType && o.categoryId === chanType.optionCategoryId && /киоск/i.test(o.label))
+        if (chanType && kioskOpt && !(next[chanType.id] || []).includes(kioskOpt.id)) {
+          next[chanType.id] = [...(next[chanType.id] || []), kioskOpt.id]
+        }
+      }
+      return next
+    })
+  }
+
   useEffect(() => {
     if (!open || cachedAgents) return
     fetchAgents().then(list => {
@@ -597,10 +633,12 @@ function AddProjectButton({ board, onCreated }: {
   const reset = () => {
     setName(''); setPosId(''); setTariff(''); setLaunchDue(''); setAssigneeId(''); setNotes(''); setSelections({})
     setMarketId(getScopeMarket('onboarding'))
+    setConnType('delivery'); setParentId('')
   }
 
   const submit = async () => {
     if (!name.trim() || saving) return
+    if (connType === 'upsell' && !parentId) return
     setSaving(true)
     try {
       const r = await createIntake({
@@ -611,6 +649,8 @@ function AddProjectButton({ board, onCreated }: {
         assigneeId: assigneeId || null,
         notes: notes.trim() || null,
         marketId: marketId || null,
+        connectionType: connType,
+        parentBrandId: connType === 'upsell' ? parentId || null : null,
         selections,
       })
       reset()
@@ -648,6 +688,27 @@ function AddProjectButton({ board, onCreated }: {
 
             <div className="flex flex-1 min-h-0">
               <div className="flex-[1.35] min-w-0 overflow-y-auto p-4 border-r border-gray-100">
+                <div className="mb-3">
+                  <div className="text-[10px] uppercase text-gray-400 mb-1">Тип подключения</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {CONNECTION_TYPES.map(([t, label]) => (
+                      <button key={t} onClick={() => pickType(t)} className={chip(connType === t)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                {connType === 'upsell' && (
+                  <div className="mb-3">
+                    <div className="text-[10px] uppercase text-gray-400 mb-1">Какому клиенту (поиск по брендам)</div>
+                    <SearchPicker
+                      items={(allBrands || board.brands).map(b => ({
+                        id: b.id, label: b.name,
+                        hint: b.archivedAt ? 'запущен/архив' : 'в работе',
+                      }))}
+                      value={parentId} onChange={setParentId}
+                      placeholder={allBrands ? 'Найдите исходный бренд клиента…' : 'загружаю бренды…'}
+                    />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <input
                     autoFocus value={name} onChange={e => setName(e.target.value)}
@@ -657,15 +718,10 @@ function AddProjectButton({ board, onCreated }: {
                   <input type="date" value={launchDue} onChange={e => setLaunchDue(e.target.value)}
                     title="Запуск до"
                     className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white" />
-                  <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
-                    className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white">
-                    <option value="">Ведёт проект…</option>
-                    {groupAgentsByDep(cachedAgents || []).map(g => (
-                      <optgroup key={g.label} label={g.label}>
-                        {g.agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
+                  <SearchPicker
+                    items={agentPickerItems(cachedAgents || [])}
+                    value={assigneeId} onChange={setAssigneeId}
+                    placeholder="Ведёт проект…" emptyLabel="Не назначен" />
                   <select value={marketId} onChange={e => { setMarketId(e.target.value); setSelections({}) }}
                     title="Регион — от него зависит набор поставщиков"
                     className={`col-span-2 px-2 py-1.5 rounded-lg border text-sm bg-white ${marketId ? 'border-blue-300 text-blue-700' : 'border-gray-300'}`}>
@@ -699,6 +755,8 @@ function AddProjectButton({ board, onCreated }: {
                 </div>
 
                 {featureTypes.map(t => {
+                  const catLabel = t.optionCategoryId ? catLabelById[t.optionCategoryId] : ''
+                  if (hiddenCats.has(catLabel || '')) return null
                   const opts = board.options.filter(o => o.categoryId === t.optionCategoryId && o.isActive && fitsMarket(o))
                   if (opts.length === 0) return null
                   const sel = selections[t.id] || []
@@ -728,6 +786,12 @@ function AddProjectButton({ board, onCreated }: {
                 <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 leading-relaxed">
                   <span className="font-medium text-gray-900">{name.trim() || 'Название клиента'}</span>
                   {posName ? ` · ${posName}` : ' · POS не выбрана'}{tariff ? ` · тариф ${tariff}` : ''}
+                  <div className="text-gray-500">
+                    {CONNECTION_TYPES.find(([t]) => t === connType)?.[1]}
+                    {connType === 'upsell' && parentId
+                      ? ` → ${(allBrands || board.brands).find(b => b.id === parentId)?.name || ''}`
+                      : ''}
+                  </div>
                   {launchDue && <div className="text-gray-400">запуск до {fmtDMY(launchDue)}</div>}
                   <div className="border-t border-gray-100 my-2" />
                   {selectedLines.length === 0 && <div className="text-gray-400">выберите возможности слева…</div>}
@@ -745,7 +809,7 @@ function AddProjectButton({ board, onCreated }: {
                 <div className="mt-auto pt-3 flex gap-2">
                   <button
                     onClick={submit}
-                    disabled={!name.trim() || saving}
+                    disabled={!name.trim() || saving || (connType === 'upsell' && !parentId)}
                     className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50 hover:bg-blue-700"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Создать проект'}
@@ -1655,6 +1719,80 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
   )
 }
 
+/** Типы подключения: разный состав секций формы и чек-листа */
+const CONNECTION_TYPES: Array<[string, string]> = [
+  ['delivery', '🚚 Своя доставка'],
+  ['aggregators', '🛵 Только агрегаторы'],
+  ['kiosk', '🖥 Киоски самообслуживания'],
+  ['upsell', '➕ Апсейл модулей'],
+]
+const CONNECTION_SHORT: Record<string, string> = {
+  delivery: 'доставка', aggregators: 'агрегаторы', kiosk: 'киоск', upsell: 'апсейл',
+}
+/** Какие категории поставщиков не относятся к типу подключения */
+const HIDDEN_CATEGORIES: Record<string, string[]> = {
+  aggregators: ['Каналы продаж', 'Курьер-сервисы', 'СМС-сервисы', 'Телефония'],
+  kiosk: ['Агрегаторы', 'Курьер-сервисы'],
+}
+
+/**
+ * Выпадающий список с поиском. Нативный select с сотней сотрудников глючил
+ * на скролле и не искался — здесь ввод фильтрует список сразу.
+ */
+function SearchPicker({ items, value, onChange, placeholder, emptyLabel }: {
+  items: { id: string; label: string; hint?: string }[]
+  value: string
+  onChange: (id: string) => void
+  placeholder: string
+  emptyLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+  const sel = items.find(i => i.id === value)
+  const filtered = q
+    ? items.filter(i => (i.label + ' ' + (i.hint || '')).toLowerCase().includes(q.toLowerCase()))
+    : items
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => { setOpen(o => !o); setQ('') }}
+        className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white text-left flex items-center justify-between gap-2">
+        <span className={sel ? 'text-gray-800 truncate' : 'text-gray-400'}>{sel?.label || placeholder}</span>
+        <span className="text-gray-400 text-[10px] flex-none">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-xl">
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Поиск…"
+            className="w-full px-2.5 py-1.5 text-sm border-b border-gray-100 rounded-t-lg outline-none" />
+          <ul className="max-h-52 overflow-y-auto py-1">
+            {emptyLabel !== undefined && !q && (
+              <li><button type="button" onClick={() => { onChange(''); setOpen(false) }}
+                className="w-full text-left px-2.5 py-1.5 text-sm text-gray-400 hover:bg-blue-50">{emptyLabel}</button></li>
+            )}
+            {filtered.map(i => (
+              <li key={i.id}><button type="button" onClick={() => { onChange(i.id); setOpen(false) }}
+                className={`w-full text-left px-2.5 py-1.5 text-sm hover:bg-blue-50 ${i.id === value ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
+                {i.label}{i.hint ? <span className="text-gray-400 text-xs"> · {i.hint}</span> : null}
+              </button></li>
+            ))}
+            {!filtered.length && <li className="px-2.5 py-2 text-xs text-gray-400">не найдено</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Сотрудники для пикера: плоский список с отделом в подсказке */
+function agentPickerItems(agents: Agent[]): { id: string; label: string; hint?: string }[] {
+  return groupAgentsByDep(agents).flatMap(g => g.agents.map(a => ({ id: a.id, label: a.name, hint: g.label })))
+}
+
 /** Регион бренда — по нему работает фильтр в шапке раздела */
 function BrandMarketSelect({ value, onSave }: {
   value: string | null
@@ -1705,17 +1843,27 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
       <BrandMarketSelect value={brand.marketId} onSave={onSave} />
       <label className="block">
         <span className="text-[10px] uppercase text-gray-400">Ведёт проект</span>
-        <select value={brand.assigneeId || ''} onChange={e => {
-          const ag = agents.find(x => x.id === e.target.value)
-          onSave({ assigneeId: e.target.value || null, assigneeName: ag?.name || null })
-        }} className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
-          <option value="">Не назначен</option>
-          {groupAgentsByDep(agents).map(g => (
-            <optgroup key={g.label} label={g.label}>
-              {g.agents.map(ag => <option key={ag.id} value={ag.id}>{ag.name}</option>)}
-            </optgroup>
-          ))}
+        <div className="mt-0.5">
+          <SearchPicker
+            items={agentPickerItems(agents)}
+            value={brand.assigneeId || ''}
+            onChange={id => {
+              const ag = agents.find(x => x.id === id)
+              onSave({ assigneeId: id || null, assigneeName: ag?.name || null })
+            }}
+            placeholder="Не назначен" emptyLabel="Не назначен" />
+        </div>
+      </label>
+      <label className="block">
+        <span className="text-[10px] uppercase text-gray-400">Тип подключения</span>
+        <select value={brand.connectionType || ''} onChange={e => onSave({ connectionType: e.target.value || null })}
+          className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
+          <option value="">Не указан</option>
+          {CONNECTION_TYPES.map(([t, l]) => <option key={t} value={t}>{l}</option>)}
         </select>
+        {brand.parentName && (
+          <span className="block text-[11px] text-blue-600 mt-1">апсейл к «{brand.parentName}»</span>
+        )}
       </label>
       <label className="block">
         <span className="text-[10px] uppercase text-gray-400">Тариф</span>
@@ -2050,6 +2198,8 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
                     <span className="text-[11px] text-gray-400 block">
                       {(brand.posId ? posById[brand.posId]?.name : null) || 'без POS'}
                       {marketName(brand.marketId) ? ` · ${marketName(brand.marketId)}` : ''}
+                      {brand.connectionType ? ` · ${CONNECTION_SHORT[brand.connectionType] || brand.connectionType}` : ''}
+                      {brand.parentName ? ` → ${brand.parentName}` : ''}
                       {brand.assigneeName ? ` · ${initials(brand.assigneeName)}` : ''}
                     </span>
                     <span className="text-[11px] text-gray-400 block">

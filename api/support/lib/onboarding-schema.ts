@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT markets FROM onboarding_options WHERE org_id = ${orgId} LIMIT 1
+      SELECT connection_type FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -84,6 +84,8 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
       owner_name VARCHAR(255),
       notes TEXT,
       market_id VARCHAR(50),
+      connection_type VARCHAR(30),
+      parent_brand_id VARCHAR(50),
       started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       archived_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -209,6 +211,10 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // v18: регионы поставщика в справочнике (список id через запятую, NULL = все):
   // Kaspi не предлагаем узбекскому бренду, Payme — казахскому
   await sql`ALTER TABLE onboarding_options ADD COLUMN IF NOT EXISTS markets TEXT`
+  // v19: тип подключения (своя доставка / агрегаторы / киоск / апсейл) и
+  // связь апсейла с исходным брендом — у клиента может быть несколько подключений
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS connection_type VARCHAR(30)`
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS parent_brand_id VARCHAR(50)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_comments_brand ON onboarding_comments(brand_id, created_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_todos_brand ON onboarding_todos(brand_id)`
 

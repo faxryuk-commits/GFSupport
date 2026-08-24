@@ -78,6 +78,11 @@ export interface ObBrand {
   launchDue: string | null
   /** Регион бренда (id рынка из справочника; null — без региона, виден всегда) */
   marketId: string | null
+  /** Тип подключения: delivery | aggregators | kiosk | upsell */
+  connectionType: string | null
+  /** Апсейл: исходный бренд клиента */
+  parentBrandId: string | null
+  parentName: string | null
   dependsOn: string | null
   blockers: string | null
   notes: string | null
@@ -240,6 +245,8 @@ export function updateBrand(data: {
   dependsOn?: string | null
   blockers?: string | null
   marketId?: string | null
+  connectionType?: string | null
+  parentBrandId?: string | null
 }): Promise<{ success: boolean }> {
   return apiPut('/onboarding', data)
 }
@@ -253,6 +260,8 @@ export function createIntake(data: {
   assigneeId?: string | null
   notes?: string | null
   marketId?: string | null
+  connectionType?: string | null
+  parentBrandId?: string | null
   selections: Record<string, string[]>
 }): Promise<{ success: boolean; id: string }> {
   return apiPost('/onboarding/intake', data)

@@ -99,6 +99,12 @@ export default async function handler(req: Request): Promise<Response> {
               AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
           `
 
+      // Имена всех брендов (вкл. архив) — родитель апсейла может быть запущен
+      const allNames = await sql`SELECT id, name FROM onboarding_brands WHERE org_id = ${orgId}`
+      const brandNameById: Record<string, string> = Object.fromEntries(
+        (allNames as any[]).map((b: any) => [b.id, b.name]),
+      )
+
       // Накопленное время по kind статусов из журнала (для тултипов/метрик).
       // Интервал = от события до следующего события той же задачи (или до NOW()).
       const durations = await sql`
@@ -176,6 +182,9 @@ export default async function handler(req: Request): Promise<Response> {
           tariff: b.tariff,
           launchDue: b.launch_due,
           marketId: b.market_id,
+          connectionType: b.connection_type,
+          parentBrandId: b.parent_brand_id,
+          parentName: b.parent_brand_id ? (brandNameById[b.parent_brand_id] || null) : null,
           dependsOn: b.depends_on,
           blockers: b.blockers,
           notes: b.notes,
@@ -273,6 +282,12 @@ export default async function handler(req: Request): Promise<Response> {
       }
       if (body.marketId !== undefined) {
         await sql`UPDATE onboarding_brands SET market_id = ${body.marketId || null} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (body.connectionType !== undefined) {
+        await sql`UPDATE onboarding_brands SET connection_type = ${body.connectionType || null} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (body.parentBrandId !== undefined) {
+        await sql`UPDATE onboarding_brands SET parent_brand_id = ${body.parentBrandId || null} WHERE id = ${id} AND org_id = ${orgId}`
       }
       if (dependsOn !== undefined) {
         await sql`UPDATE onboarding_brands SET depends_on = ${dependsOn} WHERE id = ${id} AND org_id = ${orgId}`
