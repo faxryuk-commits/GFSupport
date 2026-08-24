@@ -214,6 +214,17 @@ async function saveInAppNotification(sql: any, payload: NotificationPayload, tar
       )
     `
     await sql`ALTER TABLE support_notifications ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP`
+    // Дедупликация у самого узкого горлышка: то же событие тому же человеку
+    // за сутки не повторяется — кроны любят напоминать по второму разу
+    const [dup] = await sql`
+      SELECT id FROM support_notifications
+      WHERE org_id = ${payload.orgId} AND agent_id = ${target.agentId}
+        AND title = ${payload.title}
+        AND COALESCE(LEFT(body, 80), '') = ${(payload.body || '').slice(0, 80)}
+        AND created_at > NOW() - INTERVAL '20 hours'
+      LIMIT 1
+    `
+    if (dup) return true
     await sql`
       INSERT INTO support_notifications (id, org_id, agent_id, type, title, body, priority, channel_id, channel_name, sender_name, decision_id, escalated_at, created_at)
       VALUES (${id}, ${payload.orgId}, ${target.agentId}, ${payload.type}, ${payload.title}, ${payload.body}, ${payload.priority}, ${payload.channelId || null}, ${payload.channelName || null}, ${payload.senderName || null}, ${payload.decisionId || null}, ${alreadyEscalated ? new Date().toISOString().slice(0, 19) : null}, NOW())

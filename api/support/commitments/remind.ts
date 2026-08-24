@@ -16,6 +16,9 @@ async function sendCommitmentNotification(
     const isOverdue = new Date(commitment.due_date) < new Date()
     const dueDate = formatWorkDateTime(commitment.due_date)
 
+    // Напоминание — ОТВЕТСТВЕННОМУ, а не всем админам: раньше владелец получал
+    // чужие обязательства всей команды в своё пространство. Админы подключаются
+    // только если ответственного нет вовсе (фолбэк внутри sendNotification)
     const results = await sendNotification({
       orgId,
       type: isOverdue ? 'sla_breach' : 'agent_decision',
@@ -26,7 +29,9 @@ async function sendCommitmentNotification(
       channelId: commitment.channel_id,
       channelName: commitment.channel_name,
       priority: isOverdue ? 'high' : 'medium',
-      targetRoles: ['admin', 'manager'],
+      ...(commitment.agent_id
+        ? { targetAgentIds: [commitment.agent_id] }
+        : { targetRoles: ['admin', 'manager'] }),
     })
 
     return results.length > 0
