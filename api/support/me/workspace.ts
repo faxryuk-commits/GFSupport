@@ -47,7 +47,7 @@ export default async function handler(req: Request): Promise<Response> {
     ? usernames.map(u => `%@${u}%`)
     : ['%@__нет_username__%']
 
-  const [mentions, items, cases, commitments, onboarding] = await sql.transaction([
+  const [mentions, items, cases, commitments, onboarding, salesLeads, salesTasks] = await sql.transaction([
     // Упоминания за неделю; «без ответа» = после упоминания команда в канале молчит
     sql`
       SELECT m.id, m.text_content, m.sender_name, m.created_at,
@@ -105,6 +105,21 @@ export default async function handler(req: Request): Promise<Response> {
         AND s.kind IN ('todo', 'active', 'waiting')
       ORDER BY t.status_since LIMIT 15
     `,
+    // Продажи — очередь дня (пересечение отделов: та же логика, что /sales/queue)
+    sql`
+      SELECT id, name, sla_due_at FROM sales_leads
+      WHERE org_id = ${orgId} AND assigned_agent_id = ${ctx.agentId}
+        AND first_touch_at IS NULL AND status = 'assigned' AND archived_at IS NULL
+      ORDER BY sla_due_at NULLS LAST LIMIT 8
+    `,
+    sql`
+      SELECT t.id, t.title, t.due_at, d.id AS deal_id, d.title AS deal_title
+      FROM sales_tasks t
+      LEFT JOIN sales_deals d ON d.id = t.deal_id
+      WHERE t.org_id = ${orgId} AND t.assignee_agent_id = ${ctx.agentId}
+        AND t.done_at IS NULL AND t.due_at <= NOW() + INTERVAL '1 day'
+      ORDER BY t.due_at ASC LIMIT 8
+    `,
   ]) as any[]
 
   // Итог недели — чтобы экран показывал не только долги, но и сделанное
@@ -128,6 +143,7 @@ export default async function handler(req: Request): Promise<Response> {
     cases,
     commitments,
     onboarding,
+    sales: { leads: salesLeads, tasks: salesTasks },
     week: week || {},
   })
 }

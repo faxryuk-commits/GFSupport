@@ -21,6 +21,7 @@ type Workspace = {
   cases: Array<{ id: string; ticket_number: string; title: string; status: string; hours_open: number }>
   commitments: Array<{ id: string; commitment_text: string; context: string | null; due_date: string | null; status: string; channel_name: string | null; channel_id: string | null }>
   onboarding: Array<{ id: string; step: string; brand: string; status: string; kind: string; status_since: string }>
+  sales?: { leads: Array<{ id: string; name: string; sla_due_at: string | null }>; tasks: Array<{ id: string; title: string; due_at: string; deal_id: string | null; deal_title: string | null }> }
   week: { confirmed_week?: number; cases_week?: number; kept_week?: number }
 }
 
@@ -40,6 +41,13 @@ const SPLIT_LABELS: Array<[keyof Activity['split'], string, string]> = [
   ['sales', 'События сделок', '#0369a1'],
 ]
 const PERIODS: Array<[number, string]> = [[1, 'День'], [7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]
+
+type Rating = {
+  rank: number; of: number
+  leader: { name: string; total: number } | null
+  metrics: Array<{ key: string; label: string; value: number; pct: number }>
+  achievements: Array<{ icon: string; label: string; earned: boolean }>
+}
 
 function Section({ icon: Icon, title, count, tone, children }: {
   icon: typeof Bell; title: string; count?: number; tone?: 'red' | 'amber'
@@ -87,9 +95,33 @@ export function MyWorkspacePage() {
     return () => clearInterval(t)
   }, [load])
 
+  const [rating, setRating] = useState<Rating | null>(null)
   useEffect(() => {
     apiGet<Activity>(`/me/activity?days=${actDays}`).then(setAct).catch(() => {})
+    apiGet<Rating>(`/me/rating?days=${actDays}`).then(setRating).catch(() => {})
   }, [actDays])
+
+  const buildReport = () => {
+    if (!act) return
+    const periodName = PERIODS.find(([d]) => d === actDays)?.[1]?.toLowerCase() || `${actDays} дн`
+    const lines = [
+      `Отчёт: ${ws?.me.name} · период: ${periodName}`,
+      ``,
+      `Действий: ${act.total}${act.prevTotal ? ` (${act.total >= act.prevTotal ? '+' : ''}${Math.round(((act.total - act.prevTotal) / Math.max(1, act.prevTotal)) * 100)}% к прошлому периоду)` : ''}`,
+      `— ответы клиентам: ${act.split.messages}`,
+      `— шаги онбординга: ${act.split.onboarding}`,
+      `— решённые тикеты: ${act.split.cases}`,
+      `— подтверждённые задачи: ${act.split.tasks}`,
+      `— события сделок: ${act.split.sales}`,
+      ``,
+      rating ? `Место в команде: ${rating.rank} из ${rating.of}` : '',
+      rating ? rating.metrics.map(m => `— ${m.label}: ${m.value} (топ-${100 - m.pct + 1}%)`).join('\n') : '',
+      rating ? `Ачивки: ${rating.achievements.filter(a => a.earned).map(a => a.icon + ' ' + a.label).join('; ') || 'пока нет'}` : '',
+    ].filter(Boolean)
+    const text = lines.join('\n')
+    navigator.clipboard?.writeText(text).catch(() => {})
+    setDetail({ title: 'Отчёт за период — скопирован в буфер', rows: [['Текст', text]] })
+  }
 
   const readNotif = async (id: string) => {
     await markNotificationRead(id).catch(() => {})
@@ -180,7 +212,64 @@ export function MyWorkspacePage() {
           )}
         </div>
 
+        {rating && rating.of > 0 && (
+          <div className="bg-white rounded-xl border border-[#e8edf3] p-4 flex gap-6 flex-wrap items-start">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-mono text-xl font-extrabold text-white"
+                style={{ background: rating.rank <= 3 ? 'linear-gradient(145deg,#fbbf24,#f59e0b)' : 'linear-gradient(145deg,#94a3b8,#64748b)' }}>
+                #{rating.rank}
+              </div>
+              <div>
+                <p className="text-[15px] font-bold text-slate-900">{rating.rank} место из {rating.of}</p>
+                <p className="text-xs text-slate-500">{rating.rank === 1 ? 'вы задаёте темп команде' : rating.leader ? `лидер периода: ${rating.leader.name}` : ''}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[12px] text-slate-600">
+              {rating.metrics.map(m => (
+                <span key={m.key}>{m.label}: <b className="font-mono tabular-nums">{m.value}</b>
+                  <span className={`ml-1 text-[10px] font-bold ${m.pct >= 70 ? 'text-emerald-600' : 'text-slate-400'}`}>топ-{Math.max(1, 100 - m.pct + 1)}%</span></span>
+              ))}
+            </div>
+            <div className="flex gap-1.5 flex-wrap items-center flex-1 min-w-[220px]">
+              {rating.achievements.map((a, i) => (
+                <span key={i} title={a.label}
+                  className={`text-[11px] font-semibold rounded-full px-2.5 py-1 border ${a.earned ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                  {a.earned ? a.icon : '🔒'} {a.label}
+                </span>
+              ))}
+            </div>
+            <button onClick={buildReport}
+              className="ml-auto self-center px-3.5 py-2 rounded-lg bg-blue-600 text-white text-[12.5px] font-bold hover:bg-blue-700">
+              Сформировать отчёт
+            </button>
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-4">
+          {(ws.sales && (ws.sales.leads.length > 0 || ws.sales.tasks.length > 0)) && (
+            <Section icon={ListChecks} title="Продажи — очередь дня" count={(ws.sales.leads.length + ws.sales.tasks.length)} tone="red">
+              <ul className="space-y-1.5">
+                {ws.sales.leads.map(l => (
+                  <li key={l.id}>
+                    <Link to={`/sales/leads/${l.id}`} className="flex items-baseline gap-2 text-[13px] text-slate-700 hover:bg-slate-50 rounded px-1 -mx-1">
+                      <span className="flex-none w-1.5 h-1.5 rounded-full bg-red-400" />
+                      <span className="truncate">Лид без касания: {l.name}</span>
+                      {l.sla_due_at && <span className="text-[10px] font-mono text-red-500 flex-none">SLA {formatDateTimeShort(l.sla_due_at)}</span>}
+                    </Link>
+                  </li>
+                ))}
+                {ws.sales.tasks.map(t => (
+                  <li key={t.id}>
+                    <Link to={t.deal_id ? `/sales/deals/${t.deal_id}` : '/sales/queue'} className="flex items-baseline gap-2 text-[13px] text-slate-700 hover:bg-slate-50 rounded px-1 -mx-1">
+                      <span className="flex-none w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span className="truncate">{t.title}{t.deal_title ? ` · ${t.deal_title}` : ''}</span>
+                      <span className="text-[10px] font-mono text-slate-400 flex-none">{formatDateTimeShort(t.due_at)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
           <Section icon={Bell} title="Уведомления" count={notifs.length} tone="red">
             {notifs.length === 0 ? <Empty text="непрочитанных нет — бот не побеспокоит" /> : (
               <ul className="space-y-2">
