@@ -50,13 +50,26 @@ export default async function handler(req: Request): Promise<Response> {
        WHERE org_id = $1 AND changed_by = $2 AND changed_at > ${prevSince} GROUP BY 1`),
   ]) as any[]
 
+  // ::date приходит объектом Date (или строкой — зависит от драйвера):
+  // String(Date).slice(0,10) давала «Fri Aug 25» → Invalid Date → вся
+  // активность улетала в «прошлый период» и экран показывал 0 при живых данных
+  const dayKey = (d: any): string => {
+    // Date берём по календарным компонентам: toISOString в не-UTC рантайме
+    // сдвигал дату на день назад
+    if (d instanceof Date) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    const m = String(d).match(/\d{4}-\d{2}-\d{2}/)
+    return m ? m[0] : ''
+  }
   const cutoff = new Date(Date.now() - days * 864e5)
   const merge = (rows: any[]) => {
     let cur = 0, prev = 0
     const byDay: Record<string, number> = {}
     for (const r of rows) {
-      const key = String(r.d).slice(0, 10)
-      if (new Date(key) >= cutoff) { cur += r.c; byDay[key] = (byDay[key] || 0) + r.c }
+      const key = dayKey(r.d)
+      const t = new Date(key + 'T00:00:00Z')
+      if (key && Number.isFinite(t.getTime()) && t >= cutoff) { cur += r.c; byDay[key] = (byDay[key] || 0) + r.c }
       else prev += r.c
     }
     return { cur, prev, byDay }
