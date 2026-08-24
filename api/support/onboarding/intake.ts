@@ -72,7 +72,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE org_id = ${orgId} AND kind = 'na' AND is_active = true
       ORDER BY sort_order LIMIT 1
     `
-    const taskTypes = posId
+    let taskTypes = posId
       ? await sql`
           SELECT t.* FROM onboarding_task_types t
           JOIN onboarding_pos_task_map m ON m.task_type_id = t.id AND m.pos_id = ${posId}
@@ -83,6 +83,14 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT * FROM onboarding_task_types
           WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order
         `
+    // Свежедобавленная POS без строк в шаблоне — не «ноль задач», а полный
+    // чек-лист: пустой проект хуже избыточного
+    if (posId && (taskTypes as any[]).length === 0) {
+      taskTypes = await sql`
+        SELECT * FROM onboarding_task_types
+        WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order
+      `
+    }
 
     const optionLabels: Record<string, string> = {}
     const allOptions = await sql`SELECT id, label FROM onboarding_options WHERE org_id = ${orgId}`

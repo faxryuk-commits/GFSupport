@@ -216,7 +216,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND kind = 'todo' AND is_active = true
         ORDER BY sort_order LIMIT 1
       `
-      const taskTypes = posId
+      let taskTypes = posId
         ? await sql`
             SELECT t.id FROM onboarding_task_types t
             JOIN onboarding_pos_task_map m ON m.task_type_id = t.id AND m.pos_id = ${posId}
@@ -227,6 +227,13 @@ export default async function handler(req: Request): Promise<Response> {
             SELECT id FROM onboarding_task_types
             WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order
           `
+      // POS без строк в шаблоне — полный чек-лист, а не пустой проект
+      if (posId && (taskTypes as any[]).length === 0) {
+        taskTypes = await sql`
+          SELECT id FROM onboarding_task_types
+          WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order
+        `
+      }
       for (const t of taskTypes) {
         await sql`
           INSERT INTO onboarding_tasks (id, org_id, brand_id, task_type_id, status_id)
