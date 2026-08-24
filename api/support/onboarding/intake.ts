@@ -60,6 +60,7 @@ export default async function handler(req: Request): Promise<Response> {
       ? body.connectionType : null
     let parentBrandId: string | null = null
     let parentName: string | null = null
+    let parentChannelId: string | null = null
     if (body.parentBrandId) {
       const [parent] = await sql`
         SELECT id, name, market_id FROM onboarding_brands
@@ -70,14 +71,26 @@ export default async function handler(req: Request): Promise<Response> {
         parentName = parent.name
         if (!intakeMarket && parent.market_id) intakeMarket = parent.market_id
       }
+    } else if (body.channelId) {
+      // апсейл давнему клиенту, у которого нет бренда в подключениях —
+      // родителем выступает его канал из саппорта
+      const [chan] = await sql`
+        SELECT id, name, market_id FROM support_channels
+        WHERE id = ${body.channelId} AND org_id = ${orgId} LIMIT 1
+      ` as any[]
+      if (chan) {
+        parentChannelId = chan.id
+        parentName = chan.name
+        if (!intakeMarket && chan.market_id) intakeMarket = chan.market_id
+      }
     }
 
     await sql`
       INSERT INTO onboarding_brands (id, org_id, name, pos_id, tariff, launch_due,
-        assignee_id, assignee_name, notes, market_id, connection_type, parent_brand_id)
+        assignee_id, assignee_name, notes, market_id, connection_type, parent_brand_id, channel_id)
       VALUES (${brandId}, ${orgId}, ${String(name).trim()}, ${posId || null},
         ${tariff || null}, ${launchDue || null}, ${assigneeId || null}, ${assigneeName},
-        ${notes || null}, ${intakeMarket}, ${connectionType}, ${parentBrandId})
+        ${notes || null}, ${intakeMarket}, ${connectionType}, ${parentBrandId}, ${parentChannelId})
     `
 
     // Чек-лист из шаблона POS (или полный)

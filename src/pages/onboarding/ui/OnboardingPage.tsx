@@ -566,14 +566,38 @@ function AddProjectButton({ board, onCreated }: {
   const fitsMarket = (o: { markets: string | null }) =>
     !marketId || !o.markets || o.markets.split(',').includes(marketId)
 
-  // Тип подключения: свой состав секций. Апсейл требует исходный бренд клиента
+  // Тип подключения: свой состав секций. Апсейл требует исходного клиента —
+  // бренд из подключений ИЛИ канал из саппорта (давним клиентам тоже продают).
+  // parentId кодируется префиксом: b:<brandId> | c:<channelId>
   const [connType, setConnType] = useState('delivery')
   const [parentId, setParentId] = useState('')
   const [allBrands, setAllBrands] = useState<ObBrand[] | null>(null)
+  const [supportChans, setSupportChans] = useState<{ id: string; name: string }[] | null>(null)
+  // Каждый видимый блок должен быть решён: выбор или явное «не требуется»
+  const [skipped, setSkipped] = useState<Record<string, boolean>>({})
   useEffect(() => {
-    if (connType !== 'upsell' || allBrands) return
-    fetchOnboardingBoard(true).then(b => setAllBrands(b.brands)).catch(() => setAllBrands([]))
-  }, [connType, allBrands])
+    if (connType !== 'upsell') return
+    if (!allBrands) fetchOnboardingBoard(true).then(b => setAllBrands(b.brands)).catch(() => setAllBrands([]))
+    if (!supportChans) fetchChannels().then((data: any) => {
+      const list = Array.isArray(data) ? data : data?.channels || []
+      setSupportChans(list
+        .filter((c: any) => c?.name && c?.type !== 'feed')
+        .map((c: any) => ({ id: c.id, name: c.name })))
+    }).catch(() => setSupportChans([]))
+  }, [connType, allBrands, supportChans])
+  const parentItems = useMemo(() => {
+    const brands = (allBrands || board.brands).map(b => ({
+      id: 'b:' + b.id, label: b.name, hint: b.archivedAt ? 'запущен/архив' : 'в работе',
+    }))
+    const known = new Set(brands.map(b => b.label.toLowerCase().trim()))
+    const chans = (supportChans || [])
+      .filter(c => !known.has(c.name.toLowerCase().trim()))
+      .map(c => ({ id: 'c:' + c.id, label: c.name, hint: 'клиент из саппорта' }))
+    return [...brands, ...chans]
+  }, [allBrands, board.brands, supportChans])
+  const parentName = parentItems.find(i => i.id === parentId)?.label || ''
+  // Апсейл: имя проекта собирается само — ручной ввод путал
+  const upsellName = parentName ? `${parentName} — апсейл` : ''
   const catLabelById = useMemo(
     () => Object.fromEntries(board.optionCategories.map(c => [c.id, c.label])),
     [board.optionCategories])
@@ -581,6 +605,7 @@ function AddProjectButton({ board, onCreated }: {
   const pickType = (t: string) => {
     setConnType(t)
     if (t !== 'upsell') setParentId('')
+    setSkipped({})
     // выбор в скрытых секциях не должен уехать в ТЗ незаметно
     const hide = new Set(HIDDEN_CATEGORIES[t] || [])
     setSelections(prev => {
@@ -627,24 +652,37 @@ function AddProjectButton({ board, onCreated }: {
 
   const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
   const posName = posId ? board.posSystems.find(p => p.id === posId)?.name : null
-  const selectedLines = featureTypes
+
+  // Видимые блоки формы (тип подключения + регион уже учтены) — именно они
+  // требуют решения: выбор или явное «не требуется»
+  const visibleTypes = featureTypes.filter(t => {
+    const cat = t.optionCategoryId ? catLabelById[t.optionCategoryId] : ''
+    if (hiddenCats.has(cat || '')) return false
+    return board.options.some(o => o.categoryId === t.optionCategoryId && o.isActive && fitsMarket(o))
+  })
+  const selectedLines = visibleTypes
     .filter(t => (selections[t.id] || []).length > 0)
     .map(t => `${t.label}: ${(selections[t.id] || []).map(oid => optionById[oid]?.label).filter(Boolean).join(', ')}`)
-  const skippedLabels = featureTypes.filter(t => (selections[t.id] || []).length === 0).map(t => t.label)
+  const skippedLabels = visibleTypes.filter(t => skipped[t.id] && !(selections[t.id] || []).length).map(t => t.label)
+  const unresolved = visibleTypes.filter(t => !(selections[t.id] || []).length && !skipped[t.id])
 
   const reset = () => {
     setName(''); setPosId(''); setTariff(''); setLaunchDue(''); setAssigneeId(''); setNotes(''); setSelections({})
     setMarketId(getScopeMarket('onboarding'))
-    setConnType('delivery'); setParentId('')
+    setConnType('delivery'); setParentId(''); setSkipped({})
   }
 
+  const finalName = connType === 'upsell' ? upsellName : name.trim()
+  const canSubmit = !!finalName && !saving
+    && (connType !== 'upsell' || !!parentId)
+    && unresolved.length === 0
+
   const submit = async () => {
-    if (!name.trim() || saving) return
-    if (connType === 'upsell' && !parentId) return
+    if (!canSubmit) return
     setSaving(true)
     try {
       const r = await createIntake({
-        name: name.trim(),
+        name: finalName,
         posId: posId || null,
         tariff: tariff || null,
         launchDue: launchDue || null,
@@ -652,7 +690,8 @@ function AddProjectButton({ board, onCreated }: {
         notes: notes.trim() || null,
         marketId: marketId || null,
         connectionType: connType,
-        parentBrandId: connType === 'upsell' ? parentId || null : null,
+        parentBrandId: connType === 'upsell' && parentId.startsWith('b:') ? parentId.slice(2) : null,
+        channelId: connType === 'upsell' && parentId.startsWith('c:') ? parentId.slice(2) : null,
         selections,
       })
       reset()
@@ -700,23 +739,28 @@ function AddProjectButton({ board, onCreated }: {
                 </div>
                 {connType === 'upsell' && (
                   <div className="mb-3">
-                    <div className="text-[10px] uppercase text-gray-400 mb-1">Какому клиенту (поиск по брендам)</div>
+                    <div className="text-[10px] uppercase text-gray-400 mb-1">Какому клиенту (подключения + клиенты саппорта)</div>
                     <SearchPicker
-                      items={(allBrands || board.brands).map(b => ({
-                        id: b.id, label: b.name,
-                        hint: b.archivedAt ? 'запущен/архив' : 'в работе',
-                      }))}
+                      items={parentItems}
                       value={parentId} onChange={setParentId}
-                      placeholder={allBrands ? 'Найдите исходный бренд клиента…' : 'загружаю бренды…'}
+                      placeholder={allBrands ? 'Найдите клиента…' : 'загружаю клиентов…'}
                     />
+                    {upsellName && (
+                      <div className="mt-1.5 text-[12px] text-gray-500">
+                        Проект: <span className="font-medium text-gray-800">{upsellName}</span>
+                        <span className="text-gray-400"> — название собирается само</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  <input
-                    autoFocus value={name} onChange={e => setName(e.target.value)}
-                    placeholder="Название клиента / бренда *"
-                    className="col-span-2 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
-                  />
+                  {connType !== 'upsell' && (
+                    <input
+                      autoFocus value={name} onChange={e => setName(e.target.value)}
+                      placeholder="Название клиента / бренда *"
+                      className="col-span-2 px-3 py-1.5 rounded-lg border border-gray-300 text-sm"
+                    />
+                  )}
                   <input type="date" value={launchDue} onChange={e => setLaunchDue(e.target.value)}
                     title="Запуск до"
                     className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white" />
@@ -756,22 +800,38 @@ function AddProjectButton({ board, onCreated }: {
                   </div>
                 </div>
 
-                {featureTypes.map(t => {
-                  const catLabel = t.optionCategoryId ? catLabelById[t.optionCategoryId] : ''
-                  if (hiddenCats.has(catLabel || '')) return null
+                {visibleTypes.map(t => {
                   const opts = board.options.filter(o => o.categoryId === t.optionCategoryId && o.isActive && fitsMarket(o))
-                  if (opts.length === 0) return null
                   const sel = selections[t.id] || []
+                  const isSkipped = !!skipped[t.id] && sel.length === 0
+                  const needsMark = sel.length === 0 && !isSkipped
                   return (
                     <div key={t.id} className="mb-3">
-                      <div className="text-[10px] uppercase text-gray-400 mb-1">{t.label}</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {opts.map(o => (
-                          <button key={o.id} onClick={() => toggle(t.id, o.id)} className={chip(sel.includes(o.id))}>
-                            {o.label}{sel.includes(o.id) ? ' ✓' : ''}
-                          </button>
-                        ))}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] uppercase ${needsMark ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>{t.label}</span>
+                        {needsMark && <span className="text-[9px] text-amber-500">— выберите или отметьте</span>}
+                        <button
+                          onClick={() => {
+                            const on = !skipped[t.id]
+                            setSkipped(p => ({ ...p, [t.id]: on }))
+                            if (on) setSelections(p => ({ ...p, [t.id]: [] }))
+                          }}
+                          className={`ml-auto text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                            isSkipped ? 'bg-gray-600 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-400 hover:text-gray-600'
+                          }`}
+                        >
+                          {isSkipped ? '✕ не требуется' : 'не требуется'}
+                        </button>
                       </div>
+                      {!isSkipped && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {opts.map(o => (
+                            <button key={o.id} onClick={() => toggle(t.id, o.id)} className={chip(sel.includes(o.id))}>
+                              {o.label}{sel.includes(o.id) ? ' ✓' : ''}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -786,7 +846,7 @@ function AddProjectButton({ board, onCreated }: {
               <div className="flex-1 min-w-0 bg-gray-50 p-4 overflow-y-auto flex flex-col">
                 <div className="text-[10px] uppercase text-gray-400 mb-1.5">ТЗ для поддержки — собирается само</div>
                 <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 leading-relaxed">
-                  <span className="font-medium text-gray-900">{name.trim() || 'Название клиента'}</span>
+                  <span className="font-medium text-gray-900">{finalName || 'Название клиента'}</span>
                   {posName ? ` · ${posName}` : ' · POS не выбрана'}{tariff ? ` · тариф ${tariff}` : ''}
                   <div className="text-gray-500">
                     {CONNECTION_TYPES.find(([t]) => t === connType)?.[1]}
@@ -798,8 +858,11 @@ function AddProjectButton({ board, onCreated }: {
                   <div className="border-t border-gray-100 my-2" />
                   {selectedLines.length === 0 && <div className="text-gray-400">выберите возможности слева…</div>}
                   {selectedLines.map(l => <div key={l}>✅ {l}</div>)}
-                  {skippedLabels.length > 0 && selectedLines.length > 0 && (
+                  {skippedLabels.length > 0 && (
                     <div className="text-gray-400 mt-1">— не требуются: {skippedLabels.join(', ')}</div>
+                  )}
+                  {unresolved.length > 0 && (
+                    <div className="text-amber-600 mt-1">❓ без решения: {unresolved.map(t => t.label).join(', ')}</div>
                   )}
                   {notes.trim() && <div className="mt-1 text-gray-500">💬 {notes.trim()}</div>}
                 </div>
@@ -811,7 +874,7 @@ function AddProjectButton({ board, onCreated }: {
                 <div className="mt-auto pt-3 flex gap-2">
                   <button
                     onClick={submit}
-                    disabled={!name.trim() || saving || (connType === 'upsell' && !parentId)}
+                    disabled={!canSubmit}
                     className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50 hover:bg-blue-700"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Создать проект'}
@@ -2328,7 +2391,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
-  const PANEL_W = 232
+  const PANEL_W = 292
   const panelStyle: CSSProperties | undefined = rect ? {
     position: 'fixed',
     zIndex: 60,

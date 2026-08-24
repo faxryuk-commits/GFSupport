@@ -262,6 +262,8 @@ export function createIntake(data: {
   marketId?: string | null
   connectionType?: string | null
   parentBrandId?: string | null
+  /** Апсейл клиенту из саппорта: канал вместо бренда */
+  channelId?: string | null
   selections: Record<string, string[]>
 }): Promise<{ success: boolean; id: string }> {
   return apiPost('/onboarding/intake', data)
