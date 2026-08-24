@@ -1387,6 +1387,7 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
     try {
       await sendMessage(brand.channelId, clientText.trim())
       await addBrandComment(brand.id, `📨 Напоминание клиенту в чат: «${clientText.trim().slice(0, 120)}»`).catch(() => {})
+      emitUndo({ label: `📨 Отправлено в группу «${brand.name}»: «${clientText.trim().slice(0, 80)}…»` })
       setRect(null)
       setClientMode(false)
       onCreated()
@@ -1397,8 +1398,8 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
 
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
   const panelStyle: CSSProperties | undefined = rect ? {
-    position: 'fixed', zIndex: 60, width: 264,
-    left: Math.max(8, rect.right - 264),
+    position: 'fixed', zIndex: 60, width: 360,
+    left: Math.max(8, rect.right - 360),
     ...(rect.bottom > vh - 220 ? { bottom: vh - rect.top + 4 } : { top: rect.bottom + 4 }),
   } : undefined
 
@@ -1420,11 +1421,12 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
           {brand.channelId && !clientMode && (
             <button
               onClick={async () => {
+                setClientMode(true)
+                setClientText('⏳ Собираю список из ТЗ…')
                 try {
                   const r = await fetchBrandRequirements(brand.id)
                   setClientText(r.text)
-                  setClientMode(true)
-                } catch {}
+                } catch { setClientText('Не удалось собрать список — попробуйте ещё раз') }
               }}
               className="w-full px-3 py-2 text-left hover:bg-gray-50 border-t border-gray-100"
             >
@@ -1435,11 +1437,12 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
           {brand.channelId && !clientMode && (
             <button
               onClick={async () => {
+                setClientMode(true)
+                setClientText('⏳ Готовлю ссылку на портал…')
                 try {
                   const r = await getPortalLink(brand.id)
                   setClientText(`Страница вашего подключения — прогресс, что нужно от вас и статусы всех запросов. Обновляется сама:\n${r.url}`)
-                  setClientMode(true)
-                } catch {}
+                } catch { setClientText('Не удалось получить ссылку — попробуйте ещё раз') }
               }}
               className="w-full px-3 py-2 text-left hover:bg-gray-50 border-t border-gray-100"
             >
@@ -1455,9 +1458,18 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
                   autoFocus
                   value={clientText}
                   onChange={e => setClientText(e.target.value)}
-                  rows={3}
-                  className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-xs"
+                  rows={7}
+                  className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-[13px] leading-snug"
                 />
+                {(() => {
+                  const m = clientText.match(/https?:\S+\/r\/\S+/)
+                  return m ? (
+                    <a href={m[0]} target="_blank" rel="noreferrer"
+                      className="inline-block mt-1 text-[12px] font-semibold text-blue-600 hover:underline">
+                      👁 Предпросмотр страницы — как увидит клиент ↗
+                    </a>
+                  ) : null
+                })()}
                 <div className="flex justify-end gap-1.5 mt-1.5">
                   <button onClick={() => setClientMode(false)} className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-500">
                     Отмена
@@ -1821,7 +1833,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
  * Отмена последнего действия. Изменил статус или поставщика случайно —
  * тост внизу экрана возвращает как было. Один шаг, восемь секунд.
  */
-type UndoEntry = { label: string; run: () => Promise<void> }
+type UndoEntry = { label: string; run?: () => Promise<void> }
 let emitUndo: (u: UndoEntry) => void = () => {}
 
 function UndoToast() {
@@ -1840,13 +1852,15 @@ function UndoToast() {
   return (
     <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-gray-900 text-white text-[13px] rounded-xl px-4 py-2.5 shadow-2xl">
       <span className="max-w-[420px] truncate">{u.label}</span>
-      <button
-        disabled={busy}
-        onClick={async () => { setBusy(true); try { await u.run() } finally { setBusy(false); setU(null) } }}
-        className="font-semibold text-blue-300 hover:text-blue-200 disabled:opacity-50"
-      >
-        {busy ? '…' : 'Отменить'}
-      </button>
+      {u.run && (
+        <button
+          disabled={busy}
+          onClick={async () => { setBusy(true); try { await u.run!() } finally { setBusy(false); setU(null) } }}
+          className="font-semibold text-blue-300 hover:text-blue-200 disabled:opacity-50"
+        >
+          {busy ? '…' : 'Отменить'}
+        </button>
+      )}
       <button onClick={() => setU(null)} className="text-gray-500 hover:text-white text-xs">✕</button>
     </div>
   )

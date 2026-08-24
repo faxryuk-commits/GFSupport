@@ -23,7 +23,7 @@ const fmtD = (iso: string | null) => {
 function StateBadge({ state, waitDays }: { state: string; waitDays?: number }) {
   if (state === 'done') return <span className="ml-auto flex-none font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 text-emerald-700 bg-emerald-100">получено</span>
   if (state === 'waiting') return <span className="ml-auto flex-none font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 text-amber-700 bg-amber-100">ждём{waitDays ? ` ${waitDays} дн` : ' вас'}</span>
-  return <span className="ml-auto flex-none font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 text-blue-700 bg-blue-100">в работе</span>
+  return <span className="ml-auto flex-none font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 text-blue-700 bg-blue-100">делаем мы</span>
 }
 
 export default function ClientPortalPage() {
@@ -77,7 +77,8 @@ export default function ClientPortalPage() {
 
         <div className="bg-white border border-[#e3e9f2] rounded-2xl p-5 mt-4 shadow-sm">
           <h2 className="text-base font-extrabold">📋 Что нужно от вас</h2>
-          <p className="text-[12.5px] text-slate-500 mt-0.5 mb-2">Пришлите прямо в нашу общую группу — по пунктам есть инструкции из базы знаний Delever.</p>
+          <p className="text-[12.5px] text-slate-500 mt-0.5 mb-1">Пришлите прямо в нашу общую группу — по пунктам есть инструкции из базы знаний Delever.</p>
+          <p className="text-[11px] text-slate-400 mb-2">✓ получено · <span className="text-blue-600 font-semibold">делаем мы</span> — мяч на нашей стороне · <span className="text-amber-600 font-semibold">ждём вас</span> — нужен ваш шаг</p>
           {data.needs.length === 0 && <p className="text-[13px] text-slate-400 py-2">Сейчас от вас ничего не нужно — работаем 💪</p>}
           {data.needs.map((n, i) => (
             <div key={i} className="flex gap-3 py-2.5 border-t border-slate-100 items-start">

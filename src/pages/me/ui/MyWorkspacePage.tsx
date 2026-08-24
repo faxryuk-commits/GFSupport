@@ -260,7 +260,7 @@ export function MyWorkspacePage() {
                   <div>
                     <b className="block font-mono text-[26px] font-bold tabular-nums leading-none">{act.total}</b>
                     <span className="text-[11px] text-slate-500">действий</span>
-                    {act.prevTotal > 0 && (
+                    {act.prevTotal + act.total >= 5 && act.prevTotal > 0 && (
                       <span className={`block text-[11px] font-bold ${act.total >= act.prevTotal ? 'text-emerald-600' : 'text-red-500'}`}>
                         {act.total >= act.prevTotal ? '▲' : '▼'} {Math.abs(Math.round(((act.total - act.prevTotal) / act.prevTotal) * 100))}%
                       </span>
@@ -279,7 +279,8 @@ export function MyWorkspacePage() {
                       const buckets: number[] = []
                       for (let i = 0; i < per.length; i += size)
                         buckets.push(per.slice(i, i + size).reduce((s2, x) => s2 + x.c, 0))
-                      const max = Math.max(1, ...buckets)
+                      // пол в знаменателе: 1 действие не должно рисовать башню
+                      const max = Math.max(5, ...buckets)
                       return buckets.map((c, i) => (
                         <div key={i} title={`${c} действий`} className="flex-1 rounded-t"
                           style={{ height: `${Math.max(4, (c / max) * 100)}%`, background: c ? '#2563eb' : '#e2e8f0' }} />

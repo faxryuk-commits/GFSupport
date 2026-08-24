@@ -616,8 +616,15 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                 </>
               )}
             </div>
+            {/* Колокольчик обязан жить и в свёрнутом меню — иначе уведомления
+                видны только из «Моего» */}
+            {isCollapsed && (
+              <div className="w-full mt-2 flex justify-center">
+                <NotificationBellSidebar />
+              </div>
+            )}
             {isCollapsed && onLogout && (
-              <button 
+              <button
                 onClick={onLogout}
                 className="w-full mt-2 p-2.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors flex items-center justify-center"
                 title="Выйти"

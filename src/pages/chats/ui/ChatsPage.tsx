@@ -91,17 +91,24 @@ function mapChannelToUI(channel: Channel): ChannelItemData {
 function mapMessageToUI(message: Message): MessageData {
   const formatTime = (dateStr: string) => formatTimeHM(dateStr)
 
-  const getMediaType = (mediaType?: string): 'image' | 'video' | 'video_note' | 'audio' | 'voice' | 'document' | 'sticker' => {
+  const getMediaType = (mediaType?: string, mimeType?: string | null): 'image' | 'video' | 'video_note' | 'audio' | 'voice' | 'document' | 'sticker' => {
     switch (mediaType) {
       case 'photo': return 'image'
+      case 'image': return 'image'
       case 'video': return 'video'
       case 'video_note': return 'video_note'
       case 'voice': return 'voice'
       case 'audio': return 'audio'
       case 'sticker': return 'sticker'
       case 'document': return 'document'
-      default: return 'document'
     }
+    // media_type в базе почти всегда пуст — настоящий тип живёт в mime_type.
+    // Без этого фото из WhatsApp открывались файлом в новом окне вместо превью
+    const mime = (mimeType || '').toLowerCase()
+    if (mime.startsWith('image/')) return 'image'
+    if (mime.startsWith('video/')) return 'video'
+    if (mime.startsWith('audio/')) return mime.includes('ogg') ? 'voice' : 'audio'
+    return 'document'
   }
 
   const mapReactions = (reactions?: Record<string, string[]>): MessageReaction[] | undefined => {
@@ -138,7 +145,7 @@ function mapMessageToUI(message: Message): MessageData {
       sender: message.replyToSender || 'Пользователь'
     } : undefined,
     attachments: message.mediaUrl ? [{
-      type: getMediaType(message.mediaType),
+      type: getMediaType(message.mediaType, message.mimeType),
       url: resolveMediaUrl(message.mediaUrl) || message.mediaUrl,
       name: message.fileName || (message.mediaType === 'document' ? 'Документ' : undefined),
       thumbnail: resolveMediaUrl(message.thumbnailUrl),
