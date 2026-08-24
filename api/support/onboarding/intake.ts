@@ -64,13 +64,16 @@ export default async function handler(req: Request): Promise<Response> {
     let parentChannelId: string | null = null
     if (body.parentBrandId) {
       const [parent] = await sql`
-        SELECT id, name, market_id FROM onboarding_brands
+        SELECT id, name, market_id, channel_id FROM onboarding_brands
         WHERE id = ${body.parentBrandId} AND org_id = ${orgId} LIMIT 1
       ` as any[]
       if (parent) {
         parentBrandId = parent.id
         parentName = parent.name
         if (!intakeMarket && parent.market_id) intakeMarket = parent.market_id
+        // апсейл живёт в той же группе клиента, что и исходный проект:
+        // без наследования «Требования» и напоминания оставались без адреса
+        if (parent.channel_id) parentChannelId = parent.channel_id
       }
     } else if (body.channelId) {
       // апсейл давнему клиенту, у которого нет бренда в подключениях —

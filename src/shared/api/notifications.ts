@@ -2,7 +2,7 @@ import { apiGet, apiPut } from '../services/api.service'
 
 export interface AppNotification {
   id: string
-  type: 'escalation' | 'tag' | 'critical_case' | 'agent_decision' | 'sla_breach'
+  type: 'escalation' | 'tag' | 'critical_case' | 'agent_decision' | 'sla_breach' | 'assignment'
   title: string
   body: string
   priority: string
