@@ -51,6 +51,17 @@ export default async function handler(req: Request): Promise<Response> {
     // Попутная ночная уборка: новые каналы без региона получают его по
     // сигналам переписки (язык, инструменты, страна в названии). Ошибка
     // распределения не должна ронять архивирование
+    // Ночная уборка личного пространства:
+    // 1) уведомления старше недели никто уже не прочитает — гасим;
+    // 2) обещание, просроченное дольше 3 дней, не выполнят «по напоминанию» —
+    //    это шум, а не долг: истекает и уходит из «Требует меня»
+    try {
+      await sql`UPDATE support_notifications SET is_read = true, read_at = NOW()
+        WHERE is_read = false AND created_at < NOW() - INTERVAL '7 days'`
+      await sql`UPDATE support_commitments SET status = 'expired'
+        WHERE status = 'overdue' AND due_date < NOW() - INTERVAL '3 days'`
+    } catch {}
+
     let regionsAssigned = 0
     try {
       regionsAssigned = await autoAssignChannelMarkets(sql, ORG)
