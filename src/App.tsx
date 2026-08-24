@@ -25,6 +25,7 @@ const RegisterPage = lazy(() => import('@/pages/register/ui/RegisterPage').then(
 const KnowledgePage = lazy(() => import('@/pages/knowledge/ui/KnowledgePage').then(m => ({ default: m.KnowledgePage })))
 const CommitmentsPage = lazy(() => import('@/pages/commitments/ui/CommitmentsPage').then(m => ({ default: m.CommitmentsPage })))
 const OnboardingPage = lazy(() => import('@/pages/onboarding/ui/OnboardingPage').then(m => ({ default: m.OnboardingPage })))
+const MyWorkspacePage = lazy(() => import('@/pages/me/ui/MyWorkspacePage').then(m => ({ default: m.MyWorkspacePage })))
 const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPage'))
 const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const PublicDocPage = lazy(() => import('@/pages/doc/ui/PublicDocPage'))
@@ -89,6 +90,7 @@ export default function App() {
 
         <Route element={<MainLayout />}>
           <Route path="/overview" element={<DashboardPage />} />
+          <Route path="/me" element={<MyWorkspacePage />} />
           <Route path="/chats" element={<ChatsPage />} />
           <Route path="/chats/:id" element={<ChatsPage />} />
           <Route path="/channels" element={<ChannelsListPage />} />

@@ -8,6 +8,7 @@ const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; label: str
   critical_case: { icon: FileWarning, color: 'text-red-600 bg-red-50', label: 'Критичный кейс' },
   agent_decision: { icon: Bot, color: 'text-blue-600 bg-blue-50', label: 'AI Агент' },
   sla_breach: { icon: Clock, color: 'text-orange-600 bg-orange-50', label: 'SLA' },
+  assignment: { icon: Zap, color: 'text-blue-600 bg-blue-50', label: 'Назначение' },
 }
 
 export function NotificationBell({ agentId }: { agentId?: string }) {

@@ -20,7 +20,7 @@
  */
 import { getSQL, json, getOpenAIKey } from '../lib/db.js'
 import { loadSla, businessMinutesBetween } from '../lib/sla.js'
-import { sendNotification } from '../lib/notifications.js'
+import { sendNotification, escalateStaleNotifications } from '../lib/notifications.js'
 import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge' }
@@ -206,6 +206,14 @@ export default async function handler(req: Request): Promise<Response> {
       VALUES (${ORG}, 'sla_guard', 'cycle', ${`Цикл: ${stat.scanned} скан, ${stat.alerts.WARNING + stat.alerts.BREACH + stat.alerts.CRITICAL} алертов, ${stat.suppressed} подавлено`}, ${JSON.stringify(stat)}::jsonb, ${LIVE ? 'live' : 'shadow'})`
   } catch {}
 
-  console.log(`[sla-guard:${LIVE ? 'LIVE' : 'SHADOW'}] ${JSON.stringify(stat)}`)
-  return json({ ok: true, mode: LIVE ? 'live' : 'shadow', ...stat })
+  // Лестница эскалации: непрочитанное в системе дольше порога → телеграм
+  let escalated = 0
+  try {
+    escalated = await escalateStaleNotifications(ORG)
+  } catch (e: any) {
+    console.error('[sla-guard] escalation failed:', e?.message)
+  }
+
+  console.log(`[sla-guard:${LIVE ? 'LIVE' : 'SHADOW'}] ${JSON.stringify(stat)} escalated=${escalated}`)
+  return json({ ok: true, mode: LIVE ? 'live' : 'shadow', escalated, ...stat })
 }

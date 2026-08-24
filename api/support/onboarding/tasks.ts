@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
 import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
+import { sendNotification } from '../lib/notifications.js'
 
 export const config = {
   runtime: 'edge',
@@ -154,7 +155,23 @@ export default async function handler(req: Request): Promise<Response> {
           SET assignee_id = ${assigneeId || null}, assignee_name = ${name}, updated_at = NOW()
           WHERE id = ${taskId} AND org_id = ${orgId}
         `
-        if (assigneeId) await addParticipant(sql, orgId, task.brand_id, assigneeId, name)
+        if (assigneeId) {
+          await addParticipant(sql, orgId, task.brand_id, assigneeId, name)
+          // Назначение — адресное событие: сначала в системе, бот подключится
+          // кроном, если не отреагирует (лестница эскалации)
+          if (assigneeId !== ctx.agentId) {
+            try {
+              const [b] = await sql`SELECT name FROM onboarding_brands WHERE id = ${task.brand_id} LIMIT 1` as any[]
+              const [tt] = await sql`SELECT label FROM onboarding_task_types WHERE id = ${task.task_type_id} LIMIT 1` as any[]
+              await sendNotification({
+                orgId, type: 'assignment', priority: 'high',
+                title: `Вам назначен шаг: ${tt?.label || 'задача'} · ${b?.name || ''}`,
+                body: `${actorName || 'Коллега'} назначил вас исполнителем шага «${tt?.label || ''}» бренда «${b?.name || ''}» в Подключениях.`,
+                targetAgentIds: [assigneeId],
+              })
+            } catch {}
+          }
+        }
       } else if (assigneeName !== undefined) {
         await sql`
           UPDATE onboarding_tasks

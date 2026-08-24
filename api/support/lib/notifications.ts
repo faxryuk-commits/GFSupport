@@ -1,7 +1,7 @@
 import { getSQL } from './db.js'
 export interface NotificationPayload {
   orgId: string
-  type: 'escalation' | 'tag' | 'critical_case' | 'agent_decision' | 'sla_breach'
+  type: 'escalation' | 'tag' | 'critical_case' | 'agent_decision' | 'sla_breach' | 'assignment'
   title: string
   body: string
   channelId?: string
@@ -74,11 +74,15 @@ export async function sendNotification(payload: NotificationPayload) {
     let inAppSent = false
     let smsSent = false
 
-    if (target.telegramId) {
+    // Лестница эскалации: сначала уведомление В СИСТЕМЕ; бот подключается
+    // кроном, только если человек не отреагировал (high — 10 мин, medium —
+    // 30 мин). Немедленный телеграм — лишь critical: раньше бот дублировал
+    // всё сразу, и внутренние уведомления никто не открывал (126/126 unread)
+    if (target.telegramId && payload.priority === 'critical') {
       tgSent = await sendTelegramDM(payload.orgId, target.telegramId, payload)
     }
 
-    inAppSent = await saveInAppNotification(sql, payload, target)
+    inAppSent = await saveInAppNotification(sql, payload, target, tgSent)
 
     if (payload.priority === 'critical' && payload.type === 'escalation') {
       smsSent = await sendSmsAlert(payload.orgId, target.agentId, payload)
@@ -187,7 +191,7 @@ async function sendTelegramCallAlert(orgId: string, agentId: string, payload: No
   } catch { return false }
 }
 
-async function saveInAppNotification(sql: any, payload: NotificationPayload, target: { agentId: string; name: string }): Promise<boolean> {
+async function saveInAppNotification(sql: any, payload: NotificationPayload, target: { agentId: string; name: string }, alreadyEscalated = false): Promise<boolean> {
   const id = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   try {
     await sql`
@@ -205,16 +209,54 @@ async function saveInAppNotification(sql: any, payload: NotificationPayload, tar
         decision_id VARCHAR(60),
         is_read BOOLEAN DEFAULT false,
         read_at TIMESTAMP,
+        escalated_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `
+    await sql`ALTER TABLE support_notifications ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP`
     await sql`
-      INSERT INTO support_notifications (id, org_id, agent_id, type, title, body, priority, channel_id, channel_name, sender_name, decision_id, created_at)
-      VALUES (${id}, ${payload.orgId}, ${target.agentId}, ${payload.type}, ${payload.title}, ${payload.body}, ${payload.priority}, ${payload.channelId || null}, ${payload.channelName || null}, ${payload.senderName || null}, ${payload.decisionId || null}, NOW())
+      INSERT INTO support_notifications (id, org_id, agent_id, type, title, body, priority, channel_id, channel_name, sender_name, decision_id, escalated_at, created_at)
+      VALUES (${id}, ${payload.orgId}, ${target.agentId}, ${payload.type}, ${payload.title}, ${payload.body}, ${payload.priority}, ${payload.channelId || null}, ${payload.channelName || null}, ${payload.senderName || null}, ${payload.decisionId || null}, ${alreadyEscalated ? new Date().toISOString().slice(0, 19) : null}, NOW())
     `
     return true
   } catch (e: any) {
     console.error('[Notifications] In-app save error:', e.message)
     return false
   }
+}
+
+/**
+ * Крон-эскалатор: непрочитанное в системе дольше своего порога уходит
+ * сотруднику в телеграм. high — 10 минут, medium — 30; low живёт только
+ * в системе. Одна эскалация на уведомление.
+ */
+export async function escalateStaleNotifications(orgId: string): Promise<number> {
+  const sql = getSQL()
+  const stale = await sql`
+    SELECT n.id, n.agent_id, n.type, n.title, n.body, n.priority, n.channel_name, n.sender_name,
+           a.telegram_id, a.name AS agent_name
+    FROM support_notifications n
+    JOIN support_agents a ON a.id = n.agent_id
+    WHERE n.org_id = ${orgId} AND n.is_read = false AND n.escalated_at IS NULL
+      AND ((n.priority = 'high' AND n.created_at < NOW() - INTERVAL '10 minutes')
+        OR (n.priority IN ('medium', 'critical') AND n.created_at < NOW() - INTERVAL '30 minutes'))
+      AND n.created_at > NOW() - INTERVAL '24 hours'
+    LIMIT 30
+  ` as any[]
+
+  let sent = 0
+  for (const n of stale) {
+    let ok = false
+    if (n.telegram_id) {
+      ok = await sendTelegramDM(orgId, n.telegram_id, {
+        orgId, type: n.type, priority: n.priority,
+        title: `Без реакции в системе: ${n.title}`,
+        body: n.body || '', channelName: n.channel_name, senderName: n.sender_name,
+      } as NotificationPayload)
+    }
+    // отметка ставится и без телеграма: второй раз долбить нечем
+    await sql`UPDATE support_notifications SET escalated_at = NOW() WHERE id = ${n.id}`
+    if (ok) sent++
+  }
+  return sent
 }

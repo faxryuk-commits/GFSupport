@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
 import { ensureOnboardingSchema, obId, addParticipant } from '../lib/onboarding-schema.js'
+import { sendNotification } from '../lib/notifications.js'
 
 export const config = {
   runtime: 'edge',
@@ -282,6 +283,18 @@ export default async function handler(req: Request): Promise<Response> {
       if (assigneeName !== undefined) {
         await sql`UPDATE onboarding_brands SET assignee_name = ${assigneeName} WHERE id = ${id} AND org_id = ${orgId}`
         if (assigneeName) await addParticipant(sql, orgId, id, (assigneeId as string) || null, assigneeName)
+        // назначили ведущего проекта — адресное уведомление в систему
+        if (assigneeId) {
+          try {
+            const [b] = await sql`SELECT name FROM onboarding_brands WHERE id = ${id} LIMIT 1` as any[]
+            await sendNotification({
+              orgId, type: 'assignment', priority: 'high',
+              title: `Вы ведёте проект: ${b?.name || ''}`,
+              body: `Вас назначили ведущим проекта «${b?.name || ''}» в Подключениях.`,
+              targetAgentIds: [assigneeId as string],
+            })
+          } catch {}
+        }
       }
       if (nextStep !== undefined) {
         await sql`UPDATE onboarding_brands SET next_step = ${nextStep} WHERE id = ${id} AND org_id = ${orgId}`

@@ -19,6 +19,7 @@ import {
   Trophy,
   Bot,
   Waypoints,
+  CircleUser,
 } from 'lucide-react'
 import {
   BarChart3, Plug, ListChecks, Handshake, Inbox, Building2, PieChart, SlidersHorizontal,
@@ -241,6 +242,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Операции',
     items: [
+      { path: '/me', label: 'Моё', icon: CircleUser },
       { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
       { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
       { path: '/channels', label: 'Каналы', icon: Hash },
