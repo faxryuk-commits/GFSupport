@@ -45,6 +45,8 @@ export interface ObOption {
   label: string
   sortOrder: number
   isActive: boolean
+  /** Регионы поставщика (id рынков через запятую; null — все регионы) */
+  markets: string | null
 }
 
 export interface ObTask {
@@ -250,6 +252,7 @@ export function createIntake(data: {
   launchDue?: string | null
   assigneeId?: string | null
   notes?: string | null
+  marketId?: string | null
   selections: Record<string, string[]>
 }): Promise<{ success: boolean; id: string }> {
   return apiPost('/onboarding/intake', data)

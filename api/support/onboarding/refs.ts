@@ -227,6 +227,9 @@ export default async function handler(req: Request): Promise<Response> {
         if (isActive !== undefined) {
           await sql`UPDATE onboarding_options SET is_active = ${isActive} WHERE id = ${id} AND org_id = ${orgId}`
         }
+        if (body.markets !== undefined) {
+          await sql`UPDATE onboarding_options SET markets = ${body.markets || null} WHERE id = ${id} AND org_id = ${orgId}`
+        }
         return json({ success: true })
       }
 

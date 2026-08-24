@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
-import { MarketFilter } from '@/shared/ui/MarketFilter'
+import { MarketFilter, getScopeMarket } from '@/shared/ui/MarketFilter'
 import { useMarket } from '@/shared/hooks/useMarket'
 import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
@@ -559,6 +559,12 @@ function AddProjectButton({ board, onCreated }: {
   const [selections, setSelections] = useState<Record<string, string[]>>({})
   const [saving, setSaving] = useState(false)
   const [, forceAgents] = useState(0)
+  // Регион заявки: по умолчанию — выбранный в шапке раздела. Kaspi не
+  // предлагаем узбекскому бренду, Payme — казахскому
+  const { markets } = useMarket()
+  const [marketId, setMarketId] = useState(() => getScopeMarket('onboarding'))
+  const fitsMarket = (o: { markets: string | null }) =>
+    !marketId || !o.markets || o.markets.split(',').includes(marketId)
 
   useEffect(() => {
     if (!open || cachedAgents) return
@@ -590,6 +596,7 @@ function AddProjectButton({ board, onCreated }: {
 
   const reset = () => {
     setName(''); setPosId(''); setTariff(''); setLaunchDue(''); setAssigneeId(''); setNotes(''); setSelections({})
+    setMarketId(getScopeMarket('onboarding'))
   }
 
   const submit = async () => {
@@ -603,6 +610,7 @@ function AddProjectButton({ board, onCreated }: {
         launchDue: launchDue || null,
         assigneeId: assigneeId || null,
         notes: notes.trim() || null,
+        marketId: marketId || null,
         selections,
       })
       reset()
@@ -658,6 +666,12 @@ function AddProjectButton({ board, onCreated }: {
                       </optgroup>
                     ))}
                   </select>
+                  <select value={marketId} onChange={e => { setMarketId(e.target.value); setSelections({}) }}
+                    title="Регион — от него зависит набор поставщиков"
+                    className={`col-span-2 px-2 py-1.5 rounded-lg border text-sm bg-white ${marketId ? 'border-blue-300 text-blue-700' : 'border-gray-300'}`}>
+                    <option value="">Регион не выбран — показаны все поставщики</option>
+                    {markets.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
                 </div>
 
                 {tariffs.length > 0 && (
@@ -685,7 +699,7 @@ function AddProjectButton({ board, onCreated }: {
                 </div>
 
                 {featureTypes.map(t => {
-                  const opts = board.options.filter(o => o.categoryId === t.optionCategoryId && o.isActive)
+                  const opts = board.options.filter(o => o.categoryId === t.optionCategoryId && o.isActive && fitsMarket(o))
                   if (opts.length === 0) return null
                   const sel = selections[t.id] || []
                   return (
@@ -3506,11 +3520,12 @@ function TaskTypesEditor({ board, onChanged }: { board: ObBoard; onChanged: () =
 
 function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () => void }) {
   const [openCat, setOpenCat] = useState<string | null>(null)
+  const { markets } = useMarket()
 
   return (
     <RefCard
       title="Категории и поставщики"
-      hint="Тип оплаты, агрегаторы, курьер-сервисы, СМС, телефония, каналы продаж — списки для выбора в ячейках"
+      hint="Тип оплаты, агрегаторы, курьеры, СМС, каналы продаж. У поставщика можно задать регион — в заявке он предлагается только своим регионам"
     >
       <ul className="space-y-1">
         {board.optionCategories.map(cat => {
@@ -3540,6 +3555,13 @@ function CategoriesEditor({ board, onChanged }: { board: ObBoard; onChanged: () 
                       <li key={o.id} className={`flex items-center gap-2 ${o.isActive ? '' : 'opacity-40'}`}>
                         <InlineEdit value={o.label} onSave={label => updateRefItem({ kind: 'option', id: o.id, label }).then(onChanged)} />
                         <span className="ml-auto flex items-center gap-1">
+                          <select value={o.markets || ''}
+                            onChange={e => updateRefItem({ kind: 'option', id: o.id, markets: e.target.value || null }).then(onChanged)}
+                            title="Регион поставщика: в заявке предлагается только этому региону"
+                            className={`text-[11px] border rounded px-1 py-0.5 max-w-[110px] ${o.markets ? 'border-blue-200 text-blue-700 bg-blue-50/50' : 'border-gray-200 text-gray-400 bg-white'}`}>
+                            <option value="">все регионы</option>
+                            {markets.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
                           <button onClick={() => updateRefItem({ kind: 'option', id: o.id, isActive: !o.isActive }).then(onChanged)} className="text-xs text-gray-400 hover:text-gray-600">
                             {o.isActive ? 'скрыть' : 'вернуть'}
                           </button>

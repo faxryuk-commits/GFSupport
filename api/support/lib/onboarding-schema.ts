@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT market_id FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
+      SELECT markets FROM onboarding_options WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -136,7 +136,8 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
       category_id VARCHAR(50) NOT NULL,
       label VARCHAR(100) NOT NULL,
       sort_order INT NOT NULL DEFAULT 0,
-      is_active BOOLEAN NOT NULL DEFAULT true
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      markets TEXT
     )
   `
   await sql`
@@ -205,6 +206,9 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS blockers TEXT`
   // v17: регион бренда — фильтр в шапке раздела наконец фильтрует
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`
+  // v18: регионы поставщика в справочнике (список id через запятую, NULL = все):
+  // Kaspi не предлагаем узбекскому бренду, Payme — казахскому
+  await sql`ALTER TABLE onboarding_options ADD COLUMN IF NOT EXISTS markets TEXT`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_comments_brand ON onboarding_comments(brand_id, created_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_todos_brand ON onboarding_todos(brand_id)`
 

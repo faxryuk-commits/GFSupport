@@ -162,6 +162,7 @@ export default async function handler(req: Request): Promise<Response> {
         options: options.map((o: any) => ({
           id: o.id, categoryId: o.category_id, label: o.label,
           sortOrder: o.sort_order, isActive: o.is_active,
+          markets: o.markets || null,
         })),
         brands: brands.map((b: any) => ({
           id: b.id,
