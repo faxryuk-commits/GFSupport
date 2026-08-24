@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
 import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
+import { inferBrandMarket } from '../lib/region-detect.js'
 
 export const config = {
   runtime: 'edge',
@@ -46,8 +47,12 @@ export default async function handler(req: Request): Promise<Response> {
     const assigneeName = assigneeId ? await resolveAgentName(sql, assigneeId) : null
 
     const brandId = obId('obbr')
-    // Регион заявки: явный из тела, иначе выбранный в шапке (market= в URL)
-    const intakeMarket = (body.marketId || new URL(req.url).searchParams.get('market') || '').trim() || null
+    // Регион заявки: явный из тела → выбранный в шапке (market= в URL) →
+    // вывод по инструментам ТЗ (все размеченные поставщики из одного региона)
+    let intakeMarket = (body.marketId || new URL(req.url).searchParams.get('market') || '').trim() || null
+    if (!intakeMarket) {
+      intakeMarket = await inferBrandMarket(sql, orgId, Object.values(selections).flat() as string[])
+    }
     await sql`
       INSERT INTO onboarding_brands (id, org_id, name, pos_id, tariff, launch_due,
         assignee_id, assignee_name, notes, market_id)

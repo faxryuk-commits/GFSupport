@@ -15,8 +15,11 @@
  */
 import { getSQL, json } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
+import { autoAssignChannelMarkets } from '../lib/region-detect.js'
 
 export const config = { runtime: 'edge' }
+
+const ORG = process.env.SALES_ORG || 'org_delever'
 
 export default async function handler(req: Request): Promise<Response> {
   const denied = assertCron(req)
@@ -45,8 +48,18 @@ export default async function handler(req: Request): Promise<Response> {
       `.catch(() => {})
     }
 
-    console.log(`[archive-resolved] archived ${archived.length} cases`)
-    return json({ ok: true, archived: archived.length })
+    // Попутная ночная уборка: новые каналы без региона получают его по
+    // сигналам переписки (язык, инструменты, страна в названии). Ошибка
+    // распределения не должна ронять архивирование
+    let regionsAssigned = 0
+    try {
+      regionsAssigned = await autoAssignChannelMarkets(sql, ORG)
+    } catch (e: any) {
+      console.error('[archive-resolved] region assign failed:', e?.message)
+    }
+
+    console.log(`[archive-resolved] archived ${archived.length} cases, regions ${regionsAssigned}`)
+    return json({ ok: true, archived: archived.length, regionsAssigned })
   } catch (e: any) {
     console.error('[archive-resolved] error:', e?.message || e)
     return json({ error: 'archive_failed', detail: e?.message }, 500)
