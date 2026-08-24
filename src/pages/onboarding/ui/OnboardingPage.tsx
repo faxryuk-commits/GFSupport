@@ -537,6 +537,7 @@ export function OnboardingPage() {
         <RefsTab board={board} onChanged={() => load(true)} />
       )}
       </div>
+      <UndoToast />
     </div>
   )
 }
@@ -1695,8 +1696,7 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
                                 task={task}
                                 taskType={tt}
                                 brandId={brand.id}
-                                siblingOptionIds={usedOptIds}
-                                siblingCount={list.length}
+                                siblings={list.map(x => ({ id: x.id, optionId: x.optionId }))}
                                 board={board}
                                 status={task.statusId ? statusById[task.statusId] : undefined}
                                 option={undefined}
@@ -1783,6 +1783,41 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
               </ul>
             )
       )}
+    </div>
+  )
+}
+
+/**
+ * Отмена последнего действия. Изменил статус или поставщика случайно —
+ * тост внизу экрана возвращает как было. Один шаг, восемь секунд.
+ */
+type UndoEntry = { label: string; run: () => Promise<void> }
+let emitUndo: (u: UndoEntry) => void = () => {}
+
+function UndoToast() {
+  const [u, setU] = useState<UndoEntry | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    emitUndo = (entry: UndoEntry) => setU(entry)
+    return () => { emitUndo = () => {} }
+  }, [])
+  useEffect(() => {
+    if (!u) return
+    const t = setTimeout(() => setU(null), 8000)
+    return () => clearTimeout(t)
+  }, [u])
+  if (!u) return null
+  return (
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 bg-gray-900 text-white text-[13px] rounded-xl px-4 py-2.5 shadow-2xl">
+      <span className="max-w-[420px] truncate">{u.label}</span>
+      <button
+        disabled={busy}
+        onClick={async () => { setBusy(true); try { await u.run() } finally { setBusy(false); setU(null) } }}
+        className="font-semibold text-blue-300 hover:text-blue-200 disabled:opacity-50"
+      >
+        {busy ? '…' : 'Отменить'}
+      </button>
+      <button onClick={() => setU(null)} className="text-gray-500 hover:text-white text-xs">✕</button>
     </div>
   )
 }
@@ -2290,8 +2325,7 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
                             task={task}
                             taskType={tt}
                             brandId={brand.id}
-                            siblingOptionIds={list.map(x => x.optionId).filter(Boolean) as string[]}
-                            siblingCount={list.length}
+                            siblings={list.map(x => ({ id: x.id, optionId: x.optionId }))}
                             board={board}
                             status={task.statusId ? statusById[task.statusId] : undefined}
                             option={task.optionId ? optionById[task.optionId] : undefined}
@@ -2314,18 +2348,20 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
 
 // ───────────────────────────── Чип статуса (портал-дропдаун)
 
-function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, board, status, option, onMutate, onChanged }: {
+function StatusChip({ task, taskType, brandId, siblings, board, status, option, onMutate, onChanged }: {
   task: ObTask
   taskType: ObTaskType
   brandId: string
-  siblingOptionIds: string[]
-  siblingCount: number
+  /** Все строки этого шага у бренда (включая текущую) — мультивыбор поставщиков */
+  siblings: { id: string; optionId: string | null }[]
   board: ObBoard
   status?: ObStatus
   option?: ObBoard['options'][number]
   onMutate: (taskId: string, patch: Partial<ObTask>) => void
   onChanged: () => void
 }) {
+  const siblingCount = siblings.length
+  const siblingOptionIds = siblings.map(s => s.optionId).filter(Boolean) as string[]
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [section, setSection] = useState<'provider' | 'assignee' | null>(null)
   const [optQ, setOptQ] = useState('')
@@ -2384,9 +2420,59 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   const pickStatus = async (statusId: string) => {
     if (statusId === task.statusId) { setOpen(false); return }
     setRect(null)
+    const prevStatusId = task.statusId
     onMutate(task.id, { statusId, statusSince: new Date().toISOString() })
     try {
       await setTaskStatus(task.id, statusId)
+      if (prevStatusId) {
+        const from = board.statuses.find(s => s.id === prevStatusId)?.label || '—'
+        const to = board.statuses.find(s => s.id === statusId)?.label || '—'
+        emitUndo({
+          label: `${taskType.label}${option ? ' · ' + option.label : ''}: ${from} → ${to}`,
+          run: async () => {
+            onMutate(task.id, { statusId: prevStatusId })
+            await setTaskStatus(task.id, prevStatusId)
+            onChanged()
+          },
+        })
+      }
+    } finally {
+      onChanged()
+    }
+  }
+
+  // Мультивыбор поставщиков: галочка = строка шага. Вторая галочка создаёт
+  // ещё строку (бывшее «+ строкой»), снятие чужой галочки убирает ту строку
+  const toggleProvider = async (o: { id: string; label: string }) => {
+    const sibling = siblings.find(s => s.id !== task.id && s.optionId === o.id)
+    try {
+      if (o.id === task.optionId) {
+        onMutate(task.id, { optionId: null })
+        await setTaskOption(task.id, null)
+        emitUndo({
+          label: `${taskType.label}: снят ${o.label}`,
+          run: async () => { onMutate(task.id, { optionId: o.id }); await setTaskOption(task.id, o.id); onChanged() },
+        })
+      } else if (sibling) {
+        await deleteTask(sibling.id)
+        emitUndo({
+          label: `${taskType.label}: убран ${o.label}`,
+          run: async () => { await addProviderTask(brandId, taskType.id, o.id); onChanged() },
+        })
+      } else if (!task.optionId) {
+        onMutate(task.id, { optionId: o.id })
+        await setTaskOption(task.id, o.id)
+        emitUndo({
+          label: `${taskType.label}: выбран ${o.label}`,
+          run: async () => { onMutate(task.id, { optionId: null }); await setTaskOption(task.id, null); onChanged() },
+        })
+      } else {
+        const r = await addProviderTask(brandId, taskType.id, o.id)
+        emitUndo({
+          label: `${taskType.label}: добавлен ${o.label}`,
+          run: async () => { if (r?.id) await deleteTask(r.id); onChanged() },
+        })
+      }
     } finally {
       onChanged()
     }
@@ -2500,40 +2586,22 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
                       .filter(o => !optQ || o.label.toLowerCase().includes(optQ.toLowerCase()))
                       .map(o => {
                         const current = o.id === task.optionId
-                        const usedByOther = !current && siblingOptionIds.includes(o.id)
+                        const checked = current || siblingOptionIds.includes(o.id)
                         return (
-                          <div key={o.id} className="flex items-center group">
-                            <button
-                              disabled={usedByOther}
-                              onClick={async () => {
-                                const v = current ? null : o.id
-                                onMutate(task.id, { optionId: v })
-                                try { await setTaskOption(task.id, v) } finally { onChanged() }
-                              }}
-                              title={usedByOther ? 'Уже добавлен отдельной строкой' : current ? 'Нажмите, чтобы снять' : undefined}
-                              className={`flex items-center gap-2 flex-1 min-w-0 pl-5 pr-1 py-1 text-left text-xs ${
-                                usedByOther ? 'text-gray-300' : current ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                              }`}
-                            >
-                              <span className={`w-3.5 h-3.5 rounded flex-none flex items-center justify-center border ${current ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
-                                {current && <Check className="w-2.5 h-2.5 text-white" />}
-                              </span>
-                              <span className="truncate">{o.label}</span>
-                            </button>
-                            {!current && !usedByOther && (
-                              <button
-                                onClick={async () => {
-                                  await addProviderTask(brandId, taskType.id, o.id)
-                                  setRect(null)
-                                  onChanged()
-                                }}
-                                title="Добавить отдельной строкой со своим статусом"
-                                className="flex-none p-1 mr-2 rounded text-gray-300 hover:text-blue-600 hover:bg-blue-50"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
+                          <button
+                            key={o.id}
+                            onClick={() => toggleProvider(o)}
+                            title={checked ? 'Нажмите, чтобы убрать' : current || !task.optionId ? undefined : 'Добавится отдельной строкой со своим статусом'}
+                            className={`flex items-center gap-2 w-full pl-5 pr-3 py-1 text-left text-xs ${
+                              checked ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className={`w-3.5 h-3.5 rounded flex-none flex items-center justify-center border ${checked ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                              {checked && <Check className="w-2.5 h-2.5 text-white" />}
+                            </span>
+                            <span className="truncate">{o.label}</span>
+                            {checked && !current && <span className="ml-auto text-[9px] text-gray-400">строкой</span>}
+                          </button>
                         )
                       })}
                     {catOptions.length > 0 && optQ &&
