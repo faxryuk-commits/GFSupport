@@ -611,10 +611,12 @@ function AddProjectButton({ board, onCreated }: {
   }, [open])
 
   const tariffCat = board.optionCategories.find(c => c.label === 'Тарифы' && c.isActive)
+  const posCat = board.optionCategories.find(c => c.label === 'POS')
   const tariffs = tariffCat ? board.options.filter(o => o.categoryId === tariffCat.id && o.isActive) : []
-  // Секции возможностей: активные задачи чек-листа с категориями (кроме Тарифов)
+  // Секции возможностей: активные задачи чек-листа с категориями. Тарифы и POS
+  // не дублируем — у них свои блоки выше (POS проставится в ячейку сама)
   const featureTypes = board.taskTypes.filter(t =>
-    t.isActive && t.optionCategoryId && t.optionCategoryId !== tariffCat?.id)
+    t.isActive && t.optionCategoryId && t.optionCategoryId !== tariffCat?.id && t.optionCategoryId !== posCat?.id)
 
   const toggle = (typeId: string, optionId: string) => {
     setSelections(prev => {
@@ -2260,6 +2262,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
 }) {
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [section, setSection] = useState<'provider' | 'assignee' | null>(null)
+  const [optQ, setOptQ] = useState('')
   const [, forceRender] = useState(0)
   const btnRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -2310,7 +2313,6 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
   const catOptions = taskType.optionCategoryId
     ? board.options.filter(o => o.categoryId === taskType.optionCategoryId && o.isActive)
     : []
-  const addableOptions = catOptions.filter(o => !siblingOptionIds.includes(o.id))
 
   // Оптимистично: чип меняется мгновенно, API — в фоне, затем тихая синхронизация
   const pickStatus = async (statusId: string) => {
@@ -2406,7 +2408,7 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
           {catOptions.length > 0 && (
             <div className="border-t border-gray-100 mt-1">
               <button
-                onClick={() => setSection(section === 'provider' ? null : 'provider')}
+                onClick={() => { setSection(section === 'provider' ? null : 'provider'); setOptQ('') }}
                 className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-gray-50"
               >
                 <span className="text-gray-400">Поставщик:</span>
@@ -2418,50 +2420,61 @@ function StatusChip({ task, taskType, brandId, siblingOptionIds, siblingCount, b
               </button>
               {section === 'provider' && (
                 <div className="pb-1">
-                  <div className="max-h-32 overflow-y-auto">
-                    {catOptions.map(o => {
-                      const current = o.id === task.optionId
-                      const usedByOther = !current && siblingOptionIds.includes(o.id)
-                      return (
-                        <button
-                          key={o.id}
-                          disabled={usedByOther}
-                          onClick={async () => {
-                            const v = current ? null : o.id
-                            onMutate(task.id, { optionId: v })
-                            try { await setTaskOption(task.id, v) } finally { onChanged() }
-                          }}
-                          title={usedByOther ? 'Уже добавлен отдельной строкой' : current ? 'Нажмите, чтобы снять' : undefined}
-                          className={`flex items-center gap-2 w-full pl-5 pr-3 py-1 text-left text-xs ${
-                            usedByOther ? 'text-gray-300' : current ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${current ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
-                            {current && <Check className="w-2.5 h-2.5 text-white" />}
-                          </span>
-                          {o.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {addableOptions.length > 0 && (
-                    <div className="border-t border-gray-50 mt-1 pt-1 max-h-20 overflow-y-auto">
-                      {addableOptions.map(o => (
-                        <button
-                          key={o.id}
-                          onClick={async () => {
-                            await addProviderTask(brandId, taskType.id, o.id)
-                            setRect(null)
-                            onChanged()
-                          }}
-                          title="Добавить отдельной строкой со своим статусом"
-                          className="flex items-center gap-1.5 w-full pl-5 pr-3 py-1 text-left text-xs text-blue-600 hover:bg-blue-50"
-                        >
-                          <Plus className="w-3 h-3" />{o.label} — строкой
-                        </button>
-                      ))}
-                    </div>
+                  {/* Один список вместо двух скролл-зон: чекбокс — выбрать в эту
+                      ячейку, «+» справа — добавить отдельной строкой */}
+                  {catOptions.length > 8 && (
+                    <input
+                      autoFocus value={optQ} onChange={e => setOptQ(e.target.value)}
+                      placeholder="Поиск поставщика…"
+                      className="w-[calc(100%-24px)] mx-3 my-1 px-2 py-1 text-xs border border-gray-200 rounded-md outline-none focus:border-blue-300"
+                    />
                   )}
+                  <div className="max-h-56 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+                    {catOptions
+                      .filter(o => !optQ || o.label.toLowerCase().includes(optQ.toLowerCase()))
+                      .map(o => {
+                        const current = o.id === task.optionId
+                        const usedByOther = !current && siblingOptionIds.includes(o.id)
+                        return (
+                          <div key={o.id} className="flex items-center group">
+                            <button
+                              disabled={usedByOther}
+                              onClick={async () => {
+                                const v = current ? null : o.id
+                                onMutate(task.id, { optionId: v })
+                                try { await setTaskOption(task.id, v) } finally { onChanged() }
+                              }}
+                              title={usedByOther ? 'Уже добавлен отдельной строкой' : current ? 'Нажмите, чтобы снять' : undefined}
+                              className={`flex items-center gap-2 flex-1 min-w-0 pl-5 pr-1 py-1 text-left text-xs ${
+                                usedByOther ? 'text-gray-300' : current ? 'text-blue-700 font-medium hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <span className={`w-3.5 h-3.5 rounded flex-none flex items-center justify-center border ${current ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                                {current && <Check className="w-2.5 h-2.5 text-white" />}
+                              </span>
+                              <span className="truncate">{o.label}</span>
+                            </button>
+                            {!current && !usedByOther && (
+                              <button
+                                onClick={async () => {
+                                  await addProviderTask(brandId, taskType.id, o.id)
+                                  setRect(null)
+                                  onChanged()
+                                }}
+                                title="Добавить отдельной строкой со своим статусом"
+                                className="flex-none p-1 mr-2 rounded text-gray-300 hover:text-blue-600 hover:bg-blue-50"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    {catOptions.length > 0 && optQ &&
+                      catOptions.every(o => !o.label.toLowerCase().includes(optQ.toLowerCase())) && (
+                      <div className="px-5 py-1.5 text-xs text-gray-400">не найдено</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

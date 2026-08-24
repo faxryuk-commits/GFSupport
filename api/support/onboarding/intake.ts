@@ -154,6 +154,19 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    // Выбранная POS — сразу в ячейку «POS-интеграция»: бренд знает свою POS,
+    // ячейка матрицы не должна оставаться пустой
+    if (posId) {
+      await sql`
+        UPDATE onboarding_tasks t SET option_id = o.id
+        FROM onboarding_task_types tt
+        JOIN onboarding_option_categories c ON c.id = tt.option_category_id AND c.label = 'POS'
+        JOIN onboarding_options o ON o.category_id = c.id
+          AND LOWER(o.label) = LOWER((SELECT name FROM onboarding_pos_systems WHERE id = ${posId}))
+        WHERE t.brand_id = ${brandId} AND t.task_type_id = tt.id AND t.option_id IS NULL
+      `.catch(() => {})
+    }
+
     // ТЗ первым комментарием
     const [pos] = posId
       ? await sql`SELECT name FROM onboarding_pos_systems WHERE id = ${posId}`
