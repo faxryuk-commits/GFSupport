@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT connection_type FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
+      SELECT portal_token FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -215,6 +215,10 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // связь апсейла с исходным брендом — у клиента может быть несколько подключений
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS connection_type VARCHAR(30)`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS parent_brand_id VARCHAR(50)`
+  // v20: клиентский статус-портал (вечный токен) и подсказки из базы знаний
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS portal_token VARCHAR(40)`
+  await sql`ALTER TABLE onboarding_task_types ADD COLUMN IF NOT EXISTS guide_url TEXT`
+  await sql`ALTER TABLE onboarding_options ADD COLUMN IF NOT EXISTS guide_url TEXT`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_comments_brand ON onboarding_comments(brand_id, created_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_todos_brand ON onboarding_todos(brand_id)`
 

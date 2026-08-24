@@ -158,6 +158,7 @@ export default async function handler(req: Request): Promise<Response> {
           targetDays: t.target_days,
           ownerAgentId: t.owner_agent_id,
           ownerName: t.owner_name,
+          guideUrl: t.guide_url || null,
         })),
         posSystems: posSystems.map((p: any) => ({
           id: p.id, name: p.name, isActive: p.is_active,
@@ -170,6 +171,7 @@ export default async function handler(req: Request): Promise<Response> {
           id: o.id, categoryId: o.category_id, label: o.label,
           sortOrder: o.sort_order, isActive: o.is_active,
           markets: o.markets || null,
+          guideUrl: o.guide_url || null,
         })),
         brands: brands.map((b: any) => ({
           id: b.id,

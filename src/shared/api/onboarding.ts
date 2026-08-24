@@ -24,6 +24,8 @@ export interface ObTaskType {
   /** Владелец процесса: отвечает за задачу, когда исполнитель не назначен */
   ownerAgentId: string | null
   ownerName: string | null
+  /** Инструкция из базы знаний Delever (GitBook) */
+  guideUrl: string | null
 }
 
 export interface ObPosSystem {
@@ -47,6 +49,8 @@ export interface ObOption {
   isActive: boolean
   /** Регионы поставщика (id рынков через запятую; null — все регионы) */
   markets: string | null
+  /** Инструкция из базы знаний Delever (GitBook) */
+  guideUrl: string | null
 }
 
 export interface ObTask {
@@ -272,6 +276,11 @@ export function createIntake(data: {
 /** Список требований к клиенту из ТЗ проекта — текст для отправки в группу */
 export function fetchBrandRequirements(brandId: string): Promise<{ brand: { id: string; name: string }; items: string[]; text: string }> {
   return apiGet(`/onboarding/requirements?brandId=${encodeURIComponent(brandId)}`, false)
+}
+
+/** Вечная ссылка на клиентский статус-портал бренда */
+export function getPortalLink(brandId: string): Promise<{ url: string; brand: string }> {
+  return apiPost('/onboarding/portal-link', { brandId })
 }
 
 export function deleteBrand(id: string): Promise<{ success: boolean }> {

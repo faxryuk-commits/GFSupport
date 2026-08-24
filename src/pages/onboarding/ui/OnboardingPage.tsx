@@ -13,7 +13,7 @@ import {
   fetchOnboardingBoard, fetchOnboardingStats, createBrand, createIntake, updateBrand, deleteBrand,
   setTaskStatus, setTaskAssignee, setTaskOption, setTaskWaitingOn, addProviderTask, deleteTask, fetchOnboardingEvents,
   fetchOnboardingLaunches, type ObLaunches,
-  fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant, fetchBrandRequirements,
+  fetchBrandCard, addBrandComment, deleteBrandComment, addBrandParticipant, fetchBrandRequirements, getPortalLink,
   addBrandTodo, updateBrandTodo, deleteBrandTodo,
   createRefItem, updateRefItem, deleteRefItem,
   type ObBoard, type ObBrand, type ObStatus, type ObEvent, type ObStats, type ObTaskType,
@@ -1432,6 +1432,21 @@ function ReminderMenu({ brand, worstLabel, onCreated }: {
               <span className="text-[11px] text-gray-400 block">система соберёт список из заявки, отправите сами</span>
             </button>
           )}
+          {brand.channelId && !clientMode && (
+            <button
+              onClick={async () => {
+                try {
+                  const r = await getPortalLink(brand.id)
+                  setClientText(`Страница вашего подключения — прогресс, что нужно от вас и статусы всех запросов. Обновляется сама:\n${r.url}`)
+                  setClientMode(true)
+                } catch {}
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-gray-50 border-t border-gray-100"
+            >
+              <span className="text-xs text-gray-900 block">🔗 Статус-портал клиента — в группу</span>
+              <span className="text-[11px] text-gray-400 block">вечная ссылка на страницу статусов, отправите сами</span>
+            </button>
+          )}
           {brand.channelId ? (
             clientMode ? (
               <div className="px-3 py-2 border-t border-gray-100">
@@ -2629,6 +2644,12 @@ function StatusChip({ task, taskType, brandId, siblings, board, status, option, 
             </div>
           )}
 
+          {(option?.guideUrl || taskType.guideUrl) && (
+            <a href={option?.guideUrl || taskType.guideUrl || '#'} target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 border-t border-gray-100">
+              📖 Как сделать — инструкция{option ? ` (${option.label})` : ''}
+            </a>
+          )}
           {kind === 'waiting' && (
             <div className="border-t border-gray-100 px-3 py-1.5">
               <div className="text-[10px] uppercase text-gray-400 mb-1">
