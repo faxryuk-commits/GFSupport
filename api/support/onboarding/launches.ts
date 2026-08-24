@@ -33,6 +33,10 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
   await ensureOnboardingSchema(sql, orgId)
 
+  // Регион из шапки раздела: '' = все, бренды без региона видны всегда
+  const market = (new URL(req.url).searchParams.get('market') || '').trim()
+  const marketCond = `($2 = '' OR b.market_id IS NULL OR b.market_id = $2)`
+
   // Финальный шаг ищем по смыслу, а не по порядковому номеру: список шагов
   // редактируется, и новый шаг в конце не должен молча стать «запуском»
   const launchedCte = `
@@ -49,6 +53,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN onboarding_brands b ON b.id = e.brand_id AND b.org_id = $1
       JOIN onboarding_statuses s ON s.id = e.new_status_id AND s.kind = 'done'
       WHERE e.org_id = $1 AND e.task_type_id = (SELECT id FROM final_type)
+        AND ${marketCond}
       GROUP BY b.id, b.name, b.started_at, b.tariff, b.owner_name
     )
   `
@@ -60,7 +65,7 @@ export default async function handler(req: Request): Promise<Response> {
              GREATEST(0, ROUND(EXTRACT(EPOCH FROM (launched_at - started_at)) / 86400))::int AS days
       FROM launched
       ORDER BY launched_at DESC
-    `, [orgId]),
+    `, [orgId, market]),
     sql.query(`
       SELECT b.name, b.started_at, b.owner_name,
              (SELECT COUNT(*) FILTER (WHERE st.kind = 'done')
@@ -69,6 +74,7 @@ export default async function handler(req: Request): Promise<Response> {
              (SELECT COUNT(*) FROM onboarding_tasks t WHERE t.brand_id = b.id)::int AS total
       FROM onboarding_brands b
       WHERE b.org_id = $1 AND b.archived_at IS NULL
+        AND ${marketCond}
         AND b.id NOT IN (
           SELECT e.brand_id FROM onboarding_task_events e
           JOIN onboarding_statuses s ON s.id = e.new_status_id AND s.kind = 'done'
@@ -76,7 +82,7 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE e.org_id = $1 AND (tt.label ILIKE '%запуск%' OR tt.label ILIKE '%launch%')
         )
       ORDER BY b.started_at
-    `, [orgId]),
+    `, [orgId, market]),
   ]) as any[]
 
   // Границы периодов считаем здесь, а не в SQL: так одна и та же дата запуска

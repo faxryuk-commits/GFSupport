@@ -46,12 +46,14 @@ export default async function handler(req: Request): Promise<Response> {
     const assigneeName = assigneeId ? await resolveAgentName(sql, assigneeId) : null
 
     const brandId = obId('obbr')
+    // Регион заявки: явный из тела, иначе выбранный в шапке (market= в URL)
+    const intakeMarket = (body.marketId || new URL(req.url).searchParams.get('market') || '').trim() || null
     await sql`
       INSERT INTO onboarding_brands (id, org_id, name, pos_id, tariff, launch_due,
-        assignee_id, assignee_name, notes)
+        assignee_id, assignee_name, notes, market_id)
       VALUES (${brandId}, ${orgId}, ${String(name).trim()}, ${posId || null},
         ${tariff || null}, ${launchDue || null}, ${assigneeId || null}, ${assigneeName},
-        ${notes || null})
+        ${notes || null}, ${intakeMarket})
     `
 
     // Чек-лист из шаблона POS (или полный)

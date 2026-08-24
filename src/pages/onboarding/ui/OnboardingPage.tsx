@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode, type CSSProperties } from 'react'
 import { MarketFilter } from '@/shared/ui/MarketFilter'
+import { useMarket } from '@/shared/hooks/useMarket'
 import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { formatDateTimeShort, formatDateShort } from '@/shared/lib'
@@ -1640,6 +1641,24 @@ function BrandPanel({ brand, board, agents, statusById, onClose, onMutateTask, o
   )
 }
 
+/** Регион бренда — по нему работает фильтр в шапке раздела */
+function BrandMarketSelect({ value, onSave }: {
+  value: string | null
+  onSave: (patch: { marketId: string | null }) => void
+}) {
+  const { markets } = useMarket()
+  return (
+    <label className="block">
+      <span className="text-[10px] uppercase text-gray-400">Регион</span>
+      <select value={value || ''} onChange={e => onSave({ marketId: e.target.value || null })}
+        className="mt-0.5 w-full px-2 py-1 rounded-lg border border-gray-300 text-sm bg-white">
+        <option value="">Без региона (виден всегда)</option>
+        {markets.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+    </label>
+  )
+}
+
 function BrandFields({ brand, board, agents, onSave, onDelete }: {
   brand: ObBrand
   board: ObBoard
@@ -1669,6 +1688,7 @@ function BrandFields({ brand, board, agents, onSave, onDelete }: {
           {board.posSystems.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
+      <BrandMarketSelect value={brand.marketId} onSave={onSave} />
       <label className="block">
         <span className="text-[10px] uppercase text-gray-400">Ведёт проект</span>
         <select value={brand.assigneeId || ''} onChange={e => {
@@ -1964,6 +1984,8 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
   const groups = useMemo(() => buildGroups(taskTypes), [taskTypes])
   const optionById = useMemo(() => Object.fromEntries(board.options.map(o => [o.id, o])), [board.options])
   const posById = useMemo(() => Object.fromEntries(board.posSystems.map(p => [p.id, p])), [board.posSystems])
+  const { markets } = useMarket()
+  const marketName = (id: string | null) => (id ? markets.find(m => m.id === id)?.name : null)
   const brands = board.brands.filter(b => !b.archivedAt)
 
   return (
@@ -2013,6 +2035,7 @@ function MatrixTab({ board, statusById, onSelect, onMutateTask, onChanged }: {
                     </span>
                     <span className="text-[11px] text-gray-400 block">
                       {(brand.posId ? posById[brand.posId]?.name : null) || 'без POS'}
+                      {marketName(brand.marketId) ? ` · ${marketName(brand.marketId)}` : ''}
                       {brand.assigneeName ? ` · ${initials(brand.assigneeName)}` : ''}
                     </span>
                     <span className="text-[11px] text-gray-400 block">

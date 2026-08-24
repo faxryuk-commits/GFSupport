@@ -41,6 +41,9 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
   await ensureOnboardingSchema(sql, orgId)
 
+  // Регион из шапки раздела: '' = все, бренды без региона видны всегда
+  const market = (new URL(req.url).searchParams.get('market') || '').trim()
+
   try {
     // Интервалы по kind из журнала (закрытые интервалы + текущий открытый до NOW)
     const stages = await sql`
@@ -50,6 +53,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM onboarding_task_events e
         JOIN onboarding_brands b ON b.id = e.brand_id
         WHERE e.org_id = ${orgId} AND b.archived_at IS NULL
+          AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
       ),
       per_task AS (
         SELECT ev.task_type_id, ev.brand_id, COALESCE(ev.option_id, '') AS option_key, s.kind,
@@ -80,6 +84,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN onboarding_task_types tt ON tt.id = t.task_type_id
       LEFT JOIN onboarding_statuses s ON s.id = t.status_id
       WHERE t.org_id = ${orgId} AND b.archived_at IS NULL
+          AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
       GROUP BY tt.id, tt.label, tt.sort_order
       ORDER BY tt.sort_order
     `
@@ -95,8 +100,10 @@ export default async function handler(req: Request): Promise<Response> {
                  ORDER BY e.changed_at
                ) AS prev_at
         FROM onboarding_task_events e
+        JOIN onboarding_brands b ON b.id = e.brand_id
         LEFT JOIN onboarding_statuses s ON s.id = e.new_status_id
         WHERE e.org_id = ${orgId}
+          AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
       )
       SELECT changed_by AS name,
              COUNT(*)::int AS events,
@@ -115,6 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN onboarding_brands b ON b.id = t.brand_id
       LEFT JOIN onboarding_statuses s ON s.id = t.status_id
       WHERE t.org_id = ${orgId} AND b.archived_at IS NULL
+        AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
         AND s.kind IN ('active', 'waiting', 'todo')
         AND COALESCE(t.assignee_name, b.assignee_name) IS NOT NULL
       GROUP BY COALESCE(t.assignee_name, b.assignee_name)
@@ -130,6 +138,7 @@ export default async function handler(req: Request): Promise<Response> {
       LEFT JOIN onboarding_tasks t ON t.brand_id = b.id
       LEFT JOIN onboarding_statuses s ON s.id = t.status_id
       WHERE b.org_id = ${orgId} AND b.archived_at IS NULL
+          AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
       GROUP BY b.id, b.name, b.assignee_name, b.started_at, b.blockers
       ORDER BY b.started_at
     `
@@ -146,6 +155,7 @@ export default async function handler(req: Request): Promise<Response> {
       JOIN onboarding_statuses s ON s.id = t.status_id
       LEFT JOIN onboarding_options op ON op.id = t.option_id
       WHERE t.org_id = ${orgId} AND b.archived_at IS NULL AND s.kind IN ('active', 'waiting')
+          AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
       ORDER BY seconds DESC
       LIMIT 15
     `

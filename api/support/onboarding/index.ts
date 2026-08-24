@@ -37,6 +37,11 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
   await ensureOnboardingSchema(sql, orgId)
 
+  // Регион из переключателя в шапке раздела: api.service дописывает market=
+  // ко всем запросам, но эндпоинт его игнорировал — фильтр был декоративным.
+  // Пустая строка = «Все регионы», бренды без региона видны всегда
+  const market = (url.searchParams.get('market') || '').trim()
+
   if (req.method === 'GET') {
     try {
       const includeArchived = url.searchParams.get('archived') === 'true'
@@ -73,18 +78,25 @@ export default async function handler(req: Request): Promise<Response> {
       )
 
       const brands = includeArchived
-        ? await sql`SELECT * FROM onboarding_brands WHERE org_id = ${orgId} ORDER BY archived_at NULLS FIRST, created_at`
-        : await sql`SELECT * FROM onboarding_brands WHERE org_id = ${orgId} AND archived_at IS NULL ORDER BY created_at`
+        ? await sql`SELECT * FROM onboarding_brands WHERE org_id = ${orgId}
+            AND (${market} = '' OR market_id IS NULL OR market_id = ${market})
+            ORDER BY archived_at NULLS FIRST, created_at`
+        : await sql`SELECT * FROM onboarding_brands WHERE org_id = ${orgId} AND archived_at IS NULL
+            AND (${market} = '' OR market_id IS NULL OR market_id = ${market})
+            ORDER BY created_at`
 
       const tasks = includeArchived
         ? await sql`
             SELECT t.* FROM onboarding_tasks t
+            JOIN onboarding_brands b ON b.id = t.brand_id
             WHERE t.org_id = ${orgId}
+              AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
           `
         : await sql`
             SELECT t.* FROM onboarding_tasks t
             JOIN onboarding_brands b ON b.id = t.brand_id
             WHERE t.org_id = ${orgId} AND b.archived_at IS NULL
+              AND (${market} = '' OR b.market_id IS NULL OR b.market_id = ${market})
           `
 
       // Накопленное время по kind статусов из журнала (для тултипов/метрик).
@@ -162,6 +174,7 @@ export default async function handler(req: Request): Promise<Response> {
           nextStep: b.next_step,
           tariff: b.tariff,
           launchDue: b.launch_due,
+          marketId: b.market_id,
           dependsOn: b.depends_on,
           blockers: b.blockers,
           notes: b.notes,
@@ -188,10 +201,12 @@ export default async function handler(req: Request): Promise<Response> {
       }
 
       const brandId = obId('obbr')
+      // Регион нового бренда: явный из формы, иначе — выбранный в шапке раздела
+      const brandMarket = (body.marketId || market || '').trim() || null
       await sql`
-        INSERT INTO onboarding_brands (id, org_id, name, pos_id, channel_id, owner_name, notes)
+        INSERT INTO onboarding_brands (id, org_id, name, pos_id, channel_id, owner_name, notes, market_id)
         VALUES (${brandId}, ${orgId}, ${String(name).trim()}, ${posId || null},
-                ${channelId || null}, ${ownerName || null}, ${notes || null})
+                ${channelId || null}, ${ownerName || null}, ${notes || null}, ${brandMarket})
       `
 
       // Задачи из шаблона POS-системы; без POS — полный чек-лист.
@@ -247,6 +262,9 @@ export default async function handler(req: Request): Promise<Response> {
       }
       if (body.launchDue !== undefined) {
         await sql`UPDATE onboarding_brands SET launch_due = ${body.launchDue || null} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+      if (body.marketId !== undefined) {
+        await sql`UPDATE onboarding_brands SET market_id = ${body.marketId || null} WHERE id = ${id} AND org_id = ${orgId}`
       }
       if (dependsOn !== undefined) {
         await sql`UPDATE onboarding_brands SET depends_on = ${dependsOn} WHERE id = ${id} AND org_id = ${orgId}`

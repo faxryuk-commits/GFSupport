@@ -74,6 +74,8 @@ export interface ObBrand {
   tariff: string | null
   /** Дедлайн запуска (yyyy-mm-dd) */
   launchDue: string | null
+  /** Регион бренда (id рынка из справочника; null — без региона, виден всегда) */
+  marketId: string | null
   dependsOn: string | null
   blockers: string | null
   notes: string | null
@@ -215,6 +217,7 @@ export function createBrand(data: {
   ownerName?: string | null
   channelId?: string | null
   notes?: string | null
+  marketId?: string | null
 }): Promise<{ success: boolean; id: string }> {
   return apiPost('/onboarding', data)
 }
@@ -234,6 +237,7 @@ export function updateBrand(data: {
   nextStep?: string | null
   dependsOn?: string | null
   blockers?: string | null
+  marketId?: string | null
 }): Promise<{ success: boolean }> {
   return apiPut('/onboarding', data)
 }

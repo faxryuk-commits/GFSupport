@@ -28,7 +28,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   // и справочники организации засеяны → пропускаем DDL и сиды на холодном старте.
   try {
     const [probe] = await sql`
-      SELECT tariff FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
+      SELECT market_id FROM onboarding_brands WHERE org_id = ${orgId} LIMIT 1
     `
     if (probe !== undefined) {
       ensuredOrgs.add(orgId)
@@ -83,6 +83,7 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
       channel_id VARCHAR(50),
       owner_name VARCHAR(255),
       notes TEXT,
+      market_id VARCHAR(50),
       started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       archived_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -202,6 +203,8 @@ export async function ensureOnboardingSchema(sql: SQL, orgId: string): Promise<v
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS next_step TEXT`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS depends_on TEXT`
   await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS blockers TEXT`
+  // v17: регион бренда — фильтр в шапке раздела наконец фильтрует
+  await sql`ALTER TABLE onboarding_brands ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_comments_brand ON onboarding_comments(brand_id, created_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_ob_todos_brand ON onboarding_todos(brand_id)`
 
