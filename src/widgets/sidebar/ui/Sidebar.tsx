@@ -119,7 +119,7 @@ function NotificationBellSidebar() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors relative"
+        className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors relative"
         title="Уведомления"
       >
         <Bell className="w-4 h-4" />
@@ -387,13 +387,13 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
         className={`flex items-center gap-3 px-3.5 py-2.5 rounded-[10px] text-[14.5px] transition-all group ${
           active
             ? 'text-white'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            : 'text-[#aab8d4] hover:bg-white/10 hover:text-white'
         } ${isCollapsed ? 'justify-center px-3 relative' : ''}`}
       >
         <span className="relative flex-shrink-0">
           <Icon className="w-5 h-5" />
           {isCollapsed && showDot && (
-            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #ffffff' }} />
+            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #13213d' }} />
           )}
         </span>
         {!isCollapsed && (
@@ -433,7 +433,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       {/* Inject animation styles */}
       <style>{badgeAnimationStyles}</style>
       <aside 
-        className={`bg-white border-r border-slate-200 h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
+        className={`bg-[#13213d] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
           isCollapsed ? 'w-[72px]' : 'w-[240px]'
         }`}
       >
@@ -452,15 +452,15 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
           )}
           {!isCollapsed && (
             <div className="min-w-0">
-              <span className="text-slate-900 font-extrabold text-[17px] block truncate" style={{ fontFamily: 'Manrope, system-ui, sans-serif' }}>{orgName || 'SUPPORT'}</span>
-              <span className="text-[11px] text-slate-400 uppercase tracking-wider">{orgPlan ? `${orgPlan} · OMNICHANNEL` : 'OMNICHANNEL'}</span>
+              <span className="text-white font-extrabold text-[17px] block truncate" style={{ fontFamily: 'Manrope, system-ui, sans-serif' }}>{orgName || 'SUPPORT'}</span>
+              <span className="text-[11px] text-[#7e8db0] uppercase tracking-wider">{orgPlan ? `${orgPlan} · OMNICHANNEL` : 'OMNICHANNEL'}</span>
             </div>
           )}
         </Link>
         <button
           onClick={toggleCollapse}
-          className={`p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors ${
-            isCollapsed ? 'absolute left-[72px] top-4 -translate-x-1/2 bg-white border border-slate-200 shadow-lg z-10' : ''
+          className={`p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${
+            isCollapsed ? 'absolute left-[72px] top-4 -translate-x-1/2 bg-[#13213d] border border-white/10 shadow-lg z-10' : ''
           }`}
           title={isCollapsed ? 'Развернуть' : 'Свернуть'}
         >
@@ -489,7 +489,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                 <button
                   onClick={() => toggleGroup(group.label)}
                   className="w-full flex items-center gap-1.5 px-3 pb-1 pt-1 text-[12px] font-semibold
-                             tracking-normal text-slate-500 hover:text-slate-800"
+                             tracking-normal text-[#7e8db0] hover:text-[#b6c6e4]"
                 >
                   <ChevronDown
                     className={`w-3.5 h-3.5 transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
@@ -497,13 +497,13 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                   <span>{group.label}</span>
                   {groupCount > 0 && (
                     <span className={`ml-auto min-w-[19px] text-center text-[11px] font-bold px-1.5 py-0.5
-                                     rounded-full ${open ? 'bg-slate-100 text-slate-500' : 'bg-blue-600 text-white'}`}>
+                                     rounded-full ${open ? 'bg-white/10 text-[#8fa3c8]' : 'bg-blue-600 text-white'}`}>
                       {groupCount > 99 ? '99+' : groupCount}
                     </span>
                   )}
                 </button>
               )}
-              {isCollapsed && gi > 0 && <div className="my-1.5 mx-3 border-t border-slate-200" />}
+              {isCollapsed && gi > 0 && <div className="my-1.5 mx-3 border-t border-white/10" />}
               {(open || isCollapsed) && (
                 <div className={`space-y-0.5 ${!flat && !isCollapsed ? 'pl-2' : ''}`}>
                   {group.items.map(item => (
@@ -520,7 +520,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       <div className="px-3 pb-4">
         {/* User */}
         {currentUser && (
-          <div className="border-t border-slate-200 pt-4">
+          <div className="border-t border-white/10 pt-4">
             <div className={`flex items-center gap-3 px-2 py-2 ${isCollapsed ? 'justify-center' : ''}`}>
               {/* Avatar with flip animation showing online count */}
               <div 
@@ -555,12 +555,12 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
               {!isCollapsed && (
                 <>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-slate-800 truncate">{currentUser.name}</p>
+                    <p className="text-[14px] font-semibold text-white truncate">{currentUser.name}</p>
                     <div className="flex items-center gap-2">
                       {currentUser.role && (
-                        <p className="text-[12.5px] text-slate-500 truncate">{currentUser.role}</p>
+                        <p className="text-[12.5px] text-slate-400 truncate">{currentUser.role}</p>
                       )}
-                      <span className="flex items-center gap-1 text-[12.5px] text-emerald-600">
+                      <span className="flex items-center gap-1 text-[12.5px] text-green-400">
                         <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
                         {onlineAgentsCount} онлайн
                       </span>
@@ -570,7 +570,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                   {onLogout && (
                     <button 
                       onClick={onLogout}
-                      className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                      className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                       title="Выйти"
                     >
                       <LogOut className="w-4 h-4" />
@@ -589,7 +589,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
             {isCollapsed && onLogout && (
               <button
                 onClick={onLogout}
-                className="w-full mt-2 p-2.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors flex items-center justify-center"
+                className="w-full mt-2 p-2.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors flex items-center justify-center"
                 title="Выйти"
               >
                 <LogOut className="w-5 h-5" />
