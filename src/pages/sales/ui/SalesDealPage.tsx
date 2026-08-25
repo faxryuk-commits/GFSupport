@@ -9,6 +9,7 @@ import { QuoteBuilder } from './QuoteBuilder'
 import { TasksCard } from './TasksCard'
 import { ActivityCard } from './ActivityCard'
 import { ContactsCard } from './ContactsCard'
+import { sendMessage } from '@/shared/api/messages'
 import { useAuth } from '@/shared/hooks/useAuth'
 
 /** Роли, которым сервер разрешает решать по скидке выше порога. */
@@ -133,6 +134,9 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   const [busy, setBusy] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
   const refs = useSalesRefs()
   const { agent } = useAuth()
   // Проверка ролей есть и на сервере — здесь она только прячет кнопку,
@@ -223,6 +227,27 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       setError(e?.message || 'Не удалось изменить решение по скидке')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Ответ клиенту из карточки. Уходит тем же путём, что и из раздела чатов:
+   * канал сам решает, WhatsApp это, Telegram или директ. Имя автора берётся
+   * из localStorage внутри sendMessage — иначе в чате появится «Support».
+   */
+  const sendToClient = async () => {
+    const text = draft.trim()
+    if (!text || !data?.channelId) return
+    setSending(true); setError(null)
+    try {
+      await sendMessage(data.channelId, text)
+      setDraft(''); setSent(true)
+      setTimeout(() => setSent(false), 2500)
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Сообщение не ушло — откройте чат и проверьте канал')
+    } finally {
+      setSending(false)
     }
   }
 
@@ -594,6 +619,28 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+            {/* Ответ прямо отсюда: раньше каждая реплика выбрасывала сейлза
+                из сделки в раздел чатов, и возвращался он не всегда */}
+            {data.channelId && (
+              <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/60">
+                <textarea
+                  value={draft} onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendToClient() }}
+                  rows={2} placeholder="Ответить клиенту…"
+                  className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg resize-y
+                             focus:outline-none focus:border-blue-400"
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <button onClick={sendToClient} disabled={sending || !draft.trim()}
+                    className="text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white
+                               hover:bg-blue-700 disabled:opacity-50">
+                    {sending ? 'Отправляем…' : 'Отправить'}
+                  </button>
+                  <span className="text-[11px] text-gray-400">⌘↵ чтобы отправить</span>
+                  {sent && <span className="text-[11.5px] text-emerald-600">Отправлено ✓</span>}
+                </div>
               </div>
             )}
           </Card>

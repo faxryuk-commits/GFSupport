@@ -347,6 +347,33 @@ export default async function handler(req: Request): Promise<Response> {
           ${senderUsername || null}, 'support', false, 'text', ${text}, true, NOW()
         )
       `
+    } else if (channel.source === 'instagram') {
+      // Директ уходит через Graph API от имени подключённого аккаунта.
+      // Ограничение платформы: ответить можно в течение суток после последнего
+      // сообщения клиента — за окном Meta вернёт ошибку, и мы честно её покажем,
+      // а не сделаем вид, что сообщение ушло
+      const igToken = process.env.IG_PAGE_TOKEN
+      if (!igToken) return json({ error: 'Instagram не подключён' }, 500)
+
+      const igRes = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${igToken}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipient: { id: channel.external_chat_id }, message: { text } }),
+      })
+      if (!igRes.ok) {
+        const detail = await igRes.text().catch(() => '')
+        return json({ error: 'Instagram не принял сообщение', details: detail.slice(0, 300) }, 502)
+      }
+
+      await sql`
+        INSERT INTO support_messages (
+          id, channel_id, org_id, sender_id, sender_name, sender_username, sender_role,
+          is_from_client, content_type, text_content, is_read, created_at
+        ) VALUES (
+          ${messageId}, ${channelId}, ${orgId}, ${senderId || null}, ${senderName || 'Support'},
+          ${senderUsername || null}, 'support', false, 'text', ${text}, true, NOW()
+        )
+      `
     } else {
       const chatId = channel.telegram_chat_id
       const hasMarkdownChars = /[_*\[\]()~`>#+\-=|{}.!]/.test(text)
