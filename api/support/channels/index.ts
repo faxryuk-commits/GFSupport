@@ -71,18 +71,18 @@ export default async function handler(req: Request): Promise<Response> {
             AND (${source || ''}::text = '' OR COALESCE(c.source, 'telegram') = ${source || ''})
             AND (${type || 'all'}::text = 'all' OR c.type = ${type || 'all'})
             AND (${isActiveFlag}::text = 'skip' OR c.is_active = ${isActive === 'true'})
+            -- Разделение по источнику, а не по статусу карточки. Статус
+            -- оказался ненадёжным: рабочие чаты ресторанов с тысячей сообщений
+            -- до сих пор числятся «лидами», и по нему в продажи уезжала вся
+            -- поддержка. Источник врать не может: директ, Messenger, бот заявок
+            -- и чат сайта — это входящие от незнакомых людей, а групповые чаты
+            -- в телеграме и вотсапе — всегда работа с действующим клиентом
             AND (
               ${scope}::text = 'all'
-              OR (${scope}::text = 'sales' AND (
-                    COALESCE(c.source, 'telegram') IN ('instagram', 'messenger')
-                    OR EXISTS (SELECT 1 FROM sales_accounts sa
-                                WHERE sa.channel_id = c.id AND sa.org_id = c.org_id
-                                  AND COALESCE(sa.lifecycle, 'lead') <> 'customer')))
-              OR (${scope}::text = 'support' AND
-                    COALESCE(c.source, 'telegram') NOT IN ('instagram', 'messenger')
-                    AND NOT EXISTS (SELECT 1 FROM sales_accounts sa
-                                     WHERE sa.channel_id = c.id AND sa.org_id = c.org_id
-                                       AND COALESCE(sa.lifecycle, 'lead') <> 'customer'))
+              OR (${scope}::text = 'sales'
+                  AND COALESCE(c.source, 'telegram') IN ('instagram', 'messenger', 'telegram_bot', 'site_chat'))
+              OR (${scope}::text = 'support'
+                  AND COALESCE(c.source, 'telegram') NOT IN ('instagram', 'messenger', 'telegram_bot', 'site_chat'))
             )
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
