@@ -2,6 +2,7 @@ import type { NeonQueryFunction } from '@neondatabase/serverless'
 import { salesId } from './sales-schema.js'
 import { pipelineForMarket } from './sales-amo.js'
 import { getOpenAIKey } from './db.js'
+import { sendNotification } from './notifications.js'
 
 /**
  * Операционка продаж в Telegram.
@@ -92,9 +93,26 @@ export function leadKeyboard(leadId: string): Keyboard {
   ]]
 }
 
-/** Отправка карточки назначенному сейлзу. Вызывается из приёмника лидов. */
+/**
+ * Извещение назначенного сейлза. Вызывается из приёмника лидов.
+ *
+ * Сначала уведомление внутри системы — оно доходит до всех. Раньше здесь был
+ * ранний выход по отсутствию telegram_id, и сотрудник без привязанного бота
+ * не узнавал о назначенном лиде вообще ниоткуда. Карточка с кнопками в
+ * Telegram остаётся сверху для тех, у кого бот есть.
+ */
 export async function notifyLeadAssigned(sql: SQL, lead: any, sourceLabel: string): Promise<void> {
   if (!lead.assigned_agent_id) return
+
+  const orgId = lead.org_id || process.env.SALES_ORG || 'org_delever'
+  await sendNotification({
+    orgId, type: 'assignment', priority: 'high',
+    title: 'Новое обращение на вас',
+    body: `${lead.name || 'Без названия'}${lead.city ? ` · ${lead.city}` : ''} · ${sourceLabel}`
+      + ' — ответить в течение 15 минут',
+    targetAgentIds: [lead.assigned_agent_id],
+  }).catch(() => {})
+
   const [agent] = await sql`
     SELECT telegram_id FROM support_agents WHERE id = ${lead.assigned_agent_id} LIMIT 1
   `

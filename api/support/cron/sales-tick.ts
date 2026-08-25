@@ -3,6 +3,7 @@ import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { getBotToken, tgSend, leadCard, leadKeyboard } from '../lib/sales-bot.js'
 import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../lib/sales-assistant.js'
 import { assertCron } from '../lib/cron-auth.js'
+import { sendNotification } from '../lib/notifications.js'
 
 export const config = { runtime: 'edge' }
 
@@ -85,6 +86,9 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // ─── 2. Просроченные задачи и каденции ──────────────────────────────────────
+  // Раньше выборка требовала привязанного телеграма, и у сотрудника без бота
+  // просроченная задача не всплывала нигде — а отметка «напомнили» ему не
+  // ставилась, поэтому он попадал в выборку каждую минуту без толку
   const tasks = await sql`
     SELECT t.id, t.title, t.due_at, t.assignee_agent_id, d.title AS deal_title, a.telegram_id
     FROM sales_tasks t
@@ -92,11 +96,17 @@ export default async function handler(req: Request): Promise<Response> {
     LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
     WHERE t.org_id = ${ORG} AND t.done_at IS NULL
       AND t.due_at < NOW() AND t.reminded_at IS NULL
-      AND a.telegram_id IS NOT NULL
+      AND t.assignee_agent_id IS NOT NULL
     ORDER BY t.due_at ASC LIMIT 30
   `
   for (const t of tasks) {
-    if (token) {
+    await sendNotification({
+      orgId: ORG, type: 'sla_breach', priority: 'medium',
+      title: 'Просрочена задача',
+      body: `${t.deal_title ? `${t.deal_title}: ` : ''}${t.title}`,
+      targetAgentIds: [t.assignee_agent_id],
+    }).catch(() => {})
+    if (token && t.telegram_id) {
       await tgSend(token, t.telegram_id,
         `⏰ <b>Просрочена задача</b>\n${t.deal_title ? `${t.deal_title}\n` : ''}${t.title}`,
         [[{ text: '✅ Выполнено', callback_data: `sl:done:${t.id}` }]])
