@@ -2,6 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
 import { marketByPhoneCity } from '../lib/region-detect.js'
+import { validMetaSignature } from '../lib/meta-signature.js'
 
 export const config = { runtime: 'edge' }
 
@@ -20,7 +21,7 @@ export const config = { runtime: 'edge' }
  * Через Amo приходил только тег формы, поэтому разбивки по кампаниям не было.
  *
  * Переменные: META_PAGE_TOKEN (или IG_PAGE_TOKEN), META_VERIFY_TOKEN
- * (или IG_VERIFY_TOKEN), SALES_ORG.
+ * (или IG_VERIFY_TOKEN), META_APP_SECRET — для проверки подписи, SALES_ORG.
  */
 
 const ORG = process.env.SALES_ORG || 'org_delever'
@@ -55,10 +56,19 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (req.method !== 'POST') return json({ ok: true })
 
-  // Meta ждёт 200 в любом случае: наша ошибка не должна приводить к повторной
-  // доставке и отключению подписки на стороне Meta
+  // Подпись проверяем до разбора тела: без неё адрес вебхука — открытая
+  // дверь, и кто угодно, узнав ссылку, положит сейлзам в очередь поддельные
+  // заявки. Нет секрета в переменных — не принимаем вовсе
+  const raw = await req.text()
+  if (!(await validMetaSignature(raw, req.headers.get('x-hub-signature-256')))) {
+    console.error('[meta-leads] подпись не сошлась или не задан META_APP_SECRET')
+    return new Response('forbidden', { status: 403 })
+  }
+
+  // Дальше Meta ждёт 200 в любом случае: наша ошибка не должна приводить
+  // к повторной доставке и отключению подписки на стороне Meta
   try {
-    const body: any = await req.json()
+    const body: any = JSON.parse(raw)
     if (body?.object !== 'page') return json({ ok: true })
 
     const token = process.env.META_PAGE_TOKEN || process.env.IG_PAGE_TOKEN

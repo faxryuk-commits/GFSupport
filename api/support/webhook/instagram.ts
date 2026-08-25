@@ -1,6 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { acceptLead, logChatMessage } from '../lib/sales-intake.js'
+import { validMetaSignature } from '../lib/meta-signature.js'
 
 export const config = { runtime: 'edge' }
 
@@ -19,7 +20,7 @@ export const config = { runtime: 'edge' }
  * как канал в Amo, сообщения уходят туда и сюда не придут — канал в Amo нужно
  * отключить (лид-формы это не затрагивает, они живут отдельно).
  *
- * Переменные: IG_VERIFY_TOKEN, IG_PAGE_TOKEN, SALES_ORG.
+ * Переменные: IG_VERIFY_TOKEN, IG_PAGE_TOKEN, META_APP_SECRET, SALES_ORG.
  */
 
 const ORG = process.env.SALES_ORG || 'org_delever'
@@ -72,10 +73,18 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (req.method !== 'POST') return json({ ok: true })
 
-  // Meta ждёт 200 в любом случае: ошибка на нашей стороне не должна приводить
-  // к повторной доставке и отключению подписки
+  // Подпись Meta проверяем до разбора тела: иначе адрес вебхука — открытая
+  // дверь для поддельных обращений. Нет секрета в переменных — не принимаем
+  const raw = await req.text()
+  if (!(await validMetaSignature(raw, req.headers.get('x-hub-signature-256')))) {
+    console.error('[webhook/instagram] подпись не сошлась или не задан META_APP_SECRET')
+    return new Response('forbidden', { status: 403 })
+  }
+
+  // Дальше Meta ждёт 200 в любом случае: ошибка на нашей стороне не должна
+  // приводить к повторной доставке и отключению подписки
   try {
-    const body: any = await req.json()
+    const body: any = JSON.parse(raw)
     if (body?.object !== 'instagram' && body?.object !== 'page') return json({ ok: true })
 
     const sql = getSQL()
