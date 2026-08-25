@@ -69,6 +69,32 @@ function kindBySource(sourceKey: string): string {
   return kindOfSource(sourceKey)
 }
 
+/**
+ * Тот же человек, приехавший вторым путём.
+ *
+ * На время переезда с Amo одна заявка с рекламы приходит дважды: мгновенно
+ * нашим приёмником Meta и через минуту синком из Amo. Без этой проверки сейлз
+ * получил бы по два одинаковых обращения на каждую заявку и перестал бы
+ * доверять очереди в первый же день. Ищем по нормализованному телефону
+ * в коротком окне: два разных заведения с одним номером за двое суток —
+ * это не совпадение, а тот же самый лид.
+ */
+export async function findRecentTwin(
+  sql: SQL, orgId: string, phone: string | null | undefined, fromSourceKeys: string[],
+): Promise<{ id: string; account_id: string | null } | null> {
+  const norm = normPhone(phone)
+  if (!norm || !fromSourceKeys.length) return null
+  const [row] = await sql`
+    SELECT l.id, l.account_id FROM sales_leads l
+    JOIN sales_sources s ON s.id = l.source_id
+    WHERE l.org_id = ${orgId} AND l.phone_norm = ${norm}
+      AND s.key = ANY(${fromSourceKeys})
+      AND l.created_at > NOW() - INTERVAL '48 hours'
+    ORDER BY l.created_at DESC LIMIT 1
+  `
+  return row ? { id: row.id, account_id: row.account_id } : null
+}
+
 export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): Promise<IntakeResult> {
   const sourceKey = String(body.source || '').trim()
   if (!sourceKey) return { ok: false, error: 'source is required' }

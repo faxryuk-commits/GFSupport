@@ -1,6 +1,6 @@
 import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
-import { acceptLead } from '../lib/sales-intake.js'
+import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
 import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
          fetchNotes, parseNotes, statusMap, applyAmoStage, readAmoMode } from '../lib/sales-amo.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
@@ -193,6 +193,10 @@ export default async function handler(req: Request): Promise<Response> {
           continue
         }
       }
+      // Помечаем: это заявка, которой у нас ещё нет. Ниже по такой метке
+      // ищем близнеца от своего приёмника Meta — у известных сделок искать
+      // нечего, они давно заведены
+      lead._fresh_form = true
       leads.push(lead)
     }
 
@@ -285,6 +289,16 @@ export default async function handler(req: Request): Promise<Response> {
         const payload = leadPayload(lead, contact)
         if (!payload.phone && lead._note_phone) payload.phone = lead._note_phone
         if (!payload.text && lead._note_text) payload.text = lead._note_text
+
+        // Пока работают оба входа — свой приёмник Meta и этот мост, — одна
+        // заявка с рекламы приезжает дважды. Мгновенный вебхук почти всегда
+        // успевает первым, мост опрашивает Amo раз в минуту. Второй экземпляр
+        // карточку не создаёт: два одинаковых обращения в очереди за день
+        // отучили бы сейлзов ей доверять
+        if (lead._fresh_form) {
+          const twin = await findRecentTwin(sql, ORG, payload.phone, ['meta_leadform'])
+          if (twin) { out.deduped++; continue }
+        }
 
         const res = await acceptLead(sql, ORG, payload)
         if (!res.ok) { out.skipped++; continue }
