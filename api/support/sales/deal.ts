@@ -13,7 +13,21 @@ export const config = { runtime: 'edge' }
  *                   контакты и история
  * PATCH {id, fields:{...}} — правка полей из белого списка. Этап здесь не
  *                   меняется: для этого есть /sales/stage с проверкой критериев.
+ * POST  ?action=approve-discount|reject-discount {id, comment?} — снять или
+ *                   подтвердить блокировку по скидке выше порога.
  */
+
+/**
+ * Кто вправе подтвердить скидку выше порога: руководство, а не сам продавец.
+ * Администраторы приходят готовым признаком, коммерческим директорам (cco)
+ * права даём по роли — они и ведут переговоры о цене.
+ */
+async function canApproveDiscount(sql: any, ctx: any): Promise<boolean> {
+  if (ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin) return true
+  const [a] = await sql`SELECT role FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`
+  return ['cco', 'sales_lead'].includes(String(a?.role || ''))
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
@@ -24,6 +38,43 @@ export default async function handler(req: Request): Promise<Response> {
 
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
+
+  // ─── Подтверждение скидки ───────────────────────────────────────────────────
+  // Движок этапов ставит сделке approval_state='pending', когда скидка выше
+  // порога. Раньше снять эту пометку было нечем — сделка замирала навсегда
+  if (req.method === 'POST') {
+    const action = url.searchParams.get('action')
+    if (action !== 'approve-discount' && action !== 'reject-discount') {
+      return json({ error: 'unknown action' }, 400)
+    }
+    const body = await req.json().catch(() => null)
+    if (!body?.id) return json({ error: 'id is required' }, 400)
+
+    const [deal] = await sql`
+      SELECT id, account_id, discount_pct, approval_state FROM sales_deals
+      WHERE id = ${body.id} AND org_id = ${orgId} LIMIT 1
+    `
+    if (!deal) return json({ error: 'not found' }, 404)
+    if (!(await canApproveDiscount(sql, ctx))) {
+      return json({ error: 'Подтвердить скидку может только руководитель' }, 403)
+    }
+
+    const approved = action === 'approve-discount'
+    const [agent] = await sql`SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`
+    const who = agent?.name || ctx.agentId
+    await sql`
+      UPDATE sales_deals SET approval_state = ${approved ? 'approved' : 'rejected'}, updated_at = NOW()
+      WHERE id = ${deal.id} AND org_id = ${orgId}
+    `
+    await sql`
+      INSERT INTO sales_activities (id, org_id, deal_id, account_id, type, result, text, agent_id)
+      VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)}, ${orgId},
+              ${deal.id}, ${deal.account_id}, 'approval', ${approved ? 'approved' : 'rejected'},
+              ${`Скидка ${deal.discount_pct}% ${approved ? 'подтверждена' : 'отклонена'}: ${who}` +
+                (body.comment ? ` — ${body.comment}` : '')}, ${ctx.agentId})
+    `
+    return json({ ok: true, approvalState: approved ? 'approved' : 'rejected' })
+  }
 
   if (req.method === 'PATCH') {
     const body = await req.json().catch(() => null)
@@ -55,7 +106,14 @@ export default async function handler(req: Request): Promise<Response> {
         case 'tariff': await sql`UPDATE sales_deals SET tariff = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'monthly_amount': await sql`UPDATE sales_deals SET monthly_amount = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'onetime_amount': await sql`UPDATE sales_deals SET onetime_amount = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
-        case 'discount_pct': await sql`UPDATE sales_deals SET discount_pct = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        // Изменили размер скидки — прежнее подтверждение больше не действует:
+        // иначе можно согласовать 16%, а потом тихо поставить 40% и провести
+        case 'discount_pct': await sql`
+          UPDATE sales_deals SET discount_pct = ${v},
+            approval_state = CASE
+              WHEN COALESCE(discount_pct, 0)::numeric IS DISTINCT FROM COALESCE(${v}, '0')::numeric
+              THEN NULL ELSE approval_state END
+          WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'term_months': await sql`UPDATE sales_deals SET term_months = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'valid_till': await sql`UPDATE sales_deals SET valid_till = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'kp_file': await sql`UPDATE sales_deals SET kp_file = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break

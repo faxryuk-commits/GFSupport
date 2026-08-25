@@ -6,6 +6,10 @@ import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/ti
 import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
+import { useAuth } from '@/shared/hooks/useAuth'
+
+/** Роли, которым сервер разрешает решать по скидке выше порога. */
+const DISCOUNT_APPROVERS = ['admin', 'org_admin', 'cco', 'sales_lead']
 
 /**
  * Карточка сделки — рабочий экран во время звонка.
@@ -127,6 +131,10 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   const [lostOpen, setLostOpen] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
   const refs = useSalesRefs()
+  const { agent } = useAuth()
+  // Проверка ролей есть и на сервере — здесь она только прячет кнопку,
+  // чтобы продавец не жал то, что ему всё равно не разрешат
+  const canApproveDiscount = DISCOUNT_APPROVERS.includes(String(agent?.role || ''))
 
   const load = useCallback(() => {
     if (!id) return
@@ -192,6 +200,24 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       load()
     } catch (e: any) {
       setError(e?.message || 'Не удалось закрыть сделку')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Решение по скидке выше порога. Пока его нет, движок этапов не пускает
+   * сделку дальше — раньше снять эту блокировку было нечем вообще.
+   */
+  const decideDiscount = async (ok: boolean) => {
+    if (!id) return
+    setBusy(true)
+    try {
+      await apiPost(`/sales/deal?action=${ok ? 'approve-discount' : 'reject-discount'}`, { id })
+      setBlocked(null)
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось изменить решение по скидке')
     } finally {
       setBusy(false)
     }
@@ -331,6 +357,42 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           ))}
         </div>
       </div>
+
+      {/* Скидка выше порога: пока решения нет, движок этапов не пускает сделку
+          дальше. Показываем всем, но решают только руководители */}
+      {d.approval_state === 'pending' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3 flex-wrap">
+          <div className="text-[13px] text-amber-900 flex-1 min-w-[240px]">
+            <b>Скидка {d.discount_pct}% ждёт решения.</b>{' '}
+            {canApproveDiscount
+              ? 'Сделка не двинется по этапам, пока вы не подтвердите условия.'
+              : 'Сделка не двинется по этапам — попросите руководителя подтвердить.'}
+          </div>
+          {canApproveDiscount && (
+            <div className="flex gap-2">
+              <button onClick={() => decideDiscount(true)} disabled={busy}
+                className="text-[12.5px] px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">
+                Подтвердить скидку
+              </button>
+              <button onClick={() => decideDiscount(false)} disabled={busy}
+                className="text-[12.5px] px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                Отклонить
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {d.approval_state === 'rejected' && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
+          <b>Скидка {d.discount_pct}% отклонена.</b> Измените коммерческие условия — после правки
+          скидки решение запросится заново.
+        </div>
+      )}
+      {d.approval_state === 'approved' && Number(d.discount_pct || 0) > 0 && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-[12.5px] text-emerald-800">
+          Скидка {d.discount_pct}% подтверждена руководителем.
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div className="space-y-4">
