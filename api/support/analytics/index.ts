@@ -98,6 +98,11 @@ export default async function handler(req: Request): Promise<Response> {
     endDate = resolved.to
   }
 
+  // Длина периода для подписей «за N дней» на карточках. Считаем из уже
+  // вычисленных границ, а не из названия периода: тогда произвольный
+  // диапазон «с… по…» подписывается так же правильно, как «7д»
+  const periodDays = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 86400000))
+
   try {
     // ============================================
     // 1. OVERVIEW METRICS

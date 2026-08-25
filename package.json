@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:proto": "PROTO_API=1 vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc --noEmit -p tsconfig.api.json && vite build",
+    "typecheck:api": "tsc --noEmit -p tsconfig.api.json",
     "lint": "eslint .",
     "preview": "vite preview"
   },

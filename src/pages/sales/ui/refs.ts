@@ -24,6 +24,11 @@ export interface SalesRefs {
   sources: Array<{ key: string; label: string; kind: string; is_active: boolean }>
   markets: Array<{ market_id: string; currency: string; legal_entity: string; deals: number }>
   options: FieldOption[]
+  pipelines: Array<{
+    id: string; key: string; label: string; market_id: string | null
+    kind: string; description: string | null; sort_order: number
+    is_active: boolean; deals: number; stages: number
+  }>
 }
 
 let cache: SalesRefs | null = null

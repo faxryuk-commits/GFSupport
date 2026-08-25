@@ -55,7 +55,6 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT id, key, label, kind, sort_order, is_active
         FROM sales_sources WHERE org_id = ${orgId} ORDER BY sort_order
       `,
-      ,
       // Регионы: у каждого своя воронка, своя валюта и своё юрлицо
       sql`
         SELECT m.market_id, m.currency, m.legal_entity,
@@ -63,7 +62,6 @@ export default async function handler(req: Request): Promise<Response> {
                  WHERE d.org_id = m.org_id AND d.market_id = m.market_id)::int AS deals
         FROM sales_market_settings m WHERE m.org_id = ${orgId} ORDER BY deals DESC
       `,
-      ,
       sql`
         SELECT id, field, value, label, market_id, sort_order, is_active
         FROM sales_field_options WHERE org_id = ${orgId}
@@ -140,36 +138,7 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ success: true })
       }
 
-      if (kind === 'pipeline') {
-      const [p] = await sql`SELECT key, label FROM sales_pipelines WHERE id = ${id} AND org_id = ${orgId}`
-      if (!p) return json({ error: 'воронка не найдена' }, 404)
-      const [{ deals }] = await sql`
-        SELECT COUNT(*)::int AS deals FROM sales_deals
-        WHERE org_id = ${orgId} AND pipeline = ${p.key} AND archived_at IS NULL
-      ` as any[]
-      // Сделки нельзя оставить без воронки: они пропадут со всех досок
-      const moveTo = url.searchParams.get('moveTo')
-      if (deals > 0 && !moveTo) {
-        return json({
-          error: `В воронке «${p.label}» ${deals} сделок. Укажите, куда их перенести.`,
-          deals,
-        }, 409)
-      }
-      if (deals > 0 && moveTo) {
-        await sql`
-          UPDATE sales_deals d
-          SET pipeline = ${moveTo}, stage_id = COALESCE(ns.id, d.stage_id)
-          FROM sales_stages os
-          LEFT JOIN sales_stages ns ON ns.org_id = os.org_id AND ns.pipeline = ${moveTo} AND ns.key = os.key
-          WHERE d.org_id = ${orgId} AND d.pipeline = ${p.key} AND os.id = d.stage_id
-        `
-      }
-      await sql`DELETE FROM sales_stages WHERE org_id = ${orgId} AND pipeline = ${p.key}`
-      await sql`DELETE FROM sales_pipelines WHERE id = ${id} AND org_id = ${orgId}`
-      return json({ success: true, moved: deals })
-    }
-
-    if (kind === 'option') {
+      if (kind === 'option') {
         const { label, value, isActive } = body
         await sql`
           UPDATE sales_field_options SET
@@ -268,36 +237,7 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ success: true, id, key: clean })
       }
 
-      if (kind === 'pipeline') {
-      const [p] = await sql`SELECT key, label FROM sales_pipelines WHERE id = ${id} AND org_id = ${orgId}`
-      if (!p) return json({ error: 'воронка не найдена' }, 404)
-      const [{ deals }] = await sql`
-        SELECT COUNT(*)::int AS deals FROM sales_deals
-        WHERE org_id = ${orgId} AND pipeline = ${p.key} AND archived_at IS NULL
-      ` as any[]
-      // Сделки нельзя оставить без воронки: они пропадут со всех досок
-      const moveTo = url.searchParams.get('moveTo')
-      if (deals > 0 && !moveTo) {
-        return json({
-          error: `В воронке «${p.label}» ${deals} сделок. Укажите, куда их перенести.`,
-          deals,
-        }, 409)
-      }
-      if (deals > 0 && moveTo) {
-        await sql`
-          UPDATE sales_deals d
-          SET pipeline = ${moveTo}, stage_id = COALESCE(ns.id, d.stage_id)
-          FROM sales_stages os
-          LEFT JOIN sales_stages ns ON ns.org_id = os.org_id AND ns.pipeline = ${moveTo} AND ns.key = os.key
-          WHERE d.org_id = ${orgId} AND d.pipeline = ${p.key} AND os.id = d.stage_id
-        `
-      }
-      await sql`DELETE FROM sales_stages WHERE org_id = ${orgId} AND pipeline = ${p.key}`
-      await sql`DELETE FROM sales_pipelines WHERE id = ${id} AND org_id = ${orgId}`
-      return json({ success: true, moved: deals })
-    }
-
-    if (kind === 'option') {
+      if (kind === 'option') {
         const { field, value, label, market = null } = body
         if (!field || !value) return json({ error: 'field and value are required' }, 400)
         const [{ max }] = await sql`
