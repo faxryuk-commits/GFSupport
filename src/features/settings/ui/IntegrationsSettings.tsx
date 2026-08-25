@@ -9,6 +9,15 @@ import { apiGet, apiPost } from '@/shared/services/api.service'
 import { OpenAISettingsModal } from './OpenAISettingsModal'
 import { MetaConnectModal } from './MetaConnectModal'
 
+/** «12 минут назад» вместо голого числа: карточку читают, а не считают. */
+function fmtAgo(minutes: number): string {
+  if (minutes < 1) return 'только что'
+  if (minutes < 60) return `${minutes} мин назад`
+  const h = Math.round(minutes / 60)
+  if (h < 24) return `${h} ч назад`
+  return `${Math.round(h / 24)} дн назад`
+}
+
 export interface Integration {
   id: string
   name: string
@@ -26,7 +35,13 @@ export interface HealthData {
   openai: { status: ServiceStatus; model: string; source?: 'db' | 'env' | 'none'; detail?: string; httpStatus?: number }
   whisper: { status: ServiceStatus; language: string }
   notify: { status: ServiceStatus; chatId: string | null }
-  whatsapp: { status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number }
+  whatsapp: {
+    status: ServiceStatus; phone: string | null; filterMode: string | null; channelsCount: number
+    transport?: 'bridge' | 'external' | null
+    lastInboundMinutes?: number | null
+    outgoingWeek?: number
+    bridgeError?: string | null
+  }
 }
 
 type LinkMode = 'qr' | 'pair_code'
@@ -640,15 +655,35 @@ export function IntegrationsSettings({
             details={
               wa?.status === 'active' ? (
                 <>
-                  <p>Номер: +{wa.phone} — {wa.filterMode === 'groups_only' ? 'только группы' : 'все чаты'}</p>
-                  <p className="text-xs text-slate-400">{wa.channelsCount} каналов</p>
+                  <p className="text-sm text-slate-600">
+                    {wa.phone
+                      ? <>Номер: +{wa.phone} — {wa.filterMode === 'groups_only' ? 'только группы' : 'все чаты'}</>
+                      : 'Переписка идёт'}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {wa.channelsCount} каналов
+                    {typeof wa.lastInboundMinutes === 'number' && (
+                      <> · последнее сообщение {fmtAgo(wa.lastInboundMinutes)}</>
+                    )}
+                    {wa.outgoingWeek ? <> · {wa.outgoingWeek} наших ответов за неделю</> : null}
+                  </p>
+                  {/* Мост молчит, а сообщения идут — их возит внешний
+                      провайдер. Это рабочее состояние, а не поломка */}
+                  {wa.transport === 'external' && (
+                    <p className="text-xs text-amber-600 mt-0.5">
+                      Через внешнего провайдера — свой мост не на связи
+                    </p>
+                  )}
                 </>
               ) : wa?.status === 'error' ? (
-                <p className="text-red-500 flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" /> Мост недоступен
-                </p>
+                <>
+                  <p className="text-red-500 flex items-center gap-1 text-sm">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Сообщения не приходят
+                  </p>
+                  {wa.bridgeError && <p className="text-xs text-slate-400 mt-0.5">{wa.bridgeError}</p>}
+                </>
               ) : (
-                <p>Не подключено</p>
+                <p className="text-sm text-slate-500">Не подключено</p>
               )
             }
             actions={

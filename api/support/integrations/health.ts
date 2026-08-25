@@ -94,33 +94,78 @@ async function checkOpenAI(openaiKey: string, aiModel: string): Promise<{
   }
 }
 
+/**
+ * Работает ли WhatsApp.
+ *
+ * Раньше ответ строился только на опросе своего моста — и когда переписку
+ * стал возить внешний провайдер, карточка честно показывала «не подключено»
+ * при двадцати двух тысячах живых сообщений. Опрос моста остался, но главным
+ * доказательством стал сам трафик: если сообщения идут и наши ответы уходят,
+ * канал работает, каким бы путём они ни шли.
+ */
 async function checkWhatsApp(sql: any, orgId: string, bridgeUrl: string, bridgeSecret: string): Promise<{
   status: ServiceStatus; phone: string | null; channelsCount: number
+  transport: 'bridge' | 'external' | null
+  lastInboundMinutes: number | null
+  outgoingWeek: number
+  bridgeError: string | null
 }> {
   let channelsCount = 0
+  let lastInboundMinutes: number | null = null
+  let outgoingWeek = 0
   try {
-    const cnt = await sql`SELECT COUNT(*)::int as cnt FROM support_channels WHERE org_id = ${orgId} AND source = 'whatsapp'`
-    channelsCount = cnt[0]?.cnt || 0
+    const [row] = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM support_channels
+          WHERE org_id = ${orgId} AND source = 'whatsapp') AS channels,
+        (SELECT EXTRACT(EPOCH FROM (NOW() - MAX(m.created_at)))::int / 60
+           FROM support_messages m JOIN support_channels c ON c.id = m.channel_id
+          WHERE m.org_id = ${orgId} AND c.source = 'whatsapp' AND m.is_from_client = true) AS inbound_min,
+        (SELECT COUNT(*)::int FROM support_messages m JOIN support_channels c ON c.id = m.channel_id
+          WHERE m.org_id = ${orgId} AND c.source = 'whatsapp' AND m.is_from_client = false
+            AND m.created_at > NOW() - INTERVAL '7 days') AS outgoing
+    ` as any[]
+    channelsCount = row?.channels || 0
+    lastInboundMinutes = row?.inbound_min ?? null
+    outgoingWeek = row?.outgoing || 0
   } catch {}
 
-  if (!bridgeUrl) return { status: 'inactive', phone: null, channelsCount }
+  // Свежий входящий поток — самое надёжное доказательство. Сутки берём
+  // с запасом: ночью и в выходные тишина не означает поломку
+  const trafficAlive = lastInboundMinutes !== null && lastInboundMinutes < 24 * 60
 
-  try {
-    const res = await fetch(`${bridgeUrl}/qr`, {
-      headers: { 'Cache-Control': 'no-cache', 'Authorization': `Bearer ${bridgeSecret}` },
-      signal: AbortSignal.timeout(4000),
-    })
-    if (!res.ok) return { status: 'error', phone: null, channelsCount }
-
-    const data = await res.json() as any
-    return {
-      status: data.connected ? 'active' : 'inactive',
-      phone: data.phone || null,
-      channelsCount,
+  let bridgeConnected = false
+  let bridgeError: string | null = null
+  let phone: string | null = null
+  if (bridgeUrl) {
+    try {
+      const res = await fetch(`${bridgeUrl}/qr`, {
+        headers: { 'Cache-Control': 'no-cache', 'Authorization': `Bearer ${bridgeSecret}` },
+        signal: AbortSignal.timeout(4000),
+      })
+      if (res.ok) {
+        const data = await res.json() as any
+        bridgeConnected = Boolean(data.connected)
+        phone = data.phone || null
+        if (!bridgeConnected && data.lastError) bridgeError = String(data.lastError).slice(0, 200)
+      } else {
+        bridgeError = `мост ответил ${res.status}`
+      }
+    } catch {
+      bridgeError = 'мост недоступен'
     }
-  } catch {
-    return { status: 'error', phone: null, channelsCount }
   }
+
+  // Мост молчит, а сообщения идут — значит их возит кто-то другой.
+  // Это рабочее состояние, а не поломка: так и пишем
+  const transport: 'bridge' | 'external' | null =
+    bridgeConnected ? 'bridge' : (trafficAlive ? 'external' : null)
+
+  const status: ServiceStatus =
+    bridgeConnected || trafficAlive ? 'active'
+      : (bridgeUrl || channelsCount ? 'error' : 'inactive')
+
+  return { status, phone, channelsCount, transport, lastInboundMinutes, outgoingWeek, bridgeError }
 }
 
 export default async function handler(req: Request): Promise<Response> {
