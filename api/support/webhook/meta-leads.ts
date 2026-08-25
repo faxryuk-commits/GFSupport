@@ -4,11 +4,16 @@ import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
 import { marketByPhoneCity } from '../lib/region-detect.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
 import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } from '../lib/meta-config.js'
+import { handleMetaMessaging } from '../lib/meta-messages.js'
 
 export const config = { runtime: 'edge' }
 
 /**
- * Заявки лид-форм Meta напрямую от Meta, минуя AmoCRM.
+ * Единый вход для всего, что шлёт Meta: заявки лид-форм, директ Instagram
+ * и Messenger. Один адрес на все объекты намеренно — в консоли Meta адрес
+ * задаётся отдельно для каждого объекта, и разные адреса означали бы, что
+ * половина событий приходит туда, где её никто не разбирает. Ровно так
+ * и вышло с сообщениями: подписка была, а обработчик знал только заявки.
  *
  * Это главный блокер ухода с Amo: сегодня заявки с рекламы приходят ТОЛЬКО
  * через «Неразобранное» в Amo, и отключение моста оборвало бы весь поток.
@@ -72,7 +77,17 @@ export default async function handler(req: Request): Promise<Response> {
   // к повторной доставке и отключению подписки на стороне Meta
   try {
     const body: any = JSON.parse(raw)
-    if (body?.object !== 'page') return json({ ok: true })
+    if (body?.object !== 'page' && body?.object !== 'instagram') return json({ ok: true })
+
+    // Сообщения — директ и Messenger — разбираем общим кодом и уходим:
+    // у таких уведомлений нет ни заявок, ни полей страницы
+    const hasMessaging = (body.entry || []).some((e: any) => Array.isArray(e?.messaging) && e.messaging.length)
+    if (hasMessaging) {
+      const sqlM = getSQL()
+      const taken = await handleMetaMessaging(sqlM, ORG, body)
+      return json({ ok: true, messages: taken })
+    }
+    if (body.object !== 'page') return json({ ok: true })
 
     const sql = getSQL()
     await ensureSalesSchema(sql, ORG)

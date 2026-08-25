@@ -288,6 +288,29 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
+    // Приложение подписываем автоматически — иначе страницы подписаны,
+    // а Meta всё равно молчит, и понять это без запроса к API невозможно
+    try {
+      const appToken = `${cfg.appId}|${cfg.appSecret}`
+      const [pin] = await sql`
+        SELECT redirect_uri FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
+      ` as any[]
+      const origin = pin?.redirect_uri ? new URL(pin.redirect_uri).origin : new URL(req.url).origin
+      for (const [object, fields] of [
+        ['page', 'leadgen,messages,messaging_postbacks,feed'],
+        ['instagram', 'messages'],
+      ]) {
+        await fetch(`${GRAPH}/${cfg.appId}/subscriptions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            object, callback_url: `${origin}/api/support/webhook/meta-leads`,
+            fields, verify_token: cfg.verifyToken, access_token: appToken,
+          }),
+        })
+      }
+    } catch { /* страница всё равно подключится, подписку можно повторить кнопкой */ }
+
     const msgErr = await subscribe('messages,messaging_postbacks,feed')
     const leadErr = await subscribe('leadgen')
     const subscribed = !msgErr
@@ -365,6 +388,54 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
     return json({ ok: true, found, failed })
+  }
+
+  /**
+   * Подписка самого приложения на вебхуки.
+   *
+   * Подписок две, и обе обязательны: страницы подписываются отдельно
+   * (subscribed_apps), а приложение — отдельно, здесь. Без второй Meta
+   * никуда ничего не шлёт, и это ровно тот шаг, который человек делал руками
+   * в консоли и о котором никто не догадывался, пока не начинали искать,
+   * почему чатов нет. Делаем сами: Meta проверит наш адрес маркером
+   * подтверждения и включит подписку.
+   */
+  if (action === 'subscribe-app') {
+    if (!cfg.appId || !cfg.appSecret || !cfg.verifyToken) {
+      return json({ error: 'Сначала заполните ключи приложения' }, 400)
+    }
+    const [pinRow] = await sql`
+      SELECT redirect_uri FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
+    ` as any[]
+    const origin = pinRow?.redirect_uri
+      ? new URL(pinRow.redirect_uri).origin
+      : new URL(req.url).origin
+    const callback = `${origin}/api/support/webhook/meta-leads`
+    const appToken = `${cfg.appId}|${cfg.appSecret}`
+
+    const out: Record<string, string> = {}
+    for (const [object, fields] of [
+      ['page', 'leadgen,messages,messaging_postbacks,feed'],
+      ['instagram', 'messages'],
+    ]) {
+      try {
+        const res = await fetch(`${GRAPH}/${cfg.appId}/subscriptions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            object, callback_url: callback, fields,
+            verify_token: cfg.verifyToken, access_token: appToken,
+          }),
+        })
+        const data: any = await res.json()
+        out[object] = data?.success ? 'ok' : String(data?.error?.message || 'не вышло').slice(0, 200)
+      } catch (e: any) {
+        out[object] = e?.message || 'нет связи с Meta'
+      }
+    }
+    await logEvent(sql, 'Интеграция Meta', 'подписка приложения',
+      `page: ${out.page} · instagram: ${out.instagram}`)
+    return json({ ok: out.page === 'ok', results: out, callback })
   }
 
   /**
