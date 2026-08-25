@@ -59,6 +59,57 @@ async function fetchProfileName(igsid: string, token: string | null): Promise<st
   }
 }
 
+/**
+ * Канал переписки для диалога в директе.
+ *
+ * Без него сообщения из Instagram оседали только карточкой лида и записью
+ * в истории касаний — в разделе «Чаты» их не было вообще, отвечать было
+ * неоткуда, и путь ответа в messages/send.ts, рассчитанный на канал
+ * с источником instagram, никогда не срабатывал: такой канал никто не создавал.
+ */
+async function getOrCreateIgChannel(
+  sql: any, igsid: string, name: string, marketId: string | null,
+): Promise<string> {
+  const [existing] = await sql`
+    SELECT id, name FROM support_channels
+    WHERE external_chat_id = ${igsid} AND source = 'instagram' AND org_id = ${ORG}
+    LIMIT 1
+  ` as any[]
+  if (existing) {
+    // Имя профиля меняется — подтягиваем, иначе в списке чатов навсегда
+    // останется числовой идентификатор вместо ника
+    if (name && existing.name !== name && !name.startsWith('Instagram ')) {
+      await sql`UPDATE support_channels SET name = ${name} WHERE id = ${existing.id}`
+    }
+    return existing.id
+  }
+  const channelId = salesId('ch')
+  await sql`
+    INSERT INTO support_channels (id, name, type, source, external_chat_id,
+                                  is_active, market_id, org_id, created_at)
+    VALUES (${channelId}, ${name}, 'client', 'instagram', ${igsid}, true, ${marketId}, ${ORG}, NOW())
+  `
+  return channelId
+}
+
+/** Входящее сообщение директа в общую ленту переписки. */
+async function saveIgMessage(
+  sql: any, channelId: string, igsid: string, name: string, text: string, hasMedia: boolean,
+): Promise<void> {
+  await sql`
+    INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name, sender_role,
+                                  is_from_client, content_type, text_content, is_read, created_at)
+    VALUES (${salesId('msg')}, ${channelId}, ${ORG}, ${igsid}, ${name}, 'client',
+            true, ${hasMedia ? 'photo' : 'text'}, ${text}, false, NOW())
+  `
+  await sql`
+    UPDATE support_channels
+    SET last_message_at = NOW(), last_message_preview = ${text.slice(0, 100)},
+        last_sender_name = ${name}, awaiting_reply = true
+    WHERE id = ${channelId}
+  `
+}
+
 export default async function handler(req: Request): Promise<Response> {
   // ─── Проверка подписки со стороны Meta ───────────────────────────────────────
   if (req.method === 'GET') {
@@ -106,16 +157,26 @@ export default async function handler(req: Request): Promise<Response> {
         const media = describeAttachments(msg.attachments || [])
         const fullText = [text, media].filter(Boolean).join(' ') || '[пустое сообщение]'
 
+        // Токен того аккаунта, которому адресовано сообщение: entry.id —
+        // это инстаграм-профиль, на который написали
+        const acc = await accountForIg(ORG, entry.id ? String(entry.id) : null)
+        const igToken = acc?.pageToken || cfg.pageToken
+
         // Диалог = один лид: external_id это id собеседника, поэтому второе
         // сообщение не создаёт вторую карточку, а дописывается в историю
         const [existing] = await sql`
-          SELECT l.id, l.account_id FROM sales_leads l
+          SELECT l.id, l.account_id, l.name FROM sales_leads l
           JOIN sales_sources s ON s.id = l.source_id
           WHERE l.org_id = ${ORG} AND s.key = ${SOURCE} AND l.external_id = ${igsid}
           LIMIT 1
         `
 
         if (existing) {
+          // Переписка идёт в общую ленту наравне с телеграмом и вотсапом —
+          // иначе диалог виден только карточкой лида, а ответить неоткуда
+          const ch = await getOrCreateIgChannel(sql, igsid, existing.name || `Instagram ${igsid.slice(-6)}`,
+            acc?.marketId || null)
+          await saveIgMessage(sql, ch, igsid, existing.name || 'Instagram', fullText, Boolean(media))
           await logChatMessage(sql, ORG, existing.account_id, 'in', fullText, 'клиент')
           await sql`
             UPDATE sales_leads SET text = ${fullText}, raw = ${JSON.stringify(ev)}::jsonb
@@ -124,11 +185,10 @@ export default async function handler(req: Request): Promise<Response> {
           continue
         }
 
-        // Токен того аккаунта, которому адресовано сообщение: entry.id —
-        // это инстаграм-профиль, на который написали
-        const acc = await accountForIg(ORG, entry.id ? String(entry.id) : null)
-        const igToken = acc?.pageToken || cfg.pageToken
         const name = (await fetchProfileName(igsid, igToken)) || `Instagram ${igsid.slice(-6)}`
+        const channelId = await getOrCreateIgChannel(sql, igsid, name, acc?.marketId || null)
+        await saveIgMessage(sql, channelId, igsid, name, fullText, Boolean(media))
+
         const result = await acceptLead(sql, ORG, {
           source: SOURCE,
           external_id: igsid,
@@ -141,6 +201,12 @@ export default async function handler(req: Request): Promise<Response> {
 
         if (result.ok && result.account_id) {
           await logChatMessage(sql, ORG, result.account_id, 'in', fullText, 'клиент')
+          // Привязка канала к аккаунту: по ней карточка сделки показывает
+          // переписку и умеет отвечать прямо оттуда
+          await sql`
+            UPDATE sales_accounts SET channel_id = COALESCE(channel_id, ${channelId})
+            WHERE id = ${result.account_id} AND org_id = ${ORG}
+          `
           // Ник пригодится для склейки с существующим клиентом по контактам
           await sql`
             UPDATE sales_contacts SET telegram = COALESCE(telegram, ${name})
