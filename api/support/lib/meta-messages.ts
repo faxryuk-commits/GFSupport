@@ -206,9 +206,12 @@ export async function importMetaHistory(
     for (const platform of ['instagram', 'messenger'] as const) {
       const source = platform === 'instagram' ? 'instagram' : 'messenger'
       const sourceKey = platform === 'instagram' ? 'instagram_direct' : 'messenger'
+      // Сообщения тянем отдельным запросом на диалог, а не вложенным списком:
+      // на части аккаунтов Meta отвечает «уменьшите объём» и не отдаёт вообще
+      // ничего, сколько ни снижай лимит вложенного поля
       let url = `${GRAPH}/${acc.pageId}/conversations?platform=${platform}`
-        + `&fields=participants,updated_time,messages.limit(${msgLimit}){id,created_time,from,message}`
-        + `&limit=${Math.min(25, convLimit)}&access_token=${acc.pageToken}`
+        + `&fields=id,participants,updated_time&limit=${Math.min(25, convLimit)}`
+        + `&access_token=${acc.pageToken}`
       let taken = 0
 
       while (url && taken < convLimit) {
@@ -235,9 +238,16 @@ export async function importMetaHistory(
             sql, orgId, source, String(other.id), name, acc.marketId, acc.pageId)
           out.channels++
 
-          // Меты отдаёт сообщения от новых к старым — разворачиваем, чтобы
+          // Meta отдаёт сообщения от новых к старым — разворачиваем, чтобы
           // в ленте они легли в том порядке, в каком люди их писали
-          const msgs = [...(conv.messages?.data || [])].reverse()
+          let msgs: any[] = []
+          try {
+            const mr = await fetch(
+              `${GRAPH}/${conv.id}/messages?fields=id,created_time,from,message`
+              + `&limit=${msgLimit}&access_token=${acc.pageToken}`)
+            const md: any = await mr.json()
+            msgs = [...(md?.data || [])].reverse()
+          } catch { /* диалог без сообщений — не повод ронять весь импорт */ }
           for (const m of msgs) {
             const text = String(m.message || '').trim()
             if (!text) continue
