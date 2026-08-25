@@ -153,6 +153,11 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   const setAccountMarket = (accountId: string, market: string) =>
     act('acc', () => apiPost('/integrations/meta?action=account-market', { accountId, market: market || null }))
 
+  const refreshAccounts = () => act('refresh', async () => {
+    const r = await apiPost<{ updated: number }>('/integrations/meta?action=refresh', {})
+    setNote(`Обновлено аккаунтов: ${r.updated}`)
+  })
+
   const dropAccount = (a: Account) => {
     if (!confirm(`Отключить «${a.pageName || a.pageId}»? Заявки и сообщения с этой страницы перестанут приходить.`)) return
     act('acc', () => apiPost('/integrations/meta?action=disconnect', { accountId: a.id }))
@@ -187,11 +192,20 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
                   Страницы Facebook, с которых идут заявки и сообщения. Instagram приходит вместе со страницей
                 </div>
               </div>
-              <button onClick={() => startAuth()} disabled={busy === 'auth'}
-                className="flex-none text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white
-                           hover:bg-blue-700 disabled:opacity-50">
-                {busy === 'auth' ? 'Открываем…' : '+ Аккаунт'}
-              </button>
+              <div className="flex-none flex items-center gap-2">
+                {accounts.length > 0 && (
+                  <button onClick={refreshAccounts} disabled={busy === 'refresh'}
+                    title="Перевыпустить доступы и подтянуть привязанные Instagram"
+                    className="text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 disabled:opacity-50">
+                    {busy === 'refresh' ? '…' : 'Обновить'}
+                  </button>
+                )}
+                <button onClick={() => startAuth()} disabled={busy === 'auth'}
+                  className="text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white
+                             hover:bg-blue-700 disabled:opacity-50">
+                  {busy === 'auth' ? 'Открываем…' : '+ Аккаунт'}
+                </button>
+              </div>
             </div>
 
             {/* Что работает, а что нет — до первой ошибки, а не после */}

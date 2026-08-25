@@ -367,6 +367,42 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ ok: true, found, failed })
   }
 
+  /**
+   * Обновление подключённых аккаунтов из Meta.
+   *
+   * Токен страницы наследует права того момента, когда его выдали: страница,
+   * подключённая раньше остальных, живёт с урезанными правами и, например,
+   * не может прочитать свой же привязанный инстаграм. Перевыпуск из текущего
+   * доступа лечит это и подтягивает свежие названия и привязки.
+   */
+  if (action === 'refresh') {
+    const [row] = await sql`
+      SELECT user_token FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (!row?.user_token) return json({ error: 'Сначала пройдите вход через Facebook' }, 400)
+
+    const res = await fetch(
+      `${GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=100&access_token=${row.user_token}`)
+    if (!res.ok) {
+      return json({ error: 'Meta не отдала список страниц', details: (await res.text()).slice(0, 300) }, 502)
+    }
+    const data: any = await res.json()
+    let updated = 0
+    for (const p of (data?.data || [])) {
+      const ig = p.instagram_business_account
+      const done = await sql`
+        UPDATE support_meta_accounts
+        SET page_token = ${p.access_token}, page_name = ${p.name || null},
+            ig_user_id = ${ig?.id || null}, ig_username = ${ig?.username || null}, updated_at = NOW()
+        WHERE org_id = ${orgId} AND page_id = ${String(p.id)} AND is_active = true
+        RETURNING id
+      ` as any[]
+      updated += done.length
+    }
+    invalidateMetaConfig(orgId)
+    return json({ ok: true, updated })
+  }
+
   // ─── Регион аккаунта ────────────────────────────────────────────────────────
   if (action === 'account-market') {
     if (!body?.accountId) return json({ error: 'accountId is required' }, 400)
