@@ -427,9 +427,13 @@ export default async function handler(req: Request): Promise<Response> {
     const appToken = `${cfg.appId}|${cfg.appSecret}`
 
     const out: Record<string, string> = {}
+    // Каждое поле отдельным заходом: одно недоступное разрешение валит всю
+    // подписку целиком, и вместе с комментариями отвалились бы сообщения
     for (const [object, fields] of [
-      ['page', 'leadgen,messages,messaging_postbacks,feed'],
+      ['page', 'leadgen,messages,messaging_postbacks'],
+      ['page', 'feed'],
       ['instagram', 'messages'],
+      ['instagram', 'comments'],
     ]) {
       try {
         const res = await fetch(`${GRAPH}/${cfg.appId}/subscriptions`, {
@@ -441,14 +445,14 @@ export default async function handler(req: Request): Promise<Response> {
           }),
         })
         const data: any = await res.json()
-        out[object] = data?.success ? 'ok' : String(data?.error?.message || 'не вышло').slice(0, 200)
+        out[`${object}:${fields}`] = data?.success ? 'ok' : String(data?.error?.message || 'не вышло').slice(0, 200)
       } catch (e: any) {
-        out[object] = e?.message || 'нет связи с Meta'
+        out[`${object}:${fields}`] = e?.message || 'нет связи с Meta'
       }
     }
     await logEvent(sql, 'Интеграция Meta', 'подписка приложения',
-      `page: ${out.page} · instagram: ${out.instagram}`)
-    return json({ ok: out.page === 'ok', results: out, callback })
+      Object.entries(out).map(([k, v]) => `${k}: ${v}`).join(' · ').slice(0, 400))
+    return json({ ok: Object.values(out).some(v => v === 'ok'), results: out, callback })
   }
 
   /**
