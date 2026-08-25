@@ -14,9 +14,20 @@ export const config = { runtime: 'edge' }
  * POST ?action=assign  {leadId, agentId?}  — взять себе или назначить
  * POST ?action=nurture {leadId}            — увести в nurture без участия человека
  *
+ * POST ?action=qual    {leadId, fields}    — квалификация нашими руками
+ *
  * Вид «dupes» показывает склейки: обращения, приклеенные к существующему
  * аккаунту. Это не мусор, а доказательство, что система не плодит карточки.
  */
+
+/**
+ * Поля квалификации, которые заполняет человек. Хранятся в своей колонке
+ * поверх сырых данных заявки: читаем «сначала своё, потом из заявки», чтобы
+ * уже заведённые карточки ничего не потеряли при уходе с Amo.
+ */
+export const QUAL_KEYS = ['pos', 'orders_per_day', 'points', 'aggregators',
+  'delivery_type', 'segment', 'pain', 'dm_name', 'dm_role', 'budget_stated']
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
@@ -172,6 +183,38 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ ok: true })
     }
 
+    // Квалификация обращения. Эти поля менеджер заполнял в Amo, а мы читали их
+    // из сырых данных заявки — без Amo они бы осиротели. Пишем в свой слой
+    // поверх: пустая строка означает «здесь пусто», и это отличается от
+    // «не заполняли» — иначе очистка поля возвращала бы старое значение Amo
+    if (action === 'qual') {
+      const f = body.fields || {}
+      const patch: Record<string, string> = {}
+      for (const k of QUAL_KEYS) {
+        if (f[k] !== undefined) patch[k] = f[k] === null ? '' : String(f[k])
+      }
+      if (!Object.keys(patch).length) return json({ error: 'nothing to update' }, 400)
+
+      // Город живёт своей колонкой — по ней идут фильтры и региональные срезы
+      if (f.city !== undefined) {
+        await sql`
+          UPDATE sales_leads SET city = ${f.city || null}
+          WHERE id = ${body.leadId} AND org_id = ${orgId}
+        `
+      }
+      // Заполнил квалификацию — значит, с человеком уже говорили. Раньше
+      // отметка первого касания стояла у двух обращений из тысячи, и норматив
+      // 15 минут был написан, но не измерялся ничем
+      await sql`
+        UPDATE sales_leads SET
+          qual = COALESCE(qual, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb,
+          first_touch_at = COALESCE(first_touch_at, NOW()),
+          updated_at = NOW()
+        WHERE id = ${body.leadId} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
+
     if (action === 'assign') {
       const agentId = body.agentId || ctx.agentId
       await sql`
@@ -220,9 +263,9 @@ export default async function handler(req: Request): Promise<Response> {
   const pos = url.searchParams.get('pos')
   const city = url.searchParams.get('city')
   const load = url.searchParams.get('orders_per_day')
-  if (pos) add("l.raw->>'pos' = ?", pos)
+  if (pos) add("COALESCE(l.qual->>'pos', l.raw->>'pos') = ?", pos)
   if (city) add('l.city = ?', city)
-  if (load) add("l.raw->>'orders_per_day' = ?", load)
+  if (load) add("COALESCE(l.qual->>'orders_per_day', l.raw->>'orders_per_day') = ?", load)
   const kind = url.searchParams.get('kind')
   if (kind) add('l.lead_kind = ?', kind)
   if (q) {
@@ -238,9 +281,10 @@ export default async function handler(req: Request): Promise<Response> {
   const rowsQ = sql.query(
     `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
             l.sla_due_at, l.first_touch_at, l.created_at, l.updated_at, l.campaign, l.text,
-            l.lead_kind, l.contact_name, l.raw,
-            l.raw->>'pos' AS pos, l.raw->>'orders_per_day' AS orders_per_day,
-            (l.raw->>'points')::text AS points,
+            l.lead_kind, l.contact_name, l.raw, l.qual,
+            NULLIF(COALESCE(l.qual->>'pos', l.raw->>'pos'), '') AS pos,
+            NULLIF(COALESCE(l.qual->>'orders_per_day', l.raw->>'orders_per_day'), '') AS orders_per_day,
+            NULLIF(COALESCE(l.qual->>'points', l.raw->>'points'), '') AS points,
             s.key AS source_key, s.label AS source,
             a.id AS account_id, a.name AS account_name, a.created_at AS account_created,
             ag.name AS agent_name

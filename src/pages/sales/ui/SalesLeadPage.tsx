@@ -3,8 +3,20 @@ import { useParams, Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
-import { Chip, Skeleton, slaTone, slaText } from './kit'
+import { Card, Chip, InlineField, Skeleton, slaTone, slaText } from './kit'
 import { TasksCard } from './TasksCard'
+import { useSalesRefs, optionsFor } from './refs'
+
+/** Что выясняем о заведении на первом звонке — те же поля, что у сделки. */
+const QUAL_FIELDS = [
+  ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
+  ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
+  ['aggregators', 'Агрегаторы'], ['delivery_type', 'Тип доставки'],
+  ['dm_name', 'ЛПР'], ['dm_role', 'Роль ЛПР'], ['pain', 'Боль клиента'],
+] as const
+
+/** Поля, где значений может быть несколько сразу. */
+const MULTI_QUAL = new Set<string>(['aggregators', 'pain'])
 
 /**
  * Карточка обращения: кто написал, откуда и что именно сказал.
@@ -81,6 +93,8 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
   useEffect(() => { load() }, [load])
 
+  const refs = useSalesRefs()
+
   const act = async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true)
     try {
@@ -90,6 +104,29 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     } catch (e: any) {
       setError(e?.message || 'Действие не выполнено')
     } finally { setBusy(false) }
+  }
+
+  /**
+   * Значение поля квалификации: сначала то, что заполнили мы, потом — то, что
+   * приехало в заявке. Пустая строка в нашем слое означает «здесь пусто»
+   * и намеренно перебивает старое значение из Amo.
+   */
+  const qual = (field: string): string => {
+    const l: any = data?.lead
+    const own = l?.qual?.[field]
+    if (own !== undefined && own !== null) return String(own)
+    if (field === 'city' && l?.city) return String(l.city)
+    const fromRaw = l?.raw?.[field]
+    return fromRaw === undefined || fromRaw === null ? '' : String(fromRaw)
+  }
+
+  const saveQual = async (field: string, value: string) => {
+    try {
+      await apiPost('/sales/leads?action=qual', { leadId: id, fields: { [field]: value } })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось сохранить')
+    }
   }
 
   /**
@@ -191,6 +228,19 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
       {/* Следующий шаг по лиду ставится здесь же: раньше его записывали в Amo,
           потому что в карточке для этого не было ничего */}
       <TasksCard leadId={id} accountId={l.account_id || undefined} />
+
+      {/* Квалификация нашими руками. Эти поля менеджер заполнял в Amo, а мы
+          читали их из сырых данных заявки — без Amo они бы осиротели */}
+      <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
+        <div className="grid sm:grid-cols-2">
+          {QUAL_FIELDS.map(([f, label]) => (
+            <InlineField key={f} label={label} value={qual(f)}
+              onSave={v => saveQual(f, v)}
+              options={optionsFor(refs, f, l.market_id)}
+              multiple={MULTI_QUAL.has(f)} />
+          ))}
+        </div>
+      </Card>
 
       <Block title="Кто обратился">
         <div>

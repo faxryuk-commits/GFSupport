@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-17.14-lead-reason'
+const SCHEMA_VERSION = '2026-08-26.15-lead-qual'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -890,6 +890,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   // есть самый частый исход воронки был неизвестен
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS lost_reason_id VARCHAR(50)`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS lost_comment TEXT`
+
+  // Квалификация обращения нашими руками. Раньше эти поля менеджер заполнял
+  // в Amo, а мы читали их из сырых данных заявки — без Amo они бы осиротели.
+  // Слой поверх, а не замена: читаем «сначала своё, потом из заявки», поэтому
+  // ни одна из уже заведённых карточек ничего не теряет
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS qual JSONB`
 
   // Архив вместо удаления: сделку и лид можно убрать с глаз, не теряя историю
   await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`
