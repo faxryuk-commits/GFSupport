@@ -520,18 +520,52 @@ export async function applyAmoStage(
   lead: any,
   statuses: Map<number, { name: string; isWon: boolean; isLost: boolean; pipelineId: number }>,
 ): Promise<{ deal: string; from: string; to: string } | null> {
-  const [deal] = await sql`
+  let [deal] = await sql`
     SELECT d.id, d.stage_id, d.won_at, d.lost_at, d.pipeline, s.key AS stage_key
     FROM sales_deals d
     LEFT JOIN sales_stages s ON s.id = d.stage_id
     WHERE d.org_id = ${orgId} AND d.external_id = ${`amo_${lead.id}`} AND d.archived_at IS NULL
     LIMIT 1
   ` as any[]
-  if (!deal) return null
 
   const st = statuses.get(lead.status_id)
   if (!st) return null
   const key = stageKeyByStatusName(st.name, st.isWon, st.isLost)
+
+  // Сделки нет — исторический бэкфилл её не застал. Раньше тут был выход:
+  // этап из Amo некуда было переносить, и «Bekosiyo на КП в Amo» вечно висел
+  // у нас лидом «ждёт касания». Если работа в Amo реально началась (этап
+  // дальше заявки/дозвона) — создаём сделку сами и закрываем лид как
+  // сконвертированный
+  if (!deal) {
+    if (['new', 'attempting'].includes(key)) return null
+    const [gfsLead] = await sql`
+      SELECT id, name, account_id, assigned_agent_id FROM sales_leads
+      WHERE org_id = ${orgId} AND external_id = ${`amo_${lead.id}`} LIMIT 1
+    ` as any[]
+    if (!gfsLead?.account_id) return null
+    const market = marketByPipeline(lead.pipeline_id)
+    const pipeline = pipelineForMarket(market)
+    const [entry] = await sql`
+      SELECT id, key FROM sales_stages
+      WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND key = 'new' LIMIT 1
+    ` as any[]
+    if (!entry) return null
+    const dealId = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    await sql`
+      INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
+                               title, deal_type, source_lead_id, external_id, pipeline, stage_since)
+      VALUES (${dealId}, ${orgId}, ${gfsLead.account_id}, ${entry.id},
+              ${gfsLead.assigned_agent_id || null}, ${market},
+              ${String(gfsLead.name || lead.name || 'Сделка из Amo').slice(0, 255)},
+              'new', ${gfsLead.id}, ${`amo_${lead.id}`}, ${pipeline}, NOW())
+    `
+    await sql`
+      UPDATE sales_leads SET status = 'converted', updated_at = NOW()
+      WHERE id = ${gfsLead.id} AND org_id = ${orgId} AND status = 'assigned'
+    `
+    deal = { id: dealId, stage_id: entry.id, won_at: null, lost_at: null, pipeline, stage_key: entry.key }
+  }
   if (key === deal.stage_key) return null
 
   // Этап ищем в воронке самой сделки: у стран разные воронки, и «Договор»
