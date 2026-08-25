@@ -17,15 +17,23 @@ export interface ChannelsResponse {
  * Загружает все каналы организации одним запросом (limit=1000).
  * Если каналов больше 1000, догружает следующие страницы.
  */
-export async function fetchChannels(): Promise<Channel[]> {
+/**
+ * Область видимости: продажи или поддержка. Разговоры разного смысла —
+ * там незнакомый человек, которого убеждают, тут действующий клиент
+ * с проблемой; общий список из четырёхсот чатов не годится ни тем, ни другим.
+ */
+export type ChatScope = 'all' | 'sales' | 'support'
+
+export async function fetchChannels(scope: ChatScope = 'all'): Promise<Channel[]> {
   const PAGE = 1000
-  const first = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}`, false)
+  const q = scope === 'all' ? '' : `&scope=${scope}`
+  const first = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}${q}`, false)
   if (!first.hasMore) return first.channels
 
   const all = [...first.channels]
   let offset = PAGE
   while (all.length < (first.total || Infinity)) {
-    const r = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}&offset=${offset}`, false)
+    const r = await apiGet<ChannelsResponse>(`/channels?limit=${PAGE}&offset=${offset}${q}`, false)
     all.push(...r.channels)
     if (!r.hasMore || r.channels.length === 0) break
     offset += PAGE

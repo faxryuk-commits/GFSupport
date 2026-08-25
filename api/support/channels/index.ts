@@ -38,6 +38,10 @@ export default async function handler(req: Request): Promise<Response> {
       const isActive = url.searchParams.get('active')
       const search = url.searchParams.get('search')
       const source = url.searchParams.get('source')
+      // Продажи и поддержка — разговоры разного смысла: там незнакомый человек,
+      // которого убеждают, тут действующий клиент с проблемой. Один список
+      // из четырёхсот чатов заставлял сейлза искать свои полтора десятка
+      const scope = url.searchParams.get('scope') || 'all'
       const market = url.searchParams.get('market') || '__ALL__'
       const limitParam = parseInt(url.searchParams.get('limit') || '100')
       const offsetParam = parseInt(url.searchParams.get('offset') || '0')
@@ -67,6 +71,19 @@ export default async function handler(req: Request): Promise<Response> {
             AND (${source || ''}::text = '' OR COALESCE(c.source, 'telegram') = ${source || ''})
             AND (${type || 'all'}::text = 'all' OR c.type = ${type || 'all'})
             AND (${isActiveFlag}::text = 'skip' OR c.is_active = ${isActive === 'true'})
+            AND (
+              ${scope}::text = 'all'
+              OR (${scope}::text = 'sales' AND (
+                    COALESCE(c.source, 'telegram') IN ('instagram', 'messenger')
+                    OR EXISTS (SELECT 1 FROM sales_accounts sa
+                                WHERE sa.channel_id = c.id AND sa.org_id = c.org_id
+                                  AND COALESCE(sa.lifecycle, 'lead') <> 'customer')))
+              OR (${scope}::text = 'support' AND
+                    COALESCE(c.source, 'telegram') NOT IN ('instagram', 'messenger')
+                    AND NOT EXISTS (SELECT 1 FROM sales_accounts sa
+                                     WHERE sa.channel_id = c.id AND sa.org_id = c.org_id
+                                       AND COALESCE(sa.lifecycle, 'lead') <> 'customer'))
+            )
           ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `,

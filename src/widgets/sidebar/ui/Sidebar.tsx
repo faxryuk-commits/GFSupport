@@ -224,6 +224,10 @@ const navGroups: NavGroup[] = [
       { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals' },
       { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads' },
       { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },
+      // Диалоги продаж отдельно от поддержки: там незнакомый человек, которого
+      // убеждают, тут действующий клиент с проблемой — общий список
+      // из четырёхсот чатов не годится ни тем, ни другим
+      { path: '/sales/chats', label: 'Диалоги', icon: MessageSquare },
     ],
   },
   {

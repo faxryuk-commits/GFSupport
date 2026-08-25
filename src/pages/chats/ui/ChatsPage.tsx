@@ -10,6 +10,7 @@ import { AIContextPanel } from '@/features/ai-assistant/ui'
 import { CommitmentsPanel } from '@/features/commitments/ui'
 import { QuickCaseModal } from '@/features/cases/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
+import type { ChatScope } from '@/shared/api/channels'
 import { useAuth } from '@/shared/hooks/useAuth'
 import { playMessageSoundIfEnabled, formatTimeHM, formatDayLabel, workDayKey } from '@/shared/lib'
 import type { Channel } from '@/entities/channel'
@@ -163,7 +164,7 @@ const defaultQuickReplies = [
   { id: '3', label: 'Завершение', text: 'Рад был помочь! Хорошего дня!', source: 'template' as const },
 ]
 
-export function ChatsPage() {
+export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
   const { id: channelIdFromPath } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -235,7 +236,7 @@ export function ChatsPage() {
         setChannelsError(null)
       }
       
-      const channelsData = await fetchChannels()
+      const channelsData = await fetchChannels(scope)
       const mappedChannels = channelsData.map(mapChannelToUI)
       setChannels(mappedChannels)
     } catch (error) {
@@ -257,7 +258,7 @@ export function ChatsPage() {
         
         // Load channels and agents in parallel
         const [channelsData, agentsData] = await Promise.all([
-          fetchChannels(),
+          fetchChannels(scope),
           fetchAgents().catch(() => []) // Don't fail if agents can't load
         ])
         
@@ -292,7 +293,7 @@ export function ChatsPage() {
       if (document.visibilityState === 'hidden' || pollInFlight) return
       pollInFlight = true
       try {
-        const channelsData = await fetchChannels()
+        const channelsData = await fetchChannels(scope)
         const mappedChannels = channelsData.map(mapChannelToUI)
         
         const oldTotalUnread = channelsRef.current.reduce((sum, ch) => sum + (ch.unread || 0), 0)

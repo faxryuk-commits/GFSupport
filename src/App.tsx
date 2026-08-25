@@ -96,6 +96,10 @@ export default function App() {
           <Route path="/me" element={<MyWorkspacePage />} />
           <Route path="/chats" element={<ChatsPage />} />
           <Route path="/chats/:id" element={<ChatsPage />} />
+          {/* Тот же экран, но только разговоры продаж: у них другой смысл,
+              и мешать их с четырьмя сотнями чатов поддержки нельзя */}
+          <Route path="/sales/chats" element={<ChatsPage scope="sales" />} />
+          <Route path="/sales/chats/:id" element={<ChatsPage scope="sales" />} />
           <Route path="/channels" element={<ChannelsListPage />} />
           <Route path="/cases" element={<CasesPage />} />
           <Route path="/health" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
