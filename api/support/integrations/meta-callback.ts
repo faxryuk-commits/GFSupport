@@ -70,7 +70,12 @@ export default async function handler(req: Request): Promise<Response> {
     return page('Не заданы ключи приложения', 'Заполните ID и секрет в карточке интеграции.', false)
   }
 
-  const redirectUri = `${url.origin}/api/support/integrations/meta-callback`
+  // Тот же адрес, что уходил в согласие: Meta сверяет его при обмене кода
+  // побуквенно, и вычисленный из текущего хоста может не совпасть
+  const [pin] = await sql`
+    SELECT redirect_uri FROM support_meta_integration WHERE org_id = ${row.org_id} LIMIT 1
+  ` as any[]
+  const redirectUri = pin?.redirect_uri || `${url.origin}/api/support/integrations/meta-callback`
 
   try {
     // Код действует секунды и только один раз — меняем сразу

@@ -37,8 +37,21 @@ const SCOPES = [
   'business_management',
 ].join(',')
 
-const redirectUri = (req: Request) =>
+/**
+ * Адрес возврата. Собирался из хоста текущего запроса — и это подводило:
+ * приложение отвечает на трёх доменах, а Meta со строгим режимом требует
+ * точного совпадения с тем, что внесли в консоль. Откроешь панель с другого
+ * адреса — и снова «URL заблокирован» без внятной причины.
+ *
+ * Поэтому адрес закрепляется при сохранении ключей и дальше берётся только
+ * из базы: что показали и скопировали, то и уходит в Meta.
+ */
+const computeRedirect = (req: Request) =>
   `${new URL(req.url).origin}/api/support/integrations/meta-callback`
+
+export function pinnedRedirect(row: any, req: Request): string {
+  return row?.redirect_uri || computeRedirect(req)
+}
 
 /** Секрет наружу не отдаём никогда — только признак, что он задан. */
 const mask = (v: string | null) => (v ? `••••${v.slice(-4)}` : null)
@@ -72,13 +85,16 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       DELETE FROM support_meta_oauth_state WHERE created_at < NOW() - INTERVAL '1 hour'
     `
+    const [pinRow] = await sql`
+      SELECT redirect_uri FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
+    ` as any[]
     const auth = new URL('https://www.facebook.com/v21.0/dialog/oauth')
     auth.searchParams.set('client_id', cfg.appId)
-    auth.searchParams.set('redirect_uri', redirectUri(req))
+    auth.searchParams.set('redirect_uri', pinnedRedirect(pinRow, req))
     auth.searchParams.set('state', state)
     auth.searchParams.set('scope', SCOPES)
     auth.searchParams.set('response_type', 'code')
-    return json({ url: auth.toString(), redirectUri: redirectUri(req) })
+    return json({ url: auth.toString(), redirectUri: pinnedRedirect(pinRow, req) })
   }
 
   // ─── Страницы подключившегося ───────────────────────────────────────────────
@@ -104,7 +120,7 @@ export default async function handler(req: Request): Promise<Response> {
       ORDER BY (market_id IS NULL) DESC, name
     `
     const [row] = await sql`
-      SELECT user_token IS NOT NULL AS has_user FROM support_meta_integration
+      SELECT user_token IS NOT NULL AS has_user, redirect_uri FROM support_meta_integration
       WHERE org_id = ${orgId} LIMIT 1
     ` as any[]
     return json({
@@ -120,7 +136,7 @@ export default async function handler(req: Request): Promise<Response> {
       source: cfg.source,
       authorized: Boolean(row?.has_user),
       webhookUrl: `${url.origin}/api/support/webhook/meta-leads`,
-      redirectUri: redirectUri(req),
+      redirectUri: pinnedRedirect(row, req),
       forms,
     })
   }
@@ -141,10 +157,13 @@ export default async function handler(req: Request): Promise<Response> {
       || cfg.verifyToken || `gfs_${Math.random().toString(36).slice(2, 14)}`
     if (!appId) return json({ error: 'Нужен ID приложения' }, 400)
 
+    // Закрепляем адрес возврата тем, что человек видит и копирует прямо сейчас
+    const pin = computeRedirect(req)
     await sql`
-      INSERT INTO support_meta_integration (org_id, app_id, app_secret, verify_token, updated_at)
-      VALUES (${orgId}, ${appId}, ${appSecret || null}, ${verifyToken}, NOW())
+      INSERT INTO support_meta_integration (org_id, app_id, app_secret, verify_token, redirect_uri, updated_at)
+      VALUES (${orgId}, ${appId}, ${appSecret || null}, ${verifyToken}, ${pin}, NOW())
       ON CONFLICT (org_id) DO UPDATE SET
+        redirect_uri = ${pin},
         app_id = ${appId},
         -- пустое поле означает «не трогать»: секрет наружу не отдаётся,
         -- и форма присылает его только когда его правда меняют
@@ -153,7 +172,7 @@ export default async function handler(req: Request): Promise<Response> {
         updated_at = NOW()
     `
     invalidateMetaConfig(orgId)
-    return json({ ok: true, verifyToken })
+    return json({ ok: true, verifyToken, redirectUri: pin })
   }
 
   // ─── Выбор страницы: тут и берётся рабочий токен ─────────────────────────────
