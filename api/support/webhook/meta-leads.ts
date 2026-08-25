@@ -115,13 +115,15 @@ export default async function handler(req: Request): Promise<Response> {
         }
 
         // Ответы на вопросы формы — самое содержательное, что о человеке
-        // известно до первого разговора: кладём их в текст обращения целиком
+        // известно до первого разговора: кладём их в текст обращения целиком.
+        // То, что уже разложено по своим полям, во второй раз не повторяем
+        const known = [...NAME_KEYS, ...PHONE_KEYS, ...EMAIL_KEYS, ...CITY_KEYS]
         const answers = [...fields.entries()]
-          .filter(([k]) => ![...NAME_KEYS, ...PHONE_KEYS, ...EMAIL_KEYS].includes(k))
+          .filter(([k]) => !known.includes(k))
           .map(([k, val]) => `${k}: ${val}`)
           .join('\n')
 
-        await acceptLead(sql, ORG, {
+        const accepted = await acceptLead(sql, ORG, {
           source: SOURCE,
           external_id: `meta_${leadgenId}`,
           lead_kind: 'form',
@@ -142,6 +144,17 @@ export default async function handler(req: Request): Promise<Response> {
           utm_content: v.adgroup_id ? String(v.adgroup_id) : null,
           raw: { ...lead, _leadgen: v },
         })
+
+        // Почта с формы — единственное место, откуда она вообще попадает
+        // в систему: ни один другой вход её не приносит, и поле у контактов
+        // стояло пустым у всех
+        const email = pick(fields, EMAIL_KEYS)
+        if (email && accepted.ok && accepted.account_id) {
+          await sql`
+            UPDATE sales_contacts SET email = COALESCE(email, ${email})
+            WHERE org_id = ${ORG} AND account_id = ${accepted.account_id} AND is_primary = true
+          `
+        }
       }
     }
   } catch (e) {
