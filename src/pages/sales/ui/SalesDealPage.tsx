@@ -8,6 +8,7 @@ import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { TasksCard } from './TasksCard'
 import { ActivityCard } from './ActivityCard'
+import { ContactsCard } from './ContactsCard'
 import { useAuth } from '@/shared/hooks/useAuth'
 
 /** Роли, которым сервер разрешает решать по скидке выше порога. */
@@ -597,23 +598,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             )}
           </Card>
 
-          <Card title="Контакты" sub="по телефону идёт склейка обращений">
-            {contacts.length === 0 ? (
-              <div className="px-4 py-4 text-[12.5px] text-gray-400">Контактов нет</div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {contacts.map((c, i) => (
-                  <div key={i} className="px-4 py-2.5 flex justify-between gap-3">
-                    <div>
-                      <div className="text-[12.5px] text-gray-900">{c.name || 'Без имени'}</div>
-                      <div className="text-[11px] text-gray-400">{c.role || (c.is_primary ? 'основной' : '')}</div>
-                    </div>
-                    <div className="text-[12px] text-gray-600 tabular-nums">{c.phone || c.telegram || '—'}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          <ContactsCard accountId={data.account?.id} market={d.market_id} />
 
           <Card title="История этапов" sub="каждое движение — событие">
             <div className="divide-y divide-gray-100">
