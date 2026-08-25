@@ -103,8 +103,9 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
     setAppSecret(''); setNote('Ключи сохранены — больше их вводить не придётся')
   })
 
-  const startAuth = () => act('auth', async () => {
-    const r = await apiGet<{ url: string }>('/integrations/meta?action=auth-url', false)
+  const startAuth = (scopes?: 'base') => act('auth', async () => {
+    const q = scopes ? '&scopes=base' : ''
+    const r = await apiGet<{ url: string }>(`/integrations/meta?action=auth-url${q}`, false)
     window.open(r.url, '_blank', 'noopener')
     setNote('Окно Facebook открылось в новой вкладке. Разрешите доступ и вернитесь сюда.')
   })
@@ -178,11 +179,21 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
               Откроется окно Facebook. Войдите и разрешите доступ — дальше останется
               выбрать страницу, с которой идёт реклама. Всё остальное система сделает сама.
             </p>
-            <button onClick={startAuth} disabled={busy === 'auth'}
+            <button onClick={() => startAuth()} disabled={busy === 'auth'}
               className="mt-4 text-[14px] font-medium px-5 py-2.5 rounded-lg bg-blue-600 text-white
                          hover:bg-blue-700 disabled:opacity-50">
               {busy === 'auth' ? 'Открываем…' : st?.authorized ? 'Войти заново' : 'Войти через Facebook'}
             </button>
+
+            {/* Запасной путь: если в приложении нет сценария про рекламу,
+                Facebook отвергает разрешение на заявки и не пускает вообще
+                никуда — вместе с директом, который подключился бы спокойно */}
+            <div className="mt-2.5">
+              <button onClick={() => startAuth('base')} disabled={busy === 'auth'}
+                className="text-[12.5px] text-slate-500 hover:text-blue-600 underline decoration-dotted disabled:opacity-50">
+                Facebook пишет «Invalid Scopes» — подключить без заявок с рекламы
+              </button>
+            </div>
 
             {/* Ровно тот вопрос, который задают первым: «а если сменится подрядчик?» */}
             <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[12.5px] text-amber-900 text-left">

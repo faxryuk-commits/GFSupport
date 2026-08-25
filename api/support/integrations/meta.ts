@@ -26,16 +26,29 @@ export const config = { runtime: 'edge' }
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
 
-/** Права: заявки с форм, список страниц, подписка вебхуков, директ и Messenger. */
-const SCOPES = [
+/**
+ * Права разделены на две части намеренно.
+ *
+ * Базовые есть у любого приложения с настроенными сценариями Instagram
+ * и Messenger. А leads_retrieval живёт в отдельном сценарии про рекламу,
+ * и если его в приложении нет, Facebook отвечает «Invalid Scopes» и не
+ * пускает вообще никуда — вместе с директом и страницами, которые
+ * подключились бы прекрасно.
+ *
+ * Поэтому при отказе можно подключиться базовым набором и добавить заявки
+ * потом, когда сценарий появится: повторное согласие просто расширит права.
+ */
+const BASE_SCOPES = [
   'pages_show_list',
   'pages_manage_metadata',
-  'leads_retrieval',
   'pages_messaging',
   'instagram_basic',
   'instagram_manage_messages',
-  'business_management',
-].join(',')
+]
+const LEAD_SCOPES = ['leads_retrieval', 'business_management']
+
+const scopesFor = (mode: string | null) =>
+  (mode === 'base' ? BASE_SCOPES : [...BASE_SCOPES, ...LEAD_SCOPES]).join(',')
 
 /**
  * Адрес возврата. Собирался из хоста текущего запроса — и это подводило:
@@ -92,7 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
     auth.searchParams.set('client_id', cfg.appId)
     auth.searchParams.set('redirect_uri', pinnedRedirect(pinRow, req))
     auth.searchParams.set('state', state)
-    auth.searchParams.set('scope', SCOPES)
+    auth.searchParams.set('scope', scopesFor(url.searchParams.get('scopes')))
     auth.searchParams.set('response_type', 'code')
     return json({ url: auth.toString(), redirectUri: pinnedRedirect(pinRow, req) })
   }

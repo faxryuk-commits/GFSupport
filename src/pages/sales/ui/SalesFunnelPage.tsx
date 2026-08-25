@@ -69,19 +69,22 @@ export function SalesFunnelPage() {
   const region = useRegion('funnel')
 
   // Что тащим: обращение или сделка — правила перехода у них разные
+  // Сколько карточек показываем в колонке. Счётчик внизу был просто текстом:
+  // «показано 15 из 142» — и посмотреть остальное было нельзя ничем
+  const [perColumn, setPerColumn] = useState(15)
   const [drag, setDrag] = useState<{ kind: 'lead' | 'deal'; id: string; from: string } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   const reqRef = useRef(0)
 
   const load = useCallback(() => {
-    const p = new URLSearchParams({ perColumn: '15', region: region || 'all' })
+    const p = new URLSearchParams({ perColumn: String(perColumn), region: region || 'all' })
     if (owner) p.set('owner', owner)
     if (q) p.set('q', q)
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, region])
+  }, [owner, q, region, perColumn])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -188,7 +191,7 @@ export function SalesFunnelPage() {
             </b></span>
             <span>сделок <b className="text-gray-900">{t.open_deals ?? 0}</b></span>
             <span>на <b className="text-gray-900">{money(t.pipeline_amount, 'UZS')}</b> в месяц</span>
-            {t.no_next_step ? <span>без шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
+            {t.no_next_step ? <span>без следующего шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -309,9 +312,12 @@ export function SalesFunnelPage() {
                   </div>
                 )}
                 {leadsIn(col.key).length < col.total && (
-                  <div className="text-[10.5px] text-gray-400 text-center">
-                    показано {leadsIn(col.key).length} из {col.total}
-                  </div>
+                  <button
+                    onClick={() => setPerColumn(p => Math.min(300, p + 50))}
+                    className="w-full text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50
+                               text-center py-2 rounded-lg border border-dashed border-blue-200 transition-colors">
+                    Показать ещё · {leadsIn(col.key).length} из {col.total}
+                  </button>
                 )}
               </div>
             </section>
@@ -423,9 +429,12 @@ export function SalesFunnelPage() {
                   </div>
                 )}
                 {dealsIn(st.key).length < st.total && (
-                  <div className="text-[10.5px] text-gray-400 text-center">
-                    показано {dealsIn(st.key).length} из {st.total}
-                  </div>
+                  <button
+                    onClick={() => setPerColumn(p => Math.min(300, p + 50))}
+                    className="w-full text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50
+                               text-center py-2 rounded-lg border border-dashed border-blue-200 transition-colors">
+                    Показать ещё · {dealsIn(st.key).length} из {st.total}
+                  </button>
                 )}
               </div>
             </section>

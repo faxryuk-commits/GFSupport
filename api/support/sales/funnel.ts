@@ -94,7 +94,9 @@ export default async function handler(req: Request): Promise<Response> {
 
   const owner = url.searchParams.get('owner') || ''
   const q = url.searchParams.get('q') || ''
-  const perColumn = Math.min(50, Math.max(5, parseInt(url.searchParams.get('perColumn') || '15', 10)))
+  // Потолок поднят с полусотни: колонка «на прогреве» бывает и в полторы
+  // сотни, а раскрыть её было нечем — счётчик внизу был просто текстом
+  const perColumn = Math.min(300, Math.max(5, parseInt(url.searchParams.get('perColumn') || '15', 10)))
   const like = q ? `%${q}%` : ''
 
   // Все выборки экрана уходят ОДНОЙ пачкой, а не семью запросами подряд.
