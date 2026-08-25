@@ -9,6 +9,27 @@
 
 export interface AmoCreds { domain: string; token: string }
 
+export type AmoMode = 'full' | 'leads_only' | 'off'
+export const AMO_MODE_KEY = 'sales_amo_mode'
+
+/**
+ * Режим моста с Amo. Живёт в базе, а не в переменных окружения намеренно:
+ * решение «команда переходит к нам» принимает руководитель продаж в интерфейсе,
+ * и откат должен занимать секунды, а не выкладку.
+ *
+ *   full        как было: приезжают лиды и переносятся этапы Amo. Ручная работа
+ *               в нашей CRM при этом затирается — истина в Amo
+ *   leads_only  приезжают только НОВЫЕ лиды. Существующие записи мост не трогает
+ *               вовсе: ни этап, ни поля, ни закрытие. Истина у нас, а Amo пока
+ *               остаётся входом для заявок с рекламы
+ *   off         мост молчит
+ */
+export async function readAmoMode(sql: any): Promise<AmoMode> {
+  const [row] = await sql`SELECT value FROM support_platform_settings WHERE key = ${AMO_MODE_KEY}`
+  const v = String(row?.value || 'full')
+  return v === 'leads_only' || v === 'off' ? v : 'full'
+}
+
 export async function amoGet(creds: AmoCreds, path: string): Promise<any | null> {
   const res = await fetch(`https://${creds.domain}/api/v4${path}`, {
     headers: { Authorization: `Bearer ${creds.token}` },

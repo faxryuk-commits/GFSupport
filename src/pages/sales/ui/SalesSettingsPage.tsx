@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Tabs, money, PageShell, Skeleton } from './kit'
 import { REGION_NAMES } from './region'
@@ -19,6 +19,33 @@ const TABS: Array<[string, string]> = [
   ['prices', 'Прайс'],
   ['options', 'Значения полей'],
   ['entities', 'Наши реквизиты'],
+  ['amo', 'Мост Amo'],
+]
+
+/**
+ * Режимы моста с Amo — предохранитель перехода команды на свою CRM.
+ * Формулировки здесь важнее кода: переключая режим, руководитель решает,
+ * чья работа считается истиной, и должен видеть последствие до клика.
+ */
+const AMO_MODES: Array<{ key: string; title: string; what: string; effect: string }> = [
+  {
+    key: 'full',
+    title: 'Полный',
+    what: 'Приезжают лиды, этапы Amo переносятся к нам.',
+    effect: 'Истина в Amo. Работа команды в GFSupport затирается при следующем проходе.',
+  },
+  {
+    key: 'leads_only',
+    title: 'Только новые лиды',
+    what: 'Приезжают новые заявки, но заведённые записи мост не трогает.',
+    effect: 'Истина у нас. Команда работает здесь, поток заявок с рекламы ещё идёт через Amo.',
+  },
+  {
+    key: 'off',
+    title: 'Выключен',
+    what: 'Мост молчит.',
+    effect: 'Заявки должны приходить своим приёмником — иначе поток с рекламы оборвётся.',
+  },
 ]
 
 /** Наша сторона договора: то, что шаблон подставляет как «Лицензиар». */
@@ -57,12 +84,34 @@ export function SalesSettingsPage() {
   ]
   const [optField, setOptField] = useState('city')
   const [newOption, setNewOption] = useState('')
+  const [amo, setAmo] = useState<any>(null)
+  const [amoBusy, setAmoBusy] = useState(false)
 
   const load = useCallback(() => {
     apiGet<any>('/sales/refs', false).then(setRefs).catch(e => setError(e?.message || 'Ошибка загрузки'))
     apiGet<any>(`/sales/catalog?market=${market}`, false).then(setCatalog).catch(() => {})
     apiGet<any>('/sales/legal-entity', false).then(d => setEntities(d.entities)).catch(() => {})
+    apiGet<any>('/sales/amo', false).then(setAmo).catch(() => {})
   }, [market])
+
+  /**
+   * Смена режима моста. Спрашиваем подтверждение с последствием в тексте:
+   * это решение о том, чья работа считается истиной, а не настройка вида.
+   */
+  const setAmoMode = async (mode: string) => {
+    const m = AMO_MODES.find(x => x.key === mode)
+    if (!m || !confirm(`Переключить мост в режим «${m.title}»?\n\n${m.effect}`)) return
+    setAmoBusy(true)
+    try {
+      await apiPost('/sales/amo', { mode })
+      const d = await apiGet<any>('/sales/amo', false)
+      setAmo(d)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось переключить режим')
+    } finally {
+      setAmoBusy(false)
+    }
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -506,8 +555,86 @@ export function SalesSettingsPage() {
         </Card>
       )}
 
+      {tab === 'amo' && (
+        <div className="space-y-4">
+          <Card title="Режим моста с AmoCRM"
+            sub="чья работа считается истиной — переключается без выкладки и откатывается так же">
+            <div className="p-4 grid sm:grid-cols-3 gap-3">
+              {AMO_MODES.map(m => {
+                const active = amo?.mode === m.key
+                return (
+                  <button key={m.key} onClick={() => !active && setAmoMode(m.key)} disabled={amoBusy || active}
+                    className={`text-left rounded-xl border p-3.5 transition ${
+                      active ? 'border-blue-500 bg-blue-50 cursor-default'
+                             : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`text-[13.5px] font-semibold ${active ? 'text-blue-700' : 'text-gray-900'}`}>
+                        {m.title}
+                      </span>
+                      {active && <Chip tone="blue">сейчас</Chip>}
+                    </div>
+                    <div className="text-[12px] text-gray-600 leading-snug">{m.what}</div>
+                    <div className="text-[11.5px] text-gray-400 leading-snug mt-1.5">{m.effect}</div>
+                  </button>
+                )
+              })}
+            </div>
+            {amo && !amo.tokenSet && (
+              <div className="mx-4 mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-800">
+                Доступ к Amo не настроен — мост не работает независимо от режима.
+              </div>
+            )}
+          </Card>
+
+          <Card title="Состояние моста" sub="по этим цифрам видно, что мост жив, даже когда в Amo тихо">
+            <div className="p-4 grid sm:grid-cols-2 gap-x-8 gap-y-2.5 text-[12.5px]">
+              <Row label="Дочитано до">
+                {amo?.cursorAt ? new Date(amo.cursorAt).toLocaleString('ru-RU') : '—'}
+              </Row>
+              <Row label="Последний проход">
+                {amo?.lastRunAt ? new Date(amo.lastRunAt).toLocaleString('ru-RU') : '—'}
+              </Row>
+              <Row label="За последний проход">
+                {amo?.lastRun
+                  ? [amo.lastRun.created ? `новых ${amo.lastRun.created}` : '',
+                     amo.lastRun.staged ? `этапов ${amo.lastRun.staged}` : '',
+                     amo.lastRun.deferred ? `отложено ${amo.lastRun.deferred}` : '',
+                     amo.lastRun.errors ? `ошибок ${amo.lastRun.errors}` : ''
+                    ].filter(Boolean).join(' · ') || 'без изменений'
+                  : '—'}
+              </Row>
+              <Row label="Сделки">
+                <span className="tabular-nums">
+                  {amo?.counts?.deals_from_amo ?? '—'} из Amo · {amo?.counts?.deals_native ?? '—'} заведены у нас
+                </span>
+              </Row>
+              <Row label="Лиды">
+                <span className="tabular-nums">
+                  {amo?.counts?.leads_from_amo ?? '—'} из Amo · всего {amo?.counts?.leads_total ?? '—'}
+                </span>
+              </Row>
+            </div>
+            <div className="px-4 py-3 text-[11.5px] text-gray-400 border-t border-gray-100">
+              Мост односторонний: из Amo к нам. Обратно не уходит ничего — поэтому в полном режиме
+              правки в нашей CRM перезаписываются данными Amo.
+            </div>
+          </Card>
+        </div>
+      )}
+
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
     </PageShell>
+  )
+}
+
+/** Строка «подпись — значение» в сводках этой страницы. */
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2 min-w-0">
+      <span className="text-gray-400 flex-none">{label}</span>
+      <span className="h-px flex-1 bg-gray-100" />
+      <span className="text-gray-900 text-right min-w-0 truncate">{children}</span>
+    </div>
   )
 }
 

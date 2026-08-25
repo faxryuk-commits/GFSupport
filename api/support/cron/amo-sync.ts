@@ -2,7 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead } from '../lib/sales-intake.js'
 import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
-         fetchNotes, parseNotes, statusMap, applyAmoStage } from '../lib/sales-amo.js'
+         fetchNotes, parseNotes, statusMap, applyAmoStage, readAmoMode } from '../lib/sales-amo.js'
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { logEvent } from '../lib/system-journal.js'
 
@@ -22,6 +22,13 @@ export const config = { runtime: 'edge' }
  * Ограничение переходного периода: через Amo не доезжают ad_id и campaign_id,
  * приходит только тег формы. Разбивка по кампаниям появится со своим приёмником
  * Meta — для команды при переключении не изменится ничего, вход один.
+ *
+ * Режим моста (настройка sales_amo_mode, читается на каждом проходе):
+ *   full        лиды приезжают, этапы Amo переносятся к нам и затирают правки
+ *   leads_only  приезжают только новые лиды, наши записи мост не трогает
+ *   off         мост молчит
+ * Переключается из интерфейса — день перехода команды на свою CRM не должен
+ * требовать выкладки, а откат тем более.
  *
  * Переменные: AMO_DOMAIN, AMO_TOKEN, AMO_PIPELINE_MARKETS, SALES_ORG, CRON_SECRET.
  */
@@ -83,6 +90,18 @@ export default async function handler(req: Request): Promise<Response> {
   // следующая минута. Иначе функция гарантированно упрётся в лимит.
   if (Date.now() - started > SCHEMA_BUDGET_MS) {
     return json({ ok: true, schema: 'initialized', note: 'синхронизация начнётся со следующего прохода' })
+  }
+
+  // Режим переключается из интерфейса и читается на каждом проходе: день
+  // перехода на свою CRM не должен требовать выкладки, а откат — тем более
+  const mode = await readAmoMode(sql)
+  if (mode === 'off') {
+    await sql`
+      INSERT INTO support_platform_settings (key, value, updated_at)
+      VALUES (${'sales_amo_last_run'}, ${JSON.stringify({ mode, note: 'мост выключен' })}, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `
+    return json({ ok: true, mode, note: 'мост выключен из настроек' })
   }
 
   const [cursorRow] = await sql`
@@ -221,7 +240,22 @@ export default async function handler(req: Request): Promise<Response> {
     // В Amo лид и сделка — одна запись, поэтому изменившиеся статусы уже лежат
     // в выборке: остаётся применить их к нашим сделкам. Без этого сделка,
     // закрытая утром в Amo, висела у нас открытой и портила и доску, и деньги
-    const statuses = await statusMap(creds)
+    const statuses = mode === 'full' ? await statusMap(creds) : new Map()
+
+    // В режиме «только лиды» уже заведённые записи не трогаем вовсе: их ведёт
+    // команда у нас, и любое касание из Amo было бы затиранием живой работы —
+    // включая безобидное на вид уточнение названия
+    const ours = new Set<string>()
+    if (mode === 'leads_only') {
+      const extIds = leads.map((l: any) => l?.id).filter(Boolean).map((id: number) => `amo_${id}`)
+      const rows = extIds.length
+        ? await sql`
+            SELECT external_id FROM sales_leads
+            WHERE org_id = ${ORG} AND external_id = ANY(${extIds})
+          ` as any[]
+        : []
+      for (const r of rows) ours.add(r.external_id)
+    }
 
     // ─── 3. В приёмник — тем же путём, что сайт и Instagram ───────────────────
     let processed = 0
@@ -235,6 +269,7 @@ export default async function handler(req: Request): Promise<Response> {
         if (lead.updated_at && lead.updated_at > maxUpdated) maxUpdated = lead.updated_at
         // В аккаунте девять воронок: Instagram comments и Onboarding в CRM продаж не нужны
         if (!isAllowedPipeline(lead.pipeline_id)) { out.skipped++; continue }
+        if (mode === 'leads_only' && ours.has(`amo_${lead.id}`)) { out.deduped++; continue }
         // Телефон нужен для склейки, но он есть не всегда: у обращений из
         // Instagram и Telegram его нет вовсе, а имя контакта — единственное,
         // что о человеке известно. Раньше мы искали контакт строго с телефоном
@@ -260,11 +295,13 @@ export default async function handler(req: Request): Promise<Response> {
         // обращение: он потратит касание на то, что уже решено. Закрытую
         // сразу отправляем к своим — не реализованную в отказ, выигранную
         // в конверсию; на доске такие не показываются
-        // Перенос этапа делаем до разбора лида: сделка важнее, она про деньги
-        const moved = await applyAmoStage(sql, ORG, lead, statuses)
+        // Перенос этапа делаем до разбора лида: сделка важнее, она про деньги.
+        // В режиме «только лиды» этап и закрытие остаются за нами — ровно этим
+        // режим и отличается: Amo больше не двигает нашу воронку
+        const moved = mode === 'full' ? await applyAmoStage(sql, ORG, lead, statuses) : null
         if (moved) out.staged++
 
-        const closed = closedKind(lead.status_id)
+        const closed = mode === 'full' ? closedKind(lead.status_id) : null
         if (closed && res.lead_id) {
           await sql`
             UPDATE sales_leads
@@ -301,9 +338,9 @@ export default async function handler(req: Request): Promise<Response> {
   // менялось, и по нему не отличить тишину от вставшего крона
   await sql`
     INSERT INTO support_platform_settings (key, value, updated_at)
-    VALUES (${'sales_amo_last_run'}, ${JSON.stringify({ ...out, ms: Date.now() - started })}, NOW())
+    VALUES (${'sales_amo_last_run'}, ${JSON.stringify({ mode, ...out, ms: Date.now() - started })}, NOW())
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
   `
 
-  return json({ ok: true, secured: cronSecured(), since, cursor: maxUpdated, ms: Date.now() - started, ...out })
+  return json({ ok: true, mode, secured: cronSecured(), since, cursor: maxUpdated, ms: Date.now() - started, ...out })
 }
