@@ -50,7 +50,10 @@ const BASE_SCOPES = [
   'instagram_basic',
   'instagram_manage_messages',
 ]
-const LEAD_SCOPES = ['leads_retrieval', 'business_management']
+// Заявок два разрешения, а не одно: leads_retrieval даёт читать содержимое
+// заявки, а pages_manage_ads — вообще увидеть список форм страницы. Без
+// второго Meta отвечает «(#200) Requires pages_manage_ads permission»
+const LEAD_SCOPES = ['leads_retrieval', 'pages_manage_ads', 'business_management']
 
 const scopesFor = (mode: string | null) =>
   (mode === 'base' ? BASE_SCOPES : [...BASE_SCOPES, ...LEAD_SCOPES]).join(',')
@@ -128,6 +131,30 @@ export default async function handler(req: Request): Promise<Response> {
     const data: any = await res.json()
     const pages = (data?.data || []).map((p: any) => ({ id: p.id, name: p.name }))
     return json({ pages })
+  }
+
+  // ─── Что нам вообще разрешили ───────────────────────────────────────────────
+  // Без этого человек узнаёт об отсутствии права только по ошибке в середине
+  // работы — и по тексту Meta понять, чего не хватает, невозможно
+  if (req.method === 'GET' && action === 'permissions') {
+    const [row] = await sql`
+      SELECT user_token FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (!row?.user_token) return json({ granted: [], leadsOk: false, messagesOk: false })
+    try {
+      const res = await fetch(`${GRAPH}/me/permissions?access_token=${row.user_token}`)
+      const data: any = await res.json()
+      const granted: string[] = (data?.data || [])
+        .filter((p: any) => p.status === 'granted').map((p: any) => p.permission)
+      const has = (n: string) => granted.includes(n)
+      return json({
+        granted,
+        leadsOk: has('leads_retrieval') && has('pages_manage_ads'),
+        messagesOk: has('pages_messaging') || has('instagram_manage_messages'),
+      })
+    } catch {
+      return json({ granted: [], leadsOk: false, messagesOk: false })
+    }
   }
 
   // ─── Состояние ──────────────────────────────────────────────────────────────
@@ -243,23 +270,34 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Подписываем приложение на страницу сразу: шаг, который в ручной
     // настройке забывают чаще всего, и без него вебхуки молчат
-    let subscribed = false
-    let subscribeError: string | null = null
-    try {
-      const subRes = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subscribed_fields: 'leadgen,messages,messaging_postbacks,feed',
-          access_token: page.access_token,
-        }),
-      })
-      const sub: any = await subRes.json()
-      subscribed = Boolean(sub?.success)
-      if (!subscribed) subscribeError = JSON.stringify(sub?.error || sub).slice(0, 300)
-    } catch (e: any) {
-      subscribeError = e?.message || 'не удалось подписать страницу'
+    // Подписываемся двумя заходами, а не одним списком. Одним — Meta валит
+    // всю подписку из-за единственного поля: нет разрешения на заявки, и
+    // вместе с ними отваливаются сообщения, которые подписались бы спокойно
+    const subscribe = async (fields: string): Promise<string | null> => {
+      try {
+        const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscribed_fields: fields, access_token: page.access_token }),
+        })
+        const out: any = await res.json()
+        if (out?.success) return null
+        return String(out?.error?.message || JSON.stringify(out)).slice(0, 200)
+      } catch (e: any) {
+        return e?.message || 'страница не ответила'
+      }
     }
+
+    const msgErr = await subscribe('messages,messaging_postbacks,feed')
+    const leadErr = await subscribe('leadgen')
+    const subscribed = !msgErr
+    // Про заявки говорим человеческим языком: в ответе Meta это длинная
+    // строка с трассировкой, из которой ничего не понять
+    const subscribeError = msgErr
+      ? `Сообщения не подписались: ${msgErr}`
+      : leadErr
+        ? 'Сообщения идут. Заявки с рекламы — нет разрешения leads_retrieval'
+        : null
 
     await sql`
       UPDATE support_meta_accounts SET subscribed = ${subscribed}, subscribe_error = ${subscribeError}
@@ -286,7 +324,27 @@ export default async function handler(req: Request): Promise<Response> {
       if (!acc.pageToken) continue
       const res = await fetch(
         `${GRAPH}/${acc.pageId}/leadgen_forms?fields=id,name,status,leads_count&limit=200&access_token=${acc.pageToken}`)
-      if (!res.ok) { failed.push(acc.pageName || acc.pageId); continue }
+      if (!res.ok) {
+        // Разбираем ответ Meta: «не отдала формы» не говорит человеку ничего,
+        // а причина почти всегда одна и та же — не хватает разрешения
+        let why = ''
+        try {
+          const err: any = await res.json()
+          why = String(err?.error?.message || '')
+        } catch { /* тело не разобралось — обойдёмся кодом ответа */ }
+        if (/pages_manage_ads|leads_retrieval|permission/i.test(why)) {
+          return json({
+            error: 'Нет разрешения на заявки с рекламы. Вы подключались без него — '
+              + 'добавьте в приложении Meta права pages_manage_ads и leads_retrieval, '
+              + 'затем нажмите «+ Аккаунт» и войдите заново: права расширятся, '
+              + 'переподключать страницу не нужно.',
+            needsScopes: ['pages_manage_ads', 'leads_retrieval'],
+            details: why.slice(0, 200),
+          }, 403)
+        }
+        failed.push(acc.pageName || acc.pageId)
+        continue
+      }
       const data: any = await res.json()
       for (const f of (data?.data || [])) {
         found++

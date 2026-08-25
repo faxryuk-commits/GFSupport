@@ -74,6 +74,7 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   const [appSecret, setAppSecret] = useState('')
   const [verifyToken, setVerifyToken] = useState('')
   const [pages, setPages] = useState<Array<{ id: string; name: string }>>([])
+  const [perms, setPerms] = useState<{ leadsOk: boolean; messagesOk: boolean } | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -92,6 +93,13 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   }, [])
 
   useEffect(() => { if (isOpen) load() }, [isOpen, load])
+
+  // Что нам разрешили — узнаём сразу, а не по ошибке в середине работы
+  useEffect(() => {
+    if (!isOpen) return
+    apiGet<{ leadsOk: boolean; messagesOk: boolean }>('/integrations/meta?action=permissions', false)
+      .then(setPerms).catch(() => setPerms(null))
+  }, [isOpen, st?.accounts?.length])
 
   useEffect(() => {
     if (!isOpen) return
@@ -186,6 +194,25 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
               </button>
             </div>
 
+            {/* Что работает, а что нет — до первой ошибки, а не после */}
+            {accounts.length > 0 && perms && (
+              <div className="px-4 py-2.5 border-b border-slate-100 flex gap-4 flex-wrap text-[12px]">
+                <span className={perms.messagesOk ? 'text-emerald-700' : 'text-slate-400'}>
+                  {perms.messagesOk ? '✅' : '○'} Директ и Messenger
+                </span>
+                <span className={perms.leadsOk ? 'text-emerald-700' : 'text-amber-700'}>
+                  {perms.leadsOk ? '✅' : '⚠️'} Заявки с рекламы
+                  {!perms.leadsOk && ' — нет разрешения'}
+                </span>
+                {!perms.leadsOk && (
+                  <button onClick={() => startAuth()} disabled={busy === 'auth'}
+                    className="text-[12px] text-blue-600 hover:underline disabled:opacity-50">
+                    войти заново, чтобы добавить
+                  </button>
+                )}
+              </div>
+            )}
+
             {accounts.length > 0 && (
               <div className="divide-y divide-slate-100">
                 {accounts.map(a => (
@@ -197,7 +224,7 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
                         {a.igUsername && <span className="font-normal text-slate-600"> · @{a.igUsername}</span>}
                       </div>
                       <div className="text-[11.5px] text-slate-400 mt-0.5">
-                        {a.subscribed ? 'заявки и сообщения идут' : 'вебхуки не подписаны'}
+                        {a.subscribed ? 'сообщения идут' : 'сообщения не подписаны'}
                         {a.connectedByName ? ` · подключил ${a.connectedByName}` : ''}
                         {a.connectedAt ? `, ${new Date(a.connectedAt).toLocaleDateString('ru-RU')}` : ''}
                       </div>
