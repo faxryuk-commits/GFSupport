@@ -6,9 +6,11 @@ import { useAuth } from '@/shared/hooks/useAuth'
 /**
  * Подключение Instagram и Facebook.
  *
- * Экран разделён на два слоя намеренно. Техническая настройка — ключи
- * приложения и два адреса в консоли Meta — делается администратором один раз
- * за всё время и потом свёрнута с глаз. Обычный человек видит одну кнопку.
+ * Экран разделён на два слоя намеренно, и это разные сущности с разной
+ * судьбой. Настройка приложения — ключи и два адреса в консоли — делается
+ * администратором один раз за всё время и свёрнута с глаз. Подключение
+ * аккаунтов — обычная работа: страниц может быть несколько, они добавляются
+ * и отключаются, у каждой свой Instagram и свой регион.
  *
  * Первая версия показывала все четыре шага всегда и подряд, и из неё
  * читалось, будто эти токены надо вводить каждый раз. Это неправда:
@@ -22,7 +24,14 @@ type Form = {
   leads_count: number; last_lead_at: string | null
 }
 
+type Account = {
+  id: string; pageId: string; pageName: string | null; igUsername: string | null
+  marketId: string | null; subscribed: boolean; subscribeError: string | null
+  connectedByName: string | null; connectedAt: string | null
+}
+
 type State = {
+  accounts: Account[]
   appId: string | null; appSecret: string | null; verifyToken: string | null
   pageId: string | null; pageName: string | null; pageToken: string | null
   igUsername: string | null; connectedByName: string | null; connectedAt: string | null
@@ -133,13 +142,22 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   const setFormMarket = (formId: string, market: string) =>
     act('form', () => apiPost('/integrations/meta?action=form-market', { formId, market: market || null }))
 
+  const setAccountMarket = (accountId: string, market: string) =>
+    act('acc', () => apiPost('/integrations/meta?action=account-market', { accountId, market: market || null }))
+
+  const dropAccount = (a: Account) => {
+    if (!confirm(`Отключить «${a.pageName || a.pageId}»? Заявки и сообщения с этой страницы перестанут приходить.`)) return
+    act('acc', () => apiPost('/integrations/meta?action=disconnect', { accountId: a.id }))
+  }
+
   const disconnect = () => {
     if (!confirm('Отключить Instagram и Facebook? Заявки с рекламы перестанут приходить.')) return
     act('off', () => apiPost('/integrations/meta?action=disconnect', {}))
   }
 
   const hasApp = Boolean(st?.appId && st?.appSecret)
-  const connected = Boolean(st?.pageId)
+  const accounts = st?.accounts || []
+  const connected = accounts.length > 0
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Instagram и Facebook" size="lg">
@@ -151,76 +169,100 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
           <div className="rounded-lg bg-blue-50 border border-blue-200 px-3.5 py-2.5 text-[12.5px] text-blue-800">{note}</div>
         )}
 
-        {/* ── Подключено: главное состояние ──────────────────────────────────── */}
-        {connected && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
-            <div className="flex items-start gap-3">
-              <span className="text-[20px] leading-none">✅</span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[15px] font-semibold text-emerald-900">
-                  {st?.pageName}
-                  {st?.igUsername && <span className="font-normal"> · Instagram @{st.igUsername}</span>}
-                </div>
-                <div className="text-[12.5px] text-emerald-800/80 mt-1">
-                  Заявки с рекламы, директ и Messenger идут в систему.
-                  Подключил {st?.connectedByName || '—'}
-                  {st?.connectedAt ? `, ${new Date(st.connectedAt).toLocaleDateString('ru-RU')}` : ''}.
+        {/* ── Подключённые аккаунты ──────────────────────────────────────────── */}
+        {hasApp && (
+          <div className="rounded-xl border border-slate-200 bg-white">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+              <div>
+                <div className="text-[14.5px] font-semibold text-slate-800">Аккаунты</div>
+                <div className="text-[12px] text-slate-500 mt-0.5">
+                  Страницы Facebook, с которых идут заявки и сообщения. Instagram приходит вместе со страницей
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Не подключено, но приложение настроено: одна кнопка ─────────────── */}
-        {!connected && hasApp && (
-          <div className="rounded-xl border border-slate-200 bg-white px-5 py-5 text-center">
-            <div className="text-[15px] font-semibold text-slate-800">Подключить Facebook и Instagram</div>
-            <p className="text-[13px] text-slate-600 mt-1.5 max-w-[420px] mx-auto">
-              Откроется окно Facebook. Войдите и разрешите доступ — дальше останется
-              выбрать страницу, с которой идёт реклама. Всё остальное система сделает сама.
-            </p>
-            <button onClick={() => startAuth()} disabled={busy === 'auth'}
-              className="mt-4 text-[14px] font-medium px-5 py-2.5 rounded-lg bg-blue-600 text-white
-                         hover:bg-blue-700 disabled:opacity-50">
-              {busy === 'auth' ? 'Открываем…' : st?.authorized ? 'Войти заново' : 'Войти через Facebook'}
-            </button>
-
-            {/* Запасной путь: если в приложении нет сценария про рекламу,
-                Facebook отвергает разрешение на заявки и не пускает вообще
-                никуда — вместе с директом, который подключился бы спокойно */}
-            <div className="mt-2.5">
-              <button onClick={() => startAuth('base')} disabled={busy === 'auth'}
-                className="text-[12.5px] text-slate-500 hover:text-blue-600 underline decoration-dotted disabled:opacity-50">
-                Facebook пишет «Invalid Scopes» — подключить без заявок с рекламы
+              <button onClick={() => startAuth()} disabled={busy === 'auth'}
+                className="flex-none text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white
+                           hover:bg-blue-700 disabled:opacity-50">
+                {busy === 'auth' ? 'Открываем…' : '+ Аккаунт'}
               </button>
             </div>
 
-            {/* Ровно тот вопрос, который задают первым: «а если сменится подрядчик?» */}
-            <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[12.5px] text-amber-900 text-left">
-              <b>Входите аккаунтом, который останется в компании</b> — владельца или
-              руководителя, а не подрядчика. Тогда смена таргетолога ничего не сломает:
-              доступ живёт у компании, а не у человека, и повторять это не нужно.
-            </div>
+            {accounts.length > 0 && (
+              <div className="divide-y divide-slate-100">
+                {accounts.map(a => (
+                  <div key={a.id} className="px-4 py-3 flex items-start gap-3 group">
+                    <span className="text-[16px] leading-none mt-0.5">{a.subscribed ? '✅' : '⚠️'}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13.5px] font-semibold text-slate-800 truncate">
+                        {a.pageName || a.pageId}
+                        {a.igUsername && <span className="font-normal text-slate-600"> · @{a.igUsername}</span>}
+                      </div>
+                      <div className="text-[11.5px] text-slate-400 mt-0.5">
+                        {a.subscribed ? 'заявки и сообщения идут' : 'вебхуки не подписаны'}
+                        {a.connectedByName ? ` · подключил ${a.connectedByName}` : ''}
+                        {a.connectedAt ? `, ${new Date(a.connectedAt).toLocaleDateString('ru-RU')}` : ''}
+                      </div>
+                      {!a.subscribed && a.subscribeError && (
+                        <div className="text-[11.5px] text-amber-700 mt-1">{a.subscribeError}</div>
+                      )}
+                    </div>
+                    <select value={a.marketId || ''} disabled={busy === 'acc'}
+                      onChange={e => setAccountMarket(a.id, e.target.value)}
+                      title="Регион, к которому относится эта страница"
+                      className="flex-none text-[12px] px-2 py-1.5 border border-slate-200 rounded-lg bg-white">
+                      <option value="">регион не задан</option>
+                      {REGIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                    <button onClick={() => dropAccount(a)} disabled={busy === 'acc'}
+                      className="flex-none opacity-0 group-hover:opacity-100 text-[11.5px] text-slate-300 hover:text-red-600">
+                      отключить
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
+            {/* Выбор страницы после согласия — тот же список для первого
+                аккаунта и для каждого следующего */}
             {st?.authorized && (
-              <div className="mt-4 text-left">
-                <div className="text-[13px] font-medium text-slate-700 mb-2">
-                  Доступ выдан. Выберите страницу:
-                </div>
+              <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60">
                 <button onClick={loadPages} disabled={busy === 'pages'}
-                  className="text-[13px] px-4 py-2 rounded-lg border border-slate-200 hover:border-blue-400 disabled:opacity-50">
-                  {busy === 'pages' ? 'Ищем…' : 'Показать страницы'}
+                  className="text-[12.5px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-blue-400 disabled:opacity-50">
+                  {busy === 'pages' ? 'Ищем…' : accounts.length ? 'Добавить ещё страницу' : 'Показать доступные страницы'}
                 </button>
                 {pages.length > 0 && (
-                  <div className="mt-2.5 border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden">
-                    {pages.map(p => (
-                      <button key={p.id} onClick={() => selectPage(p.id)} disabled={busy === 'select'}
-                        className="w-full text-left px-3.5 py-2.5 text-[13px] hover:bg-blue-50 disabled:opacity-50">
-                        {p.name}
-                      </button>
-                    ))}
+                  <div className="mt-2.5 border border-slate-200 rounded-lg divide-y divide-slate-100 bg-white overflow-hidden">
+                    {pages.map(p => {
+                      const already = accounts.some(a => a.pageId === p.id)
+                      return (
+                        <button key={p.id} onClick={() => selectPage(p.id)} disabled={busy === 'select' || already}
+                          className="w-full text-left px-3.5 py-2.5 text-[12.5px] hover:bg-blue-50 disabled:opacity-40 disabled:hover:bg-transparent">
+                          {p.name}
+                          {already && <span className="text-slate-400"> · уже подключена</span>}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {!accounts.length && (
+              <div className="px-4 py-5 text-center">
+                <p className="text-[13px] text-slate-600 max-w-[430px] mx-auto">
+                  Ни одного аккаунта не подключено. Нажмите «+ Аккаунт» — откроется окно
+                  Facebook, где нужно разрешить доступ, потом выберете страницу.
+                </p>
+                <div className="mt-2.5">
+                  <button onClick={() => startAuth('base')} disabled={busy === 'auth'}
+                    className="text-[12px] text-slate-500 hover:text-blue-600 underline decoration-dotted disabled:opacity-50">
+                    Facebook пишет «Invalid Scopes» — подключить без заявок с рекламы
+                  </button>
+                </div>
+                <div className="mt-3.5 rounded-lg bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[12.5px] text-amber-900 text-left">
+                  <b>Входите аккаунтом, который останется в компании</b> — владельца или
+                  руководителя, а не подрядчика. Тогда смена таргетолога ничего не сломает:
+                  доступ живёт у компании, а не у человека.
+                </div>
               </div>
             )}
           </div>

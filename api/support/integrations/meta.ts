@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig,
-         marketFromFormName } from '../lib/meta-config.js'
+         readMetaAccounts, marketFromFormName } from '../lib/meta-config.js'
 import { logEvent } from '../lib/system-journal.js'
 
 export const config = { runtime: 'edge' }
@@ -18,10 +18,15 @@ export const config = { runtime: 'edge' }
  * GET  ?action=auth-url    ссылка на согласие Meta
  * GET  ?action=pages       страницы, доступные подключившемуся
  * POST ?action=credentials { appId, appSecret, verifyToken }
- * POST ?action=select-page { pageId } — берём токен страницы и подписываем вебхуки
- * POST ?action=sync-forms  тянем лид-формы страницы и раскладываем по регионам
+ * POST ?action=select-page { pageId } — добавляем аккаунт и подписываем вебхуки
+ * POST ?action=sync-forms { accountId? } — тянем лид-формы и раскладываем по регионам
  * POST ?action=form-market { formId, market }
- * POST ?action=disconnect
+ * POST ?action=account-market { accountId, market }
+ * POST ?action=disconnect { accountId? } — аккаунт или весь доступ приложения
+ *
+ * Аккаунтов может быть несколько: у каждого региона своя страница со своей
+ * рекламой и своим инстаграмом. Настройка приложения при этом одна и разовая —
+ * это разные сущности с разной судьбой, и мешать их в одном экране нельзя.
  */
 
 const GRAPH = 'https://graph.facebook.com/v21.0'
@@ -136,7 +141,14 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT user_token IS NOT NULL AS has_user, redirect_uri FROM support_meta_integration
       WHERE org_id = ${orgId} LIMIT 1
     ` as any[]
+    const accounts = await readMetaAccounts(orgId)
     return json({
+      accounts: accounts.map(a => ({
+        id: a.id, pageId: a.pageId, pageName: a.pageName,
+        igUsername: a.igUsername, marketId: a.marketId,
+        subscribed: a.subscribed, subscribeError: a.subscribeError,
+        connectedByName: a.connectedByName, connectedAt: a.connectedAt,
+      })),
       appId: cfg.appId,
       appSecret: mask(cfg.appSecret),
       verifyToken: cfg.verifyToken,
@@ -214,13 +226,18 @@ export default async function handler(req: Request): Promise<Response> {
     } catch { /* страница может быть без инстаграма — это нормально */ }
 
     const [agent] = await sql`SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`
+    // Аккаунт добавляется в список, а не заменяет единственный: у каждого
+    // региона своя страница, и подключают их в разное время разные люди
     await sql`
-      UPDATE support_meta_integration SET
-        page_id = ${pageId}, page_name = ${page.name || null}, page_token = ${page.access_token},
-        ig_user_id = ${igUserId}, ig_username = ${igUsername},
-        connected_by = ${ctx.agentId}, connected_by_name = ${agent?.name || null},
-        connected_at = NOW(), updated_at = NOW()
-      WHERE org_id = ${orgId}
+      INSERT INTO support_meta_accounts (id, org_id, page_id, page_name, page_token,
+                                         ig_user_id, ig_username, connected_by, connected_by_name)
+      VALUES (${'ma_' + pageId}, ${orgId}, ${pageId}, ${page.name || null}, ${page.access_token},
+              ${igUserId}, ${igUsername}, ${ctx.agentId}, ${agent?.name || null})
+      ON CONFLICT (org_id, page_id) DO UPDATE SET
+        page_name = EXCLUDED.page_name, page_token = EXCLUDED.page_token,
+        ig_user_id = EXCLUDED.ig_user_id, ig_username = EXCLUDED.ig_username,
+        connected_by = EXCLUDED.connected_by, connected_by_name = EXCLUDED.connected_by_name,
+        is_active = true, updated_at = NOW()
     `
     invalidateMetaConfig(orgId)
 
@@ -244,36 +261,62 @@ export default async function handler(req: Request): Promise<Response> {
       subscribeError = e?.message || 'не удалось подписать страницу'
     }
 
-    await logEvent(sql, 'Интеграция Meta', 'подключение',
+    await sql`
+      UPDATE support_meta_accounts SET subscribed = ${subscribed}, subscribe_error = ${subscribeError}
+      WHERE org_id = ${orgId} AND page_id = ${pageId}
+    `
+    await logEvent(sql, 'Интеграция Meta', 'подключён аккаунт',
       `${page.name || pageId}${igUsername ? ` · @${igUsername}` : ''} · ${agent?.name || ctx.agentId}`)
     return json({ ok: true, pageName: page.name, igUsername, subscribed, subscribeError })
   }
 
   // ─── Формы страницы ─────────────────────────────────────────────────────────
+  // Формы тянем по всем подключённым аккаунтам сразу: у каждой страницы
+  // свои формы, и заставлять выбирать страницу перед обновлением незачем
   if (action === 'sync-forms') {
-    if (!cfg.pageId || !cfg.pageToken) return json({ error: 'Сначала выберите страницу' }, 400)
-    const res = await fetch(
-      `${GRAPH}/${cfg.pageId}/leadgen_forms?fields=id,name,status,leads_count&limit=200&access_token=${cfg.pageToken}`)
-    if (!res.ok) {
-      return json({ error: 'Meta не отдала формы', details: (await res.text()).slice(0, 300) }, 502)
+    const accounts = await readMetaAccounts(orgId)
+    const targets = body?.accountId
+      ? accounts.filter(a => a.id === String(body.accountId))
+      : accounts
+    if (!targets.length) return json({ error: 'Сначала подключите аккаунт' }, 400)
+
+    let found = 0
+    const failed: string[] = []
+    for (const acc of targets) {
+      if (!acc.pageToken) continue
+      const res = await fetch(
+        `${GRAPH}/${acc.pageId}/leadgen_forms?fields=id,name,status,leads_count&limit=200&access_token=${acc.pageToken}`)
+      if (!res.ok) { failed.push(acc.pageName || acc.pageId); continue }
+      const data: any = await res.json()
+      for (const f of (data?.data || [])) {
+        found++
+        // Регион формы наследуем от аккаунта, если у страницы он задан:
+        // страница региона обычно и ведёт формы этого региона
+        const suggested = marketFromFormName(f.name) || acc.marketId
+        await sql`
+          INSERT INTO support_meta_forms (org_id, form_id, name, page_id, suggested_market,
+                                          status, leads_count, seen_at)
+          VALUES (${orgId}, ${String(f.id)}, ${f.name || null}, ${acc.pageId}, ${suggested},
+                  ${f.status || null}, ${Number(f.leads_count || 0)}, NOW())
+          ON CONFLICT (org_id, form_id) DO UPDATE SET
+            name = EXCLUDED.name, status = EXCLUDED.status, page_id = EXCLUDED.page_id,
+            leads_count = EXCLUDED.leads_count,
+            -- подсказку обновляем, назначенный руками регион не трогаем
+            suggested_market = EXCLUDED.suggested_market, seen_at = NOW()
+        `
+      }
     }
-    const data: any = await res.json()
-    const list: any[] = data?.data || []
-    for (const f of list) {
-      const suggested = marketFromFormName(f.name)
-      await sql`
-        INSERT INTO support_meta_forms (org_id, form_id, name, page_id, suggested_market,
-                                        status, leads_count, seen_at)
-        VALUES (${orgId}, ${String(f.id)}, ${f.name || null}, ${cfg.pageId}, ${suggested},
-                ${f.status || null}, ${Number(f.leads_count || 0)}, NOW())
-        ON CONFLICT (org_id, form_id) DO UPDATE SET
-          name = EXCLUDED.name, status = EXCLUDED.status,
-          leads_count = EXCLUDED.leads_count,
-          -- подсказку обновляем, назначенный руками регион не трогаем
-          suggested_market = EXCLUDED.suggested_market, seen_at = NOW()
-      `
-    }
-    return json({ ok: true, found: list.length })
+    return json({ ok: true, found, failed })
+  }
+
+  // ─── Регион аккаунта ────────────────────────────────────────────────────────
+  if (action === 'account-market') {
+    if (!body?.accountId) return json({ error: 'accountId is required' }, 400)
+    await sql`
+      UPDATE support_meta_accounts SET market_id = ${body.market || null}, updated_at = NOW()
+      WHERE org_id = ${orgId} AND id = ${String(body.accountId)}
+    `
+    return json({ ok: true })
   }
 
   // ─── Регион формы ───────────────────────────────────────────────────────────
@@ -291,18 +334,33 @@ export default async function handler(req: Request): Promise<Response> {
   // ─── Отключение ─────────────────────────────────────────────────────────────
   if (action === 'disconnect') {
     if (!(ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin)) {
-      return json({ error: 'Отключить интеграцию может только администратор' }, 403)
+      return json({ error: 'Отключить может только администратор' }, 403)
     }
-    // Ключи приложения оставляем: подключиться заново без них не выйдет,
-    // а вводить их каждый раз заново — лишняя работа
+    // Отключение одного аккаунта — обычное дело: закрыли направление, сменили
+    // страницу. Остальные при этом работать не перестают
+    if (body?.accountId) {
+      const [acc] = await sql`
+        SELECT page_name FROM support_meta_accounts
+        WHERE org_id = ${orgId} AND id = ${String(body.accountId)} LIMIT 1
+      ` as any[]
+      await sql`
+        UPDATE support_meta_accounts SET is_active = false, page_token = NULL, updated_at = NOW()
+        WHERE org_id = ${orgId} AND id = ${String(body.accountId)}
+      `
+      invalidateMetaConfig(orgId)
+      await logEvent(sql, 'Интеграция Meta', 'отключён аккаунт', acc?.page_name || String(body.accountId))
+      return json({ ok: true })
+    }
+
+    // Без указания аккаунта — снимаем сам доступ приложения. Ключи оставляем:
+    // подключиться заново без них не выйдет, а вводить каждый раз — лишняя работа
     await sql`
-      UPDATE support_meta_integration SET
-        user_token = NULL, page_id = NULL, page_name = NULL, page_token = NULL,
-        ig_user_id = NULL, ig_username = NULL, connected_at = NULL, updated_at = NOW()
+      UPDATE support_meta_integration SET user_token = NULL, updated_at = NOW()
       WHERE org_id = ${orgId}
     `
+    await sql`UPDATE support_meta_accounts SET is_active = false WHERE org_id = ${orgId}`
     invalidateMetaConfig(orgId)
-    await logEvent(sql, 'Интеграция Meta', 'отключение', `организация ${orgId}`)
+    await logEvent(sql, 'Интеграция Meta', 'полное отключение', `организация ${orgId}`)
     return json({ ok: true })
   }
 

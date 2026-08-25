@@ -74,6 +74,32 @@ export async function ensureMetaSchema(sql: any): Promise<void> {
       PRIMARY KEY (org_id, form_id)
     )
   `
+  // Подключённых аккаунтов может быть несколько: у каждого региона своя
+  // страница со своей рекламой и своим инстаграмом. Раньше страница была
+  // одна на всю организацию — вторую подключить было некуда
+  await sql`
+    CREATE TABLE IF NOT EXISTS support_meta_accounts (
+      id VARCHAR(60) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      page_id VARCHAR(50) NOT NULL,
+      page_name VARCHAR(200),
+      page_token TEXT,
+      ig_user_id VARCHAR(50),
+      ig_username VARCHAR(100),
+      market_id VARCHAR(50),
+      subscribed BOOLEAN NOT NULL DEFAULT false,
+      subscribe_error TEXT,
+      connected_by VARCHAR(50),
+      connected_by_name VARCHAR(150),
+      connected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_meta_accounts_page
+    ON support_meta_accounts(org_id, page_id)
+  `
   await sql`
     CREATE TABLE IF NOT EXISTS support_meta_oauth_state (
       state VARCHAR(80) PRIMARY KEY,
@@ -163,4 +189,57 @@ export function marketFromFormName(name: string | null | undefined): string | nu
   if (!n) return null
   for (const [re, market] of NAME_HINTS) if (re.test(n)) return market
   return null
+}
+
+
+export interface MetaAccount {
+  id: string; pageId: string; pageName: string | null; pageToken: string | null
+  igUserId: string | null; igUsername: string | null; marketId: string | null
+  subscribed: boolean; subscribeError: string | null
+  connectedByName: string | null; connectedAt: string | null
+}
+
+/** Подключённые страницы организации. */
+export async function readMetaAccounts(orgId: string): Promise<MetaAccount[]> {
+  const sql = getSQL()
+  await ensureMetaSchema(sql)
+  const rows = await sql`
+    SELECT * FROM support_meta_accounts
+    WHERE org_id = ${orgId} AND is_active = true
+    ORDER BY connected_at
+  ` as any[]
+  return rows.map(r => ({
+    id: r.id, pageId: r.page_id, pageName: r.page_name, pageToken: r.page_token,
+    igUserId: r.ig_user_id, igUsername: r.ig_username, marketId: r.market_id,
+    subscribed: Boolean(r.subscribed), subscribeError: r.subscribe_error,
+    connectedByName: r.connected_by_name, connectedAt: r.connected_at,
+  }))
+}
+
+/**
+ * Доступ к нужной странице. Вебхук приносит идентификатор страницы или
+ * инстаграма, и отвечать надо именно её токеном: с несколькими подключёнными
+ * аккаунтами общий токен «на организацию» отправил бы ответ не туда.
+ *
+ * Пока не подключено ни одного аккаунта, возвращаем токен из переменных
+ * окружения — так уже настроенное окружение продолжает работать.
+ */
+export async function accountForPage(orgId: string, pageId: string | null): Promise<MetaAccount | null> {
+  if (!pageId) return null
+  const all = await readMetaAccounts(orgId)
+  return all.find(a => a.pageId === String(pageId)) || null
+}
+
+export async function accountForIg(orgId: string, igUserId: string | null): Promise<MetaAccount | null> {
+  if (!igUserId) return null
+  const all = await readMetaAccounts(orgId)
+  return all.find(a => a.igUserId === String(igUserId)) || null
+}
+
+/** Токен для ответа: сначала по конкретной странице, потом запасной из окружения. */
+export async function tokenForPage(orgId: string, pageId: string | null): Promise<string | null> {
+  const acc = await accountForPage(orgId, pageId)
+  if (acc?.pageToken) return acc.pageToken
+  const cfg = await readMetaConfig(orgId)
+  return cfg.pageToken
 }

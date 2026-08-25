@@ -3,7 +3,7 @@ import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
 import { marketByPhoneCity } from '../lib/region-detect.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
-import { readMetaConfig, ensureMetaSchema, marketFromFormName } from '../lib/meta-config.js'
+import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } from '../lib/meta-config.js'
 
 export const config = { runtime: 'edge' }
 
@@ -74,17 +74,19 @@ export default async function handler(req: Request): Promise<Response> {
     const body: any = JSON.parse(raw)
     if (body?.object !== 'page') return json({ ok: true })
 
-    const token = cfg.pageToken
-    if (!token) {
-      console.error('[meta-leads] нет токена страницы — заявка не разобрана')
-      return json({ ok: true })
-    }
-
     const sql = getSQL()
     await ensureSalesSchema(sql, ORG)
     await ensureMetaSchema(sql)
 
     for (const entry of body.entry || []) {
+      // Страница, на которую пришла заявка. С несколькими подключёнными
+      // аккаунтами общий токен «на организацию» читал бы не ту страницу
+      const pageId = entry.id ? String(entry.id) : null
+      const token = await tokenForPage(ORG, pageId)
+      if (!token) {
+        console.error('[meta-leads] нет токена для страницы', pageId)
+        continue
+      }
       for (const ch of entry.changes || []) {
         if (ch.field !== 'leadgen') continue
         const v = ch.value || {}
@@ -158,7 +160,7 @@ export default async function handler(req: Request): Promise<Response> {
           await sql`
             INSERT INTO support_meta_forms (org_id, form_id, name, page_id, suggested_market,
                                             leads_count, last_lead_at, seen_at)
-            VALUES (${ORG}, ${formId}, ${lead.form_name || null}, ${cfg.pageId},
+            VALUES (${ORG}, ${formId}, ${lead.form_name || null}, ${pageId},
                     ${marketFromFormName(lead.form_name)}, 1, NOW(), NOW())
             ON CONFLICT (org_id, form_id) DO UPDATE SET
               leads_count = support_meta_forms.leads_count + 1,

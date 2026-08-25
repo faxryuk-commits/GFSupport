@@ -2,7 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { acceptLead, logChatMessage } from '../lib/sales-intake.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
-import { readMetaConfig } from '../lib/meta-config.js'
+import { readMetaConfig, accountForIg, readMetaAccounts } from '../lib/meta-config.js'
 
 export const config = { runtime: 'edge' }
 
@@ -124,7 +124,11 @@ export default async function handler(req: Request): Promise<Response> {
           continue
         }
 
-        const name = (await fetchProfileName(igsid, cfg.pageToken)) || `Instagram ${igsid.slice(-6)}`
+        // Токен того аккаунта, которому адресовано сообщение: entry.id —
+        // это инстаграм-профиль, на который написали
+        const acc = await accountForIg(ORG, entry.id ? String(entry.id) : null)
+        const igToken = acc?.pageToken || cfg.pageToken
+        const name = (await fetchProfileName(igsid, igToken)) || `Instagram ${igsid.slice(-6)}`
         const result = await acceptLead(sql, ORG, {
           source: SOURCE,
           external_id: igsid,
@@ -154,8 +158,13 @@ export default async function handler(req: Request): Promise<Response> {
 
 /** Отправка ответа в директ — используется ассистентом и менеджером. */
 export async function sendInstagramMessage(igsid: string, text: string, orgId?: string): Promise<boolean> {
-  const cfg = await readMetaConfig(orgId || ORG)
-  const token = cfg.pageToken
+  // Подключённых аккаунтов может быть несколько, а к какому относится диалог,
+  // из одного идентификатора собеседника не понять. Берём единственный, если
+  // он один; иначе — общий доступ организации
+  const org = orgId || ORG
+  const accounts = await readMetaAccounts(org)
+  const cfg = await readMetaConfig(org)
+  const token = accounts.length === 1 ? accounts[0].pageToken : cfg.pageToken
   if (!token) return false
   const res = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${token}`, {
     method: 'POST',
