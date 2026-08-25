@@ -86,6 +86,7 @@ export function SalesSettingsPage() {
   const [newOption, setNewOption] = useState('')
   const [amo, setAmo] = useState<any>(null)
   const [amoBusy, setAmoBusy] = useState(false)
+  const [recon, setRecon] = useState<Recon | null>(null)
 
   const load = useCallback(() => {
     apiGet<any>('/sales/refs', false).then(setRefs).catch(e => setError(e?.message || 'Ошибка загрузки'))
@@ -129,6 +130,34 @@ export function SalesSettingsPage() {
     } catch (e: any) {
       setError(e?.message || 'Не удалось сохранить реквизиты')
     }
+  }
+
+  /**
+   * Сверка идёт страницами: сколько сделок в Amo, заранее неизвестно, а один
+   * запрос «за всё сразу» упёрся бы в лимит функции. Страницы заказываем
+   * отсюда и складываем результат — заодно видно, что сверка идёт, а не висит.
+   */
+  const runReconcile = async () => {
+    const acc: Recon = { running: true, page: 0, seen: 0, checked: 0, missing: [], noDeal: [], stageDiff: [] }
+    setRecon({ ...acc })
+    for (let page = 1; page <= 200; page++) {
+      let r: any
+      try {
+        r = await apiGet<any>(`/sales/amo?action=reconcile&page=${page}`, false)
+      } catch (e: any) {
+        setRecon({ ...acc, running: false, error: e?.message || 'Сверка прервалась' })
+        return
+      }
+      acc.page = page
+      acc.seen += r.seen || 0
+      acc.checked += r.checked || 0
+      acc.missing.push(...(r.missing || []))
+      acc.noDeal.push(...(r.noDeal || []))
+      acc.stageDiff.push(...(r.stageDiff || []))
+      setRecon({ ...acc, missing: [...acc.missing], noDeal: [...acc.noDeal], stageDiff: [...acc.stageDiff] })
+      if (!r.hasMore) break
+    }
+    setRecon({ ...acc, running: false, done: true })
   }
 
   const addPipeline = async () => {
@@ -619,11 +648,108 @@ export function SalesSettingsPage() {
               правки в нашей CRM перезаписываются данными Amo.
             </div>
           </Card>
+
+          <Card title="Сверка с Amo"
+            sub="пропуск на переключение режима: пока расхождения есть, переезжать рано"
+            right={
+              <button onClick={runReconcile} disabled={recon?.running}
+                className="text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                {recon?.running ? 'Сверяем…' : 'Запустить сверку'}
+              </button>
+            }>
+            {!recon && (
+              <div className="p-4 text-[12.5px] text-gray-500">
+                Сравним каждую сделку Amo с нашей базой: чего нет у нас, где завели лид, но не создали
+                сделку, и где разошёлся этап. Только чтение — на Amo это никак не влияет.
+              </div>
+            )}
+            {recon && (
+              <div className="p-4 space-y-3">
+                <div className="text-[12.5px] text-gray-500 tabular-nums">
+                  {recon.running ? `Страница ${recon.page}, ` : 'Готово. '}
+                  проверено {recon.checked} сделок наших воронок из {recon.seen} просмотренных
+                </div>
+                {recon.error && <div className="text-[12.5px] text-red-600">{recon.error}</div>}
+                <div className="grid sm:grid-cols-3 gap-2.5">
+                  <ReconTile n={recon.missing.length} label="нет у нас"
+                    hint="сделка есть в Amo, а у нас ни лида, ни сделки" tone="red" />
+                  <ReconTile n={recon.noDeal.length} label="лид есть, сделки нет"
+                    hint="заявку приняли, но до воронки она не дошла" tone="amber" />
+                  <ReconTile n={recon.stageDiff.length} label="этап разошёлся"
+                    hint="сделка есть у обоих, но стоит на разных этапах" tone="amber" />
+                </div>
+                {recon.done && !recon.missing.length && !recon.noDeal.length && !recon.stageDiff.length && (
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12.5px] text-emerald-800">
+                    Расхождений нет — данные полные, режим можно переключать.
+                  </div>
+                )}
+                <ReconList title="Нет у нас" rows={recon.missing} />
+                <ReconList title="Лид есть, сделки нет" rows={recon.noDeal} />
+                <ReconList title="Этап разошёлся" rows={recon.stageDiff} withOurs />
+              </div>
+            )}
+          </Card>
         </div>
       )}
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
     </PageShell>
+  )
+}
+
+/** Накопленный результат постраничной сверки с Amo. */
+type ReconRow = {
+  id: number; name: string | null; amoStatus: string | null
+  amoStage: string | null; ourStage?: string; market: string | null
+}
+type Recon = {
+  running: boolean; done?: boolean; error?: string
+  page: number; seen: number; checked: number
+  missing: ReconRow[]; noDeal: ReconRow[]; stageDiff: ReconRow[]
+}
+
+function ReconTile({ n, label, hint, tone }: {
+  n: number; label: string; hint: string; tone: 'red' | 'amber'
+}) {
+  const ok = n === 0
+  const color = ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : tone === 'red' ? 'border-red-200 bg-red-50 text-red-800'
+      : 'border-amber-200 bg-amber-50 text-amber-900'
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${color}`} title={hint}>
+      <div className="text-[19px] font-semibold tabular-nums leading-none">{n}</div>
+      <div className="text-[11.5px] mt-1">{label}</div>
+    </div>
+  )
+}
+
+/** Список расхождений: показываем первые, остальное считаем — таблица на тысячу строк не помогает. */
+function ReconList({ title, rows, withOurs }: { title: string; rows: ReconRow[]; withOurs?: boolean }) {
+  if (!rows.length) return null
+  const shown = rows.slice(0, 40)
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-[11.5px] font-semibold text-gray-600">
+        {title} · {rows.length}
+      </div>
+      <div className="divide-y divide-gray-100">
+        {shown.map(r => (
+          <div key={r.id} className="px-3 py-2 flex items-center gap-2.5 text-[12px]">
+            <span className="text-gray-400 tabular-nums flex-none">{r.id}</span>
+            <span className="text-gray-900 truncate flex-1 min-w-0">{r.name || 'без названия'}</span>
+            {r.market && <span className="text-gray-400 flex-none uppercase">{r.market}</span>}
+            <span className="text-gray-500 flex-none">
+              {withOurs ? `у нас ${r.ourStage} · в Amo ${r.amoStage}` : (r.amoStatus || r.amoStage || '')}
+            </span>
+          </div>
+        ))}
+      </div>
+      {rows.length > shown.length && (
+        <div className="px-3 py-2 text-[11.5px] text-gray-400 border-t border-gray-100">
+          и ещё {rows.length - shown.length} — показаны первые {shown.length}
+        </div>
+      )}
+    </div>
   )
 }
 
