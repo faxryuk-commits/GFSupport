@@ -4,6 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig,
          readMetaAccounts, marketFromFormName } from '../lib/meta-config.js'
 import { logEvent } from '../lib/system-journal.js'
+import { importMetaHistory } from '../lib/meta-messages.js'
 
 export const config = { runtime: 'edge' }
 
@@ -388,6 +389,18 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
     return json({ ok: true, found, failed })
+  }
+
+  // Разовая подгрузка архива переписок: вебхуки приносят только то, что
+  // происходит после подключения, а диалоги шли и до него
+  if (action === 'import-history') {
+    const res = await importMetaHistory(sql, orgId, {
+      conversations: Number(body?.conversations) || 50,
+      messages: Number(body?.messages) || 50,
+    })
+    await logEvent(sql, 'Интеграция Meta', 'загрузка истории',
+      `диалогов ${res.channels} · сообщений ${res.messages}`)
+    return json({ ok: true, ...res })
   }
 
   /**

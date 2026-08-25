@@ -1,5 +1,5 @@
 import { getOrgBotToken, getSQL, json } from '../lib/db.js'
-import { readMetaConfig } from '../lib/meta-config.js'
+import { tokenForPage } from '../lib/meta-config.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
 
@@ -353,8 +353,9 @@ export default async function handler(req: Request): Promise<Response> {
       // Ограничение платформы: ответить можно в течение суток после последнего
       // сообщения клиента — за окном Meta вернёт ошибку, и мы честно её покажем,
       // а не сделаем вид, что сообщение ушло
-      const metaCfg = await readMetaConfig(orgId)
-      const igToken = metaCfg.pageToken
+      // Токен именно той страницы, которой принадлежит диалог: при двух
+      // подключённых аккаунтах общий токен отправил бы ответ не от того имени
+      const igToken = await tokenForPage(orgId, channel.meta_page_id || null)
       if (!igToken) return json({ error: 'Instagram не подключён — подключите его в настройках' }, 500)
 
       const igRes = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${igToken}`, {

@@ -153,6 +153,13 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   const setAccountMarket = (accountId: string, market: string) =>
     act('acc', () => apiPost('/integrations/meta?action=account-market', { accountId, market: market || null }))
 
+  const importHistory = () => act('history', async () => {
+    const r = await apiPost<{ channels: number; messages: number; errors: string[] }>(
+      '/integrations/meta?action=import-history', {})
+    setNote(`Загружено: ${r.channels} диалогов, ${r.messages} сообщений`
+      + (r.errors?.length ? ` · не всё: ${r.errors[0]}` : ''))
+  })
+
   const refreshAccounts = () => act('refresh', async () => {
     const r = await apiPost<{ updated: number }>('/integrations/meta?action=refresh', {})
     setNote(`Обновлено аккаунтов: ${r.updated}`)
@@ -193,6 +200,13 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
                 </div>
               </div>
               <div className="flex-none flex items-center gap-2">
+                {accounts.length > 0 && (
+                  <button onClick={importHistory} disabled={busy === 'history'}
+                    title="Подтянуть переписки, которые шли до подключения"
+                    className="text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 disabled:opacity-50">
+                    {busy === 'history' ? 'Грузим…' : 'История'}
+                  </button>
+                )}
                 {accounts.length > 0 && (
                   <button onClick={refreshAccounts} disabled={busy === 'refresh'}
                     title="Перевыпустить доступы и подтянуть привязанные Instagram"
