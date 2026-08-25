@@ -1,28 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { 
-  LayoutDashboard, 
-  MessageSquare,
-  Hash,
-  Briefcase, 
-  Settings,
-  Megaphone,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
-  Target,
-  Globe,
-  ChevronDown,
-  Bell,
-  Activity,
-  Sparkles,
-  Trophy,
-  Bot,
-  Waypoints,
-  CircleUser,
-} from 'lucide-react'
 import {
-  BarChart3, Plug, ListChecks, Handshake, Inbox, Building2, PieChart, SlidersHorizontal,
+  LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
+  ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser,
+  Plug, Handshake, Inbox, Building2,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
 
@@ -138,7 +119,7 @@ function NotificationBellSidebar() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors relative"
+        className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors relative"
         title="Уведомления"
       >
         <Bell className="w-4 h-4" />
@@ -220,60 +201,42 @@ interface NavGroup {
   items: NavItemDef[]
 }
 
+/**
+ * Семь разделов вместо двадцати пунктов в пяти группах.
+ *
+ * Раскрываются только «Продажи» и «Операции» — там правда несколько рабочих
+ * экранов. Остальные пять открываются сразу, без промежуточного клика.
+ *
+ * Куда уехало: отчёты продаж и журнал ИИ-ассистента — в «Обзор», справочники
+ * продаж, бенчмарки, AI-агент и маршрутизация — в «Настройки». ИИ-чат,
+ * обязательства и база знаний убраны из меню; страницы и код на месте
+ * и открываются прямой ссылкой.
+ */
 const navGroups: NavGroup[] = [
+  { label: '', items: [{ path: '/me', label: 'Моё', icon: CircleUser }] },
+  { label: '', items: [{ path: '/overview', label: 'Обзор', icon: LayoutDashboard }] },
   {
     label: 'Продажи',
     items: [
       // Иконки у продаж свои: раньше «Лиды» и «Чаты» делили один значок, а
       // «Аккаунты» и «Каналы» — решётку, и в свёрнутом меню они были неразличимы
-      // Новый общий экран: обращения и сделки вместе. Старые разделы пока на
-      // месте — пусть новое докажет себя на живой работе, прежде чем ломать
-      // привычную навигацию
       { path: '/sales/funnel', label: 'Воронка', icon: Waypoints },
       { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals' },
       { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads' },
       { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },
-      { path: '/sales/assistant', label: 'ИИ-ассистент', icon: Bot },
-      { path: '/sales/reports', label: 'Отчёты продаж', icon: PieChart },
-      { path: '/sales/settings', label: 'Справочники продаж', icon: SlidersHorizontal },
     ],
   },
   {
     label: 'Операции',
     items: [
-      { path: '/me', label: 'Моё', icon: CircleUser },
-      { path: '/overview', label: 'Обзор', icon: LayoutDashboard },
       { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
-      { path: '/channels', label: 'Каналы', icon: Hash },
       { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
-      { path: '/onboarding', label: 'Подключения', icon: Plug },
-      // { path: '/commitments', label: 'Обязательства', icon: Clock, badgeKey: 'pendingCommitments' },
+      { path: '/channels', label: 'Каналы', icon: Hash },
     ],
   },
-  {
-    label: 'Аналитика',
-    items: [
-      { path: '/analytics', label: 'Аналитика', icon: BarChart3 },
-      { path: '/benchmarks', label: 'Бенчмарки', icon: Trophy },
-      { path: '/insights-chat', label: 'ИИ-чат', icon: Sparkles },
-    ],
-  },
-  {
-    label: 'Автоматизация',
-    items: [
-      { path: '/ai-agent', label: 'AI Агент', icon: Bot, statusDot: true },
-      { path: '/routing', label: 'Маршрутизация', icon: Waypoints },
-      // { path: '/knowledge', label: 'База знаний', icon: BookOpen },
-      { path: '/broadcast', label: 'Рассылки', icon: Megaphone },
-    ],
-  },
-  {
-    label: 'Система',
-    items: [
-      { path: '/settings', label: 'Настройки', icon: Settings },
-      // { path: '/system-map', label: 'Карта системы', icon: Map },
-    ],
-  },
+  { label: '', items: [{ path: '/onboarding', label: 'Подключение', icon: Plug }] },
+  { label: '', items: [{ path: '/broadcast', label: 'Рассылка', icon: Megaphone }] },
+  { label: '', items: [{ path: '/settings', label: 'Настройки', icon: Settings }] },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
@@ -421,16 +384,16 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
         to={path}
         title={isCollapsed ? label : undefined}
         style={active ? { background: 'linear-gradient(135deg,#3b82f6,#2563eb)', boxShadow: '0 6px 16px rgba(37,99,235,.35)' } : undefined}
-        className={`flex items-center gap-3 px-4 py-2.5 rounded-[10px] transition-all group ${
+        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-[10px] text-[14.5px] transition-all group ${
           active
             ? 'text-white'
-            : 'text-[#aab8d4] hover:bg-white/10 hover:text-white'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
         } ${isCollapsed ? 'justify-center px-3 relative' : ''}`}
       >
         <span className="relative flex-shrink-0">
           <Icon className="w-5 h-5" />
           {isCollapsed && showDot && (
-            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #13213d' }} />
+            <span className="absolute -top-0.5 -right-0.5 w-[7px] h-[7px] rounded-full bg-green-500" style={{ boxShadow: '0 0 0 2px #ffffff' }} />
           )}
         </span>
         {!isCollapsed && (
@@ -470,7 +433,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       {/* Inject animation styles */}
       <style>{badgeAnimationStyles}</style>
       <aside 
-        className={`bg-[#13213d] h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
+        className={`bg-white border-r border-slate-200 h-full flex flex-col flex-shrink-0 transition-all duration-300 ${
           isCollapsed ? 'w-[72px]' : 'w-[240px]'
         }`}
       >
@@ -489,15 +452,15 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
           )}
           {!isCollapsed && (
             <div className="min-w-0">
-              <span className="text-white font-extrabold text-[17px] block truncate" style={{ fontFamily: 'Manrope, system-ui, sans-serif' }}>{orgName || 'SUPPORT'}</span>
-              <span className="text-[10px] text-[#7e8db0] uppercase tracking-wider">{orgPlan ? `${orgPlan} · OMNICHANNEL` : 'OMNICHANNEL'}</span>
+              <span className="text-slate-900 font-extrabold text-[17px] block truncate" style={{ fontFamily: 'Manrope, system-ui, sans-serif' }}>{orgName || 'SUPPORT'}</span>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wider">{orgPlan ? `${orgPlan} · OMNICHANNEL` : 'OMNICHANNEL'}</span>
             </div>
           )}
         </Link>
         <button
           onClick={toggleCollapse}
-          className={`p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${
-            isCollapsed ? 'absolute left-[72px] top-4 -translate-x-1/2 bg-[#13213d] border border-white/10 shadow-lg z-10' : ''
+          className={`p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors ${
+            isCollapsed ? 'absolute left-[72px] top-4 -translate-x-1/2 bg-white border border-slate-200 shadow-lg z-10' : ''
           }`}
           title={isCollapsed ? 'Развернуть' : 'Свернуть'}
         >
@@ -510,39 +473,39 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
           Узбекистану нельзя было заглянуть в казахстанские лиды, не переключив
           заодно чаты и аналитику. */}
 
-      {/* Main Navigation — 4 группы (Операции / Аналитика / Автоматизация / Система) */}
+      {/* Семь разделов. Раскрываются только те, у кого есть подпись группы —
+          «Продажи» и «Операции»; остальные открываются сразу, одним кликом */}
       <nav className="flex-1 px-3 overflow-y-auto py-2">
         {visibleGroups.map((group, gi) => {
-          // Сворачивается любой раздел, включая тот, где открыта страница:
-          // запрет выглядел поломкой — по клику ничего не происходило
-          const open = !collapsedGroups.includes(group.label)
+          const flat = !group.label
+          const open = flat || !collapsedGroups.includes(group.label)
           // Сумма по разделу: свёрнутый раздел не должен прятать, что там горит
           const groupCount = group.items.reduce(
             (sum, i) => sum + (i.badgeKey ? badges[i.badgeKey] || 0 : 0), 0)
 
           return (
-            <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
-              {!isCollapsed && (
+            <div key={group.label || group.items[0]?.path} className={gi > 0 ? (flat ? 'mt-1' : 'mt-3') : ''}>
+              {!isCollapsed && !flat && (
                 <button
                   onClick={() => toggleGroup(group.label)}
-                  className="w-full flex items-center gap-1.5 px-3 pb-1.5 text-[10px] font-bold
-                             uppercase tracking-[0.09em] text-[#5d6f96] hover:text-[#8fa3c8]"
+                  className="w-full flex items-center gap-1.5 px-3 pb-1 pt-1 text-[12px] font-semibold
+                             tracking-normal text-slate-500 hover:text-slate-800"
                 >
                   <ChevronDown
-                    className={`w-3 h-3 transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
+                    className={`w-3.5 h-3.5 transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
                   />
                   <span>{group.label}</span>
                   {groupCount > 0 && (
-                    <span className={`ml-auto min-w-[18px] text-center text-[10px] font-bold px-1.5 py-0.5
-                                     rounded-full ${open ? 'bg-white/10 text-[#8fa3c8]' : 'bg-blue-600 text-white'}`}>
+                    <span className={`ml-auto min-w-[19px] text-center text-[11px] font-bold px-1.5 py-0.5
+                                     rounded-full ${open ? 'bg-slate-100 text-slate-500' : 'bg-blue-600 text-white'}`}>
                       {groupCount > 99 ? '99+' : groupCount}
                     </span>
                   )}
                 </button>
               )}
-              {isCollapsed && gi > 0 && <div className="my-2 mx-3 border-t border-white/10" />}
+              {isCollapsed && gi > 0 && <div className="my-1.5 mx-3 border-t border-slate-200" />}
               {(open || isCollapsed) && (
-                <div className="space-y-0.5">
+                <div className={`space-y-0.5 ${!flat && !isCollapsed ? 'pl-2' : ''}`}>
                   {group.items.map(item => (
                     <NavItem key={item.path} {...item} />
                   ))}
@@ -557,7 +520,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
       <div className="px-3 pb-4">
         {/* User */}
         {currentUser && (
-          <div className="border-t border-white/10 pt-4">
+          <div className="border-t border-slate-200 pt-4">
             <div className={`flex items-center gap-3 px-2 py-2 ${isCollapsed ? 'justify-center' : ''}`}>
               {/* Avatar with flip animation showing online count */}
               <div 
@@ -592,12 +555,12 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
               {!isCollapsed && (
                 <>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{currentUser.name}</p>
+                    <p className="text-[14px] font-semibold text-slate-800 truncate">{currentUser.name}</p>
                     <div className="flex items-center gap-2">
                       {currentUser.role && (
-                        <p className="text-xs text-slate-400 truncate">{currentUser.role}</p>
+                        <p className="text-[12.5px] text-slate-500 truncate">{currentUser.role}</p>
                       )}
-                      <span className="flex items-center gap-1 text-xs text-green-400">
+                      <span className="flex items-center gap-1 text-[12.5px] text-emerald-600">
                         <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
                         {onlineAgentsCount} онлайн
                       </span>
@@ -607,7 +570,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                   {onLogout && (
                     <button 
                       onClick={onLogout}
-                      className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                       title="Выйти"
                     >
                       <LogOut className="w-4 h-4" />
@@ -626,7 +589,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
             {isCollapsed && onLogout && (
               <button
                 onClick={onLogout}
-                className="w-full mt-2 p-2.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors flex items-center justify-center"
+                className="w-full mt-2 p-2.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors flex items-center justify-center"
                 title="Выйти"
               >
                 <LogOut className="w-5 h-5" />
