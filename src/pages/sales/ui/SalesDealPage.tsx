@@ -7,6 +7,7 @@ import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { TasksCard } from './TasksCard'
+import { ActivityCard } from './ActivityCard'
 import { useAuth } from '@/shared/hooks/useAuth'
 
 /** Роли, которым сервер разрешает решать по скидке выше порога. */
@@ -554,6 +555,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           </Card>
 
           <TasksCard dealId={id} initial={tasks} />
+
+          <ActivityCard dealId={id} accountId={data.account?.id} />
 
           {/* Переписка рядом со сделкой: иначе диалог читают в одном месте,
               а работают в другом, и контекст теряется по дороге */}
