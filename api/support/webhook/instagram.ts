@@ -2,6 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { acceptLead, logChatMessage } from '../lib/sales-intake.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
+import { readMetaConfig } from '../lib/meta-config.js'
 
 export const config = { runtime: 'edge' }
 
@@ -20,7 +21,8 @@ export const config = { runtime: 'edge' }
  * как канал в Amo, сообщения уходят туда и сюда не придут — канал в Amo нужно
  * отключить (лид-формы это не затрагивает, они живут отдельно).
  *
- * Переменные: IG_VERIFY_TOKEN, IG_PAGE_TOKEN, META_APP_SECRET, SALES_ORG.
+ * Доступы берутся из настроек организации (карточка «Instagram и Facebook»
+ * в интеграциях), переменные окружения остаются запасным путём.
  */
 
 const ORG = process.env.SALES_ORG || 'org_delever'
@@ -44,8 +46,7 @@ function describeAttachments(atts: any[]): string {
 }
 
 /** Имя профиля: без него в очереди будет безликий числовой id. */
-async function fetchProfileName(igsid: string): Promise<string | null> {
-  const token = process.env.IG_PAGE_TOKEN
+async function fetchProfileName(igsid: string, token: string | null): Promise<string | null> {
   if (!token) return null
   try {
     const res = await fetch(
@@ -65,7 +66,8 @@ export default async function handler(req: Request): Promise<Response> {
     const mode = url.searchParams.get('hub.mode')
     const token = url.searchParams.get('hub.verify_token')
     const challenge = url.searchParams.get('hub.challenge')
-    if (mode === 'subscribe' && token && token === process.env.IG_VERIFY_TOKEN) {
+    const cfg = await readMetaConfig(ORG)
+    if (mode === 'subscribe' && token && cfg.verifyToken && token === cfg.verifyToken) {
       return new Response(challenge || '', { status: 200, headers: { 'Content-Type': 'text/plain' } })
     }
     return new Response('forbidden', { status: 403 })
@@ -75,9 +77,10 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Подпись Meta проверяем до разбора тела: иначе адрес вебхука — открытая
   // дверь для поддельных обращений. Нет секрета в переменных — не принимаем
+  const cfg = await readMetaConfig(ORG)
   const raw = await req.text()
-  if (!(await validMetaSignature(raw, req.headers.get('x-hub-signature-256')))) {
-    console.error('[webhook/instagram] подпись не сошлась или не задан META_APP_SECRET')
+  if (!(await validMetaSignature(raw, req.headers.get('x-hub-signature-256'), cfg.appSecret))) {
+    console.error('[webhook/instagram] подпись не сошлась или не задан секрет приложения')
     return new Response('forbidden', { status: 403 })
   }
 
@@ -121,7 +124,7 @@ export default async function handler(req: Request): Promise<Response> {
           continue
         }
 
-        const name = (await fetchProfileName(igsid)) || `Instagram ${igsid.slice(-6)}`
+        const name = (await fetchProfileName(igsid, cfg.pageToken)) || `Instagram ${igsid.slice(-6)}`
         const result = await acceptLead(sql, ORG, {
           source: SOURCE,
           external_id: igsid,
@@ -150,8 +153,9 @@ export default async function handler(req: Request): Promise<Response> {
 }
 
 /** Отправка ответа в директ — используется ассистентом и менеджером. */
-export async function sendInstagramMessage(igsid: string, text: string): Promise<boolean> {
-  const token = process.env.IG_PAGE_TOKEN
+export async function sendInstagramMessage(igsid: string, text: string, orgId?: string): Promise<boolean> {
+  const cfg = await readMetaConfig(orgId || ORG)
+  const token = cfg.pageToken
   if (!token) return false
   const res = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${token}`, {
     method: 'POST',

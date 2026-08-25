@@ -10,18 +10,15 @@
  * вовсе. Молча доверять неподписанным данным хуже, чем не работать.
  */
 
-/** Секрет приложения Meta. Одно приложение — один секрет на все вебхуки. */
-export function metaAppSecret(): string | null {
-  return process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET || null
-}
-
 /**
- * Сверка подписи с телом запроса. Сравнение идёт посимвольно до конца,
- * без раннего выхода: по времени ответа не должно быть видно, насколько
- * подпись близка к правильной.
+ * Сверка подписи с телом запроса. Секрет передаёт вызывающий — он лежит
+ * в настройках организации, а не в переменных окружения. Сравнение идёт
+ * посимвольно до конца, без раннего выхода: по времени ответа не должно
+ * быть видно, насколько подпись близка к правильной.
  */
-export async function validMetaSignature(rawBody: string, header: string | null): Promise<boolean> {
-  const secret = metaAppSecret()
+export async function validMetaSignature(
+  rawBody: string, header: string | null, secret: string | null,
+): Promise<boolean> {
   if (!secret || !header?.startsWith('sha256=')) return false
 
   const enc = new TextEncoder()

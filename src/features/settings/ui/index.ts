@@ -8,3 +8,4 @@ export { AppearanceSettings, type AppearanceSettingsData } from './AppearanceSet
 export { AutoReplySettings, type AutoReplySettingsData, type AutoReplyTemplate } from './AutoReplySettings'
 export { MarketsSettings } from './MarketsSettings'
 export { SlaGuardSettings } from './SlaGuardSettings'
+export { MetaConnectModal } from './MetaConnectModal'

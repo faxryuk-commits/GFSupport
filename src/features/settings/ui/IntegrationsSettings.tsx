@@ -7,6 +7,7 @@ import {
 import { Modal } from '@/shared/ui'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { OpenAISettingsModal } from './OpenAISettingsModal'
+import { MetaConnectModal } from './MetaConnectModal'
 
 export interface Integration {
   id: string
@@ -493,6 +494,16 @@ export function IntegrationsSettings({
 }: IntegrationsSettingsProps) {
   const [waModalOpen, setWaModalOpen] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [metaModalOpen, setMetaModalOpen] = useState(false)
+  const [meta, setMeta] = useState<{ pageName: string | null; igUsername: string | null } | null>(null)
+
+  // Состояние Meta живёт в своём эндпоинте, а не в общей проверке здоровья:
+  // там доступы организации, и читать их вместе с ключами от чужих сервисов
+  // незачем
+  useEffect(() => {
+    apiGet<{ pageName: string | null; igUsername: string | null }>('/integrations/meta', false)
+      .then(setMeta).catch(() => setMeta(null))
+  }, [])
 
   const tg = health?.telegram
   const ai = health?.openai
@@ -653,9 +664,39 @@ export function IntegrationsSettings({
               </button>
             }
           />
+
+          {/* Meta: доступы живут в базе, а не в переменных окружения —
+              подключает тот, у кого права на страницу, без выкладки */}
+          <IntegrationCard
+            icon="📸"
+            name="Instagram и Facebook"
+            status={meta?.pageName ? 'active' : 'inactive'}
+            details={meta?.pageName ? (
+              <>
+                <p className="text-sm text-slate-600">{meta.pageName}</p>
+                {meta.igUsername && <p className="text-xs text-slate-400 mt-0.5">Instagram @{meta.igUsername}</p>}
+                <p className="text-xs text-slate-400 mt-0.5">Заявки с рекламы, директ и Messenger</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Не подключено — заявки с рекламы идут через AmoCRM</p>
+            )}
+            actions={
+              <button
+                onClick={() => setMetaModalOpen(true)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  meta?.pageName
+                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                    : 'text-white bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {meta?.pageName ? 'Настройки' : 'Подключить'}
+              </button>
+            }
+          />
         </div>
       </div>
 
+      <MetaConnectModal isOpen={metaModalOpen} onClose={() => setMetaModalOpen(false)} />
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
       <OpenAISettingsModal isOpen={aiModalOpen} onClose={() => setAiModalOpen(false)} onSaved={onRefreshHealth} />
 
