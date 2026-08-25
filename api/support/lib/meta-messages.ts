@@ -42,6 +42,21 @@ async function fetchProfileName(userId: string, token: string | null): Promise<s
   }
 }
 
+/**
+ * Регион канала хранится идентификатором из справочника рынков, а у аккаунта
+ * Meta он лежит кодом («uz», «kz»). Разница незаметна ровно до того момента,
+ * когда фильтр региона в чатах прячет новые каналы: коду там взяться неоткуда,
+ * и диалоги просто исчезают из списка.
+ */
+async function marketIdByCode(sql: any, orgId: string, code: string | null): Promise<string | null> {
+  if (!code) return null
+  const [row] = await sql`
+    SELECT id FROM support_markets
+    WHERE org_id = ${orgId} AND LOWER(code) = LOWER(${code}) LIMIT 1
+  ` as any[]
+  return row?.id || null
+}
+
 async function getOrCreateChannel(
   sql: any, orgId: string, source: 'instagram' | 'messenger',
   externalId: string, name: string, marketId: string | null, pageId: string | null,
@@ -124,7 +139,8 @@ export async function handleMetaMessaging(
       const fallback = `${isInstagram ? 'Instagram' : 'Messenger'} ${senderId.slice(-6)}`
       const name = existing?.name || (await fetchProfileName(senderId, token)) || fallback
       const channelId = await getOrCreateChannel(
-        sql, orgId, source, senderId, name, acc?.marketId || null, acc?.pageId || null)
+        sql, orgId, source, senderId, name,
+        await marketIdByCode(sql, orgId, acc?.marketId || null), acc?.pageId || null)
 
       await sql`
         INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name, sender_role,
@@ -235,7 +251,8 @@ export async function importMetaHistory(
           if (!other?.id) continue
           const name = other.username ? `@${other.username}` : (other.name || `${source} ${String(other.id).slice(-6)}`)
           const channelId = await getOrCreateChannel(
-            sql, orgId, source, String(other.id), name, acc.marketId, acc.pageId)
+            sql, orgId, source, String(other.id), name,
+            await marketIdByCode(sql, orgId, acc.marketId), acc.pageId)
           out.channels++
 
           // Meta отдаёт сообщения от новых к старым — разворачиваем, чтобы

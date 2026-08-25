@@ -206,7 +206,7 @@ export function ChatsPage() {
   
   // UI состояния
   const [filter, setFilter] = useState<'all' | 'unread' | 'open' | 'pending' | 'resolved'>('all')
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp'>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'telegram' | 'whatsapp' | 'instagram' | 'messenger'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [messageText, setMessageText] = useState('')
   const [replyingTo, setReplyingTo] = useState<{ id: string; telegramMessageId?: number; text: string; sender: string } | null>(null)
@@ -606,11 +606,13 @@ export function ChatsPage() {
   }, [channels, filter, sourceFilter, searchQuery])
 
   const sourceCounts = useMemo(() => {
-    const counts = { all: channels.length, telegram: 0, whatsapp: 0 }
+    const counts = { all: channels.length, telegram: 0, whatsapp: 0, instagram: 0, messenger: 0 }
     for (const ch of channels) {
       const s = ch.source || 'telegram'
       if (s === 'telegram') counts.telegram++
       else if (s === 'whatsapp') counts.whatsapp++
+      else if (s === 'instagram') counts.instagram++
+      else if (s === 'messenger') counts.messenger++
     }
     return counts
   }, [channels])
@@ -906,6 +908,12 @@ export function ChatsPage() {
               { key: 'all' as const, label: 'Все', count: sourceCounts.all },
               { key: 'telegram' as const, label: 'Telegram', count: sourceCounts.telegram },
               { key: 'whatsapp' as const, label: 'WhatsApp', count: sourceCounts.whatsapp },
+              // Показываем только когда такие каналы есть: пустые вкладки
+              // в узкой панели съедают место и сбивают с толку
+              ...(sourceCounts.instagram
+                ? [{ key: 'instagram' as const, label: 'Instagram', count: sourceCounts.instagram }] : []),
+              ...(sourceCounts.messenger
+                ? [{ key: 'messenger' as const, label: 'Messenger', count: sourceCounts.messenger }] : []),
             ]).map(s => (
               <button
                 key={s.key}
