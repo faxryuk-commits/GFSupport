@@ -6,6 +6,7 @@ import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/ti
 import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
+import { TasksCard } from './TasksCard'
 import { useAuth } from '@/shared/hooks/useAuth'
 
 /** Роли, которым сервер разрешает решать по скидке выше порога. */
@@ -552,23 +553,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             </div>
           </Card>
 
-          <Card title="Задачи и каденция" sub="создаются автоматически при смене этапа">
-            {tasks.filter(t => !t.done_at).length === 0 ? (
-              <div className="px-4 py-4 text-[12.5px] text-gray-400">Активных задач нет</div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {tasks.filter(t => !t.done_at).map(t => (
-                  <div key={t.id} className="px-4 py-2.5">
-                    <div className="text-[12.5px] text-gray-900">{t.title}</div>
-                    <div className="text-[11px] text-gray-400">
-                      {fmtDate(t.due_at)} · {t.kind === 'cadence' ? 'каденция' : 'задача'}
-                      {t.channel ? ` · ${t.channel}` : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          <TasksCard dealId={id} initial={tasks} />
 
           {/* Переписка рядом со сделкой: иначе диалог читают в одном месте,
               а работают в другом, и контекст теряется по дороге */}

@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
 import { Chip, Skeleton, slaTone, slaText } from './kit'
+import { TasksCard } from './TasksCard'
 
 /**
  * Карточка обращения: кто написал, откуда и что именно сказал.
@@ -186,6 +187,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         )}
         {error && <div className="text-[12px] text-red-600">{error}</div>}
       </header>
+
+      {/* Следующий шаг по лиду ставится здесь же: раньше его записывали в Amo,
+          потому что в карточке для этого не было ничего */}
+      <TasksCard leadId={id} accountId={l.account_id || undefined} />
 
       <Block title="Кто обратился">
         <div>
