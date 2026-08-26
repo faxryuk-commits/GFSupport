@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser,
   Plug, Handshake, Inbox, Building2,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
+import { apiGet } from '@/shared/services/api.service'
+import { markNotificationRead } from '@/shared/api'
 
 // CSS for coin flip and shine animations
 const badgeAnimationStyles = `

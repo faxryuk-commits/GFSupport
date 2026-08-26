@@ -110,6 +110,7 @@ export async function notifyLeadAssigned(sql: SQL, lead: any, sourceLabel: strin
     title: 'Новое обращение на вас',
     body: `${lead.name || 'Без названия'}${lead.city ? ` · ${lead.city}` : ''} · ${sourceLabel}`
       + ' — ответить в течение 15 минут',
+    link: `/sales/leads/${lead.id}`,
     targetAgentIds: [lead.assigned_agent_id],
   }).catch(() => {})
 

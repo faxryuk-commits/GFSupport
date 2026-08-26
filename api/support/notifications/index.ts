@@ -51,6 +51,7 @@ export default async function handler(req: Request): Promise<Response> {
           channelId: n.channel_id,
           channelName: n.channel_name,
           senderName: n.sender_name,
+          link: n.link,
           isRead: n.is_read,
           createdAt: n.created_at,
         })),

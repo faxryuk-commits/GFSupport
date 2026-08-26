@@ -8,6 +8,8 @@ export interface NotificationPayload {
   channelName?: string
   senderName?: string
   decisionId?: string
+  /** Куда вести по нажатию: адрес внутри системы, а не только чат. */
+  link?: string
   priority: 'low' | 'medium' | 'high' | 'critical'
   targetAgentIds?: string[]
   targetRoles?: string[]
@@ -207,6 +209,7 @@ async function saveInAppNotification(sql: any, payload: NotificationPayload, tar
         channel_name VARCHAR(255),
         sender_name VARCHAR(255),
         decision_id VARCHAR(60),
+        link VARCHAR(255),
         is_read BOOLEAN DEFAULT false,
         read_at TIMESTAMP,
         escalated_at TIMESTAMP,
@@ -226,8 +229,8 @@ async function saveInAppNotification(sql: any, payload: NotificationPayload, tar
     `
     if (dup) return true
     await sql`
-      INSERT INTO support_notifications (id, org_id, agent_id, type, title, body, priority, channel_id, channel_name, sender_name, decision_id, escalated_at, created_at)
-      VALUES (${id}, ${payload.orgId}, ${target.agentId}, ${payload.type}, ${payload.title}, ${payload.body}, ${payload.priority}, ${payload.channelId || null}, ${payload.channelName || null}, ${payload.senderName || null}, ${payload.decisionId || null}, ${alreadyEscalated ? new Date().toISOString().slice(0, 19) : null}, NOW())
+      INSERT INTO support_notifications (id, org_id, agent_id, type, title, body, priority, channel_id, channel_name, sender_name, decision_id, link, escalated_at, created_at)
+      VALUES (${id}, ${payload.orgId}, ${target.agentId}, ${payload.type}, ${payload.title}, ${payload.body}, ${payload.priority}, ${payload.channelId || null}, ${payload.channelName || null}, ${payload.senderName || null}, ${payload.decisionId || null}, ${payload.link || null}, ${alreadyEscalated ? new Date().toISOString().slice(0, 19) : null}, NOW())
     `
     return true
   } catch (e: any) {

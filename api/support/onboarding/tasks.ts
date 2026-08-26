@@ -167,6 +167,7 @@ export default async function handler(req: Request): Promise<Response> {
                 orgId, type: 'assignment', priority: 'high',
                 title: `Вам назначен шаг: ${tt?.label || 'задача'} · ${b?.name || ''}`,
                 body: `${actorName || 'Коллега'} назначил вас исполнителем шага «${tt?.label || ''}» бренда «${b?.name || ''}» в Подключениях.`,
+                link: '/onboarding',
                 targetAgentIds: [assigneeId],
               })
             } catch {}

@@ -458,7 +458,10 @@ export function MyWorkspacePage() {
                       <button className="min-w-0 text-left" onClick={() => setDetail({
                         title: n.title,
                         rows: [['Текст', n.body || '—'], ['Когда', formatDateTimeShort(n.createdAt)], ['Канал', n.channelName || '—']],
-                        linkTo: n.channelId ? `/chats/${n.channelId}` : undefined, linkLabel: 'Открыть чат',
+                        // Адрес уведомления главнее канала: задача по сделке
+                        // должна открывать сделку, а не чат её клиента
+                        linkTo: n.link || (n.channelId ? `/chats/${n.channelId}` : undefined),
+                        linkLabel: n.link ? 'Открыть' : 'Открыть чат',
                       })}>
                         <p className="text-[13px] font-medium text-slate-800 truncate">{n.title}</p>
                         <p className="text-xs text-slate-500 line-clamp-2">{n.body}</p>

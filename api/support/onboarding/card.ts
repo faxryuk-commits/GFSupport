@@ -196,6 +196,7 @@ async function notifyAssignee(
       orgId, type: 'assignment', priority: 'high',
       title: `Задача по подключению: ${b?.name || 'бренд'}`,
       body: `${actorName || 'Коллега'}: ${text.trim().slice(0, 140)}`,
+      link: '/onboarding',
       targetAgentIds: [assigneeId],
     })
   } catch { /* уведомление не должно ронять создание задачи */ }

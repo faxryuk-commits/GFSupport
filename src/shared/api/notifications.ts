@@ -7,6 +7,8 @@ export interface AppNotification {
   body: string
   priority: string
   channelId?: string
+  /** Куда ведёт уведомление внутри системы. */
+  link?: string
   channelName?: string
   senderName?: string
   isRead: boolean

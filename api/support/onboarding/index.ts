@@ -293,6 +293,7 @@ export default async function handler(req: Request): Promise<Response> {
               orgId, type: 'assignment', priority: 'high',
               title: `Вы ведёте проект: ${b?.name || ''}`,
               body: `Вас назначили ведущим проекта «${b?.name || ''}» в Подключениях.`,
+              link: '/onboarding',
               targetAgentIds: [assigneeId as string],
             })
           } catch {}

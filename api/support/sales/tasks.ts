@@ -76,10 +76,16 @@ export default async function handler(req: Request): Promise<Response> {
     // Задачу поставили другому — он должен узнать об этом, не открывая раздел
     if (assignee !== ctx.agentId) {
       const [from] = await sql`SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`
+      // Без адреса уведомление бесполезно: человек читает «вам поставили
+      // задачу» и идёт искать, где именно. Ведём прямо в ту карточку
+      const link = body.dealId ? `/sales/deals/${body.dealId}`
+        : body.leadId ? `/sales/leads/${body.leadId}`
+        : accountId ? `/sales/accounts/${accountId}` : undefined
       await sendNotification({
         orgId, type: 'assignment', priority: 'medium',
         title: 'Вам поставили задачу',
         body: `${title.slice(0, 120)}${from?.name ? ` — от ${from.name}` : ''}`,
+        link,
         targetAgentIds: [assignee],
       }).catch(() => {})
     }

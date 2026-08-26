@@ -104,6 +104,7 @@ export default async function handler(req: Request): Promise<Response> {
       orgId: ORG, type: 'sla_breach', priority: 'medium',
       title: 'Просрочена задача',
       body: `${t.deal_title ? `${t.deal_title}: ` : ''}${t.title}`,
+      link: t.deal_id ? `/sales/deals/${t.deal_id}` : '/me',
       targetAgentIds: [t.assignee_agent_id],
     }).catch(() => {})
     if (token && t.telegram_id) {
