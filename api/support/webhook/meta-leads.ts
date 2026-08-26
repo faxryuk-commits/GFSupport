@@ -5,6 +5,7 @@ import { marketByPhoneCity } from '../lib/region-detect.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
 import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } from '../lib/meta-config.js'
 import { handleMetaMessaging } from '../lib/meta-messages.js'
+import { handleMetaComments } from '../lib/meta-comments.js'
 
 export const config = { runtime: 'edge' }
 
@@ -86,6 +87,15 @@ export default async function handler(req: Request): Promise<Response> {
       const sqlM = getSQL()
       const taken = await handleMetaMessaging(sqlM, ORG, body)
       return json({ ok: true, messages: taken })
+    }
+
+    // Комментарии живут в entry.changes рядом с заявками: у страницы это
+    // поле feed, у инстаграма — comments. Разбираем до проверки объекта,
+    // иначе комментарии инстаграма отсеивались бы следующей же строкой
+    const hasChanges = (body.entry || []).some((e: any) => Array.isArray(e?.changes) && e.changes.length)
+    if (hasChanges) {
+      const taken = await handleMetaComments(getSQL(), ORG, body)
+      if (taken) console.log('[webhook/meta] принято комментариев:', taken)
     }
     if (body.object !== 'page') return json({ ok: true })
 

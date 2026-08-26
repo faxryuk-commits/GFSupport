@@ -2,6 +2,7 @@ import { getSQL, json } from '../lib/db.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
 import { readMetaConfig, readMetaAccounts } from '../lib/meta-config.js'
 import { handleMetaMessaging } from '../lib/meta-messages.js'
+import { handleMetaComments } from '../lib/meta-comments.js'
 
 export const config = { runtime: 'edge' }
 
@@ -54,8 +55,12 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const body: any = JSON.parse(raw)
     if (body?.object !== 'instagram' && body?.object !== 'page') return json({ ok: true })
-    const taken = await handleMetaMessaging(getSQL(), ORG, body)
-    return json({ ok: true, messages: taken })
+    const sql = getSQL()
+    // Сообщения и комментарии приходят на один адрес разными ветками:
+    // первые в entry.messaging, вторые в entry.changes
+    const taken = await handleMetaMessaging(sql, ORG, body)
+    const comments = await handleMetaComments(sql, ORG, body)
+    return json({ ok: true, messages: taken, comments })
   } catch (e) {
     console.error('[webhook/instagram] error:', e)
   }

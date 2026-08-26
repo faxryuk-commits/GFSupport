@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
-  ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser,
+  ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
   Plug, Handshake, Inbox, Building2,
 } from 'lucide-react'
 import { getPlanConfig } from '@/shared/lib/plan-features'
@@ -234,6 +234,10 @@ const navGroups: NavGroup[] = [
       // убеждают, тут действующий клиент с проблемой — общий список
       // из четырёхсот чатов не годится ни тем, ни другим
       { path: '/sales/chats', label: 'Диалоги', icon: MessageSquare },
+      // Комментарии отдельно от диалогов: под постом вопрос видят все, кто
+      // увидит пост, и молчание там стоит дороже, чем в личке
+      { path: '/sales/comments', label: 'Комментарии', icon: MessagesSquare,
+        badgeKey: 'metaComments', badgeHint: 'комментарии без ответа' },
     ],
   },
   {
