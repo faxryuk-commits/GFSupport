@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
   Plug, Handshake, Inbox, Building2,
 } from 'lucide-react'
-import { getPlanConfig } from '@/shared/lib/plan-features'
+import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { apiGet } from '@/shared/services/api.service'
 import { markNotificationRead } from '@/shared/api'
 
@@ -382,7 +382,10 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
   const planConfig = getPlanConfig(orgPlan)
   // Фильтруем пункты по плану, оставляем только непустые группы.
   const visibleGroups = navGroups
-    .map(g => ({ ...g, items: g.items.filter(item => planConfig.navPaths.includes(item.path)) }))
+    // Отбираем по правилу «что закрыто», а не «что разрешено»: новый раздел
+    // должен появляться в меню сам, а не исчезать до тех пор, пока кто-то не
+    // вспомнит про отдельный список путей
+    .map(g => ({ ...g, items: g.items.filter(item => isPathAllowed(item.path, orgPlan)) }))
     .filter(g => g.items.length > 0)
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/')

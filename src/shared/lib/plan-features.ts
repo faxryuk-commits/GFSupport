@@ -46,9 +46,26 @@ export function getPlanConfig(plan?: string): PlanConfig {
   return PLANS[key] || PLANS.starter
 }
 
+/**
+ * Что закрыто на самом простом тарифе. Всё остальное открыто.
+ *
+ * Раньше здесь был обратный список — «что разрешено», — и любой новый экран
+ * исчезал из меню молча, пока его не впишут во все тарифы разом. Так уже
+ * пропадали «ИИ Агент» в марте и «Комментарии» в августе: страница есть,
+ * маршрут есть, кнопки нет, и ни ошибки, ни предупреждения.
+ *
+ * Список наоборот эту ловушку убирает: новый раздел виден сразу, а закрыть
+ * его можно осознанно, дописав сюда.
+ */
+const STARTER_HIDDEN = [
+  '/commitments', '/analytics', '/benchmarks', '/insights-chat', '/ai-agent',
+  '/routing', '/knowledge', '/broadcast', '/system-map', '/sales',
+]
+
 export function isPathAllowed(path: string, plan?: string): boolean {
-  const config = getPlanConfig(plan)
-  return config.navPaths.some(p => path === p || path.startsWith(p + '/'))
+  const key = (plan || 'starter').toLowerCase()
+  if (key !== 'starter') return true
+  return !STARTER_HIDDEN.some(p => path === p || path.startsWith(p + '/'))
 }
 
 export function hasFeature(feature: string, plan?: string): boolean {
