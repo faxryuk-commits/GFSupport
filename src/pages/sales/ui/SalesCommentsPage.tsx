@@ -85,6 +85,14 @@ export function SalesCommentsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [answering, setAnswering] = useState<string | null>(null)
+  // Журнал свёрнут по умолчанию: экран должен отвечать «где не ответили»,
+  // а не показывать сразу все сорок реплик под одним рилсом
+  const [opened, setOpened] = useState<Set<string>>(new Set())
+  const toggleOpen = (key: string) => setOpened(o => {
+    const next = new Set(o)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
   const [draft, setDraft] = useState('')
   const region = useRegion('comments')
 
@@ -223,15 +231,25 @@ export function SalesCommentsPage() {
       <div className="space-y-3">
         {groups.map(g => (
           <section key={g.key} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-            <header className="flex gap-3 px-4 py-3 bg-gray-50/70 border-b border-gray-100">
+            {/* Шапка — не кнопка: внутри живут ссылки на пост, а ссылка внутри
+                кнопки недопустима. Поэтому обычный блок с ролью и клавиатурой */}
+            <div
+              role="button" tabIndex={0}
+              onClick={() => toggleOpen(g.key)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleOpen(g.key) }
+              }}
+              className={`w-full cursor-pointer flex gap-3 px-4 py-3 bg-gray-50/70 hover:bg-gray-100/70
+                          transition-colors ${opened.has(g.key) ? 'border-b border-gray-100' : ''}`}>
               {g.post?.thumb_url ? (
                 <a href={g.post.permalink || undefined} target="_blank" rel="noreferrer"
-                  className="flex-none block w-12 h-12 rounded-lg overflow-hidden bg-gray-100
+                  onClick={e => e.stopPropagation()}
+                  className="flex-none block w-11 h-11 rounded-lg overflow-hidden bg-gray-100
                              border border-gray-200 hover:border-blue-400 transition-colors">
                   <img src={g.post.thumb_url} alt="" className="w-full h-full object-cover" />
                 </a>
               ) : (
-                <div className="flex-none w-12 h-12 rounded-lg bg-white border border-dashed
+                <div className="flex-none w-11 h-11 rounded-lg bg-white border border-dashed
                                 border-gray-200 grid place-items-center text-[9px] text-gray-300 text-center px-1">
                   {g.post?.fetch_error ? 'нет доступа' : 'без обложки'}
                 </div>
@@ -251,18 +269,22 @@ export function SalesCommentsPage() {
                   {g.open > 0 && <span className="text-amber-600">без ответа {g.open}</span>}
                   {g.post?.permalink && (
                     <a href={g.post.permalink} target="_blank" rel="noreferrer"
+                      onClick={e => e.stopPropagation()}
                       className="text-blue-600 hover:underline">открыть</a>
                   )}
                 </div>
                 {g.post?.caption && (
-                  <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-2">{g.post.caption}</p>
+                  <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-1">{g.post.caption}</p>
                 )}
               </div>
-            </header>
+              <span className={`flex-none self-center text-gray-400 text-[11px] transition-transform ${
+                opened.has(g.key) ? 'rotate-180' : ''}`}>▾</span>
+            </div>
 
+            {opened.has(g.key) && (
             <ul className="divide-y divide-gray-100">
               {g.items.map(c => (
-                <li key={c.id} className="px-4 py-3">
+                <li key={c.id} className="px-4 py-2.5 group/c hover:bg-gray-50/60">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-[13px] font-medium text-gray-900">
                       {c.author_name || 'Без имени'}
@@ -342,7 +364,8 @@ export function SalesCommentsPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-1.5 flex gap-2 opacity-0 group-hover/c:opacity-100
+                                    focus-within:opacity-100 transition-opacity">
                       <Btn onClick={() => { setAnswering(c.comment_id); setDraft('') }}>
                         {c.replied_at ? 'Ответить ещё' : 'Ответить'}
                       </Btn>
@@ -355,6 +378,7 @@ export function SalesCommentsPage() {
                 </li>
               ))}
             </ul>
+            )}
           </section>
         ))}
       </div>
