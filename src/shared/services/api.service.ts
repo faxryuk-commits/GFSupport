@@ -63,6 +63,21 @@ export async function apiGet<T>(endpoint: string, useCache = true): Promise<T> {
   return data
 }
 
+/**
+ * Ответ без тела — обычно это шлюз, а не наш код: при таймауте и перегрузке
+ * приходит HTML, разбор падает, и человек видел «Unknown error» вместо
+ * объяснения, что запрос просто не успел.
+ */
+function statusText(status: number): string {
+  if (status === 504 || status === 408) return 'Сервер не успел ответить — попробуйте ещё раз'
+  if (status === 502 || status === 503) return 'Сервер временно недоступен'
+  if (status === 401) return 'Нужно войти заново'
+  if (status === 403) return 'Недостаточно прав'
+  if (status === 413) return 'Слишком много данных за один раз'
+  if (status === 429) return 'Слишком часто — подождите немного'
+  return `Ошибка ${status}`
+}
+
 export async function apiPost<T>(endpoint: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
@@ -71,10 +86,10 @@ export async function apiPost<T>(endpoint: string, body: unknown): Promise<T> {
   })
   
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Unknown error' }))
+    const error = await res.json().catch(() => ({ error: statusText(res.status) }))
     // У движка продаж отказ приходит с человеческим message («не заполнено: …»),
     // и показать нужно именно его, а не «API Error: 422»
-    throw new Error(error.message || error.error || `API Error: ${res.status}`)
+    throw new Error(error.message || error.error || statusText(res.status))
   }
   
   return res.json()
@@ -88,8 +103,8 @@ export async function apiPut<T>(endpoint: string, body: unknown): Promise<T> {
   })
   
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `API Error: ${res.status}`)
+    const error = await res.json().catch(() => ({ error: statusText(res.status) }))
+    throw new Error(error.message || error.error || statusText(res.status))
   }
   
   return res.json()
@@ -118,8 +133,8 @@ export async function apiDelete<T>(endpoint: string): Promise<T> {
   })
   
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `API Error: ${res.status}`)
+    const error = await res.json().catch(() => ({ error: statusText(res.status) }))
+    throw new Error(error.message || error.error || statusText(res.status))
   }
   
   return res.json()

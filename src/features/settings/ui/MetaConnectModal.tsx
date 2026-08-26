@@ -153,11 +153,31 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   const setAccountMarket = (accountId: string, market: string) =>
     act('acc', () => apiPost('/integrations/meta?action=account-market', { accountId, market: market || null }))
 
+  /**
+   * История грузится порциями: сервер работает столько, сколько влезает в
+   * время функции, и возвращает место остановки. Идём по нему, пока не
+   * кончится, показывая накопленное — раньше один длинный запрос упирался
+   * в 504, и человек видел «Unknown error» после сорока секунд ожидания.
+   */
   const importHistory = () => act('history', async () => {
-    const r = await apiPost<{ channels: number; messages: number; errors: string[] }>(
-      '/integrations/meta?action=import-history', {})
-    setNote(`Загружено: ${r.channels} диалогов, ${r.messages} сообщений`
-      + (r.errors?.length ? ` · не всё: ${r.errors[0]}` : ''))
+    type Cursor = { accountId: string; platform: string; after?: string }
+    type Res = { channels: number; messages: number; errors: string[]; next: Cursor | null }
+    let cursor: Cursor | null = null
+    let channels = 0, messages = 0
+    const errors: string[] = []
+
+    // Ограничение на число заходов — предохранитель от бесконечного круга,
+    // если сервер вдруг начнёт возвращать один и тот же курсор
+    for (let pass = 0; pass < 40; pass++) {
+      const r: Res = await apiPost<Res>('/integrations/meta?action=import-history', { cursor })
+      channels += r.channels; messages += r.messages
+      for (const e of r.errors || []) if (!errors.includes(e)) errors.push(e)
+      setNote(`Загружаю: ${channels} диалогов, ${messages} сообщений…`)
+      if (!r.next) break
+      cursor = r.next
+    }
+    setNote(`Загружено: ${channels} диалогов, ${messages} сообщений`
+      + (errors.length ? ` · не всё: ${errors[0]}` : ''))
   })
 
   const refreshAccounts = () => act('refresh', async () => {

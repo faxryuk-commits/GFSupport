@@ -194,135 +194,191 @@ export async function handleMetaMessaging(
 }
 
 /**
- * Разовая подгрузка истории переписок из Meta.
+ * Подгрузка истории переписок из Meta — порциями, с продолжением.
  *
  * Вебхуки приносят только то, что происходит после подключения, — а диалоги
  * шли и до него. Meta отдаёт архив через conversations, и без него в чатах
  * первое время пусто, хотя переписка с человеком идёт полгода.
  *
+ * Раньше функция обходила все аккаунты и все диалоги за один заход и не
+ * укладывалась во время: на каждый диалог отдельный запрос за сообщениями,
+ * и на второй сотне шлюз отвечал 504. Теперь за один вызов делается
+ * столько, сколько влезает в бюджет, а место остановки возвращается
+ * курсором — вызывающий продолжает с него.
+ *
  * Повторный запуск безопасен: сообщения различаются по идентификатору Meta,
  * уже загруженные пропускаются.
  */
+export interface ImportCursor {
+  accountId: string
+  platform: 'instagram' | 'messenger'
+  after?: string
+}
+
 export async function importMetaHistory(
-  sql: any, orgId: string, opts: { conversations?: number; messages?: number } = {},
-): Promise<{ channels: number; messages: number; errors: string[] }> {
+  sql: any, orgId: string,
+  opts: {
+    conversations?: number; messages?: number
+    budgetMs?: number; cursor?: ImportCursor | null
+  } = {},
+): Promise<{ channels: number; messages: number; errors: string[]; next: ImportCursor | null }> {
   const GRAPH = 'https://graph.facebook.com/v21.0'
-  const convLimit = Math.min(200, Math.max(1, opts.conversations ?? 50))
+  const pageSize = Math.min(25, Math.max(1, opts.conversations ?? 25))
   const msgLimit = Math.min(200, Math.max(1, opts.messages ?? 50))
+  const budgetMs = Math.max(3000, opts.budgetMs ?? 18_000)
+  const until = Date.now() + budgetMs
   const accounts = await readMetaAccounts(orgId)
-  const out = { channels: 0, messages: 0, errors: [] as string[] }
+  const out = { channels: 0, messages: 0, errors: [] as string[], next: null as ImportCursor | null }
 
   await ensureSalesSchema(sql, orgId)
 
+  // Работа разложена в плоский список: аккаунт × площадка. По нему легко
+  // и продолжить с нужного места, и понять, что осталось
+  const tasks: Array<{ acc: any; platform: 'instagram' | 'messenger' }> = []
   for (const acc of accounts) {
     if (!acc.pageToken) continue
-    // Наши собственные идентификаторы: по ним отличаем свои реплики от клиентских
+    for (const platform of ['instagram', 'messenger'] as const) tasks.push({ acc, platform })
+  }
+
+  let start = 0
+  let after = opts.cursor?.after
+  if (opts.cursor) {
+    const at = tasks.findIndex(t =>
+      t.acc.id === opts.cursor!.accountId && t.platform === opts.cursor!.platform)
+    if (at >= 0) start = at
+    else after = undefined
+  }
+
+  for (let i = start; i < tasks.length; i++) {
+    const { acc, platform } = tasks[i]
+    const source: 'instagram' | 'messenger' = platform
+    const sourceKey = platform === 'instagram' ? 'instagram_direct' : 'messenger'
     const ours = new Set([acc.pageId, acc.igUserId].filter(Boolean).map(String))
+    const marketId = await marketIdByCode(sql, orgId, acc.marketId)
 
-    for (const platform of ['instagram', 'messenger'] as const) {
-      const source = platform === 'instagram' ? 'instagram' : 'messenger'
-      const sourceKey = platform === 'instagram' ? 'instagram_direct' : 'messenger'
-      // Сообщения тянем отдельным запросом на диалог, а не вложенным списком:
-      // на части аккаунтов Meta отвечает «уменьшите объём» и не отдаёт вообще
-      // ничего, сколько ни снижай лимит вложенного поля
-      let url = `${GRAPH}/${acc.pageId}/conversations?platform=${platform}`
-        + `&fields=id,participants,updated_time&limit=${Math.min(25, convLimit)}`
+    for (;;) {
+      const url = `${GRAPH}/${acc.pageId}/conversations?platform=${platform}`
+        + `&fields=id,participants,updated_time&limit=${pageSize}`
+        + (after ? `&after=${encodeURIComponent(after)}` : '')
         + `&access_token=${acc.pageToken}`
-      let taken = 0
 
-      while (url && taken < convLimit) {
-        let data: any
-        try {
-          const res = await fetch(url)
-          data = await res.json()
-        } catch (e: any) {
-          out.errors.push(`${acc.pageName} ${platform}: ${e?.message || 'нет связи'}`)
-          break
-        }
-        if (data?.error) {
-          // Таймаут у Meta на этом методе — обычное дело, не поломка
-          out.errors.push(`${acc.pageName} ${platform}: ${String(data.error.message).slice(0, 120)}`)
-          break
-        }
-
-        for (const conv of (data?.data || [])) {
-          taken++
-          const other = (conv.participants?.data || []).find((p: any) => !ours.has(String(p.id)))
-          if (!other?.id) continue
-          const name = other.username ? `@${other.username}` : (other.name || `${source} ${String(other.id).slice(-6)}`)
-          const channelId = await getOrCreateChannel(
-            sql, orgId, source, String(other.id), name,
-            await marketIdByCode(sql, orgId, acc.marketId), acc.pageId)
-          out.channels++
-
-          // Meta отдаёт сообщения от новых к старым — разворачиваем, чтобы
-          // в ленте они легли в том порядке, в каком люди их писали
-          let msgs: any[] = []
-          try {
-            const mr = await fetch(
-              `${GRAPH}/${conv.id}/messages?fields=id,created_time,from,message`
-              + `&limit=${msgLimit}&access_token=${acc.pageToken}`)
-            const md: any = await mr.json()
-            msgs = [...(md?.data || [])].reverse()
-          } catch { /* диалог без сообщений — не повод ронять весь импорт */ }
-          for (const m of msgs) {
-            const text = String(m.message || '').trim()
-            if (!text) continue
-            const mine = ours.has(String(m.from?.id || ''))
-            const done = await sql`
-              INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name, sender_role,
-                                            is_from_client, content_type, text_content,
-                                            external_message_id, is_read, created_at)
-              SELECT ${salesId('msg')}, ${channelId}, ${orgId}, ${String(m.from?.id || '')},
-                     ${mine ? (m.from?.name || 'Мы') : name}, ${mine ? 'support' : 'client'},
-                     ${!mine}, 'text', ${text}, ${String(m.id)}, true,
-                     ${m.created_time ? new Date(m.created_time).toISOString() : new Date().toISOString()}
-              WHERE NOT EXISTS (
-                SELECT 1 FROM support_messages
-                WHERE org_id = ${orgId} AND external_message_id = ${String(m.id)}
-              )
-              RETURNING id
-            ` as any[]
-            out.messages += done.length
-          }
-
-          const last = msgs[msgs.length - 1]
-          if (last) {
-            await sql`
-              UPDATE support_channels
-              SET last_message_at = GREATEST(COALESCE(last_message_at, to_timestamp(0)),
-                                             ${new Date(last.created_time || Date.now()).toISOString()}),
-                  last_message_preview = COALESCE(last_message_preview, ${String(last.message || '').slice(0, 100)}),
-                  last_sender_name = COALESCE(last_sender_name, ${name})
-              WHERE id = ${channelId}
-            `
-          }
-
-          // Диалог из архива — тоже обращение: без этого он появится в чатах,
-          // но в продажах его не будет, и сейлз о нём не узнает
-          const [known] = await sql`
-            SELECT l.id FROM sales_leads l JOIN sales_sources s ON s.id = l.source_id
-            WHERE l.org_id = ${orgId} AND s.key = ${sourceKey} AND l.external_id = ${String(other.id)}
-            LIMIT 1
-          ` as any[]
-          if (!known) {
-            const res = await acceptLead(sql, orgId, {
-              source: sourceKey, external_id: String(other.id), name, contact_name: name,
-              text: String(msgs[msgs.length - 1]?.message || '').slice(0, 500) || null,
-              market: acc.marketId, channel_key: String(other.id), raw: { _imported: true },
-            })
-            if (res.ok && res.account_id) {
-              await sql`
-                UPDATE sales_accounts SET channel_id = COALESCE(channel_id, ${channelId})
-                WHERE id = ${res.account_id} AND org_id = ${orgId}
-              `
-            }
-          }
-        }
-
-        url = taken < convLimit ? (data?.paging?.next || '') : ''
+      let data: any
+      try {
+        data = await (await fetch(url)).json()
+      } catch (e: any) {
+        out.errors.push(`${acc.pageName} ${platform}: ${e?.message || 'нет связи'}`)
+        break
       }
+      if (data?.error) {
+        // Таймаут у Meta на этом методе — обычное дело, не поломка
+        out.errors.push(`${acc.pageName} ${platform}: ${String(data.error.message).slice(0, 120)}`)
+        break
+      }
+
+      const convs = (data?.data || []) as any[]
+      // Сообщения тянем пачками: сорок диалогов подряд по одному запросу —
+      // это и есть те сорок секунд, на которых всё обрывалось
+      for (let b = 0; b < convs.length; b += 5) {
+        await Promise.all(convs.slice(b, b + 5).map(conv =>
+          ingestConversation(sql, orgId, acc, source, sourceKey, ours, marketId,
+                             conv, msgLimit, GRAPH, out)))
+      }
+
+      after = data?.paging?.cursors?.after || ''
+      const more = Boolean(after && convs.length === pageSize)
+      if (!more) { after = undefined; break }
+      if (Date.now() > until) {
+        out.next = { accountId: acc.id, platform, after }
+        return out
+      }
+    }
+
+    if (Date.now() > until && i + 1 < tasks.length) {
+      out.next = { accountId: tasks[i + 1].acc.id, platform: tasks[i + 1].platform }
+      return out
     }
   }
   return out
+}
+
+/** Один диалог: канал, сообщения и обращение в продажах. */
+async function ingestConversation(
+  sql: any, orgId: string, acc: any,
+  source: 'instagram' | 'messenger', sourceKey: string,
+  ours: Set<string>, marketId: string | null,
+  conv: any, msgLimit: number, GRAPH: string,
+  out: { channels: number; messages: number; errors: string[] },
+): Promise<void> {
+  const other = (conv.participants?.data || []).find((p: any) => !ours.has(String(p.id)))
+  if (!other?.id) return
+  const name = other.username ? `@${other.username}`
+    : (other.name || `${source} ${String(other.id).slice(-6)}`)
+
+  const channelId = await getOrCreateChannel(
+    sql, orgId, source, String(other.id), name, marketId, acc.pageId)
+  out.channels++
+
+  // Meta отдаёт сообщения от новых к старым — разворачиваем, чтобы в ленте
+  // они легли в том порядке, в каком люди их писали
+  let msgs: any[] = []
+  try {
+    const md: any = await (await fetch(
+      `${GRAPH}/${conv.id}/messages?fields=id,created_time,from,message`
+      + `&limit=${msgLimit}&access_token=${acc.pageToken}`)).json()
+    msgs = [...(md?.data || [])].reverse()
+  } catch { /* диалог без сообщений — не повод ронять весь импорт */ }
+
+  for (const m of msgs) {
+    const text = String(m.message || '').trim()
+    if (!text) continue
+    const mine = ours.has(String(m.from?.id || ''))
+    const done = await sql`
+      INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name, sender_role,
+                                    is_from_client, content_type, text_content,
+                                    external_message_id, is_read, created_at)
+      SELECT ${salesId('msg')}, ${channelId}, ${orgId}, ${String(m.from?.id || '')},
+             ${mine ? (m.from?.name || 'Мы') : name}, ${mine ? 'support' : 'client'},
+             ${!mine}, 'text', ${text}, ${String(m.id)}, true,
+             ${m.created_time ? new Date(m.created_time).toISOString() : new Date().toISOString()}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM support_messages
+        WHERE org_id = ${orgId} AND external_message_id = ${String(m.id)}
+      )
+      RETURNING id
+    ` as any[]
+    out.messages += done.length
+  }
+
+  const last = msgs[msgs.length - 1]
+  if (last) {
+    await sql`
+      UPDATE support_channels
+      SET last_message_at = GREATEST(COALESCE(last_message_at, to_timestamp(0)),
+                                     ${new Date(last.created_time || Date.now()).toISOString()}),
+          last_message_preview = COALESCE(last_message_preview, ${String(last.message || '').slice(0, 100)}),
+          last_sender_name = COALESCE(last_sender_name, ${name})
+      WHERE id = ${channelId}
+    `
+  }
+
+  // Диалог из архива — тоже обращение: без этого он появится в чатах,
+  // но в продажах его не будет, и сейлз о нём не узнает
+  const [known] = await sql`
+    SELECT l.id FROM sales_leads l JOIN sales_sources s ON s.id = l.source_id
+    WHERE l.org_id = ${orgId} AND s.key = ${sourceKey} AND l.external_id = ${String(other.id)}
+    LIMIT 1
+  ` as any[]
+  if (known) return
+
+  const res = await acceptLead(sql, orgId, {
+    source: sourceKey, external_id: String(other.id), name, contact_name: name,
+    text: String(msgs[msgs.length - 1]?.message || '').slice(0, 500) || null,
+    market: acc.marketId, channel_key: String(other.id), raw: { _imported: true },
+  })
+  if (res.ok && res.account_id) {
+    await sql`
+      UPDATE sales_accounts SET channel_id = COALESCE(channel_id, ${channelId})
+      WHERE id = ${res.account_id} AND org_id = ${orgId}
+    `
+  }
 }

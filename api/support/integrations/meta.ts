@@ -415,12 +415,19 @@ export default async function handler(req: Request): Promise<Response> {
   // Разовая подгрузка архива переписок: вебхуки приносят только то, что
   // происходит после подключения, а диалоги шли и до него
   if (action === 'import-history') {
+    // За один заход делаем столько, сколько влезает в время функции, и
+    // возвращаем место остановки. Экран продолжает с него, пока не кончится:
+    // раньше обход всех диалогов подряд упирался в 504 на шлюзе
     const res = await importMetaHistory(sql, orgId, {
-      conversations: Number(body?.conversations) || 50,
+      conversations: Number(body?.conversations) || 25,
       messages: Number(body?.messages) || 50,
+      budgetMs: 18_000,
+      cursor: body?.cursor || null,
     })
-    await logEvent(sql, 'Интеграция Meta', 'загрузка истории',
-      `диалогов ${res.channels} · сообщений ${res.messages}`)
+    if (!res.next) {
+      await logEvent(sql, 'Интеграция Meta', 'загрузка истории',
+        `диалогов ${res.channels} · сообщений ${res.messages}`)
+    }
     return json({ ok: true, ...res })
   }
 
