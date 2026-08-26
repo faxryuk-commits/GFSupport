@@ -290,9 +290,16 @@ export default async function handler(req: Request): Promise<Response> {
     params.push(`%${q}%`, `%${q}%`)
     conds.push(`(l.name ILIKE $${params.length - 1} OR l.phone ILIKE $${params.length})`)
   }
+  // Обращение, ставшее сделкой, — это уже не обращение: оно живёт дальше
+  // карточкой сделки. В рабочих списках его быть не должно, иначе один и тот
+  // же клиент числится и в лидах, и в воронке, и счёт обращений врёт
+  if (!['converted', 'archived'].includes(view)) conds.push(`l.status <> 'converted'`)
   if (view === 'inbox') conds.push(`l.created_at > NOW() - INTERVAL '7 days'`)
   if (view === 'queue') conds.push(`l.status = 'new'`)
   if (view === 'nurture') conds.push(`l.status = 'nurture'`)
+  // Отдельная вкладка: не потерять то, что дошло до сделки, — по ней видно
+  // конверсию входа и легко найти, откуда сделка взялась
+  if (view === 'converted') conds.push(`l.status = 'converted'`)
   // Склейка: у лида есть аккаунт, созданный раньше самого лида
   if (view === 'dupes') conds.push('a.created_at < l.created_at - INTERVAL \'1 minute\'')
 
