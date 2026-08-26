@@ -296,23 +296,6 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Подписываем приложение на страницу сразу: шаг, который в ручной
     // настройке забывают чаще всего, и без него вебхуки молчат
-    // Подписываемся двумя заходами, а не одним списком. Одним — Meta валит
-    // всю подписку из-за единственного поля: нет разрешения на заявки, и
-    // вместе с ними отваливаются сообщения, которые подписались бы спокойно
-    const subscribe = async (fields: string): Promise<string | null> => {
-      try {
-        const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subscribed_fields: fields, access_token: page.access_token }),
-        })
-        const out: any = await res.json()
-        if (out?.success) return null
-        return String(out?.error?.message || JSON.stringify(out)).slice(0, 200)
-      } catch (e: any) {
-        return e?.message || 'страница не ответила'
-      }
-    }
 
     // Приложение подписываем автоматически — иначе страницы подписаны,
     // а Meta всё равно молчит, и понять это без запроса к API невозможно
@@ -337,9 +320,10 @@ export default async function handler(req: Request): Promise<Response> {
       }
     } catch { /* страница всё равно подключится, подписку можно повторить кнопкой */ }
 
-    const msgErr = await subscribe('messages,messaging_postbacks,feed')
-    const leadErr = await subscribe('leadgen')
-    const subscribed = !msgErr
+    const { applied, error: subErr } = await subscribePage(pageId, page.access_token)
+    const msgErr = applied.includes('messages') ? null : (subErr || 'сообщения не подписались')
+    const leadErr = applied.includes('leadgen') ? null : 'заявки не подписались'
+    const subscribed = Boolean(applied)
     // Про заявки говорим человеческим языком: в ответе Meta это длинная
     // строка с трассировкой, из которой ничего не понять
     const subscribeError = msgErr
@@ -508,6 +492,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
     const data: any = await res.json()
     let updated = 0
+    let fixed = 0
     for (const p of (data?.data || [])) {
       const ig = p.instagram_business_account
       const done = await sql`
@@ -518,9 +503,21 @@ export default async function handler(req: Request): Promise<Response> {
         RETURNING id
       ` as any[]
       updated += done.length
+      // Заодно чиним подписку: токен обновить мало, если страница подписана
+      // не на те поля. Раньше это лечилось только полным переподключением
+      if (done.length) {
+        const { applied } = await subscribePage(String(p.id), p.access_token)
+        await sql`
+          UPDATE support_meta_accounts
+          SET subscribed = ${Boolean(applied)},
+              subscribe_error = ${applied.includes('messages') ? null : 'сообщения не подписались'}
+          WHERE org_id = ${orgId} AND page_id = ${String(p.id)}
+        `
+        if (applied) fixed++
+      }
     }
     invalidateMetaConfig(orgId)
-    return json({ ok: true, updated })
+    return json({ ok: true, updated, fixed })
   }
 
   // ─── Регион аккаунта ────────────────────────────────────────────────────────
@@ -604,4 +601,49 @@ async function unsubscribePage(pageId?: string | null, token?: string | null): P
     await fetch(`${GRAPH}/${pageId}/subscribed_apps?access_token=${token}`,
       { method: 'DELETE', signal: AbortSignal.timeout(6000) })
   } catch { /* отключение важнее подтверждения от Meta */ }
+}
+
+/**
+ * Подписка страницы на вебхуки приложения.
+ *
+ * Meta не добавляет поля к подписке, а ЗАМЕНЯЕТ список целиком. Из-за этого
+ * два вызова подряд оставляли только то, что было в последнем: после каждого
+ * переподключения у страницы оставалось одно leadgen, а сообщения и
+ * комментарии молча переставали приходить.
+ *
+ * Поэтому сначала пробуем весь набор одним вызовом. Если Meta отвергла его
+ * из-за единственного поля без разрешения, выясняем поштучно, что доступно,
+ * и обязательно ставим итоговый набор последним вызовом — иначе в подписке
+ * останется одно последнее проверенное поле.
+ */
+const WANT_FIELDS = ['messages', 'messaging_postbacks', 'feed', 'leadgen']
+
+async function subscribePage(
+  pageId: string, token: string,
+): Promise<{ applied: string; error: string | null }> {
+  const put = async (fields: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscribed_fields: fields, access_token: token }),
+      })
+      const out: any = await res.json()
+      if (out?.success) return null
+      return String(out?.error?.message || JSON.stringify(out)).slice(0, 200)
+    } catch (e: any) {
+      return e?.message || 'страница не ответила'
+    }
+  }
+
+  const all = WANT_FIELDS.join(',')
+  const err = await put(all)
+  if (!err) return { applied: all, error: null }
+
+  const ok: string[] = []
+  for (const f of WANT_FIELDS) if (!(await put(f))) ok.push(f)
+  if (!ok.length) return { applied: '', error: err }
+
+  const finalErr = await put(ok.join(','))
+  return finalErr ? { applied: '', error: finalErr } : { applied: ok.join(','), error: null }
 }
