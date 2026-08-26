@@ -482,6 +482,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       assignee_agent_id VARCHAR(50),
       cadence_step INT,
       auto BOOLEAN NOT NULL DEFAULT false,
+      -- Кто поставил и что с задачей стало: без этого поручение уходило
+      -- в один конец, и автор не знал, взяли её вообще или нет
+      created_by_agent_id VARCHAR(60),
+      status VARCHAR(20) NOT NULL DEFAULT 'open',
+      status_note TEXT,
+      status_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `

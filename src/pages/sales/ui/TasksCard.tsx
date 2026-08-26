@@ -16,6 +16,16 @@ type Task = {
   id: string; title: string; kind: string; channel: string | null
   due_at: string | null; done_at: string | null; done_result: string | null
   assignee_agent_id: string | null; assignee_name: string | null; auto: boolean
+  status?: string; status_note?: string | null; status_at?: string | null
+  created_by_agent_id?: string | null; created_by_name?: string | null
+}
+
+/** Ход задачи: то, что видит автор поручения, не спрашивая исполнителя. */
+const STATUS: Record<string, { label: string; cls: string }> = {
+  open: { label: 'не начата', cls: 'text-gray-500 bg-gray-100' },
+  in_progress: { label: 'в работе', cls: 'text-blue-700 bg-blue-50' },
+  done: { label: 'выполнена', cls: 'text-emerald-700 bg-emerald-50' },
+  rejected: { label: 'отклонена', cls: 'text-red-700 bg-red-50' },
 }
 
 /** Виды задач: подпись для человека и то, что уходит на сервер. */
@@ -84,6 +94,29 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
       setBusy(false)
     }
   }
+
+  /**
+   * Ход задачи. Раньше поручение уходило в один конец: автор ставил задачу и
+   * ждал, не зная, взяли её вообще или нет. Отказ спрашиваем с причиной —
+   * «отклонено» без объяснения автору ничего не даёт.
+   */
+  const setStatus = async (task: Task, status: string) => {
+    let note: string | null = null
+    if (status === 'rejected') {
+      note = prompt(`Почему не беретесь за «${task.title}»?`)
+      if (!note?.trim()) return
+    }
+    setTasks(ts => ts.map(x => x.id === task.id ? { ...x, status } : x))
+    try {
+      await apiPatch('/sales/tasks', { id: task.id, status, note: note?.trim() || undefined })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось изменить задачу')
+      load()
+    }
+  }
+
+  const me = localStorage.getItem('support_agent_id') || ''
 
   const toggle = async (task: Task) => {
     // Снятие галочки возвращает задачу в работу — закрыли не ту, поправимо
@@ -198,12 +231,45 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
               <div className={`text-[12.5px] ${t.done_at ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                 {t.title}
               </div>
-              <div className="text-[11px] text-gray-400">
-                {t.due_at ? formatDateTimeShort(t.due_at) : 'без срока'}
-                {' · '}{KIND_LABEL[t.kind] || t.kind}
-                {t.auto ? ' · авто' : ''}
-                {t.assignee_name ? ` · ${t.assignee_name}` : ''}
+              <div className="text-[11px] text-gray-400 flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {t.due_at ? formatDateTimeShort(t.due_at) : 'без срока'}
+                  {' · '}{KIND_LABEL[t.kind] || t.kind}
+                  {t.auto ? ' · авто' : ''}
+                  {t.assignee_name ? ` · ${t.assignee_name}` : ''}
+                </span>
+                {/* Ход показываем только у поручений: своя задача либо есть,
+                    либо закрыта, и три состояния ей ни к чему */}
+                {t.created_by_name && t.created_by_agent_id !== t.assignee_agent_id && (
+                  <>
+                    <span className={`px-1.5 py-0.5 rounded font-medium ${
+                      STATUS[t.status || 'open']?.cls || STATUS.open.cls}`}>
+                      {STATUS[t.status || 'open']?.label || t.status}
+                    </span>
+                    <span>от {t.created_by_name}</span>
+                  </>
+                )}
               </div>
+              {t.status_note && (
+                <div className="text-[11px] text-red-600 mt-0.5">{t.status_note}</div>
+              )}
+              {/* Кнопки хода видит исполнитель, пока задача открыта */}
+              {!t.done_at && t.assignee_agent_id === me && t.created_by_agent_id
+                && t.created_by_agent_id !== me && (
+                <div className="flex gap-1.5 mt-1.5">
+                  {t.status !== 'in_progress' && (
+                    <button onClick={() => setStatus(t, 'in_progress')}
+                      className="text-[11px] px-2 py-0.5 rounded border border-blue-200 text-blue-700
+                                 hover:bg-blue-50">Беру в работу</button>
+                  )}
+                  <button onClick={() => setStatus(t, 'done')}
+                    className="text-[11px] px-2 py-0.5 rounded border border-emerald-200 text-emerald-700
+                               hover:bg-emerald-50">Выполнено</button>
+                  <button onClick={() => setStatus(t, 'rejected')}
+                    className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500
+                               hover:border-red-300 hover:text-red-600">Отклонить</button>
+                </div>
+              )}
             </div>
             <button onClick={() => remove(t)} title="Удалить задачу"
               className="opacity-0 group-hover:opacity-100 text-[11px] text-gray-300 hover:text-red-600 flex-none">

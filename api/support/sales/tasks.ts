@@ -67,10 +67,10 @@ export default async function handler(req: Request): Promise<Response> {
     const id = salesId('stk')
     await sql`
       INSERT INTO sales_tasks (id, org_id, deal_id, account_id, lead_id, kind, title,
-                               channel, due_at, assignee_agent_id, auto)
+                               channel, due_at, assignee_agent_id, created_by_agent_id, auto)
       VALUES (${id}, ${orgId}, ${body.dealId || null}, ${accountId}, ${body.leadId || null},
               ${kind}, ${title.slice(0, 500)}, ${body.channel || null},
-              ${body.dueAt || null}, ${assignee}, false)
+              ${body.dueAt || null}, ${assignee}, ${ctx.agentId}, false)
     `
 
     // Задачу поставили другому — он должен узнать об этом, не открывая раздел
@@ -97,8 +97,9 @@ export default async function handler(req: Request): Promise<Response> {
     const body = await req.json().catch(() => null)
     if (!body?.id) return json({ error: 'id is required' }, 400)
     const [task] = await sql`
-      SELECT id FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId} LIMIT 1
-    `
+      SELECT id, title, deal_id, lead_id, account_id, created_by_agent_id
+      FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId} LIMIT 1
+    ` as any[]
     if (!task) return json({ error: 'not found' }, 404)
 
     // Поля правим по одному именованным запросом: динамическая сборка SQL
@@ -117,9 +118,31 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`
         UPDATE sales_tasks
         SET done_at = ${body.done ? new Date().toISOString() : null},
-            done_result = ${body.done ? (body.result || 'done') : null}
+            done_result = ${body.done ? (body.result || 'done') : null},
+            status = ${body.done ? 'done' : 'open'}, status_at = NOW()
         WHERE id = ${body.id} AND org_id = ${orgId}
       `
+      await reportBack(sql, orgId, ctx.agentId, task, body.done ? 'done' : 'open', null)
+    }
+
+    // Ход задачи: поручение перестаёт быть дорогой в один конец. Автор видит,
+    // взяли её в работу, сделали или отказались — и почему
+    if (body.status !== undefined) {
+      const status = String(body.status)
+      if (!TASK_STATUS.includes(status)) return json({ error: 'Неизвестный статус' }, 400)
+      const note = body.note ? String(body.note).slice(0, 500) : null
+      if (status === 'rejected' && !note) {
+        return json({ error: 'Отказ без причины автору ничего не объясняет' }, 400)
+      }
+      const closed = status === 'done' || status === 'rejected'
+      await sql`
+        UPDATE sales_tasks
+        SET status = ${status}, status_note = ${note}, status_at = NOW(),
+            done_at = ${closed ? new Date().toISOString() : null},
+            done_result = ${closed ? status : null}
+        WHERE id = ${body.id} AND org_id = ${orgId}
+      `
+      await reportBack(sql, orgId, ctx.agentId, task, status, note)
     }
     return json({ ok: true })
   }
@@ -143,32 +166,36 @@ export default async function handler(req: Request): Promise<Response> {
   // дальше», а не быть архивом. История касаний живёт в активностях
   const tasks = dealId
     ? await sql`
-        SELECT t.*, a.name AS assignee_name FROM sales_tasks t
+        SELECT t.*, a.name AS assignee_name, c.name AS created_by_name FROM sales_tasks t
         LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
+        LEFT JOIN support_agents c ON c.id = t.created_by_agent_id
         WHERE t.org_id = ${orgId} AND t.deal_id = ${dealId}
           AND (t.done_at IS NULL OR t.done_at > NOW() - interval '14 days')
         ORDER BY t.done_at IS NOT NULL, t.due_at NULLS LAST, t.created_at
       `
     : leadId
       ? await sql`
-          SELECT t.*, a.name AS assignee_name FROM sales_tasks t
+          SELECT t.*, a.name AS assignee_name, c.name AS created_by_name FROM sales_tasks t
           LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
+        LEFT JOIN support_agents c ON c.id = t.created_by_agent_id
           WHERE t.org_id = ${orgId} AND t.lead_id = ${leadId}
             AND (t.done_at IS NULL OR t.done_at > NOW() - interval '14 days')
           ORDER BY t.done_at IS NOT NULL, t.due_at NULLS LAST, t.created_at
         `
       : accountId
         ? await sql`
-            SELECT t.*, a.name AS assignee_name FROM sales_tasks t
+            SELECT t.*, a.name AS assignee_name, c.name AS created_by_name FROM sales_tasks t
             LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
+        LEFT JOIN support_agents c ON c.id = t.created_by_agent_id
             WHERE t.org_id = ${orgId} AND t.account_id = ${accountId}
               AND (t.done_at IS NULL OR t.done_at > NOW() - interval '14 days')
             ORDER BY t.done_at IS NOT NULL, t.due_at NULLS LAST, t.created_at
           `
         : mine
           ? await sql`
-              SELECT t.*, a.name AS assignee_name, d.title AS deal_title FROM sales_tasks t
+              SELECT t.*, a.name AS assignee_name, c.name AS created_by_name, d.title AS deal_title FROM sales_tasks t
               LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
+        LEFT JOIN support_agents c ON c.id = t.created_by_agent_id
               LEFT JOIN sales_deals d ON d.id = t.deal_id
               WHERE t.org_id = ${orgId} AND t.assignee_agent_id = ${ctx.agentId} AND t.done_at IS NULL
               ORDER BY t.due_at NULLS LAST
@@ -177,4 +204,44 @@ export default async function handler(req: Request): Promise<Response> {
           : []
 
   return json({ tasks })
+}
+
+
+/** Состояния задачи: открыта, в работе, выполнена, отклонена. */
+const TASK_STATUS = ['open', 'in_progress', 'done', 'rejected']
+
+const STATUS_VERB: Record<string, string> = {
+  open: 'вернул в работу',
+  in_progress: 'взял в работу',
+  done: 'выполнил',
+  rejected: 'отклонил',
+}
+
+/**
+ * Обратная связь автору поручения.
+ *
+ * Раньше задача уходила в один конец: поставил — и жди, гадая, взяли её
+ * вообще или нет. Теперь каждое изменение хода возвращается тому, кто
+ * поручил, — кроме случая, когда человек ведёт свою же задачу.
+ */
+async function reportBack(
+  sql: any, orgId: string, actorId: string, task: any, status: string, note: string | null,
+): Promise<void> {
+  const author = task?.created_by_agent_id
+  if (!author || author === actorId) return
+  try {
+    const [who] = await sql`SELECT name FROM support_agents WHERE id = ${actorId} LIMIT 1` as any[]
+    const link = task.deal_id ? `/sales/deals/${task.deal_id}`
+      : task.lead_id ? `/sales/leads/${task.lead_id}`
+      : task.account_id ? `/sales/accounts/${task.account_id}` : undefined
+    await sendNotification({
+      orgId, type: 'assignment',
+      priority: status === 'rejected' ? 'high' : 'medium',
+      title: `Задача: ${STATUS_VERB[status] || 'изменена'}`,
+      body: `${who?.name || 'Исполнитель'} ${STATUS_VERB[status] || 'изменил'}: `
+        + `«${String(task.title || '').slice(0, 100)}»${note ? ` — ${note.slice(0, 160)}` : ''}`,
+      link,
+      targetAgentIds: [author],
+    })
+  } catch { /* обратная связь не должна ронять саму правку задачи */ }
 }
