@@ -581,9 +581,14 @@ export async function applyAmoStage(
               ${String(gfsLead.name || lead.name || 'Сделка из Amo').slice(0, 255)},
               'new', ${gfsLead.id}, ${`amo_${lead.id}`}, ${pipeline}, NOW())
     `
+    // Раньше здесь стояло «только assigned», и лид, лежавший в «новом» или на
+    // прогреве, оставался в колонке обращений после создания сделки: один и
+    // тот же клиент висел в воронке дважды. Хуже того, прогрев продолжал
+    // слать ему письма, пока сейлз вёл с ним сделку на «КП»
     await sql`
       UPDATE sales_leads SET status = 'converted', updated_at = NOW()
-      WHERE id = ${gfsLead.id} AND org_id = ${orgId} AND status = 'assigned'
+      WHERE id = ${gfsLead.id} AND org_id = ${orgId}
+        AND status IN ('new', 'assigned', 'nurture')
     `
     deal = { id: dealId, stage_id: entry.id, won_at: null, lost_at: null, pipeline, stage_key: entry.key }
   }
