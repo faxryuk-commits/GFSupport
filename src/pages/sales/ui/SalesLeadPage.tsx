@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
-import { formatDateTimeShort, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
+import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, Skeleton, leadStatus, slaTone, slaText } from './kit'
 import { TasksCard } from './TasksCard'
@@ -120,6 +120,33 @@ const Block = ({ title, sub, children }: { title: string; sub?: string; children
     {children}
   </section>
 )
+
+
+/**
+ * Названия полей приходят из формы Meta как есть: «какая_кассовая_система_у_вас»
+ * с подчёркиваниями вместо пробелов. Читать это тяжело, а поправить в самой
+ * форме нельзя — она принадлежит рекламному кабинету.
+ */
+function humanLabel(raw: string): string {
+  const t = String(raw || '').replace(/_/g, ' ').trim()
+  return t ? t[0].toUpperCase() + t.slice(1) : raw
+}
+
+/**
+ * Время в ответах формы приходит в UTC со смещением «+0000», и по нему
+ * невозможно понять, в какой зоне оно записано. Переводим в рабочую и
+ * подписываем зону явно, остальные значения оставляем как есть.
+ */
+const ISO_TS = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?([.\d]*)?(Z|[+-]\d{2}:?\d{2})?$/
+
+function humanValue(raw: string): string {
+  const v = String(raw ?? '').trim()
+  if (ISO_TS.test(v)) {
+    const out = formatDateTimeWithTz(v)
+    if (out !== '—') return out
+  }
+  return v.replace(/_/g, ' ')
+}
 
 export function SalesLeadPage({ leadId }: { leadId?: string }) {
   const params = useParams()
@@ -357,13 +384,20 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
       {l.text && (
         <Block title="Что написал">
-          <p className="px-4 py-3 text-[12.5px] text-gray-800 whitespace-pre-wrap">{l.text}</p>
+          {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
+              вместо пробелов. Правим только при показе: в самой форме
+              названия полей не наши, а рекламного кабинета */}
+          <p className="px-4 py-3 text-[12.5px] text-gray-800 whitespace-pre-wrap">
+            {String(l.text || '').split('\n').map(humanValue).join('\n')}
+          </p>
         </Block>
       )}
 
       {data.fields.length > 0 && (
         <Block title="Что заполнил" sub="поля формы и карточки как есть">
-          <div>{data.fields.map(f => <Row key={f.label} label={f.label}>{f.value}</Row>)}</div>
+          <div>{data.fields.map(f => (
+            <Row key={f.label} label={humanLabel(f.label)}>{humanValue(f.value)}</Row>
+          ))}</div>
         </Block>
       )}
 
