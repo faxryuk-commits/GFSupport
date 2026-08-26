@@ -47,9 +47,24 @@ const GRAPH = 'https://graph.facebook.com/v21.0'
 const BASE_SCOPES = [
   'pages_show_list',
   'pages_manage_metadata',
+  // Без этого не прочитать ни имя страницы, ни привязанный к ней инстаграм:
+  // у казахстанской страницы токен выдан без него, и список постов
+  // возвращает отказ вместо данных
+  'pages_read_engagement',
   'pages_messaging',
   'instagram_basic',
   'instagram_manage_messages',
+]
+
+/**
+ * Комьюнити-менеджмент: чтение комментариев под постами и ответ на них.
+ * Отдельной группой, потому что без одобрения Meta их не выдают, а без них
+ * подключение сообщений должно продолжать работать.
+ */
+const COMMENT_SCOPES = [
+  'pages_read_user_content',
+  'pages_manage_engagement',
+  'instagram_manage_comments',
 ]
 // Заявок два разрешения, а не одно: leads_retrieval даёт читать содержимое
 // заявки, а pages_manage_ads — вообще увидеть список форм страницы. Без
@@ -57,7 +72,9 @@ const BASE_SCOPES = [
 const LEAD_SCOPES = ['leads_retrieval', 'pages_manage_ads', 'business_management']
 
 const scopesFor = (mode: string | null) =>
-  (mode === 'base' ? BASE_SCOPES : [...BASE_SCOPES, ...LEAD_SCOPES]).join(',')
+  (mode === 'base'
+    ? BASE_SCOPES
+    : [...BASE_SCOPES, ...LEAD_SCOPES, ...COMMENT_SCOPES]).join(',')
 
 /**
  * Адрес возврата. Собирался из хоста текущего запроса — и это подводило:
@@ -152,6 +169,10 @@ export default async function handler(req: Request): Promise<Response> {
         granted,
         leadsOk: has('leads_retrieval') && has('pages_manage_ads'),
         messagesOk: has('pages_messaging') || has('instagram_manage_messages'),
+        // Комментарии: у инстаграма и страницы свои разрешения, и одобрить
+        // могут по отдельности — показываем раздельно, а не одним флагом
+        commentsIgOk: has('instagram_manage_comments'),
+        commentsFbOk: has('pages_read_user_content') && has('pages_manage_engagement'),
       })
     } catch {
       return json({ granted: [], leadsOk: false, messagesOk: false })
