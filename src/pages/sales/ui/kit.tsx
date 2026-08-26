@@ -292,6 +292,7 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
   const [open, setOpen] = useState(!!autoFocus)
   const [draft, setDraft] = useState(value ?? '')
   const box = useRef<HTMLDivElement>(null)
+  const pop = useRef<HTMLDivElement>(null)
   // Координаты списка считаем от поля и рисуем его в body: карточки в модуле
   // скруглённые и с overflow-hidden, из-за чего выпадающий список обрезался
   const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
@@ -318,7 +319,13 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
 
   useEffect(() => {
     const outside = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); onDone?.() }
+      const t = e.target as Node
+      if (box.current?.contains(t)) return
+      // Список рисуется в body, а не внутри поля, — иначе его обрезали бы
+      // скруглённые карточки. Но тогда клик по пункту считался кликом «мимо»,
+      // и при множественном выборе поповер закрывался после первой галочки
+      if (pop.current?.contains(t)) return
+      setOpen(false); onDone?.()
     }
     document.addEventListener('mousedown', outside)
     return () => document.removeEventListener('mousedown', outside)
@@ -328,9 +335,18 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
   const parts = multiple ? draft.split(',').map(x => x.trim()).filter(Boolean) : []
   const tail = multiple ? (draft.split(',').pop() || '').trim().toLowerCase() : draft.trim().toLowerCase()
   const typed = tail
-  const shown = typed && typed !== (value || '').toLowerCase()
-    ? options.filter(o => o.toLowerCase().includes(typed))
-    : options
+  // Справочник может содержать одно значение дважды — тогда пункт рисовался
+  // двумя строками с одинаковым ключом
+  const opts = [...new Set(options)]
+  // После выбора хвост строки совпадает с только что отмеченным значением.
+  // Это не ввод, и фильтровать по нему нельзя: список схлопывался до одного
+  // пункта, и добавить второго поставщика было уже нечем
+  const typing = multiple
+    ? !parts.some(x => x.toLowerCase() === typed)
+    : typed !== (value || '').toLowerCase()
+  const shown = typed && typing
+    ? opts.filter(o => o.toLowerCase().includes(typed))
+    : opts
 
   const pick = (v: string) => {
     if (multiple) {
@@ -367,6 +383,7 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
       <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▾</span>
       {open && rect && createPortal(
         <div
+          ref={pop}
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, zIndex: 60 }}
           className="max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl"
           onMouseDown={e => e.preventDefault()}
@@ -387,7 +404,7 @@ export function Combo({ value, options, onChange, placeholder, autoFocus, onDone
               </button>
             )
           })}
-          {typed && !options.some(o => o.toLowerCase() === typed) && (
+          {typed && typing && !opts.some(o => o.toLowerCase() === typed) && (
             <button type="button" onMouseDown={e => { e.preventDefault(); pick(draft.trim()) }}
               className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-500 border-t border-gray-100">
               Своё значение: «{draft.trim()}»

@@ -274,7 +274,11 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'PUT') {
     try {
       const body = await req.json()
-      const { id, status, dueDate, reminderAt, priority, notes, assignedTo, assigneeName, text } = body
+      const { status, dueDate, reminderAt, priority, notes, assignedTo, assigneeName, text } = body
+      // Клиент шлёт обязательство адресом (?id=), как и при удалении, а здесь
+      // читалось только тело — любая отметка «выполнено» отвечала «id is
+      // required». Принимаем оба способа
+      const id = body.id || url.searchParams.get('id')
 
       if (!id) {
         return json({ error: 'id is required' }, 400)
