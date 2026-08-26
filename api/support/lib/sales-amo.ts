@@ -553,11 +553,12 @@ export async function applyAmoStage(
 
   const st = statuses.get(lead.status_id)
   if (!st) return null
-  // Амошное «неразобранное» у нас — это блок обращений, а не этап сделки.
-  // Раз сделка уже существует, работа по ней началась: ставим «Дозвон»,
-  // иначе Amo вернул бы её в погашенный этап и колонка воскресла бы
-  const key = (k => (k === 'new' ? 'attempting' : k))(
-    stageKeyByStatusName(st.name, st.isWon, st.isLost))
+  const key = stageKeyByStatusName(st.name, st.isWon, st.isLost)
+  // «Неразобранное» и «дозвон» из Amo у нас живут на стороне обращений:
+  // отдельного этапа для них больше нет. Подтягивать такую сделку к
+  // «Квалифицирован» нельзя — это заявило бы квалификацию, которой не было,
+  // а именно на ней у нас начинается сделка
+  if (['new', 'attempting'].includes(key)) return null
 
   // Сделки нет — исторический бэкфилл её не застал. Раньше тут был выход:
   // этап из Amo некуда было переносить, и «Bekosiyo на КП в Amo» вечно висел
@@ -565,7 +566,6 @@ export async function applyAmoStage(
   // дальше заявки/дозвона) — создаём сделку сами и закрываем лид как
   // сконвертированный
   if (!deal) {
-    if (['new', 'attempting'].includes(key)) return null
     const [gfsLead] = await sql`
       SELECT id, name, account_id, assigned_agent_id FROM sales_leads
       WHERE org_id = ${orgId} AND external_id = ${`amo_${lead.id}`} LIMIT 1

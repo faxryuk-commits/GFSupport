@@ -81,13 +81,8 @@ const STAGE_SEED: Array<{
   // обращение взяли в работу, — а это уже дозвон. Отдельная колонка «Новый»
   // дублировала блок обращений один в один: в Amo «новое» означало
   // «неразобранное», и этот смысл у нас закрывают именно обращения
-  { key: 'attempting', label: 'Дозвон', kind: 'open', ownerRole: 'sdr', slaHours: 168, probability: 10,
-    requiredFields: [],
-    cadence: [
-      { day: 1, title: 'Попытка дозвона 2', channel: 'call' },
-      { day: 3, title: 'Попытка дозвона 3 + сообщение', channel: 'telegram' },
-      { day: 7, title: 'Финальная попытка перед отказом', channel: 'call' },
-    ] },
+  // Дозвона у сделок нет: выяснение «наш ли клиент» происходит на стороне
+  // обращений, и сделка рождается уже квалифицированной
   { key: 'qualified', label: 'Квалифицирован', kind: 'open', ownerRole: 'sdr', slaHours: 24, probability: 20,
     requiredFields: ['city', 'points', 'orders_per_day', 'pos', 'aggregators', 'delivery_type', 'pain'],
     cadence: [] },
