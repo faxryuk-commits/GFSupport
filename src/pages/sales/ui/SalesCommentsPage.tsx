@@ -26,6 +26,15 @@ interface Comment {
   replied_by: string | null
   reply_text: string | null
   created_at: string
+  /** Публикация, под которой написали: без неё ответ пишется вслепую. */
+  post: {
+    kind: string | null
+    caption: string | null
+    thumb_url: string | null
+    permalink: string | null
+    published_at: string | null
+    fetch_error: string | null
+  } | null
 }
 
 interface Data {
@@ -170,7 +179,43 @@ export function SalesCommentsPage() {
       <div className="space-y-2">
         {(data?.items || []).map(c => (
           <article key={c.id} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <div className="flex items-baseline gap-2 flex-wrap">
+            {/* Публикация идёт первой строкой: сначала «под чем», потом «что
+                написали». В обратном порядке человек читает реплику без
+                контекста и додумывает его сам */}
+            <div className="flex gap-3">
+              {c.post?.thumb_url ? (
+                <a href={c.post.permalink || undefined} target="_blank" rel="noreferrer"
+                  className="flex-none block w-14 h-14 rounded-lg overflow-hidden bg-gray-100
+                             border border-gray-200 hover:border-blue-400 transition-colors">
+                  <img src={c.post.thumb_url} alt="" className="w-full h-full object-cover" />
+                </a>
+              ) : (
+                <div className="flex-none w-14 h-14 rounded-lg bg-gray-50 border border-dashed
+                                border-gray-200 grid place-items-center text-[10px] text-gray-300 text-center px-1">
+                  {c.post?.fetch_error ? 'нет доступа' : 'без обложки'}
+                </div>
+              )}
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5 flex-wrap text-[11.5px] text-gray-400">
+                  <span className="font-medium text-gray-600">
+                    {c.post?.kind || (c.platform === 'instagram' ? 'публикация' : 'пост')}
+                  </span>
+                  {c.post?.published_at && (
+                    <span className="tabular-nums">от {fmtDateTime(c.post.published_at)}</span>
+                  )}
+                  {(c.post?.permalink || c.permalink) && (
+                    <a href={c.post?.permalink || c.permalink || undefined} target="_blank" rel="noreferrer"
+                      className="text-blue-600 hover:underline">открыть</a>
+                  )}
+                </div>
+                {c.post?.caption && (
+                  <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-2">{c.post.caption}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-baseline gap-2 flex-wrap mt-2.5 pt-2.5 border-t border-gray-100">
               <span className="text-[13px] font-medium text-gray-900">
                 {c.author_name || 'Без имени'}
               </span>
@@ -182,10 +227,6 @@ export function SalesCommentsPage() {
                 ? <Chip tone="green">отвечено</Chip>
                 : <Chip tone="amber">без ответа</Chip>}
               <span className="text-[11.5px] text-gray-400 tabular-nums">{fmtDateTime(c.created_at)}</span>
-              {c.permalink && (
-                <a href={c.permalink} target="_blank" rel="noreferrer"
-                  className="text-[11.5px] text-blue-600 hover:underline">пост</a>
-              )}
             </div>
 
             <p className="text-[13px] text-gray-900 mt-1.5 whitespace-pre-wrap">{c.text}</p>

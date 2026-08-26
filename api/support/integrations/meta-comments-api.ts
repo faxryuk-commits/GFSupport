@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureMetaSchema, readMetaAccounts, tokenForPage } from '../lib/meta-config.js'
-import { hideComment, importMetaComments, replyToComment } from '../lib/meta-comments.js'
+import { ensurePostInfo, hideComment, importMetaComments, replyToComment } from '../lib/meta-comments.js'
 
 export const config = { runtime: 'edge' }
 
@@ -114,8 +114,17 @@ export default async function handler(req: Request): Promise<Response> {
   ]) as any[]
 
   const accounts = await readMetaAccounts(orgId)
+
+  // Публикация, под которой написали: обложка, подпись и вид. Без них человек
+  // отвечает вслепую — «огонёк» под поздравлением и под прайсом требуют
+  // разного ответа. Тянем только для показанной страницы и с запасом времени
+  const seen = new Map<string, string>()
+  for (const c of items as any[]) if (c.post_id && !seen.has(c.post_id)) seen.set(c.post_id, c.platform)
+  const posts = await ensurePostInfo(sql, orgId, accounts,
+    [...seen].map(([postId, platform]) => ({ postId, platform })))
+
   return json({
-    items,
+    items: (items as any[]).map(c => ({ ...c, post: posts.get(c.post_id) || null })),
     stats: (stats as any[])[0] || {},
     connected: accounts.map(a => ({ pageName: a.pageName, igUsername: a.igUsername, marketId: a.marketId })),
   })

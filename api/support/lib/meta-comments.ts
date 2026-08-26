@@ -195,3 +195,95 @@ export async function importMetaComments(
   }
   return out
 }
+
+/**
+ * Что за публикация, под которой написали.
+ *
+ * Отвечать вслепую нельзя: «🔥🔥🔥» под праздничным поздравлением и под
+ * прайсом требуют разного ответа, а по одному идентификатору поста человек
+ * этого не поймёт. Тянем обложку, подпись и вид публикации и держим их
+ * рядом — у поста комментариев много, и запрашивать одно и то же на каждый
+ * из них было бы расточительно.
+ */
+const POST_KIND: Record<string, string> = {
+  IMAGE: 'фото', VIDEO: 'видео', CAROUSEL_ALBUM: 'карусель',
+  REELS: 'рилс', STORY: 'сторис', AD: 'реклама', FEED: 'пост',
+}
+
+export async function ensurePostInfo(
+  sql: any, orgId: string, accounts: any[],
+  wanted: Array<{ postId: string; platform: string }>, budgetMs = 6000,
+): Promise<Map<string, any>> {
+  const known = new Map<string, any>()
+  if (!wanted.length) return known
+
+  const ids = wanted.map(w => w.postId)
+  const rows = await sql`
+    SELECT * FROM support_meta_posts
+    WHERE org_id = ${orgId} AND post_id = ANY(${ids})
+  ` as any[]
+  for (const r of rows) known.set(r.post_id, r)
+
+  // Заново не спрашиваем даже те, по которым раньше был отказ: обложка не
+  // стоит того, чтобы долбить Meta на каждом открытии экрана
+  const missing = wanted.filter(w => !known.has(w.postId))
+  if (!missing.length || !accounts.length) return known
+
+  // Наборы полей у площадок разные, и лишнее поле Graph не игнорирует, а
+  // отвергает весь запрос: «message» у публикации инстаграма не существует,
+  // и из-за него не приходило вообще ничего
+  const FIELDS: Record<string, string> = {
+    instagram: 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp',
+    facebook: 'id,message,permalink_url,created_time,full_picture',
+  }
+
+  const until = Date.now() + budgetMs
+  for (const { postId, platform } of missing) {
+    if (Date.now() > until) break
+    const order = platform === 'facebook' ? ['facebook', 'instagram'] : ['instagram', 'facebook']
+    let saved: any = null
+
+    outer:
+    for (const kindOf of order) {
+      for (const acc of accounts) {
+        if (!acc.pageToken) continue
+        try {
+          const d: any = await (await fetch(
+            `${GRAPH}/${postId}?fields=${FIELDS[kindOf]}&access_token=${acc.pageToken}`,
+            { signal: AbortSignal.timeout(5000) })).json()
+          if (d?.error) continue
+          const kindKey = d.media_product_type === 'REELS' ? 'REELS'
+            : d.media_product_type === 'STORY' ? 'STORY'
+            : d.media_type || 'FEED'
+          saved = {
+            platform: kindOf,
+            kind: POST_KIND[kindKey] || 'публикация',
+            caption: String(d.caption ?? d.message ?? '').slice(0, 400) || null,
+            thumb: d.thumbnail_url || d.media_url || d.full_picture || null,
+            permalink: d.permalink || d.permalink_url || null,
+            at: d.timestamp || d.created_time || null,
+            pageId: acc.pageId,
+          }
+          break outer
+        } catch { /* следующий токен: пост может принадлежать другой странице */ }
+      }
+    }
+
+    await sql`
+      INSERT INTO support_meta_posts (id, org_id, platform, post_id, page_id, kind,
+                                      caption, thumb_url, permalink, published_at, fetch_error)
+      VALUES (${salesId('mps')}, ${orgId}, ${saved?.platform || platform}, ${postId},
+              ${saved?.pageId || null}, ${saved?.kind || null}, ${saved?.caption || null},
+              ${saved?.thumb || null}, ${saved?.permalink || null},
+              ${saved?.at ? new Date(saved.at).toISOString() : null},
+              ${saved ? null : 'публикация недоступна'})
+      ON CONFLICT (org_id, post_id) DO NOTHING
+    `
+    known.set(postId, {
+      post_id: postId, kind: saved?.kind || null, caption: saved?.caption || null,
+      thumb_url: saved?.thumb || null, permalink: saved?.permalink || null,
+      published_at: saved?.at || null, fetch_error: saved ? null : 'публикация недоступна',
+    })
+  }
+  return known
+}
