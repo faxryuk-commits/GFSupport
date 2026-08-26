@@ -1,5 +1,5 @@
 import { salesId } from './sales-schema.js'
-import { accountForIg, accountForPage } from './meta-config.js'
+import { accountForIg, accountForPage, readMetaAccounts } from './meta-config.js'
 
 /**
  * Комментарии под постами Instagram и Facebook.
@@ -40,6 +40,7 @@ export async function handleMetaComments(
     const acc = isInstagram
       ? await accountForIg(orgId, entry.id ? String(entry.id) : null)
       : await accountForPage(orgId, entry.id ? String(entry.id) : null)
+    if (!(await pageIsLive(orgId, acc))) continue
 
     for (const ch of entry.changes || []) {
       // Instagram шлёт поле comments, страница — feed со множеством событий:
@@ -288,4 +289,20 @@ export async function ensurePostInfo(
     })
   }
   return known
+}
+
+/**
+ * Событие от страницы, которую у нас отключили, принимать нельзя.
+ *
+ * Подписку у Meta снять не всегда удаётся — сеть, отозванный токен, — и тогда
+ * отключённая страница продолжает слать данные. Без этой проверки они молча
+ * ложились в базу без региона и без страницы: «отключил» ничего не отключало.
+ *
+ * Если не подключено ни одного аккаунта, пропускаем всё: значит организация
+ * ещё живёт на ключах из окружения, и ломать ей приём нельзя.
+ */
+async function pageIsLive(orgId: string, acc: any): Promise<boolean> {
+  if (acc) return true
+  const all = await readMetaAccounts(orgId)
+  return all.length === 0
 }

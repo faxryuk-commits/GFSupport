@@ -554,9 +554,13 @@ export default async function handler(req: Request): Promise<Response> {
     // страницу. Остальные при этом работать не перестают
     if (body?.accountId) {
       const [acc] = await sql`
-        SELECT page_name FROM support_meta_accounts
+        SELECT page_name, page_id, page_token FROM support_meta_accounts
         WHERE org_id = ${orgId} AND id = ${String(body.accountId)} LIMIT 1
       ` as any[]
+      // Снимаем подписку на стороне Meta до того, как забудем токен: иначе
+      // страница остаётся подписанной навсегда и продолжает слать события,
+      // а ответить на них уже нечем
+      await unsubscribePage(acc?.page_id, acc?.page_token)
       await sql`
         UPDATE support_meta_accounts SET is_active = false, page_token = NULL, updated_at = NOW()
         WHERE org_id = ${orgId} AND id = ${String(body.accountId)}
@@ -568,15 +572,36 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Без указания аккаунта — снимаем сам доступ приложения. Ключи оставляем:
     // подключиться заново без них не выйдет, а вводить каждый раз — лишняя работа
+    const live = await sql`
+      SELECT page_id, page_token FROM support_meta_accounts
+      WHERE org_id = ${orgId} AND is_active = true
+    ` as any[]
+    for (const a of live) await unsubscribePage(a.page_id, a.page_token)
     await sql`
       UPDATE support_meta_integration SET user_token = NULL, updated_at = NOW()
       WHERE org_id = ${orgId}
     `
-    await sql`UPDATE support_meta_accounts SET is_active = false WHERE org_id = ${orgId}`
+    await sql`UPDATE support_meta_accounts SET is_active = false, page_token = NULL WHERE org_id = ${orgId}`
     invalidateMetaConfig(orgId)
     await logEvent(sql, 'Интеграция Meta', 'полное отключение', `организация ${orgId}`)
     return json({ ok: true })
   }
 
   return json({ error: 'unknown action' }, 400)
+}
+
+/**
+ * Снять подписку страницы на вебхуки приложения.
+ *
+ * Без этого «отключение» было только у нас: строка гасла, токен забывался, а
+ * Meta продолжала слать сообщения и комментарии по отключённой странице.
+ * Ошибку глотаем — если Meta не ответила, отключение всё равно должно
+ * состояться, иначе страницу не убрать вообще никогда.
+ */
+async function unsubscribePage(pageId?: string | null, token?: string | null): Promise<void> {
+  if (!pageId || !token) return
+  try {
+    await fetch(`${GRAPH}/${pageId}/subscribed_apps?access_token=${token}`,
+      { method: 'DELETE', signal: AbortSignal.timeout(6000) })
+  } catch { /* отключение важнее подтверждения от Meta */ }
 }

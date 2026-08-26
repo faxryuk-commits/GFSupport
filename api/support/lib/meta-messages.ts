@@ -127,6 +127,8 @@ export async function handleMetaMessaging(
       : await accountForPage(orgId, entry.id ? String(entry.id) : null)
     const cfg = await readMetaConfig(orgId)
     const token = acc?.pageToken || cfg.pageToken
+    // Отключённая страница не должна продолжать наполнять систему
+    if (!acc && (await readMetaAccounts(orgId)).length) continue
 
     for (const ev of entry.messaging || []) {
       const msg = ev.message
