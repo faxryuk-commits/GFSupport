@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { apiGet, apiPost } from '@/shared/services/api.service'
+import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, Skeleton, slaTone, slaText } from './kit'
@@ -65,6 +65,57 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
   </div>
 )
 
+/**
+ * Название, которое правится по клику.
+ *
+ * Бренд переименовывают часто: в заявке приходит «bread way», а компания
+ * называется «Bread Way Bakery». Раньше это чинили только на странице
+ * аккаунта — до неё надо было сначала догадаться дойти по ссылке.
+ */
+const Rename = ({ value, onSave, children }: {
+  value: string
+  onSave: (v: string) => Promise<void> | void
+  children: React.ReactNode
+}) => {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  const commit = async () => {
+    const v = draft.trim()
+    setEditing(false)
+    if (v && v !== value) await onSave(v)
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        className="border border-blue-400 rounded-md px-2 py-0.5 text-[13px] min-w-0 w-56"
+      />
+    )
+  }
+
+  return (
+    <span className="inline-flex items-baseline gap-1.5 group/rn">
+      {children}
+      <button
+        onClick={() => { setDraft(value); setEditing(true) }}
+        title="Переименовать"
+        className="flex-none text-[11px] text-gray-300 group-hover/rn:text-blue-600"
+      >
+        ✎
+      </button>
+    </span>
+  )
+}
+
 const Block = ({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) => (
   <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
     <header className="px-4 py-2.5 border-b border-gray-100">
@@ -104,6 +155,17 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     } catch (e: any) {
       setError(e?.message || 'Действие не выполнено')
     } finally { setBusy(false) }
+  }
+
+  // Бренд живёт в аккаунте, а не в обращении: переименование должно доехать
+  // до компании, иначе в списках останется старое написание
+  const renameAccount = async (v: string) => {
+    const accountId = (data?.lead as any)?.account_id
+    if (!accountId) return
+    try {
+      await apiPatch('/sales/accounts', { id: accountId, fields: { name: v } })
+      load()
+    } catch (e: any) { setError(e?.message || 'Не удалось переименовать') }
   }
 
   /**
@@ -163,7 +225,9 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         </div>
         <div className="flex items-baseline gap-2 flex-wrap">
           <h1 className="text-[19px] font-semibold text-gray-900 tracking-tight">
-            {l.contact_name || l.name}
+            <Rename value={l.name} onSave={v => act('update', { fields: { name: v } })}>
+              {l.contact_name || l.name}
+            </Rename>
           </h1>
           {l.contact_name && l.name !== l.contact_name && (
             <span className="text-[13px] text-gray-500">{l.name}</span>
@@ -258,9 +322,11 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           {l.city && <Row label="Город">{l.city}</Row>}
           <Row label="Компания">
             {l.account_id
-              ? <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
-                  {l.account_name}
-                </Link>
+              ? <Rename value={l.account_name || ''} onSave={renameAccount}>
+                  <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
+                    {l.account_name}
+                  </Link>
+                </Rename>
               : <span className="text-gray-400">аккаунт не заведён</span>}
           </Row>
           {(l.instagram || l.telegram || l.website) && (

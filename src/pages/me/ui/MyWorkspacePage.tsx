@@ -12,6 +12,8 @@ import { Link } from 'react-router-dom'
 import { RefreshCw, Loader2, Bell, CheckCircle2, X, ExternalLink } from 'lucide-react'
 import { apiGet } from '@/shared/services/api.service'
 import { fetchNotifications, markNotificationRead, type AppNotification } from '@/shared/api'
+import { completeCommitment } from '@/shared/api/commitments'
+import { updateBrandTodo } from '@/shared/api/onboarding'
 import { formatDateTimeShort } from '@/shared/lib'
 
 type Workspace = {
@@ -42,6 +44,8 @@ type NeedItem = {
   tone: 'red' | 'amber' | 'blue'
   text: string; meta: string
   linkTo?: string; detail?: Detail
+  /** Закрыть позицию, не уходя с экрана. Без этого список копит выполненное. */
+  done?: { label: string; run: () => Promise<unknown> }
 }
 
 const PERIODS: Array<[number, string]> = [[1, 'День'], [7, 'Неделя'], [30, 'Месяц'], [365, 'Год']]
@@ -123,6 +127,7 @@ export function MyWorkspacePage() {
       id: 'c' + c.id, mod: 'support', tone: 'red',
       text: `Просрочено обещание: «${(c.context || c.commitment_text || '').slice(0, 70)}»`,
       meta: c.channel_name || '',
+      done: { label: 'Выполнено', run: () => completeCommitment(c.id) },
       detail: {
         title: `Обещание · ${c.channel_name || ''}`,
         rows: [['Что сказали', c.context || c.commitment_text || '—'], ['Срок', c.due_date ? formatDateTimeShort(c.due_date) : '—']],
@@ -138,6 +143,7 @@ export function MyWorkspacePage() {
       id: 'p' + c.id, mod: 'support', tone: 'blue',
       text: `Обещание: «${(c.context || c.commitment_text || '').slice(0, 70)}»`,
       meta: c.due_date ? `до ${formatDateTimeShort(c.due_date)}` : c.channel_name || '',
+      done: { label: 'Выполнено', run: () => completeCommitment(c.id) },
       detail: {
         title: `Обещание · ${c.channel_name || ''}`,
         rows: [['Что сказали', c.context || c.commitment_text || '—'], ['Срок', c.due_date ? formatDateTimeShort(c.due_date) : '—']],
@@ -168,6 +174,7 @@ export function MyWorkspacePage() {
         tone: overdue ? 'red' : 'blue',
         text: t.text,
         meta: t.due_at ? `${t.brand} · до ${formatDateTimeShort(t.due_at)}` : t.brand,
+        done: { label: 'Сделано', run: () => updateBrandTodo(t.id, { done: true }) },
         detail: {
           title: t.text,
           rows: [
@@ -184,8 +191,25 @@ export function MyWorkspacePage() {
     return list.sort((a, b) => w[a.tone] - w[b.tone])
   }, [ws])
 
+  // Отметка «сделано» прямо в списке. Раньше выполненное обещание висело до
+  // ночного крона: человек читал упрёк за работу, которую сделал полчаса назад,
+  // и закрыть её из этого окна было нечем
+  const [closing, setClosing] = useState<Set<string>>(new Set())
+  const closeItem = async (n: NeedItem) => {
+    if (!n.done) return
+    setClosing(s => new Set(s).add(n.id))
+    setDetail(null)
+    try {
+      await n.done.run()
+      load(true)
+    } catch {
+      // не закрылось — возвращаем в список, иначе позиция молча пропадёт
+      setClosing(s => { const c = new Set(s); c.delete(n.id); return c })
+    }
+  }
+
   const byMod = (m: NeedItem['mod']) => needs.filter(n => n.mod === m)
-  const visible = tab === 'all' ? needs : byMod(tab)
+  const visible = (tab === 'all' ? needs : byMod(tab)).filter(n => !closing.has(n.id))
   const tabs: Array<['all' | 'sales' | 'support' | 'onb', string, number]> = [
     ['all', 'Всё', needs.length],
     ['sales', 'Продажи', byMod('sales').length],
@@ -397,11 +421,18 @@ export function MyWorkspacePage() {
                   </>
                 )
                 return (
-                  <li key={n.id}>
+                  <li key={n.id} className="group flex items-baseline gap-1">
                     {n.linkTo && !n.detail ? (
-                      <Link to={n.linkTo} className="flex items-baseline gap-2 py-1.5 px-1.5 rounded hover:bg-slate-50">{inner}</Link>
+                      <Link to={n.linkTo} className="flex-1 min-w-0 flex items-baseline gap-2 py-1.5 px-1.5 rounded hover:bg-slate-50">{inner}</Link>
                     ) : (
-                      <button onClick={() => n.detail && setDetail(n.detail)} className="w-full text-left flex items-baseline gap-2 py-1.5 px-1.5 rounded hover:bg-slate-50">{inner}</button>
+                      <button onClick={() => n.detail && setDetail(n.detail)} className="flex-1 min-w-0 text-left flex items-baseline gap-2 py-1.5 px-1.5 rounded hover:bg-slate-50">{inner}</button>
+                    )}
+                    {n.done && (
+                      <button onClick={() => closeItem(n)} title={n.done.label}
+                        className="flex-none p-1 rounded text-slate-300 hover:text-emerald-600 hover:bg-emerald-50
+                                   opacity-0 group-hover:opacity-100 focus:opacity-100">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </li>
                 )
