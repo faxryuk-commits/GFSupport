@@ -36,6 +36,9 @@ const ORG = process.env.SALES_ORG || 'org_delever'
 const SOURCE = 'meta_leadform'
 
 /** Имена полей Meta для того, что мы храним отдельными колонками. */
+/** Заглушки инструмента проверки Meta: «<test lead: dummy data for …>». */
+const DUMMY = /^<test lead:/i
+
 const NAME_KEYS = ['full_name', 'first_name', 'имя', 'ism']
 const PHONE_KEYS = ['phone_number', 'phone', 'телефон']
 const EMAIL_KEYS = ['email', 'почта']
@@ -131,11 +134,18 @@ export default async function handler(req: Request): Promise<Response> {
         }
         const lead: any = await res.json()
 
+        // Инструмент проверки Meta присылает заглушки вида
+        // «<test lead: dummy data for full_name>». Раньше они ложились как
+        // настоящие данные: карточка с именем «<test lead…>», телефоном
+        // «<test lead…>» и нормативом в 15 минут, по которому сейлз обязан
+        // позвонить несуществующему человеку
+        let isTest = false
         const fields = new Map<string, string>()
         for (const f of lead.field_data || []) {
           const key = String(f?.name || '').toLowerCase()
-          const val = Array.isArray(f?.values) ? String(f.values[0] ?? '') : ''
-          if (key && val) fields.set(key, val)
+          const rawVal = Array.isArray(f?.values) ? String(f.values[0] ?? '') : ''
+          if (DUMMY.test(rawVal)) { isTest = true; continue }
+          if (key && rawVal) fields.set(key, rawVal)
         }
 
         const phone = pick(fields, PHONE_KEYS)
@@ -200,8 +210,8 @@ export default async function handler(req: Request): Promise<Response> {
           source: SOURCE,
           external_id: `meta_${leadgenId}`,
           lead_kind: 'form',
-          name: name || null,
-          contact_name: name || null,
+          name: isTest ? `Тестовая заявка${lead.form_name ? ` · ${lead.form_name}` : ''}` : (name || null),
+          contact_name: isTest ? null : (name || null),
           phone,
           city,
           market,
@@ -215,8 +225,17 @@ export default async function handler(req: Request): Promise<Response> {
           utm_medium: 'lead_form',
           utm_campaign: v.campaign_id ? String(v.campaign_id) : null,
           utm_content: v.adgroup_id ? String(v.adgroup_id) : null,
-          raw: { ...lead, _leadgen: v },
+          raw: { ...lead, _leadgen: v, ...(isTest ? { _test: true } : {}) },
         })
+
+        // У тестовой заявки норматив первого касания снимаем: звонить
+        // некому, а просрочка портит и очередь, и отчёт по скорости
+        if (isTest && accepted.ok && accepted.lead_id) {
+          await sql`
+            UPDATE sales_leads SET sla_due_at = NULL, updated_at = NOW()
+            WHERE id = ${accepted.lead_id} AND org_id = ${ORG}
+          `
+        }
 
         // Почта с формы — единственное место, откуда она вообще попадает
         // в систему: ни один другой вход её не приносит, и поле у контактов

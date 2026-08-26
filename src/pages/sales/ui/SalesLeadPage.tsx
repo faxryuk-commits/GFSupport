@@ -257,6 +257,9 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         </div>
         <div className="flex flex-wrap gap-1.5 items-center">
           <Chip tone="violet">{KIND_LABEL[l.lead_kind || ''] || 'обращение'}</Chip>
+          {/* Заявка из инструмента проверки Meta: настоящих данных в ней нет,
+              и звонить по ней некому */}
+          {l.raw?._test && <Chip tone="amber">тестовая</Chip>}
           <Chip tone={leadStatus(l.status).tone}>{leadStatus(l.status).label}</Chip>
           {l.sla_due_at && !l.first_touch_at && open && (
             <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
