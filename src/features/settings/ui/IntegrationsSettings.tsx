@@ -510,15 +510,21 @@ export function IntegrationsSettings({
   const [waModalOpen, setWaModalOpen] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [metaModalOpen, setMetaModalOpen] = useState(false)
-  const [meta, setMeta] = useState<{ pageName: string | null; igUsername: string | null } | null>(null)
+  type MetaAcc = { pageName: string | null; igUsername: string | null }
+  const [metaAccounts, setMetaAccounts] = useState<MetaAcc[]>([])
 
   // Состояние Meta живёт в своём эндпоинте, а не в общей проверке здоровья:
   // там доступы организации, и читать их вместе с ключами от чужих сервисов
   // незачем
+  // Перечитываем при закрытии окна настройки: там подключают и отключают
+  // страницы, и карточка должна отвечать состоянию, а не тому, что было
+  // на момент загрузки страницы
   useEffect(() => {
-    apiGet<{ pageName: string | null; igUsername: string | null }>('/integrations/meta', false)
-      .then(setMeta).catch(() => setMeta(null))
-  }, [])
+    if (metaModalOpen) return
+    apiGet<{ accounts: MetaAcc[] }>('/integrations/meta', false)
+      .then(r => setMetaAccounts(r.accounts || []))
+      .catch(() => setMetaAccounts([]))
+  }, [metaModalOpen])
 
   const tg = health?.telegram
   const ai = health?.openai
@@ -705,11 +711,17 @@ export function IntegrationsSettings({
           <IntegrationCard
             icon="📸"
             name="Instagram и Facebook"
-            status={meta?.pageName ? 'active' : 'inactive'}
-            details={meta?.pageName ? (
+            status={metaAccounts.length ? 'active' : 'inactive'}
+            details={metaAccounts.length ? (
               <>
-                <p className="text-sm text-slate-600">{meta.pageName}</p>
-                {meta.igUsername && <p className="text-xs text-slate-400 mt-0.5">Instagram @{meta.igUsername}</p>}
+                <p className="text-sm text-slate-600">
+                  {metaAccounts.map(a => a.pageName).filter(Boolean).join(' · ')}
+                </p>
+                {metaAccounts.some(a => a.igUsername) && (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Instagram {metaAccounts.filter(a => a.igUsername).map(a => `@${a.igUsername}`).join(' · ')}
+                  </p>
+                )}
                 <p className="text-xs text-slate-400 mt-0.5">Заявки с рекламы, директ и Messenger</p>
               </>
             ) : (
@@ -719,12 +731,12 @@ export function IntegrationsSettings({
               <button
                 onClick={() => setMetaModalOpen(true)}
                 className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                  meta?.pageName
+                  metaAccounts.length
                     ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
                     : 'text-white bg-blue-500 hover:bg-blue-600'
                 }`}
               >
-                {meta?.pageName ? 'Настройки' : 'Подключить'}
+                {metaAccounts.length ? 'Настройки' : 'Подключить'}
               </button>
             }
           />
