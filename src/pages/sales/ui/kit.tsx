@@ -10,6 +10,20 @@ export function money(v: any, currency = 'UZS') {
   return `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ${currency}`
 }
 
+/**
+ * Суммы в нескольких валютах подряд.
+ *
+ * Складывать доллары с сумами нельзя, а показывать только одну валюту —
+ * значит молча спрятать часть воронки. Пишем рядом, от большего к меньшему.
+ */
+export function moneyList(amounts: Record<string, any> | null | undefined, empty = 'сумма не указана') {
+  const pairs = Object.entries(amounts || {})
+    .filter(([, v]) => Number(v) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+  if (!pairs.length) return empty
+  return pairs.map(([cur, v]) => money(v, cur)).join(' · ')
+}
+
 export function pct(part: number, total: number): string {
   if (!total) return '—'
   return `${Math.round((part / total) * 100)}%`

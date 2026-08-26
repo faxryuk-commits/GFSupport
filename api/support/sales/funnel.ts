@@ -165,12 +165,20 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
              MIN(s.description) AS description, MAX(s.sla_hours) AS sla_hours,
              COUNT(d.id)::int AS total,
-             COALESCE(SUM(d.monthly_amount), 0) AS amount
+             -- Суммы складываем по валютам: у нас в одной воронке живут
+             -- доллары и сумы, и общий итог был бы просто неверным числом
+             COALESCE(jsonb_object_agg(d.currency, d.amt) FILTER (WHERE d.currency IS NOT NULL),
+                      '{}'::jsonb) AS amounts
       FROM sales_stages s
-      LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.archived_at IS NULL
-        AND d.won_at IS NULL AND d.lost_at IS NULL
-        AND (${market} = '' OR d.market_id = ${market})
-        AND (${owner} = '' OR d.owner_agent_id = ${owner})
+      LEFT JOIN (
+        SELECT stage_id, currency, SUM(monthly_amount) AS amt, MIN(id) AS id
+        FROM sales_deals
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
+          AND COALESCE(monthly_amount, 0) <> 0
+          AND (${market} = '' OR market_id = ${market})
+          AND (${owner} = '' OR owner_agent_id = ${owner})
+        GROUP BY stage_id, currency
+      ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
         AND s.pipeline <> 'partner'
         AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
@@ -178,15 +186,23 @@ export default async function handler(req: Request): Promise<Response> {
     `,
     sql`
       SELECT s.key, MIN(s.label) AS label, MIN(s.kind) AS kind,
-             COUNT(d.id)::int AS total,
-             COUNT(d.id) FILTER (
-               WHERE COALESCE(d.won_at, d.lost_at) > NOW() - INTERVAL '30 days')::int AS last30,
-             COALESCE(SUM(d.monthly_amount) FILTER (
-               WHERE d.won_at > NOW() - INTERVAL '30 days'), 0) AS amount30
+             COALESCE(SUM(d.cnt), 0)::int AS total,
+             COALESCE(SUM(d.last30), 0)::int AS last30,
+             COALESCE(jsonb_object_agg(d.currency, d.won30) FILTER (
+               WHERE d.currency IS NOT NULL AND d.won30 > 0), '{}'::jsonb) AS amounts30
       FROM sales_stages s
-      LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.archived_at IS NULL
-        AND (${market} = '' OR d.market_id = ${market})
-        AND (${owner} = '' OR d.owner_agent_id = ${owner})
+      LEFT JOIN (
+        SELECT stage_id, currency, MIN(id) AS id,
+               COUNT(*)::int AS cnt,
+               COUNT(*) FILTER (WHERE COALESCE(won_at, lost_at) > NOW() - INTERVAL '30 days')::int AS last30,
+               COALESCE(SUM(monthly_amount) FILTER (
+                 WHERE won_at > NOW() - INTERVAL '30 days'), 0) AS won30
+        FROM sales_deals
+        WHERE org_id = ${orgId} AND archived_at IS NULL
+          AND (${market} = '' OR market_id = ${market})
+          AND (${owner} = '' OR owner_agent_id = ${owner})
+        GROUP BY stage_id, currency
+      ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind IN ('won', 'lost') AND s.is_active = true
         AND s.pipeline <> 'partner'
         AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
@@ -194,8 +210,19 @@ export default async function handler(req: Request): Promise<Response> {
     `,
     sql`
       SELECT COUNT(*)::int AS open_deals,
-             COALESCE(SUM(monthly_amount), 0) AS pipeline_amount,
-             COUNT(*) FILTER (WHERE next_step_at IS NULL)::int AS no_next_step
+             COUNT(*) FILTER (WHERE next_step_at IS NULL)::int AS no_next_step,
+             -- Итог по валютам, а не одной кучей: в воронке живут и доллары,
+             -- и сумы, и общее число было бы просто неверным
+             COALESCE((
+               SELECT jsonb_object_agg(currency, amt) FROM (
+                 SELECT currency, SUM(monthly_amount) AS amt FROM sales_deals
+                 WHERE org_id = ${orgId} AND archived_at IS NULL
+                   AND won_at IS NULL AND lost_at IS NULL AND pipeline <> 'partner'
+                   AND COALESCE(monthly_amount, 0) <> 0
+                   AND (${market} = '' OR market_id = ${market})
+                 GROUP BY currency
+               ) x
+             ), '{}'::jsonb) AS pipeline_amounts
       FROM sales_deals
       WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
         AND pipeline <> 'partner' AND (${market} = '' OR market_id = ${market})

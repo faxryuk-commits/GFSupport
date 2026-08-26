@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
-import { Chip, PageShell, Skeleton, money, fmtDateTime, slaTone, slaText,
+import { Chip, PageShell, Skeleton, money, moneyList, fmtDateTime, slaTone, slaText,
          useAutoRefresh, Drawer, FilterBar , workMorningIn } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
@@ -41,10 +41,10 @@ interface Deal {
 interface FunnelData {
   leadColumns: Array<{ key: string; label: string; hint: string; total: number }>
   leads: Lead[]
-  stages: Array<{ key: string; label: string; description: string | null; sla_hours: string | null; total: number; amount: string }>
+  stages: Array<{ key: string; label: string; description: string | null; sla_hours: string | null; total: number; amounts: Record<string, string> }>
   deals: Deal[]
-  closed: Array<{ key: string; label: string; kind: string; total: number; last30: number; amount30: string }>
-  totals: { open_deals?: number; pipeline_amount?: string; no_next_step?: number }
+  closed: Array<{ key: string; label: string; kind: string; total: number; last30: number; amounts30: Record<string, string> }>
+  totals: { open_deals?: number; pipeline_amounts?: Record<string, string>; no_next_step?: number }
   owners: Array<{ id: string; name: string }>
 }
 
@@ -191,7 +191,7 @@ export function SalesFunnelPage() {
               {data.leadColumns.reduce((s, c) => s + c.total, 0)}
             </b></span>
             <span>сделок <b className="text-gray-900">{t.open_deals ?? 0}</b></span>
-            <span>на <b className="text-gray-900">{money(t.pipeline_amount, 'UZS')}</b> в месяц</span>
+            <span>на <b className="text-gray-900">{moneyList(t.pipeline_amounts, '—')}</b> в месяц</span>
             {t.no_next_step ? <span>без следующего шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
           </div>
         </div>
@@ -358,7 +358,7 @@ export function SalesFunnelPage() {
                   <span className="text-[11.5px] text-gray-400 tabular-nums">{st.total}</span>
                 </div>
                 <div className="text-[10.5px] text-gray-400 tabular-nums">
-                  {Number(st.amount) ? money(st.amount, 'UZS') : 'сумма не указана'}
+                  {moneyList(st.amounts)}
                   {st.sla_hours ? ` · норматив ${Math.round(Number(st.sla_hours) / 24) || 1} дн` : ''}
                 </div>
               </header>
@@ -468,7 +468,7 @@ export function SalesFunnelPage() {
                 </div>
                 <div className="text-[10.5px] text-gray-400 tabular-nums">
                   за 30 дней: {cl.last30}
-                  {won && Number(cl.amount30) ? ` · ${money(cl.amount30, 'UZS')}` : ''}
+                  {won && Object.keys(cl.amounts30 || {}).length ? ` · ${moneyList(cl.amounts30, '')}` : ''}
                 </div>
               </header>
               <div className="p-2 flex flex-col gap-1.5 overflow-y-auto">
