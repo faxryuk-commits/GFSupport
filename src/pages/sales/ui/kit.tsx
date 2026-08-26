@@ -59,6 +59,7 @@ const TONES: Record<string, string> = {
 export const LEAD_STATUS: Record<string, { label: string; tone: string }> = {
   new: { label: 'Новое', tone: 'amber' },
   assigned: { label: 'Назначено', tone: 'blue' },
+  attempting: { label: 'Дозвон', tone: 'blue' },
   nurture: { label: 'На прогреве', tone: 'gray' },
   converted: { label: 'Стало сделкой', tone: 'green' },
   junk: { label: 'Отказ', tone: 'red' },

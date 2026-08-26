@@ -163,7 +163,7 @@ export async function markSalesTouch(
       WHERE org_id = ${orgId}
         AND first_touch_at IS NULL
         AND archived_at IS NULL
-        AND status IN ('new', 'assigned', 'nurture')
+        AND status IN ('new', 'assigned', 'attempting', 'nurture')
         AND account_id IN (SELECT id FROM sales_accounts WHERE org_id = ${orgId} AND channel_id = ${channelId})
       RETURNING id, account_id
     ` as any[]

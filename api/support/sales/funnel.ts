@@ -118,7 +118,7 @@ export default async function handler(req: Request): Promise<Response> {
         LEFT JOIN sales_sources s ON s.id = l.source_id
         LEFT JOIN support_agents ag ON ag.id = l.assigned_agent_id
         WHERE l.org_id = ${orgId} AND l.archived_at IS NULL
-          AND l.status IN ('new', 'assigned', 'nurture')
+          AND l.status IN ('new', 'assigned', 'attempting', 'nurture')
           AND (${market} = '' OR l.market_id = ${market})
           AND (${owner} = '' OR l.assigned_agent_id = ${owner})
           AND (${like} = '' OR l.name ILIKE ${like} OR l.phone ILIKE ${like})
@@ -127,7 +127,7 @@ export default async function handler(req: Request): Promise<Response> {
     sql`
       SELECT status, COUNT(*)::int AS total FROM sales_leads
       WHERE org_id = ${orgId} AND archived_at IS NULL
-        AND status IN ('new', 'assigned', 'nurture')
+        AND status IN ('new', 'assigned', 'attempting', 'nurture')
         AND (${market} = '' OR market_id = ${market})
         AND (${owner} = '' OR assigned_agent_id = ${owner})
         AND (${like} = '' OR name ILIKE ${like} OR phone ILIKE ${like})
@@ -245,6 +245,9 @@ export default async function handler(req: Request): Promise<Response> {
     leadColumns: [
       { key: 'new', label: 'Новые', hint: 'норматив касания 15 минут', total: counts.new || 0 },
       { key: 'assigned', label: 'Ждут касания', hint: 'назначены, но не тронуты', total: counts.assigned || 0 },
+      // Дозвон — работа по выяснению, наш ли это клиент, то есть сама
+      // квалификация. Сделка рождается уже после неё, поэтому колонка здесь
+      { key: 'attempting', label: 'Дозвон', hint: 'выясняем, наш ли клиент', total: counts.attempting || 0 },
       { key: 'nurture', label: 'На прогреве', hint: 'греет ассистент', total: counts.nurture || 0 },
     ],
     leads: leadRows,

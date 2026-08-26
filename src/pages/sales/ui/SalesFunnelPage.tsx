@@ -106,6 +106,7 @@ export function SalesFunnelPage() {
     try {
       if (to === 'new') await apiPost('/sales/leads?action=restore', { leadId })
       else if (to === 'nurture') await apiPost('/sales/leads?action=nurture', { leadId })
+      else if (to === 'attempting') await apiPost('/sales/leads?action=dial', { leadId })
       else await apiPost('/sales/leads?action=assign', { leadId })
       load()
     } catch (e: any) {

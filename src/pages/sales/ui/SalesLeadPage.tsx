@@ -205,7 +205,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
   const l = data.lead
   const phone = parsePhone(l.phone)
-  const open = ['new', 'assigned', 'nurture'].includes(l.status)
+  const open = ['new', 'assigned', 'attempting', 'nurture'].includes(l.status)
 
   // День разговора подписываем один раз: сплошная лента одинаковых дат
   // читается хуже, чем разговор с разделителями

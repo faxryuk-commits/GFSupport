@@ -51,9 +51,12 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const [stage] = await sql`
+      -- Сделку заводят, когда клиент уже квалифицирован: дозвон и выяснение
+      -- «наш ли это клиент» живут на стороне обращений
       SELECT id FROM sales_stages
-      WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND kind = 'open' AND is_active = true
-      ORDER BY sort_order LIMIT 1
+      WHERE org_id = ${orgId} AND pipeline = ${pipeline}
+        AND key = 'qualified' AND is_active = true
+      LIMIT 1
     `
     const dealId = salesId('sd')
     await sql`

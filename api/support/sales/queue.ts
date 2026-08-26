@@ -47,10 +47,11 @@ export default async function handler(req: Request): Promise<Response> {
       const pipeline = pipelineForMarket(lead.market_id)
       const [stage] = await sql`
         SELECT id FROM sales_stages
-        WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND kind = 'open' AND is_active = true
-        -- Первый активный этап и есть «Дозвон»: «Новый» у сделок убран,
-        -- и прежний пропуск первой строки увёл бы сделку на «Квалифицирован»
-        ORDER BY sort_order LIMIT 1
+        -- Сделка рождается уже квалифицированной: дозвон и выяснение
+        -- «наш ли клиент» происходят на стороне обращений
+        WHERE org_id = ${orgId} AND pipeline = ${pipeline}
+          AND key = 'qualified' AND is_active = true
+        LIMIT 1
       `
       const dealId = salesId('sd')
       await sql`

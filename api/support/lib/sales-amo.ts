@@ -576,7 +576,7 @@ export async function applyAmoStage(
     const [entry] = await sql`
       SELECT id, key FROM sales_stages
       WHERE org_id = ${orgId} AND pipeline = ${pipeline}
-        AND key = 'attempting' AND is_active = true LIMIT 1
+        AND key = 'qualified' AND is_active = true LIMIT 1
     ` as any[]
     if (!entry) return null
     const dealId = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -597,7 +597,7 @@ export async function applyAmoStage(
     await sql`
       UPDATE sales_leads SET status = 'converted', updated_at = NOW()
       WHERE id = ${gfsLead.id} AND org_id = ${orgId}
-        AND status IN ('new', 'assigned', 'nurture')
+        AND status IN ('new', 'assigned', 'attempting', 'nurture')
     `
     deal = { id: dealId, stage_id: entry.id, won_at: null, lost_at: null, pipeline, stage_key: entry.key }
   }

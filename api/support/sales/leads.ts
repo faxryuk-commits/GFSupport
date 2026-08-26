@@ -229,6 +229,20 @@ export default async function handler(req: Request): Promise<Response> {
       `
       return json({ ok: true })
     }
+    // Дозвон — это уже касание: таймер норматива останавливаем здесь, иначе
+    // обращение считалось бы просроченным, пока по нему идут попытки связаться
+    if (action === 'dial') {
+      await sql`
+        UPDATE sales_leads
+        SET status = 'attempting',
+            assigned_agent_id = COALESCE(assigned_agent_id, ${body.agentId || ctx.agentId}),
+            assigned_at = COALESCE(assigned_at, NOW()),
+            first_touch_at = COALESCE(first_touch_at, NOW()),
+            sla_due_at = NULL, updated_at = NOW()
+        WHERE id = ${body.leadId} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
     if (action === 'nurture') {
       await sql`
         UPDATE sales_leads SET status = 'nurture', sla_due_at = NULL, updated_at = NOW()
