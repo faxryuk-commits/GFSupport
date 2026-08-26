@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Chip, PageShell, Skeleton, Btn, fmtDateTime, useAutoRefresh } from './kit'
 import { useRegion, RegionBadge } from './region'
@@ -68,6 +68,16 @@ const PLATFORMS: Array<[string, string]> = [
   ['facebook', 'Facebook'],
 ]
 
+/** «1 комментарий · 2 комментария · 5 комментариев» — иначе счётчик режет глаз. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const a = Math.abs(n) % 100
+  if (a > 10 && a < 20) return many
+  const b = a % 10
+  if (b === 1) return one
+  if (b >= 2 && b <= 4) return few
+  return many
+}
+
 export function SalesCommentsPage() {
   const [data, setData] = useState<Data | null>(null)
   const [view, setView] = useState('open')
@@ -126,6 +136,21 @@ export function SalesCommentsPage() {
       setError(e?.message || 'Подгрузка не удалась')
     } finally { setBusy(null) }
   }
+
+  // Группируем по публикации, сохраняя порядок: сверху пост со свежим
+  // комментарием, а не тот, где их больше
+  const groups = useMemo(() => {
+    const by = new Map<string, { key: string; post: Comment['post']; items: Comment[]; open: number }>()
+    for (const c of data?.items || []) {
+      const key = c.post_id || `без поста · ${c.platform}`
+      let g = by.get(key)
+      if (!g) { g = { key, post: c.post, items: [], open: 0 }; by.set(key, g) }
+      if (!g.post && c.post) g.post = c.post
+      g.items.push(c)
+      if (!c.replied_at && !c.is_hidden) g.open++
+    }
+    return [...by.values()]
+  }, [data])
 
   if (!data && !error) return <Skeleton rows={6} />
 
@@ -191,138 +216,149 @@ export function SalesCommentsPage() {
         </div>
       )}
 
-      <div className="space-y-2">
-        {(data?.items || []).map(c => (
-          <article key={c.id} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            {/* Публикация идёт первой строкой: сначала «под чем», потом «что
-                написали». В обратном порядке человек читает реплику без
-                контекста и додумывает его сам */}
-            <div className="flex gap-3">
-              {c.post?.thumb_url ? (
-                <a href={c.post.permalink || undefined} target="_blank" rel="noreferrer"
-                  className="flex-none block w-14 h-14 rounded-lg overflow-hidden bg-gray-100
+      {/* Один пост — одна карточка, комментарии внутри журналом. Под вирусным
+          постом их бывают десятки, и плоским списком они вытесняли с экрана
+          всё остальное: человек листал одну публикацию вместо того, чтобы
+          видеть, где ещё не ответили */}
+      <div className="space-y-3">
+        {groups.map(g => (
+          <section key={g.key} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <header className="flex gap-3 px-4 py-3 bg-gray-50/70 border-b border-gray-100">
+              {g.post?.thumb_url ? (
+                <a href={g.post.permalink || undefined} target="_blank" rel="noreferrer"
+                  className="flex-none block w-12 h-12 rounded-lg overflow-hidden bg-gray-100
                              border border-gray-200 hover:border-blue-400 transition-colors">
-                  <img src={c.post.thumb_url} alt="" className="w-full h-full object-cover" />
+                  <img src={g.post.thumb_url} alt="" className="w-full h-full object-cover" />
                 </a>
               ) : (
-                <div className="flex-none w-14 h-14 rounded-lg bg-gray-50 border border-dashed
-                                border-gray-200 grid place-items-center text-[10px] text-gray-300 text-center px-1">
-                  {c.post?.fetch_error ? 'нет доступа' : 'без обложки'}
+                <div className="flex-none w-12 h-12 rounded-lg bg-white border border-dashed
+                                border-gray-200 grid place-items-center text-[9px] text-gray-300 text-center px-1">
+                  {g.post?.fetch_error ? 'нет доступа' : 'без обложки'}
                 </div>
               )}
-
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-1.5 flex-wrap text-[11.5px] text-gray-400">
-                  <span className="font-medium text-gray-600">
-                    {c.post?.kind || (c.platform === 'instagram' ? 'публикация' : 'пост')}
+                  <span className="font-medium text-gray-700">
+                    {g.post?.kind || 'публикация'}
                   </span>
-                  {c.post?.published_at && (
-                    <span className="tabular-nums">от {fmtDateTime(c.post.published_at)}</span>
+                  {g.post?.published_at && (
+                    <span className="tabular-nums">от {fmtDateTime(g.post.published_at)}</span>
                   )}
-                  {(c.post?.permalink || c.permalink) && (
-                    <a href={c.post?.permalink || c.permalink || undefined} target="_blank" rel="noreferrer"
+                  <span>·</span>
+                  <span className="tabular-nums">
+                    {g.items.length} {plural(g.items.length, 'комментарий', 'комментария', 'комментариев')}
+                  </span>
+                  {g.open > 0 && <span className="text-amber-600">без ответа {g.open}</span>}
+                  {g.post?.permalink && (
+                    <a href={g.post.permalink} target="_blank" rel="noreferrer"
                       className="text-blue-600 hover:underline">открыть</a>
                   )}
                 </div>
-                {c.post?.caption && (
-                  <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-2">{c.post.caption}</p>
+                {g.post?.caption && (
+                  <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-2">{g.post.caption}</p>
                 )}
               </div>
-            </div>
+            </header>
 
-            <div className="flex items-baseline gap-2 flex-wrap mt-2.5 pt-2.5 border-t border-gray-100">
-              <span className="text-[13px] font-medium text-gray-900">
-                {c.author_name || 'Без имени'}
-              </span>
-              <Chip tone={c.platform === 'instagram' ? 'violet' : 'blue'}>
-                {c.platform === 'instagram' ? 'Instagram' : 'Facebook'}
-              </Chip>
-              {c.is_hidden && <Chip tone="gray">скрыт</Chip>}
-              {c.replied_at
-                ? <Chip tone="green">отвечено</Chip>
-                : <Chip tone="amber">без ответа</Chip>}
-              {c.ai_class && (
-                <span title={c.ai_reason || undefined}>
-                  <Chip tone={AI_CLASS[c.ai_class]?.tone || 'gray'}>
-                    {AI_CLASS[c.ai_class]?.label || c.ai_class}
-                  </Chip>
-                </span>
-              )}
-              {c.ai_auto && <Chip tone="violet">ответил агент</Chip>}
-              <span className="text-[11.5px] text-gray-400 tabular-nums">{fmtDateTime(c.created_at)}</span>
-            </div>
+            <ul className="divide-y divide-gray-100">
+              {g.items.map(c => (
+                <li key={c.id} className="px-4 py-3">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[13px] font-medium text-gray-900">
+                      {c.author_name || 'Без имени'}
+                    </span>
+                    <Chip tone={c.platform === 'instagram' ? 'violet' : 'blue'}>
+                      {c.platform === 'instagram' ? 'Instagram' : 'Facebook'}
+                    </Chip>
+                    {c.is_hidden && <Chip tone="gray">скрыт</Chip>}
+                    {c.replied_at
+                      ? <Chip tone="green">отвечено</Chip>
+                      : <Chip tone="amber">без ответа</Chip>}
+                    {c.ai_class && (
+                      <span title={c.ai_reason || undefined}>
+                        <Chip tone={AI_CLASS[c.ai_class]?.tone || 'gray'}>
+                          {AI_CLASS[c.ai_class]?.label || c.ai_class}
+                        </Chip>
+                      </span>
+                    )}
+                    {c.ai_auto && <Chip tone="violet">ответил агент</Chip>}
+                    <span className="text-[11.5px] text-gray-400 tabular-nums">
+                      {fmtDateTime(c.created_at)}
+                    </span>
+                  </div>
 
-            <p className="text-[13px] text-gray-900 mt-1.5 whitespace-pre-wrap">{c.text}</p>
+                  <p className="text-[13px] text-gray-900 mt-1 whitespace-pre-wrap">{c.text}</p>
 
-            {c.reply_text && (
-              <div className="mt-2 pl-3 border-l-2 border-emerald-200">
-                <div className="text-[12.5px] text-gray-700 whitespace-pre-wrap">{c.reply_text}</div>
-                <div className="text-[11px] text-gray-400 mt-0.5">
-                  {c.replied_by || 'Команда'}
-                  {c.replied_at ? ` · ${fmtDateTime(c.replied_at)}` : ''}
-                </div>
-              </div>
-            )}
+                  {c.reply_text && (
+                    <div className="mt-1.5 pl-3 border-l-2 border-emerald-200">
+                      <div className="text-[12.5px] text-gray-700 whitespace-pre-wrap">{c.reply_text}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">
+                        {c.replied_by || 'Команда'}
+                        {c.replied_at ? ` · ${fmtDateTime(c.replied_at)}` : ''}
+                      </div>
+                    </div>
+                  )}
 
-            {/* Черновик агента: он не отправлен и не отправится сам — там,
-                где цена ошибки высокая, последнее слово за человеком */}
-            {!c.replied_at && c.ai_draft && answering !== c.comment_id && (
-              <div className="mt-2 rounded-lg bg-violet-50/60 border border-violet-100 px-3 py-2">
-                <div className="text-[11px] text-violet-700 font-medium mb-0.5">
-                  Черновик агента{c.ai_reason ? ` · ${c.ai_reason}` : ''}
-                </div>
-                <div className="text-[12.5px] text-gray-800 whitespace-pre-wrap">{c.ai_draft}</div>
-                <div className="flex gap-1.5 mt-2">
-                  <button
-                    onClick={() => reply(c, c.ai_draft || '')}
-                    disabled={busy === c.comment_id}
-                    className="text-[11.5px] px-2.5 py-1 rounded border border-violet-300 text-violet-700
-                               hover:bg-violet-100 disabled:opacity-50">
-                    Отправить как есть
-                  </button>
-                  <button
-                    onClick={() => { setAnswering(c.comment_id); setDraft(c.ai_draft || '') }}
-                    className="text-[11.5px] px-2.5 py-1 rounded border border-gray-200 text-gray-600
-                               hover:border-blue-300">
-                    Поправить
-                  </button>
-                </div>
-              </div>
-            )}
+                  {!c.replied_at && c.ai_draft && answering !== c.comment_id && (
+                    <div className="mt-2 rounded-lg bg-violet-50/60 border border-violet-100 px-3 py-2">
+                      <div className="text-[11px] text-violet-700 font-medium mb-0.5">
+                        Черновик агента{c.ai_reason ? ` · ${c.ai_reason}` : ''}
+                      </div>
+                      <div className="text-[12.5px] text-gray-800 whitespace-pre-wrap">{c.ai_draft}</div>
+                      <div className="flex gap-1.5 mt-2">
+                        <button onClick={() => reply(c, c.ai_draft || '')}
+                          disabled={busy === c.comment_id}
+                          className="text-[11.5px] px-2.5 py-1 rounded border border-violet-300 text-violet-700
+                                     hover:bg-violet-100 disabled:opacity-50">
+                          Отправить как есть
+                        </button>
+                        <button onClick={() => { setAnswering(c.comment_id); setDraft(c.ai_draft || '') }}
+                          className="text-[11.5px] px-2.5 py-1 rounded border border-gray-200 text-gray-600
+                                     hover:border-blue-300">
+                          Поправить
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
-            {answering === c.comment_id ? (
-              <div className="mt-2 flex gap-2 items-start">
-                <textarea
-                  autoFocus rows={2} value={draft} onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) reply(c)
-                    if (e.key === 'Escape') { setAnswering(null); setDraft('') }
-                  }}
-                  placeholder="Ответ появится под постом от имени страницы"
-                  className="flex-1 text-[13px] px-3 py-2 border border-gray-200 rounded-lg
-                             focus:outline-none focus:border-blue-400 resize-y"
-                />
-                <div className="flex flex-col gap-1.5">
-                  <Btn kind="primary" onClick={() => reply(c)} disabled={busy === c.comment_id || !draft.trim()}>
-                    {busy === c.comment_id ? '…' : 'Ответить'}
-                  </Btn>
-                  <Btn onClick={() => { setAnswering(null); setDraft('') }}>Отмена</Btn>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-2 flex gap-2">
-                <Btn onClick={() => { setAnswering(c.comment_id); setDraft('') }}>
-                  {c.replied_at ? 'Ответить ещё' : 'Ответить'}
-                </Btn>
-                <Btn kind={c.is_hidden ? 'ghost' : 'danger'}
-                  onClick={() => toggleHidden(c)} disabled={busy === c.comment_id}>
-                  {c.is_hidden ? 'Показать' : 'Скрыть'}
-                </Btn>
-              </div>
-            )}
-          </article>
+                  {answering === c.comment_id ? (
+                    <div className="mt-2 flex gap-2 items-start">
+                      <textarea
+                        autoFocus rows={2} value={draft} onChange={e => setDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) reply(c)
+                          if (e.key === 'Escape') { setAnswering(null); setDraft('') }
+                        }}
+                        placeholder="Ответ появится под постом от имени страницы"
+                        className="flex-1 text-[13px] px-3 py-2 border border-gray-200 rounded-lg
+                                   focus:outline-none focus:border-blue-400 resize-y"
+                      />
+                      <div className="flex flex-col gap-1.5">
+                        <Btn kind="primary" onClick={() => reply(c)}
+                          disabled={busy === c.comment_id || !draft.trim()}>
+                          {busy === c.comment_id ? '…' : 'Ответить'}
+                        </Btn>
+                        <Btn onClick={() => { setAnswering(null); setDraft('') }}>Отмена</Btn>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex gap-2">
+                      <Btn onClick={() => { setAnswering(c.comment_id); setDraft('') }}>
+                        {c.replied_at ? 'Ответить ещё' : 'Ответить'}
+                      </Btn>
+                      <Btn kind={c.is_hidden ? 'ghost' : 'danger'}
+                        onClick={() => toggleHidden(c)} disabled={busy === c.comment_id}>
+                        {c.is_hidden ? 'Показать' : 'Скрыть'}
+                      </Btn>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
         ))}
       </div>
+
     </PageShell>
   )
 }

@@ -133,6 +133,10 @@ export default async function handler(req: Request): Promise<Response> {
     auth.searchParams.set('state', state)
     auth.searchParams.set('scope', scopesFor(url.searchParams.get('scopes')))
     auth.searchParams.set('response_type', 'code')
+    // Facebook не переспрашивает про однажды отклонённое разрешение: окно
+    // просто не показывается, и человек уверен, что дал всё. Rerequest
+    // заставляет показать список заново — без него отказ навсегда молчаливый
+    auth.searchParams.set('auth_type', 'rerequest')
     return json({ url: auth.toString(), redirectUri: pinnedRedirect(pinRow, req) })
   }
 
