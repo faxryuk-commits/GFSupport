@@ -40,6 +40,25 @@ export function salesId(prefix: string): string {
  * Тот же принцип, что в identification.ts для сотрудников — у номеров UZ/KZ/AZ
  * различаются префиксы записи (+998, 998, 8), а последние 9 цифр стабильны.
  */
+/**
+ * Валюта рынка. Сделка создавалась с жёстким «UZS» в одном месте и с
+ * умолчанием колонки «USD» в двух других — казахстанские сделки после
+ * импорта из Amo оказывались в сумах, а узбекские в долларах.
+ *
+ * Единственный источник правды — настройки рынка; неизвестный рынок
+ * оставляем без валюты, чтобы это было видно, а не подменялось молча.
+ */
+export async function currencyForMarket(
+  sql: any, orgId: string, market: string | null | undefined,
+): Promise<string | null> {
+  if (!market) return null
+  const [row] = await sql`
+    SELECT currency FROM sales_market_settings
+    WHERE org_id = ${orgId} AND market_id = ${market} LIMIT 1
+  ` as any[]
+  return row?.currency || null
+}
+
 export function normPhone(raw: string | null | undefined): string | null {
   if (!raw) return null
   const digits = String(raw).replace(/\D/g, '')

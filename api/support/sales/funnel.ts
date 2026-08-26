@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
+import { currencyForMarket, ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { resolveRegion, pipelineForMarket } from '../lib/sales-amo.js'
 import { FIELD_LABELS, missingFields } from '../lib/sales-fields.js'
 
@@ -70,10 +70,10 @@ export default async function handler(req: Request): Promise<Response> {
     const dealId = salesId('sd')
     await sql`
       INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                               title, deal_type, source_lead_id, pipeline, city, stage_since)
+                               title, deal_type, source_lead_id, pipeline, city, currency, stage_since)
       VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${target.id}, ${ctx.agentId},
               ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${leadPipeline},
-              ${lead.city}, NOW())
+              ${lead.city}, ${await currencyForMarket(sql, orgId, lead.market_id)}, NOW())
     `
     await sql`
       INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)

@@ -7,6 +7,8 @@
  * перенесённые и текущие сделки разъедутся по источникам и полям.
  */
 
+import { currencyForMarket } from './sales-schema.js'
+
 export interface AmoCreds { domain: string; token: string }
 
 export type AmoMode = 'full' | 'leads_only' | 'off'
@@ -575,11 +577,13 @@ export async function applyAmoStage(
     const dealId = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
     await sql`
       INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                               title, deal_type, source_lead_id, external_id, pipeline, stage_since)
+                               title, deal_type, source_lead_id, external_id, pipeline,
+                               currency, stage_since)
       VALUES (${dealId}, ${orgId}, ${gfsLead.account_id}, ${entry.id},
               ${gfsLead.assigned_agent_id || null}, ${market},
               ${String(gfsLead.name || lead.name || 'Сделка из Amo').slice(0, 255)},
-              'new', ${gfsLead.id}, ${`amo_${lead.id}`}, ${pipeline}, NOW())
+              'new', ${gfsLead.id}, ${`amo_${lead.id}`}, ${pipeline},
+              ${await currencyForMarket(sql, orgId, market)}, NOW())
     `
     // Раньше здесь стояло «только assigned», и лид, лежавший в «новом» или на
     // прогреве, оставался в колонке обращений после создания сделки: один и

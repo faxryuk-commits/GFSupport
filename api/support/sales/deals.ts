@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
+import { currencyForMarket, ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { resolveRegion } from '../lib/sales-amo.js'
 
 export const config = { runtime: 'edge' }
@@ -63,7 +63,8 @@ export default async function handler(req: Request): Promise<Response> {
       VALUES (${dealId}, ${orgId}, ${accountId}, ${stage?.id || ''},
               ${body?.ownerAgentId || ctx.agentId}, ${market}, ${title.slice(0, 255)},
               ${body?.dealType || 'new'}, ${pipeline}, ${body?.city || null},
-              ${body?.monthlyAmount || null}, ${body?.currency || 'UZS'},
+              ${body?.monthlyAmount || null},
+              ${body?.currency || (await currencyForMarket(sql, orgId, market)) || 'UZS'},
               ${body?.tariff || null}, ${body?.pos || null},
               ${body?.ordersPerDay || null}, ${body?.points || null}, NOW())
     `
