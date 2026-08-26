@@ -141,7 +141,11 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (stage) add('s.key = ?', stage)
   if (pos) add('d.pos = ?', pos)
-  if (city) add('COALESCE(NULLIF(d.city, \'\'), a.city) = ?', city)
+  // У бренда точки бывают в нескольких городах, и город хранится списком
+  // через запятую. Сравнение строки целиком такой бренд не находило вовсе
+  if (city) add(
+    "strpos(',' || replace(lower(COALESCE(NULLIF(d.city, ''), a.city, '')), ', ', ',') || ',', ?) > 0",
+    `,${city.toLowerCase()},`)
   if (segment) add('d.segment = ?', segment)
   if (tariff) add('d.tariff ILIKE ?', `${tariff}%`)
   if (load) add('d.orders_per_day = ?', load)
@@ -245,7 +249,9 @@ export default async function handler(req: Request): Promise<Response> {
       AND (${market || ''} = '' OR d.market_id = ${market || ''})
       AND (${owner || ''} = '' OR d.owner_agent_id = ${owner || ''})
       AND (${pos || ''} = '' OR d.pos = ${pos || ''})
-      AND (${city || ''} = '' OR COALESCE(NULLIF(d.city, ''), '') = ${city || ''})
+      AND (${city || ''} = '' OR strpos(
+            ',' || replace(lower(COALESCE(NULLIF(d.city, ''), '')), ', ', ',') || ',',
+            ${city ? `,${city.toLowerCase()},` : ''}) > 0)
       AND (${segment || ''} = '' OR d.segment = ${segment || ''})
       AND (${load || ''} = '' OR d.orders_per_day = ${load || ''})
       AND (${fromTs}::timestamptz IS NULL OR d.created_at >= ${fromTs}::timestamptz)

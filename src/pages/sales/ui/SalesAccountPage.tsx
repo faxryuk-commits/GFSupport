@@ -407,12 +407,15 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
           <Card title="Профиль клиента" sub="значения из справочника: одно написание на всю базу">
             <div>
               <InlineField label="Название" value={a.name} onSave={v => patch('name', v)} />
+              {/* Сеть может работать сразу в нескольких странах и городах:
+                  одно значение заставляло выбирать, какую точку считать
+                  «настоящей», а остальные просто терялись */}
               <InlineField label="Страна" value={a.country} onSave={v => patch('country', v)}
-                options={optionsFor(refs, 'country')} />
+                options={optionsFor(refs, 'country')} multiple />
               {/* Города берём по стране аккаунта, а не общим списком: в карточке
                   узбекского клиента незачем предлагать Лимассол */}
               <InlineField label="Город" value={a.city} onSave={v => patch('city', v)}
-                options={optionsFor(refs, 'city', a.market_id)} />
+                options={optionsFor(refs, 'city', a.market_id)} multiple />
               <InlineField label="Тип заведения" value={a.segment} onSave={v => patch('segment', v)}
                 options={optionsFor(refs, 'segment')} />
               {isPartner && (

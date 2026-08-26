@@ -15,6 +15,7 @@ export interface FieldOption {
   value: string
   label: string
   market_id: string | null
+  sort_order?: number
   is_active: boolean
 }
 
@@ -168,10 +169,24 @@ export const COUNTRY_BY_MARKET: Record<string, string> = {
 export function optionsFor(refs: SalesRefs | null, field: string, market?: string | null): string[] {
   // Справочник — вспомогательная вещь: неожиданный ответ сервера должен
   // ронять список вариантов, а не всю карточку сделки
-  const fromServer = (Array.isArray(refs?.options) ? refs!.options : [])
+  const suitable = (Array.isArray(refs?.options) ? refs!.options : [])
     .filter(o => o.field === field && o.is_active !== false)
     .filter(o => !o.market_id || !market || o.market_id === market)
-    .map(o => o.label || o.value)
+
+  // Агрегаторы заведены дважды: общим списком и внутри каждого рынка. В поле
+  // это давало два «Yandex Eats» и два «Wolt» подряд — человек не понимал,
+  // чем они отличаются, и какой из них выбирать. Значение рынка точнее
+  // общего, поэтому при совпадении названия побеждает оно
+  const best = new Map<string, { label: string; sort: number; own: boolean }>()
+  for (const o of suitable) {
+    const label = String(o.label || o.value || '')
+    const key = label.toLowerCase().replace(/\s+/g, ' ').trim()
+    if (!key) continue
+    const own = Boolean(o.market_id)
+    const prev = best.get(key)
+    if (!prev || (own && !prev.own)) best.set(key, { label, sort: o.sort_order ?? 0, own })
+  }
+  const fromServer = [...best.values()].sort((a, b) => a.sort - b.sort).map(o => o.label)
   if (fromServer.length) return fromServer
   if (field === 'city') {
     const code = (market || '').toLowerCase()
