@@ -35,6 +35,7 @@ interface Deal {
   next_step_at: string | null; stage_since: string; stalled_at: string | null
   updated_at: string | null; owner_name: string | null; phone: string | null
   doc_opens: number | null; stage_key: string
+  won_at?: string | null; lost_at?: string | null; lost_reason?: string | null
 }
 
 interface FunnelData {
@@ -442,32 +443,73 @@ export function SalesFunnelPage() {
         </div>
 
         {/* ─── Закрытие ──────────────────────────────────────────── */}
-        {data.closed.map(cl => (
-          <section
-            key={cl.key}
-            onDragOver={e => { e.preventDefault(); setOver(cl.key) }}
-            onDragLeave={() => setOver(o => (o === cl.key ? null : o))}
-            onDrop={e => { e.preventDefault(); drop(cl.key, 'closed') }}
-            className={`flex-none w-[156px] rounded-xl border-2 border-dashed p-3 flex flex-col gap-1
-                        transition-colors ${
-              over === cl.key
-                ? cl.kind === 'won' ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'
-                : 'border-gray-200 bg-gray-50'}`}
-          >
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${
-              cl.kind === 'won' ? 'text-emerald-700' : 'text-red-600'}`}>
-              {cl.label}
-            </span>
-            <span className="text-[11px] text-gray-500 tabular-nums">{cl.total} всего</span>
-            <span className="text-[11px] text-gray-500 tabular-nums">за 30 дней: {cl.last30}</span>
-            {cl.kind === 'won' && Number(cl.amount30) ? (
-              <span className="text-[11px] text-emerald-700 tabular-nums">{money(cl.amount30, 'UZS')}</span>
-            ) : null}
-            <span className="text-[10.5px] text-gray-400 mt-auto">
-              {cl.kind === 'won' ? 'перетащите, чтобы закрыть' : 'перетащите — спросим причину'}
-            </span>
-          </section>
-        ))}
+        {/* Раньше здесь были узкие зоны со счётчиком: закрытое можно было
+            только пополнить, но не посмотреть. Колонки такие же, как у
+            этапов, — с карточками и «показать ещё» */}
+        {data.closed.map(cl => {
+          const won = cl.kind === 'won'
+          const items = dealsIn(cl.key)
+          return (
+            <section
+              key={cl.key}
+              onDragOver={e => { e.preventDefault(); setOver(cl.key) }}
+              onDragLeave={() => setOver(o => (o === cl.key ? null : o))}
+              onDrop={e => { e.preventDefault(); drop(cl.key, 'closed') }}
+              className={`flex-none w-[232px] rounded-lg border-2 flex flex-col transition-colors ${
+                over === cl.key
+                  ? won ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'
+                  : won ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-gray-50'}`}
+            >
+              <header className={`px-2.5 py-2 border-b ${won ? 'border-emerald-100' : 'border-gray-200'}`}>
+                <div className="flex justify-between items-baseline gap-2">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                    won ? 'text-emerald-700' : 'text-red-600'}`}>{cl.label}</span>
+                  <span className="text-[11.5px] text-gray-400 tabular-nums">{cl.total}</span>
+                </div>
+                <div className="text-[10.5px] text-gray-400 tabular-nums">
+                  за 30 дней: {cl.last30}
+                  {won && Number(cl.amount30) ? ` · ${money(cl.amount30, 'UZS')}` : ''}
+                </div>
+              </header>
+              <div className="p-2 flex flex-col gap-1.5 overflow-y-auto">
+                {items.map(d => (
+                  <button
+                    key={d.id}
+                    onClick={() => setOpenDeal(d.id)}
+                    className="w-full text-left bg-white border border-gray-200 rounded-lg px-2 py-1.5
+                               hover:border-blue-400 transition-colors"
+                  >
+                    <div className="text-[12px] font-medium text-gray-900 truncate">
+                      {d.account || d.title}
+                    </div>
+                    <div className="text-[10.5px] text-gray-400 tabular-nums truncate">
+                      {won
+                        ? [Number(d.monthly_amount) ? money(d.monthly_amount, d.currency) : null,
+                           d.won_at ? fmtDateTime(d.won_at).split(',')[0] : null].filter(Boolean).join(' · ')
+                          || 'сумма не указана'
+                        : [d.lost_reason || 'причина не указана',
+                           d.lost_at ? fmtDateTime(d.lost_at).split(',')[0] : null].filter(Boolean).join(' · ')}
+                    </div>
+                  </button>
+                ))}
+                {items.length === 0 && (
+                  <div className="text-[11px] text-gray-300 text-center py-3 border border-dashed
+                                  border-gray-200 rounded-lg">
+                    {won ? 'перетащите, чтобы закрыть' : 'перетащите — спросим причину'}
+                  </div>
+                )}
+                {items.length > 0 && items.length < cl.total && (
+                  <button
+                    onClick={() => setPerColumn(p => Math.min(300, p + 50))}
+                    className="w-full text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50
+                               text-center py-2 rounded-lg border border-dashed border-blue-200 transition-colors">
+                    Показать ещё · {items.length} из {cl.total}
+                  </button>
+                )}
+              </div>
+            </section>
+          )
+        })}
       </div>
 
       {error && (

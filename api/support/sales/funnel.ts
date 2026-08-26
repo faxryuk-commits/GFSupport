@@ -142,15 +142,20 @@ export default async function handler(req: Request): Promise<Response> {
                (SELECT c.phone FROM sales_contacts c WHERE c.account_id = d.account_id
                  ORDER BY c.is_primary DESC LIMIT 1) AS phone,
                (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens,
-               s.key AS stage_key,
+               s.key AS stage_key, d.won_at, d.lost_at, lr.label AS lost_reason,
                ROW_NUMBER() OVER (PARTITION BY s.key
                  ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC) AS rn
         FROM sales_deals d
         JOIN sales_stages s ON s.id = d.stage_id
         LEFT JOIN sales_accounts a ON a.id = d.account_id
         LEFT JOIN support_agents ag ON ag.id = d.owner_agent_id
+        LEFT JOIN sales_lost_reasons lr ON lr.id = d.lost_reason_id
+        -- Закрытые сделки тоже отдаём карточками: раньше выигранное и
+        -- проигранное было счётчиком, и посмотреть, что именно там лежит,
+        -- из воронки было нельзя. Срез свой на каждую колонку, так что
+        -- открытые этапы это не утяжеляет
         WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
-          AND d.won_at IS NULL AND d.lost_at IS NULL AND d.pipeline <> 'partner'
+          AND d.pipeline <> 'partner'
           AND (${market} = '' OR d.market_id = ${market})
           AND (${owner} = '' OR d.owner_agent_id = ${owner})
           AND (${like} = '' OR d.title ILIKE ${like} OR a.name ILIKE ${like})
@@ -181,6 +186,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM sales_stages s
       LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.archived_at IS NULL
         AND (${market} = '' OR d.market_id = ${market})
+        AND (${owner} = '' OR d.owner_agent_id = ${owner})
       WHERE s.org_id = ${orgId} AND s.kind IN ('won', 'lost') AND s.is_active = true
         AND s.pipeline <> 'partner'
         AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
