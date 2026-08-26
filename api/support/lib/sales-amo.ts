@@ -553,7 +553,11 @@ export async function applyAmoStage(
 
   const st = statuses.get(lead.status_id)
   if (!st) return null
-  const key = stageKeyByStatusName(st.name, st.isWon, st.isLost)
+  // Амошное «неразобранное» у нас — это блок обращений, а не этап сделки.
+  // Раз сделка уже существует, работа по ней началась: ставим «Дозвон»,
+  // иначе Amo вернул бы её в погашенный этап и колонка воскресла бы
+  const key = (k => (k === 'new' ? 'attempting' : k))(
+    stageKeyByStatusName(st.name, st.isWon, st.isLost))
 
   // Сделки нет — исторический бэкфилл её не застал. Раньше тут был выход:
   // этап из Amo некуда было переносить, и «Bekosiyo на КП в Amo» вечно висел
@@ -571,7 +575,8 @@ export async function applyAmoStage(
     const pipeline = pipelineForMarket(market)
     const [entry] = await sql`
       SELECT id, key FROM sales_stages
-      WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND key = 'new' LIMIT 1
+      WHERE org_id = ${orgId} AND pipeline = ${pipeline}
+        AND key = 'attempting' AND is_active = true LIMIT 1
     ` as any[]
     if (!entry) return null
     const dealId = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -603,6 +608,7 @@ export async function applyAmoStage(
   const [target] = await sql`
     SELECT id, key, label, kind FROM sales_stages
     WHERE org_id = ${orgId} AND pipeline = ${deal.pipeline || 'sales'} AND key = ${key}
+      AND is_active = true
     LIMIT 1
   ` as any[]
   if (!target) return null

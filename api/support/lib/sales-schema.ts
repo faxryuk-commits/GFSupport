@@ -77,8 +77,10 @@ const STAGE_SEED: Array<{
   requiredFields: string[]
   cadence: Array<{ day: number; title: string; channel: string }>
 }> = [
-  { key: 'new', label: 'Новый', kind: 'open', ownerRole: 'sdr', slaHours: 0.25, probability: 5,
-    requiredFields: [], cadence: [] },
+  // «Новый» у сделок не заводим. Сделка рождается в тот момент, когда
+  // обращение взяли в работу, — а это уже дозвон. Отдельная колонка «Новый»
+  // дублировала блок обращений один в один: в Amo «новое» означало
+  // «неразобранное», и этот смысл у нас закрывают именно обращения
   { key: 'attempting', label: 'Дозвон', kind: 'open', ownerRole: 'sdr', slaHours: 168, probability: 10,
     requiredFields: [],
     cadence: [

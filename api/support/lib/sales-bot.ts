@@ -219,7 +219,9 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
       SELECT id FROM sales_stages
       WHERE org_id = ${agent.org_id} AND pipeline = ${pipelineForMarket(lead.market_id)}
         AND kind = 'open' AND is_active = true
-      ORDER BY sort_order OFFSET 1 LIMIT 1
+      -- Первый активный этап и есть «Дозвон»: «Новый» у сделок убран,
+      -- и прежний пропуск первой строки увёл бы сделку на «Квалифицирован»
+      ORDER BY sort_order LIMIT 1
     `
     const dealId = salesId('sd')
     await sql`
