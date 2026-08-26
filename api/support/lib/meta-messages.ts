@@ -40,15 +40,28 @@ function describeAttachments(atts: any[]): string {
   }).join(' ')
 }
 
-/** Имя собеседника: без него в списке чатов будет безликий числовой id. */
-async function fetchProfileName(userId: string, token: string | null): Promise<string | null> {
+/**
+ * Имя собеседника: без него в списке чатов будет безликий числовой id.
+ *
+ * Набор полей у площадок разный, и лишнее поле Graph не игнорирует, а
+ * отвергает весь запрос. Поле username у собеседника из Messenger объявлено
+ * устаревшим — из-за него не приходило ни имени, ни ошибки, и все диалоги
+ * назывались «Messenger 545555».
+ */
+async function fetchProfileName(
+  userId: string, token: string | null, platform: 'instagram' | 'messenger',
+): Promise<string | null> {
   if (!token) return null
+  const fields = platform === 'instagram' ? 'name,username' : 'name,first_name,last_name'
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v21.0/${userId}?fields=name,username&access_token=${token}`)
+      `https://graph.facebook.com/v21.0/${userId}?fields=${fields}&access_token=${token}`)
     if (!res.ok) return null
     const data: any = await res.json()
-    return data?.username ? `@${data.username}` : (data?.name || null)
+    if (data?.username) return `@${data.username}`
+    if (data?.name) return String(data.name)
+    const full = [data?.first_name, data?.last_name].filter(Boolean).join(' ').trim()
+    return full || null
   } catch {
     return null
   }
@@ -151,7 +164,7 @@ export async function handleMetaMessaging(
       ` as any[]
 
       const fallback = `${isInstagram ? 'Instagram' : 'Messenger'} ${senderId.slice(-6)}`
-      const name = existing?.name || (await fetchProfileName(senderId, token)) || fallback
+      const name = existing?.name || (await fetchProfileName(senderId, token, source)) || fallback
       const channelId = await getOrCreateChannel(
         sql, orgId, source, senderId, name,
         await marketIdByCode(sql, orgId, acc?.marketId || null), acc?.pageId || null)
