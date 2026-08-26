@@ -488,6 +488,7 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       -- в один конец, и автор не знал, взяли её вообще или нет
       created_by_agent_id VARCHAR(60),
       status VARCHAR(20) NOT NULL DEFAULT 'open',
+      -- (у задач свой статус; тег потери живёт у сделок и обращений)
       status_note TEXT,
       status_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -102,6 +102,9 @@ export default async function handler(req: Request): Promise<Response> {
       UPDATE sales_deals SET
         stage_id = ${target.id}, stage_since = ${now}, stalled_at = NULL, updated_at = ${now},
         lost_at = ${now}, lost_reason_id = ${reason.id},
+        -- Потеря одна на всю воронку, а тег объясняет, где именно она
+        -- случилась: «не дозвонились» и «не устроила цена» — разные болезни
+        lost_stage = (SELECT key FROM sales_stages WHERE id = ${deal.stage_id}),
         lost_comment = ${body.comment || null}, reactivate_at = ${reactivateAt}
       WHERE id = ${deal.id}
     `

@@ -139,9 +139,13 @@ export default async function handler(req: Request): Promise<Response> {
       // Причина отказа обязательна по смыслу, но не по форме: заставлять
       // выбирать её в разгар разбора очереди значит получить «Другое» на всём.
       // Спрашиваем, принимаем и без неё — но тогда честно видно, что не знаем
+      // Тег «где потеряли» ставим из текущего состояния обращения: потом
+      // его не восстановить, а без него потеря на первом касании
+      // неотличима от потери после долгого прогрева
       await sql`
         UPDATE sales_leads
         SET archived_at = NOW(), status = 'junk',
+            lost_stage = COALESCE(lost_stage, status),
             lost_reason_id = COALESCE(${body.reasonId || null}, lost_reason_id),
             lost_comment = COALESCE(${body.comment || null}, lost_comment),
             updated_at = NOW()
