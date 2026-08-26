@@ -11,6 +11,18 @@ import { accountForIg, accountForPage, readMetaAccounts, readMetaConfig } from '
  * директ ляжет в чаты, а Messenger — молча потеряется.
  */
 
+/**
+ * Запрос к Meta с ограничением по времени.
+ *
+ * У метода conversations Meta регулярно отвечает собственным «Timeout», и
+ * висящий запрос съедал весь бюджет функции: страница диалогов не успевала
+ * закончиться, и шлюз обрывал соединение раньше, чем мы возвращали курсор.
+ */
+async function graphFetch(url: string, ms = 8000): Promise<any> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(ms) })
+  return res.json()
+}
+
 /** Тип вложения человеческим языком — в текст лида и в историю. */
 function describeAttachments(atts: any[]): string {
   if (!atts?.length) return ''
@@ -223,9 +235,11 @@ export async function importMetaHistory(
   } = {},
 ): Promise<{ channels: number; messages: number; errors: string[]; next: ImportCursor | null }> {
   const GRAPH = 'https://graph.facebook.com/v21.0'
-  const pageSize = Math.min(25, Math.max(1, opts.conversations ?? 25))
+  // Порция маленькая намеренно: бюджет проверяется между страницами, и одна
+  // большая страница успевала съесть всё время до проверки
+  const pageSize = Math.min(10, Math.max(1, opts.conversations ?? 5))
   const msgLimit = Math.min(200, Math.max(1, opts.messages ?? 50))
-  const budgetMs = Math.max(3000, opts.budgetMs ?? 18_000)
+  const budgetMs = Math.max(3000, opts.budgetMs ?? 12_000)
   const until = Date.now() + budgetMs
   const accounts = await readMetaAccounts(orgId)
   const out = { channels: 0, messages: 0, errors: [] as string[], next: null as ImportCursor | null }
@@ -264,9 +278,10 @@ export async function importMetaHistory(
 
       let data: any
       try {
-        data = await (await fetch(url)).json()
+        data = await graphFetch(url)
       } catch (e: any) {
-        out.errors.push(`${acc.pageName} ${platform}: ${e?.message || 'нет связи'}`)
+        out.errors.push(`${acc.pageName} ${platform}: `
+          + (e?.name === 'TimeoutError' ? 'Meta не ответила вовремя' : (e?.message || 'нет связи')))
         break
       }
       if (data?.error) {
@@ -322,31 +337,46 @@ async function ingestConversation(
   // они легли в том порядке, в каком люди их писали
   let msgs: any[] = []
   try {
-    const md: any = await (await fetch(
+    const md: any = await graphFetch(
       `${GRAPH}/${conv.id}/messages?fields=id,created_time,from,message`
-      + `&limit=${msgLimit}&access_token=${acc.pageToken}`)).json()
+      + `&limit=${msgLimit}&access_token=${acc.pageToken}`)
     msgs = [...(md?.data || [])].reverse()
   } catch { /* диалог без сообщений — не повод ронять весь импорт */ }
 
-  for (const m of msgs) {
-    const text = String(m.message || '').trim()
-    if (!text) continue
-    const mine = ours.has(String(m.from?.id || ''))
-    const done = await sql`
-      INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name, sender_role,
-                                    is_from_client, content_type, text_content,
-                                    external_message_id, is_read, created_at)
-      SELECT ${salesId('msg')}, ${channelId}, ${orgId}, ${String(m.from?.id || '')},
-             ${mine ? (m.from?.name || 'Мы') : name}, ${mine ? 'support' : 'client'},
-             ${!mine}, 'text', ${text}, ${String(m.id)}, true,
-             ${m.created_time ? new Date(m.created_time).toISOString() : new Date().toISOString()}
-      WHERE NOT EXISTS (
-        SELECT 1 FROM support_messages
-        WHERE org_id = ${orgId} AND external_message_id = ${String(m.id)}
+  // Сообщения пишем одной пачкой, а не по одному. Каждая вставка — это заход
+  // в базу примерно на двести миллисекунд, и полсотни сообщений в диалоге
+  // превращались в десять секунд на ровном месте
+  const fresh = msgs.filter(m => String(m.message || '').trim())
+  if (fresh.length) {
+    const ids = fresh.map(m => String(m.id))
+    const known = new Set((await sql`
+      SELECT external_message_id FROM support_messages
+      WHERE org_id = ${orgId} AND external_message_id = ANY(${ids})
+    ` as any[]).map(r => r.external_message_id))
+
+    const rows = fresh.filter(m => !known.has(String(m.id)))
+    if (rows.length) {
+      const params: any[] = []
+      const values = rows.map(m => {
+        const mine = ours.has(String(m.from?.id || ''))
+        params.push(
+          salesId('msg'), channelId, orgId, String(m.from?.id || ''),
+          mine ? (m.from?.name || 'Мы') : name, mine ? 'support' : 'client', !mine,
+          String(m.message).trim(), String(m.id),
+          m.created_time ? new Date(m.created_time).toISOString() : new Date().toISOString(),
+        )
+        const at = params.length - 10
+        return `($${at + 1}, $${at + 2}, $${at + 3}, $${at + 4}, $${at + 5}, $${at + 6}, `
+          + `$${at + 7}, 'text', $${at + 8}, $${at + 9}, true, $${at + 10}::timestamptz)`
+      })
+      await sql.query(
+        `INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name,
+           sender_role, is_from_client, content_type, text_content, external_message_id,
+           is_read, created_at) VALUES ${values.join(', ')}`,
+        params,
       )
-      RETURNING id
-    ` as any[]
-    out.messages += done.length
+      out.messages += rows.length
+    }
   }
 
   const last = msgs[msgs.length - 1]

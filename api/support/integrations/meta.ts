@@ -419,9 +419,9 @@ export default async function handler(req: Request): Promise<Response> {
     // возвращаем место остановки. Экран продолжает с него, пока не кончится:
     // раньше обход всех диалогов подряд упирался в 504 на шлюзе
     const res = await importMetaHistory(sql, orgId, {
-      conversations: Number(body?.conversations) || 25,
+      conversations: Number(body?.conversations) || 5,
       messages: Number(body?.messages) || 50,
-      budgetMs: 18_000,
+      budgetMs: 12_000,
       cursor: body?.cursor || null,
     })
     if (!res.next) {
