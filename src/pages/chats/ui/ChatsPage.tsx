@@ -904,7 +904,11 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
             </div>
           </div>
 
-          <div className="flex gap-1 px-4 pt-2 pb-1 border-b border-slate-100">
+          {/* Прокрутка по горизонтали: вкладок стало пять, и в узкой панели
+              последние две просто обрезались — добраться до них было нельзя */}
+          <div className="flex gap-1 px-4 pt-2 pb-1 border-b border-slate-100
+                          overflow-x-auto scrollbar-none [-ms-overflow-style:none]
+                          [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {([
               { key: 'all' as const, label: 'Все', count: sourceCounts.all },
               { key: 'telegram' as const, label: 'Telegram', count: sourceCounts.telegram },
@@ -919,7 +923,7 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
               <button
                 key={s.key}
                 onClick={() => setSourceFilter(s.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                className={`flex-none flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   sourceFilter === s.key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
                 }`}
               >

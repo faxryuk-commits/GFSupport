@@ -72,7 +72,11 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN support_channels ch ON m.channel_id = ch.id
           WHERE m.channel_id = ${channelId}
             AND m.org_id = ${orgId}
-            AND m.created_at > NOW() - INTERVAL '90 days'
+          -- Окна в 90 дней здесь быть не должно: оно ставилось ради скорости
+          -- на общей выборке, а при открытии конкретного диалога отсекало всю
+          -- переписку старше трёх месяцев. Загруженная из Meta история —
+          -- полтора года — показывалась пустым экраном при живом превью
+          -- в списке. Объём здесь ограничивает LIMIT, и этого достаточно
           ORDER BY m.created_at ASC
           LIMIT ${limit} OFFSET ${offset}
         `
@@ -81,7 +85,6 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT COUNT(*) as total FROM support_messages
           WHERE channel_id = ${channelId}
             AND org_id = ${orgId}
-            AND created_at > NOW() - INTERVAL '90 days'
         `
       } else if (mode === 'hot') {
         // Hot mode: только активные каналы (awaiting_reply или unread)
