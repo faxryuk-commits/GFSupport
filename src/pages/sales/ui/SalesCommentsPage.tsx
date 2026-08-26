@@ -35,6 +35,19 @@ interface Comment {
     published_at: string | null
     fetch_error: string | null
   } | null
+  ai_class?: string | null
+  ai_draft?: string | null
+  ai_reason?: string | null
+  ai_auto?: boolean
+}
+
+/** Как агент разобрал комментарий — и что из этого следует. */
+const AI_CLASS: Record<string, { label: string; tone: string }> = {
+  praise: { label: 'похвала', tone: 'green' },
+  question: { label: 'вопрос', tone: 'blue' },
+  complaint: { label: 'жалоба', tone: 'red' },
+  spam: { label: 'спам', tone: 'gray' },
+  other: { label: 'прочее', tone: 'gray' },
 }
 
 interface Data {
@@ -74,8 +87,10 @@ export function SalesCommentsPage() {
   useEffect(() => { load() }, [load])
   useAutoRefresh(load, 60000)
 
-  const reply = async (c: Comment) => {
-    const text = draft.trim()
+  // Текст можно передать явно: при отправке черновика состояние обновится
+  // только к следующей отрисовке, и ответ ушёл бы пустым
+  const reply = async (c: Comment, override?: string) => {
+    const text = (override ?? draft).trim()
     if (!text) return
     setBusy(c.comment_id)
     try {
@@ -226,6 +241,14 @@ export function SalesCommentsPage() {
               {c.replied_at
                 ? <Chip tone="green">отвечено</Chip>
                 : <Chip tone="amber">без ответа</Chip>}
+              {c.ai_class && (
+                <span title={c.ai_reason || undefined}>
+                  <Chip tone={AI_CLASS[c.ai_class]?.tone || 'gray'}>
+                    {AI_CLASS[c.ai_class]?.label || c.ai_class}
+                  </Chip>
+                </span>
+              )}
+              {c.ai_auto && <Chip tone="violet">ответил агент</Chip>}
               <span className="text-[11.5px] text-gray-400 tabular-nums">{fmtDateTime(c.created_at)}</span>
             </div>
 
@@ -237,6 +260,32 @@ export function SalesCommentsPage() {
                 <div className="text-[11px] text-gray-400 mt-0.5">
                   {c.replied_by || 'Команда'}
                   {c.replied_at ? ` · ${fmtDateTime(c.replied_at)}` : ''}
+                </div>
+              </div>
+            )}
+
+            {/* Черновик агента: он не отправлен и не отправится сам — там,
+                где цена ошибки высокая, последнее слово за человеком */}
+            {!c.replied_at && c.ai_draft && answering !== c.comment_id && (
+              <div className="mt-2 rounded-lg bg-violet-50/60 border border-violet-100 px-3 py-2">
+                <div className="text-[11px] text-violet-700 font-medium mb-0.5">
+                  Черновик агента{c.ai_reason ? ` · ${c.ai_reason}` : ''}
+                </div>
+                <div className="text-[12.5px] text-gray-800 whitespace-pre-wrap">{c.ai_draft}</div>
+                <div className="flex gap-1.5 mt-2">
+                  <button
+                    onClick={() => reply(c, c.ai_draft || '')}
+                    disabled={busy === c.comment_id}
+                    className="text-[11.5px] px-2.5 py-1 rounded border border-violet-300 text-violet-700
+                               hover:bg-violet-100 disabled:opacity-50">
+                    Отправить как есть
+                  </button>
+                  <button
+                    onClick={() => { setAnswering(c.comment_id); setDraft(c.ai_draft || '') }}
+                    className="text-[11.5px] px-2.5 py-1 rounded border border-gray-200 text-gray-600
+                               hover:border-blue-300">
+                    Поправить
+                  </button>
                 </div>
               </div>
             )}

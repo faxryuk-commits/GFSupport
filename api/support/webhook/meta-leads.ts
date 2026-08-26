@@ -6,6 +6,7 @@ import { validMetaSignature } from '../lib/meta-signature.js'
 import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } from '../lib/meta-config.js'
 import { handleMetaMessaging } from '../lib/meta-messages.js'
 import { handleMetaComments } from '../lib/meta-comments.js'
+import { handleCommentByAgent } from '../lib/meta-comment-agent.js'
 
 export const config = { runtime: 'edge' }
 
@@ -94,8 +95,10 @@ export default async function handler(req: Request): Promise<Response> {
     // иначе комментарии инстаграма отсеивались бы следующей же строкой
     const hasChanges = (body.entry || []).some((e: any) => Array.isArray(e?.changes) && e.changes.length)
     if (hasChanges) {
-      const taken = await handleMetaComments(getSQL(), ORG, body)
-      if (taken) console.log('[webhook/meta] принято комментариев:', taken)
+      const sqlC = getSQL()
+      const fresh = await handleMetaComments(sqlC, ORG, body)
+      if (fresh.length) console.log('[webhook/meta] принято комментариев:', fresh.length)
+      await runCommentAgent(sqlC, fresh)
     }
     if (body.object !== 'page') return json({ ok: true })
 
@@ -232,4 +235,40 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   return json({ ok: true })
+}
+
+/**
+ * Разбор свежих комментариев агентом.
+ *
+ * Делаем в вебхуке, а не кроном: комментарий под рекламой живёт минутами, и
+ * ответ через час стоит примерно столько же, сколько молчание. Ограничение
+ * на три штуки за доставку — предохранитель от лавины на вирусном посте,
+ * остальные разберутся при следующем открытии экрана.
+ */
+async function runCommentAgent(sql: any, fresh: string[]): Promise<void> {
+  if (!fresh.length) return
+  const on = await agentSwitch(sql)
+  if (!on.enabled) return
+  for (const id of fresh.slice(0, 3)) {
+    try {
+      await handleCommentByAgent(sql, ORG, id, { autoReply: on.autoReply })
+    } catch (e) {
+      console.error('[агент комментариев]', id, e)
+    }
+  }
+}
+
+/** Выключатель агента. По умолчанию включён: иначе о нём просто забудут. */
+async function agentSwitch(sql: any): Promise<{ enabled: boolean; autoReply: boolean }> {
+  try {
+    const [row] = await sql`
+      SELECT value FROM support_settings
+      WHERE org_id = ${ORG} AND key = 'meta_comment_agent' LIMIT 1
+    ` as any[]
+    if (!row?.value) return { enabled: true, autoReply: true }
+    const v = typeof row.value === 'string' ? JSON.parse(row.value) : row.value
+    return { enabled: v.enabled !== false, autoReply: v.autoReply !== false }
+  } catch {
+    return { enabled: true, autoReply: true }
+  }
 }

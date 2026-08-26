@@ -3,6 +3,7 @@ import { validMetaSignature } from '../lib/meta-signature.js'
 import { readMetaConfig, readMetaAccounts } from '../lib/meta-config.js'
 import { handleMetaMessaging } from '../lib/meta-messages.js'
 import { handleMetaComments } from '../lib/meta-comments.js'
+import { handleCommentByAgent } from '../lib/meta-comment-agent.js'
 
 export const config = { runtime: 'edge' }
 
@@ -59,8 +60,9 @@ export default async function handler(req: Request): Promise<Response> {
     // Сообщения и комментарии приходят на один адрес разными ветками:
     // первые в entry.messaging, вторые в entry.changes
     const taken = await handleMetaMessaging(sql, ORG, body)
-    const comments = await handleMetaComments(sql, ORG, body)
-    return json({ ok: true, messages: taken, comments })
+    const fresh = await handleMetaComments(sql, ORG, body)
+    await runCommentAgent(sql, fresh)
+    return json({ ok: true, messages: taken, comments: fresh.length })
   } catch (e) {
     console.error('[webhook/instagram] error:', e)
   }
@@ -87,4 +89,40 @@ export async function sendInstagramMessage(igsid: string, text: string, orgId?: 
     body: JSON.stringify({ recipient: { id: igsid }, message: { text } }),
   })
   return res.ok
+}
+
+/**
+ * Разбор свежих комментариев агентом.
+ *
+ * Делаем в вебхуке, а не кроном: комментарий под рекламой живёт минутами, и
+ * ответ через час стоит примерно столько же, сколько молчание. Ограничение
+ * на три штуки за доставку — предохранитель от лавины на вирусном посте,
+ * остальные разберутся при следующем открытии экрана.
+ */
+async function runCommentAgent(sql: any, fresh: string[]): Promise<void> {
+  if (!fresh.length) return
+  const on = await agentSwitch(sql)
+  if (!on.enabled) return
+  for (const id of fresh.slice(0, 3)) {
+    try {
+      await handleCommentByAgent(sql, ORG, id, { autoReply: on.autoReply })
+    } catch (e) {
+      console.error('[агент комментариев]', id, e)
+    }
+  }
+}
+
+/** Выключатель агента. По умолчанию включён: иначе о нём просто забудут. */
+async function agentSwitch(sql: any): Promise<{ enabled: boolean; autoReply: boolean }> {
+  try {
+    const [row] = await sql`
+      SELECT value FROM support_settings
+      WHERE org_id = ${ORG} AND key = 'meta_comment_agent' LIMIT 1
+    ` as any[]
+    if (!row?.value) return { enabled: true, autoReply: true }
+    const v = typeof row.value === 'string' ? JSON.parse(row.value) : row.value
+    return { enabled: v.enabled !== false, autoReply: v.autoReply !== false }
+  } catch {
+    return { enabled: true, autoReply: true }
+  }
 }

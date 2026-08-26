@@ -29,10 +29,12 @@ function isOurs(fromId: string, pageId: string | null, igId: string | null): boo
  */
 export async function handleMetaComments(
   sql: any, orgId: string, body: any,
-): Promise<number> {
+): Promise<string[]> {
   const isInstagram = body?.object === 'instagram'
   const platform = isInstagram ? 'instagram' : 'facebook'
-  let taken = 0
+  // Возвращаем не счётчик, а сами новые комментарии: их разбирает агент, и
+  // ему нужно знать, какие именно появились, а не сколько
+  const fresh: string[] = []
 
   for (const entry of body?.entry || []) {
     const acc = isInstagram
@@ -76,7 +78,7 @@ export async function handleMetaComments(
         )
         RETURNING id
       ` as any[]
-      taken += done.length
+      if (done.length && !ours) fresh.push(commentId)
 
       // Наш ответ, пришедший обратно, закрывает родительский комментарий:
       // иначе он вечно висел бы в «без ответа», хотя ответ уже под ним
@@ -90,7 +92,7 @@ export async function handleMetaComments(
       }
     }
   }
-  return taken
+  return fresh
 }
 
 /**
