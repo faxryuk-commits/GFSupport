@@ -348,24 +348,42 @@ export default async function handler(req: Request): Promise<Response> {
           ${senderUsername || null}, 'support', false, 'text', ${text}, true, NOW()
         )
       `
-    } else if (channel.source === 'instagram') {
-      // Директ уходит через Graph API от имени подключённого аккаунта.
-      // Ограничение платформы: ответить можно в течение суток после последнего
-      // сообщения клиента — за окном Meta вернёт ошибку, и мы честно её покажем,
-      // а не сделаем вид, что сообщение ушло
+    } else if (channel.source === 'instagram' || channel.source === 'messenger') {
+      // Директ и Messenger уходят одним и тем же методом Graph API: различаются
+      // они только объектом, от которого пришло уведомление. Отдельной ветки
+      // для Messenger раньше не было, и ответ молча уходил в Telegram с пустым
+      // адресом чата — то есть никуда
       // Токен именно той страницы, которой принадлежит диалог: при двух
       // подключённых аккаунтах общий токен отправил бы ответ не от того имени
       const igToken = await tokenForPage(orgId, channel.meta_page_id || null)
-      if (!igToken) return json({ error: 'Instagram не подключён — подключите его в настройках' }, 500)
+      if (!igToken) return json({ error: 'Meta не подключена — подключите страницу в настройках' }, 500)
 
-      const igRes = await fetch(`https://graph.facebook.com/v21.0/me/messages?access_token=${igToken}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipient: { id: channel.external_chat_id }, message: { text } }),
-      })
-      if (!igRes.ok) {
-        const detail = await igRes.text().catch(() => '')
-        return json({ error: 'Instagram не принял сообщение', details: detail.slice(0, 300) }, 502)
+      const post = (extra: Record<string, string>) => fetch(
+        `https://graph.facebook.com/v21.0/me/messages?access_token=${igToken}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: { id: channel.external_chat_id }, message: { text }, ...extra,
+          }),
+        })
+
+      let metaRes = await post({ messaging_type: 'RESPONSE' })
+      let detail = ''
+      if (!metaRes.ok) {
+        detail = await metaRes.text().catch(() => '')
+        let code = 0
+        try { code = JSON.parse(detail)?.error?.code ?? 0 } catch { /* не JSON — код неизвестен */ }
+        // Десятый код — «вне разрешённого окна»: сутки с последнего сообщения
+        // клиента прошли. Отвечает живой сотрудник, а не бот, и ровно для этого
+        // у Meta есть отметка HUMAN_AGENT с окном в семь дней. Обращение,
+        // пришедшее вечером в пятницу, иначе осталось бы без ответа
+        if (code === 10) {
+          metaRes = await post({ messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' })
+          if (!metaRes.ok) detail = await metaRes.text().catch(() => '')
+        }
+      }
+      if (!metaRes.ok) {
+        return json({ error: 'Meta не приняла сообщение', details: detail.slice(0, 300) }, 502)
       }
 
       await sql`
