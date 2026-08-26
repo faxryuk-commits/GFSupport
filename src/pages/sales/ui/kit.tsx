@@ -34,6 +34,26 @@ const TONES: Record<string, string> = {
   violet: 'bg-violet-50 text-violet-700',
 }
 
+/**
+ * Статус обращения — одним словарём на всю систему.
+ *
+ * Раньше подписи жили отдельно в списке и в карточке, и один и тот же лид
+ * назывался по-разному: в списке «в работе», в карточке «Стало сделкой»,
+ * «мусор» против «Отказ». Человек читал два экрана и не понимал, одно ли
+ * это состояние.
+ */
+export const LEAD_STATUS: Record<string, { label: string; tone: string }> = {
+  new: { label: 'Новое', tone: 'amber' },
+  assigned: { label: 'Назначено', tone: 'blue' },
+  nurture: { label: 'На прогреве', tone: 'gray' },
+  converted: { label: 'Стало сделкой', tone: 'green' },
+  junk: { label: 'Отказ', tone: 'red' },
+  duplicate: { label: 'Дубль', tone: 'gray' },
+}
+
+export const leadStatus = (key: string) =>
+  LEAD_STATUS[key] || { label: key, tone: 'gray' }
+
 export const Chip = ({ tone = 'gray', children }: { tone?: string; children: ReactNode }) => (
   <span className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap ${TONES[tone]}`}>
     {children}

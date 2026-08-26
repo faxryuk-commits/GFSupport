@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
-         Modal, Field, Btn, useAutoRefresh, slaTone, slaText, Skeleton , RangePicker, rangeOf , PageNumbers, FilterBar, BulkBar } from './kit'
+         Modal, Field, Btn, useAutoRefresh, leadStatus, slaTone, slaText, Skeleton , RangePicker, rangeOf , PageNumbers, FilterBar, BulkBar } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { useSalesRefs, optionsFor } from './refs'
 import { parsePhone } from '@/shared/lib/phone'
@@ -71,13 +71,6 @@ const KIND_LABEL: Record<string, string> = {
 const KIND_TONE: Record<string, string> = {
   form: 'green', message: 'violet', comment: 'amber', call: 'blue',
   email: 'blue', manual: 'gray', other: 'red',
-}
-
-const STATUS_TONE: Record<string, string> = {
-  assigned: 'blue', converted: 'green', new: 'amber', nurture: 'gray', junk: 'gray',
-}
-const STATUS_LABEL: Record<string, string> = {
-  assigned: 'назначен', converted: 'в работе', new: 'в очереди', nurture: 'на прогреве', junk: 'мусор',
 }
 
 export function SalesLeadsPage() {
@@ -361,9 +354,7 @@ export function SalesLeadsPage() {
                             {KIND_LABEL[l.lead_kind || ''] || 'обращение'}
                           </Chip>
                           <Chip tone="blue">{l.source || 'источник не определён'}</Chip>
-                          <Chip tone={STATUS_TONE[l.status] || 'gray'}>
-                            {STATUS_LABEL[l.status] || l.status}
-                          </Chip>
+                          <Chip tone={leadStatus(l.status).tone}>{leadStatus(l.status).label}</Chip>
                           {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
                             <Chip tone={slaTone(l.sla_due_at)}>
                               первое касание {slaText(l.sla_due_at)}

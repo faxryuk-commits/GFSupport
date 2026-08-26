@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
-import { Card, Chip, InlineField, Skeleton, slaTone, slaText } from './kit'
+import { Card, Chip, InlineField, Skeleton, leadStatus, slaTone, slaText } from './kit'
 import { TasksCard } from './TasksCard'
 import { useSalesRefs, optionsFor } from './refs'
 
@@ -46,11 +46,6 @@ interface LeadData {
 const KIND_LABEL: Record<string, string> = {
   form: 'заявка с формы', message: 'написал в мессенджер', comment: 'комментарий',
   call: 'звонок', email: 'письмо', manual: 'заведён вручную', other: 'канал не определён',
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  new: 'Новое', assigned: 'Назначено', nurture: 'На прогреве',
-  converted: 'Стало сделкой', junk: 'Отказ', duplicate: 'Дубль',
 }
 
 const ASSISTANT_ACTION: Record<string, string> = {
@@ -235,9 +230,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         </div>
         <div className="flex flex-wrap gap-1.5 items-center">
           <Chip tone="violet">{KIND_LABEL[l.lead_kind || ''] || 'обращение'}</Chip>
-          <Chip tone={l.status === 'junk' ? 'red' : l.status === 'converted' ? 'green' : 'gray'}>
-            {STATUS_LABEL[l.status] || l.status}
-          </Chip>
+          <Chip tone={leadStatus(l.status).tone}>{leadStatus(l.status).label}</Chip>
           {l.sla_due_at && !l.first_touch_at && open && (
             <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
           )}
