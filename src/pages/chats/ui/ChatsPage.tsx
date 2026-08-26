@@ -801,8 +801,10 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
     setMessages([])
     setChannelMembers([])
     
-    // Обновляем URL для возможности шаринга/закладок
-    navigate(`/chats/${channel.id}`, { replace: true })
+    // Адрес обновляем внутри своего раздела: у продаж и поддержки один и тот же
+    // экран по разным путям, и жёсткий /chats выбрасывал сейлза из «Диалогов»
+    // в общий список поддержки прямо по клику на свой же диалог
+    navigate(`${scope === 'sales' ? '/sales/chats' : '/chats'}/${channel.id}`, { replace: true })
     
     // Загружаем сообщения и участников параллельно
     const [, membersResult] = await Promise.all([

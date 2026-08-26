@@ -44,9 +44,12 @@ export default async function handler(req: Request): Promise<Response> {
         AND (last_active_at IS NULL OR last_active_at < NOW() - INTERVAL '15 minutes')
     `,
     sql`
-      SELECT COALESCE(SUM(unread_count), 0)::int AS unread
+      -- Считаем чаты, а не сообщения. Сумма непрочитанных давала 402 рядом
+      -- с подписью «Чаты», хотя чатов с непрочитанным семь десятков: значок
+      -- у пункта меню отвечает на вопрос «сколько дел», а не «сколько строк»
+      SELECT COUNT(*)::int AS unread
       FROM support_channels
-      WHERE org_id = ${orgId} AND is_active = true
+      WHERE org_id = ${orgId} AND is_active = true AND unread_count > 0
         AND (${market} = '' OR market_id = ${market})
     `,
     sql`

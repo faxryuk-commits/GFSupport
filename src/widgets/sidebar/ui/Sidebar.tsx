@@ -194,6 +194,8 @@ interface NavItemDef {
   label: string
   icon: typeof LayoutDashboard
   badgeKey?: string
+  /** Что означает число в значке — видно при наведении. */
+  badgeHint?: string
   statusDot?: boolean
 }
 interface NavGroup {
@@ -221,8 +223,10 @@ const navGroups: NavGroup[] = [
       // Иконки у продаж свои: раньше «Лиды» и «Чаты» делили один значок, а
       // «Аккаунты» и «Каналы» — решётку, и в свёрнутом меню они были неразличимы
       { path: '/sales/funnel', label: 'Воронка', icon: Waypoints },
-      { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals' },
-      { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads' },
+      { path: '/sales/deals', label: 'Сделки', icon: Handshake, badgeKey: 'salesDeals',
+        badgeHint: 'ваши сделки без следующего шага' },
+      { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads',
+        badgeHint: 'назначены на вас и ещё не тронуты' },
       { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },
       // Диалоги продаж отдельно от поддержки: там незнакомый человек, которого
       // убеждают, тут действующий клиент с проблемой — общий список
@@ -233,8 +237,10 @@ const navGroups: NavGroup[] = [
   {
     label: 'Операции',
     items: [
-      { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats' },
-      { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases' },
+      { path: '/chats', label: 'Чаты', icon: MessageSquare, badgeKey: 'unreadChats',
+        badgeHint: 'чатов с непрочитанными сообщениями' },
+      { path: '/cases', label: 'Кейсы', icon: Briefcase, badgeKey: 'openCases',
+        badgeHint: 'открытых кейсов' },
       { path: '/channels', label: 'Каналы', icon: Hash },
     ],
   },
@@ -377,7 +383,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
 
   const toggleCollapse = () => setIsCollapsed(!isCollapsed)
 
-  const NavItem = ({ path, label, icon: Icon, badgeKey, statusDot }: NavItemDef) => {
+  const NavItem = ({ path, label, icon: Icon, badgeKey, badgeHint, statusDot }: NavItemDef) => {
     const active = isActive(path)
     const badgeCount = badgeKey ? badges[badgeKey] : 0
     const isAnimating = badgeKey && animatingBadges.has(badgeKey)
@@ -412,6 +418,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
                   active ? 'bg-white/20 text-white' : 'bg-blue-500 text-white'
                 } ${isAnimating ? 'badge-animate badge-shine' : ''}`}
                 style={{ transformStyle: 'preserve-3d', position: 'relative' }}
+                title={badgeHint}
               >
                 {badgeCount}
               </span>

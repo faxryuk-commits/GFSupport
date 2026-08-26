@@ -145,8 +145,12 @@ export default async function handler(req: Request): Promise<Response> {
            AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
            AND d.archived_at IS NULL
            AND (d.stalled_at IS NOT NULL OR d.next_step_at IS NULL)) AS hot_deals,
+        -- Тоже лично по сейлзу, как и сделки рядом: соседние значки должны
+        -- мерить одно и то же. Раньше сделки считались по владельцу, а лиды —
+        -- по всей организации, и «10» с «72» стояли рядом, означая разное
         (SELECT COUNT(*) FROM sales_leads l WHERE l.org_id = ${orgId}
-           AND l.archived_at IS NULL AND l.status = 'new') AS new_leads
+           AND l.archived_at IS NULL AND l.assigned_agent_id = ${agentId}
+           AND l.first_touch_at IS NULL) AS new_leads
     `,
   ])
 
