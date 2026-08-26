@@ -21,6 +21,7 @@ type Workspace = {
   cases: Array<{ id: string; ticket_number: string; title: string; status: string; hours_open: number }>
   commitments: Array<{ id: string; commitment_text: string; context: string | null; due_date: string | null; status: string; channel_name: string | null; channel_id: string | null }>
   onboarding: Array<{ id: string; step: string; brand: string; status: string; kind: string; status_since: string }>
+  onboardingTodos?: Array<{ id: string; text: string; brand: string; brand_id: string; due_at: string | null; created_by: string | null; created_at: string }>
   sales?: { leads: Array<{ id: string; name: string; sla_due_at: string | null }>; tasks: Array<{ id: string; title: string; due_at: string; deal_id: string | null; deal_title: string | null }> }
   week: { confirmed_week?: number; cases_week?: number; kept_week?: number }
 }
@@ -156,6 +157,27 @@ export function MyWorkspacePage() {
         text: `${s.step} · ${s.brand}`,
         meta: s.kind === 'waiting' ? `${s.status} · ${stuckDays} дн` : s.status,
         detail: { title: `${s.step} · ${s.brand}`, rows: [['Статус', s.status], ['В статусе с', formatDateTimeShort(s.status_since)]], linkTo: '/onboarding', linkLabel: 'Открыть Подключения' },
+      })
+    }
+    // Мини-задачи из карточек подключений: их ставят руками друг другу,
+    // и до этого экрана они не доходили — задача жила только внутри карточки
+    for (const t of ws.onboardingTodos || []) {
+      const overdue = t.due_at ? new Date(t.due_at).getTime() < Date.now() : false
+      list.push({
+        id: 'ot' + t.id, mod: 'onb',
+        tone: overdue ? 'red' : 'blue',
+        text: t.text,
+        meta: t.due_at ? `${t.brand} · до ${formatDateTimeShort(t.due_at)}` : t.brand,
+        detail: {
+          title: t.text,
+          rows: [
+            ['Бренд', t.brand],
+            ['Поставил', t.created_by || '—'],
+            ['Срок', t.due_at ? formatDateTimeShort(t.due_at) : 'без срока'],
+            ['Создана', formatDateTimeShort(t.created_at)],
+          ],
+          linkTo: '/onboarding', linkLabel: 'Открыть Подключения',
+        },
       })
     }
     const w = { red: 0, amber: 1, blue: 2 }

@@ -2094,8 +2094,10 @@ function CommentsBlock({ brandId, brandName, comments, agents, selfName, onChang
   // @-упоминания: автодополнение по сотрудникам; упомянутый получает задачу-вызов
   const atMatch = /@([^@\n]*)$/.exec(text)
   const mentionQuery = atMatch ? atMatch[1].toLowerCase() : null
+  // Шесть первых по алфавиту выглядели как «в системе всего шесть человек».
+  // Отдаём весь список — окно прокручивается
   const mentionSuggestions = mentionQuery !== null
-    ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery)).slice(0, 6)
+    ? agents.filter(a => a.name.toLowerCase().includes(mentionQuery))
     : []
 
   const insertMention = (name: string) => {
@@ -2134,7 +2136,7 @@ function CommentsBlock({ brandId, brandName, comments, agents, selfName, onChang
           className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
         <button onClick={submit} disabled={!text.trim()} className="p-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-40"><Plus className="w-4 h-4" /></button>
         {mentionSuggestions.length > 0 && (
-          <div className="absolute left-0 top-full mt-1 z-30 w-64 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+          <div className="absolute left-0 top-full mt-1 z-30 w-64 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1">
             {mentionSuggestions.map(a => (
               <button
                 key={a.id}
@@ -2216,7 +2218,7 @@ function TodosBlock({ brandId, todos, agents, selfName, onChanged }: {
           onKeyDown={e => { if (e.key === 'Enter') submit() }}
           placeholder="Новая задача"
           className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-sm" />
-        <select value={assignee} onChange={e => setAssignee(e.target.value)} className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white max-w-[120px]">
+        <select value={assignee} onChange={e => setAssignee(e.target.value)} className="px-2 py-1.5 rounded-lg border border-gray-300 text-sm bg-white max-w-[180px]">
           <option value="">Кому…</option>
           {groupAgentsByDep(agents).map(g => (
             <optgroup key={g.label} label={g.label}>

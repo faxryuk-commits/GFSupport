@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json } from '../lib/db.js'
 import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
+import { sendNotification } from '../lib/notifications.js'
 
 export const config = {
   runtime: 'edge',
@@ -112,6 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
           VALUES (${id}, ${orgId}, ${brandId}, ${String(text).trim()},
                   ${assigneeId || null}, ${assigneeName}, ${dueAt || null}, ${authorName})
         `
+        await notifyAssignee(sql, orgId, brandId, assigneeId, ctx.agentId, authorName, String(text))
         return json({ success: true, id })
       }
 
@@ -140,6 +142,8 @@ export default async function handler(req: Request): Promise<Response> {
       if (assigneeId !== undefined) {
         const name = assigneeId ? await resolveAgentName(sql, assigneeId) : null
         await sql`UPDATE onboarding_todos SET assignee_id = ${assigneeId || null}, assignee_name = ${name} WHERE id = ${todoId} AND org_id = ${orgId}`
+        const [td] = await sql`SELECT brand_id, text FROM onboarding_todos WHERE id = ${todoId} AND org_id = ${orgId} LIMIT 1` as any[]
+        if (td) await notifyAssignee(sql, orgId, td.brand_id, assigneeId, ctx.agentId, await resolveAgentName(sql, ctx.agentId), String(td.text || ''))
       }
       if (dueAt !== undefined) {
         await sql`UPDATE onboarding_todos SET due_at = ${dueAt || null} WHERE id = ${todoId} AND org_id = ${orgId}`
@@ -169,4 +173,30 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   return json({ error: 'Method not allowed' }, 405)
+}
+
+/**
+ * Назначили мини-задачу — человек должен узнать об этом, не открывая карточку
+ * бренда. Раньше задача просто ложилась в базу и ждала, пока исполнитель
+ * случайно откроет тот же экран.
+ *
+ * Себе задачу ставят как напоминание — дёргать человека уведомлением о его же
+ * действии незачем, поэтому такой случай пропускаем. В «Моём» она всё равно
+ * появится: этот список читается по исполнителю, а не по уведомлениям.
+ */
+async function notifyAssignee(
+  sql: any, orgId: string, brandId: string,
+  assigneeId: string | null | undefined, actorId: string | null,
+  actorName: string | null, text: string,
+): Promise<void> {
+  if (!assigneeId || assigneeId === actorId) return
+  try {
+    const [b] = await sql`SELECT name FROM onboarding_brands WHERE id = ${brandId} LIMIT 1` as any[]
+    await sendNotification({
+      orgId, type: 'assignment', priority: 'high',
+      title: `Задача по подключению: ${b?.name || 'бренд'}`,
+      body: `${actorName || 'Коллега'}: ${text.trim().slice(0, 140)}`,
+      targetAgentIds: [assigneeId],
+    })
+  } catch { /* уведомление не должно ронять создание задачи */ }
 }

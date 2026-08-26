@@ -47,7 +47,7 @@ export default async function handler(req: Request): Promise<Response> {
     ? usernames.map(u => `%@${u}%`)
     : ['%@__нет_username__%']
 
-  const [mentions, items, cases, commitments, onboarding, salesLeads, salesTasks] = await sql.transaction([
+  const [mentions, items, cases, commitments, onboarding, onbTodos, salesLeads, salesTasks] = await sql.transaction([
     // Упоминания за неделю; «без ответа» = после упоминания команда в канале молчит
     sql`
       SELECT m.id, m.text_content, m.sender_name, m.created_at,
@@ -105,6 +105,18 @@ export default async function handler(req: Request): Promise<Response> {
         AND s.kind IN ('todo', 'active', 'waiting')
       ORDER BY t.status_since LIMIT 15
     `,
+    // Мои мини-задачи из карточек подключений. Их ставят друг другу руками,
+    // и до этого экрана они не доходили вовсе: человек узнавал о задаче,
+    // только если сам открывал карточку того же бренда
+    sql`
+      SELECT td.id, td.text, td.due_at, td.created_by, td.created_at,
+             b.id AS brand_id, b.name AS brand
+      FROM onboarding_todos td
+      JOIN onboarding_brands b ON b.id = td.brand_id AND b.archived_at IS NULL
+      WHERE td.org_id = ${orgId} AND td.assignee_id = ${ctx.agentId}
+        AND td.done_at IS NULL
+      ORDER BY td.due_at NULLS LAST, td.created_at LIMIT 15
+    `,
     // Продажи — очередь дня (пересечение отделов: та же логика, что /sales/queue)
     sql`
       SELECT id, name, sla_due_at FROM sales_leads
@@ -143,6 +155,7 @@ export default async function handler(req: Request): Promise<Response> {
     cases,
     commitments,
     onboarding,
+    onboardingTodos: onbTodos,
     sales: { leads: salesLeads, tasks: salesTasks },
     week: week || {},
   })
