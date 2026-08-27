@@ -182,7 +182,8 @@ export default async function handler(req: Request): Promise<Response> {
     if (!dealId) return json({ error: 'dealId or id is required' }, 400)
     const docs = await sql`
       SELECT id, kind, number, version, status, title, total, currency, valid_till,
-             opened_count, read_seconds, first_opened_at, last_opened_at, sent_at, created_at
+             opened_count, read_seconds, first_opened_at, last_opened_at, sent_at, created_at,
+             materials
       FROM sales_documents
       WHERE org_id = ${orgId} AND deal_id = ${dealId}
       ORDER BY created_at DESC
@@ -211,6 +212,11 @@ export default async function handler(req: Request): Promise<Response> {
         body = COALESCE(${body.body ?? null}, body),
         title = COALESCE(${body.title ?? null}, title),
         valid_till = COALESCE(${body.validTill ?? null}, valid_till),
+        -- Материалы к предложению: одна ссылка вместо россыпи вложений,
+        -- и видно, дочитал ли клиент до презентации
+        materials = ${body.materials !== undefined
+          ? JSON.stringify(body.materials || [])
+          : (doc.materials ? JSON.stringify(doc.materials) : null)}::jsonb,
         total = ${total},
         updated_at = NOW()
       WHERE id = ${body.id}
@@ -355,10 +361,21 @@ export default async function handler(req: Request): Promise<Response> {
   const total = monthlyTotal
   const id = salesId('sdoc')
 
+  // Материалы «по умолчанию» кладём сразу: общая презентация продукта нужна
+  // почти всегда, и заставлять отмечать её каждый раз — способ забыть
+  const defaults = kind === 'quote'
+    ? (await sql`
+        SELECT id FROM sales_materials
+        WHERE org_id = ${orgId} AND is_active = true AND default_on = true
+          AND (markets IS NULL OR ${deal.market_id || ''} = ANY(markets))
+        ORDER BY sort_order
+      ` as any[]).map(r => r.id)
+    : []
+
   await sql`
     INSERT INTO sales_documents (id, org_id, deal_id, account_id, kind, status, title, number,
                                  lines, conditions, requisites, body, total, currency, valid_till,
-                                 discount_pct, template_id, created_by)
+                                 discount_pct, template_id, materials, created_by)
     VALUES (${id}, ${orgId}, ${deal.id}, ${deal.account_id}, ${kind}, 'draft',
             ${`${kind === 'quote' ? 'КП' : kind === 'offer' ? 'Оферта' : 'Договор'} — ${account?.name || deal.title || ''}`},
             ${docNumber},
@@ -375,7 +392,8 @@ export default async function handler(req: Request): Promise<Response> {
               signer_basis: account?.signer_basis, city: account?.city,
             })}::jsonb,
             ${templateBody}, ${total || deal.monthly_amount || null}, ${built.currency},
-            ${deal.valid_till}, ${deal.discount_pct}, ${templateId}, ${ctx.agentId})
+            ${deal.valid_till}, ${deal.discount_pct}, ${templateId},
+            ${JSON.stringify(defaults)}::jsonb, ${ctx.agentId})
   `
 
   return json({

@@ -42,12 +42,30 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const [doc] = await sql`
     SELECT id, org_id, kind, number, version, status, title, lines, conditions, body,
-           total, currency, valid_till, requisites, sent_at, accepted_at, paid_at
+           total, currency, valid_till, requisites, sent_at, accepted_at, paid_at, materials
     FROM sales_documents WHERE share_token = ${token} LIMIT 1
   `
   if (!doc) return json({ error: 'not found' }, 404)
 
   const expired = doc.valid_till && new Date(doc.valid_till).getTime() < Date.now()
+
+  // Клик по материалу: пишем отдельно от открытия документа — по этому
+  // видно, дочитал ли клиент до презентации или закрыл на первом экране
+  if (req.method === 'POST' && new URL(req.url).searchParams.get('action') === 'material') {
+    const body = await req.json().catch(() => null)
+    const id = String(body?.materialId || '')
+    if (id) {
+      await sql`
+        UPDATE sales_materials SET opened_count = opened_count + 1
+        WHERE org_id = ${doc.org_id} AND id = ${id}
+      `
+      await sql`
+        INSERT INTO sales_document_views (org_id, document_id, viewer_hash, user_agent, referrer)
+        VALUES (${doc.org_id}, ${doc.id}, ${await viewerHash(req, token)}, 'material', ${id})
+      `
+    }
+    return json({ ok: true })
+  }
 
   if (req.method === 'GET') {
     const hash = await viewerHash(req, token)
@@ -67,6 +85,18 @@ export default async function handler(req: Request): Promise<Response> {
         status = CASE WHEN status = 'sent' THEN 'opened' ELSE status END
       WHERE id = ${doc.id}
     `
+    // Материалы: одна ссылка вместо четырёх вложений в директе, и видно,
+    // что именно смотрели — открыл предложение, но не открыл презентацию
+    // это другой разговор при следующем звонке
+    const ids: string[] = Array.isArray(doc.materials) ? doc.materials.map(String) : []
+    const materials = ids.length
+      ? await sql`
+          SELECT id, title, description, url, kind FROM sales_materials
+          WHERE org_id = ${doc.org_id} AND id = ANY(${ids}) AND is_active = true
+          ORDER BY sort_order, title
+        `
+      : []
+
     return json({
       document: {
         kind: doc.kind, number: doc.number, version: doc.version, title: doc.title,
@@ -75,6 +105,7 @@ export default async function handler(req: Request): Promise<Response> {
         validTill: doc.valid_till, requisites: doc.requisites, expired,
         acceptedAt: doc.accepted_at, paidAt: doc.paid_at, status: doc.status,
       },
+      materials,
     })
   }
 

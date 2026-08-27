@@ -65,9 +65,22 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
+interface Material {
+  id: string
+  title: string
+  description: string | null
+  url: string
+  kind: string
+}
+
+const MATERIAL_ICON: Record<string, string> = {
+  presentation: '📊', case: '🏆', video: '🎬', doc: '📄', link: '🔗',
+}
+
 export function PublicDocPage() {
   const { token } = useParams<{ token: string }>()
   const [doc, setDoc] = useState<PublicDoc | null>(null)
+  const [materials, setMaterials] = useState<Material[]>([])
   const [error, setError] = useState<string | null>(null)
   const [accepting, setAccepting] = useState(false)
   const pending = useRef(0)
@@ -101,9 +114,18 @@ export function PublicDocPage() {
         if (!r.ok) throw new Error(r.status === 404 ? 'Документ не найден' : 'Не удалось открыть документ')
         return r.json()
       })
-      .then(d => setDoc(d.document))
+      .then(d => { setDoc(d.document); setMaterials(d.materials || []) })
       .catch(e => setError(e.message))
   }, [token])
+
+  /** Клик по материалу считаем отдельно: видно, дочитал ли клиент до него. */
+  const openMaterial = (m: Material) => {
+    fetch(`/api/support/sales/doc-public?token=${encodeURIComponent(token || '')}&action=material`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ materialId: m.id }),
+    }).catch(() => {})
+  }
 
   // Маячок времени чтения: считаем только активную вкладку, иначе «читал 3 часа»
   // будет означать «оставил открытым и ушёл обедать»
@@ -331,6 +353,38 @@ export function PublicDocPage() {
                 </li>
               ))}
             </ul>
+          </section>
+        )}
+
+        {/* Материалы: клиенту одна ссылка вместо россыпи вложений, менеджеру —
+            понимание, дочитали ли до презентации */}
+        {materials.length > 0 && (
+          <section className="mt-5 bg-white border border-gray-200 rounded-xl p-5">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-3">
+              Материалы
+            </div>
+            <div className="space-y-2">
+              {materials.map(m => (
+                <a
+                  key={m.id}
+                  href={m.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => openMaterial(m)}
+                  className="flex items-start gap-3 p-3 rounded-lg border border-gray-200
+                             hover:border-blue-400 hover:bg-blue-50/40 transition-colors"
+                >
+                  <span className="flex-none text-xl leading-6">{MATERIAL_ICON[m.kind] || '📄'}</span>
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-medium text-gray-900">{m.title}</span>
+                    {m.description && (
+                      <span className="block text-[12px] text-gray-500 mt-0.5">{m.description}</span>
+                    )}
+                  </span>
+                  <span className="ml-auto flex-none text-[12px] text-blue-600 self-center">открыть →</span>
+                </a>
+              ))}
+            </div>
           </section>
         )}
 
