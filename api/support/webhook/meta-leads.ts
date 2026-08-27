@@ -1,5 +1,5 @@
 import { getSQL, json } from '../lib/db.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
 import { marketByPhoneCity } from '../lib/region-detect.js'
 import { validMetaSignature } from '../lib/meta-signature.js'
@@ -36,6 +36,15 @@ const ORG = process.env.SALES_ORG || 'org_delever'
 const SOURCE = 'meta_leadform'
 
 /** Имена полей Meta для того, что мы храним отдельными колонками. */
+/**
+ * Ответы формы одной строкой — для отметки о повторной заявке.
+ * Показываем именно ответы: по ним видно, изменилось ли что-то с прошлого раза.
+ */
+function answersFor(fields: Map<string, string>, formName?: string | null): string {
+  const body = [...fields.entries()].map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('; ')
+  return [formName ? `форма «${formName}»` : null, body].filter(Boolean).join(' · ').slice(0, 500)
+}
+
 /** Заглушки инструмента проверки Meta: «<test lead: dummy data for …>». */
 const DUMMY = /^<test lead:/i
 
@@ -164,6 +173,19 @@ export default async function handler(req: Request): Promise<Response> {
                 utm_campaign = COALESCE(${v.campaign_id ? String(v.campaign_id) : null}, utm_campaign),
                 updated_at = NOW()
             WHERE id = ${twin.id} AND org_id = ${ORG}
+          `
+          // Склейка происходила молча: человек видел старое обращение и не
+          // знал, что по нему пришло что-то новое. А повторно заполненная
+          // форма — это сигнал интереса, и терять его нельзя. В тестах же
+          // без этой строки всё выглядит как «заявка не дошла»
+          await sql`
+            INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
+                                           title, detail, identity, happened_at)
+            VALUES (${salesId('tp')}, ${ORG}, ${twin.account_id}, ${twin.id},
+                    'form', 'meta',
+                    'Повторная заявка с той же формы',
+                    ${answersFor(fields, lead.form_name) || null},
+                    ${phone || null}, NOW())
           `
           continue
         }
