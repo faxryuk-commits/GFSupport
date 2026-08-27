@@ -7,6 +7,7 @@ import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { TasksCard } from './TasksCard'
+import { SpecCard } from './SpecCard'
 import { ActivityCard } from './ActivityCard'
 import { ContactsCard } from './ContactsCard'
 import { sendMessage } from '@/shared/api/messages'
@@ -581,6 +582,10 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           </Card>
 
           <TasksCard dealId={id} initial={tasks} />
+
+          {/* ТЗ собирается по ходу продажи: на финише сейлз хочет закрыть
+              сделку, а не заполнять анкету, и форма превращается в «уточним» */}
+          {id && <SpecCard dealId={id} />}
 
           <ActivityCard dealId={id} accountId={data.account?.id} />
 

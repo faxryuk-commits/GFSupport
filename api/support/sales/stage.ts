@@ -85,6 +85,23 @@ export default async function handler(req: Request): Promise<Response> {
     }, 422)
   }
 
+  // ТЗ на подключение проверяем до перевода: если выпустить сделку в выигрыш
+  // без него, проект уедет в подключения пустым, и выяснять состав придётся
+  // заново — уже без сейлза и через неделю после разговора
+  const spec = deal.onboarding_spec as { selections?: Record<string, string[]>; note?: string } | null
+  if (target.kind === 'won') {
+    const filled = Object.values(spec?.selections || {}).filter(v => Array.isArray(v) && v.length)
+    if (!filled.length && !body?.skipSpec) {
+      return json({
+        blocked: true,
+        needSpec: true,
+        message: 'Перед выигрышем заполните ТЗ на подключение: чем клиент пользуется — '
+          + 'касса, оплата, агрегаторы, доставка. Без него отдел подключения '
+          + 'начнёт с выяснения того, что вы уже знаете.',
+      }, 422)
+    }
+  }
+
   // ─── 3. Переход ─────────────────────────────────────────────────────────────
   const now = new Date().toISOString()
 
@@ -172,10 +189,17 @@ export default async function handler(req: Request): Promise<Response> {
             deal.city ? `Город: ${deal.city}` : '',
             deal.points ? `Точек: ${deal.points}` : '',
             deal.pos ? `POS: ${deal.pos}` : '',
+            deal.orders_per_day ? `Заказов в день: ${deal.orders_per_day}` : '',
+            deal.delivery_type ? `Доставка: ${deal.delivery_type}` : '',
+            deal.aggregators ? `Агрегаторы: ${deal.aggregators}` : '',
             deal.monthly_amount ? `Подписка: ${deal.monthly_amount} ${deal.currency}` : '',
             deal.pain ? `Боль: ${deal.pain}` : '',
+            spec?.note ? `\nОт сейлза: ${spec.note}` : '',
           ].filter(Boolean).join('\n'),
-          selections: {},
+          // Раньше сюда уходил пустой объект: проект заводился со списком
+          // задач, но без единого поставщика — инженер открывал карточку и
+          // выяснял звонком то, что клиент уже рассказал сейлзу
+          selections: spec?.selections || {},
         }),
       })
       const data: any = await res.json()
