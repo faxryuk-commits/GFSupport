@@ -89,17 +89,23 @@ export default async function handler(req: Request): Promise<Response> {
   // без него, проект уедет в подключения пустым, и выяснять состав придётся
   // заново — уже без сейлза и через неделю после разговора
   const spec = deal.onboarding_spec as { selections?: Record<string, string[]>; note?: string } | null
-  if (target.kind === 'won') {
-    const filled = Object.values(spec?.selections || {}).filter(v => Array.isArray(v) && v.length)
-    if (!filled.length && !body?.skipSpec) {
-      return json({
-        blocked: true,
-        needSpec: true,
-        message: 'Перед выигрышем заполните ТЗ на подключение: чем клиент пользуется — '
-          + 'касса, оплата, агрегаторы, доставка. Без него отдел подключения '
-          + 'начнёт с выяснения того, что вы уже знаете.',
-      }, 422)
-    }
+  const specFilled = Object.values(spec?.selections || {}).filter(v => Array.isArray(v) && v.length).length
+
+  // Спрашиваем на КП, а не на выигрыше. Во-первых, к этому моменту сейлз уже
+  // всё выяснил, а на финише он хочет закрыть сделку и пишет «уточним».
+  // Во-вторых, состав подключения — сам по себе довод: «ваша касса, эти
+  // платёжные системы, эти агрегаторы» читается серьёзнее прайса
+  if ((target.key === 'kp' || target.kind === 'won') && !specFilled && !body?.skipSpec) {
+    return json({
+      blocked: true,
+      needSpec: true,
+      message: target.key === 'kp'
+        ? 'Перед отправкой КП заполните состав подключения: касса, оплата, '
+          + 'агрегаторы, доставка. Он войдёт в предложение — клиент увидит, '
+          + 'что именно ему подключат, а не общий прайс.'
+        : 'Перед выигрышем заполните ТЗ на подключение: без него отдел '
+          + 'подключения начнёт с выяснения того, что вы уже знаете.',
+    }, 422)
   }
 
   // ─── 3. Переход ─────────────────────────────────────────────────────────────
