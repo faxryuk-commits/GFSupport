@@ -115,7 +115,7 @@ export function UpdateBanner() {
             <p className="text-xs text-white/80 truncate">
               {notes.length
                 ? `${notes.length} ${notes.length === 1 ? 'изменение' : notes.length < 5 ? 'изменения' : 'изменений'} — посмотреть`
-                : 'Обновите страницу для новых функций'}
+                : 'Вышла новая сборка — обновите страницу'}
             </p>
           </div>
           <div className="flex items-center gap-1.5">

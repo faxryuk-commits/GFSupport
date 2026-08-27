@@ -37,7 +37,6 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   // отдельным файлом две копии состава выпуска разъехались бы на первой же
   // выкладке
   const [history, setHistory] = useState<VersionInfo[]>([])
-  const [dismissed, setDismissed] = useState(false)
 
   // Получить версию приложения
   /**
@@ -100,7 +99,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       return
     }
 
-    if (version !== currentVersion && !dismissed) {
+    if (version !== currentVersion) {
       const list = await fetchReleases()
       setHistory(list)
       // Состав показываем только если выпуск новый. Сборка пересобирается на
@@ -112,17 +111,21 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       setNewVersion(version)
       setHasUpdate(true)
     }
-  }, [currentVersion, dismissed, fetchVersion, fetchReleases])
+  }, [currentVersion, fetchVersion, fetchReleases])
 
   // Отложить обновление. Запоминаем прочитанный выпуск: закрыл — значит
-  // ознакомился, и второй раз тот же список показывать незачем
+  // ознакомился, и второй раз тот же список показывать незачем.
+  //
+  // Заодно считаем эту сборку текущей. Раньше здесь взводился флаг, который
+  // до конца сессии затыкал проверку целиком: закрыл баннер утром — и о всех
+  // сегодняшних выпусках не узнал, пока не перезагрузил страницу сам
   const dismiss = useCallback(() => {
     if (info?.version) {
       try { localStorage.setItem(SEEN_KEY, info.version) } catch { /* приватный режим */ }
     }
-    setDismissed(true)
+    if (newVersion) setCurrentVersion(newVersion)
     setHasUpdate(false)
-  }, [info])
+  }, [info, newVersion])
 
   // Обновление страницы — тоже знакомство с выпуском
   const refreshAndRemember = useCallback(() => {
