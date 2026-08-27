@@ -4,6 +4,7 @@ import { getBotToken, tgSend, leadCard, leadKeyboard } from '../lib/sales-bot.js
 import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../lib/sales-assistant.js'
 import { assertCron } from '../lib/cron-auth.js'
 import { sendNotification } from '../lib/notifications.js'
+import { tokenForPage } from '../lib/meta-config.js'
 
 export const config = { runtime: 'edge' }
 
@@ -149,7 +150,15 @@ export default async function handler(req: Request): Promise<Response> {
              l.account_id, a.channel_id,
              -- Писать нужно в Telegram-чат, а не в наш внутренний id канала:
              -- это разные вещи, и с внутренним отправка молча не доходит
-             ch.telegram_chat_id
+             ch.telegram_chat_id,
+             -- Директ и Messenger: адрес собеседника и страница, от имени
+             -- которой отвечаем
+             ch.source AS channel_source, ch.external_chat_id, ch.meta_page_id,
+             -- Окно ответа у Meta — сутки с последнего сообщения клиента.
+             -- За ним прогрев отправить нельзя: это не продолжение живого
+             -- разговора, а инициатива с нашей стороны
+             (SELECT MAX(m.created_at) FROM support_messages m
+               WHERE m.channel_id = ch.id AND m.is_from_client = true) AS last_client_at
       FROM sales_leads l
       LEFT JOIN sales_accounts a ON a.id = l.account_id
       LEFT JOIN support_channels ch ON ch.id = a.channel_id
@@ -179,7 +188,35 @@ export default async function handler(req: Request): Promise<Response> {
       // Отправляем ботом, который сидит в этих чатах: платформенный бот
       // (@gfsupport_robot) в клиентские группы не добавлен и написать туда не может
       const chatToken = process.env.TELEGRAM_BOT_TOKEN || token
-      if (lead.telegram_chat_id && chatToken) {
+      const metaOk = ['instagram', 'messenger'].includes(String(lead.channel_source || ''))
+        && Boolean(lead.external_chat_id) && Boolean(lead.last_client_at)
+        && Date.now() - new Date(lead.last_client_at).getTime() < 23 * 3600 * 1000
+
+      if (metaOk) {
+        const igToken = await tokenForPage(ORG, lead.meta_page_id || null)
+        let sent = false
+        if (igToken) {
+          const r = await fetch(
+            `https://graph.facebook.com/v21.0/me/messages?access_token=${igToken}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipient: { id: lead.external_chat_id },
+                message: { text: draft.text },
+                messaging_type: 'RESPONSE',
+              }),
+            })
+          sent = r.ok
+        }
+        await logAssistant(sql, ORG, {
+          leadId: lead.id, accountId: lead.account_id,
+          action: sent ? 'nurture_sent' : 'nurture_failed',
+          channel: lead.channel_source, step, message: draft.text,
+          status: sent ? 'sent' : 'error',
+          error: sent ? undefined : 'Meta не приняла сообщение',
+        })
+        if (!sent) continue
+      } else if (lead.telegram_chat_id && chatToken) {
         try {
           await tgSend(chatToken, lead.telegram_chat_id, draft.text)
           await logAssistant(sql, ORG, {
