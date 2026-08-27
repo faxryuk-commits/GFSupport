@@ -37,40 +37,62 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   const [dismissed, setDismissed] = useState(false)
 
   // Получить версию приложения
-  const fetchVersion = useCallback(async (): Promise<VersionInfo | null> => {
+  /**
+   * Сигнал и содержание — разные файлы, и это намеренно.
+   *
+   * version.json собирается заново на каждой выкладке и меняет номер: по нему
+   * видно, что вкладка устарела. releases.json ведётся руками и меняется
+   * только когда есть о чём рассказать. Если слушать один releases.json,
+   * баннер молчал бы на всех выкладках без новых возможностей; если один version.json —
+   * не о чем было бы рассказывать.
+   */
+  const fetchVersion = useCallback(async (): Promise<string | null> => {
     try {
       // Метка времени в адресе: иначе браузер отдаёт свой старый файл и
       // обновление никогда не замечается
-      const response = await fetch(`/releases.json?t=${Date.now()}`)
-      if (!response.ok) return null
-      const list: VersionInfo[] = await response.json()
-      if (!Array.isArray(list) || !list.length) return null
-      setHistory(list)
-      // Первый в списке — текущий выпуск: файл ведётся сверху вниз
-      return list[0]
+      const res = await fetch(`/version.json?t=${Date.now()}`)
+      if (!res.ok) return null
+      const info = await res.json()
+      return info?.version ? String(info.version) : null
     } catch {
       return null
     }
   }, [])
 
+  const fetchReleases = useCallback(async (): Promise<VersionInfo[]> => {
+    try {
+      const res = await fetch(`/releases.json?t=${Date.now()}`)
+      if (!res.ok) return []
+      const list = await res.json()
+      return Array.isArray(list) ? list : []
+    } catch {
+      return []
+    }
+  }, [])
+
   // Проверка версии
   const checkVersion = useCallback(async () => {
-    const versionInfo = await fetchVersion()
-    if (!versionInfo) return
+    const version = await fetchVersion()
+    if (!version) return
 
-    // Первая загрузка - сохраняем текущую версию
+    // Первая загрузка — запоминаем, что сейчас, и заодно тянем историю:
+    // она нужна и странице «Что нового», где никакого обновления не ждут
     if (!currentVersion) {
-      setCurrentVersion(versionInfo.version)
+      setCurrentVersion(version)
+      const list = await fetchReleases()
+      setHistory(list)
+      setInfo(list[0] || null)
       return
     }
 
-    // Сравниваем версии
-    if (versionInfo.version !== currentVersion && !dismissed) {
-      setNewVersion(versionInfo.version)
-      setInfo(versionInfo)
+    if (version !== currentVersion && !dismissed) {
+      const list = await fetchReleases()
+      setHistory(list)
+      setInfo(list[0] || null)
+      setNewVersion(version)
       setHasUpdate(true)
     }
-  }, [currentVersion, dismissed, fetchVersion])
+  }, [currentVersion, dismissed, fetchVersion, fetchReleases])
 
   // Обновить страницу
   const refresh = useCallback(() => {
