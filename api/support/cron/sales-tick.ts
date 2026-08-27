@@ -231,12 +231,23 @@ export default async function handler(req: Request): Promise<Response> {
           continue
         }
       } else {
-        // Канала нет — не молчим: текст готов, отправить его должен человек.
-        // Черновик в журнале честнее, чем вид работающей автоматики
+        // Отправить нечем — не молчим: текст готов, отправит человек. Черновик
+        // в журнале честнее, чем вид работающей автоматики.
+        //
+        // Причину пишем точную: «канал не привязан» на диалоге из директа
+        // было прямой неправдой и отправляло искать несуществующую поломку
+        const isMeta = ['instagram', 'messenger'].includes(String(lead.channel_source || ''))
+        const reason = isMeta && lead.last_client_at
+          ? 'окно ответа Meta закрыто — прошло больше суток с сообщения клиента, '
+            + 'отправьте вручную или дождитесь ответа'
+          : isMeta
+            ? 'клиент ещё ничего не писал в этом диалоге — Meta не пропустит сообщение первым'
+            : lead.channel_id
+              ? 'канал клиента не поддерживает отправку — отправьте вручную'
+              : 'канал клиента не привязан — отправьте вручную'
         await logAssistant(sql, ORG, {
           leadId: lead.id, accountId: lead.account_id, action: 'nurture_draft',
-          step, message: draft.text, status: 'draft',
-          error: 'канал клиента не привязан — отправьте вручную',
+          step, message: draft.text, status: 'draft', error: reason,
         })
       }
 
