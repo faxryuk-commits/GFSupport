@@ -101,6 +101,7 @@ export function SettingsPage() {
     return {
       companyName: 'Support System',
       botToken: '',
+      salesBotToken: '',
       defaultLanguage: 'ru',
       timezone: 'UTC+5',
       autoCreateCases: true,
@@ -163,6 +164,7 @@ export function SettingsPage() {
       setGeneralSettings(prev => ({
         ...prev,
         botToken: settings.telegram_bot_token || '',
+        salesBotToken: settings.sales_bot_token || '',
         autoCreateCases: settings.auto_create_cases,
       }))
       
@@ -269,6 +271,19 @@ export function SettingsPage() {
         auto_create_cases: generalSettings.autoCreateCases,
         working_hours_start: parseInt(responseSettings.workingHoursStart.split(':')[0]),
         working_hours_end: parseInt(responseSettings.workingHoursEnd.split(':')[0]),
+      }
+
+      // Токены сохранялись только на словах: поля в форме были, а в запрос они
+      // не попадали — введённый токен пропадал при перезагрузке страницы.
+      // Пришедшее с сервера значение замаскировано (`123456789:…wxyz`), и
+      // отправлять его обратно нельзя: сервер такие пропускает, но полагаться
+      // на это незачем
+      const masked = (v: string) => !v || v.includes('...')
+      if (!masked(generalSettings.botToken)) {
+        settingsToSave.telegram_bot_token = generalSettings.botToken.trim()
+      }
+      if (!masked(generalSettings.salesBotToken)) {
+        settingsToSave.sales_bot_token = generalSettings.salesBotToken.trim()
       }
       
       const response = await updateSettings(settingsToSave)

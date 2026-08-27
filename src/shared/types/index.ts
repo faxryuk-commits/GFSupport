@@ -335,6 +335,8 @@ export interface AnalyticsData {
 
 export interface SupportSettings {
   botToken: string
+  /** Бот заявок с сайта: чаты у него свои, и отвечать в них нужно его токеном */
+  salesBotToken: string
   autoCreateCases: boolean
   aiModel: string
   notifyOnNewMessage: boolean

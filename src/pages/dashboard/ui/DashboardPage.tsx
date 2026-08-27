@@ -19,6 +19,7 @@ import { CommitmentsPanel } from '@/features/commitments/ui'
 import { formatWaitTime } from '../model/types'
 import type { AttentionItem, RecentActivity, ResponseTimeModalData } from '../model/types'
 import { DashboardHeader } from './DashboardHeader'
+import { ReportsDirectory } from './ReportsDirectory'
 import { ChannelSourceSummary, type SourceFilter } from './ChannelSourceSummary'
 import { OperationsSection } from './OperationsSection'
 import { StatsSection } from './StatsSection'
@@ -261,19 +262,7 @@ export function DashboardPage() {
           />
         )}
 
-        <div className="bg-white rounded-xl border border-[#e8edf3] p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-800">Детальная аналитика</h3>
-              <p className="text-sm text-slate-500 mt-1">
-                Pulse / Diagnosis / Detail · per-agent FRT и SLA, состояние покупателей, категории проблем
-              </p>
-            </div>
-            <a href="/analytics" className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium">
-              Открыть Аналитику <span className="text-xs">→</span>
-            </a>
-          </div>
-        </div>
+        <ReportsDirectory />
       </div>
     </div>
   )

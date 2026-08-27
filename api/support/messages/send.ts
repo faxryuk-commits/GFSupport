@@ -1,4 +1,4 @@
-import { getOrgBotToken, getSQL, json } from '../lib/db.js'
+import { getOrgBotToken, getSalesBotToken, getSQL, json } from '../lib/db.js'
 import { tokenForPage } from '../lib/meta-config.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
@@ -395,8 +395,28 @@ export default async function handler(req: Request): Promise<Response> {
           ${senderUsername || null}, 'support', false, 'text', ${text}, true, NOW()
         )
       `
+    } else if (channel.source === 'site_chat') {
+      // Виджет на сайте односторонний: он приносит сообщения через приёмник,
+      // а обратного канала к нему нет
+      return json({ error: 'Чат на сайте пока только принимает сообщения — ответить из системы нельзя' }, 422)
     } else {
       const chatId = channel.telegram_chat_id
+      if (!chatId) {
+        return json({ error: 'У этого диалога нет адреса чата в Telegram — отвечать некуда' }, 422)
+      }
+      // Диалоги из бота заявок принадлежат другому боту: человек нажал /start
+      // у него на сайте, а не писал в поддержку. Токеном поддержки в такой чат
+      // не попасть — Telegram отвечает «chat not found», и это возвращалось
+      // пятисоткой без объяснений. Ни одно исходящее в такие чаты ни разу не
+      // дошло с тех пор, как приёмник их завёл
+      const fromSalesBot = channel.source === 'telegram_bot'
+      const salesToken = fromSalesBot ? await getSalesBotToken(orgId) : null
+      if (fromSalesBot && !salesToken) {
+        return json({
+          error: 'Этот диалог начат в боте заявок. Чтобы отвечать из системы, укажите его токен в настройках — «Токен бота заявок»',
+        }, 422)
+      }
+      const sendToken = salesToken || botToken
       const hasMarkdownChars = /[_*\[\]()~`>#+\-=|{}.!]/.test(text)
       const telegramPayload: any = { chat_id: chatId, text }
       if (!hasMarkdownChars) {
@@ -410,7 +430,7 @@ export default async function handler(req: Request): Promise<Response> {
         telegramPayload.reply_to_message_id = replyToMessageId
       }
 
-      const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      const telegramRes = await fetch(`https://api.telegram.org/bot${sendToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(telegramPayload),
@@ -418,7 +438,20 @@ export default async function handler(req: Request): Promise<Response> {
 
       const telegramData = await telegramRes.json()
       if (!telegramData.ok) {
-        return json({ error: 'Failed to send Telegram message', details: telegramData.description }, 500)
+        // Telegram объясняет отказ по-английски и одной строкой. Сотрудник
+        // видел «500 Internal Server Error» и шёл спрашивать, а причина почти
+        // всегда одна из трёх и лечится по-разному
+        const d = String(telegramData.description || '')
+        const human = /chat not found/i.test(d)
+          ? (fromSalesBot
+              ? 'Бот заявок не знает этот чат — похоже, указан токен не того бота'
+              : 'Telegram не нашёл этот чат: бота удалили из группы или диалог начат другим ботом')
+          : /blocked by the user/i.test(d) ? 'Собеседник заблокировал бота — доставить сообщение некому'
+          : /deactivated|user is deactivated/i.test(d) ? 'Аккаунт собеседника удалён'
+          : /kicked|not a member/i.test(d) ? 'Бота убрали из этой группы'
+          : /message thread not found/i.test(d) ? 'Тема в группе удалена — отвечайте в общую ленту'
+          : 'Telegram не принял сообщение'
+        return json({ error: human, details: d }, 502)
       }
 
       const sentMessage = telegramData.result

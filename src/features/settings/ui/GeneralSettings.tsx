@@ -5,6 +5,7 @@ import { Toggle } from './Toggle'
 export interface GeneralSettingsData {
   companyName: string
   botToken: string
+  salesBotToken: string
   defaultLanguage: string
   timezone: string
   autoCreateCases: boolean
@@ -40,6 +41,7 @@ const weekDays = [
 
 export function GeneralSettings({ general, response, onGeneralChange, onResponseChange }: GeneralSettingsProps) {
   const [showBotToken, setShowBotToken] = useState(false)
+  const [showSalesToken, setShowSalesToken] = useState(false)
 
   const handleTestConnection = async () => {
     await new Promise(resolve => setTimeout(resolve, 1500))
@@ -123,6 +125,36 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                 Проверить
               </button>
             </div>
+          </div>
+
+          {/* Бот заявок — отдельный от бота поддержки. Диалог, начатый у него
+              на сайте, принадлежит ему: без этого токена ответ из системы
+              возвращался ошибкой, потому что чужой бот такого чата не знает */}
+          <div className="mb-6">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
+              <Bot className="w-4 h-4 text-slate-400" />
+              Токен бота заявок
+            </label>
+            <div className="relative">
+              <input
+                type={showSalesToken ? 'text' : 'password'}
+                value={general.salesBotToken}
+                onChange={(e) => onGeneralChange({ ...general, salesBotToken: e.target.value })}
+                className="w-full px-4 py-3 pr-12 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 focus:bg-white transition-all font-mono text-sm"
+                placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSalesToken(!showSalesToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+              >
+                {showSalesToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Бот, который приводит людей с сайта. Без него ответить в такие диалоги нельзя —
+              их чаты принадлежат ему, а не боту поддержки.
+            </p>
           </div>
 
           <div className="space-y-1 p-4 bg-slate-50 rounded-xl">

@@ -10,6 +10,8 @@ export const config = {
 const DEFAULT_SETTINGS = {
   telegram_bot_token: '', // Пустой = использовать env
   telegram_bot_username: '',
+  // Бот заявок с сайта — отдельный от бота поддержки, и чаты у них разные
+  sales_bot_token: '',
   openai_api_key: '', // Пустой = использовать env
   auto_create_cases: true,
   min_urgency_for_case: 2,
@@ -90,6 +92,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Маскируем токены для безопасности
       const hasBotToken = !!dbSettings.telegram_bot_token
       const hasOpenAIKey = !!dbSettings.openai_api_key
+      const hasSalesBotToken = !!dbSettings.sales_bot_token
 
       const maskedSettings = {
         ...settings,
@@ -98,6 +101,9 @@ export default async function handler(req: Request): Promise<Response> {
           : '',
         openai_api_key: hasOpenAIKey
           ? `sk-...${settings.openai_api_key.slice(-4)}`
+          : '',
+        sales_bot_token: hasSalesBotToken
+          ? `${settings.sales_bot_token.slice(0, 10)}...${settings.sales_bot_token.slice(-4)}`
           : '',
       }
 

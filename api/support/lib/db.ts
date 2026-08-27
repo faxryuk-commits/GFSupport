@@ -188,6 +188,29 @@ export async function getOrgBotToken(orgId?: string | null): Promise<string | nu
   return process.env.TELEGRAM_BOT_TOKEN || null
 }
 
+/**
+ * Токен бота заявок — того, что живёт на Railway и приводит людей с сайта.
+ *
+ * Такой чат начался не у нас: человек нажал /start у бота заявок, и диалог
+ * принадлежит ему. Отвечать токеном бота поддержки бесполезно — Telegram на
+ * чужой chat_id отвечает «chat not found», и это до сих пор превращалось в
+ * 500 без объяснений. Пока токен не задан, отвечать из системы в такие
+ * диалоги нельзя, и честнее сказать это прямо, чем молча падать.
+ */
+export async function getSalesBotToken(orgId?: string | null): Promise<string | null> {
+  const sql = getSQL()
+  if (orgId) {
+    try {
+      const rows = await sql`
+        SELECT value FROM support_settings
+        WHERE org_id = ${orgId} AND key = 'sales_bot_token' LIMIT 1
+      `
+      if (rows[0]?.value) return rows[0].value
+    } catch { /* таблицы может не быть на свежей базе */ }
+  }
+  return process.env.SALES_BOT_TOKEN || null
+}
+
 export async function getOrgWhatsAppBridge(orgId?: string | null): Promise<{ url: string | null; secret: string | null }> {
   const sql = getSQL()
   if (orgId) {
