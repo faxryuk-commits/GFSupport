@@ -25,6 +25,12 @@ type Workspace = {
   onboarding: Array<{ id: string; step: string; brand: string; status: string; kind: string; status_since: string }>
   onboardingTodos?: Array<{ id: string; text: string; brand: string; brand_id: string; due_at: string | null; created_by: string | null; created_at: string }>
   sales?: { leads: Array<{ id: string; name: string; sla_due_at: string | null }>; tasks: Array<{ id: string; title: string; due_at: string; deal_id: string | null; deal_title: string | null }> }
+  delegated?: Array<{
+    id: string; title: string; due_at: string | null
+    status: string | null; status_note: string | null; status_at: string | null
+    deal_id: string | null; lead_id: string | null; account_id: string | null
+    assignee_name: string | null; about: string | null
+  }>
   week: { confirmed_week?: number; cases_week?: number; kept_week?: number }
 }
 type Activity = {
@@ -57,6 +63,13 @@ const SPLIT_LABELS: Array<[keyof Activity['split'], string, string]> = [
   ['sales', 'Продажи', '#0369a1'],
 ]
 const fmtMin = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}ч ${m % 60}м` : `${m}м`)
+
+/** Ход поручения — то, ради чего блок и нужен: видно, взяли его или нет. */
+const DELEGATED_STATUS: Record<string, { label: string; cls: string }> = {
+  open: { label: 'не начата', cls: 'bg-slate-100 text-slate-600' },
+  in_progress: { label: 'в работе', cls: 'bg-blue-50 text-blue-700' },
+  rejected: { label: 'отклонена', cls: 'bg-red-50 text-red-700' },
+}
 
 export function MyWorkspacePage() {
   const [ws, setWs] = useState<Workspace | null>(null)
@@ -440,6 +453,55 @@ export function MyWorkspacePage() {
             </ul>
           )}
         </div>
+
+        {/* Что я поручил: обратная связь приходит уведомлением, но списка
+            «за чем я жду» не было — поставил задачу и держи в голове */}
+        {(ws.delegated || []).length > 0 && (
+          <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-3">
+              🫱 Я поручил
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                {(ws.delegated || []).length}
+              </span>
+            </h3>
+            <ul className="divide-y divide-slate-100">
+              {(ws.delegated || []).map(t => {
+                const st = DELEGATED_STATUS[t.status || 'open'] || DELEGATED_STATUS.open
+                const late = t.due_at && new Date(t.due_at).getTime() < Date.now()
+                const link = t.deal_id ? `/sales/deals/${t.deal_id}`
+                  : t.lead_id ? `/sales/leads/${t.lead_id}`
+                  : t.account_id ? `/sales/accounts/${t.account_id}` : null
+                return (
+                  <li key={t.id} className="py-2 flex items-start gap-2">
+                    <span className={`mt-0.5 flex-none text-[10px] font-semibold px-1.5 py-0.5 rounded ${st.cls}`}>
+                      {st.label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-slate-800">{t.title}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {t.assignee_name || 'не назначен'}
+                        {t.about ? ` · ${t.about}` : ''}
+                        {t.due_at && (
+                          <span className={late ? 'text-red-500 font-medium' : ''}>
+                            {' · '}до {formatDateTimeShort(t.due_at)}
+                          </span>
+                        )}
+                      </p>
+                      {t.status_note && (
+                        <p className="text-[11px] text-red-600 mt-0.5">{t.status_note}</p>
+                      )}
+                    </div>
+                    {link && (
+                      <Link to={link} className="flex-none text-[11px] text-blue-600 hover:underline mt-0.5">
+                        открыть
+                      </Link>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
 
         {/* Уведомления + сильные стороны */}
         <div className="grid md:grid-cols-2 gap-4">

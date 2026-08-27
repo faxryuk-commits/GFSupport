@@ -47,7 +47,8 @@ export default async function handler(req: Request): Promise<Response> {
     ? usernames.map(u => `%@${u}%`)
     : ['%@__нет_username__%']
 
-  const [mentions, items, cases, commitments, onboarding, onbTodos, salesLeads, salesTasks] = await sql.transaction([
+  const [mentions, items, cases, commitments, onboarding, onbTodos,
+         salesLeads, salesTasks, delegated] = await sql.transaction([
     // Упоминания за неделю; «без ответа» = после упоминания команда в канале молчит
     sql`
       SELECT m.id, m.text_content, m.sender_name, m.created_at,
@@ -132,6 +133,23 @@ export default async function handler(req: Request): Promise<Response> {
         AND t.done_at IS NULL AND t.due_at <= NOW() + INTERVAL '1 day'
       ORDER BY t.due_at ASC LIMIT 8
     `,
+    // Что я поручил другим. Обратная связь по задаче приходит уведомлением,
+    // но списка «за чем я жду» не было нигде: поставил и держи в голове
+    sql`
+      SELECT t.id, t.title, t.due_at, t.status, t.status_note, t.status_at,
+             t.deal_id, t.lead_id, t.account_id,
+             a.name AS assignee_name,
+             COALESCE(d.title, l.name, ac.name) AS about
+      FROM sales_tasks t
+      LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
+      LEFT JOIN sales_deals d ON d.id = t.deal_id
+      LEFT JOIN sales_leads l ON l.id = t.lead_id
+      LEFT JOIN sales_accounts ac ON ac.id = t.account_id
+      WHERE t.org_id = ${orgId} AND t.created_by_agent_id = ${ctx.agentId}
+        AND t.assignee_agent_id IS DISTINCT FROM ${ctx.agentId}
+        AND t.done_at IS NULL
+      ORDER BY t.due_at NULLS LAST, t.created_at DESC LIMIT 20
+    `,
   ]) as any[]
 
   // Итог недели — чтобы экран показывал не только долги, но и сделанное
@@ -157,6 +175,7 @@ export default async function handler(req: Request): Promise<Response> {
     onboarding,
     onboardingTodos: onbTodos,
     sales: { leads: salesLeads, tasks: salesTasks },
+    delegated,
     week: week || {},
   })
 }
