@@ -40,6 +40,8 @@ type Activity = {
 }
 type Rating = {
   rank: number; of: number
+  /** Соревнование идёт внутри отдела: сейлз и саппорт делают разную работу. */
+  department?: string; departmentLabel?: string
   leader: { name: string; total: number } | null
   metrics: Array<{ key: string; label: string; value: number; pct: number }>
   achievements: Array<{ icon: string; label: string; earned: boolean }>
@@ -261,7 +263,8 @@ export function MyWorkspacePage() {
       act.activeMinutesPerDay != null ? `Активное время: ~${fmtMin(act.activeMinutesPerDay)}/день` : '',
       `— чаты клиентов: ${act.split.messages} · подключения: ${act.split.onboarding} · кейсы: ${act.split.cases} · задачи: ${act.split.tasks} · продажи: ${act.split.sales}`,
       ``,
-      rating && rating.of > 0 ? `Место в команде: ${rating.rank} из ${rating.of}` : '',
+      rating && rating.of > 0
+        ? `Место среди ${rating.departmentLabel || 'команды'}: ${rating.rank} из ${rating.of}` : '',
       rating ? rating.metrics.map(m => `— ${m.label}: ${m.value}${m.value > 0 ? ` (топ-${Math.max(1, 101 - m.pct)}%)` : ''}`).join('\n') : '',
       rating ? `Ачивки: ${rating.achievements.filter(a => a.earned).map(a => a.icon + ' ' + a.label).join('; ') || 'пока нет'}` : '',
       strengths.bad.length ? `\nУзкие места: ${strengths.bad.join('; ')}` : '',
@@ -376,7 +379,12 @@ export function MyWorkspacePage() {
                     #{rating.rank}
                   </div>
                   <div>
-                    <p className="text-[14px] font-bold text-slate-900">{rating.rank} место из {rating.of}</p>
+                    <p className="text-[14px] font-bold text-slate-900">
+                      {rating.rank} место из {rating.of}
+                      {rating.departmentLabel && (
+                        <span className="font-normal text-slate-500"> · среди {rating.departmentLabel}</span>
+                      )}
+                    </p>
                     <p className="text-[11.5px] text-slate-500">{rating.rank === 1 ? 'вы задаёте темп' : rating.leader ? `лидер: ${rating.leader.name}` : ''}</p>
                   </div>
                 </div>

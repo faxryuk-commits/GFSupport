@@ -13,6 +13,16 @@ export const config = { runtime: 'edge' }
  *
  * GET ?days=7 → { rank, of, metrics[], achievements[] }
  */
+/** Подписи отделов: «вы третий среди продаж» понятнее, чем «третий из 26». */
+const DEPT_LABEL: Record<string, string> = {
+  sales: 'отдела продаж',
+  support: 'поддержки',
+  product: 'продукта',
+  admin: 'администрации',
+  it: 'IT',
+  other: 'команды',
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
@@ -26,8 +36,10 @@ export default async function handler(req: Request): Promise<Response> {
   const since = `NOW() - INTERVAL '${days} days'`
 
   const q = (body: string) => sql.query(body, [orgId])
-  const [agents, msgs, onbDone, casesRes, workConf, myCommit, myStuck] = await sql.transaction([
-    q(`SELECT id, name FROM support_agents WHERE org_id = $1 AND is_active = true`),
+  const [agents, msgs, onbDone, casesRes, workConf, salesQual, salesWon, myCommit, myStuck]
+    = await sql.transaction([
+    q(`SELECT id, name, COALESCE(NULLIF(department, ''), 'other') AS dept
+       FROM support_agents WHERE org_id = $1 AND is_active = true`),
     q(`SELECT sender_name AS k, COUNT(*)::int c FROM support_messages
        WHERE org_id = $1 AND is_from_client = false AND created_at > ${since}
        GROUP BY 1`),
@@ -39,6 +51,13 @@ export default async function handler(req: Request): Promise<Response> {
        WHERE org_id = $1 AND resolved_at > ${since} AND assigned_to IS NOT NULL GROUP BY 1`),
     q(`SELECT owner_agent_id AS k, COUNT(*)::int c FROM work_items
        WHERE org_id = $1 AND confirmed_at > ${since} AND owner_agent_id IS NOT NULL GROUP BY 1`),
+    // Работа продаж: сейлз не пишет клиентам в поддержке и не закрывает
+    // тикеты — по прежним меркам он всегда оказывался в самом низу
+    q(`SELECT assigned_agent_id AS k, COUNT(*)::int c FROM sales_leads
+       WHERE org_id = $1 AND status = 'converted' AND updated_at > ${since}
+         AND assigned_agent_id IS NOT NULL GROUP BY 1`),
+    q(`SELECT owner_agent_id AS k, COUNT(*)::int c FROM sales_deals
+       WHERE org_id = $1 AND won_at > ${since} AND owner_agent_id IS NOT NULL GROUP BY 1`),
     sql.query(`SELECT
         COUNT(*) FILTER (WHERE status = 'overdue')::int AS overdue,
         COUNT(*) FILTER (WHERE status = 'completed' AND completed_at > ${since})::int AS kept
@@ -51,30 +70,46 @@ export default async function handler(req: Request): Promise<Response> {
 
   const nameOf: Record<string, string> = {}
   const idOf: Record<string, string> = {}
-  for (const a of agents as any[]) { nameOf[a.id] = a.name; idOf[a.name] = a.id }
+  const deptOf: Record<string, string> = {}
+  for (const a of agents as any[]) {
+    nameOf[a.id] = a.name; idOf[a.name] = a.id; deptOf[a.id] = a.dept
+  }
   const me = { id: ctx.agentId, name: nameOf[ctx.agentId] || '' }
 
   // Свод по сотруднику: имя-ключи мапим на id через справочник
-  const totals: Record<string, { msgs: number; onb: number; cases: number; tasks: number }> = {}
-  const bump = (id: string | null, key: 'msgs' | 'onb' | 'cases' | 'tasks', c: number) => {
+  type Key = 'msgs' | 'onb' | 'cases' | 'tasks' | 'qual' | 'won'
+  const ZERO = { msgs: 0, onb: 0, cases: 0, tasks: 0, qual: 0, won: 0 }
+  const totals: Record<string, typeof ZERO> = {}
+  const bump = (id: string | null, key: Key, c: number) => {
     if (!id || !nameOf[id]) return
-    totals[id] = totals[id] || { msgs: 0, onb: 0, cases: 0, tasks: 0 }
+    totals[id] = totals[id] || { ...ZERO }
     totals[id][key] += c
   }
   for (const r of msgs as any[]) bump(idOf[r.k] || null, 'msgs', r.c)
   for (const r of onbDone as any[]) bump(idOf[r.k] || null, 'onb', r.c)
   for (const r of casesRes as any[]) bump(r.k, 'cases', r.c)
   for (const r of workConf as any[]) bump(r.k, 'tasks', r.c)
+  for (const r of salesQual as any[]) bump(r.k, 'qual', r.c)
+  for (const r of salesWon as any[]) bump(r.k, 'won', r.c)
 
-  const rows = Object.entries(totals).map(([id, t]) => ({
-    id, name: nameOf[id],
-    total: t.msgs + t.onb * 2 + t.cases * 3 + t.tasks * 2, // вес: тикет тяжелее реплики
+  const all = Object.entries(totals).map(([id, t]) => ({
+    id, name: nameOf[id], dept: deptOf[id] || 'other',
+    // Вес по трудоёмкости: выигранная сделка тяжелее тикета, тикет тяжелее
+    // реплики. Внутри отдела веса и так однородны, между отделами не сравниваем
+    total: t.msgs + t.onb * 2 + t.cases * 3 + t.tasks * 2 + t.qual * 3 + t.won * 8,
     ...t,
-  })).sort((a, b) => b.total - a.total)
+  }))
 
-  const my = rows.find(r => r.id === me.id) || { id: me.id, name: me.name, total: 0, msgs: 0, onb: 0, cases: 0, tasks: 0 }
+  // Соревнование внутри своего отдела: сейлз и саппорт делают разную работу,
+  // и общий список ставил сейлза на последнее место просто потому, что он не
+  // отвечает в чатах поддержки
+  const myDept = deptOf[ctx.agentId] || 'other'
+  const rows = all.filter(r => r.dept === myDept).sort((a, b) => b.total - a.total)
+
+  const my = rows.find(r => r.id === me.id)
+    || { id: me.id, name: me.name, dept: myDept, total: 0, ...ZERO }
   const rank = rows.findIndex(r => r.id === me.id) + 1 || rows.length + 1
-  const pct = (key: 'msgs' | 'onb' | 'cases' | 'tasks') => {
+  const pct = (key: Key) => {
     const vals = rows.map(r => r[key])
     if (!vals.length) return 0
     const below = vals.filter(v => v <= (my as any)[key]).length
@@ -96,10 +131,20 @@ export default async function handler(req: Request): Promise<Response> {
   return json({
     rank, of: rows.length,
     leader: rows[0] ? { name: rows[0].name, total: rows[0].total } : null,
+    department: myDept,
+    departmentLabel: DEPT_LABEL[myDept] || 'Команда',
+    // Показываем только то, что относится к работе отдела: сейлзу незачем
+    // видеть «решённые тикеты» с нулём, а саппорту — «выигранные сделки»
     metrics: [
+      ...(myDept === 'sales' ? [
+        { key: 'qual', label: 'Квалифицировано обращений', value: my.qual, pct: pct('qual') },
+        { key: 'won', label: 'Выигранные сделки', value: my.won, pct: pct('won') },
+      ] : []),
       { key: 'msgs', label: 'Ответы клиентам', value: my.msgs, pct: pct('msgs') },
-      { key: 'onb', label: 'Закрытые шаги', value: my.onb, pct: pct('onb') },
-      { key: 'cases', label: 'Решённые тикеты', value: my.cases, pct: pct('cases') },
+      ...(myDept === 'sales' ? [] : [
+        { key: 'onb', label: 'Закрытые шаги', value: my.onb, pct: pct('onb') },
+        { key: 'cases', label: 'Решённые тикеты', value: my.cases, pct: pct('cases') },
+      ]),
       { key: 'tasks', label: 'Подтверждённые задачи', value: my.tasks, pct: pct('tasks') },
     ],
     achievements,
