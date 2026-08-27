@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, MoreHorizontal, Pin, Archive, User, Tag, Phone, Video, AlertCircle, Sparkles, Brain, ClipboardList, Eye, CheckCheck, MessageSquare } from 'lucide-react'
+import { Search, MoreHorizontal, Archive, User, Tag, AlertCircle, Sparkles, Eye, CheckCheck, MessageSquare } from 'lucide-react'
 import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
 import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 import { ChannelListItem, ChannelPreviewModal, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
-import { AIContextPanel } from '@/features/ai-assistant/ui'
-import { CommitmentsPanel } from '@/features/commitments/ui'
 import { QuickCaseModal } from '@/features/cases/ui'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import type { ChatScope } from '@/shared/api/channels'
@@ -213,8 +211,6 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
   const [replyingTo, setReplyingTo] = useState<{ id: string; telegramMessageId?: number; text: string; sender: string } | null>(null)
   const [showQuickReplies, setShowQuickReplies] = useState(false)
   const [showChannelActions, setShowChannelActions] = useState(false)
-  const [showAIPanel, setShowAIPanel] = useState(false)
-  const [showCommitmentsPanel, setShowCommitmentsPanel] = useState(false)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false)
   const [isTagModalOpen, setIsTagModalOpen] = useState(false)
   const [tagSel, setTagSel] = useState<string[]>([])
@@ -599,10 +595,6 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
         (filter === 'resolved' && ch.status === 'resolved')
       const matchesSource = sourceFilter === 'all' || (ch.source || 'telegram') === sourceFilter
       return matchesSearch && matchesFilter && matchesSource
-    }).sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1
-      if (!a.isPinned && b.isPinned) return 1
-      return 0
     })
   }, [channels, filter, sourceFilter, searchQuery])
 
@@ -843,15 +835,6 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
     }
   }
 
-  const handlePinChannel = () => {
-    if (selectedChannel) {
-      setChannels(prev => prev.map(ch => 
-        ch.id === selectedChannel.id ? { ...ch, isPinned: !ch.isPinned } : ch
-      ))
-      setSelectedChannel(prev => prev ? { ...prev, isPinned: !prev.isPinned } : null)
-    }
-  }
-
   const handleArchiveChannel = () => {
     if (selectedChannel) {
       setChannels(prev => prev.map(ch => 
@@ -1035,25 +1018,9 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <button onClick={handlePinChannel} className={`p-2 rounded-lg transition-colors ${selectedChannel.isPinned ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}>
-                  <Pin className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => setShowAIPanel(!showAIPanel)} 
-                  className={`p-2 rounded-lg transition-colors ${showAIPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}
-                  title="AI Контекст"
-                >
-                  <Brain className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => setShowCommitmentsPanel(!showCommitmentsPanel)} 
-                  className={`p-2 rounded-lg transition-colors ${showCommitmentsPanel ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100 text-slate-500'}`}
-                  title="Обязательства"
-                >
-                  <ClipboardList className="w-4 h-4" />
-                </button>
-                <button className="p-2 hover:bg-slate-100 rounded-lg"><Phone className="w-4 h-4 text-slate-500" /></button>
-                <button className="p-2 hover:bg-slate-100 rounded-lg"><Video className="w-4 h-4 text-slate-500" /></button>
+                {/* Звонок и видео никуда не вели, закрепление жило до перезагрузки,
+                    а панели AI и обязательств открывались пустыми. Осталось «…»,
+                    где лежат назначение, теги и архив */}
                 <div className="relative">
                   <button onClick={() => setShowChannelActions(!showChannelActions)} className="p-2 hover:bg-slate-100 rounded-lg">
                     <MoreHorizontal className="w-4 h-4 text-slate-500" />
@@ -1267,25 +1234,6 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
             />
           </div>
 
-          {/* Боковые панели AI и Обязательства */}
-          {(showAIPanel || showCommitmentsPanel) && (
-            <div className="w-80 flex-shrink-0 flex flex-col border-l border-[#e8edf3] bg-white overflow-hidden">
-              {showAIPanel && (
-                <AIContextPanel
-                  channelId={selectedChannel.id}
-                  isOpen={showAIPanel}
-                  onClose={() => setShowAIPanel(false)}
-                  className="flex-1"
-                />
-              )}
-              {showCommitmentsPanel && !showAIPanel && (
-                <CommitmentsPanel
-                  channelId={selectedChannel.id}
-                  className="flex-1 overflow-y-auto"
-                />
-              )}
-            </div>
-          )}
         </>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-slate-50">

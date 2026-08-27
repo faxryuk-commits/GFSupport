@@ -85,6 +85,18 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       const list = await fetchReleases()
       setHistory(list)
       setInfo(list[0] || null)
+      // Загрузили страницу — значит уже работаем в этом выпуске, и на
+      // следующей выкладке пересказывать его состав незачем. Отметку ставила
+      // только кнопка в баннере, а страницу чаще обновляют сами: без этой
+      // строки одни и те же семь пунктов всплывали каждую выкладку.
+      // Затираем только пустое место — кому выпуск ещё не показывали, тот
+      // увидит его в свой черёд
+      const latest = list[0]
+      if (latest?.version) {
+        try {
+          if (!localStorage.getItem(SEEN_KEY)) localStorage.setItem(SEEN_KEY, latest.version)
+        } catch { /* приватный режим */ }
+      }
       return
     }
 
