@@ -69,8 +69,9 @@ export const LEAD_STATUS: Record<string, { label: string; tone: string }> = {
 export const leadStatus = (key: string) =>
   LEAD_STATUS[key] || { label: key, tone: 'gray' }
 
-export const Chip = ({ tone = 'gray', children }: { tone?: string; children: ReactNode }) => (
-  <span className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap ${TONES[tone]}`}>
+export const Chip = ({ tone = 'gray', children, title }: { tone?: string; children: ReactNode; title?: string }) => (
+  <span title={title}
+    className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-md whitespace-nowrap ${TONES[tone]}`}>
     {children}
   </span>
 )

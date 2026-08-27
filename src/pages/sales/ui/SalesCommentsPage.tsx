@@ -292,7 +292,11 @@ export function SalesCommentsPage() {
                     <Chip tone={c.platform === 'instagram' ? 'violet' : 'blue'}>
                       {c.platform === 'instagram' ? 'Instagram' : 'Facebook'}
                     </Chip>
-                    {c.is_hidden && <Chip tone="gray">скрыт</Chip>}
+                    {c.is_hidden && (
+                      <Chip tone="gray" title="Не виден под постом никому, кроме автора комментария">
+                        скрыт
+                      </Chip>
+                    )}
                     {c.replied_at
                       ? <Chip tone="green">отвечено</Chip>
                       : <Chip tone="amber">без ответа</Chip>}
@@ -369,7 +373,10 @@ export function SalesCommentsPage() {
                         {c.replied_at ? 'Ответить ещё' : 'Ответить'}
                       </Btn>
                       <Btn kind={c.is_hidden ? 'ghost' : 'danger'}
-                        onClick={() => toggleHidden(c)} disabled={busy === c.comment_id}>
+                        onClick={() => toggleHidden(c)} disabled={busy === c.comment_id}
+                        title={c.is_hidden
+                          ? 'Вернуть комментарий в ленту под постом'
+                          : 'Пропадёт из ленты под постом для всех, кроме самого автора: Meta скрывает молча, и человек не узнает'}>
                         {c.is_hidden ? 'Показать' : 'Скрыть'}
                       </Btn>
                     </div>
