@@ -290,7 +290,7 @@ export default async function handler(req: Request): Promise<Response> {
         page_name = EXCLUDED.page_name, page_token = EXCLUDED.page_token,
         ig_user_id = EXCLUDED.ig_user_id, ig_username = EXCLUDED.ig_username,
         connected_by = EXCLUDED.connected_by, connected_by_name = EXCLUDED.connected_by_name,
-        is_active = true, updated_at = NOW()
+        is_active = true, connected_at = NOW(), updated_at = NOW()
     `
     invalidateMetaConfig(orgId)
 
