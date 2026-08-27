@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Chip, PageShell, Skeleton, Btn, fmtDateTime, useAutoRefresh } from './kit'
 import { useRegion, RegionBadge } from './region'
+import { formatRelativeTime } from '@/shared/lib/time'
 
 /**
  * Комментарии под постами Instagram и Facebook.
@@ -62,6 +63,9 @@ const VIEWS: Array<[string, string]> = [
   ['hidden', 'Скрытые'],
 ]
 
+/** Свежим считаем то, что появилось за последние два часа. */
+const FRESH_MS = 2 * 60 * 60 * 1000
+
 const PLATFORMS: Array<[string, string]> = [
   ['', 'Обе площадки'],
   ['instagram', 'Instagram'],
@@ -96,9 +100,15 @@ export function SalesCommentsPage() {
   const [draft, setDraft] = useState('')
   const region = useRegion('comments')
 
+  // Под какой набор фильтров пришли данные, что сейчас на экране. Смена
+  // вкладки меняет фильтры мгновенно, а список — только после ответа сервера,
+  // и всё, что смотрит на «текущую вкладку», успевает отработать по старому
+  const [loadedKey, setLoadedKey] = useState('')
+
   const load = useCallback(() => {
+    const key = `${view}|${platform}|${region || ''}`
     apiGet<Data>(`/integrations/meta-comments-api?view=${view}&platform=${platform}`, false)
-      .then(d => { setData(d); setError(null) })
+      .then(d => { setData(d); setLoadedKey(key); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить комментарии'))
   }, [view, platform, region])
 
@@ -146,19 +156,50 @@ export function SalesCommentsPage() {
   }
 
   // Группируем по публикации, сохраняя порядок: сверху пост со свежим
-  // комментарием, а не тот, где их больше
+  // комментарием, а не тот, где их больше.
+  //
+  // Плюс то, чего в шапке не хватало: когда под постом писали в последний раз
+  // и вмешался ли агент. Раньше там стояла дата самой публикации — пост с
+  // комментарием минутной давности выглядел июньским, и понять, что вообще
+  // что-то произошло, можно было только раскрыв каждую карточку по очереди
   const groups = useMemo(() => {
-    const by = new Map<string, { key: string; post: Comment['post']; items: Comment[]; open: number }>()
+    const by = new Map<string, {
+      key: string; post: Comment['post']; items: Comment[]; open: number
+      lastAt: string | null; agentReplies: number; fresh: number
+    }>()
     for (const c of data?.items || []) {
       const key = c.post_id || `без поста · ${c.platform}`
       let g = by.get(key)
-      if (!g) { g = { key, post: c.post, items: [], open: 0 }; by.set(key, g) }
+      if (!g) {
+        g = { key, post: c.post, items: [], open: 0, lastAt: null, agentReplies: 0, fresh: 0 }
+        by.set(key, g)
+      }
       if (!g.post && c.post) g.post = c.post
       g.items.push(c)
       if (!c.replied_at && !c.is_hidden) g.open++
+      if (!g.lastAt || c.created_at > g.lastAt) g.lastAt = c.created_at
+      if (c.replied_at && (c.ai_auto || c.replied_by === 'Агент')) g.agentReplies++
+      if (Date.now() - new Date(c.created_at).getTime() < FRESH_MS) g.fresh++
     }
     return [...by.values()]
   }, [data])
+
+  // Раскрываем то, где только что писали, — иначе свежее прячется за
+  // свёрнутой карточкой и человек уходит, решив, что ничего не приходило.
+  // Только при первой загрузке: обновление раз в минуту иначе разворачивало
+  // бы обратно то, что человек только что свернул
+  // Раскрываем по загруженному набору, а не по выбранной вкладке: иначе на
+  // клик по вкладке разворачивается ещё старый список. Обновление раз в
+  // минуту ключ не меняет и свёрнутое человеком обратно не развернёт
+  const autoOpenedRef = useRef('')
+  useEffect(() => {
+    if (!loadedKey || autoOpenedRef.current === loadedKey || !groups.length) return
+    autoOpenedRef.current = loadedKey
+    const keys = groups.filter(g => g.fresh > 0).map(g => g.key)
+    // Если свежего нет, раскрываем верхнюю: посадочная страница не должна
+    // встречать стеной свёрнутых заголовков
+    setOpened(new Set(keys.length ? keys : [groups[0].key]))
+  }, [groups, loadedKey])
 
   if (!data && !error) return <Skeleton rows={6} />
 
@@ -267,6 +308,12 @@ export function SalesCommentsPage() {
                     {g.items.length} {plural(g.items.length, 'комментарий', 'комментария', 'комментариев')}
                   </span>
                   {g.open > 0 && <span className="text-amber-600">без ответа {g.open}</span>}
+                  {g.agentReplies > 0 && (
+                    <span className="text-violet-600"
+                      title="На эти комментарии агент ответил сам — ответ виден внутри карточки">
+                      агент ответил {g.agentReplies}
+                    </span>
+                  )}
                   {g.post?.permalink && (
                     <a href={g.post.permalink} target="_blank" rel="noreferrer"
                       onClick={e => e.stopPropagation()}
@@ -277,14 +324,33 @@ export function SalesCommentsPage() {
                   <p className="text-[12px] text-gray-500 mt-0.5 line-clamp-1">{g.post.caption}</p>
                 )}
               </div>
-              <span className={`flex-none self-center text-gray-400 text-[11px] transition-transform ${
-                opened.has(g.key) ? 'rotate-180' : ''}`}>▾</span>
+              {/* Когда под постом писали в последний раз. Дата слева — это дата
+                  самой публикации, и на неё ориентироваться нельзя: под
+                  июньским роликом могут написать сегодня */}
+              <div className="flex-none self-center flex items-center gap-2.5">
+                {g.fresh > 0 && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider
+                                   text-emerald-700 bg-emerald-50 border border-emerald-200
+                                   px-1.5 py-0.5 rounded-md">
+                    новое
+                  </span>
+                )}
+                <span className={`text-[11px] tabular-nums whitespace-nowrap ${
+                  g.fresh > 0 ? 'text-emerald-700 font-medium' : 'text-gray-400'}`}>
+                  {formatRelativeTime(g.lastAt)}
+                </span>
+                <span className={`text-gray-400 text-[11px] transition-transform ${
+                  opened.has(g.key) ? 'rotate-180' : ''}`}>▾</span>
+              </div>
             </div>
 
             {opened.has(g.key) && (
             <ul className="divide-y divide-gray-100">
               {g.items.map(c => (
-                <li key={c.id} className="px-4 py-2.5 group/c hover:bg-gray-50/60">
+                <li key={c.id}
+                  className={`px-4 py-2.5 group/c hover:bg-gray-50/60 ${
+                    Date.now() - new Date(c.created_at).getTime() < FRESH_MS
+                      ? 'border-l-2 border-l-emerald-400 bg-emerald-50/30' : ''}`}>
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-[13px] font-medium text-gray-900">
                       {c.author_name || 'Без имени'}
