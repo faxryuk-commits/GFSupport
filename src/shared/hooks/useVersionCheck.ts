@@ -102,11 +102,6 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     }
   }, [currentVersion, dismissed, fetchVersion, fetchReleases])
 
-  // Обновить страницу
-  const refresh = useCallback(() => {
-    window.location.reload()
-  }, [])
-
   // Отложить обновление. Запоминаем прочитанный выпуск: закрыл — значит
   // ознакомился, и второй раз тот же список показывать незачем
   const dismiss = useCallback(() => {
