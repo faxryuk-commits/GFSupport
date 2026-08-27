@@ -292,6 +292,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
             salesQueue: (d.sla?.length || 0) + (d.tasks?.length || 0),
             salesDeals: d.stats?.hot_deals ?? 0,
             salesLeads: d.stats?.new_leads ?? 0,
+            metaComments: d.stats?.meta_comments ?? 0,
           })
         })
         .catch(() => {})

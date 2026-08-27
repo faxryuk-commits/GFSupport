@@ -84,7 +84,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'unknown action' }, 400)
   }
 
-  const [sla, hot, tasks, revival, stats] = await Promise.all([
+  const [sla, hot, tasks, revival, stats, comments] = await Promise.all([
     // 1. Горит SLA первого касания
     sql`
       SELECT l.id, l.name, l.icp_score, l.city, l.phone, l.sla_due_at, l.created_at, s.label AS source
@@ -155,6 +155,15 @@ export default async function handler(req: Request): Promise<Response> {
            AND l.archived_at IS NULL AND l.assigned_agent_id = ${agentId}
            AND l.first_touch_at IS NULL) AS new_leads
     `,
+    // Комментарии — общая корзина, а не личная: под постом вопрос видят все,
+    // и владельца у него нет. Поэтому считаем по организации, в отличие от
+    // сделок и лидов рядом. Таблица заводится при подключении Meta, поэтому
+    // отказ гасим: без неё значок должен быть нулём, а не пятисоткой на всю
+    // очередь
+    sql`
+      SELECT COUNT(*)::int AS n FROM support_meta_comments
+      WHERE org_id = ${orgId} AND NOT is_ours AND NOT is_hidden AND replied_at IS NULL
+    `.catch(() => [{ n: 0 }]),
   ])
 
   // Чего не хватает, чтобы двинуть сделку дальше. Считаем здесь, а не в
@@ -186,7 +195,7 @@ export default async function handler(req: Request): Promise<Response> {
   return json({
     agentId,
     sla, hot: hotEnriched, tasks, revival,
-    stats: stats[0] || {},
+    stats: { ...(stats[0] || {}), meta_comments: (comments as any[])[0]?.n ?? 0 },
     total: sla.length + hot.length + tasks.length + revival.length,
   })
 }
