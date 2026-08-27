@@ -68,7 +68,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (action === 'hide') {
       const hidden = Boolean(body?.hidden)
-      const res = await hideComment(token, commentId, hidden)
+      const res = await hideComment(token, row.platform, commentId, hidden)
       if (!res.ok) return json({ error: 'Meta не приняла изменение', details: res.error }, 502)
       await sql`
         UPDATE support_meta_comments SET is_hidden = ${hidden}

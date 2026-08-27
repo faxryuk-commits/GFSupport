@@ -364,8 +364,7 @@ export function SalesCommentsPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-1.5 flex gap-2 opacity-0 group-hover/c:opacity-100
-                                    focus-within:opacity-100 transition-opacity">
+                    <div className="mt-1.5 flex gap-2">
                       <Btn onClick={() => { setAnswering(c.comment_id); setDraft('') }}>
                         {c.replied_at ? 'Ответить ещё' : 'Ответить'}
                       </Btn>

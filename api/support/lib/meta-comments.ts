@@ -118,13 +118,21 @@ export async function replyToComment(
   }
 }
 
-/** Скрыть или вернуть комментарий: спам убираем, не удаляя чужие слова. */
+/**
+ * Скрыть или вернуть комментарий: спам убираем, не удаляя чужие слова.
+ *
+ * Поле называется по-разному, и это не мелочь: у Facebook комментарий
+ * скрывается через is_hidden, у Instagram — через hide. Отправляли всегда
+ * facebook'овое, а все наши комментарии инстаграмные — Graph отвечал отказом,
+ * и кнопка «Скрыть» не срабатывала ни разу.
+ */
 export async function hideComment(
-  token: string, commentId: string, hidden: boolean,
+  token: string, platform: string, commentId: string, hidden: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
+  const field = platform === 'instagram' ? 'hide' : 'is_hidden'
   try {
     const res = await fetch(
-      `${GRAPH}/${commentId}?is_hidden=${hidden}&access_token=${token}`, { method: 'POST' })
+      `${GRAPH}/${commentId}?${field}=${hidden}&access_token=${token}`, { method: 'POST' })
     if (res.ok) return { ok: true }
     const detail = await res.text().catch(() => '')
     return { ok: false, error: detail.slice(0, 300) }
