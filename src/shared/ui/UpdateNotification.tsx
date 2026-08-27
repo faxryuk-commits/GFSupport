@@ -1,4 +1,5 @@
-import { RefreshCw, X, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { RefreshCw, X, Sparkles, ChevronUp } from 'lucide-react'
 import { useVersionCheck } from '../hooks/useVersionCheck'
 
 export function UpdateNotification() {
@@ -85,27 +86,48 @@ export function UpdateNotification() {
   )
 }
 
-// Мини-версия для ненавязчивого уведомления (баннер)
+/**
+ * Баннер обновления с составом выпуска.
+ *
+ * Раньше здесь стояло «обновите страницу для новых функций» — сотрудник
+ * обновлял и не знал, что изменилось, поэтому новыми разделами не
+ * пользовался. Список берётся из version.json и пишется человеческим языком.
+ */
 export function UpdateBanner() {
-  const { hasUpdate, refresh, dismiss } = useVersionCheck({
+  const { hasUpdate, info, refresh, dismiss } = useVersionCheck({
     checkInterval: 60000,
-    enabled: true
+    enabled: true,
   })
+  const [open, setOpen] = useState(false)
 
   if (!hasUpdate) return null
+  const notes = info?.notes || []
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-[200] animate-slide-in">
-      <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl shadow-xl p-4">
-        <div className="flex items-center gap-3">
+    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-[400px] z-[200] animate-slide-in">
+      <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl shadow-xl overflow-hidden">
+        <div className="flex items-center gap-3 p-4">
           <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm">Доступно обновление</p>
-            <p className="text-xs text-white/80">Обновите страницу для новых функций</p>
+            <p className="font-medium text-sm">{info?.title || 'Доступно обновление'}</p>
+            <p className="text-xs text-white/80 truncate">
+              {notes.length
+                ? `${notes.length} ${notes.length === 1 ? 'изменение' : notes.length < 5 ? 'изменения' : 'изменений'} — посмотреть`
+                : 'Обновите страницу для новых функций'}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {notes.length > 0 && (
+              <button
+                onClick={() => setOpen(o => !o)}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                title={open ? 'Свернуть' : 'Что нового'}
+              >
+                <ChevronUp className={`w-4 h-4 transition-transform ${open ? '' : 'rotate-180'}`} />
+              </button>
+            )}
             <button
               onClick={dismiss}
               className="p-2 hover:bg-white/20 rounded-lg transition-colors"
@@ -115,13 +137,29 @@ export function UpdateBanner() {
             </button>
             <button
               onClick={refresh}
-              className="px-3 py-2 bg-white text-blue-600 rounded-lg font-medium text-sm hover:bg-blue-50 transition-colors flex items-center gap-1.5"
+              className="px-3 py-2 bg-white text-blue-600 rounded-lg font-medium text-sm
+                         hover:bg-blue-50 transition-colors flex items-center gap-1.5 flex-none"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Обновить
             </button>
           </div>
         </div>
+
+        {open && notes.length > 0 && (
+          <div className="bg-white/10 border-t border-white/20 px-4 py-3 space-y-2.5
+                          max-h-[300px] overflow-y-auto">
+            {notes.map((n, i) => (
+              <div key={i} className="flex gap-2.5">
+                <span className="flex-none text-base leading-5">{n.icon || '•'}</span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium leading-snug">{n.title}</p>
+                  {n.text && <p className="text-[11.5px] text-white/80 leading-snug mt-0.5">{n.text}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

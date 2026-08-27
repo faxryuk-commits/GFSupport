@@ -1,9 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 
-interface VersionInfo {
+export interface ReleaseNote {
+  icon?: string
+  title: string
+  text?: string
+}
+
+export interface VersionInfo {
   version: string
   buildTime: string
   commitHash?: string
+  /** Что изменилось — показываем прямо в окне обновления. */
+  title?: string
+  notes?: ReleaseNote[]
 }
 
 interface UseVersionCheckOptions {
@@ -17,6 +26,10 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   const [hasUpdate, setHasUpdate] = useState(false)
   const [currentVersion, setCurrentVersion] = useState<string | null>(null)
   const [newVersion, setNewVersion] = useState<string | null>(null)
+  // Держим весь ответ, а не только номер: из него берутся заголовок выпуска
+  // и список изменений — иначе окно сообщает «новые функции» и молчит о том,
+  // какие именно
+  const [info, setInfo] = useState<VersionInfo | null>(null)
   const [dismissed, setDismissed] = useState(false)
 
   // Получить версию приложения
@@ -45,6 +58,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     // Сравниваем версии
     if (versionInfo.version !== currentVersion && !dismissed) {
       setNewVersion(versionInfo.version)
+      setInfo(versionInfo)
       setHasUpdate(true)
     }
   }, [currentVersion, dismissed, fetchVersion])
@@ -88,6 +102,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     hasUpdate,
     currentVersion,
     newVersion,
+    info,
     refresh,
     dismiss,
     checkVersion
