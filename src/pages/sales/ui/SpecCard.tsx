@@ -37,6 +37,9 @@ export function SpecCard({ dealId }: { dealId: string }) {
   const [sel, setSel] = useState<Record<string, string[]>>({})
   const [note, setNote] = useState('')
   const [dirty, setDirty] = useState(false)
+  // Свёрнуто по умолчанию: карточка сделки и так длинная, а разворачивают
+  // ТЗ не каждый раз — обычно когда собирают КП
+  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -90,14 +93,24 @@ export function SpecCard({ dealId }: { dealId: string }) {
       sub={filled
         ? `заполнено блоков: ${filled} из ${data.tasks.length}`
         : 'чем клиент пользуется — это уйдёт в подключение вместе со сделкой'}
-      right={dirty
-        ? <Btn kind="primary" onClick={save} disabled={busy}>{busy ? '…' : 'Сохранить'}</Btn>
-        : data.updatedBy
-          ? <span className="text-[11px] text-gray-400">
+      right={
+        <span className="flex items-center gap-2">
+          {dirty && <Btn kind="primary" onClick={save} disabled={busy}>{busy ? '…' : 'Сохранить'}</Btn>}
+          {!dirty && data.updatedBy && (
+            <span className="text-[11px] text-gray-400">
               {data.updatedBy}{data.updatedAt ? ` · ${formatDateTimeShort(data.updatedAt)}` : ''}
             </span>
-          : undefined}
+          )}
+          <button onClick={() => setOpen(o => !o)}
+            className="text-[12px] px-2.5 py-1 border border-gray-300 rounded-lg
+                       hover:border-blue-500 hover:text-blue-600">
+            {open ? 'Свернуть' : filled ? 'Показать' : 'Заполнить'}
+          </button>
+        </span>
+      }
     >
+      {!open ? null : (
+      <>
       {error && (
         <div className="mx-4 mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[12px] text-red-700">
           {error}
@@ -162,6 +175,8 @@ export function SpecCard({ dealId }: { dealId: string }) {
           />
         </div>
       </div>
+      </>
+      )}
     </Card>
   )
 }

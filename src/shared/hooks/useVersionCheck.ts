@@ -15,6 +15,9 @@ export interface VersionInfo {
   notes?: ReleaseNote[]
 }
 
+/** Какой выпуск человек уже видел — чтобы не пересказывать его каждую выкладку. */
+const SEEN_KEY = 'gfs_seen_release'
+
 interface UseVersionCheckOptions {
   checkInterval?: number // интервал проверки в мс (по умолчанию 60 секунд)
   enabled?: boolean
@@ -88,7 +91,12 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     if (version !== currentVersion && !dismissed) {
       const list = await fetchReleases()
       setHistory(list)
-      setInfo(list[0] || null)
+      // Состав показываем только если выпуск новый. Сборка пересобирается на
+      // каждой выкладке, и без этой проверки один и тот же список изменений
+      // всплывал по десять раз за день — его переставали читать
+      const latest = list[0] || null
+      const seen = localStorage.getItem(SEEN_KEY)
+      setInfo(latest && latest.version !== seen ? latest : null)
       setNewVersion(version)
       setHasUpdate(true)
     }
@@ -99,11 +107,23 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     window.location.reload()
   }, [])
 
-  // Отложить обновление
+  // Отложить обновление. Запоминаем прочитанный выпуск: закрыл — значит
+  // ознакомился, и второй раз тот же список показывать незачем
   const dismiss = useCallback(() => {
+    if (info?.version) {
+      try { localStorage.setItem(SEEN_KEY, info.version) } catch { /* приватный режим */ }
+    }
     setDismissed(true)
     setHasUpdate(false)
-  }, [])
+  }, [info])
+
+  // Обновление страницы — тоже знакомство с выпуском
+  const refreshAndRemember = useCallback(() => {
+    if (info?.version) {
+      try { localStorage.setItem(SEEN_KEY, info.version) } catch { /* приватный режим */ }
+    }
+    window.location.reload()
+  }, [info])
 
   // Периодическая проверка версии
   useEffect(() => {
@@ -135,7 +155,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     newVersion,
     info,
     history,
-    refresh,
+    refresh: refreshAndRemember,
     dismiss,
     checkVersion
   }

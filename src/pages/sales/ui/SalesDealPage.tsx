@@ -444,23 +444,30 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 </span>
               }
             >
-              <div>
-                {(data.nextStage?.required_fields || []).map(f => {
-                  const miss = missing.find(m => m.field === f)
-                  return (
-                    <InlineField
-                      key={f}
-                      label={miss?.label || data.labels?.[f] || f}
-                      value={d[f]}
-                      money={MONEY_FIELDS.has(f)}
-                      when={DATE_FIELDS[f]}
-                      options={optionsFor(refs, f, d.market_id)}
-                      onSave={v => patch(f, v)}
-                    />
-                  )
-                })}
-                {!data.nextStage?.required_fields?.length && (
-                  <div className="px-4 py-3 text-[12.5px] text-gray-400">Для этого перехода полей не требуется</div>
+              {/* Не второй редактор, а подсказка. Раньше здесь стояли те же поля,
+                  что и в «Коммерческих условиях», — одно и то же правилось в
+                  двух местах одного экрана, и было непонятно, зачем их два */}
+              <div className="px-4 py-3">
+                {!data.nextStage?.required_fields?.length ? (
+                  <div className="text-[12.5px] text-gray-400">Для этого перехода полей не требуется</div>
+                ) : missing.length ? (
+                  <>
+                    <div className="text-[12.5px] text-gray-600 mb-2">
+                      Не хватает для перехода — заполните в блоках ниже:
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {missing.map(m => (
+                        <span key={m.field}
+                          className="text-[11.5px] px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-100">
+                          {m.label || data.labels?.[m.field] || m.field}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[12.5px] text-emerald-700">
+                    Всё заполнено — сделку можно переводить дальше.
+                  </div>
                 )}
               </div>
               {blocked && (
@@ -543,6 +550,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               </div>
             )}
           </Card>
+
+          {/* Под документами: ТЗ нужно к моменту, когда собирают КП, и рядом
+              с ним ему самое место. Свёрнуто по умолчанию — карточка сделки
+              и так длинная, а разворачивают его не каждый раз */}
+          {id && <SpecCard dealId={id} />}
         </div>
 
         <div className="space-y-4">
@@ -585,7 +597,6 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
           {/* ТЗ собирается по ходу продажи: на финише сейлз хочет закрыть
               сделку, а не заполнять анкету, и форма превращается в «уточним» */}
-          {id && <SpecCard dealId={id} />}
 
           <ActivityCard dealId={id} accountId={data.account?.id} />
 
