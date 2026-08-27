@@ -58,8 +58,8 @@ interface Data {
 }
 
 const VIEWS: Array<[string, string]> = [
-  ['open', 'Без ответа'],
   ['all', 'Все'],
+  ['open', 'Без ответа'],
   ['hidden', 'Скрытые'],
 ]
 
@@ -84,7 +84,7 @@ function plural(n: number, one: string, few: string, many: string): string {
 
 export function SalesCommentsPage() {
   const [data, setData] = useState<Data | null>(null)
-  const [view, setView] = useState('open')
+  const [view, setView] = useState('all')
   const [platform, setPlatform] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
