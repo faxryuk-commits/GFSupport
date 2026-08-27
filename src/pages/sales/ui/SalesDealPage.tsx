@@ -63,7 +63,7 @@ const MONEY_FIELDS = new Set(['monthly_amount', 'onetime_amount', 'budget_stated
  * Eats и Uzum Tezkor, а в сделку берут два-три модуля. Хранится строкой через
  * запятую — так же, как приходило из Amo.
  */
-const MULTI_FIELDS = new Set(['aggregators', 'products', 'pain'])
+const MULTI_FIELDS = new Set(['aggregators', 'products', 'pain', 'delivery_type'])
 
 /**
  * Поля с датой. Вводятся календарём, а не строкой: «дата демо», набранная

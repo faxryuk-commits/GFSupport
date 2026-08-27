@@ -8,8 +8,8 @@ export interface ReleaseNote {
 
 export interface VersionInfo {
   version: string
-  buildTime: string
-  commitHash?: string
+  date?: string
+  buildTime?: string
   /** Что изменилось — показываем прямо в окне обновления. */
   title?: string
   notes?: ReleaseNote[]
@@ -30,15 +30,24 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
   // и список изменений — иначе окно сообщает «новые функции» и молчит о том,
   // какие именно
   const [info, setInfo] = useState<VersionInfo | null>(null)
+  // Всю историю держим рядом: она же питает страницу «Что нового», и
+  // отдельным файлом две копии состава выпуска разъехались бы на первой же
+  // выкладке
+  const [history, setHistory] = useState<VersionInfo[]>([])
   const [dismissed, setDismissed] = useState(false)
 
   // Получить версию приложения
   const fetchVersion = useCallback(async (): Promise<VersionInfo | null> => {
     try {
-      // Добавляем timestamp чтобы избежать кэширования
-      const response = await fetch(`/version.json?t=${Date.now()}`)
+      // Метка времени в адресе: иначе браузер отдаёт свой старый файл и
+      // обновление никогда не замечается
+      const response = await fetch(`/releases.json?t=${Date.now()}`)
       if (!response.ok) return null
-      return await response.json()
+      const list: VersionInfo[] = await response.json()
+      if (!Array.isArray(list) || !list.length) return null
+      setHistory(list)
+      // Первый в списке — текущий выпуск: файл ведётся сверху вниз
+      return list[0]
     } catch {
       return null
     }
@@ -103,6 +112,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     currentVersion,
     newVersion,
     info,
+    history,
     refresh,
     dismiss,
     checkVersion

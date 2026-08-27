@@ -16,7 +16,7 @@ const QUAL_FIELDS = [
 ] as const
 
 /** Поля, где значений может быть несколько сразу. */
-const MULTI_QUAL = new Set<string>(['aggregators', 'pain'])
+const MULTI_QUAL = new Set<string>(['aggregators', 'pain', 'delivery_type'])
 
 /**
  * Карточка обращения: кто написал, откуда и что именно сказал.

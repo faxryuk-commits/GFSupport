@@ -158,6 +158,11 @@ export function UpdateBanner() {
                 </div>
               </div>
             ))}
+            {/* Баннер закрывают, не читая: пусть будет куда вернуться */}
+            <a href="/whats-new"
+              className="block text-[11.5px] text-white/90 underline underline-offset-2 pt-1">
+              вся история обновлений
+            </a>
           </div>
         )}
       </div>

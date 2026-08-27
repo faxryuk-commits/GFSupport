@@ -569,6 +569,8 @@ export function MyWorkspacePage() {
 
         <p className="text-xs text-slate-400 pb-4">
           Лестница эскалации: событие появляется здесь и в колокольчике; нет реакции 10–30 минут — бот напишет в Telegram; critical уходит сразу. Очередь дня продаж влита в «Требует меня»; полная страница очереди — по ссылке.
+          {' '}
+          <Link to="/whats-new" className="text-blue-600 hover:underline">Что нового в системе →</Link>
         </p>
       </div>
 
