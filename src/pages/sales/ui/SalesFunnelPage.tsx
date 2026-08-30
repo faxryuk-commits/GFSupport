@@ -48,9 +48,12 @@ interface FunnelData {
   owners: Array<{ id: string; name: string }>
 }
 
+// «other» здесь нет намеренно: это не вид обращения, а его отсутствие.
+// Плашка «канал неизвестен» висела на лидах из Messenger и холодного обзвона,
+// у которых источник написан строкой ниже, — и читалась как поломка
 const KIND_LABEL: Record<string, string> = {
   form: 'форма', message: 'мессенджер', comment: 'комментарий',
-  call: 'звонок', email: 'письмо', manual: 'вручную', other: 'канал неизвестен',
+  call: 'звонок', email: 'письмо', manual: 'вручную',
 }
 
 function days(iso: string | null): number {
@@ -264,7 +267,9 @@ export function SalesFunnelPage() {
                         <div className="text-[10.5px] text-gray-500">{l.name}</div>
                       )}
                       <div className="flex flex-wrap gap-1 mt-1">
-                        <Chip tone="violet">{KIND_LABEL[l.lead_kind || ''] || 'обращение'}</Chip>
+                        {KIND_LABEL[l.lead_kind || ''] && (
+                          <Chip tone="violet">{KIND_LABEL[l.lead_kind || '']}</Chip>
+                        )}
                         {l.sla_due_at && !l.first_touch_at && col.key !== 'nurture' && (
                           <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
                         )}

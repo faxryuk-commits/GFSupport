@@ -67,7 +67,7 @@ const VIEWS: Array<[string, string]> = [
 /** Что человек сделал: форма, сообщение, комментарий, звонок. */
 const KIND_LABEL: Record<string, string> = {
   form: 'заявка с формы', message: 'написал в мессенджер', comment: 'комментарий',
-  call: 'звонок', email: 'письмо', manual: 'заведён вручную', other: 'источник не определён',
+  call: 'звонок', email: 'письмо', manual: 'заведён вручную',
 }
 const KIND_TONE: Record<string, string> = {
   form: 'green', message: 'violet', comment: 'amber', call: 'blue',
@@ -353,9 +353,11 @@ export function SalesLeadsPage() {
                           )
                         )}
                         <div className="flex gap-1 mt-1 flex-wrap items-center">
-                          <Chip tone={KIND_TONE[l.lead_kind || ''] || 'gray'}>
-                            {KIND_LABEL[l.lead_kind || ''] || 'обращение'}
-                          </Chip>
+                          {KIND_LABEL[l.lead_kind || ''] && (
+                            <Chip tone={KIND_TONE[l.lead_kind || ''] || 'gray'}>
+                              {KIND_LABEL[l.lead_kind || '']}
+                            </Chip>
+                          )}
                           <Chip tone="blue">{l.source || 'источник не определён'}</Chip>
                           <Chip tone={leadStatus(l.status).tone}>{leadStatus(l.status).label}</Chip>
                           {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (

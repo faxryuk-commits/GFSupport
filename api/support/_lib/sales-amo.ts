@@ -243,7 +243,7 @@ function readableName(lead: any, contact?: { phone?: string; name?: string }): s
 
 /** Что человек сделал: заполнил форму, написал, прокомментировал, позвонил. */
 export function kindOfSource(source: string): string {
-  if (['instagram_direct', 'telegram', 'telegram_bot', 'whatsapp', 'site_chat'].includes(source)) return 'message'
+  if (['instagram_direct', 'messenger', 'telegram', 'telegram_bot', 'whatsapp', 'site_chat'].includes(source)) return 'message'
   if (['meta_leadform', 'site', 'partner_apply'].includes(source)) return 'form'
   if (source === 'instagram_comment') return 'comment'
   if (source === 'call') return 'call'
