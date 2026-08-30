@@ -5,6 +5,7 @@ import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../
 import { assertCron } from '../_lib/cron-auth.js'
 import { sendNotification } from '../_lib/notifications.js'
 import { tokenForPage } from '../_lib/meta-config.js'
+import { runQualifier } from '../_lib/sales-qualifier.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -111,6 +112,55 @@ export default async function handler(req: Request): Promise<Response> {
         leadKeyboard(lead.id))
     }
   }
+
+  // ─── 1б. Неотвеченные сообщения клиентов: повторный заход квалификатора ────
+  //
+  // Квалификатор срабатывает на входящем, но молчит, пока в диалоге недавно
+  // писал живой сотрудник. Без досмотра это дыра: если сотрудник так и не
+  // ответил, сообщение клиента висело без ответа вечно — вернуться было
+  // некому. Досмотр находит диалоги, где последнее слово за клиентом, тишина
+  // человека истекла, а квалификатор ещё не отработал, — и зовёт его снова.
+  // Свои проверки (лимиты, режим, живой человек) он делает сам.
+  try {
+    const unanswered = await sql`
+      SELECT l.id AS lead_id, c.id AS channel_id, m.text_content
+      FROM sales_leads l
+      JOIN sales_accounts a ON a.id = l.account_id
+      JOIN support_channels c ON c.id = a.channel_id
+      JOIN LATERAL (
+        SELECT text_content, created_at, is_from_client FROM support_messages
+        WHERE channel_id = c.id ORDER BY created_at DESC LIMIT 1
+      ) m ON true
+      WHERE l.org_id = ${ORG} AND l.archived_at IS NULL
+        AND l.status IN ('new', 'assigned', 'nurture')
+        AND m.is_from_client = true
+        -- вебхук-ветке даём отработать самой; старше суток не трогаем —
+        -- окно ответа Meta всё равно закрыто, а воскрешать древность незачем
+        AND m.created_at < NOW() - INTERVAL '3 minutes'
+        AND m.created_at > NOW() - INTERVAL '20 hours'
+        -- тишина человека истекла: за два часа исходящих от людей не было
+        AND NOT EXISTS (
+          SELECT 1 FROM support_messages h
+          WHERE h.channel_id = c.id AND h.is_from_client = false
+            AND COALESCE(h.sender_name, '') <> 'Агент'
+            AND h.created_at > NOW() - INTERVAL '2 hours'
+        )
+        -- квалификатор после этого сообщения ещё не высказывался
+        AND NOT EXISTS (
+          SELECT 1 FROM sales_assistant_log sl
+          WHERE sl.org_id = ${ORG} AND sl.lead_id = l.id
+            AND sl.action IN ('qualify_sent', 'qualify_draft', 'qualify_handover', 'qualify_failed', 'qualify_silent')
+            AND sl.created_at > m.created_at
+        )
+      LIMIT 5
+    ` as any[]
+    for (const u of unanswered) {
+      await runQualifier(sql, ORG, {
+        leadId: u.lead_id, channelId: u.channel_id,
+        inboundText: String(u.text_content || '').slice(0, 500),
+      })
+    }
+  } catch { /* досмотр не должен ронять остальной проход */ }
 
   // ─── 2. Просроченные задачи и каденции ──────────────────────────────────────
   // Раньше выборка требовала привязанного телеграма, и у сотрудника без бота

@@ -247,11 +247,23 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
     await notifyHandover(sql, orgId, lead, verdict.intent, input.inboundText)
   }
 
-  // 3. Ответ клиенту. Молчим, когда: живой сотрудник в диалоге, лимит
-  //    сообщений исчерпан, только что отвечали, отвечать нечего или клиент
-  //    отказался — уговаривать после «нет» будет человек, если сочтёт нужным
+  // 3. Ответ клиенту. Тишина бывает двух сортов, и различать их обязан
+  //    журнал: временная (человек в диалоге, только что отвечали) не
+  //    записывается — досмотр в кроне вернётся позже; окончательная (лимит
+  //    исчерпан, клиент отказался, ответить нечего) записывается — иначе
+  //    досмотр дёргал бы модель каждую минуту до конца окна
   const reply = String(verdict.reply || '').trim()
-  if (!reply || humanActive || exhausted || justReplied || verdict.intent === 'not_interested') return
+  if (humanActive || justReplied) return
+  if (!reply || exhausted || verdict.intent === 'not_interested') {
+    await logAssistant(sql, orgId, {
+      leadId: lead.id, accountId: lead.account_id, action: 'qualify_silent',
+      status: 'skip',
+      message: exhausted ? 'лимит из шести сообщений исчерпан'
+        : verdict.intent === 'not_interested' ? 'клиент отказался — не уговариваем'
+        : 'модель решила промолчать',
+    })
+    return
+  }
 
   if (mode === 'draft') {
     await logAssistant(sql, orgId, {

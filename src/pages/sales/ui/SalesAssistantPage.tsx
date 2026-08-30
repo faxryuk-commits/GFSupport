@@ -22,12 +22,13 @@ const ACTION_LABEL: Record<string, string> = {
   qualify_extracted: 'выяснены факты',
   qualify_handover: 'квалификатор зовёт сейлза',
   qualify_failed: 'квалификатор не смог',
+  qualify_silent: 'квалификатор промолчал',
 }
 const ACTION_TONE: Record<string, string> = {
   nurture_sent: 'green', nurture_draft: 'amber', nurture_failed: 'red',
   draft_failed: 'red', handover: 'blue',
   qualify_sent: 'violet', qualify_draft: 'amber', qualify_extracted: 'green',
-  qualify_handover: 'blue', qualify_failed: 'red', inbox_lead: 'gray',
+  qualify_handover: 'blue', qualify_failed: 'red', inbox_lead: 'gray', qualify_silent: 'gray',
 }
 
 export function SalesAssistantPage() {
