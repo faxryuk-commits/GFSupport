@@ -1,4 +1,4 @@
-import { getSQL, json } from '../_lib/db.js'
+import { getSQL, json, ensureOnce } from '../_lib/db.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
 import { getBotToken, tgSend, leadCard, leadKeyboard } from '../_lib/sales-bot.js'
 import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../_lib/sales-assistant.js'
@@ -34,22 +34,40 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   await ensureSalesSchema(sql, ORG)
 
-  // Колонка появляется здесь, а не в схеме модуля: она нужна только крону,
-  // чтобы не слать одно и то же напоминание каждую минуту
-  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ`
+  // Колонки появляются здесь, а не в схеме модуля: они нужны только крону.
+  // reminded_at — чтобы не слать одно напоминание каждую минуту;
+  // sla_handoff_at и sla_handoffs — служебный график карусели, чтобы не
+  // трогать sla_due_at: это видимый людям срок, и двигать его — врать
+  await ensureOnce('sales-tick-cols', async () => {
+    await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ`
+    await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS sla_handoff_at TIMESTAMPTZ`
+    await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS sla_handoffs INT DEFAULT 0`
+  })
 
   const token = await getBotToken(sql)
   const out = { reassigned: 0, reminded: 0, stalled: 0, abandoned: 0, reactivated: 0 }
 
   // ─── 1. Просроченный SLA первого касания ────────────────────────────────────
-  const overdue = await sql`
+  // Два предохранителя, без которых карусель превращалась во враньё:
+  // передач не больше двух (дальше дело не в занятости, а гонять лид по кругу
+  // с уведомлениями — спам), и ночью карусель спит — передать лид спящему
+  // и через 15 минут забрать обратно было бы работой ради работы
+  const tashkentHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tashkent', hour: 'numeric', hour12: false,
+  }).format(new Date()))
+  const workHours = tashkentHour >= 9 && tashkentHour < 21
+
+  const overdue = workHours ? await sql`
     SELECT l.*, s.label AS source_label
     FROM sales_leads l
     LEFT JOIN sales_sources s ON s.id = l.source_id
     WHERE l.org_id = ${ORG} AND l.status = 'assigned'
-      AND l.first_touch_at IS NULL AND l.sla_due_at < NOW()
+      AND l.first_touch_at IS NULL AND l.archived_at IS NULL
+      AND l.sla_due_at < NOW()
+      AND COALESCE(l.sla_handoff_at, l.sla_due_at) < NOW()
+      AND COALESCE(l.sla_handoffs, 0) < 2
     ORDER BY l.sla_due_at ASC LIMIT 20
-  `
+  ` : []
   for (const lead of overdue) {
     // Свободнее всех = меньше всего висящих лидов; текущего владельца исключаем
     const [next] = await sql`
@@ -60,21 +78,29 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE a.telegram_id IS NOT NULL AND a.merged_into IS NULL
         AND a.id <> ${lead.assigned_agent_id}
         AND (a.org_id = ${ORG} OR a.org_id IS NULL)
-        AND (LOWER(COALESCE(a.role, '')) IN ('sales', 'sales_rep', 'ae', 'sdr', 'sales_lead')
+        AND (LOWER(COALESCE(a.role, '')) IN ('sales', 'sales_rep', 'ae', 'sdr', 'sales_lead', 'kam', 'cco')
+             -- отдел у команды записан латиницей: фильтр только по «прода»
+             -- не находил никого, и карусель ни разу не сработала
+             OR LOWER(COALESCE(a.department, '')) IN ('sales', 'sale')
              OR LOWER(COALESCE(a.department, '')) LIKE '%прода%')
       GROUP BY a.id
       ORDER BY COUNT(l.id) ASC, a.id ASC
       LIMIT 1
     `
     if (!next) {
-      // Некому передать — продлеваем таймер, чтобы не крутить проход вхолостую
-      await sql`UPDATE sales_leads SET sla_due_at = NOW() + INTERVAL '15 minutes' WHERE id = ${lead.id}`
+      // Некому передать — вернёмся через час. Видимый срок не трогаем:
+      // раньше он продлевался на 15 минут каждый проход, и лиды
+      // двухнедельной давности вечно показывали «через 5 мин»
+      await sql`UPDATE sales_leads SET sla_handoff_at = NOW() + INTERVAL '1 hour' WHERE id = ${lead.id}`
       continue
     }
+    // Новому владельцу — новые 15 минут: здесь сдвиг срока не враньё,
+    // а настоящая переустановка норматива
     await sql`
       UPDATE sales_leads
       SET assigned_agent_id = ${next.id}, assigned_at = NOW(),
-          sla_due_at = NOW() + INTERVAL '15 minutes'
+          sla_due_at = NOW() + INTERVAL '15 minutes',
+          sla_handoff_at = NULL, sla_handoffs = COALESCE(sla_handoffs, 0) + 1
       WHERE id = ${lead.id}
     `
     out.reassigned++
