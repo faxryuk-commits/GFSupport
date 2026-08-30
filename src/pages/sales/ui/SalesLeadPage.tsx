@@ -5,7 +5,7 @@ import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM
 import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, Skeleton, leadStatus, slaTone, slaText } from './kit'
 import { TasksCard } from './TasksCard'
-import { useSalesRefs, optionsFor } from './refs'
+import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
 
 /** Что выясняем о заведении на первом звонке — те же поля, что у сделки. */
 const QUAL_FIELDS = [
@@ -222,7 +222,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     setAsking(true)
     if (reasons.length) return
     try {
-      const d = await apiGet<any>('/sales/refs', false)
+      const d = await getSalesRefs()
       setReasons(d.reasons || [])
     } catch { /* без справочника отказ всё равно можно оформить */ }
   }

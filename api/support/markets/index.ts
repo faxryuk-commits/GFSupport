@@ -66,21 +66,22 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ channels })
     }
 
-    const markets = await sql`SELECT * FROM support_markets WHERE org_id = ${orgId} ORDER BY name`
-
-    const counts = await sql`
-      SELECT market_id, COUNT(*)::int as count FROM support_channels
-      WHERE market_id IS NOT NULL AND org_id = ${orgId} GROUP BY market_id
-    `
-    const agentCounts = await sql`
-      SELECT market_id, COUNT(*)::int as count FROM support_agent_markets WHERE org_id = ${orgId} GROUP BY market_id
-    `
+    // Четыре независимых чтения — одним заходом в базу, а не гуськом
+    const [markets, counts, agentCounts, unassigned] = await sql.transaction([
+      sql`SELECT * FROM support_markets WHERE org_id = ${orgId} ORDER BY name`,
+      sql`
+        SELECT market_id, COUNT(*)::int as count FROM support_channels
+        WHERE market_id IS NOT NULL AND org_id = ${orgId} GROUP BY market_id
+      `,
+      sql`
+        SELECT market_id, COUNT(*)::int as count FROM support_agent_markets WHERE org_id = ${orgId} GROUP BY market_id
+      `,
+      sql`
+        SELECT COUNT(*)::int as count FROM support_channels WHERE market_id IS NULL AND org_id = ${orgId}
+      `,
+    ]) as any[]
     const channelMap = Object.fromEntries(counts.map((r: any) => [r.market_id, r.count]))
     const agentMap = Object.fromEntries(agentCounts.map((r: any) => [r.market_id, r.count]))
-
-    const unassigned = await sql`
-      SELECT COUNT(*)::int as count FROM support_channels WHERE market_id IS NULL AND org_id = ${orgId}
-    `
 
     return json({
       markets: markets.map((m: any) => ({

@@ -38,43 +38,44 @@ export default async function handler(req: Request): Promise<Response> {
   // GET - получить кейс с историей
   if (req.method === 'GET') {
     try {
-      const caseResult = await sql`
-        SELECT 
-          c.*,
-          ch.name as channel_name,
-          ch.telegram_chat_id,
-          a.name as assignee_name
-        FROM support_cases c
-        LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
-        LEFT JOIN support_agents a ON c.assigned_to = a.id
-        WHERE c.id = ${caseId} AND c.org_id = ${orgId}
-      `
+      // Карточка, история и переписка не зависят друг от друга — один заход
+      // в базу вместо трёх. Пустую карточку ловим после: два лишних чтения по
+      // несуществующему id дешевле, чем лишняя дорога у каждого открытия
+      const [caseResult, activities, messages] = await sql.transaction([
+        sql`
+          SELECT 
+            c.*,
+            ch.name as channel_name,
+            ch.telegram_chat_id,
+            a.name as assignee_name
+          FROM support_cases c
+          LEFT JOIN support_channels ch ON c.channel_id = ch.id AND ch.org_id = ${orgId}
+          LEFT JOIN support_agents a ON c.assigned_to = a.id
+          WHERE c.id = ${caseId} AND c.org_id = ${orgId}
+        `,
+        sql`
+          SELECT 
+            a.*,
+            m.name as manager_name
+          FROM support_case_activities a
+          LEFT JOIN crm_managers m ON a.manager_id = m.id
+          WHERE a.case_id = ${caseId}
+          ORDER BY a.created_at DESC
+          LIMIT 50
+        `,
+        sql`
+          SELECT * FROM support_messages
+          WHERE case_id = ${caseId} AND org_id = ${orgId}
+          ORDER BY created_at ASC
+          LIMIT 100
+        `,
+      ]) as any[]
 
       if (!caseResult || caseResult.length === 0) {
         return json({ error: 'Case not found' }, 404)
       }
 
       const c = caseResult[0]
-
-      // Получаем историю активностей
-      const activities = await sql`
-        SELECT 
-          a.*,
-          m.name as manager_name
-        FROM support_case_activities a
-        LEFT JOIN crm_managers m ON a.manager_id = m.id
-        WHERE a.case_id = ${caseId}
-        ORDER BY a.created_at DESC
-        LIMIT 50
-      `
-
-      // Получаем связанные сообщения
-      const messages = await sql`
-        SELECT * FROM support_messages
-        WHERE case_id = ${caseId} AND org_id = ${orgId}
-        ORDER BY created_at ASC
-        LIMIT 100
-      `
 
       // Три показателя жизненного цикла тикета (в минутах, от первого сообщения клиента).
       // Разница наивных UTC-таймстампов tz-инвариантна: обе даты парсятся одинаково,

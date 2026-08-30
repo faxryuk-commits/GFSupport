@@ -62,6 +62,15 @@ function fetchRefs(attempt = 0): Promise<SalesRefs> {
   return inflight
 }
 
+/**
+ * Разовый доступ к справочникам через тот же кэш, что и useSalesRefs.
+ * Прямые apiGet('/sales/refs') из страниц ходили мимо кэша, и на одной
+ * загрузке один и тот же запрос уходил дважды.
+ */
+export function getSalesRefs(): Promise<SalesRefs> {
+  return cache ? Promise.resolve(cache) : fetchRefs()
+}
+
 /** Сбросить кэш после правки справочника. */
 export function refreshRefs(): Promise<SalesRefs> {
   cache = null

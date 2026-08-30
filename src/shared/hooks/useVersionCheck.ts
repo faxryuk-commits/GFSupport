@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 export interface ReleaseNote {
   icon?: string
@@ -135,20 +135,25 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
     window.location.reload()
   }, [info])
 
-  // Периодическая проверка версии
+  // Проверка привязана к моменту монтирования, а не к пересозданию колбэка:
+  // checkVersion меняется, когда узнаёт текущую версию, и раньше эффект
+  // перезапускался следом — на загрузке version.json уходил дважды
+  const checkRef = useRef(checkVersion)
+  useEffect(() => { checkRef.current = checkVersion }, [checkVersion])
+
   useEffect(() => {
     if (!enabled) return
 
     // Первичная проверка
-    checkVersion()
+    checkRef.current()
 
     // Периодическая проверка
-    const interval = setInterval(checkVersion, checkInterval)
+    const interval = setInterval(() => checkRef.current(), checkInterval)
 
     // Также проверяем при возвращении на вкладку
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        checkVersion()
+        checkRef.current()
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -157,7 +162,7 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [enabled, checkInterval, checkVersion])
+  }, [enabled, checkInterval])
 
   return {
     hasUpdate,

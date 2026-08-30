@@ -15,17 +15,42 @@ export interface Market {
   agentsCount: number
 }
 
+/**
+ * Список регионов один на всё приложение.
+ *
+ * Хук живёт в шапке, в фильтрах и на страницах разом — и каждый экземпляр
+ * ходил за списком сам: три-четыре одинаковых запроса на каждую загрузку
+ * страницы. Список меняется хорошо если раз в месяц, поэтому кэш модуля
+ * с недолгим сроком, а одновременные запросы сливаются в один.
+ */
+let marketsCache: { data: Market[]; at: number } | null = null
+let marketsInflight: Promise<Market[]> | null = null
+const MARKETS_TTL = 5 * 60 * 1000
+
+function loadMarkets(force = false): Promise<Market[]> {
+  if (!force && marketsCache && Date.now() - marketsCache.at < MARKETS_TTL) {
+    return Promise.resolve(marketsCache.data)
+  }
+  if (marketsInflight) return marketsInflight
+  marketsInflight = apiGet<{ markets: Market[] }>('/markets')
+    .then(d => {
+      marketsCache = { data: d.markets || [], at: Date.now() }
+      return marketsCache.data
+    })
+    .finally(() => { marketsInflight = null })
+  return marketsInflight
+}
+
 export function useMarket() {
-  const [markets, setMarkets] = useState<Market[]>([])
+  const [markets, setMarkets] = useState<Market[]>(marketsCache?.data || [])
   const [selectedMarket, setSelectedMarketState] = useState<string | null>(() => {
     return localStorage.getItem(MARKET_KEY) || null
   })
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!marketsCache)
 
-  const fetchMarkets = useCallback(async () => {
+  const fetchMarkets = useCallback(async (force = false) => {
     try {
-      const data = await apiGet<{ markets: Market[] }>('/markets')
-      setMarkets(data.markets || [])
+      setMarkets(await loadMarkets(force))
     } catch {
       setMarkets([])
     } finally {

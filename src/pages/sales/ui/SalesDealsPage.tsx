@@ -5,7 +5,7 @@ import { Card, Chip, Empty, Pager, PageShell, Th, money, Modal, Field, Btn,
          useAutoRefresh, fmtDateTime, Skeleton, BoardSkeleton , Drawer , RangePicker, rangeOf , slaTone , PageNumbers, FilterBar , workMorningIn } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { SalesDealPage } from './SalesDealPage'
-import { useSalesRefs, optionsFor } from './refs'
+import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
 
 /**
  * Список сделок: канбан и таблица над одними данными.
@@ -190,7 +190,7 @@ export function SalesDealsPage() {
   useAutoRefresh(load)
 
   useEffect(() => {
-    apiGet<any>('/sales/refs', false)
+    getSalesRefs()
       .then(r => setReasons((r.reasons || []).filter((x: any) => x.is_active !== false)))
       .catch(() => {})
   }, [])
