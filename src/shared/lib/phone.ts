@@ -68,7 +68,7 @@ const PLANS: Record<string, Plan> = {
   },
   '994': {
     code: 'az', name: 'Азербайджан', nationalLength: 9,
-    mobile: { '50': 'Azercell', '51': 'Azercell', '55': 'Bakcell', '99': 'Bakcell', '70': 'Nar', '77': 'Nar' },
+    mobile: { '50': 'Azercell', '51': 'Azercell', '10': 'Azercell', '55': 'Bakcell', '99': 'Bakcell', '70': 'Nar', '77': 'Nar', '60': 'Nar' },
     landlinePrefixes: ['12', '18', '20', '21', '22', '23', '24', '25', '26'],
     group: n => `${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5, 7)} ${n.slice(7)}`,
   },
@@ -92,19 +92,38 @@ const PLANS: Record<string, Plan> = {
   },
 }
 
-/** Узбекский номер часто пишут без кода страны или с ведущей 8 — чиним. */
-function guessCountry(digits: string): { cc: string; national: string } | null {
+const CC_BY_MARKET: Record<string, string> = {
+  uz: '998', kz: '7', kg: '996', az: '994', ge: '995', cy: '357', ae: '971',
+}
+
+/** Номер часто пишут без кода страны или с ведущей 8 — чиним. */
+function guessCountry(digits: string, hintCc?: string | null): { cc: string; national: string } | null {
+  // Рынок лида важнее угадывания. Местный азербайджанский 099 850 06 09
+  // начинается с «998» и без подсказки читается как обрезанный узбекский,
+  // а девятизначный 51 345 67 78 у азербайджанской карточки дорисовывался
+  // до +998 — сейлз звонил в другую страну
+  if (hintCc && PLANS[hintCc]) {
+    if (digits.length === PLANS[hintCc].nationalLength) {
+      return { cc: hintCc, national: digits }
+    }
+    // Национальный ноль: «050 311 65 95» — так номер набирают внутри страны
+    if (digits.startsWith('0') && digits.length === PLANS[hintCc].nationalLength + 1) {
+      return { cc: hintCc, national: digits.slice(1) }
+    }
+  }
   for (const cc of ['998', '996', '995', '994', '971', '357']) {
     if (digits.startsWith(cc)) return { cc, national: digits.slice(cc.length) }
   }
   if (digits.startsWith('7') && digits.length === 11) return { cc: '7', national: digits.slice(1) }
   if (digits.startsWith('8') && digits.length === 11) return { cc: '7', national: digits.slice(1) }
-  // Девять цифр без кода — почти всегда Узбекистан: это наш основной рынок
+  // Девять цифр без кода и без подсказки — почти всегда Узбекистан:
+  // это наш основной рынок
   if (digits.length === 9) return { cc: '998', national: digits }
   return null
 }
 
-export function parsePhone(raw: string | null | undefined): PhoneInfo {
+/** market — код рынка лида ('az'): локальный номер трактуется в его нумерации. */
+export function parsePhone(raw: string | null | undefined, market?: string | null): PhoneInfo {
   const text = String(raw || '').trim()
   const digits = text.replace(/\D/g, '')
   const empty: PhoneInfo = {
@@ -114,7 +133,7 @@ export function parsePhone(raw: string | null | undefined): PhoneInfo {
   }
   if (!digits) return empty
 
-  const guess = guessCountry(digits)
+  const guess = guessCountry(digits, market ? CC_BY_MARKET[market.toLowerCase()] : null)
   if (!guess) return { ...empty, problem: 'неизвестный код страны' }
 
   const plan = PLANS[guess.cc]

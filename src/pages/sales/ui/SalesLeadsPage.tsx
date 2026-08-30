@@ -34,6 +34,7 @@ interface Lead {
   source: string | null
   source_key: string | null
   lead_kind: string | null
+  market_id?: string | null
   account_id: string | null
   account_name: string | null
   account_created: string | null
@@ -320,7 +321,7 @@ export function SalesLeadsPage() {
               <tbody>
                 {data.leads.map((l, idx) => {
                   const merged = l.account_created && new Date(l.account_created) < new Date(l.created_at)
-                  const phone = parsePhone(l.phone)
+                  const phone = parsePhone(l.phone, l.market_id)
                   return (
                     <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 align-top ${
                       picked.includes(l.id) ? 'bg-blue-50/50' : ''}`}>

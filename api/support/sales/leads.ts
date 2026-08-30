@@ -304,7 +304,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (view === 'dupes') conds.push('a.created_at < l.created_at - INTERVAL \'1 minute\'')
 
   const rowsQ = sql.query(
-    `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status,
+    `SELECT l.id, l.name, l.phone, l.city, l.icp_score, l.icp_reasons, l.status, l.market_id,
             l.sla_due_at, l.first_touch_at, l.created_at, l.updated_at, l.campaign, l.text,
             l.lead_kind, l.contact_name, l.raw, l.qual,
             NULLIF(COALESCE(l.qual->>'pos', l.raw->>'pos'), '') AS pos,

@@ -244,7 +244,7 @@ export function SalesFunnelPage() {
               </header>
               <div className="p-2 flex flex-col gap-2 overflow-y-auto">
                 {leadsIn(col.key).map(l => {
-                  const phone = parsePhone(l.phone)
+                  const phone = parsePhone(l.phone, l.market_id)
                   return (
                     <article
                       key={l.id}

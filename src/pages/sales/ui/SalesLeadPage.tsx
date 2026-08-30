@@ -231,7 +231,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   if (!data) return <Skeleton rows={5} kpis={false} />
 
   const l = data.lead
-  const phone = parsePhone(l.phone)
+  const phone = parsePhone(l.phone, l.market_id)
   const open = ['new', 'assigned', 'attempting', 'nurture'].includes(l.status)
 
   // День разговора подписываем один раз: сплошная лента одинаковых дат
