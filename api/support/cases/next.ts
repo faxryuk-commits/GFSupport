@@ -18,9 +18,9 @@
  * Возвращает выбранный кейс или { case: null, reason: 'queue_empty' }.
  */
 
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
-import { checkOrgRateLimit } from '../lib/rate-limit.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json } from '../_lib/db.js'
+import { checkOrgRateLimit } from '../_lib/rate-limit.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

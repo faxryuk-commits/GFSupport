@@ -1,6 +1,6 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
-import { formatWorkDateTime } from '../lib/work-time.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json } from '../_lib/db.js'
+import { formatWorkDateTime } from '../_lib/work-time.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

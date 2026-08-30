@@ -1,8 +1,8 @@
 import OpenAI from 'openai'
-import { getOpenAIKey, getSQL, json } from '../lib/db.js'
-import { getRequestOrgId } from '../lib/org.js'
-import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
-import { detectProblem, detectUrgent } from '../lib/case-detector.js'
+import { getOpenAIKey, getSQL, json } from '../_lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { ensureTaxonomyColumns } from '../_lib/ensure-taxonomy.js'
+import { detectProblem, detectUrgent } from '../_lib/case-detector.js'
 import {
   TAXONOMY,
   isValidDomain,
@@ -11,7 +11,7 @@ import {
   LEGACY_CATEGORY_TO_DOMAIN,
   taxonomyPromptBlock,
   type DomainKey,
-} from './taxonomy.js'
+} from './_taxonomy.js'
 
 export const config = {
   runtime: 'edge',

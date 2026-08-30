@@ -6,7 +6,7 @@
  * одним из них. Иначе глобальную (NULL+NULL). По tier'ам собираем bronze/silver/gold.
  */
 
-import { getSQL } from '../../lib/db.js'
+import { getSQL } from '../../_lib/db.js'
 import type {
   BenchmarkSet,
   BenchmarkTarget,

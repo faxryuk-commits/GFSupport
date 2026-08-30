@@ -14,10 +14,10 @@
  *     percentile_internal). Удаляются только manual-строки.
  */
 
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureBenchmarkTable } from '../lib/ensure-taxonomy.js'
-import { METRIC_REGISTRY } from './metrics/index.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureBenchmarkTable } from '../_lib/ensure-taxonomy.js'
+import { METRIC_REGISTRY } from './_metrics/index.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

@@ -1,6 +1,6 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, ensureOnce } from '../lib/db.js'
-import { fetchTeamFrtAggregate } from '../lib/team-frt-aggregate.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, ensureOnce } from '../_lib/db.js'
+import { fetchTeamFrtAggregate } from '../_lib/team-frt-aggregate.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

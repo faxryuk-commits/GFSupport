@@ -1,4 +1,4 @@
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json } from '../_lib/db.js'
 // Migration API v2.1 - SLA Categories
 export const config = {
   runtime: 'edge', regions: ['fra1'],

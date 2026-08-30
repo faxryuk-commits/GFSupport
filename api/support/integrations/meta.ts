@@ -1,10 +1,10 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
 import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig,
-         readMetaAccounts, marketFromFormName } from '../lib/meta-config.js'
-import { logEvent } from '../lib/system-journal.js'
-import { importMetaHistory } from '../lib/meta-messages.js'
+         readMetaAccounts, marketFromFormName } from '../_lib/meta-config.js'
+import { logEvent } from '../_lib/system-journal.js'
+import { importMetaHistory } from '../_lib/meta-messages.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

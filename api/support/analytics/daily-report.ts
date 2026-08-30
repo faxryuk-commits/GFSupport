@@ -26,17 +26,17 @@
  * скорее всего выходной/болезнь, а не плохой день).
  */
 
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
 import {
   computeFrtAvg,
   computeSlaCompliance,
   frtAvgDescriptor,
   slaComplianceDescriptor,
   resolvePeriod,
-} from './metrics/index.js'
-import type { MetricResult, ResolvedPeriod } from './metrics/index.js'
-import { formatWorkDate } from '../lib/work-time.js'
+} from './_metrics/index.js'
+import type { MetricResult, ResolvedPeriod } from './_metrics/index.js'
+import { formatWorkDate } from '../_lib/work-time.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

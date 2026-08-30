@@ -19,8 +19,8 @@
  * (telegram_id / a.id / username / name). См. agentJoin.ts.
  */
 
-import { getSQL } from '../../lib/db.js'
-import { ensureFrtOverridesTable } from '../../lib/frt-overrides-schema.js'
+import { getSQL } from '../../_lib/db.js'
+import { ensureFrtOverridesTable } from '../../_lib/frt-overrides-schema.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
 import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './frtShared.js'
 import type {

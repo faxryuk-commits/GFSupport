@@ -1,4 +1,4 @@
-import { json } from '../lib/db.js'
+import { json } from '../_lib/db.js'
 export const config = {
   runtime: 'edge', regions: ['fra1'],
 }

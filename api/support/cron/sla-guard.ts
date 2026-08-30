@@ -18,11 +18,11 @@
  *
  * Защита: Vercel cron (user-agent) или CRON_SECRET.
  */
-import { getSQL, json, getOpenAIKey, ensureOnce } from '../lib/db.js'
-import { loadSla, businessMinutesBetween } from '../lib/sla.js'
-import { sendNotification, escalateStaleNotifications } from '../lib/notifications.js'
-import { notifyClientStuck } from '../lib/onboarding-alerts.js'
-import { assertCron } from '../lib/cron-auth.js'
+import { getSQL, json, getOpenAIKey, ensureOnce } from '../_lib/db.js'
+import { loadSla, businessMinutesBetween } from '../_lib/sla.js'
+import { sendNotification, escalateStaleNotifications } from '../_lib/notifications.js'
+import { notifyClientStuck } from '../_lib/onboarding-alerts.js'
+import { assertCron } from '../_lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

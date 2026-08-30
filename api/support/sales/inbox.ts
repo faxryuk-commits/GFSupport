@@ -1,8 +1,8 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
-import { acceptLead } from '../lib/sales-intake.js'
-import { stopNurtureOnReply, logAssistant } from '../lib/sales-assistant.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { ensureSalesSchema, salesId, normPhone } from '../_lib/sales-schema.js'
+import { acceptLead } from '../_lib/sales-intake.js'
+import { stopNurtureOnReply, logAssistant } from '../_lib/sales-assistant.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

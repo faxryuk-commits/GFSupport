@@ -1,6 +1,6 @@
-import { identifySender } from '../lib/identification.js'
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { identifySender } from '../_lib/identification.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json } from '../_lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

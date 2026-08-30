@@ -1,8 +1,8 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders, getOpenAIKey } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureErrorFeedSchema, activeIncidents, recentErrorsForChannel } from '../lib/error-feed.js'
-import { similarExamples } from '../lib/reply-examples.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders, getOpenAIKey } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureErrorFeedSchema, activeIncidents, recentErrorsForChannel } from '../_lib/error-feed.js'
+import { similarExamples } from '../_lib/reply-examples.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

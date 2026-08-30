@@ -1,8 +1,8 @@
-import { json, corsHeaders } from '../lib/db.js'
-import { extractSuperAdminContext } from '../lib/sa-auth.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { getRequestOrgId } from '../lib/org.js'
-import { checkAgentQuota, checkChannelQuota, checkMessageQuota } from '../lib/quota.js'
+import { json, corsHeaders } from '../_lib/db.js'
+import { extractSuperAdminContext } from '../_lib/sa-auth.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { checkAgentQuota, checkChannelQuota, checkMessageQuota } from '../_lib/quota.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

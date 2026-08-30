@@ -1,6 +1,6 @@
-import { getOrgBotToken, getSQL, json, ensureOnce } from '../lib/db.js'
-import { getRequestOrgId } from '../lib/org.js'
-import { checkOrgRateLimit } from '../lib/rate-limit.js'
+import { getOrgBotToken, getSQL, json, ensureOnce } from '../_lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { checkOrgRateLimit } from '../_lib/rate-limit.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

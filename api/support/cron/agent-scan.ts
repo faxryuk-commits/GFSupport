@@ -20,9 +20,9 @@
  * Гейт: весь скан выключается, если ai_agent_enabled != true (как у runAgent).
  * Защита эндпоинта: Vercel cron (user-agent) или CRON_SECRET.
  */
-import { getSQL, json } from '../lib/db.js'
-import { runAgent } from '../lib/ai-agent.js'
-import { assertCron } from '../lib/cron-auth.js'
+import { getSQL, json } from '../_lib/db.js'
+import { runAgent } from '../_lib/ai-agent.js'
+import { assertCron } from '../_lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 60 }
 

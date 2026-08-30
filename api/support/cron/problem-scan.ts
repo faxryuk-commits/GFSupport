@@ -21,7 +21,7 @@
  *    'active' — создаёт кейсы (issue && confidence ≥ 0.7, дедуп по каналу).
  */
 
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json } from '../_lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

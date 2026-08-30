@@ -1,4 +1,4 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

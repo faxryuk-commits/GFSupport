@@ -1,6 +1,6 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { handleSalesCallback, handleSalesCommand, handleVoiceNote } from '../lib/sales-bot.js'
-import { handleWorkCallback } from '../lib/work-items.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { handleSalesCallback, handleSalesCommand, handleVoiceNote } from '../_lib/sales-bot.js'
+import { handleWorkCallback } from '../_lib/work-items.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

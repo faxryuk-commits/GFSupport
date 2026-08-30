@@ -4,7 +4,7 @@
  * считается по всем событиям периода.
  */
 
-import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from '../analytics/metrics/frtShared.js'
+import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from '../analytics/_metrics/frtShared.js'
 
 type SqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>
 

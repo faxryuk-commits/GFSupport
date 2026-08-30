@@ -1,5 +1,5 @@
-import { getSQL, json } from '../lib/db.js'
-import { checkRateLimit } from '../lib/rate-limit.js'
+import { getSQL, json } from '../_lib/db.js'
+import { checkRateLimit } from '../_lib/rate-limit.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

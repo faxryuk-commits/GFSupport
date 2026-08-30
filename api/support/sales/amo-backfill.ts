@@ -1,7 +1,7 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
-import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline, agentByAmoUser, pipelineForMarket } from '../lib/sales-amo.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureSalesSchema, salesId, normPhone } from '../_lib/sales-schema.js'
+import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline, agentByAmoUser, pipelineForMarket } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

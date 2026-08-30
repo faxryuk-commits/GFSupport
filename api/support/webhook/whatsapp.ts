@@ -1,7 +1,7 @@
-import { identifySender } from '../lib/identification.js'
-import { shouldAutoCreateCase, generateCaseId, getNextTicketNumber } from '../lib/case-detector.js'
-import { getOpenAIKey, getOrgWhatsAppBridge, getSQL, json, ensureOnce } from '../lib/db.js'
-import { markSalesTouch } from '../lib/sales-assistant.js'
+import { identifySender } from '../_lib/identification.js'
+import { shouldAutoCreateCase, generateCaseId, getNextTicketNumber } from '../_lib/case-detector.js'
+import { getOpenAIKey, getOrgWhatsAppBridge, getSQL, json, ensureOnce } from '../_lib/db.js'
+import { markSalesTouch } from '../_lib/sales-assistant.js'
 
 export const config = {
   runtime: 'edge',
@@ -520,7 +520,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (isFromClient && text && text.length > 2) {
       try {
-        const { runAgent, executeDecision } = await import('../lib/ai-agent.js')
+        const { runAgent, executeDecision } = await import('../_lib/ai-agent.js')
         const agentResult = await runAgent({
           channelId, channelName: channelName || 'WhatsApp', orgId,
           incomingMessage: text, senderName: senderName || 'Client',

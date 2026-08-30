@@ -1,8 +1,8 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { ensureMetaSchema, readMetaAccounts, tokenForPage } from '../lib/meta-config.js'
-import { ensurePostInfo, hideComment, importMetaComments, replyToComment } from '../lib/meta-comments.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { ensureMetaSchema, readMetaAccounts, tokenForPage } from '../_lib/meta-config.js'
+import { ensurePostInfo, hideComment, importMetaComments, replyToComment } from '../_lib/meta-comments.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

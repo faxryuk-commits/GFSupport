@@ -2,8 +2,8 @@
  * @deprecated Use /api/support/messages/reaction instead
  * This endpoint is kept for backwards compatibility
  */
-import { getOrgBotToken, getSQL, json } from '../lib/db.js'
-import { getRequestOrgId } from '../lib/org.js'
+import { getOrgBotToken, getSQL, json } from '../_lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

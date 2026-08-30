@@ -1,10 +1,10 @@
-import { getSQL, json } from '../lib/db.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
-import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
+import { acceptLead, findRecentTwin } from '../_lib/sales-intake.js'
 import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
-         fetchNotes, parseNotes, statusMap, applyAmoStage, readAmoMode } from '../lib/sales-amo.js'
-import { assertCron, cronSecured } from '../lib/cron-auth.js'
-import { logEvent } from '../lib/system-journal.js'
+         fetchNotes, parseNotes, statusMap, applyAmoStage, readAmoMode } from '../_lib/sales-amo.js'
+import { assertCron, cronSecured } from '../_lib/cron-auth.js'
+import { logEvent } from '../_lib/system-journal.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

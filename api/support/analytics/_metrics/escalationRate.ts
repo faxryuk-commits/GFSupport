@@ -16,7 +16,7 @@
  * perAgent: false — это свойство AI, не отдельных команд.
  */
 
-import { getSQL } from '../../lib/db.js'
+import { getSQL } from '../../_lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
 import type { MetricDescriptor, MetricResult, MetricScope, ResolvedPeriod } from './types.js'
 

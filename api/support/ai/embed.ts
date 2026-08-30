@@ -1,4 +1,4 @@
-import { getOpenAIKey, json } from '../lib/db.js'
+import { getOpenAIKey, json } from '../_lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

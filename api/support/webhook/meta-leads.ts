@@ -1,12 +1,12 @@
-import { getSQL, json } from '../lib/db.js'
-import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
-import { acceptLead, findRecentTwin } from '../lib/sales-intake.js'
-import { marketByPhoneCity } from '../lib/region-detect.js'
-import { validMetaSignature } from '../lib/meta-signature.js'
-import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } from '../lib/meta-config.js'
-import { handleMetaMessaging } from '../lib/meta-messages.js'
-import { handleMetaComments } from '../lib/meta-comments.js'
-import { handleCommentByAgent } from '../lib/meta-comment-agent.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
+import { acceptLead, findRecentTwin } from '../_lib/sales-intake.js'
+import { marketByPhoneCity } from '../_lib/region-detect.js'
+import { validMetaSignature } from '../_lib/meta-signature.js'
+import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } from '../_lib/meta-config.js'
+import { handleMetaMessaging } from '../_lib/meta-messages.js'
+import { handleMetaComments } from '../_lib/meta-comments.js'
+import { handleCommentByAgent } from '../_lib/meta-comment-agent.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

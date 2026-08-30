@@ -1,6 +1,6 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { checkAuthRateLimit } from '../lib/rate-limit.js'
-import { writeAuditLog, getClientIP } from '../lib/audit.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { checkAuthRateLimit } from '../_lib/rate-limit.js'
+import { writeAuditLog, getClientIP } from '../_lib/audit.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

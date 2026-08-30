@@ -13,9 +13,9 @@
  *
  * Защита: Vercel cron (user-agent) или CRON_SECRET (как sla-guard).
  */
-import { getSQL, json } from '../lib/db.js'
-import { assertCron } from '../lib/cron-auth.js'
-import { autoAssignChannelMarkets, autoAssignSalesRegions } from '../lib/region-detect.js'
+import { getSQL, json } from '../_lib/db.js'
+import { assertCron } from '../_lib/cron-auth.js'
+import { autoAssignChannelMarkets, autoAssignSalesRegions } from '../_lib/region-detect.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

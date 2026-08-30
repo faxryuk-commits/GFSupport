@@ -1,5 +1,5 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { json, getSQL } from '../lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { json, getSQL } from '../_lib/db.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

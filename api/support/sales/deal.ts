@@ -1,8 +1,8 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
-import { EDITABLE_FIELDS, FIELD_LABELS, missingFields } from '../lib/sales-fields.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
+import { EDITABLE_FIELDS, FIELD_LABELS, missingFields } from '../_lib/sales-fields.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

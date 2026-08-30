@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, getOpenAIKey, json } from '../lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, getOpenAIKey, json } from '../_lib/db.js'
 
 export const config = {
   runtime: 'edge',

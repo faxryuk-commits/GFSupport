@@ -1,5 +1,5 @@
-import { getSQL } from '../lib/db.js'
-import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig } from '../lib/meta-config.js'
+import { getSQL } from '../_lib/db.js'
+import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig } from '../_lib/meta-config.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

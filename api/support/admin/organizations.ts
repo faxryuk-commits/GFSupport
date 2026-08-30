@@ -1,7 +1,7 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractSuperAdminContext } from '../lib/sa-auth.js'
-import { invalidateOrgCache } from '../lib/org.js'
-import { writeAuditLog } from '../lib/audit.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractSuperAdminContext } from '../_lib/sa-auth.js'
+import { invalidateOrgCache } from '../_lib/org.js'
+import { writeAuditLog } from '../_lib/audit.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

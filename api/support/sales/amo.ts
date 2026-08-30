@@ -1,10 +1,10 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
 import { AMO_MODE_KEY, readAmoMode, amoGet, isAllowedPipeline, statusMap,
-         stageKeyByStatusName, marketByPipeline, type AmoMode } from '../lib/sales-amo.js'
-import { logEvent } from '../lib/system-journal.js'
+         stageKeyByStatusName, marketByPipeline, type AmoMode } from '../_lib/sales-amo.js'
+import { logEvent } from '../_lib/system-journal.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

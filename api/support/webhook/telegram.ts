@@ -1,8 +1,8 @@
-import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../lib/identification.js'
-import { getOpenAIKey, getOrgBotToken, getSQL, json, ensureOnce } from '../lib/db.js'
-import { checkOrgRateLimit } from '../lib/rate-limit.js'
+import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../_lib/identification.js'
+import { getOpenAIKey, getOrgBotToken, getSQL, json, ensureOnce } from '../_lib/db.js'
+import { checkOrgRateLimit } from '../_lib/rate-limit.js'
 import OpenAI from 'openai'
-import { markSalesTouch } from '../lib/sales-assistant.js'
+import { markSalesTouch } from '../_lib/sales-assistant.js'
 
 export const config = {
   runtime: 'edge',
@@ -1881,7 +1881,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (identification.role === 'client' && analysisText && analysisText.length > 2) {
       try {
-        const { runAgent, executeDecision } = await import('../lib/ai-agent.js')
+        const { runAgent, executeDecision } = await import('../_lib/ai-agent.js')
         const agentResult = await runAgent({
           channelId,
           channelName: chat.title || chat.firstName || 'Unknown',

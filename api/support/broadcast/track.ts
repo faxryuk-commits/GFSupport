@@ -1,5 +1,5 @@
-import { getSQL } from '../lib/db.js'
-import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
+import { getSQL } from '../_lib/db.js'
+import { ensureBroadcastSchema } from '../_lib/broadcast-schema.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

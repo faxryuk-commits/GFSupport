@@ -1,8 +1,8 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
-import { sendNotification } from '../lib/notifications.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
+import { sendNotification } from '../_lib/notifications.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

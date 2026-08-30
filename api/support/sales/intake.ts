@@ -1,9 +1,9 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { checkRateLimit } from '../lib/rate-limit.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
-import { acceptLead } from '../lib/sales-intake.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { checkRateLimit } from '../_lib/rate-limit.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
+import { acceptLead } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

@@ -1,10 +1,10 @@
-import { getSQL, json } from '../lib/db.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
-import { getBotToken, tgSend, leadCard, leadKeyboard } from '../lib/sales-bot.js'
-import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../lib/sales-assistant.js'
-import { assertCron } from '../lib/cron-auth.js'
-import { sendNotification } from '../lib/notifications.js'
-import { tokenForPage } from '../lib/meta-config.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
+import { getBotToken, tgSend, leadCard, leadKeyboard } from '../_lib/sales-bot.js'
+import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../_lib/sales-assistant.js'
+import { assertCron } from '../_lib/cron-auth.js'
+import { sendNotification } from '../_lib/notifications.js'
+import { tokenForPage } from '../_lib/meta-config.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

@@ -1,14 +1,14 @@
 import OpenAI from 'openai'
-import { getRequestOrgId } from '../lib/org.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { getSQL, getOpenAIKey, json, corsHeaders } from '../lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { getSQL, getOpenAIKey, json, corsHeaders } from '../_lib/db.js'
 import {
   ensureChatTables,
   getOpenAITools,
   isActiveTool,
   TOOLS,
   type ToolCtx,
-} from '../lib/insights-tools.js'
+} from '../_lib/insights-tools.js'
 
 export const config = {
   runtime: 'edge',

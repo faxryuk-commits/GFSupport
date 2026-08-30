@@ -9,10 +9,10 @@
  * См. metrics/customerHealth.ts для формулы.
  */
 
-import { getRequestOrgId } from '../lib/org.js'
-import { json } from '../lib/db.js'
-import { computeCustomerHealth, parsePeriodParam, resolvePeriod } from './metrics/index.js'
-import type { CustomerHealthRow, HealthBand } from './metrics/index.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { json } from '../_lib/db.js'
+import { computeCustomerHealth, parsePeriodParam, resolvePeriod } from './_metrics/index.js'
+import type { CustomerHealthRow, HealthBand } from './_metrics/index.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

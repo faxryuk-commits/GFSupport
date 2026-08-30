@@ -14,7 +14,7 @@
  * Возвращает значение в шкале 0..100 (percent).
  */
 
-import { getSQL } from '../../lib/db.js'
+import { getSQL } from '../../_lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
 import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './frtShared.js'
 import type {

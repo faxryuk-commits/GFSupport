@@ -1,9 +1,9 @@
-import { getSQL, json } from '../lib/db.js'
-import { validMetaSignature } from '../lib/meta-signature.js'
-import { readMetaConfig, readMetaAccounts } from '../lib/meta-config.js'
-import { handleMetaMessaging } from '../lib/meta-messages.js'
-import { handleMetaComments } from '../lib/meta-comments.js'
-import { handleCommentByAgent } from '../lib/meta-comment-agent.js'
+import { getSQL, json } from '../_lib/db.js'
+import { validMetaSignature } from '../_lib/meta-signature.js'
+import { readMetaConfig, readMetaAccounts } from '../_lib/meta-config.js'
+import { handleMetaMessaging } from '../_lib/meta-messages.js'
+import { handleMetaComments } from '../_lib/meta-comments.js'
+import { handleCommentByAgent } from '../_lib/meta-comment-agent.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

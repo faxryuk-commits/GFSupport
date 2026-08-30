@@ -1,9 +1,9 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
-import { missingFields } from '../lib/sales-fields.js'
-import { pipelineForMarket } from '../lib/sales-amo.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
+import { missingFields } from '../_lib/sales-fields.js'
+import { pipelineForMarket } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

@@ -13,12 +13,12 @@
  * detectChurnSignals() для точной классификации.
  */
 
-import { getRequestOrgId } from '../lib/org.js'
-import { json } from '../lib/db.js'
-import { getSQL } from '../lib/db.js'
-import { CHURN_SQL_KEYWORDS, detectChurnSignals } from '../lib/churn-signals.js'
-import type { ChurnSignalMatch } from '../lib/churn-signals.js'
-import { parsePeriodParam, resolvePeriod } from './metrics/index.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { json } from '../_lib/db.js'
+import { getSQL } from '../_lib/db.js'
+import { CHURN_SQL_KEYWORDS, detectChurnSignals } from '../_lib/churn-signals.js'
+import type { ChurnSignalMatch } from '../_lib/churn-signals.js'
+import { parsePeriodParam, resolvePeriod } from './_metrics/index.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

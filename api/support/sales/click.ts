@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { getSQL } from '../lib/db.js'
-import { ensureSalesSchema } from '../lib/sales-schema.js'
+import { getSQL } from '../_lib/db.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
 
 /**
  * Приём оплаты по оферте через Click (Merchant API).

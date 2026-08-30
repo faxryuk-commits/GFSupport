@@ -1,8 +1,8 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../lib/onboarding-schema.js'
-import { sendNotification } from '../lib/notifications.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureOnboardingSchema, obId, resolveAgentName, addParticipant } from '../_lib/onboarding-schema.js'
+import { sendNotification } from '../_lib/notifications.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

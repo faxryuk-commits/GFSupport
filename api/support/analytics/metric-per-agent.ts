@@ -19,8 +19,8 @@
  *   }
  */
 
-import { getRequestOrgId } from '../lib/org.js'
-import { json } from '../lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { json } from '../_lib/db.js'
 import {
   computeFrtAvgPerAgent,
   computeSlaCompliancePerAgent,
@@ -28,8 +28,8 @@ import {
   slaComplianceDescriptor,
   parsePeriodParam,
   resolvePeriod,
-} from './metrics/index.js'
-import type { MetricDescriptor } from './metrics/index.js'
+} from './_metrics/index.js'
+import type { MetricDescriptor } from './_metrics/index.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

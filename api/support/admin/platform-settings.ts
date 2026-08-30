@@ -1,5 +1,5 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { extractSuperAdminContext } from '../lib/sa-auth.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { extractSuperAdminContext } from '../_lib/sa-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

@@ -12,14 +12,14 @@
  * они перезатрутся — это известный compromise, см. baseline.ts.
  */
 
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { ensureBenchmarkTable } from '../lib/ensure-taxonomy.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { ensureBenchmarkTable } from '../_lib/ensure-taxonomy.js'
 import {
   METRIC_REGISTRY,
   computeWeeklyPercentileBaseline,
   resolvePeriod,
   upsertBaselines,
-} from './metrics/index.js'
+} from './_metrics/index.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

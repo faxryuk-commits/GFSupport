@@ -32,8 +32,8 @@
  * нормализуются на оставшиеся. Если совсем нет данных — health = null.
  */
 
-import { getSQL } from '../../lib/db.js'
-import { CHURN_SQL_KEYWORDS } from '../../lib/churn-signals.js'
+import { getSQL } from '../../_lib/db.js'
+import { CHURN_SQL_KEYWORDS } from '../../_lib/churn-signals.js'
 import type { ResolvedPeriod } from './types.js'
 
 export type HealthBand = 'healthy' | 'at_risk' | 'critical' | 'unknown'

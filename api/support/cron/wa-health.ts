@@ -16,8 +16,8 @@
  * Защита: для cron нужен либо CRON_SECRET, либо запрос от Vercel cron infrastructure.
  */
 
-import { getSQL, json, getOrgBotToken } from '../lib/db.js'
-import { assertCron } from '../lib/cron-auth.js'
+import { getSQL, json, getOrgBotToken } from '../_lib/db.js'
+import { assertCron } from '../_lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

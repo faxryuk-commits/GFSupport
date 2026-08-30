@@ -1,6 +1,6 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { runAgent, executeDecision, type AgentContext } from '../lib/ai-agent.js'
-import { getSQL, json, ensureOnce } from '../lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { runAgent, executeDecision, type AgentContext } from '../_lib/ai-agent.js'
+import { getSQL, json, ensureOnce } from '../_lib/db.js'
 
 export const config = {
   runtime: 'edge',

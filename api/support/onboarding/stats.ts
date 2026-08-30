@@ -1,7 +1,7 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { extractAgentContext } from '../lib/auth.js'
-import { getSQL, json } from '../lib/db.js'
-import { ensureOnboardingSchema } from '../lib/onboarding-schema.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { extractAgentContext } from '../_lib/auth.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureOnboardingSchema } from '../_lib/onboarding-schema.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

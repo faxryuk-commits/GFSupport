@@ -1,7 +1,7 @@
-import { getOrgBotToken, getSalesBotToken, getSQL, json } from '../lib/db.js'
-import { tokenForPage } from '../lib/meta-config.js'
-import { getRequestOrgId } from '../lib/org.js'
-import { checkOrgRateLimit } from '../lib/rate-limit.js'
+import { getOrgBotToken, getSalesBotToken, getSQL, json } from '../_lib/db.js'
+import { tokenForPage } from '../_lib/meta-config.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { checkOrgRateLimit } from '../_lib/rate-limit.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

@@ -1,5 +1,5 @@
-import { getOpenAIKey, getSQL, json } from '../lib/db.js'
-import { getRequestOrgId } from '../lib/org.js'
+import { getOpenAIKey, getSQL, json } from '../_lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
 
 export const config = {
   runtime: 'edge',

@@ -1,7 +1,7 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { checkChannelQuota } from '../lib/quota.js'
-import { getSQL, json } from '../lib/db.js'
-import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { checkChannelQuota } from '../_lib/quota.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureChannelSourceColumn } from '../_lib/ensure-taxonomy.js'
 
 // Channels API v2.1 - SLA Categories support
 export const config = {

@@ -9,8 +9,8 @@
  * Расписание: каждые 30 мин (см. vercel.json). Исход созревает не сразу.
  * Защита: Vercel cron (user-agent) или CRON_SECRET.
  */
-import { getSQL, json, getOpenAIKey, ensureOnce } from '../lib/db.js'
-import { assertCron } from '../lib/cron-auth.js'
+import { getSQL, json, getOpenAIKey, ensureOnce } from '../_lib/db.js'
+import { assertCron } from '../_lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 60 }
 

@@ -1,5 +1,5 @@
-import { getSQL, json, corsHeaders } from '../lib/db.js'
-import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
+import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { ensureBroadcastSchema } from '../_lib/broadcast-schema.js'
 
 export const config = {
   runtime: 'edge',

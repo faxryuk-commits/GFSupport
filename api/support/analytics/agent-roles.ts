@@ -12,8 +12,8 @@
  * варианты вроде 'support', 'Support', 'support_agent', 'agent').
  */
 
-import { getSQL, json } from '../lib/db.js'
-import { extractAgentContext } from '../lib/auth.js'
+import { getSQL, json } from '../_lib/db.js'
+import { extractAgentContext } from '../_lib/auth.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

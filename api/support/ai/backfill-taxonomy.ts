@@ -1,7 +1,7 @@
-import { getSQL, json } from '../lib/db.js'
-import { getRequestOrgId } from '../lib/org.js'
+import { getSQL, json } from '../_lib/db.js'
+import { getRequestOrgId } from '../_lib/org.js'
 import { analyzeWithAI } from './analyze.js'
-import { ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
+import { ensureTaxonomyColumns } from '../_lib/ensure-taxonomy.js'
 
 export const config = {
   runtime: 'edge',

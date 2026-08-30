@@ -18,10 +18,10 @@
  * новых endpoint-файлов плодить не нужно.
  */
 
-import { getRequestOrgId } from '../lib/org.js'
-import { json } from '../lib/db.js'
-import { METRIC_REGISTRY, parsePeriodParam, resolvePeriod } from './metrics/index.js'
-import type { MetricScope } from './metrics/index.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { json } from '../_lib/db.js'
+import { METRIC_REGISTRY, parsePeriodParam, resolvePeriod } from './_metrics/index.js'
+import type { MetricScope } from './_metrics/index.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],

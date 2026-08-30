@@ -1,6 +1,6 @@
-import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
-import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
+import { getRequestOrgId } from '../_lib/org.js'
+import { getSQL, json } from '../_lib/db.js'
+import { ensureChannelSourceColumn } from '../_lib/ensure-taxonomy.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 30 }
 

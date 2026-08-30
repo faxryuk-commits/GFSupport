@@ -14,7 +14,7 @@
  * Per-agent пока не поддержан (кейс не всегда атрибутирован конкретному агенту).
  */
 
-import { getSQL } from '../../lib/db.js'
+import { getSQL } from '../../_lib/db.js'
 import { loadBenchmarks, classifyStatus } from './benchmarks.js'
 import type {
   MetricDescriptor,

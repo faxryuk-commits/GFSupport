@@ -20,8 +20,8 @@
  *
  * Защита эндпоинта: Vercel cron (user-agent) или CRON_SECRET. Расписание: каждые 30 минут.
  */
-import { getSQL, json } from '../lib/db.js'
-import { assertCron } from '../lib/cron-auth.js'
+import { getSQL, json } from '../_lib/db.js'
+import { assertCron } from '../_lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 

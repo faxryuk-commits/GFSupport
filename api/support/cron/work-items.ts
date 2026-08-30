@@ -1,7 +1,7 @@
-import { getSQL, json } from '../lib/db.js'
-import { assertCron, cronSecured } from '../lib/cron-auth.js'
-import { ensureWorkSchema, workTick } from '../lib/work-items.js'
-import { logEvent } from '../lib/system-journal.js'
+import { getSQL, json } from '../_lib/db.js'
+import { assertCron, cronSecured } from '../_lib/cron-auth.js'
+import { ensureWorkSchema, workTick } from '../_lib/work-items.js'
+import { logEvent } from '../_lib/system-journal.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
