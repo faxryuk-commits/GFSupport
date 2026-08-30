@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],
@@ -25,23 +25,25 @@ export default async function handler(req: Request) {
   const id = url.searchParams.get('id')
   
   try {
-    // Ensure table exists
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_docs (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        content TEXT,
-        url TEXT UNIQUE NOT NULL,
-        path TEXT,
-        category TEXT,
-        keywords TEXT[],
-        content_hash TEXT,
-        synced_at TIMESTAMP DEFAULT NOW(),
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `
-    await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
-    await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`.catch(() => {})
+    await ensureOnce('docs', async () => {
+  // Ensure table exists
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_docs (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          content TEXT,
+          url TEXT UNIQUE NOT NULL,
+          path TEXT,
+          category TEXT,
+          keywords TEXT[],
+          content_hash TEXT,
+          synced_at TIMESTAMP DEFAULT NOW(),
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+      await sql`ALTER TABLE support_docs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`.catch(() => {})
+  })
 
     // CREATE — добавить документ
     if (req.method === 'POST') {

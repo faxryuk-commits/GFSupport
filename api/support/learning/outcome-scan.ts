@@ -9,7 +9,7 @@
  * Расписание: каждые 30 мин (см. vercel.json). Исход созревает не сразу.
  * Защита: Vercel cron (user-agent) или CRON_SECRET.
  */
-import { getSQL, json, getOpenAIKey } from '../lib/db.js'
+import { getSQL, json, getOpenAIKey, ensureOnce } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 60 }
@@ -42,9 +42,11 @@ export default async function handler(req: Request): Promise<Response> {
   const denied = assertCron(req)
   if (denied) return denied
   const sql = getSQL()
+  await ensureOnce('outcome-cols', async () => {
   try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS feedback VARCHAR(20)` } catch {}
-  try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS feedback_note TEXT` } catch {}
-  try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS outcome_at TIMESTAMPTZ` } catch {}
+    try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS feedback_note TEXT` } catch {}
+    try { await sql`ALTER TABLE support_agent_decisions ADD COLUMN IF NOT EXISTS outcome_at TIMESTAMPTZ` } catch {}
+  })
 
   const apiKey = await getOpenAIKey(ORG)
   if (!apiKey) return json({ ok: false, error: 'no openai key' })

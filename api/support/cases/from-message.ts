@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -81,7 +81,9 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Add source_message_id column if not exists
     try {
-      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS source_message_id VARCHAR(64)`
+      await ensureOnce('case-source-col', async () => {
+    await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS source_message_id VARCHAR(64)`
+  })
     } catch (e) { /* column exists */ }
 
     await sql`

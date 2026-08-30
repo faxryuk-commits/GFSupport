@@ -8,6 +8,21 @@ export function getSQL(): NeonQueryFunction<false, false> {
   return neon(connectionString)
 }
 
+/**
+ * Выполнить настройку схемы один раз на живой инстанс.
+ *
+ * По коду разбросаны CREATE TABLE IF NOT EXISTS прямо в обработчиках: так
+ * модуль переживает свежую базу. Но выполнялись они на каждом запросе, и
+ * каждый — отдельная дорога до базы ради ответа «уже есть». Флаг в памяти
+ * оставляет за этой страховкой один прогон на холодный старт.
+ */
+const ensuredOnce = new Set<string>()
+export async function ensureOnce(key: string, fn: () => Promise<void>): Promise<void> {
+  if (ensuredOnce.has(key)) return
+  await fn()
+  ensuredOnce.add(key)
+}
+
 export async function ensureMigrated() {
   if (migrated) return
   

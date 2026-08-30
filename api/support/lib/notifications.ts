@@ -1,4 +1,4 @@
-import { getSQL } from './db.js'
+import { getSQL, ensureOnce } from './db.js'
 export interface NotificationPayload {
   orgId: string
   type: 'escalation' | 'tag' | 'critical_case' | 'agent_decision' | 'sla_breach' | 'assignment'
@@ -196,27 +196,29 @@ async function sendTelegramCallAlert(orgId: string, agentId: string, payload: No
 async function saveInAppNotification(sql: any, payload: NotificationPayload, target: { agentId: string; name: string }, alreadyEscalated = false): Promise<boolean> {
   const id = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_notifications (
-        id VARCHAR(60) PRIMARY KEY,
-        org_id VARCHAR(50) NOT NULL,
-        agent_id VARCHAR(60) NOT NULL,
-        type VARCHAR(30) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        body TEXT,
-        priority VARCHAR(20) DEFAULT 'medium',
-        channel_id VARCHAR(60),
-        channel_name VARCHAR(255),
-        sender_name VARCHAR(255),
-        decision_id VARCHAR(60),
-        link VARCHAR(255),
-        is_read BOOLEAN DEFAULT false,
-        read_at TIMESTAMP,
-        escalated_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `
-    await sql`ALTER TABLE support_notifications ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP`
+    await ensureOnce('notifications', async () => {
+  await sql`
+        CREATE TABLE IF NOT EXISTS support_notifications (
+          id VARCHAR(60) PRIMARY KEY,
+          org_id VARCHAR(50) NOT NULL,
+          agent_id VARCHAR(60) NOT NULL,
+          type VARCHAR(30) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          body TEXT,
+          priority VARCHAR(20) DEFAULT 'medium',
+          channel_id VARCHAR(60),
+          channel_name VARCHAR(255),
+          sender_name VARCHAR(255),
+          decision_id VARCHAR(60),
+          link VARCHAR(255),
+          is_read BOOLEAN DEFAULT false,
+          read_at TIMESTAMP,
+          escalated_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`ALTER TABLE support_notifications ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP`
+  })
     // Дедупликация у самого узкого горлышка: то же событие тому же человеку
     // за сутки не повторяется — кроны любят напоминать по второму разу
     const [dup] = await sql`

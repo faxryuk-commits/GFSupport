@@ -1,5 +1,5 @@
 import { identifySender, markChannelReadOnReply, autoBindTelegramId } from '../lib/identification.js'
-import { getOpenAIKey, getOrgBotToken, getSQL, json } from '../lib/db.js'
+import { getOpenAIKey, getOrgBotToken, getSQL, json, ensureOnce } from '../lib/db.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
 import OpenAI from 'openai'
 import { markSalesTouch } from '../lib/sales-assistant.js'
@@ -313,32 +313,34 @@ async function upsertUser(sql: any, user: any, channelId: string, role: string, 
   
   try {
     // Ensure support_users exists (webhook can be first touchpoint)
-    try {
-      await sql`
-        CREATE TABLE IF NOT EXISTS support_users (
-          id VARCHAR(100) PRIMARY KEY,
-          telegram_id BIGINT UNIQUE,
-          telegram_username VARCHAR(255),
-          name VARCHAR(255) NOT NULL,
-          photo_url TEXT,
-          role VARCHAR(50) DEFAULT 'client',
-          department VARCHAR(100),
-          position VARCHAR(255),
-          is_active BOOLEAN DEFAULT true,
-          notes TEXT,
-          channels JSONB DEFAULT '[]',
-          metrics JSONB DEFAULT '{}',
-          first_seen_at TIMESTAMP DEFAULT NOW(),
-          last_seen_at TIMESTAMP DEFAULT NOW(),
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        )
-      `
-      await sql`CREATE INDEX IF NOT EXISTS idx_users_telegram ON support_users(telegram_id)`.catch(() => {})
-      await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON support_users(role)`.catch(() => {})
-    } catch {
-      // ignore
-    }
+    await ensureOnce('tg-users', async () => {
+      try {
+        await sql`
+          CREATE TABLE IF NOT EXISTS support_users (
+            id VARCHAR(100) PRIMARY KEY,
+            telegram_id BIGINT UNIQUE,
+            telegram_username VARCHAR(255),
+            name VARCHAR(255) NOT NULL,
+            photo_url TEXT,
+            role VARCHAR(50) DEFAULT 'client',
+            department VARCHAR(100),
+            position VARCHAR(255),
+            is_active BOOLEAN DEFAULT true,
+            notes TEXT,
+            channels JSONB DEFAULT '[]',
+            metrics JSONB DEFAULT '{}',
+            first_seen_at TIMESTAMP DEFAULT NOW(),
+            last_seen_at TIMESTAMP DEFAULT NOW(),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+          )
+        `
+        await sql`CREATE INDEX IF NOT EXISTS idx_users_telegram ON support_users(telegram_id)`.catch(() => {})
+        await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON support_users(role)`.catch(() => {})
+      } catch {
+        // ignore
+      }
+    })
 
     // Check if user exists
     const existing = await sql`
@@ -443,16 +445,18 @@ async function saveMessage(
 
   await upsertUser(sql, user, channelId, role, orgId)
   
-  try {
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size BIGINT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT`
-    await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS media_file_id VARCHAR(255)`
-  } catch { /* columns exist */ }
+  await ensureOnce('tg-msg-cols', async () => {
+    try {
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size BIGINT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT`
+      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS media_file_id VARCHAR(255)`
+    } catch { /* columns exist */ }
+  })
 
   await sql`
     INSERT INTO support_messages (
@@ -705,23 +709,26 @@ async function recordAgentActivity(
   systemAgentId?: string | null
 ) {
   try {
-    // Create activity table if not exists
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_agent_activity (
-        id VARCHAR(100) PRIMARY KEY,
-        agent_id VARCHAR(100),
-        system_agent_id VARCHAR(100),
-        telegram_user_id VARCHAR(100),
-        agent_name VARCHAR(255),
-        activity_type VARCHAR(50),
-        channel_id VARCHAR(100),
-        activity_at TIMESTAMP DEFAULT NOW(),
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `
-    await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON support_agent_activity(agent_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_system_agent ON support_agent_activity(system_agent_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_time ON support_agent_activity(activity_at)`
+    await ensureOnce('tg-activity', async () => {
+  // Create activity table if not exists
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_agent_activity (
+          id VARCHAR(100) PRIMARY KEY,
+          agent_id VARCHAR(100),
+          system_agent_id VARCHAR(100),
+          telegram_user_id VARCHAR(100),
+          agent_name VARCHAR(255),
+          activity_type VARCHAR(50),
+          channel_id VARCHAR(100),
+          activity_at TIMESTAMP DEFAULT NOW(),
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_agent ON support_agent_activity(agent_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_system_agent ON support_agent_activity(system_agent_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_agent_activity_time ON support_agent_activity(activity_at)`
+    })
+
     
     // Try to find system agent by telegram_id
     let resolvedSystemAgentId = systemAgentId
@@ -1058,39 +1065,42 @@ async function createCommitmentReminder(
   }
 
   try {
-    // Use unified support_commitments table with extended fields
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_commitments (
-        id VARCHAR(50) PRIMARY KEY,
-        channel_id VARCHAR(100) NOT NULL,
-        case_id VARCHAR(100),
-        message_id VARCHAR(100),
-        agent_id VARCHAR(100),
-        agent_name VARCHAR(255),
-        sender_role VARCHAR(30),
-        commitment_text TEXT NOT NULL,
-        commitment_type VARCHAR(30) DEFAULT 'promise',
-        is_vague BOOLEAN DEFAULT false,
-        priority VARCHAR(20) DEFAULT 'medium',
-        due_date TIMESTAMPTZ,
-        reminder_at TIMESTAMPTZ,
-        reminder_sent BOOLEAN DEFAULT false,
-        status VARCHAR(20) DEFAULT 'pending',
-        notes TEXT,
-        completed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `
+    await ensureOnce('tg-commitments', async () => {
+  // Use unified support_commitments table with extended fields
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_commitments (
+          id VARCHAR(50) PRIMARY KEY,
+          channel_id VARCHAR(100) NOT NULL,
+          case_id VARCHAR(100),
+          message_id VARCHAR(100),
+          agent_id VARCHAR(100),
+          agent_name VARCHAR(255),
+          sender_role VARCHAR(30),
+          commitment_text TEXT NOT NULL,
+          commitment_type VARCHAR(30) DEFAULT 'promise',
+          is_vague BOOLEAN DEFAULT false,
+          priority VARCHAR(20) DEFAULT 'medium',
+          due_date TIMESTAMPTZ,
+          reminder_at TIMESTAMPTZ,
+          reminder_sent BOOLEAN DEFAULT false,
+          status VARCHAR(20) DEFAULT 'pending',
+          notes TEXT,
+          completed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `
     
-    // Add missing columns if needed
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT false`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium'`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS case_id VARCHAR(100)`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS notes TEXT`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`.catch(() => {})
+      // Add missing columns if needed
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS reminder_sent BOOLEAN DEFAULT false`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium'`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS case_id VARCHAR(100)`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS notes TEXT`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`.catch(() => {})
+    })
+
 
     await sql`
       INSERT INTO support_commitments (
@@ -1263,7 +1273,9 @@ async function createTicketFromReply(
     const ticketNumber = parseInt(maxTicketResult[0]?.max_num || 0) + 1
     
     // Ensure created_by column exists
-    await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`.catch(() => {})
+    await ensureOnce('tg-case-created-by', async () => {
+      await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`.catch(() => {})
+    })
     
     await sql`
       INSERT INTO support_cases (

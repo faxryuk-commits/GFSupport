@@ -1,4 +1,4 @@
-import { getOrgBotToken, getSQL, json } from '../lib/db.js'
+import { getOrgBotToken, getSQL, json, ensureOnce } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
 
@@ -34,12 +34,14 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     // Ensure columns exist FIRST
-    try {
-      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false`
-      await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`
-    } catch (e) {
-      // Columns may exist
-    }
+    await ensureOnce('msg-delete-cols', async () => {
+      try {
+        await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false`
+        await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`
+      } catch (e) {
+        // Columns may exist
+      }
+    })
     
     const body = await req.json()
     const { messageId, telegramMessageId } = body

@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],
@@ -32,39 +32,41 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
 
-  // Ensure table exists with all required fields
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_commitments (
-        id VARCHAR(50) PRIMARY KEY,
-        channel_id VARCHAR(100) NOT NULL,
-        case_id VARCHAR(100),
-        message_id VARCHAR(100),
-        agent_id VARCHAR(100),
-        agent_name VARCHAR(255),
-        sender_role VARCHAR(30),
-        commitment_text TEXT NOT NULL,
-        commitment_type VARCHAR(30) DEFAULT 'promise',
-        is_vague BOOLEAN DEFAULT false,
-        priority VARCHAR(20) DEFAULT 'medium',
-        due_date TIMESTAMPTZ,
-        reminder_at TIMESTAMPTZ,
-        reminder_sent BOOLEAN DEFAULT false,
-        status VARCHAR(20) DEFAULT 'pending',
-        notes TEXT,
-        completed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `
-    // Add missing columns if table already exists
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS case_id VARCHAR(100)`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium'`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS notes TEXT`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`.catch(() => {})
-    await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS is_vague BOOLEAN DEFAULT false`.catch(() => {})
-  } catch (e) { /* table exists */ }
+  await ensureOnce('commitments', async () => {
+    // Ensure table exists with all required fields
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_commitments (
+          id VARCHAR(50) PRIMARY KEY,
+          channel_id VARCHAR(100) NOT NULL,
+          case_id VARCHAR(100),
+          message_id VARCHAR(100),
+          agent_id VARCHAR(100),
+          agent_name VARCHAR(255),
+          sender_role VARCHAR(30),
+          commitment_text TEXT NOT NULL,
+          commitment_type VARCHAR(30) DEFAULT 'promise',
+          is_vague BOOLEAN DEFAULT false,
+          priority VARCHAR(20) DEFAULT 'medium',
+          due_date TIMESTAMPTZ,
+          reminder_at TIMESTAMPTZ,
+          reminder_sent BOOLEAN DEFAULT false,
+          status VARCHAR(20) DEFAULT 'pending',
+          notes TEXT,
+          completed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `
+      // Add missing columns if table already exists
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS case_id VARCHAR(100)`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'medium'`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS notes TEXT`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS sender_role VARCHAR(30)`.catch(() => {})
+      await sql`ALTER TABLE support_commitments ADD COLUMN IF NOT EXISTS is_vague BOOLEAN DEFAULT false`.catch(() => {})
+    } catch (e) { /* table exists */ }
+  })
 
   // GET - список обещаний
   if (req.method === 'GET') {

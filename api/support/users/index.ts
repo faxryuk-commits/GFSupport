@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],
@@ -25,31 +25,33 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
+  await ensureOnce('users', async () => {
   // Ensure users table exists with all needed columns
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_users (
-        id VARCHAR(100) PRIMARY KEY,
-        telegram_id BIGINT UNIQUE,
-        telegram_username VARCHAR(255),
-        name VARCHAR(255) NOT NULL,
-        photo_url TEXT,
-        role VARCHAR(50) DEFAULT 'client',
-        department VARCHAR(100),
-        position VARCHAR(255),
-        is_active BOOLEAN DEFAULT true,
-        notes TEXT,
-        channels JSONB DEFAULT '[]',
-        metrics JSONB DEFAULT '{}',
-        first_seen_at TIMESTAMP DEFAULT NOW(),
-        last_seen_at TIMESTAMP DEFAULT NOW(),
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `
-    await sql`CREATE INDEX IF NOT EXISTS idx_users_telegram ON support_users(telegram_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON support_users(role)`
-  } catch (e) { /* table exists */ }
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_users (
+          id VARCHAR(100) PRIMARY KEY,
+          telegram_id BIGINT UNIQUE,
+          telegram_username VARCHAR(255),
+          name VARCHAR(255) NOT NULL,
+          photo_url TEXT,
+          role VARCHAR(50) DEFAULT 'client',
+          department VARCHAR(100),
+          position VARCHAR(255),
+          is_active BOOLEAN DEFAULT true,
+          notes TEXT,
+          channels JSONB DEFAULT '[]',
+          metrics JSONB DEFAULT '{}',
+          first_seen_at TIMESTAMP DEFAULT NOW(),
+          last_seen_at TIMESTAMP DEFAULT NOW(),
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+      await sql`CREATE INDEX IF NOT EXISTS idx_users_telegram ON support_users(telegram_id)`
+      await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON support_users(role)`
+    } catch (e) { /* table exists */ }
+  })
 
   // GET - List users with filters
   if (req.method === 'GET') {

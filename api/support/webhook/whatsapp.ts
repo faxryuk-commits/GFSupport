@@ -1,6 +1,6 @@
 import { identifySender } from '../lib/identification.js'
 import { shouldAutoCreateCase, generateCaseId, getNextTicketNumber } from '../lib/case-detector.js'
-import { getOpenAIKey, getOrgWhatsAppBridge, getSQL, json } from '../lib/db.js'
+import { getOpenAIKey, getOrgWhatsAppBridge, getSQL, json, ensureOnce } from '../lib/db.js'
 import { markSalesTouch } from '../lib/sales-assistant.js'
 
 export const config = {
@@ -70,8 +70,10 @@ async function analyzePhoto(url: string, orgId?: string): Promise<string | null>
 async function upsertWhatsAppUser(sql: any, phone: string, name: string, channelId: string, role: string, orgId: string) {
   if (!phone || phone.length < 5) return
   try {
-    try { await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS phone VARCHAR(50)` } catch {}
-    try { await sql`CREATE INDEX IF NOT EXISTS idx_users_phone ON support_users(phone)` } catch {}
+    await ensureOnce('wa-user-phone', async () => {
+      try { await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS phone VARCHAR(50)` } catch {}
+      try { await sql`CREATE INDEX IF NOT EXISTS idx_users_phone ON support_users(phone)` } catch {}
+    })
 
     const existing = await sql`
       SELECT id, channels FROM support_users WHERE phone = ${phone} AND org_id = ${orgId} LIMIT 1
@@ -312,17 +314,20 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
 
+// Десять заходов «колонка уже есть» — только на холодный старт
+  await ensureOnce('wa-columns', async () => {
   try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'telegram'` } catch {}
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
-  try { await sql`ALTER TABLE support_channels ALTER COLUMN telegram_chat_id DROP NOT NULL` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB` } catch {}
-  try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS external_message_id VARCHAR(120)` } catch {}
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS external_chat_id VARCHAR(100)` } catch {}
+    try { await sql`ALTER TABLE support_channels ALTER COLUMN telegram_chat_id DROP NOT NULL` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS thumbnail_url TEXT` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS mime_type TEXT` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_text TEXT` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reply_to_sender TEXT` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS forwarded_from TEXT` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS reactions JSONB` } catch {}
+    try { await sql`ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS external_message_id VARCHAR(120)` } catch {}
+  })
 
   try {
     let body = await req.json()

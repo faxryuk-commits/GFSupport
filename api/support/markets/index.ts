@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -22,19 +22,22 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url)
   const action = url.searchParams.get('action')
 
-  try { await sql`CREATE TABLE IF NOT EXISTS support_markets (
-    id VARCHAR(50) PRIMARY KEY, name VARCHAR(255) NOT NULL, code VARCHAR(10) UNIQUE NOT NULL,
-    country VARCHAR(100), timezone VARCHAR(50) DEFAULT 'Asia/Tashkent', is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW()
-  )` } catch {}
-  try { await sql`CREATE TABLE IF NOT EXISTS support_agent_markets (
-    agent_id VARCHAR(50) NOT NULL, market_id VARCHAR(50) NOT NULL,
-    role VARCHAR(50) DEFAULT 'member', created_at TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (agent_id, market_id)
-  )` } catch {}
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)` } catch {}
-  try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)` } catch {}
-  try { await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)` } catch {}
+  // Пять заходов в базу ради «таблицы уже есть» — только на холодный старт
+  await ensureOnce('markets', async () => {
+    try { await sql`CREATE TABLE IF NOT EXISTS support_markets (
+      id VARCHAR(50) PRIMARY KEY, name VARCHAR(255) NOT NULL, code VARCHAR(10) UNIQUE NOT NULL,
+      country VARCHAR(100), timezone VARCHAR(50) DEFAULT 'Asia/Tashkent', is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )` } catch {}
+    try { await sql`CREATE TABLE IF NOT EXISTS support_agent_markets (
+      agent_id VARCHAR(50) NOT NULL, market_id VARCHAR(50) NOT NULL,
+      role VARCHAR(50) DEFAULT 'member', created_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (agent_id, market_id)
+    )` } catch {}
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)` } catch {}
+    try { await sql`ALTER TABLE support_cases ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)` } catch {}
+    try { await sql`ALTER TABLE support_users ADD COLUMN IF NOT EXISTS market_id VARCHAR(50)` } catch {}
+  })
 
   if (req.method === 'GET') {
     if (action === 'agents') {

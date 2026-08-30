@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -50,23 +50,25 @@ export default async function handler(req: Request): Promise<Response> {
     // Accept any valid Bearer token (agents can manage settings)
   }
 
-  // Убедимся что таблица настроек существует
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_settings (
-        org_id VARCHAR(50) NOT NULL DEFAULT 'org_delever',
-        key VARCHAR(100) NOT NULL,
-        value TEXT,
-        updated_at TIMESTAMP DEFAULT NOW(),
-        PRIMARY KEY (org_id, key)
-      )
-    `
-  } catch (e) {
-    // Таблица уже существует
-  }
-  await sql`ALTER TABLE support_settings ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
-  await sql`UPDATE support_settings SET org_id = 'org_delever' WHERE org_id IS NULL`.catch(() => {})
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS support_settings_org_key ON support_settings(org_id, key)`.catch(() => {})
+  // Убедимся, что таблица настроек существует — один раз на живой инстанс
+  await ensureOnce('settings', async () => {
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_settings (
+          org_id VARCHAR(50) NOT NULL DEFAULT 'org_delever',
+          key VARCHAR(100) NOT NULL,
+          value TEXT,
+          updated_at TIMESTAMP DEFAULT NOW(),
+          PRIMARY KEY (org_id, key)
+        )
+      `
+    } catch (e) {
+      // Таблица уже существует
+    }
+    await sql`ALTER TABLE support_settings ADD COLUMN IF NOT EXISTS org_id VARCHAR(50) DEFAULT 'org_delever'`.catch(() => {})
+    await sql`UPDATE support_settings SET org_id = 'org_delever' WHERE org_id IS NULL`.catch(() => {})
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS support_settings_org_key ON support_settings(org_id, key)`.catch(() => {})
+  })
   // Migration: drop old PK(key) to allow multi-tenant (org_id, key)
   await sql`ALTER TABLE support_settings DROP CONSTRAINT IF EXISTS support_settings_pkey`.catch(() => {})
   await sql`ALTER TABLE support_settings ADD PRIMARY KEY (org_id, key)`.catch(() => {})

@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 import { fetchTeamFrtAggregate } from '../lib/team-frt-aggregate.js'
 
 export const config = {
@@ -66,7 +66,9 @@ export default async function handler(req: Request) {
   try {
     // Самодостаточность: колонка появляется в Migration 44, но эндпоинт не должен
     // падать, если задеплоился раньше прогона миграции
+    await ensureOnce('agents-merged-col', async () => {
     await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS merged_into VARCHAR(50)`.catch(() => {})
+  })
 
     // Канонический агент для сообщения: LATERAL + LIMIT 1 с приоритетом матчей,
     // иначе OR-join даёт фанаут (sender матчится и по telegram_id одной строки,

@@ -18,7 +18,7 @@
  *
  * Защита: Vercel cron (user-agent) или CRON_SECRET.
  */
-import { getSQL, json, getOpenAIKey } from '../lib/db.js'
+import { getSQL, json, getOpenAIKey, ensureOnce } from '../lib/db.js'
 import { loadSla, businessMinutesBetween } from '../lib/sla.js'
 import { sendNotification, escalateStaleNotifications } from '../lib/notifications.js'
 import { notifyClientStuck } from '../lib/onboarding-alerts.js'
@@ -76,17 +76,19 @@ export default async function handler(req: Request): Promise<Response> {
   if (denied) return denied
 
   const sql = getSQL()
-  // колонки состояния SLA (идемпотентно)
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_state VARCHAR(20)` } catch {}
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_alert_level INT DEFAULT 0` } catch {}
-  try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_last_alert_at TIMESTAMPTZ` } catch {}
-  // ledger событий ИИ-решателей (общий журнал: страж, агент, ...)
-  try {
-    await sql`CREATE TABLE IF NOT EXISTS support_ai_events (
-      id BIGSERIAL PRIMARY KEY, org_id VARCHAR(50), actor VARCHAR(30), kind VARCHAR(30),
-      channel_id VARCHAR(60), channel_name VARCHAR(255), tier VARCHAR(20),
-      reasoning TEXT, payload JSONB, mode VARCHAR(10), created_at TIMESTAMPTZ DEFAULT NOW()
-    )` } catch {}
+  // Колонки SLA и журнал ИИ-событий — только на холодный старт
+  await ensureOnce('sla-guard', async () => {
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_state VARCHAR(20)` } catch {}
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_alert_level INT DEFAULT 0` } catch {}
+    try { await sql`ALTER TABLE support_channels ADD COLUMN IF NOT EXISTS sla_last_alert_at TIMESTAMPTZ` } catch {}
+    // ledger событий ИИ-решателей (общий журнал: страж, агент, ...)
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS support_ai_events (
+        id BIGSERIAL PRIMARY KEY, org_id VARCHAR(50), actor VARCHAR(30), kind VARCHAR(30),
+        channel_id VARCHAR(60), channel_name VARCHAR(255), tier VARCHAR(20),
+        reasoning TEXT, payload JSONB, mode VARCHAR(10), created_at TIMESTAMPTZ DEFAULT NOW()
+      )` } catch {}
+  })
 
   // 1) сброс resolved: команда ответила последней → чистим состояние
   try {

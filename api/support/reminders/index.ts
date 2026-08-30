@@ -1,5 +1,5 @@
 import { getRequestOrgId } from '../lib/org.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],
@@ -25,37 +25,39 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
+  await ensureOnce('reminders', async () => {
   // Ensure table and columns exist
-  try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS support_reminders (
-        id VARCHAR(50) PRIMARY KEY,
-        channel_id VARCHAR(50) NOT NULL,
-        case_id VARCHAR(50),
-        message_id VARCHAR(100),
-        commitment_text TEXT,
-        commitment_type VARCHAR(50),
-        is_vague BOOLEAN DEFAULT false,
-        deadline TIMESTAMPTZ,
-        detected_deadline TIMESTAMP,
-        auto_deadline TIMESTAMP,
-        reminder_at TIMESTAMP,
-        escalation_level INTEGER DEFAULT 0,
-        assigned_to VARCHAR(50),
-        assigned_name VARCHAR(255),
-        created_by VARCHAR(255),
-        status VARCHAR(30) DEFAULT 'active',
-        completed_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `
-  } catch (e) { /* table exists */ }
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS support_reminders (
+          id VARCHAR(50) PRIMARY KEY,
+          channel_id VARCHAR(50) NOT NULL,
+          case_id VARCHAR(50),
+          message_id VARCHAR(100),
+          commitment_text TEXT,
+          commitment_type VARCHAR(50),
+          is_vague BOOLEAN DEFAULT false,
+          deadline TIMESTAMPTZ,
+          detected_deadline TIMESTAMP,
+          auto_deadline TIMESTAMP,
+          reminder_at TIMESTAMP,
+          escalation_level INTEGER DEFAULT 0,
+          assigned_to VARCHAR(50),
+          assigned_name VARCHAR(255),
+          created_by VARCHAR(255),
+          status VARCHAR(30) DEFAULT 'active',
+          completed_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `
+    } catch (e) { /* table exists */ }
   
-  // Add missing columns if they don't exist
-  try {
-    await sql`ALTER TABLE support_reminders ADD COLUMN IF NOT EXISTS deadline TIMESTAMPTZ`
-    await sql`ALTER TABLE support_reminders ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`
-  } catch (e) { /* columns exist */ }
+    // Add missing columns if they don't exist
+    try {
+      await sql`ALTER TABLE support_reminders ADD COLUMN IF NOT EXISTS deadline TIMESTAMPTZ`
+      await sql`ALTER TABLE support_reminders ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)`
+    } catch (e) { /* columns exist */ }
+  })
 
   // GET - list reminders
   if (req.method === 'GET') {

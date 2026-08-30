@@ -1,6 +1,6 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { runAgent, executeDecision, type AgentContext } from '../lib/ai-agent.js'
-import { getSQL, json } from '../lib/db.js'
+import { getSQL, json, ensureOnce } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
@@ -26,32 +26,34 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   const url = new URL(req.url)
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS support_agent_decisions (
-      id VARCHAR(60) PRIMARY KEY,
-      org_id VARCHAR(50) NOT NULL,
-      channel_id VARCHAR(50),
-      channel_name VARCHAR(255),
-      source VARCHAR(20),
-      incoming_message TEXT,
-      sender_name VARCHAR(255),
-      action VARCHAR(30),
-      reply_text TEXT,
-      tag_agent_id VARCHAR(60),
-      tag_agent_name VARCHAR(255),
-      escalate_to_role VARCHAR(50),
-      case_priority VARCHAR(20),
-      case_title VARCHAR(255),
-      reasoning TEXT,
-      confidence REAL,
-      context_messages_count INTEGER DEFAULT 0,
-      similar_history_count INTEGER DEFAULT 0,
-      feedback VARCHAR(20),
-      feedback_note TEXT,
-      executed_actions TEXT[],
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `.catch(() => {})
+  await ensureOnce('agent-decisions', async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS support_agent_decisions (
+        id VARCHAR(60) PRIMARY KEY,
+        org_id VARCHAR(50) NOT NULL,
+        channel_id VARCHAR(50),
+        channel_name VARCHAR(255),
+        source VARCHAR(20),
+        incoming_message TEXT,
+        sender_name VARCHAR(255),
+        action VARCHAR(30),
+        reply_text TEXT,
+        tag_agent_id VARCHAR(60),
+        tag_agent_name VARCHAR(255),
+        escalate_to_role VARCHAR(50),
+        case_priority VARCHAR(20),
+        case_title VARCHAR(255),
+        reasoning TEXT,
+        confidence REAL,
+        context_messages_count INTEGER DEFAULT 0,
+        similar_history_count INTEGER DEFAULT 0,
+        feedback VARCHAR(20),
+        feedback_note TEXT,
+        executed_actions TEXT[],
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `.catch(() => {})
+  })
 
   if (req.method === 'GET') {
     const limit = parseInt(url.searchParams.get('limit') || '30')
