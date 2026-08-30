@@ -109,6 +109,9 @@ export default async function handler(req: Request): Promise<Response> {
       phone,
       text: text.slice(0, 500),
       lead_kind: 'message',
+      // Бот и чат сайта delever.io обслуживают узбекский рынок — лид без
+      // региона выпадал из фильтров по странам и ходил без флага
+      market: 'uz',
       channel_key: chatId,
       raw: { source, chatId, username: body?.username || null, first_text: text.slice(0, 500) },
     })

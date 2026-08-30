@@ -551,11 +551,14 @@ export async function applyAmoStage(
   lead: any,
   statuses: Map<number, { name: string; isWon: boolean; isLost: boolean; pipelineId: number }>,
 ): Promise<{ deal: string; from: string; to: string } | null> {
+  // Архивные тоже ищем: сделка могла быть заархивирована у нас, а в Amo
+  // работа продолжилась. Раньше фильтр по архиву её прятал, вставка новой
+  // падала об уникальность external_id — и весь проход синка обрывался
   let [deal] = await sql`
-    SELECT d.id, d.stage_id, d.won_at, d.lost_at, d.pipeline, s.key AS stage_key
+    SELECT d.id, d.stage_id, d.won_at, d.lost_at, d.pipeline, d.archived_at, s.key AS stage_key
     FROM sales_deals d
     LEFT JOIN sales_stages s ON s.id = d.stage_id
-    WHERE d.org_id = ${orgId} AND d.external_id = ${`amo_${lead.id}`} AND d.archived_at IS NULL
+    WHERE d.org_id = ${orgId} AND d.external_id = ${`amo_${lead.id}`}
     LIMIT 1
   ` as any[]
 
@@ -609,6 +612,12 @@ export async function applyAmoStage(
     `
     deal = { id: dealId, stage_id: entry.id, won_at: null, lost_at: null, pipeline, stage_key: entry.key }
   }
+  // Amo двигает сделку, которую мы заархивировали, — возвращаем в работу:
+  // в режиме full истина у Amo
+  if (deal.archived_at) {
+    await sql`UPDATE sales_deals SET archived_at = NULL, updated_at = NOW() WHERE id = ${deal.id}`
+  }
+
   if (key === deal.stage_key) return null
 
   // Этап ищем в воронке самой сделки: у стран разные воронки, и «Договор»
