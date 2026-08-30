@@ -205,8 +205,16 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   let status = routeByBand(icp.band)
 
   // Живое обращение человека никогда не уходит в nurture автоматически:
-  // написали в чат, позвонили, оставили заявку — разбирает сотрудник
-  if (status === 'nurture' && ['inbound', 'referral'].includes(String(source.kind))) {
+  // написали в чат, позвонили, оставили заявку — разбирает сотрудник.
+  //
+  // Определяем по действию человека, а не по типу источника: заявка с
+  // рекламной формы приходит из источника вида «paid», и проверка только по
+  // источнику отправляла её в прогрев без единого звонка — человек заполнил
+  // форму, компания заплатила за клик, а сейлз об этом не узнавал
+  const actKind = String(body.lead_kind || kindBySource(sourceKey))
+  if (status === 'nurture' &&
+      (['form', 'message', 'comment', 'call'].includes(actKind)
+       || ['inbound', 'referral'].includes(String(source.kind)))) {
     status = 'new'
   }
 
