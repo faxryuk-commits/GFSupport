@@ -2,7 +2,7 @@ import { getSQL } from '../lib/db.js'
 import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 export default async function handler(req: Request) {

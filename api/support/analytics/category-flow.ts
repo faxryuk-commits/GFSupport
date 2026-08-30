@@ -7,7 +7,7 @@ import { ensureTaxonomyColumns, ensureChannelSourceColumn } from '../lib/ensure-
 
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['fra1'],
 }
 
 type FlowStatus = 'resolved' | 'in_progress' | 'stuck' | 'ignored' | 'blocked'

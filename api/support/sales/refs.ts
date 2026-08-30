@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 /**

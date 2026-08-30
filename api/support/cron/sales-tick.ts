@@ -6,7 +6,7 @@ import { assertCron } from '../lib/cron-auth.js'
 import { sendNotification } from '../lib/notifications.js'
 import { tokenForPage } from '../lib/meta-config.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Cron: фоновая часть движка продаж. Раз в минуту, один идемпотентный проход.

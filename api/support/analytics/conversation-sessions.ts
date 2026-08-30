@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
-export const config = { runtime: 'edge', maxDuration: 30 }
+export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 30 }
 
 async function safeQuery(sql: any, query: Promise<any[]>, fallback: any = []): Promise<any> {
   try { return await query } catch (e: any) { console.error('[CommQ]', e.message); return fallback }

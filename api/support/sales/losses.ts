@@ -4,7 +4,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { resolveRegion } from '../lib/sales-amo.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Потери одной корзиной.

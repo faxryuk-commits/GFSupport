@@ -16,7 +16,7 @@ import { getSQL, json } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 // Роли, которые мы по умолчанию считаем «командой поддержки» — клиентоориентированные,

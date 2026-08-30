@@ -17,7 +17,7 @@ import { getSQL, json } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
 import { autoAssignChannelMarkets, autoAssignSalesRegions } from '../lib/region-detect.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const ORG = process.env.SALES_ORG || 'org_delever'
 

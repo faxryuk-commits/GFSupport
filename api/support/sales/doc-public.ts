@@ -1,7 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { checkRateLimit } from '../lib/rate-limit.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Публичная страница документа: то, что открывает клиент по ссылке /d/<token>.

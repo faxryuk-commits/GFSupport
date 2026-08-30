@@ -3,7 +3,7 @@ import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { ensureWorkSchema, workTick } from '../lib/work-items.js'
 import { logEvent } from '../lib/system-journal.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Проход учёта работы — раз в 10 минут.

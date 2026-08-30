@@ -1,7 +1,7 @@
 import { getSQL } from '../lib/db.js'
 import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig } from '../lib/meta-config.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Возврат из согласия Meta.

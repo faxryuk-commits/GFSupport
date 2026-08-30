@@ -31,7 +31,7 @@ import {
 } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
   maxDuration: 60,
 }
 

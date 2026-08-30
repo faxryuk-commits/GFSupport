@@ -19,7 +19,7 @@
 import { getSQL, json, getOrgBotToken } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const WA_BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'https://gfsupport-production.up.railway.app'
 const DOWN_THRESHOLD_MINUTES = 30

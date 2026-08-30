@@ -15,7 +15,7 @@ import { computeCustomerHealth, parsePeriodParam, resolvePeriod } from './metric
 import type { CustomerHealthRow, HealthBand } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 export default async function handler(req: Request): Promise<Response> {

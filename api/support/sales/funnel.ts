@@ -5,7 +5,7 @@ import { currencyForMarket, ensureSalesSchema, salesId } from '../lib/sales-sche
 import { resolveRegion, pipelineForMarket } from '../lib/sales-amo.js'
 import { FIELD_LABELS, missingFields } from '../lib/sales-fields.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Единая воронка: обращения и сделки на одном экране.

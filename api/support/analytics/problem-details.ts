@@ -1,7 +1,7 @@
 import { getSQL } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {

@@ -4,7 +4,7 @@ import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './metrics/frtShare
 import { ensureChannelSourceColumn, ensureTaxonomyColumns } from '../lib/ensure-taxonomy.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 /**

@@ -2,7 +2,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { handleSalesCallback, handleSalesCommand, handleVoiceNote } from '../lib/sales-bot.js'
 import { handleWorkCallback } from '../lib/work-items.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 async function getPlatformBotToken(): Promise<string | null> {
   try {

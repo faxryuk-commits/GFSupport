@@ -1,6 +1,6 @@
 import { getOpenAIKey, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'] }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 // Sanitize personal data before storing
 export function sanitizeText(text: string): string {

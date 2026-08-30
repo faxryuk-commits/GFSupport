@@ -3,7 +3,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureOnboardingSchema } from '../lib/onboarding-schema.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Список требований к клиенту — из ТЗ проекта.

@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'] }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {

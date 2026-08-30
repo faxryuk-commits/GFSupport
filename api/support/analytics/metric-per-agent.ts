@@ -32,7 +32,7 @@ import {
 import type { MetricDescriptor } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 const SUPPORTED: Record<

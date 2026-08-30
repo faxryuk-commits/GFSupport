@@ -3,7 +3,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureOnboardingSchema } from '../lib/onboarding-schema.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Сколько брендов мы запустили — за неделю, месяц, квартал, год.

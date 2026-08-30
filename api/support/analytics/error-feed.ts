@@ -11,7 +11,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'] }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 type Fault = 'delever' | 'integration' | 'pos' | 'merchant' | 'customer' | 'aggregator' | 'unknown'
 

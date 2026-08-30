@@ -5,7 +5,7 @@ import { checkRateLimit } from '../lib/rate-limit.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { acceptLead } from '../lib/sales-intake.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Единый приёмник лидов по HTTP. Поставщики: мост AmoCRM, формы сайта, ручной

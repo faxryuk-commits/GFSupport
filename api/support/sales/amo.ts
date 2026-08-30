@@ -6,7 +6,7 @@ import { AMO_MODE_KEY, readAmoMode, amoGet, isAllowedPipeline, statusMap,
          stageKeyByStatusName, marketByPipeline, type AmoMode } from '../lib/sales-amo.js'
 import { logEvent } from '../lib/system-journal.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Управление мостом с AmoCRM — предохранитель перехода команды на свою CRM.

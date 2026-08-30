@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { checkAgentQuota, checkChannelQuota, checkMessageQuota } from '../lib/quota.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })

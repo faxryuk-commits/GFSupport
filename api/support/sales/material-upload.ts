@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { json, corsHeaders } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Загрузка материала в хранилище.

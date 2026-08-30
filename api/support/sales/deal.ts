@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { EDITABLE_FIELDS, FIELD_LABELS, missingFields } from '../lib/sales-fields.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Карточка сделки — всё, что нужно во время звонка, одним запросом.

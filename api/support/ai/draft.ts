@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureErrorFeedSchema, activeIncidents, recentErrorsForChannel } from '../lib/error-feed.js'
 import { similarExamples } from '../lib/reply-examples.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Черновик со знаниями — по кнопке ✨ в чате.

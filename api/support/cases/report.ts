@@ -3,7 +3,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { CASE_TOPICS } from '../lib/case-topics.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Отчёт по тикетам: сколько пришло, о чём, сколько решили, за какое время и кто.

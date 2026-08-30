@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { sendNotification } from '../lib/notifications.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Задачи продаж, которые ставит человек.

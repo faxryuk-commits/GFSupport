@@ -20,7 +20,7 @@ import { ensureBenchmarkTable } from '../lib/ensure-taxonomy.js'
 import { METRIC_REGISTRY } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 interface BenchmarkRow {

@@ -3,7 +3,7 @@ import { getSQL, json } from '../lib/db.js'
 import { checkOrgRateLimit } from '../lib/rate-limit.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 const VALID_STATUSES = new Set([

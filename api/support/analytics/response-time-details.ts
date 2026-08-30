@@ -4,7 +4,7 @@ import { ensureFrtOverridesTable } from '../lib/frt-overrides-schema.js'
 import { ANTI_THANKS_REGEX, ACK_TEXT_SQL, ACK_MAX_LEN } from './metrics/frtShared.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 export default async function handler(req: Request): Promise<Response> {

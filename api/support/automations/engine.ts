@@ -1,6 +1,6 @@
 import { getSQL } from '../lib/db.js'
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 // Типы триггеров

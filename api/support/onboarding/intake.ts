@@ -6,7 +6,7 @@ import { inferBrandMarket } from '../lib/region-detect.js'
 import { autoLinkBrandChannel } from '../lib/onboarding-alerts.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 /**

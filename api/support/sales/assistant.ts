@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { NURTURE_STEPS, MAX_STEPS } from '../lib/sales-assistant.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Что делает ассистент — открыто.

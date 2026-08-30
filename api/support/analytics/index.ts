@@ -6,7 +6,7 @@ import { resolvePeriod, parsePeriodParam } from './metrics/periodEngine.js'
 
 // API Version: 2.2 - SLA Categories with real data
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 // Format milliseconds to human-readable duration

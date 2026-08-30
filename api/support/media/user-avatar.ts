@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 // Proxy endpoint for user avatar photos
 // Telegram photo URLs expire, so we need to refresh them dynamically

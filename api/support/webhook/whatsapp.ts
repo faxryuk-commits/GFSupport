@@ -5,7 +5,7 @@ import { markSalesTouch } from '../lib/sales-assistant.js'
 
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['fra1'],
   maxDuration: 30,
 }
 

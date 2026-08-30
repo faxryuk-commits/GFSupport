@@ -5,7 +5,7 @@ import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 // Channels API v2.1 - SLA Categories support
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 export default async function handler(req: Request): Promise<Response> {

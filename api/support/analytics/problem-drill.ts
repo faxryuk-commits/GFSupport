@@ -21,7 +21,7 @@ import { getRequestOrgId } from '../lib/org.js'
 import { json, getSQL } from '../lib/db.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 interface ThemeRow {

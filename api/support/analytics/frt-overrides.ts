@@ -5,7 +5,7 @@ import {
   type FrtOverrideType,
 } from '../lib/frt-overrides-schema.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 function cors() {
   return {

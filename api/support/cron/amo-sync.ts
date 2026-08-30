@@ -6,7 +6,7 @@ import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
 import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { logEvent } from '../lib/system-journal.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Мост AmoCRM → приёмник лидов. Переходное решение на время, пока лид-формы

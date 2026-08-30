@@ -3,7 +3,7 @@ import { fetchTeamFrtAggregate } from '../lib/team-frt-aggregate.js'
 import { getSQL, json } from '../lib/db.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 /**

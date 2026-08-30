@@ -4,7 +4,7 @@ import { getRequestOrgId } from '../lib/org.js'
 
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['fra1'],
 }
 
 async function sendTelegramMessage(

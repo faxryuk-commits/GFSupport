@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 // Detect language from recent messages in channel
 async function detectChannelLanguage(sql: any, channelId: string, orgId: string): Promise<'ru' | 'uz' | 'en'> {

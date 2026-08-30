@@ -2,7 +2,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { checkAuthRateLimit } from '../lib/rate-limit.js'
 import { writeAuditLog, getClientIP } from '../lib/audit.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString()

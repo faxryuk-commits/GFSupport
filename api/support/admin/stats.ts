@@ -1,7 +1,7 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractSuperAdminContext } from '../lib/sa-auth.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })

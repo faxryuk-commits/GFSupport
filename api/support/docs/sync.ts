@@ -4,7 +4,7 @@ import { getSQL, json } from '../lib/db.js'
 export const config = {
   runtime: 'edge',
   maxDuration: 300,
-  regions: ['iad1'],
+  regions: ['fra1'],
 }
 
 // GitBook base URL

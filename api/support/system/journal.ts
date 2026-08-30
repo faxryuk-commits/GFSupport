@@ -3,7 +3,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { fetchJournal } from '../lib/system-journal.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Хроника системы: что, как и когда делали автоматы и ИИ.

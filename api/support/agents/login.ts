@@ -4,7 +4,7 @@ import { verifyPassword, hashPassword } from '../lib/password.js'
 import { getSQL, json } from '../lib/db.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 // Get avatar URL from Telegram

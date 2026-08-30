@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 async function getFreshPhotoUrl(botToken: string, telegramChatId: string): Promise<string | null> {
   try {

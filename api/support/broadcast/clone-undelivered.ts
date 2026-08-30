@@ -4,7 +4,7 @@ import { ensureBroadcastSchema } from '../lib/broadcast-schema.js'
 import { runBroadcastWorker } from '../lib/broadcast-runner.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
   maxDuration: 30,
 }
 

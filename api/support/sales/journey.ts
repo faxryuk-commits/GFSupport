@@ -3,7 +3,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Путь клиента: все касания в одной ленте.

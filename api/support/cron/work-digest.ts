@@ -3,7 +3,7 @@ import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { ensureWorkSchema, workDigest } from '../lib/work-items.js'
 import { logEvent } from '../lib/system-journal.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Вечерняя сверка — 18:00 по Ташкенту, один раз в день.

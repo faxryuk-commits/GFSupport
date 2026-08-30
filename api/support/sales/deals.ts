@@ -4,7 +4,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { currencyForMarket, ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { resolveRegion } from '../lib/sales-amo.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Список сделок: таблица, канбан и блок «требуют внимания».

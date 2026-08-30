@@ -4,7 +4,7 @@ import { getSQL, getOpenAIKey, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['fra1'],
   maxDuration: 30,
 }
 

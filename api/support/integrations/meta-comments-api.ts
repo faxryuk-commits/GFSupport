@@ -4,7 +4,7 @@ import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { ensureMetaSchema, readMetaAccounts, tokenForPage } from '../lib/meta-config.js'
 import { ensurePostInfo, hideComment, importMetaComments, replyToComment } from '../lib/meta-comments.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Комьюнити-менеджмент: комментарии под постами Instagram и Facebook.

@@ -24,7 +24,7 @@ import { getSQL, json } from '../lib/db.js'
 import { runAgent } from '../lib/ai-agent.js'
 import { assertCron } from '../lib/cron-auth.js'
 
-export const config = { runtime: 'edge', maxDuration: 60 }
+export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 60 }
 
 const ORG = process.env.AGENT_SCAN_ORG || 'org_delever'
 const WA_RECONNECT = new Date('2026-06-03T00:00:00Z')

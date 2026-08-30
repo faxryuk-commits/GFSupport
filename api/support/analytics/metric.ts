@@ -24,7 +24,7 @@ import { METRIC_REGISTRY, parsePeriodParam, resolvePeriod } from './metrics/inde
 import type { MetricScope } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 export default async function handler(req: Request): Promise<Response> {

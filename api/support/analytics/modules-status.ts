@@ -1,7 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'] }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'https://gfsupport-production.up.railway.app'
 

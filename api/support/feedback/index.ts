@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 // Update learning stats for today
 async function updateDailyStats(sql: any, rating: string, orgId: string) {

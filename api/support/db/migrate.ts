@@ -1,7 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 // Migration API v2.1 - SLA Categories
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 export default async function handler(req: Request): Promise<Response> {

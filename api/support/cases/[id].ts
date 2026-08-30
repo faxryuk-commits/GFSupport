@@ -3,7 +3,7 @@ import { getSQL, json } from '../lib/db.js'
 import { formatWorkDateTime } from '../lib/work-time.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 const VALID_STATUSES = ['detected', 'in_progress', 'waiting', 'blocked', 'resolved', 'closed', 'recurring']

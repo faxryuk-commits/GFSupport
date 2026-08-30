@@ -22,7 +22,7 @@ import { METRIC_REGISTRY } from './metrics/index.js'
 import type { MetricResult, ResolvedPeriod } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
   maxDuration: 60,
 }
 

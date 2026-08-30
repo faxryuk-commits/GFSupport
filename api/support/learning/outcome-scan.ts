@@ -12,7 +12,7 @@
 import { getSQL, json, getOpenAIKey } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'], maxDuration: 60 }
+export const config = { runtime: 'edge', regions: ['fra1'], maxDuration: 60 }
 
 const ORG = process.env.SLA_GUARD_ORG || 'org_delever'
 

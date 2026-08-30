@@ -5,7 +5,7 @@ import { runBroadcastWorker } from '../lib/broadcast-runner.js'
 
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['fra1'],
   maxDuration: 60,
 }
 

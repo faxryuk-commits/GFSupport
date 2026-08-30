@@ -3,7 +3,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
 import { amoGet, fetchContacts, cf, sourceFromLead, marketByPipeline, fetchStatuses, stageKeyByStatusName, isAllowedPipeline, agentByAmoUser, pipelineForMarket } from '../lib/sales-amo.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Разовый перенос истории AmoCRM. Не крон: запускается руками, постранично,

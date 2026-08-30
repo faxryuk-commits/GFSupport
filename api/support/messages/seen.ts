@@ -2,7 +2,7 @@ import { identifySender } from '../lib/identification.js'
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Mark messages as seen by support staff

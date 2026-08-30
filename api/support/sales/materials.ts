@@ -3,7 +3,7 @@ import { extractAgentContext } from '../lib/auth.js'
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 import { salesId } from '../lib/sales-schema.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Материалы к предложению: презентации, кейсы, видео.

@@ -3,7 +3,7 @@ import { getSQL, json } from '../lib/db.js'
 import { workDayKey } from '../lib/work-time.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 // Patterns for detecting commitments/promises in messages

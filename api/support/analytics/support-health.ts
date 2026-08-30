@@ -3,7 +3,7 @@ import { getSQL, json } from '../lib/db.js'
 import { ensureChannelSourceColumn } from '../lib/ensure-taxonomy.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 /**

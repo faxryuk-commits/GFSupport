@@ -23,7 +23,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { assertCron } from '../lib/cron-auth.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const ORG = process.env.ERROR_RESOLVER_ORG || 'org_delever'
 const WINDOW_HOURS = 6          // окно анализа ошибок

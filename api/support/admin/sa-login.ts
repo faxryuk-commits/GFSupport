@@ -3,7 +3,7 @@ import { writeAuditLog, getClientIP } from '../lib/audit.js'
 import { verifyPassword, hashPassword } from '../lib/password.js'
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {

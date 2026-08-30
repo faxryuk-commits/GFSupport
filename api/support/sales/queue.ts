@@ -5,7 +5,7 @@ import { ensureSalesSchema, salesId } from '../lib/sales-schema.js'
 import { missingFields } from '../lib/sales-fields.js'
 import { pipelineForMarket } from '../lib/sales-amo.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Очередь дня — то, с чего сейлз начинает работу.

@@ -4,7 +4,7 @@ import { getSQL, json } from '../lib/db.js'
 export const config = {
   runtime: 'edge',
   maxDuration: 120,
-  regions: ['iad1'],
+  regions: ['fra1'],
 }
 
 const TOGETHER_EMBED_API = 'https://api.together.xyz/v1/embeddings'

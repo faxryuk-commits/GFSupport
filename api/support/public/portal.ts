@@ -1,6 +1,6 @@
 import { getSQL, json, corsHeaders } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Клиентский статус-портал — публичная страница по токену из группы.

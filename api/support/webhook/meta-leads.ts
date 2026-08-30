@@ -8,7 +8,7 @@ import { handleMetaMessaging } from '../lib/meta-messages.js'
 import { handleMetaComments } from '../lib/meta-comments.js'
 import { handleCommentByAgent } from '../lib/meta-comment-agent.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Единый вход для всего, что шлёт Meta: заявки лид-форм, директ Instagram

@@ -6,7 +6,7 @@ import { ensureMetaSchema, readMetaConfig, invalidateMetaConfig,
 import { logEvent } from '../lib/system-journal.js'
 import { importMetaHistory } from '../lib/meta-messages.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Подключение Instagram и Facebook из настроек системы.

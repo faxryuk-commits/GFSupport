@@ -5,7 +5,7 @@ import { ensureSalesSchema } from '../lib/sales-schema.js'
 import { resolveRegion } from '../lib/sales-amo.js'
 import { acceptLead } from '../lib/sales-intake.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Лиды — входящие обращения из всех каналов.

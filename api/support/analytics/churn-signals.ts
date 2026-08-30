@@ -21,7 +21,7 @@ import type { ChurnSignalMatch } from '../lib/churn-signals.js'
 import { parsePeriodParam, resolvePeriod } from './metrics/index.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 interface MessageRow {

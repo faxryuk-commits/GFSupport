@@ -3,7 +3,7 @@ import { getSQL, json } from '../lib/db.js'
 
 export const config = {
   runtime: 'edge',
-  regions: ['iad1'],
+  regions: ['fra1'],
 }
 
 // Uzbek language patterns - both Latin and Cyrillic

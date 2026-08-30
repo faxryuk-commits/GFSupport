@@ -39,7 +39,7 @@ import type { MetricResult, ResolvedPeriod } from './metrics/index.js'
 import { formatWorkDate } from '../lib/work-time.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
   maxDuration: 300,
 }
 

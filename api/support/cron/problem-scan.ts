@@ -23,7 +23,7 @@
 
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const ORG = 'org_delever'
 const OPENAI_API = 'https://api.openai.com/v1/chat/completions'

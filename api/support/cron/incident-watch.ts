@@ -3,7 +3,7 @@ import { assertCron, cronSecured } from '../lib/cron-auth.js'
 import { ensureErrorFeedSchema, indexFeed, detectSpikes } from '../lib/error-feed.js'
 import { logEvent } from '../lib/system-journal.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Сводка состояния систем — раз в 2 минуты.

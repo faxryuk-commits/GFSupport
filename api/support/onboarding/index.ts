@@ -5,7 +5,7 @@ import { ensureOnboardingSchema, obId, addParticipant } from '../lib/onboarding-
 import { sendNotification } from '../lib/notifications.js'
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'edge', regions: ['fra1'],
 }
 
 /**

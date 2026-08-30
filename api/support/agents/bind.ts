@@ -9,7 +9,7 @@
 import { getRequestOrgId } from '../lib/org.js'
 import { getSQL, json } from '../lib/db.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 export default async function handler(req: Request): Promise<Response> {
   // CORS preflight

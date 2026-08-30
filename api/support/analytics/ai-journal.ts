@@ -1,7 +1,7 @@
 import { getSQL, json } from '../lib/db.js'
 import { getRequestOrgId } from '../lib/org.js'
 
-export const config = { runtime: 'edge', regions: ['iad1'] }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 interface FeedItem {
   actor: 'ai_agent' | 'sla_guard'

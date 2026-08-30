@@ -4,7 +4,7 @@ import { ensureSalesSchema, salesId, normPhone } from '../lib/sales-schema.js'
 import { acceptLead } from '../lib/sales-intake.js'
 import { stopNurtureOnReply, logAssistant } from '../lib/sales-assistant.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Мост переписки: сообщения из Telegram-бота сайта и чата delever.io.

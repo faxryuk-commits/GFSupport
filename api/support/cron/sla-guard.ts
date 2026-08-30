@@ -24,7 +24,7 @@ import { sendNotification, escalateStaleNotifications } from '../lib/notificatio
 import { notifyClientStuck } from '../lib/onboarding-alerts.js'
 import { assertCron } from '../lib/cron-auth.js'
 
-export const config = { runtime: 'edge' }
+export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const ORG = process.env.SLA_GUARD_ORG || 'org_delever'
 // Безопасный rollout: по умолчанию SHADOW (считает + пишет sla_state, НЕ шлёт алерты).
