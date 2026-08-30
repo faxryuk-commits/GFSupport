@@ -77,6 +77,8 @@ interface QualifierInput {
 }
 
 interface LlmVerdict {
+  /** Кто пишет: от этого зависит, уместна ли квалификация вообще. */
+  who: 'prospect' | 'existing_client' | 'job_seeker' | 'partner' | 'personal' | 'spam' | 'unclear'
   intent: 'answering' | 'question' | 'wants_call' | 'price' | 'not_interested' | 'other'
   extracted: Record<string, string>
   reply: string | null
@@ -240,7 +242,47 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
     })
   }
 
-  // 2. Передача человеку: цена, звонок, отказ — или всё выяснено
+  // 2. Кто перед нами — решает всё. В директ бренда пишут не только
+  //    покупатели: друзья основателя, соискатели, действующие клиенты с
+  //    проблемами, партнёры. Квалифицировать можно только потенциального
+  //    клиента; остальным — человеческий ответ и передача, а в личное агент
+  //    не суётся вовсе
+  if (verdict.who === 'personal' || verdict.who === 'spam') {
+    if (verdict.who === 'personal') {
+      await notifyHandover(sql, orgId, lead, 'personal', input.inboundText)
+    }
+    await logAssistant(sql, orgId, {
+      leadId: lead.id, accountId: lead.account_id, action: 'qualify_silent', status: 'skip',
+      message: verdict.who === 'personal'
+        ? 'похоже на личное сообщение — агент не вмешивается, сейлз уведомлён'
+        : 'похоже на спам — не отвечаем',
+    })
+    return
+  }
+
+  if (['existing_client', 'job_seeker', 'partner'].includes(verdict.who)) {
+    // Один вежливый ответ и передача человеку — без всякой квалификации
+    await notifyHandover(sql, orgId, lead, verdict.who, input.inboundText)
+    const reply0 = String(verdict.reply || '').trim()
+    if (reply0 && !humanActive && !justReplied && mode === 'auto') {
+      const ok = await deliver(sql, orgId, channel, reply0)
+      await logAssistant(sql, orgId, {
+        leadId: lead.id, accountId: lead.account_id,
+        action: ok ? 'qualify_sent' : 'qualify_failed',
+        channel: channel?.source || null, message: reply0,
+        status: ok ? 'sent' : 'error',
+      })
+    } else if (reply0 && mode === 'draft') {
+      await logAssistant(sql, orgId, {
+        leadId: lead.id, accountId: lead.account_id, action: 'qualify_draft',
+        channel: channel?.source || null, message: reply0, status: 'draft',
+      })
+    }
+    return
+  }
+
+  // Потенциальный клиент (или пока неясно): цена, звонок, отказ — или всё
+  // выяснено — зовём человека
   const handover = ['wants_call', 'price', 'not_interested'].includes(verdict.intent)
     || verdict.done || missing.length === 0
   if (handover) {
@@ -337,6 +379,10 @@ async function notifyHandover(
   const reason = intent === 'wants_call' ? 'клиент просит звонок'
     : intent === 'price' ? 'клиент спрашивает про цену'
     : intent === 'not_interested' ? 'клиент отказался'
+    : intent === 'personal' ? 'похоже на личное сообщение — ответьте сами'
+    : intent === 'existing_client' ? 'пишет действующий клиент — возможно, вопрос поддержки'
+    : intent === 'job_seeker' ? 'человек спрашивает про работу'
+    : intent === 'partner' ? 'вопрос о партнёрстве или сотрудничестве'
     : 'квалификация собрана'
   await logAssistant(sql, orgId, {
     leadId: lead.id, accountId: lead.account_id, action: 'qualify_handover',
@@ -392,7 +438,21 @@ export async function askModel(
     'Ты — ассистент отдела продаж Delever, платформы автоматизации доставки для ресторанов',
     '(приём заказов через сайт/бот/приложение, интеграции с кассами iiko, RKeeper, Jowi, Poster,',
     'с агрегаторами Yandex, Wolt, Uzum, свои курьеры, аналитика).',
-    'Твоя работа: вести живой разговор, как хороший менеджер, и по ходу выяснять факты о заведении.',
+    'Твоя работа: сначала понять, КТО пишет, и только потом действовать.',
+    'В директ бренда пишут разные люди: потенциальные клиенты-рестораторы (prospect), действующие',
+    'клиенты с вопросами и проблемами (existing_client), соискатели работы (job_seeker), партнёры,',
+    'поставщики и блогеры (partner), друзья и личные знакомые команды (personal), спам (spam).',
+    'Не считай собеседника клиентом по умолчанию. Пока непонятно (unclear) — короткое приветствие',
+    'и нейтральное «чем можем помочь?»; слова «заведение», «ресторан», «доставка» не употребляй,',
+    'пока собеседник сам не обозначил тему.',
+    'existing_client: если в базе знаний есть точный ответ — дай его; технических советов из головы',
+    'НЕ давай никогда («перезапустите», «проверьте интернет» — запрещено, если этого нет в выдержках).',
+    'При проблеме или аварии: сочувствие одной фразой + «передаю команде прямо сейчас» — и всё.',
+    'job_seeker: тепло ответь, что передашь менеджеру, — не квалифицируй.',
+    'partner: поблагодари, скажи, что передашь менеджеру, — не квалифицируй.',
+    'personal и spam: reply = null, отвечать не нужно.',
+    'И только с prospect веди разговор менеджера по продажам: живой диалог, по ходу которого',
+    'выясняются факты о заведении.',
     'Тон: пиши как живой человек в мессенджере, а не как скрипт. Коротко, тепло, простыми словами,',
     'без канцелярита («что касается», «данный», «пожалуйста, уточните» — под запретом).',
     'Отражай язык и манеру клиента: пишет по-узбекски — отвечай по-узбекски, пишет коротко и',
@@ -417,7 +477,8 @@ export async function askModel(
     'О возможностях продукта: утверждай ТОЛЬКО то, что есть в блоке «Из базы знаний» или в профиле',
     'выше. Если ответа там нет — скажи «уточню у менеджера, он подскажет точно» и НИКОГДА не',
     'утверждай, что функции нет: отсутствие в выдержке не значит отсутствие в продукте.',
-    'Верни строго JSON: {"intent": "answering|question|wants_call|price|not_interested|other",',
+    'Верни строго JSON: {"who": "prospect|existing_client|job_seeker|partner|personal|spam|unclear",',
+    '"intent": "answering|question|wants_call|price|not_interested|other",',
     '"extracted": {"pos": "...", "points": "...", "orders_per_day": "...", "aggregators": "...",',
     '"delivery_type": "...", "city": "..."} — только то, что клиент реально сообщил, иначе пропусти ключ.',
     'Семантика полей: pos — НАЗВАНИЕ кассовой системы (iiko, RKeeper, Jowi, Poster...), никогда не число;',
@@ -460,6 +521,8 @@ export async function askModel(
     const parsed = JSON.parse(data?.choices?.[0]?.message?.content || 'null')
     if (!parsed || typeof parsed !== 'object') return null
     return {
+      who: ['prospect', 'existing_client', 'job_seeker', 'partner', 'personal', 'spam', 'unclear']
+        .includes(parsed.who) ? parsed.who : 'unclear',
       intent: ['answering', 'question', 'wants_call', 'price', 'not_interested', 'other']
         .includes(parsed.intent) ? parsed.intent : 'other',
       extracted: parsed.extracted && typeof parsed.extracted === 'object' ? parsed.extracted : {},
