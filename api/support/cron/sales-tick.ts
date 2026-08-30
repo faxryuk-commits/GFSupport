@@ -135,8 +135,10 @@ export default async function handler(req: Request): Promise<Response> {
         AND l.status IN ('new', 'assigned', 'nurture')
         AND m.is_from_client = true
         -- вебхук-ветке даём отработать самой; старше суток не трогаем —
-        -- окно ответа Meta всё равно закрыто, а воскрешать древность незачем
-        AND m.created_at < NOW() - INTERVAL '3 minutes'
+        -- окно ответа Meta всё равно закрыто, а воскрешать древность незачем.
+        -- Минута, не больше: каждый новый пинг клиента сдвигает этот таймер,
+        -- и с тремя минутами частые «ау, что молчишь» замораживали диалог
+        AND m.created_at < NOW() - INTERVAL '60 seconds'
         AND m.created_at > NOW() - INTERVAL '20 hours'
         -- тишина человека истекла: за два часа исходящих от людей не было
         AND NOT EXISTS (

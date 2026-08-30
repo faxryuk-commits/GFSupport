@@ -130,11 +130,13 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
   ` as any[]
   if (!lead) return
 
-  // Сколько агент уже написал этому лиду — и не писал ли только что:
-  // на очередь быстрых сообщений клиента отвечаем один раз, а не залпом
+  // Сколько агент уже написал этому лиду — и не писал ли только что.
+  // Интервал короткий: его задача — не ответить дважды на почти одновременные
+  // сообщения, а не выдерживать паузу. 90 секунд здесь замораживали диалог:
+  // клиент писал «что молчишь», попадая в интервал снова и снова
   const [sent] = await sql`
     SELECT COUNT(*)::int AS n,
-           MAX(created_at) FILTER (WHERE created_at > NOW() - INTERVAL '90 seconds') AS just_now
+           MAX(created_at) FILTER (WHERE created_at > NOW() - INTERVAL '25 seconds') AS just_now
     FROM sales_assistant_log
     WHERE org_id = ${orgId} AND lead_id = ${lead.id} AND action = 'qualify_sent'
   ` as any[]
