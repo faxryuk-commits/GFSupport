@@ -1,5 +1,7 @@
 import { ensureSalesSchema, salesId } from './sales-schema.js'
 import { acceptLead, logChatMessage } from './sales-intake.js'
+import { stopNurtureOnReply } from './sales-assistant.js'
+import { runQualifier } from './sales-qualifier.js'
 import { accountForIg, accountForPage, readMetaAccounts, readMetaConfig } from './meta-config.js'
 
 /**
@@ -157,7 +159,7 @@ export async function handleMetaMessaging(
       // Диалог = один лид: external_id это id собеседника, поэтому второе
       // сообщение не создаёт вторую карточку, а дописывается в историю
       const [existing] = await sql`
-        SELECT l.id, l.account_id, l.name FROM sales_leads l
+        SELECT l.id, l.account_id, l.name, l.status FROM sales_leads l
         JOIN sales_sources s ON s.id = l.source_id
         WHERE l.org_id = ${orgId} AND s.key = ${sourceKey} AND l.external_id = ${senderId}
         LIMIT 1
@@ -189,6 +191,15 @@ export async function handleMetaMessaging(
           UPDATE sales_leads SET text = ${fullText}, raw = ${JSON.stringify(ev)}::jsonb
           WHERE id = ${existing.id}
         `
+        // Ответ в директ останавливает прогрев так же, как ответ боту сайта:
+        // до сих пор прогреватель продолжал слать касания поверх живого
+        // разговора — эту остановку знал только приёмник Telegram
+        if (existing.status === 'nurture') {
+          await stopNurtureOnReply(sql, orgId, existing.id, fullText.slice(0, 500))
+        }
+        runQualifier(sql, orgId, {
+          leadId: existing.id, channelId, inboundText: fullText,
+        }).catch(() => {})
         continue
       }
 
@@ -204,6 +215,11 @@ export async function handleMetaMessaging(
       })
       if (result.ok && result.account_id) {
         await logChatMessage(sql, orgId, result.account_id, 'in', fullText, 'клиент')
+        if (result.lead_id) {
+          runQualifier(sql, orgId, {
+            leadId: result.lead_id, channelId, inboundText: fullText,
+          }).catch(() => {})
+        }
         // Привязка канала к аккаунту: по ней карточка сделки показывает
         // переписку и умеет отвечать прямо оттуда
         await sql`

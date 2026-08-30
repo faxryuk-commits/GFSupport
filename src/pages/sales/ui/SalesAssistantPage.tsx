@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiGet, apiPost } from '@/shared/services/api.service'
+import { apiGet, apiPut, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Kpis, PageShell, Skeleton, fmtDateTime, useAutoRefresh, Btn } from './kit'
 
 /**
@@ -16,10 +16,18 @@ const ACTION_LABEL: Record<string, string> = {
   nurture_failed: 'не отправилось',
   draft_failed: 'не смог написать',
   handover: 'передано сейлзу',
+  inbox_lead: 'новое обращение',
+  qualify_sent: 'квалификатор ответил',
+  qualify_draft: 'квалификатор: черновик',
+  qualify_extracted: 'выяснены факты',
+  qualify_handover: 'квалификатор зовёт сейлза',
+  qualify_failed: 'квалификатор не смог',
 }
 const ACTION_TONE: Record<string, string> = {
   nurture_sent: 'green', nurture_draft: 'amber', nurture_failed: 'red',
   draft_failed: 'red', handover: 'blue',
+  qualify_sent: 'violet', qualify_draft: 'amber', qualify_extracted: 'green',
+  qualify_handover: 'blue', qualify_failed: 'red', inbox_lead: 'gray',
 }
 
 export function SalesAssistantPage() {
@@ -27,6 +35,20 @@ export function SalesAssistantPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  // Режим квалификатора: auto — пишет сам, draft — только черновики, off — молчит
+  const [qMode, setQMode] = useState<string | null>(null)
+
+  useEffect(() => {
+    apiGet<any>('/settings', false)
+      .then(d => setQMode(String(d?.settings?.sales_qualifier_mode || 'auto')))
+      .catch(() => setQMode('auto'))
+  }, [])
+
+  const saveQMode = async (m: string) => {
+    setQMode(m)
+    try { await apiPut('/settings', { settings: { sales_qualifier_mode: m } }) }
+    catch { setError('Режим не сохранился — попробуйте ещё раз') }
+  }
 
   const load = useCallback(() => {
     apiGet<any>('/sales/assistant', false)
@@ -54,12 +76,34 @@ export function SalesAssistantPage() {
 
   return (
     <PageShell header={
-      <div>
-        <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">ИИ-ассистент</h1>
-        <p className="text-[12.5px] text-gray-500 mt-0.5">
-          Пишет тем, до кого не дошли руки: ночные заявки и лиды без ответа. Как только клиент
-          отвечает — цепочка останавливается и лид возвращается сейлзу с нормативом 15 минут.
-        </p>
+      <div className="flex items-start gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight">ИИ-ассистент</h1>
+          <p className="text-[12.5px] text-gray-500 mt-0.5">
+            Прогреватель пишет тем, кто молчит. Квалификатор отвечает тем, кто написал:
+            выясняет кассу, филиалы и поток заказов, пересчитывает балл и зовёт сейлза,
+            когда клиент готов говорить о деле.
+          </p>
+        </div>
+        {/* Квалификатор можно осадить, не трогая прогрев: черновики или тишина */}
+        <div className="flex-none">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+            Квалификатор
+          </div>
+          <div className="flex gap-1">
+            {([['auto', 'Сам пишет'], ['draft', 'Черновики'], ['off', 'Выключен']] as const).map(([m, label]) => (
+              <button key={m} onClick={() => saveQMode(m)}
+                title={m === 'auto' ? 'Отвечает клиентам сам и заполняет квалификацию'
+                  : m === 'draft' ? 'Готовит ответы в журнал, отправляет человек'
+                  : 'Не пишет и не извлекает — полная тишина'}
+                className={`text-[11.5px] px-2.5 py-1 rounded-lg border ${
+                  qMode === m ? 'bg-violet-600 border-violet-600 text-white'
+                              : 'border-gray-300 text-gray-600 hover:border-violet-400'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     }>
 

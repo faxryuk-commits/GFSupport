@@ -3,6 +3,7 @@ import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { ensureSalesSchema, salesId, normPhone } from '../_lib/sales-schema.js'
 import { acceptLead } from '../_lib/sales-intake.js'
 import { stopNurtureOnReply, logAssistant } from '../_lib/sales-assistant.js'
+import { runQualifier } from '../_lib/sales-qualifier.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -146,6 +147,12 @@ export default async function handler(req: Request): Promise<Response> {
       leadId, accountId, action: 'inbox_lead', channel: source,
       message: text.slice(0, 300), status: 'received',
     })
+  }
+
+  // 6. Агент-квалификатор: отвечает на входящее и выясняет кассу, филиалы,
+  //    поток заказов. Ждать его нельзя — Telegram ресендит вебхук по таймауту
+  if (leadId) {
+    runQualifier(sql, orgId, { leadId, channelId: channel.id, inboundText: text }).catch(() => {})
   }
 
   return json({ ok: true, channelId: channel.id, leadId, accountId, created: !existingLead })

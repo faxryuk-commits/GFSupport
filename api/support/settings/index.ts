@@ -24,7 +24,9 @@ const DEFAULT_SETTINGS = {
   escalation_hours: 24,
   ai_model: 'gpt-4o-mini',
   whisper_language: 'ru',
-  sla_guard_live: false, // SLA-страж: true = шлёт алерты (LIVE), false = только наблюдает (SHADOW)
+  sla_guard_live: false,
+  // Агент-квалификатор в продажах: auto — пишет сам, draft — черновики в журнал, off — молчит
+  sales_qualifier_mode: 'auto', // SLA-страж: true = шлёт алерты (LIVE), false = только наблюдает (SHADOW)
 }
 
 export default async function handler(req: Request): Promise<Response> {
