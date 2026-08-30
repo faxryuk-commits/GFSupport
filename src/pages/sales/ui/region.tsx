@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMarket } from '@/shared/hooks/useMarket'
+import { apiGet } from '@/shared/services/api.service'
 
 /**
  * Регион — фильтр самого раздела, а не всей системы.
@@ -14,6 +15,27 @@ import { useMarket } from '@/shared/hooks/useMarket'
 export const REGION_NAMES: Record<string, string> = {
   uz: 'Узбекистан', kz: 'Казахстан', kg: 'Кыргызстан', az: 'Азербайджан',
   ge: 'Грузия', cy: 'Кипр', ae: 'ОАЭ',
+}
+
+/**
+ * Объём живой работы по регионам — для выпадашки. Выигранное и проигранное
+ * не входит: фильтр отвечает «где сейчас работа», а не «где была».
+ * Кэш на минуту общий для всех переключателей на странице.
+ */
+type RegionCounts = Record<string, { leads: number; deals: number }>
+let countsCache: { at: number; data: RegionCounts } | null = null
+let countsInflight: Promise<RegionCounts> | null = null
+
+function loadRegionCounts(): Promise<RegionCounts> {
+  if (countsCache && Date.now() - countsCache.at < 60_000) return Promise.resolve(countsCache.data)
+  if (countsInflight) return countsInflight
+  countsInflight = apiGet<{ regions: RegionCounts }>('/sales/funnel?action=region-counts', false)
+    .then(d => {
+      countsCache = { at: Date.now(), data: d.regions || {} }
+      return countsCache.data
+    })
+    .finally(() => { countsInflight = null })
+  return countsInflight
 }
 
 const key = (scope: string) => `sales_region_${scope}`
@@ -36,6 +58,18 @@ export function useRegion(scope: string): string {
   return region
 }
 
+/** «12 · 5» — лиды и сделки в работе; подробности в подсказке. */
+const CountCell = ({ c }: { c?: { leads: number; deals: number } | null }) => {
+  if (!c || (!c.leads && !c.deals)) return null
+  return (
+    <span
+      title={`${c.leads} лидов · ${c.deals} сделок в работе`}
+      className="text-[11px] tabular-nums text-gray-400 flex-none">
+      {c.leads} · {c.deals}
+    </span>
+  )
+}
+
 /** Переключатель региона в шапке раздела. */
 export const RegionBadge = ({ scope }: { scope: string }) => {
   const { markets } = useMarket()
@@ -44,6 +78,13 @@ export const RegionBadge = ({ scope }: { scope: string }) => {
   const box = useRef<HTMLDivElement>(null)
   const menu = useRef<HTMLDivElement>(null)
   const [rect, setRect] = useState<{ top: number; right: number } | null>(null)
+  const [counts, setCounts] = useState<RegionCounts | null>(countsCache?.data || null)
+
+  // Количества тянем в момент открытия: пока меню закрыто, они не нужны
+  useEffect(() => {
+    if (!open) return
+    loadRegionCounts().then(setCounts).catch(() => {})
+  }, [open])
 
   const place = useCallback(() => {
     const el = box.current
@@ -106,18 +147,24 @@ export const RegionBadge = ({ scope }: { scope: string }) => {
         <div
           ref={menu}
           style={{ position: 'fixed', top: rect.top, right: rect.right, zIndex: 60 }}
-          className="w-52 bg-white border border-gray-200 rounded-lg shadow-xl py-1"
+          className="w-60 bg-white border border-gray-200 rounded-lg shadow-xl py-1"
         >
           <button onMouseDown={e => { e.preventDefault(); choose('') }}
-            className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
+            className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50
+                        flex items-baseline justify-between gap-2 ${
               !region ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
-            Все регионы
+            <span>Все регионы</span>
+            <CountCell c={counts && Object.values(counts).reduce(
+              (a, x) => ({ leads: a.leads + x.leads, deals: a.deals + x.deals }),
+              { leads: 0, deals: 0 })} />
           </button>
           {list.map(code => (
             <button key={code} onMouseDown={e => { e.preventDefault(); choose(code) }}
-              className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50 ${
+              className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50
+                          flex items-baseline justify-between gap-2 ${
                 region === code ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
-              {REGION_NAMES[code] || code.toUpperCase()}
+              <span>{REGION_NAMES[code] || code.toUpperCase()}</span>
+              <CountCell c={counts?.[code]} />
             </button>
           ))}
         </div>,

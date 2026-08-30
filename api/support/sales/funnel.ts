@@ -31,6 +31,34 @@ export default async function handler(req: Request): Promise<Response> {
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
+  // Счётчики для выпадашки регионов: сколько лидов и сделок в работе.
+  // Выигранное и проигранное не считаем — фильтру нужен объём живой работы,
+  // а не историческая статистика
+  if (req.method === 'GET' && url.searchParams.get('action') === 'region-counts') {
+    const [leadRows, dealRows] = await sql.transaction([
+      sql`
+        SELECT COALESCE(market_id, '') AS m, COUNT(*)::int AS n FROM sales_leads
+        WHERE org_id = ${orgId} AND archived_at IS NULL
+          AND status IN ('new', 'assigned', 'nurture')
+        GROUP BY 1
+      `,
+      sql`
+        SELECT COALESCE(market_id, '') AS m, COUNT(*)::int AS n FROM sales_deals
+        WHERE org_id = ${orgId} AND archived_at IS NULL
+          AND won_at IS NULL AND lost_at IS NULL
+        GROUP BY 1
+      `,
+    ]) as any[]
+    const regions: Record<string, { leads: number; deals: number }> = {}
+    for (const r of leadRows) {
+      regions[r.m] = regions[r.m] || { leads: 0, deals: 0 }; regions[r.m].leads = r.n
+    }
+    for (const r of dealRows) {
+      regions[r.m] = regions[r.m] || { leads: 0, deals: 0 }; regions[r.m].deals = r.n
+    }
+    return json({ regions }, 200, 60)
+  }
+
   const market = await resolveRegion(sql, orgId, url)
   const pipeline = market ? `sales_${market}` : null
 

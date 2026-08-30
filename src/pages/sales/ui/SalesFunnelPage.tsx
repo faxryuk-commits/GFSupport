@@ -257,18 +257,20 @@ export function SalesFunnelPage() {
                     >
                       {/* Имя — вход в карточку: «кто это и что просит» нельзя
                           понять по строке из двух слов */}
-                      <button
-                        onClick={() => setOpenLead(l.id)}
-                        className="text-[12px] font-semibold text-gray-900 leading-tight text-left
-                                   hover:text-violet-700"
-                      >
-                        {l.contact_name || l.name}
-                      </button>
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          onClick={() => setOpenLead(l.id)}
+                          className="text-[12px] font-semibold text-gray-900 leading-tight text-left
+                                     hover:text-violet-700"
+                        >
+                          {l.contact_name || l.name}
+                        </button>
+                        {!region && <MarketFlag market={l.market_id} />}
+                      </div>
                       {l.contact_name && l.name !== l.contact_name && (
                         <div className="text-[10.5px] text-gray-500">{l.name}</div>
                       )}
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {!region && <MarketFlag market={l.market_id} />}
                         {KIND_LABEL[l.lead_kind || ''] && (
                           <Chip tone="violet">{KIND_LABEL[l.lead_kind || '']}</Chip>
                         )}
@@ -389,10 +391,12 @@ export function SalesFunnelPage() {
                           className="text-[12px] font-semibold text-gray-900 hover:text-blue-600 text-left leading-tight">
                           {d.account || d.title}
                         </button>
-                        <Chip tone={days(d.stage_since) > 14 ? 'red' : 'gray'}>{days(d.stage_since)} дн</Chip>
+                        <span className="flex items-center gap-1.5 flex-none">
+                          {!region && <MarketFlag market={d.market_id} />}
+                          <Chip tone={days(d.stage_since) > 14 ? 'red' : 'gray'}>{days(d.stage_since)} дн</Chip>
+                        </span>
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {!region && <MarketFlag market={d.market_id} />}
                         {[d.city, d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day]
                           .filter(Boolean).map(f => <Chip key={String(f)} tone="gray">{f}</Chip>)}
                         {d.doc_opens ? <Chip tone="green">КП открыто {d.doc_opens}×</Chip> : null}
