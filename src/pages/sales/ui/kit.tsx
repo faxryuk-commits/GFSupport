@@ -469,6 +469,43 @@ export const Field = ({ label, value, onChange, options, placeholder, hint, type
   </label>
 )
 
+/**
+ * Круглый флажок рынка. В режиме «Все регионы» колонки перемешаны, и без
+ * него не понять, чья карточка — а звонить в Алматы по узбекскому скрипту
+ * неловко. Флаги нарисованы градиентами, а не эмодзи: на Windows эмодзи
+ * флагов рендерятся буквами. Название страны — в подсказке при наведении.
+ */
+const FLAG_BG: Record<string, string> = {
+  uz: 'linear-gradient(180deg,#0099b5 0 31%,#ce1126 31% 36%,#ffffff 36% 64%,#ce1126 64% 69%,#1eb53a 69%)',
+  kz: 'radial-gradient(circle at 50% 44%,#fec50c 0 29%,#00afca 30%)',
+  az: 'linear-gradient(180deg,#0092bc 0 33%,#e4002b 33% 66%,#00af66 66%)',
+  kg: 'radial-gradient(circle at 50% 44%,#ffd700 0 29%,#e8112d 30%)',
+  ge: 'linear-gradient(90deg,transparent 0 41%,#dA291c 41% 59%,transparent 59%),' +
+      'linear-gradient(180deg,transparent 0 41%,#da291c 41% 59%,transparent 59%),' +
+      'linear-gradient(#ffffff,#ffffff)',
+  cy: 'radial-gradient(circle at 50% 42%,#d57800 0 22%,transparent 23%),linear-gradient(#ffffff,#ffffff)',
+  ae: 'linear-gradient(90deg,#ce1126 0 30%,transparent 30%),' +
+      'linear-gradient(180deg,#00732f 0 33%,#ffffff 33% 66%,#000000 66%)',
+}
+const FLAG_NAME: Record<string, string> = {
+  uz: 'Узбекистан', kz: 'Казахстан', az: 'Азербайджан', kg: 'Кыргызстан',
+  ge: 'Грузия', cy: 'Кипр', ae: 'ОАЭ',
+}
+
+export function MarketFlag({ market }: { market?: string | null }) {
+  const key = (market || '').toLowerCase()
+  if (!FLAG_BG[key]) return null
+  return (
+    <span
+      title={FLAG_NAME[key] || key.toUpperCase()}
+      aria-label={FLAG_NAME[key] || key}
+      className="inline-block w-[14px] h-[14px] rounded-full flex-none self-center
+                 border border-black/10 shadow-sm"
+      style={{ background: FLAG_BG[key] }}
+    />
+  )
+}
+
 export const Btn = ({ kind = 'ghost', children, ...rest }: any) => (
   <button {...rest}
     className={`text-[12.5px] px-3 py-1.5 rounded-lg disabled:opacity-50 ${

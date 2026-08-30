@@ -109,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Обращения: срез по каждой колонке входа, без архива
     sql`
       SELECT * FROM (
-        SELECT l.id, l.name, l.contact_name, l.phone, l.city, l.status, l.icp_score,
+        SELECT l.id, l.name, l.contact_name, l.phone, l.city, l.status, l.icp_score, l.market_id,
                l.sla_due_at, l.first_touch_at, l.created_at, l.text, l.lead_kind,
                l.nurture_step, l.nurture_next_at,
                s.label AS source, ag.name AS agent_name,
@@ -136,7 +136,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Сделки: срез по каждому этапу
     sql`
       SELECT * FROM (
-        SELECT d.id, d.title, d.monthly_amount, d.currency, d.city, d.pos, d.points,
+        SELECT d.id, d.title, d.monthly_amount, d.currency, d.city, d.pos, d.points, d.market_id,
                d.orders_per_day, d.tariff, d.next_step, d.next_step_at, d.stage_since,
                d.stalled_at, d.updated_at, a.name AS account, ag.name AS owner_name,
                (SELECT c.phone FROM sales_contacts c WHERE c.account_id = d.account_id

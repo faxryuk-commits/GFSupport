@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { Chip, PageShell, Skeleton, money, moneyList, fmtDateTime, slaTone, slaText,
-         useAutoRefresh, Drawer, FilterBar , workMorningIn } from './kit'
+         useAutoRefresh, Drawer, FilterBar , workMorningIn, MarketFlag } from './kit'
 import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
@@ -22,6 +22,7 @@ import { SalesLeadPage } from './SalesLeadPage'
 
 interface Lead {
   id: string; name: string; contact_name: string | null; phone: string | null
+  market_id: string | null
   city: string | null; status: string; icp_score: number | null
   sla_due_at: string | null; first_touch_at: string | null; created_at: string
   text: string | null; lead_kind: string | null; source: string | null
@@ -34,7 +35,7 @@ interface Deal {
   orders_per_day: string | null; tariff: string | null; next_step: string | null
   next_step_at: string | null; stage_since: string; stalled_at: string | null
   updated_at: string | null; owner_name: string | null; phone: string | null
-  doc_opens: number | null; stage_key: string
+  doc_opens: number | null; stage_key: string; market_id?: string | null
   won_at?: string | null; lost_at?: string | null; lost_reason?: string | null
 }
 
@@ -267,6 +268,7 @@ export function SalesFunnelPage() {
                         <div className="text-[10.5px] text-gray-500">{l.name}</div>
                       )}
                       <div className="flex flex-wrap gap-1 mt-1">
+                        {!region && <MarketFlag market={l.market_id} />}
                         {KIND_LABEL[l.lead_kind || ''] && (
                           <Chip tone="violet">{KIND_LABEL[l.lead_kind || '']}</Chip>
                         )}
@@ -390,6 +392,7 @@ export function SalesFunnelPage() {
                         <Chip tone={days(d.stage_since) > 14 ? 'red' : 'gray'}>{days(d.stage_since)} дн</Chip>
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1">
+                        {!region && <MarketFlag market={d.market_id} />}
                         {[d.city, d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day]
                           .filter(Boolean).map(f => <Chip key={String(f)} tone="gray">{f}</Chip>)}
                         {d.doc_opens ? <Chip tone="green">КП открыто {d.doc_opens}×</Chip> : null}
