@@ -6,6 +6,7 @@ import { logAssistant } from './sales-assistant.js'
 import { logChatMessage } from './sales-intake.js'
 import { tokenForPage } from './meta-config.js'
 import { tgSend } from './sales-bot.js'
+import { fetchRelevantDocs, getTogetherKey } from './ai-agent-data.js'
 
 type SQL = NeonQueryFunction<false, false>
 
@@ -30,6 +31,9 @@ type SQL = NeonQueryFunction<false, false>
  */
 
 const MODE_KEY = 'sales_qualifier_mode'
+// Не mini: квалификатор пишет живым клиентам, объём — десятки сообщений в
+// день, и цена модели тут ничто рядом с ценой топорного разговора
+const QUALIFIER_MODEL = 'gpt-4o'
 const MAX_MESSAGES = 6
 const HUMAN_QUIET_HOURS = 2
 /** Имя, под которым агент пишет в ленту: то же, что у комментариев. */
@@ -169,7 +173,25 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
   const key = await getOpenAIKey(orgId)
   if (!key) return
 
-  const verdict = await askModel(key, lead, history, input.inboundText, known.map(f => `${f.label}: ${knownOf(f.key)}`), missing.map(f => f.label))
+  // Знания системы, а не общий кругозор модели: на вопрос о продукте — куски
+  // из базы знаний (та же семантика, что у агента поддержки), плюс живое
+  // соц-доказательство из клиентской базы — сколько заведений уже работает
+  // на кассе, которую назвал клиент
+  const [docs, proof, leadCtx] = await Promise.all([
+    getTogetherKey(orgId)
+      .then(tk => fetchRelevantDocs(orgId, input.inboundText, tk))
+      .catch(() => [] as any[]),
+    socialProof(sql, knownOf('pos')),
+    sql`
+      SELECT s.label AS source, l.campaign FROM sales_leads l
+      LEFT JOIN sales_sources s ON s.id = l.source_id
+      WHERE l.id = ${lead.id} LIMIT 1
+    `.then((r: any[]) => r[0] || null).catch(() => null),
+  ])
+
+  const verdict = await askModel(key, lead, history, input.inboundText,
+    known.map(f => `${f.label}: ${knownOf(f.key)}`), missing.map(f => f.label),
+    { docs: docs as any[], proof, source: leadCtx?.source || null, campaign: leadCtx?.campaign || null })
   if (!verdict) return
 
   // 1. Факты сохраняем всегда — даже когда отвечать нельзя. Заполненное не
@@ -321,10 +343,38 @@ async function notifyHandover(
   } catch { /* уведомление — не повод уронить квалификацию */ }
 }
 
+/**
+ * Соц-доказательство из живой базы: заведения, уже работающие на кассе
+ * клиента. Врать модели не из чего — только реальный счёт; пусто, если кассу
+ * ещё не назвали или таких клиентов нет.
+ */
+async function socialProof(sql: SQL, pos: string): Promise<string | null> {
+  const p = (pos || '').trim()
+  if (!p) return null
+  try {
+    const [row] = await sql`
+      SELECT COUNT(*)::int AS n
+      FROM onboarding_brands b JOIN onboarding_pos_systems ps ON ps.id = b.pos_id
+      WHERE b.archived_at IS NULL AND LOWER(ps.name) = LOWER(${p})
+    ` as any[]
+    const n = Number(row?.n || 0)
+    if (!n) return null
+    return `у Delever уже есть действующие клиенты на кассе ${p} (${n} ${n === 1 ? 'бренд' : 'брендов'}) — интеграция обкатана`
+  } catch {
+    return null
+  }
+}
+
 export async function askModel(
   key: string, lead: any,
   history: Array<{ from: string; text: string }>,
   inbound: string, known: string[], missing: string[],
+  knowledge?: {
+    docs?: Array<{ title: string; excerpt: string }>
+    proof?: string | null
+    source?: string | null
+    campaign?: string | null
+  },
 ): Promise<LlmVerdict | null> {
   const system = [
     'Ты — ассистент отдела продаж Delever, платформы автоматизации доставки для ресторанов',
@@ -342,7 +392,10 @@ export async function askModel(
     'превращают разговор в допрос; выбери один, остальные задашь в следующих сообщениях;',
     'на языке клиента (русский, узбекский или азербайджанский — по его сообщениям);',
     'обращение на «вы»; никаких цен, скидок, сроков и обещаний — про цену отвечай, что менеджер',
-    'подберёт тариф и свяжется; не выдумывай возможностей продукта; не представляйся человеком, если спросят.',
+    'подберёт тариф и свяжется; не представляйся человеком, если спросят.',
+    'О возможностях продукта: утверждай ТОЛЬКО то, что есть в блоке «Из базы знаний» или в профиле',
+    'выше. Если ответа там нет — скажи «уточню у менеджера, он подскажет точно» и НИКОГДА не',
+    'утверждай, что функции нет: отсутствие в выдержке не значит отсутствие в продукте.',
     'Верни строго JSON: {"intent": "answering|question|wants_call|price|not_interested|other",',
     '"extracted": {"pos": "...", "points": "...", "orders_per_day": "...", "aggregators": "...",',
     '"delivery_type": "...", "city": "..."} — только то, что клиент реально сообщил, иначе пропусти ключ.',
@@ -354,20 +407,25 @@ export async function askModel(
   ].join(' ')
 
   const dialog = history.map(h => `${h.from}: ${h.text}`).join('\n') || '(истории нет)'
+  const docsBlock = (knowledge?.docs || []).slice(0, 3)
+    .map(d => `— ${d.title}: ${String(d.excerpt || '').slice(0, 350)}`).join('\n')
   const user = [
     `Клиент: ${lead.contact_name || lead.name}`,
+    knowledge?.source && `Откуда пришёл: ${knowledge.source}${knowledge.campaign ? `, кампания «${knowledge.campaign}»` : ''}`,
     `Уже известно:\n${known.length ? known.join('\n') : 'ничего'}`,
     `Ещё не выяснено:\n${missing.length ? missing.join('\n') : 'всё собрано'}`,
+    knowledge?.proof && `Факт для разговора (не преувеличивай и не называй чисел, если клиент не спросит): ${knowledge.proof}`,
+    docsBlock && `Из базы знаний Delever (отвечай о продукте ТОЛЬКО из этого, не выдумывай):\n${docsBlock}`,
     `Диалог:\n${dialog}`,
     `Новое сообщение клиента: ${inbound.slice(0, 500)}`,
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: QUALIFIER_MODEL,
         temperature: 0.4,
         max_tokens: 400,
         response_format: { type: 'json_object' },
