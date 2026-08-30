@@ -2,6 +2,7 @@ import { ensureSalesSchema, salesId } from './sales-schema.js'
 import { acceptLead, logChatMessage } from './sales-intake.js'
 import { stopNurtureOnReply } from './sales-assistant.js'
 import { runQualifier } from './sales-qualifier.js'
+import { waitUntil } from '@vercel/functions'
 import { accountForIg, accountForPage, readMetaAccounts, readMetaConfig } from './meta-config.js'
 
 /**
@@ -197,9 +198,9 @@ export async function handleMetaMessaging(
         if (existing.status === 'nurture') {
           await stopNurtureOnReply(sql, orgId, existing.id, fullText.slice(0, 500))
         }
-        runQualifier(sql, orgId, {
+        waitUntil(runQualifier(sql, orgId, {
           leadId: existing.id, channelId, inboundText: fullText,
-        }).catch(() => {})
+        }).catch(() => {}))
         continue
       }
 
@@ -216,9 +217,9 @@ export async function handleMetaMessaging(
       if (result.ok && result.account_id) {
         await logChatMessage(sql, orgId, result.account_id, 'in', fullText, 'клиент')
         if (result.lead_id) {
-          runQualifier(sql, orgId, {
+          waitUntil(runQualifier(sql, orgId, {
             leadId: result.lead_id, channelId, inboundText: fullText,
-          }).catch(() => {})
+          }).catch(() => {}))
         }
         // Привязка канала к аккаунту: по ней карточка сделки показывает
         // переписку и умеет отвечать прямо оттуда

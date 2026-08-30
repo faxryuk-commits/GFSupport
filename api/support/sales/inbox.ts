@@ -4,6 +4,7 @@ import { ensureSalesSchema, salesId, normPhone } from '../_lib/sales-schema.js'
 import { acceptLead } from '../_lib/sales-intake.js'
 import { stopNurtureOnReply, logAssistant } from '../_lib/sales-assistant.js'
 import { runQualifier } from '../_lib/sales-qualifier.js'
+import { waitUntil } from '@vercel/functions'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -152,7 +153,7 @@ export default async function handler(req: Request): Promise<Response> {
   // 6. Агент-квалификатор: отвечает на входящее и выясняет кассу, филиалы,
   //    поток заказов. Ждать его нельзя — Telegram ресендит вебхук по таймауту
   if (leadId) {
-    runQualifier(sql, orgId, { leadId, channelId: channel.id, inboundText: text }).catch(() => {})
+    waitUntil(runQualifier(sql, orgId, { leadId, channelId: channel.id, inboundText: text }).catch(() => {}))
   }
 
   return json({ ok: true, channelId: channel.id, leadId, accountId, created: !existingLead })
