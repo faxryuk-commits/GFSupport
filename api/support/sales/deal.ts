@@ -1,4 +1,5 @@
 import { getRequestOrgId } from '../_lib/org.js'
+import { scoreIcp } from '../_lib/sales-icp.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
@@ -134,6 +135,30 @@ export default async function handler(req: Request): Promise<Response> {
         stalled_at = CASE WHEN next_step_at IS NOT NULL THEN NULL ELSE stalled_at END
       WHERE id = ${body.id} AND org_id = ${orgId}
     `
+
+    // Досчёт ICP задним числом. Балл лида — снимок пустой анкеты: кассу,
+    // филиалы и поток сейлз выясняет уже в сделке, и без досчёта статистика
+    // «что предсказывает покупку» навсегда остаётся считанной по незнанию.
+    // Статус лида не трогаем — он давно живёт своей жизнью, обновляются
+    // только балл и основания
+    const QUAL_FIELDS = ['pos', 'points', 'orders_per_day', 'aggregators', 'delivery_type', 'city']
+    if (entries.some(([k]) => QUAL_FIELDS.includes(k))) {
+      const [d] = await sql`
+        SELECT source_lead_id, pos, points, orders_per_day, aggregators, delivery_type, city
+        FROM sales_deals WHERE id = ${body.id} AND org_id = ${orgId} LIMIT 1
+      ` as any[]
+      if (d?.source_lead_id) {
+        const icp = scoreIcp({
+          ordersPerDay: d.orders_per_day, points: d.points, pos: d.pos,
+          aggregators: d.aggregators, deliveryType: d.delivery_type, city: d.city,
+        })
+        await sql`
+          UPDATE sales_leads
+          SET icp_score = ${icp.score}, icp_reasons = ${JSON.stringify(icp.reasons)}::jsonb
+          WHERE id = ${d.source_lead_id} AND org_id = ${orgId}
+        `
+      }
+    }
     return json({ ok: true, updated: entries.map(([k]) => k) })
   }
 
