@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/widgets/sidebar'
-import { ErrorBoundary } from '@/shared/ui'
+import { ErrorBoundary, Dialer } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
 import { useMarket } from '@/shared/hooks/useMarket'
 import { useOrg, OrgContext } from '@/shared/hooks/useOrg'
@@ -209,6 +209,7 @@ export function MainLayout() {
           orgPlan={orgState.org?.plan}
         />
         <main className="flex-1 h-full overflow-auto">
+          <Dialer />
           <DemoBanner />
           <ErrorBoundary>
             <Outlet />
