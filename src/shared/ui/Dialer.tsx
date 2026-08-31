@@ -29,6 +29,16 @@ export function Dialer() {
   // С какого номера уйдёт исходящий: личный добавочный сейлза или общий.
   // Видно до набора — понятно, какая трубка сейчас зазвонит
   const [ext, setExt] = useState('')
+  // Поиск по базе: имя или кусок номера превращаются в подсказки из лидов
+  // и контактов — не нужно помнить, в каком списке живёт человек
+  const [found, setFound] = useState<Array<{
+    kind: string; id: string; name: string; phone: string; sub: string | null
+  }>>([])
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Живые входящие из вебхука АТС: звонок всплывает ещё до снятой трубки
+  const [incoming, setIncoming] = useState<Array<{
+    number: string; leadId: string | null; leadName: string | null
+  }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
@@ -40,6 +50,35 @@ export function Dialer() {
       .then(d => { setRecent(d?.calls || []); setExt(String(d?.ext || '')) })
       .catch(() => {})
   }, [open])
+
+  // Опрос живых событий АТС: раз в 12 секунд, всегда — входящий должен
+  // всплыть, даже когда звонилка закрыта
+  useEffect(() => {
+    let stop = false
+    const tick = () => {
+      apiGet<any>('/sales/call?action=live', false)
+        .then(d => { if (!stop) setIncoming(d?.calls || []) })
+        .catch(() => {})
+    }
+    tick()
+    const t = setInterval(tick, 12000)
+    return () => { stop = true; clearInterval(t) }
+  }, [])
+
+  const search = (q: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    const clean = q.trim()
+    const hasLetters = /[^\d\s+()-]/.test(clean)
+    const digitsN = clean.replace(/\D/g, '').length
+    if (clean.length < 2 || (!hasLetters && digitsN < 4) || (!hasLetters && digitsN >= 12)) {
+      setFound([]); return
+    }
+    searchTimer.current = setTimeout(() => {
+      apiGet<any>(`/sales/call?action=search&q=${encodeURIComponent(clean)}`, false)
+        .then(d => setFound(d?.results || []))
+        .catch(() => setFound([]))
+    }, 300)
+  }
 
   const parsed = parsePhone(num)
   const digits = num.replace(/\D/g, '')
@@ -111,11 +150,40 @@ export function Dialer() {
       <button
         onClick={() => setOpen(o => !o)}
         title="Позвонить на любой номер"
-        className="fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full bg-emerald-600 text-white
-                   shadow-lg hover:bg-emerald-700 flex items-center justify-center transition-colors"
+        className={`fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full text-white
+                   shadow-lg flex items-center justify-center transition-colors ${
+                   incoming.length ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}
       >
         {open ? <X className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
       </button>
+
+      {/* Входящий прямо сейчас: события вебхука АТС — карточка всплывает
+          ещё до снятой трубки, чтобы сейлз видел, кто звонит */}
+      {incoming.length > 0 && (
+        <div className="fixed bottom-5 right-20 z-40 flex flex-col gap-1.5 items-end">
+          {incoming.map((c, i) => {
+            const p = parsePhone(c.number)
+            return (
+              <div key={`${c.number}_${i}`}
+                className="flex items-center gap-2 bg-white border border-emerald-300 rounded-full
+                           shadow-lg pl-3 pr-2 py-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-none" />
+                <span className="text-[12px] text-gray-800 tabular-nums">
+                  ↓ {p.valid ? p.pretty : c.number}
+                </span>
+                {c.leadId ? (
+                  <Link to={`/sales/leads/${c.leadId}`}
+                    className="text-[11.5px] text-blue-600 hover:underline max-w-[140px] truncate">
+                    {c.leadName || 'лид'}
+                  </Link>
+                ) : (
+                  <span className="text-[11px] text-gray-400">номер новый</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {open && (
         <div className="fixed bottom-20 right-5 z-40 w-80 bg-white border border-gray-200
@@ -127,10 +195,11 @@ export function Dialer() {
             onChange={e => {
               setNum(e.target.value)
               setLead(null); setNoLead(false)
+              search(e.target.value)
               if (status !== 'calling') { setStatus('idle'); setNote('') }
             }}
             onKeyDown={e => { if (e.key === 'Enter') call() }}
-            placeholder="+998 90 123 45 67"
+            placeholder="имя или номер"
             inputMode="tel"
             className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-[15px] font-mono tabular-nums
                        focus:outline-none focus:border-emerald-500"
@@ -145,6 +214,34 @@ export function Dialer() {
               <span className="text-amber-600">{parsed.problem} — наберётся как есть</span>
             )}
           </div>
+          {found.length > 0 && (
+            <div className="mt-1 border border-gray-100 rounded-xl divide-y divide-gray-50 max-h-44 overflow-y-auto">
+              {found.map((f, i) => (
+                <div key={`${f.kind}_${f.id}_${i}`} className="flex items-center gap-2 px-2.5 py-1.5">
+                  <button
+                    onClick={() => { setNum(f.phone); setFound([]); inputRef.current?.focus() }}
+                    title="Подставить номер"
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="text-[12.5px] text-gray-800 truncate">
+                      {f.name}
+                      {f.sub && <span className="text-gray-400"> · {f.sub}</span>}
+                    </div>
+                    <div className="text-[10.5px] text-gray-400 tabular-nums">
+                      {parsePhone(f.phone).valid ? parsePhone(f.phone).pretty : f.phone}
+                    </div>
+                  </button>
+                  <Link
+                    to={f.kind === 'lead' ? `/sales/leads/${f.id}` : `/sales/accounts/${f.id}`}
+                    onClick={() => setOpen(false)}
+                    className="flex-none text-[10.5px] text-blue-600 hover:underline"
+                  >
+                    {f.kind === 'lead' ? 'лид' : 'аккаунт'}
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
           <button
             onClick={call}
             disabled={digits.length < 7 || status === 'calling'}

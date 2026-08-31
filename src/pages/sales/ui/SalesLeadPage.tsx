@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CallPhone } from '@/shared/ui'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
@@ -180,6 +180,22 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     } finally { setBusy(false) }
   }
 
+  // Удаление насовсем: для тестовых обращений, которые не должны попадать
+  // даже в отчёт по отказам. API пускает только админа и не даёт удалить
+  // лида, из которого выросла сделка
+  const navigate = useNavigate()
+  const remove = async () => {
+    if (!window.confirm('Удалить обращение насовсем? История звонков и сообщений по нему отвяжется.')) return
+    setBusy(true)
+    try {
+      await apiPost('/sales/leads?action=delete', { leadId: id })
+      navigate('/sales/leads')
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить')
+      setBusy(false)
+    }
+  }
+
   // Бренд живёт в аккаунте, а не в обращении: переименование должно доехать
   // до компании, иначе в списках останется старое написание
   const renameAccount = async (v: string) => {
@@ -300,13 +316,19 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                 </button>
               ))}
             </div>
-            <div className="flex gap-2 pt-0.5">
+            <div className="flex gap-2 pt-0.5 items-center">
               <button disabled={busy} onClick={() => act('archive')}
                 className="text-[11.5px] text-gray-400 hover:text-gray-700">
                 причина неизвестна
               </button>
               <button onClick={() => setAsking(false)}
                 className="text-[11.5px] text-gray-400 hover:text-gray-700">отмена</button>
+              <span className="flex-1" />
+              <button disabled={busy} onClick={remove}
+                title="Насовсем — для тестовых обращений; доступно администратору"
+                className="text-[11.5px] text-red-400 hover:text-red-600">
+                удалить насовсем
+              </button>
             </div>
           </div>
         )}

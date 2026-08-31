@@ -90,9 +90,8 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT won_at, lost_at FROM sales_deals WHERE id = ${id} AND org_id = ${orgId}
       ` as any[]
       if (!deal) return json({ error: 'сделка не найдена' }, 404)
-      if (deal.won_at || deal.lost_at) {
-        return json({ error: 'Закрытую сделку удалить нельзя — она в отчётах. Уберите в архив.' }, 409)
-      }
+      // Закрытые тоже удаляемы: тестовая «выигранная» сделка портит отчёты
+      // сильнее, чем дырка от неё. Защита — только админ и явное hard=1
       await sql`DELETE FROM sales_deal_events WHERE deal_id = ${id} AND org_id = ${orgId}`
       await sql`DELETE FROM sales_tasks WHERE deal_id = ${id} AND org_id = ${orgId}`
       await sql`UPDATE sales_documents SET deal_id = NULL WHERE deal_id = ${id} AND org_id = ${orgId}`

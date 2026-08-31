@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
-import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus } from '../_lib/pbx.js'
+import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus, pbxHookSecret } from '../_lib/pbx.js'
 import { leadFromPhone } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -137,6 +137,82 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
+  // Поиск по клиентской базе для звонилки: имя или кусок номера — и звонить
+  // можно, не вспоминая, в каком списке живёт человек. Ищем в обращениях
+  // и в контактах аккаунтов
+  if (req.method === 'GET' && url.searchParams.get('action') === 'search') {
+    const q = String(url.searchParams.get('q') || '').trim().slice(0, 60)
+    if (q.length < 2) return json({ results: [] })
+    const digits = q.replace(/\D/g, '')
+    const byPhone = digits.length >= 4
+    const like = '%' + q + '%'
+    const dlike = '%' + digits + '%'
+    const [leads, contacts] = await Promise.all([
+      byPhone
+        ? sql`
+          SELECT id, name, phone FROM sales_leads
+          WHERE org_id = ${orgId} AND archived_at IS NULL AND phone IS NOT NULL
+            AND (phone_norm LIKE ${dlike} OR name ILIKE ${like})
+          ORDER BY created_at DESC LIMIT 6`
+        : sql`
+          SELECT id, name, phone FROM sales_leads
+          WHERE org_id = ${orgId} AND archived_at IS NULL AND phone IS NOT NULL
+            AND name ILIKE ${like}
+          ORDER BY created_at DESC LIMIT 6`,
+      byPhone
+        ? sql`
+          SELECT c.account_id AS id, c.name, c.phone, a.name AS account
+          FROM sales_contacts c JOIN sales_accounts a ON a.id = c.account_id
+          WHERE c.org_id = ${orgId} AND c.phone IS NOT NULL
+            AND (regexp_replace(c.phone, ${'\\D'}, '', 'g') LIKE ${dlike}
+                 OR c.name ILIKE ${like} OR a.name ILIKE ${like})
+          LIMIT 6`
+        : sql`
+          SELECT c.account_id AS id, c.name, c.phone, a.name AS account
+          FROM sales_contacts c JOIN sales_accounts a ON a.id = c.account_id
+          WHERE c.org_id = ${orgId} AND c.phone IS NOT NULL
+            AND (c.name ILIKE ${like} OR a.name ILIKE ${like})
+          LIMIT 6`,
+    ]) as [any[], any[]]
+    const results = [
+      ...leads.map(l => ({ kind: 'lead', id: l.id, name: l.name, phone: l.phone, sub: null })),
+      ...contacts.map(c => ({
+        kind: 'account', id: c.id, name: c.name || c.account, phone: c.phone,
+        sub: c.account && c.name !== c.account ? c.account : null,
+      })),
+    ].slice(0, 8)
+    return json({ results })
+  }
+
+  // Живые входящие: события вебхука АТС за последнюю минуту. Пока АТС шлёт
+  // события — человек звонит или разговор идёт; отбой убирает карточку сам,
+  // когда события кончаются
+  if (req.method === 'GET' && url.searchParams.get('action') === 'live') {
+    const rows = await sql`
+      SELECT DISTINCT ON (caller) caller, event, created_at
+      FROM sales_pbx_events
+      WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '60 seconds'
+        AND caller IS NOT NULL
+        AND length(regexp_replace(caller, ${'\\D'}, '', 'g')) >= 7
+      ORDER BY caller, created_at DESC
+    `.catch(() => [] as any[]) as any[]
+    const live = rows.filter(r => !/hangup|bye|end/i.test(String(r.event || '')))
+    const calls: any[] = []
+    for (const r of live.slice(0, 3)) {
+      const norm = String(r.caller).replace(/\D/g, '').slice(-9)
+      const [lead] = await sql`
+        SELECT id, name FROM sales_leads
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
+        ORDER BY created_at DESC LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      calls.push({
+        number: r.caller, at: r.created_at,
+        leadId: lead?.id || null, leadName: lead?.name || null,
+      })
+    }
+    return json({ calls })
+  }
+
   // История для звонилки: последние звонки из касаний с привязкой к лидам.
   // Синк наполняет их раз в несколько минут — свежайший звонок может чуть
   // запаздывать, и это нормально
@@ -180,6 +256,17 @@ export default async function handler(req: Request): Promise<Response> {
   const cfg = await readPbxConfig(sql, orgId)
   if (!cfg) {
     return json({ error: 'Телефония не настроена: укажите домен АТС и API-ключ OnlinePBX в настройках' }, 422)
+  }
+
+  // Адрес вебхука для личного кабинета АТС: с ним входящие всплывают в CRM
+  // ещё до снятой трубки. Секрет — производная от API-ключа, сам ключ в URL
+  // не попадает
+  if (url.searchParams.get('action') === 'hookurl') {
+    if (!(ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin)) {
+      return json({ error: 'только администратор' }, 403)
+    }
+    const s = await pbxHookSecret(cfg.authKey)
+    return json({ url: `https://www.gfsupport.uz/api/support/webhook/pbx?s=${s}` })
   }
 
   if (url.searchParams.get('action') === 'probe') {

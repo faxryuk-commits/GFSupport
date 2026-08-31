@@ -195,6 +195,16 @@ export async function pbxCallStatus(cfg: PbxConfig, uuid: string): Promise<{
   }
 }
 
+/**
+ * Секрет вебхука — производная от API-ключа: в URL вебхука нельзя класть сам
+ * ключ, а отдельный секрет пришлось бы где-то заводить и синхронизировать.
+ * Хеш восстановим с обеих сторон и бесполезен для обратного хода.
+ */
+export async function pbxHookSecret(authKey: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(authKey))
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24)
+}
+
 /** Диагностика для настройки: живой ли ключ и что отвечает история. */
 export async function pbxProbe(cfg: PbxConfig): Promise<any> {
   const now = Math.floor(Date.now() / 1000)

@@ -170,6 +170,9 @@ const LOST_REASON_SEED: Array<{ code: string; label: string; days: number | null
   // половина отказов сваливалась в «Другое» и не давала повода для возврата
   { code: 'need_gone', label: 'Пропала потребность', days: 120 },
   { code: 'terms_rejected', label: 'Не устроили условия', days: 90 },
+  // Тестовые обращения: команда живёт в системе и проверяет звонки/формы
+  // на себе — им нужен честный ярлык, а не маскировка под «Другое»
+  { code: 'test', label: 'Тест', days: null },
   { code: 'other', label: 'Другое', days: null },
 ]
 

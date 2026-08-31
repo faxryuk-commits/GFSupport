@@ -57,6 +57,8 @@ export function TelephonySettings() {
   const [probe, setProbe] = useState<{ ok: boolean; text: string } | null>(null)
   const [probing, setProbing] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [hookUrl, setHookUrl] = useState('')
+  const [copied, setCopied] = useState(false)
 
   const load = useCallback(() => {
     apiGet<any>('/settings', false).then(d => {
@@ -70,6 +72,11 @@ export function TelephonySettings() {
       setAgents((d?.agents || []).filter((a: AgentRow) =>
         a.name && !a.mergedInto && a.isActive !== false))
     }).catch(() => {})
+    // Адрес вебхука видит только администратор — остальным API откажет, и
+    // блок просто не покажется
+    apiPost<any>('/sales/call?action=hookurl', {})
+      .then(d => setHookUrl(String(d?.url || '')))
+      .catch(() => {})
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -222,6 +229,29 @@ export function TelephonySettings() {
             звонки), CRM подхватывает результат: звонок ложится касанием на лида,
             неизвестный номер создаёт нового лида в очереди «Новые».
           </p>
+          {hookUrl && (
+            <div className="rounded-xl bg-slate-50 border border-[#e8edf3] p-3">
+              <p className="mb-2">
+                <b>Всплывающий входящий.</b> Добавьте этот адрес в OnlinePBX
+                (Сервисы → Webhooks, отметьте все события) — звонок будет
+                всплывать в CRM ещё до снятой трубки:
+              </p>
+              <div className="flex items-center gap-2">
+                <input readOnly value={hookUrl}
+                  onFocus={e => e.currentTarget.select()}
+                  className="flex-1 px-3 py-1.5 bg-white border border-[#e8edf3] rounded-lg text-[12px] font-mono text-slate-600" />
+                <button
+                  onClick={() => {
+                    navigator.clipboard?.writeText(hookUrl).then(() => {
+                      setCopied(true); setTimeout(() => setCopied(false), 2000)
+                    }).catch(() => {})
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 rounded-lg text-[12px] text-slate-700 hover:bg-slate-200 flex-none">
+                  {copied ? 'Скопировано' : 'Скопировать'}
+                </button>
+              </div>
+            </div>
+          )}
           <p>
             <b>Без софтфона.</b> Укажите сотруднику мобильный вместо внутреннего —
             АТС будет звонить ему на сотовый. Софтфон нужен, только если хочется
