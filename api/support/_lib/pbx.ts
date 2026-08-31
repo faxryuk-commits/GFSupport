@@ -140,9 +140,16 @@ export async function pbxHistory(cfg: PbxConfig, fromUnix: number, toUnix: numbe
   return calls
 }
 
-/** Набрать клиента: АТС сначала звонит сотруднику, потом соединяет. */
+/**
+ * Набрать клиента: АТС сначала звонит сотруднику, потом соединяет.
+ * Обе ноги — только цифры: «+998…» АТС отвергает как UNALLOCATED_NUMBER,
+ * а плюс неизбежно просачивается из карточек и полей настроек.
+ */
 export async function pbxCallNow(cfg: PbxConfig, fromExt: string, toNumber: string): Promise<{ ok: boolean; raw: any }> {
-  const data = await pbxPost(cfg, 'call/now.json', { from: fromExt, to: toNumber })
+  const data = await pbxPost(cfg, 'call/now.json', {
+    from: fromExt.replace(/\D/g, ''),
+    to: toNumber.replace(/\D/g, ''),
+  })
   return { ok: Boolean(data && Number(data.status) === 1), raw: data }
 }
 

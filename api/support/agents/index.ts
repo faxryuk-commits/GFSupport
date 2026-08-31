@@ -81,7 +81,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Номер телефонии задаётся и очищается отдельно: COALESCE не даёт
       // стереть значение, а пустая строка здесь — осознанное «убрать номер»
       if (pbxExt !== undefined) {
-        await sql`UPDATE support_agents SET pbx_ext = ${String(pbxExt).trim() || null} WHERE id = ${id} AND org_id = ${orgId}`
+        await sql`UPDATE support_agents SET pbx_ext = ${String(pbxExt).replace(/\D/g, '') || null} WHERE id = ${id} AND org_id = ${orgId}`
       }
 
       // Update permissions if provided
