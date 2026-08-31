@@ -87,12 +87,16 @@ export default async function handler(req: Request): Promise<Response> {
       const m = title.match(/(\d+) сек/)
       const talk = m ? Number(m[1]) : 0
       const ok = talk > 0
-      const detail = String(r.detail || '')
-      const number = detail.split('·')[0].trim()
-      const sideRaw = detail.split('·').slice(1).join('·').trim()
-      let who = ''
-      if (/^внутр\./.test(sideRaw)) who = extName.get(sideRaw.replace(/\D/g, '')) || sideRaw
-      else if (/^моб\./.test(sideRaw)) who = sideRaw.replace(/^моб\.\s*/, '')
+      const parts = String(r.detail || '').split('·').map((s: string) => s.trim())
+      const number = parts[0] || ''
+      const sideRaw = parts[1] || ''
+      // Имя сотрудника синк пишет третьим сегментом; старые касания без него
+      // резолвятся по добавочному из профилей
+      let who = parts[2] || ''
+      if (!who) {
+        if (/^внутр\./.test(sideRaw)) who = extName.get(sideRaw.replace(/\D/g, '')) || sideRaw
+        else if (/^моб\./.test(sideRaw)) who = sideRaw.replace(/^моб\.\s*/, '')
+      }
       if (dirIn) inbound++; else outbound++
       if (ok) { answered++; talkSec += talk } else if (dirIn) missedIn++; else failedOut++
       const t = new Date(r.happened_at).getTime() + TK

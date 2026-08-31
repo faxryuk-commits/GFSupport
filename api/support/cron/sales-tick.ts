@@ -6,7 +6,7 @@ import { assertCron } from '../_lib/cron-auth.js'
 import { sendNotification } from '../_lib/notifications.js'
 import { tokenForPage } from '../_lib/meta-config.js'
 import { runQualifier } from '../_lib/sales-qualifier.js'
-import { readPbxConfig, pbxHistory } from '../_lib/pbx.js'
+import { readPbxConfig, pbxHistory, pbxUsers } from '../_lib/pbx.js'
 import { acceptLead } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -187,6 +187,10 @@ export default async function handler(req: Request): Promise<Response> {
         const from = lastSync > 0 ? lastSync - 60 : nowSec - 24 * 3600
         const calls = await pbxHistory(cfg, from, nowSec)
         let saved = 0
+        // Карта «добавочный → мобильный переадресации» грузится лениво: ответ
+        // записан на «внутр. 101», но трубку снял мобильный из переадресации —
+        // только через неё добавочный превращается в имя сотрудника
+        let extForward: Map<string, string> | null = null
         for (const c of calls) {
           const norm = c.clientNumber.replace(/\D/g, '').slice(-9)
           if (!norm || norm.length < 7) continue
@@ -247,7 +251,30 @@ export default async function handler(req: Request): Promise<Response> {
               LIMIT 1
             `.catch(() => [] as any[]) as any[]
           }
-          const side = c.ext ? ` · внутр. ${c.ext}` : (me?.name ? ` · моб. ${me.name}` : '')
+          // Добавочный никому не принадлежит напрямую — но у него есть
+          // переадресация на мобильный, а мобильный есть в профиле
+          if (c.ext && !me) {
+            if (!extForward) {
+              extForward = new Map()
+              const us = await pbxUsers(cfg).catch(() => [] as any[])
+              for (const u of us) {
+                const d = String(u.forward || '').replace(/\D/g, '').slice(-9)
+                if (d.length >= 7) extForward.set(u.num, d)
+              }
+            }
+            const fwd = extForward.get(c.ext)
+            if (fwd) {
+              ;[me] = await sql`
+                SELECT id, name, telegram_id FROM support_agents
+                WHERE regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + fwd}
+                  AND merged_into IS NULL
+                LIMIT 1
+              `.catch(() => [] as any[]) as any[]
+            }
+          }
+          const side = c.ext
+            ? ` · внутр. ${c.ext}${me?.name ? ` · ${me.name}` : ''}`
+            : (me?.name ? ` · моб. ${me.name}` : '')
           await sql`
             INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
                                            title, detail, identity, happened_at)

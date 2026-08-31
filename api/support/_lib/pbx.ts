@@ -196,6 +196,20 @@ export async function pbxCallStatus(cfg: PbxConfig, uuid: string): Promise<{
 }
 
 /**
+ * Пользователи АТС: добавочный и номер личной переадресации. По этой карте
+ * ответ «на внутр. 101» превращается в имя сотрудника — группа звонит на
+ * добавочные, но трубку в реальности снимает мобильный из переадресации.
+ */
+export async function pbxUsers(cfg: PbxConfig): Promise<Array<{ num: string; forward: string | null }>> {
+  const data = await pbxPost(cfg, 'user/get.json', {})
+  const rows: any[] = Array.isArray(data?.data) ? data.data : []
+  return rows.map(r => ({
+    num: String(r.num || ''),
+    forward: r.tr1 ? String(r.tr1) : r.tr2 ? String(r.tr2) : null,
+  }))
+}
+
+/**
  * Секрет вебхука — производная от API-ключа: в URL вебхука нельзя класть сам
  * ключ, а отдельный секрет пришлось бы где-то заводить и синхронизировать.
  * Хеш восстановим с обеих сторон и бесполезен для обратного хода.
