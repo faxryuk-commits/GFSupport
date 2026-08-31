@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
-import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl } from '../_lib/pbx.js'
+import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus } from '../_lib/pbx.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -68,6 +68,30 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
+  // Судьба вызова: АТС принимает заявку мгновенно, а провал случается позже —
+  // занято, не ответили, транк не в строю. Звонилка опрашивает исход и
+  // показывает правду вместо вечного «АТС звонит вам»
+  if (url.searchParams.get('action') === 'status') {
+    const b = await req.json().catch(() => null)
+    const uuid = String(b?.uuid || '').trim()
+    if (!/^[0-9a-f-]{20,60}$/i.test(uuid)) return json({ error: 'uuid не распознан' }, 400)
+    try {
+      const st = await pbxCallStatus(cfg, uuid)
+      if (!st.found) return json({ done: false })
+      const c = String(st.hangupCause || '')
+      const human = st.talkSec > 0 ? `разговор состоялся · ${st.talkSec} сек`
+        : /UNALLOCATED/i.test(c) ? 'номер не существует — или исходящая линия АТС не активна'
+        : /USER_BUSY/i.test(c) ? 'занято'
+        : /NO_ANSWER|ORIGINATOR_CANCEL|NO_USER_RESPONSE/i.test(c) ? 'не ответили'
+        : /CALL_REJECT/i.test(c) ? 'сбросили вызов'
+        : st.durationSec > 0 ? 'соединение было, но разговор не состоялся'
+        : 'звонок не состоялся'
+      return json({ done: true, ok: st.talkSec > 0, human, talkSec: st.talkSec })
+    } catch {
+      return json({ done: false })
+    }
+  }
+
   // Запись разговора: свежая подписанная ссылка на mp3 по uuid звонка.
   // Доступна любому вошедшему сотруднику — как и сама карточка клиента
   if (url.searchParams.get('action') === 'record') {
@@ -114,6 +138,7 @@ export default async function handler(req: Request): Promise<Response> {
           : 'АТС не приняла звонок'
       return json({ error: human, details: raw }, 502)
     }
+    const callUuid = String(res.raw?.data?.uuid || '')
     // След в пути клиента: сейлз инициировал звонок. Сам разговор и его
     // длительность приедут синком истории и лягут отдельным касанием
     if (body?.leadId) {
@@ -129,7 +154,7 @@ export default async function handler(req: Request): Promise<Response> {
         `.catch(() => {})
       }
     }
-    return json({ ok: true })
+    return json({ ok: true, uuid: callUuid || null })
   } catch (e: any) {
     return json({ error: 'Телефония недоступна', details: String(e?.message || e).slice(0, 200) }, 502)
   }

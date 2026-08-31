@@ -164,6 +164,24 @@ export async function pbxRecordUrl(cfg: PbxConfig, uuid: string): Promise<string
   return url && url.startsWith('http') ? url : null
 }
 
+/**
+ * Судьба вызова по uuid: строка появляется в истории после завершения.
+ * Пока звонок идёт (или не начался) — found=false.
+ */
+export async function pbxCallStatus(cfg: PbxConfig, uuid: string): Promise<{
+  found: boolean; talkSec: number; durationSec: number; hangupCause: string | null
+}> {
+  const data = await pbxPost(cfg, 'mongo_history/search.json', { uuid })
+  const row = Array.isArray(data?.data) ? data.data[0] : null
+  if (!row) return { found: false, talkSec: 0, durationSec: 0, hangupCause: null }
+  return {
+    found: true,
+    talkSec: Number(row.user_talk_time ?? 0),
+    durationSec: Number(row.duration ?? 0),
+    hangupCause: row.hangup_cause ? String(row.hangup_cause) : null,
+  }
+}
+
 /** Диагностика для настройки: живой ли ключ и что отвечает история. */
 export async function pbxProbe(cfg: PbxConfig): Promise<any> {
   const now = Math.floor(Date.now() / 1000)

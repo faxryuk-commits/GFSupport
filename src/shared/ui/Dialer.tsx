@@ -35,14 +35,30 @@ export function Dialer() {
   const parsed = parsePhone(num)
   const digits = num.replace(/\D/g, '')
 
+  // АТС принимает заявку мгновенно, а исход известен позже: занято, не
+  // ответили, линия не в строю. Поэтому после «звонит вам» опрашиваем судьбу
+  // вызова и показываем правду — вечное оптимистичное сообщение хуже ошибки
+  const watchOutcome = (uuid: string) => {
+    const delays = [12000, 25000, 45000]
+    delays.forEach(d => setTimeout(async () => {
+      try {
+        const st = await apiPost<any>('/sales/call?action=status', { uuid })
+        if (!st?.done) return
+        setStatus(st.ok ? 'ok' : 'error')
+        setNote(st.ok ? `✓ ${st.human}` : `Звонок не прошёл: ${st.human}`)
+      } catch { /* исход неизвестен — молчим */ }
+    }, d))
+  }
+
   const call = async () => {
     if (digits.length < 7 || status === 'calling') return
     setStatus('calling'); setNote('')
     try {
-      await apiPost('/sales/call', { to: num })
+      const r = await apiPost<any>('/sales/call', { to: num })
       setStatus('ok')
       setNote('АТС звонит вам — снимите трубку, дальше соединит')
-      setTimeout(() => { setStatus('idle'); setNote('') }, 6000)
+      if (r?.uuid) watchOutcome(r.uuid)
+      else setTimeout(() => { setStatus('idle'); setNote('') }, 8000)
     } catch (e: any) {
       setStatus('error')
       setNote(e?.message || 'Телефония не настроена')
@@ -138,8 +154,9 @@ export function Dialer() {
             </div>
           )}
           <div className="mt-2 text-[10.5px] text-gray-400">
-            АТС наберёт ваш номер, после ответа — соединит. Звонок запишется и через
-            несколько минут появится в недавних и в карточке клиента.
+            АТС наберёт ваш номер, после ответа — соединит. Микрофон браузера не
+            используется: разговор идёт через ваш телефон или софтфон. Звонок
+            запишется и появится в недавних и в карточке клиента.
           </div>
         </div>
       )}
