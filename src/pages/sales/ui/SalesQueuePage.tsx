@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { CallPhone } from '@/shared/ui'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { SalesDealPage } from './SalesDealPage'
