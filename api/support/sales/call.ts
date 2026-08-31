@@ -43,6 +43,100 @@ export default async function handler(req: Request): Promise<Response> {
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
+  // Дашборд звонков: агрегаты и список за период. Считается из касаний синка
+  // (title/detail) — отдельного хранилища звонков нет, и для картины «сколько,
+  // когда и с кем говорили» оно и не нужно. «Звонок из карточки» — служебная
+  // отметка нажатия, не сам разговор, поэтому в статистику не входит
+  if (req.method === 'GET' && url.searchParams.get('action') === 'stats') {
+    const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') || 7)))
+    const [rows, extRows] = await Promise.all([
+      sql`
+        SELECT t.title, t.detail, t.identity, t.happened_at, t.lead_id,
+               l.name AS lead_name, d.id AS deal_id, d.title AS deal_title
+        FROM sales_touchpoints t
+        LEFT JOIN sales_leads l ON l.id = t.lead_id
+        LEFT JOIN LATERAL (
+          SELECT id, title FROM sales_deals
+          WHERE org_id = ${orgId} AND source_lead_id = t.lead_id
+          ORDER BY created_at DESC LIMIT 1
+        ) d ON true
+        WHERE t.org_id = ${orgId} AND t.kind = 'call'
+          AND (t.title LIKE 'Входящий%' OR t.title LIKE 'Исходящий%')
+          AND t.happened_at > NOW() - make_interval(days => ${days})
+        ORDER BY t.happened_at DESC
+      `,
+      sql`
+        SELECT name, pbx_ext FROM support_agents
+        WHERE org_id = ${orgId} AND pbx_ext IS NOT NULL AND merged_into IS NULL
+      `,
+    ]) as [any[], any[]]
+
+    const extName = new Map<string, string>()
+    for (const e of extRows) extName.set(String(e.pbx_ext).replace(/\D/g, ''), e.name)
+
+    // Наивные UTC-таймстампы: Ташкент — фиксированный сдвиг +5, без переходов
+    const TK = 5 * 3600 * 1000
+    const byDay = new Map<string, { answered: number; missed: number }>()
+    const byHour = Array.from({ length: 24 }, () => ({ answered: 0, missed: 0 }))
+    const byAgent = new Map<string, { name: string; total: number; answered: number; talkSec: number }>()
+    let inbound = 0, outbound = 0, answered = 0, missedIn = 0, failedOut = 0, talkSec = 0
+    const calls: any[] = []
+    for (const r of rows) {
+      const title = String(r.title || '')
+      const dirIn = title.startsWith('Входящий')
+      const m = title.match(/(\d+) сек/)
+      const talk = m ? Number(m[1]) : 0
+      const ok = talk > 0
+      const detail = String(r.detail || '')
+      const number = detail.split('·')[0].trim()
+      const sideRaw = detail.split('·').slice(1).join('·').trim()
+      let who = ''
+      if (/^внутр\./.test(sideRaw)) who = extName.get(sideRaw.replace(/\D/g, '')) || sideRaw
+      else if (/^моб\./.test(sideRaw)) who = sideRaw.replace(/^моб\.\s*/, '')
+      if (dirIn) inbound++; else outbound++
+      if (ok) { answered++; talkSec += talk } else if (dirIn) missedIn++; else failedOut++
+      const t = new Date(r.happened_at).getTime() + TK
+      const day = new Date(t).toISOString().slice(0, 10)
+      const hour = new Date(t).getUTCHours()
+      if (!byDay.has(day)) byDay.set(day, { answered: 0, missed: 0 })
+      const dd = byDay.get(day)!
+      if (ok) dd.answered++; else dd.missed++
+      if (ok) byHour[hour].answered++; else byHour[hour].missed++
+      if (who) {
+        if (!byAgent.has(who)) byAgent.set(who, { name: who, total: 0, answered: 0, talkSec: 0 })
+        const aa = byAgent.get(who)!
+        aa.total++
+        if (ok) { aa.answered++; aa.talkSec += talk }
+      }
+      if (calls.length < 80) {
+        calls.push({
+          uuid: r.identity, at: r.happened_at, direction: dirIn ? 'in' : 'out',
+          answered: ok, talkSec: talk, number, who,
+          leadId: r.lead_id, leadName: r.lead_name,
+          dealId: r.deal_id, dealTitle: r.deal_title,
+        })
+      }
+    }
+    // Пустые дни тоже в тренде: провал в графике информативнее дырки в оси
+    const daysArr: any[] = []
+    const nowTk = Date.now() + TK
+    for (let i = days - 1; i >= 0; i--) {
+      const k = new Date(nowTk - i * 86400000).toISOString().slice(0, 10)
+      daysArr.push({ day: k, ...(byDay.get(k) || { answered: 0, missed: 0 }) })
+    }
+    return json({
+      period: days,
+      totals: {
+        total: rows.length, inbound, outbound, answered, missedIn, failedOut,
+        talkSec, avgTalkSec: answered ? Math.round(talkSec / answered) : 0,
+      },
+      byDay: daysArr,
+      byHour: byHour.map((v, h) => ({ h, ...v })),
+      byAgent: [...byAgent.values()].sort((a, b) => b.total - a.total),
+      calls,
+    })
+  }
+
   // История для звонилки: последние звонки из касаний с привязкой к лидам.
   // Синк наполняет их раз в несколько минут — свежайший звонок может чуть
   // запаздывать, и это нормально

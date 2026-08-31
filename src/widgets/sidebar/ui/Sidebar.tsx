@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2,
+  Plug, Handshake, Inbox, Building2, Phone,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { apiGet } from '@/shared/services/api.service'
@@ -238,6 +238,7 @@ const navGroups: NavGroup[] = [
       // увидит пост, и молчание там стоит дороже, чем в личке
       { path: '/sales/comments', label: 'Комментарии', icon: MessagesSquare,
         badgeKey: 'metaComments', badgeHint: 'комментарии без ответа' },
+      { path: '/sales/calls', label: 'Звонки', icon: Phone },
     ],
   },
   {

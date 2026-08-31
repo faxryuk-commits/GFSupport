@@ -42,6 +42,7 @@ const SalesSettingsPage = lazy(() => import('@/pages/sales/ui/SalesSettingsPage'
 const SalesAssistantPage = lazy(() => import('@/pages/sales/ui/SalesAssistantPage'))
 const SalesFunnelPage = lazy(() => import('@/pages/sales/ui/SalesFunnelPage'))
 const SalesCommentsPage = lazy(() => import('@/pages/sales/ui/SalesCommentsPage'))
+const SalesCallsPage = lazy(() => import('@/pages/sales/ui/SalesCallsPage'))
 const ReleasesPage = lazy(() => import('@/pages/releases/ui/ReleasesPage'))
 const AIAgentPage = lazy(() => import('@/pages/ai-agent/ui/AIAgentPage'))
 const InsightsChatPage = lazy(() => import('@/pages/insights-chat/ui/InsightsChatPage').then(m => ({ default: m.InsightsChatPage })))
@@ -119,6 +120,7 @@ export default function App() {
           <Route path="/sales/reports" element={<SalesReportsPage />} />
           <Route path="/sales/funnel" element={<SalesFunnelPage />} />
           <Route path="/sales/comments" element={<SalesCommentsPage />} />
+          <Route path="/sales/calls" element={<SalesCallsPage />} />
           <Route path="/whats-new" element={<ReleasesPage />} />
           <Route path="/sales/assistant" element={<SalesAssistantPage />} />
           <Route path="/sales/settings" element={<SalesSettingsPage />} />

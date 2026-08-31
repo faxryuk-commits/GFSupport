@@ -16,6 +16,36 @@ interface AgentRow {
   role?: string
   department?: string | null
   pbx_ext?: string | null
+  mergedInto?: string | null
+  isActive?: boolean
+}
+
+/**
+ * Отделы в человеческом порядке: телефония — прежде всего инструмент продаж,
+ * поэтому они сверху, дальше по убыванию причастности к звонкам.
+ */
+const DEPT_ORDER = ['sales', 'sale', 'support', 'admin', 'agent', 'product', 'it']
+const DEPT_LABEL: Record<string, string> = {
+  sales: 'Продажи', sale: 'Продажи', support: 'Поддержка', admin: 'Администрация',
+  agent: 'Агенты', product: 'Продукт', it: 'IT',
+}
+
+function groupByDept(agents: AgentRow[]): Array<{ label: string; rows: AgentRow[] }> {
+  const groups = new Map<string, AgentRow[]>()
+  for (const a of agents) {
+    const key = String(a.department || a.role || '').toLowerCase() || '—'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(a)
+  }
+  return [...groups.entries()]
+    .sort((x, y) => {
+      const xi = DEPT_ORDER.indexOf(x[0]); const yi = DEPT_ORDER.indexOf(y[0])
+      return (xi === -1 ? 99 : xi) - (yi === -1 ? 99 : yi) || x[0].localeCompare(y[0])
+    })
+    .map(([key, rows]) => ({
+      label: DEPT_LABEL[key] || (key === '—' ? 'Без отдела' : key),
+      rows: rows.sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    }))
 }
 
 export function TelephonySettings() {
@@ -35,7 +65,10 @@ export function TelephonySettings() {
       setExt(String(d?.settings?.onlinepbx_ext || ''))
     }).catch(() => {})
     apiGet<any>('/agents', false).then(d => {
-      setAgents((d?.agents || []).filter((a: AgentRow) => a.name))
+      // Дубли скрываем: один человек пишет из нескольких мессенджеров и
+      // получает несколько учёток, но канонизация (merged_into) знает главную
+      setAgents((d?.agents || []).filter((a: AgentRow) =>
+        a.name && !a.mergedInto && a.isActive !== false))
     }).catch(() => {})
   }, [])
 
@@ -139,23 +172,33 @@ export function TelephonySettings() {
           Годится внутренний номер АТС («101») или мобильный («998…»): АТС сначала
           позвонит сотруднику, потом клиенту, разговор запишется в обоих случаях.
         </p>
-        <div className="divide-y divide-slate-100">
-          {agents.map(a => (
-            <div key={a.id} className="flex items-center gap-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-slate-800">{a.name}</div>
-                {(a.department || a.role) && (
-                  <div className="text-xs text-slate-400">{a.department || a.role}</div>
-                )}
+        <div className="space-y-5">
+          {groupByDept(agents).map(g => (
+            <div key={g.label}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  {g.label}
+                </span>
+                <span className="text-[11px] text-slate-300">{g.rows.length}</span>
+                <span className="flex-1 border-t border-slate-100" />
               </div>
-              <input
-                defaultValue={a.pbx_ext || ''}
-                onBlur={e => saveAgentExt(a, e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                placeholder="не задан"
-                className="w-44 px-3 py-1.5 bg-slate-50 border border-[#e8edf3] rounded-lg text-sm font-mono
-                           focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
-              />
+              <div className="divide-y divide-slate-100">
+                {g.rows.map(a => (
+                  <div key={a.id} className="flex items-center gap-3 py-2">
+                    <div className="min-w-0 flex-1 text-sm font-medium text-slate-800 truncate">
+                      {a.name}
+                    </div>
+                    <input
+                      defaultValue={a.pbx_ext || ''}
+                      onBlur={e => saveAgentExt(a, e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                      placeholder="не задан"
+                      className="w-44 px-3 py-1.5 bg-slate-50 border border-[#e8edf3] rounded-lg text-sm font-mono
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
           {!agents.length && <div className="text-sm text-slate-400 py-3">Команда не загрузилась</div>}

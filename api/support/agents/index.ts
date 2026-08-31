@@ -154,7 +154,8 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const rows = await sql`
       SELECT id, name, username, email, telegram_id, role, status, pbx_ext,
-             avatar_url, created_at, phone, position, department, permissions
+             avatar_url, created_at, phone, position, department, permissions,
+             merged_into, is_active
       FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC
     `
 
@@ -298,6 +299,11 @@ export default async function handler(req: Request): Promise<Response> {
         avatarUrl: r.avatar_url, createdAt: r.created_at,
         lastSeenAt, phone: r.phone, position: r.position,
         department: r.department, permissions,
+        // pbx_ext выбирался из базы, но терялся при сборке ответа — из-за
+        // этого номера в настройках телефонии выглядели несохранёнными
+        pbx_ext: r.pbx_ext || null,
+        mergedInto: r.merged_into || null,
+        isActive: r.is_active !== false,
         assignedChannels: m.resolved, activeChats: m.active,
         points: m.messages + m.resolved * 5 + (esc.escalations > 0 ? 0 : 10),
         metrics: {
