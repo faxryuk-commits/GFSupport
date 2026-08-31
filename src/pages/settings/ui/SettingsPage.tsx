@@ -170,9 +170,11 @@ export function SettingsPage() {
         ...prev,
         botToken: settings.telegram_bot_token || '',
         salesBotToken: settings.sales_bot_token || '',
-        pbxDomain: settings.onlinepbx_domain || '',
-        pbxApiKey: settings.onlinepbx_api_key || '',
-        pbxExt: settings.onlinepbx_ext || '',
+        pbxDomain: String(settings.onlinepbx_domain || ''),
+        pbxApiKey: String(settings.onlinepbx_api_key || ''),
+        // Чисто цифровое значение («101») приезжает из /settings числом,
+        // и .trim() на нём падал при общем сохранении
+        pbxExt: String(settings.onlinepbx_ext || ''),
         autoCreateCases: settings.auto_create_cases,
       }))
       
@@ -293,8 +295,8 @@ export function SettingsPage() {
       if (!masked(generalSettings.salesBotToken)) {
         settingsToSave.sales_bot_token = generalSettings.salesBotToken.trim()
       }
-      settingsToSave.onlinepbx_domain = generalSettings.pbxDomain.trim()
-      settingsToSave.onlinepbx_ext = generalSettings.pbxExt.trim()
+      settingsToSave.onlinepbx_domain = String(generalSettings.pbxDomain ?? '').trim()
+      settingsToSave.onlinepbx_ext = String(generalSettings.pbxExt ?? '').trim()
       if (!masked(generalSettings.pbxApiKey)) {
         settingsToSave.onlinepbx_api_key = generalSettings.pbxApiKey.trim()
       }
