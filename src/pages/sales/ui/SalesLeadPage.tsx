@@ -156,6 +156,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
+  // Запись разговора по uuid звонка: ссылка подписанная и короткоживущая,
+  // берётся на каждое прослушивание
+  const [rec, setRec] = useState<{ id: string; url: string } | null>(null)
+  const [recBusy, setRecBusy] = useState<string | null>(null)
   const [reasons, setReasons] = useState<Array<{ id: string; label: string }>>([])
 
   const load = useCallback(() => {
@@ -194,6 +198,17 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
       setError(e?.message || 'Не удалось удалить')
       setBusy(false)
     }
+  }
+
+  const listenRec = async (uuid: string) => {
+    if (recBusy) return
+    setRecBusy(uuid)
+    try {
+      const r = await apiPost<{ url: string }>('/sales/call?action=record', { uuid })
+      if (r?.url) setRec({ id: uuid, url: r.url })
+    } catch (e: any) {
+      setError(e?.message || 'АТС не отдала запись')
+    } finally { setRecBusy(null) }
   }
 
   // Бренд живёт в аккаунте, а не в обращении: переименование должно доехать
@@ -486,13 +501,23 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                 <span className="text-[11.5px] text-gray-400 w-28 flex-none tabular-nums">
                   {formatDateTimeShort(t.happened_at)}
                 </span>
-                <span className="text-[12.5px] text-gray-800 min-w-0">
+                <span className="text-[12.5px] text-gray-800 min-w-0 flex-1">
                   {t.title || t.kind}
                   {t.channel && <span className="text-gray-400"> · {t.channel}</span>}
                   {t.detail && <div className="text-[11.5px] text-gray-500">{t.detail}</div>}
                   {t.url && (
                     <a href={t.url} target="_blank" rel="noreferrer"
                        className="text-[11.5px] text-blue-600 hover:underline break-all">{t.url}</a>
+                  )}
+                  {t.kind === 'call' && t.identity && (
+                    rec?.id === t.identity ? (
+                      <audio controls autoPlay src={rec.url} className="mt-1.5 w-full h-8" />
+                    ) : (
+                      <button onClick={() => listenRec(t.identity!)} disabled={recBusy === t.identity}
+                        className="mt-0.5 block text-[11.5px] text-emerald-700 hover:underline disabled:opacity-40">
+                        {recBusy === t.identity ? 'загружаю…' : '▶ запись'}
+                      </button>
+                    )
                   )}
                 </span>
               </div>

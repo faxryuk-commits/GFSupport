@@ -314,7 +314,7 @@ export default function SalesCallsPage() {
                         )}
                       </div>
                     </div>
-                    {c.answered && c.uuid && (
+                    {c.uuid && (
                       <button onClick={() => listen(c.uuid!)} disabled={recBusy === c.uuid}
                         title="Прослушать запись"
                         className="flex-none flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200
