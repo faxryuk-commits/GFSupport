@@ -65,7 +65,14 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const res = await pbxCallNow(cfg, ext, to)
     if (!res.ok) {
-      return json({ error: 'АТС не приняла звонок', details: JSON.stringify(res.raw).slice(0, 200) }, 502)
+      const raw = JSON.stringify(res.raw).slice(0, 200)
+      const c = String(res.raw?.comment || '')
+      const human = /DND/i.test(c)
+        ? `Ваш внутренний номер ${ext} не в сети или в режиме «не беспокоить» — включите софтфон и попробуйте снова`
+        : /not (registered|found)|no such user/i.test(c)
+          ? `Внутренний номер ${ext} не зарегистрирован на АТС — проверьте номер в настройках`
+          : 'АТС не приняла звонок'
+      return json({ error: human, details: raw }, 502)
     }
     // След в пути клиента: сейлз инициировал звонок. Сам разговор и его
     // длительность приедут синком истории и лягут отдельным касанием

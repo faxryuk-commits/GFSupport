@@ -7,6 +7,7 @@ import { sendNotification } from '../_lib/notifications.js'
 import { tokenForPage } from '../_lib/meta-config.js'
 import { runQualifier } from '../_lib/sales-qualifier.js'
 import { readPbxConfig, pbxHistory } from '../_lib/pbx.js'
+import { acceptLead } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -190,12 +191,32 @@ export default async function handler(req: Request): Promise<Response> {
           const norm = c.clientNumber.replace(/\D/g, '').slice(-9)
           if (!norm || norm.length < 7) continue
           // Кому звонили: лид по нормализованному телефону, свежий важнее
-          const [lead] = await sql`
+          let [lead] = await sql`
             SELECT id, account_id, first_touch_at, status FROM sales_leads
             WHERE org_id = ${ORG} AND archived_at IS NULL
               AND phone_norm LIKE ${'%' + norm}
             ORDER BY created_at DESC LIMIT 1
           ` as any[]
+          // Входящий с неизвестного номера — это обращение, а не шум:
+          // человек сам позвонил. Заводим лида с источником «Входящий
+          // звонок» — он падает в общую очередь, и сейлз перезвонит
+          if (!lead && c.direction === 'in') {
+            const res = await acceptLead(sql, ORG, {
+              source: 'call',
+              external_id: `pbx_${norm}`,
+              name: `Звонок ${c.clientNumber}`,
+              phone: c.clientNumber,
+              lead_kind: 'call',
+              raw: { pbx_uuid: c.uuid, ext: c.ext },
+            }).catch(() => null as any)
+            if (res?.ok && res.lead_id) {
+              const [fresh] = await sql`
+                SELECT id, account_id, first_touch_at, status FROM sales_leads
+                WHERE id = ${res.lead_id} LIMIT 1
+              ` as any[]
+              lead = fresh
+            }
+          }
           const [dup] = await sql`
             SELECT id FROM sales_touchpoints
             WHERE org_id = ${ORG} AND kind = 'call' AND identity = ${c.uuid} LIMIT 1
