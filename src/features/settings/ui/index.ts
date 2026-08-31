@@ -9,3 +9,4 @@ export { AutoReplySettings, type AutoReplySettingsData, type AutoReplyTemplate }
 export { MarketsSettings } from './MarketsSettings'
 export { SlaGuardSettings } from './SlaGuardSettings'
 export { MetaConnectModal } from './MetaConnectModal'
+export { TelephonySettings } from './TelephonySettings'

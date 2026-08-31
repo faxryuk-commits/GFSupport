@@ -5,7 +5,7 @@ import {
   AlertCircle, Loader2, UsersRound, Users, Zap, ChevronRight, Check,
   Building2, Globe, Bot, Clock, Volume2, UserCog,
   Brain, FileText, Sparkles,
-} from 'lucide-react'
+, PhoneCall } from 'lucide-react'
 import {
   GeneralSettings,
   NotificationsSettings,
@@ -25,6 +25,7 @@ import {
   type ApiKey,
   type AppearanceSettingsData,
   type AutoReplySettingsData,
+  TelephonySettings,
 } from '@/features/settings/ui'
 import {
   fetchSettings,
@@ -40,7 +41,7 @@ import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 import { formatDateDMY } from '@/shared/lib'
 
-type SettingsTab = 'general' | 'team' | 'users' | 'markets' | 'automations' | 'autoreply' | 'ai-content' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
+type SettingsTab = 'general' | 'telephony' | 'team' | 'users' | 'markets' | 'automations' | 'autoreply' | 'ai-content' | 'notifications' | 'integrations' | 'security' | 'api' | 'appearance'
 
 interface TabConfig {
   id: SettingsTab
@@ -53,6 +54,7 @@ interface TabConfig {
 
 const tabs: TabConfig[] = [
   { id: 'general', label: 'Основные', description: 'Общие настройки системы', icon: Settings, color: 'text-blue-600', bgColor: 'bg-blue-100' },
+  { id: 'telephony', label: 'Телефония', description: 'АТС, номера сейлзов, звонки', icon: PhoneCall, color: 'text-green-600', bgColor: 'bg-green-100' },
   { id: 'team', label: 'Команда', description: 'Управление сотрудниками', icon: UsersRound, color: 'text-violet-600', bgColor: 'bg-violet-100' },
   { id: 'users', label: 'Клиенты', description: 'База клиентов и партнёров', icon: Users, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
   { id: 'markets', label: 'Рынки', description: 'Страны, доступы, привязки', icon: Globe, color: 'text-teal-600', bgColor: 'bg-teal-100' },
@@ -533,6 +535,8 @@ export function SettingsPage() {
 
             {/* Content Body */}
             <div className="space-y-6">
+              {activeTab === 'telephony' && <TelephonySettings />}
+
               {activeTab === 'general' && (
                 <>
                 <TabGuide

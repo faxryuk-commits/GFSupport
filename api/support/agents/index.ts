@@ -52,7 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
   // PUT - Update agent
   if (req.method === 'PUT') {
     try {
-      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions } = await req.json()
+      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions, pbxExt } = await req.json()
 
       if (!id) {
         return json({ error: 'Agent ID is required' }, 400)
@@ -76,6 +76,12 @@ export default async function handler(req: Request): Promise<Response> {
       if (password) {
         const passwordHash = await hashPassword(password)
         await sql`UPDATE support_agents SET password_hash = ${passwordHash} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+
+      // Номер телефонии задаётся и очищается отдельно: COALESCE не даёт
+      // стереть значение, а пустая строка здесь — осознанное «убрать номер»
+      if (pbxExt !== undefined) {
+        await sql`UPDATE support_agents SET pbx_ext = ${String(pbxExt).trim() || null} WHERE id = ${id} AND org_id = ${orgId}`
       }
 
       // Update permissions if provided
@@ -147,7 +153,7 @@ export default async function handler(req: Request): Promise<Response> {
   
   try {
     const rows = await sql`
-      SELECT id, name, username, email, telegram_id, role, status,
+      SELECT id, name, username, email, telegram_id, role, status, pbx_ext,
              avatar_url, created_at, phone, position, department, permissions
       FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC
     `
