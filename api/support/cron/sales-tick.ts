@@ -225,12 +225,26 @@ export default async function handler(req: Request): Promise<Response> {
           const title = c.direction === 'in'
             ? (c.talkSec > 0 ? `Входящий звонок · ${c.talkSec} сек` : 'Входящий звонок · не ответили')
             : (c.talkSec > 0 ? `Исходящий звонок · ${c.talkSec} сек` : 'Исходящий звонок · недозвон')
+          // Кто на нашей стороне: короткий добавочный — как есть; переадресация
+          // на мобильный (ночь, в офисе пусто) — по совпадению с телефоном
+          // сотрудника, чтобы атрибуция звонка не терялась
+          let side = c.ext ? ` · внутр. ${c.ext}` : ''
+          if (!side && c.forwardedTo) {
+            const fwd = c.forwardedTo.replace(/\D/g, '').slice(-9)
+            const [ag] = await sql`
+              SELECT name FROM support_agents
+              WHERE regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + fwd}
+                AND merged_into IS NULL
+              LIMIT 1
+            `.catch(() => [] as any[]) as any[]
+            if (ag?.name) side = ` · моб. ${ag.name}`
+          }
           await sql`
             INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
                                            title, detail, identity, happened_at)
             VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG},
                     ${lead?.account_id || null}, ${lead?.id || null}, 'call', 'phone',
-                    ${title}, ${c.clientNumber + (c.ext ? ` · внутр. ${c.ext}` : '')},
+                    ${title}, ${c.clientNumber + side},
                     ${c.uuid}, ${new Date(c.startStamp * 1000).toISOString()})
           `
           saved++
