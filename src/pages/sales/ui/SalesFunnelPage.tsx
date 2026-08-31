@@ -285,8 +285,14 @@ export function SalesFunnelPage() {
                         <div className="text-[11px] text-gray-600 mt-1 line-clamp-2">«{l.text}»</div>
                       )}
                       <div className="text-[10px] text-gray-400 mt-1">
-                        {[l.city, phone.valid ? phone.pretty : l.phone, l.source]
-                          .filter(Boolean).join(' · ')}
+                        {l.city && <span>{l.city} · </span>}
+                        {l.phone && (
+                          <>
+                            <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
+                            {' · '}
+                          </>
+                        )}
+                        {l.source}
                       </div>
                       {/* Когда обращение пришло — цифра, по которой сейлз решает,
                           звонить сейчас или это вчерашний хвост. «Просрочено на
@@ -427,11 +433,10 @@ export function SalesFunnelPage() {
                           </button>
                         )}
                         {d.phone && (
-                          <a href={`tel:${d.phone}`}
-                            className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
-                                       hover:border-blue-400 hover:text-blue-600">
-                            Позвонить
-                          </a>
+                          <span className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
+                                           hover:border-emerald-400">
+                            <CallPhone phone={d.phone} market={d.market_id} size="sm" />
+                          </span>
                         )}
                       </div>
                     </article>

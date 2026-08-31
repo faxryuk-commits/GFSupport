@@ -132,9 +132,7 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
             </div>
             <div className="flex items-center gap-2 flex-none">
               {c.phone && (
-                <a href={`tel:${c.phone}`} className="text-[12px] text-blue-600 hover:underline tabular-nums">
-                  {c.phone}
-                </a>
+                <CallPhone phone={c.phone} size="sm" className="text-[12px] text-blue-600" />
               )}
               {!c.is_primary && (
                 <button onClick={() => makePrimary(c)} title="Сделать основным контактом"

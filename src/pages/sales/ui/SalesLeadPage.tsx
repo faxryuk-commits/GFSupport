@@ -152,7 +152,6 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   const params = useParams()
   const id = leadId || params.id
   const [data, setData] = useState<LeadData | null>(null)
-  const [calling, setCalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
@@ -232,17 +231,6 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   if (!data) return <Skeleton rows={5} kpis={false} />
 
   const l = data.lead
-  // Звонок через АТС: телефония сама позвонит сейлзу и соединит с клиентом.
-  // tel:-ссылка остаётся запасным путём с мобильного
-  const callViaPbx = async () => {
-    setCalling(true)
-    try {
-      await apiPost('/sales/call', { to: l.phone, leadId: l.id })
-    } catch (e: any) {
-      alert(e?.message || 'Телефония не настроена')
-    } finally { setCalling(false) }
-  }
-
   const phone = parsePhone(l.phone, l.market_id)
   const open = ['new', 'assigned', 'attempting', 'nurture'].includes(l.status)
 
@@ -346,23 +334,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           {l.contact_name && <Row label="Контакт">{l.contact_name}</Row>}
           <Row label="Телефон">
             {l.phone
-              ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">
-                  {phone.valid ? phone.pretty : l.phone}
-                </a>
+              ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} />
               : <span className="text-gray-400">не оставил</span>}
             {phone.valid && phone.operator && (
               <span className="text-gray-400 text-[11.5px]"> · {phone.operator}</span>
-            )}
-            {l.phone && (
-              <button
-                onClick={callViaPbx}
-                disabled={calling}
-                title="АТС позвонит вам, затем соединит с клиентом. Разговор запишется"
-                className="ml-2 text-[11px] px-2 py-0.5 rounded-md border border-emerald-300
-                           text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-              >
-                {calling ? 'Соединяю…' : '📞 Позвонить'}
-              </button>
             )}
           </Row>
           {l.city && <Row label="Город">{l.city}</Row>}

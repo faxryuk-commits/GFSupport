@@ -369,7 +369,7 @@ export function SalesLeadsPage() {
                           {l.city && <Chip tone="gray">{l.city}</Chip>}
                           {l.phone && (
                             <Chip tone="gray">
-                              {phone.valid ? phone.pretty : l.phone}
+                              <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
                               {phone.operator ? ` · ${phone.kind === 'landline' ? 'городской' : phone.operator}` : ''}
                             </Chip>
                           )}

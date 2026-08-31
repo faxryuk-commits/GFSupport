@@ -315,10 +315,9 @@ export function SalesQueuePage() {
                   </div>
                   <div className="flex gap-1.5 flex-wrap justify-end">
                     {d.phone && (
-                      <a href={`tel:${d.phone}`}
-                        className="text-[12px] px-2.5 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-                        Позвонить
-                      </a>
+                      <span className="text-[12px] px-2.5 py-1.5 border border-gray-300 rounded-lg hover:border-emerald-500">
+                        <CallPhone phone={d.phone} size="sm" />
+                      </span>
                     )}
                     {!d.next_step_at && (
                       <button disabled={busy === d.id} onClick={() => planStep(d.id)}
