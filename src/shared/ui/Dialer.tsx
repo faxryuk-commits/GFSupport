@@ -37,7 +37,7 @@ export function Dialer() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Живые входящие из вебхука АТС: звонок всплывает ещё до снятой трубки
   const [incoming, setIncoming] = useState<Array<{
-    number: string; leadId: string | null; leadName: string | null
+    number: string; leadId: string | null; leadName: string | null; staff?: string | null
   }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
@@ -176,6 +176,8 @@ export function Dialer() {
                     className="text-[11.5px] text-blue-600 hover:underline max-w-[140px] truncate">
                     {c.leadName || 'лид'}
                   </Link>
+                ) : c.staff ? (
+                  <span className="text-[11px] text-gray-500">сотрудник {c.staff}</span>
                 ) : (
                   <span className="text-[11px] text-gray-400">номер новый</span>
                 )}

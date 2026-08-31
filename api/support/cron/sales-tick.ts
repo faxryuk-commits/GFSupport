@@ -201,10 +201,23 @@ export default async function handler(req: Request): Promise<Response> {
               AND phone_norm LIKE ${'%' + norm}
             ORDER BY created_at DESC LIMIT 1
           ` as any[]
+          // Свои — не лиды: команда постоянно звонит на офисный номер, и
+          // каждый такой тест превращался в карточку «Звонок 3300…»
+          let isStaff = false
+          if (!lead && c.direction === 'in') {
+            const [st] = await sql`
+              SELECT id FROM support_agents
+              WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+                     OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm})
+                AND merged_into IS NULL
+              LIMIT 1
+            `.catch(() => [] as any[]) as any[]
+            isStaff = Boolean(st)
+          }
           // Входящий с неизвестного номера — это обращение, а не шум:
           // человек сам позвонил. Заводим лида с источником «Входящий
           // звонок» — он падает в общую очередь, и сейлз перезвонит
-          if (!lead && c.direction === 'in') {
+          if (!lead && !isStaff && c.direction === 'in') {
             const res = await acceptLead(sql, ORG, {
               source: 'call',
               external_id: `pbx_${norm}`,

@@ -210,9 +210,23 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
         ORDER BY created_at DESC LIMIT 1
       `.catch(() => [] as any[]) as any[]
+      // Свой номер — назвать по имени: команда тестирует линию постоянно,
+      // и «номер новый» на коллеге сбивает с толку
+      let staff: string | null = null
+      if (!lead) {
+        const [st] = await sql`
+          SELECT name FROM support_agents
+          WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+                 OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm})
+            AND merged_into IS NULL
+          LIMIT 1
+        `.catch(() => [] as any[]) as any[]
+        staff = st?.name || null
+      }
       calls.push({
         number: r.caller, at: r.created_at,
         leadId: lead?.id || null, leadName: lead?.name || null,
+        staff,
       })
     }
     return json({ calls })
