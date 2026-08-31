@@ -16,6 +16,8 @@ type Activity = {
   id: string; type: string; direction: string | null; result: string | null
   text: string | null; agent_id: string | null; agent_name: string | null
   happened_at: string
+  /** Запись пришла из АТС — её нельзя убрать руками, она факт, а не заметка. */
+  readonly?: boolean
 }
 
 const TYPES: Array<[string, string, string]> = [
@@ -168,10 +170,12 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
                   {a.agent_name ? ` · ${a.agent_name}` : ''}
                 </div>
               </div>
-              <button onClick={() => remove(a)} title="Убрать запись"
-                className="opacity-0 group-hover:opacity-100 text-[11px] text-gray-300 hover:text-red-600 flex-none">
-                убрать
-              </button>
+              {!a.readonly && (
+                <button onClick={() => remove(a)} title="Убрать запись"
+                  className="opacity-0 group-hover:opacity-100 text-[11px] text-gray-300 hover:text-red-600 flex-none">
+                  убрать
+                </button>
+              )}
             </div>
           )
         })}

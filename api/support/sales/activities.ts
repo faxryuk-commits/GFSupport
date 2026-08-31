@@ -113,5 +113,37 @@ export default async function handler(req: Request): Promise<Response> {
         LIMIT 60
       `
 
-  return json({ activities })
+  // Звонки из АТС живут в касаниях (sales_touchpoints) — их пишет синк
+  // телефонии с дедупликацией по uuid звонка. Здесь подмешиваем их к журналу
+  // на чтении: у каждой таблицы один писатель, а сейлз видит одну ленту —
+  // и свои заметки, и реальные звонки из OnlinePBX
+  const acc = accountId || (dealId ? await sql`
+    SELECT account_id FROM sales_deals WHERE id = ${dealId} AND org_id = ${orgId} LIMIT 1
+  `.then((r: any[]) => r[0]?.account_id || null) : null)
+
+  let calls: any[] = []
+  if (acc) {
+    const tps = await sql`
+      SELECT id, title, detail, happened_at FROM sales_touchpoints
+      WHERE org_id = ${orgId} AND account_id = ${acc} AND kind = 'call'
+      ORDER BY happened_at DESC LIMIT 40
+    ` as any[]
+    calls = tps.map((t: any) => ({
+      id: `tp_${t.id}`,
+      type: 'call',
+      direction: /входящ/i.test(t.title) ? 'in' : 'out',
+      result: String(t.title).split('·')[1]?.trim() || null,
+      text: t.detail,
+      agent_id: null,
+      agent_name: 'АТС',
+      happened_at: t.happened_at,
+      readonly: true,
+    }))
+  }
+
+  const merged = [...(activities as any[]), ...calls]
+    .sort((a, b) => new Date(b.happened_at).getTime() - new Date(a.happened_at).getTime())
+    .slice(0, 60)
+
+  return json({ activities: merged })
 }
