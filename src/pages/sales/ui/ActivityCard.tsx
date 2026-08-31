@@ -18,6 +18,8 @@ type Activity = {
   happened_at: string
   /** Запись пришла из АТС — её нельзя убрать руками, она факт, а не заметка. */
   readonly?: boolean
+  /** uuid звонка в АТС — по нему достаётся запись разговора. */
+  record_uuid?: string | null
 }
 
 const TYPES: Array<[string, string, string]> = [
@@ -45,6 +47,20 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Прослушивание: ссылка на mp3 подписанная и недолгая, тянем по клику
+  const [playing, setPlaying] = useState<{ id: string; url: string } | null>(null)
+  const [recBusy, setRecBusy] = useState<string | null>(null)
+
+  const listen = async (a: Activity) => {
+    if (!a.record_uuid) return
+    setRecBusy(a.id)
+    try {
+      const r = await apiPost<{ url: string }>('/sales/call?action=record', { uuid: a.record_uuid })
+      setPlaying({ id: a.id, url: r.url })
+    } catch (e: any) {
+      setError(e?.message || 'Запись не нашлась')
+    } finally { setRecBusy(null) }
+  }
 
   const query = dealId ? `dealId=${dealId}` : `accountId=${accountId}`
 
@@ -168,7 +184,18 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
                 <div className="text-[11px] text-gray-400 mt-0.5">
                   {formatDateTimeShort(a.happened_at)} · {view.label}
                   {a.agent_name ? ` · ${a.agent_name}` : ''}
+                  {/* Запись есть только у состоявшихся разговоров — у недозвонов
+                      АТС писать нечего */}
+                  {a.record_uuid && /сек/.test(a.result || '') && playing?.id !== a.id && (
+                    <button onClick={() => listen(a)} disabled={recBusy === a.id}
+                      className="ml-2 text-emerald-700 hover:underline disabled:opacity-50">
+                      {recBusy === a.id ? 'загружаю…' : '▶ запись'}
+                    </button>
+                  )}
                 </div>
+                {playing?.id === a.id && (
+                  <audio controls autoPlay src={playing.url} className="mt-1.5 h-8 w-full max-w-[360px]" />
+                )}
               </div>
               {!a.readonly && (
                 <button onClick={() => remove(a)} title="Убрать запись"

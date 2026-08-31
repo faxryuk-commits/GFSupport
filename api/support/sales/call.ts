@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
-import { readPbxConfig, pbxCallNow, pbxProbe } from '../_lib/pbx.js'
+import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl } from '../_lib/pbx.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -42,6 +42,21 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ ok: true, raw })
     } catch (e: any) {
       return json({ ok: false, error: String(e?.message || e).slice(0, 300) }, 502)
+    }
+  }
+
+  // Запись разговора: свежая подписанная ссылка на mp3 по uuid звонка.
+  // Доступна любому вошедшему сотруднику — как и сама карточка клиента
+  if (url.searchParams.get('action') === 'record') {
+    const b = await req.json().catch(() => null)
+    const uuid = String(b?.uuid || '').trim()
+    if (!/^[0-9a-f-]{20,60}$/i.test(uuid)) return json({ error: 'uuid не распознан' }, 400)
+    try {
+      const rec = await pbxRecordUrl(cfg, uuid)
+      if (!rec) return json({ error: 'Запись не найдена — возможно, разговор не записывался' }, 404)
+      return json({ url: rec })
+    } catch (e: any) {
+      return json({ error: 'АТС не отдала запись', details: String(e?.message || e).slice(0, 200) }, 502)
     }
   }
 

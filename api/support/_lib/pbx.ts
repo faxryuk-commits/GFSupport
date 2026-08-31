@@ -146,6 +146,17 @@ export async function pbxCallNow(cfg: PbxConfig, fromExt: string, toNumber: stri
   return { ok: Boolean(data && Number(data.status) === 1), raw: data }
 }
 
+/**
+ * Ссылка на запись разговора. Для одиночного uuid АТС отдаёт прямой mp3
+ * (для интервала — tar-архив, поэтому только точечные запросы). Ссылка
+ * подписанная и живёт недолго — запрашивается на каждое прослушивание.
+ */
+export async function pbxRecordUrl(cfg: PbxConfig, uuid: string): Promise<string | null> {
+  const data = await pbxPost(cfg, 'mongo_history/search.json', { uuid, download: '1' })
+  const url = data && Number(data.status) === 1 && typeof data.data === 'string' ? data.data : null
+  return url && url.startsWith('http') ? url : null
+}
+
 /** Диагностика для настройки: живой ли ключ и что отвечает история. */
 export async function pbxProbe(cfg: PbxConfig): Promise<any> {
   const now = Math.floor(Date.now() / 1000)

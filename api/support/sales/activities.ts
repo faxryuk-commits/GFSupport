@@ -130,6 +130,7 @@ export default async function handler(req: Request): Promise<Response> {
     ` as any[]
     calls = tps.map((t: any) => ({
       id: `tp_${t.id}`,
+      record_uuid: t.identity || null,
       type: 'call',
       direction: /входящ/i.test(t.title) ? 'in' : 'out',
       result: String(t.title).split('·')[1]?.trim() || null,
