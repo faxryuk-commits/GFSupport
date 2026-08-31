@@ -5,6 +5,9 @@ export interface BackendSettings {
   telegram_bot_token: string
   /** Бот заявок с сайта — чаты у него свои, отвечать в них нужно его токеном */
   sales_bot_token: string
+  onlinepbx_domain: string
+  onlinepbx_api_key: string
+  onlinepbx_ext: string
   telegram_bot_username: string
   openai_api_key: string
   auto_create_cases: boolean

@@ -6,6 +6,7 @@ import { assertCron } from '../_lib/cron-auth.js'
 import { sendNotification } from '../_lib/notifications.js'
 import { tokenForPage } from '../_lib/meta-config.js'
 import { runQualifier } from '../_lib/sales-qualifier.js'
+import { readPbxConfig, pbxHistory } from '../_lib/pbx.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -43,10 +44,11 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ`
     await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS sla_handoff_at TIMESTAMPTZ`
     await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS sla_handoffs INT DEFAULT 0`
+    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS pbx_ext VARCHAR(10)`
   })
 
   const token = await getBotToken(sql)
-  const out = { reassigned: 0, reminded: 0, stalled: 0, abandoned: 0, reactivated: 0 }
+  const out: Record<string, number> = { reassigned: 0, reminded: 0, stalled: 0, abandoned: 0, reactivated: 0 }
 
   // ─── 1. Просроченный SLA первого касания ────────────────────────────────────
   // Два предохранителя, без которых карусель превращалась во враньё:
@@ -163,6 +165,74 @@ export default async function handler(req: Request): Promise<Response> {
       })
     }
   } catch { /* досмотр не должен ронять остальной проход */ }
+
+  // ─── 1в. Звонки из OnlinePBX ────────────────────────────────────────────────
+  //
+  // История АТС ложится касаниями на лида: видно, кто и когда звонил, дозвон
+  // проставляет первое касание — норматив «15 минут» наконец меряется и
+  // звонками. Раз в пять минут по курсору; дедупликация по uuid звонка в
+  // поле identity касания.
+  try {
+    const cfg = await readPbxConfig(sql, ORG)
+    if (cfg) {
+      const CUR = 'pbx_sync_cursor'
+      const [cur] = await sql`
+        SELECT value FROM support_platform_settings WHERE key = ${CUR} LIMIT 1
+      ` as any[]
+      const lastSync = Number(cur?.value || 0)
+      const nowSec = Math.floor(Date.now() / 1000)
+      if (nowSec - lastSync >= 300) {
+        // Первый запуск: сутки назад, не глубже — древность уже прожита в Amo
+        const from = lastSync > 0 ? lastSync - 60 : nowSec - 24 * 3600
+        const calls = await pbxHistory(cfg, from, nowSec)
+        let saved = 0
+        for (const c of calls) {
+          const norm = c.clientNumber.replace(/\D/g, '').slice(-9)
+          if (!norm || norm.length < 7) continue
+          // Кому звонили: лид по нормализованному телефону, свежий важнее
+          const [lead] = await sql`
+            SELECT id, account_id, first_touch_at, status FROM sales_leads
+            WHERE org_id = ${ORG} AND archived_at IS NULL
+              AND phone_norm LIKE ${'%' + norm}
+            ORDER BY created_at DESC LIMIT 1
+          ` as any[]
+          const [dup] = await sql`
+            SELECT id FROM sales_touchpoints
+            WHERE org_id = ${ORG} AND kind = 'call' AND identity = ${c.uuid} LIMIT 1
+          ` as any[]
+          if (dup) continue
+          const title = c.direction === 'in'
+            ? (c.talkSec > 0 ? `Входящий звонок · ${c.talkSec} сек` : 'Входящий звонок · не ответили')
+            : (c.talkSec > 0 ? `Исходящий звонок · ${c.talkSec} сек` : 'Исходящий звонок · недозвон')
+          await sql`
+            INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
+                                           title, detail, identity, happened_at)
+            VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG},
+                    ${lead?.account_id || null}, ${lead?.id || null}, 'call', 'phone',
+                    ${title}, ${c.clientNumber + (c.ext ? ` · внутр. ${c.ext}` : '')},
+                    ${c.uuid}, ${new Date(c.startStamp * 1000).toISOString()})
+          `
+          saved++
+          // Состоявшийся разговор — настоящее первое касание
+          if (lead && !lead.first_touch_at && c.talkSec > 0) {
+            await sql`
+              UPDATE sales_leads SET first_touch_at = NOW(), updated_at = NOW()
+              WHERE id = ${lead.id} AND org_id = ${ORG} AND first_touch_at IS NULL
+            `
+          }
+        }
+        await sql`
+          INSERT INTO support_platform_settings (key, value, updated_at)
+          VALUES (${CUR}, ${String(nowSec)}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = ${String(nowSec)}, updated_at = NOW()
+        `
+        if (saved) out.calls = saved
+      }
+    }
+  } catch (e) {
+    // Телефония не должна ронять остальной проход; причину — в лог функции
+    console.error('[sales-tick] pbx sync:', e)
+  }
 
   // ─── 2. Просроченные задачи и каденции ──────────────────────────────────────
   // Раньше выборка требовала привязанного телеграма, и у сотрудника без бота

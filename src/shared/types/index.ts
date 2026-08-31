@@ -337,6 +337,9 @@ export interface SupportSettings {
   botToken: string
   /** Бот заявок с сайта: чаты у него свои, и отвечать в них нужно его токеном */
   salesBotToken: string
+  pbxDomain: string
+  pbxApiKey: string
+  pbxExt: string
   autoCreateCases: boolean
   aiModel: string
   notifyOnNewMessage: boolean

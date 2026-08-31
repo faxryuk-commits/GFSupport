@@ -12,6 +12,10 @@ const DEFAULT_SETTINGS = {
   telegram_bot_username: '',
   // Бот заявок с сайта — отдельный от бота поддержки, и чаты у них разные
   sales_bot_token: '',
+  // Телефония OnlinePBX: домен АТС, API-ключ из ЛК и общий внутренний номер
+  onlinepbx_domain: 'pbx27296.onpbx.ru',
+  onlinepbx_api_key: '',
+  onlinepbx_ext: '',
   openai_api_key: '', // Пустой = использовать env
   auto_create_cases: true,
   min_urgency_for_case: 2,
@@ -108,6 +112,9 @@ export default async function handler(req: Request): Promise<Response> {
           : '',
         sales_bot_token: hasSalesBotToken
           ? `${settings.sales_bot_token.slice(0, 10)}...${settings.sales_bot_token.slice(-4)}`
+          : '',
+        onlinepbx_api_key: dbSettings.onlinepbx_api_key
+          ? `${String(settings.onlinepbx_api_key).slice(0, 6)}...${String(settings.onlinepbx_api_key).slice(-4)}`
           : '',
       }
 

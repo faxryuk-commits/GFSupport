@@ -6,6 +6,9 @@ export interface GeneralSettingsData {
   companyName: string
   botToken: string
   salesBotToken: string
+  pbxDomain: string
+  pbxApiKey: string
+  pbxExt: string
   defaultLanguage: string
   timezone: string
   autoCreateCases: boolean
@@ -154,6 +157,39 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
             <p className="mt-2 text-xs text-slate-500">
               Бот, который приводит людей с сайта. Без него ответить в такие диалоги нельзя —
               их чаты принадлежат ему, а не боту поддержки.
+            </p>
+          </div>
+
+          {/* Телефония: АТС OnlinePBX. Ключ выпускается в ЛК АТС (Настройки → API).
+              Без него не работают кнопка «Позвонить» и синк истории звонков */}
+          <div className="mb-6">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
+              <Bot className="w-4 h-4 text-slate-400" />
+              Телефония OnlinePBX
+            </label>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <input
+                type="text" value={general.pbxDomain}
+                onChange={(e) => onGeneralChange({ ...general, pbxDomain: e.target.value })}
+                className="px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
+                placeholder="pbx27296.onpbx.ru"
+              />
+              <input
+                type="password" value={general.pbxApiKey}
+                onChange={(e) => onGeneralChange({ ...general, pbxApiKey: e.target.value })}
+                className="px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
+                placeholder="API-ключ из ЛК АТС"
+              />
+              <input
+                type="text" value={general.pbxExt}
+                onChange={(e) => onGeneralChange({ ...general, pbxExt: e.target.value })}
+                className="px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
+                placeholder="Внутр. номер, напр. 100"
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              История звонков ляжет касаниями на лидов, дозвон засчитается первым касанием,
+              а кнопка «Позвонить» на карточке соединит сейлза с клиентом через АТС.
             </p>
           </div>
 
