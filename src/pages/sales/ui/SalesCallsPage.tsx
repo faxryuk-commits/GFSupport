@@ -88,6 +88,68 @@ function Bars({ items, labelEvery = 1, labels }: {
   )
 }
 
+const fmtSince = (sec: number): string => {
+  if (sec < 60) return `${sec} сек`
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+}
+
+/** Линия прямо сейчас: кто звонит и с кем идёт разговор, по событиям АТС. */
+function LiveLines() {
+  const [lines, setLines] = useState<Array<{
+    direction: 'in' | 'out'; state: 'ringing' | 'talking'; number: string
+    ext: string | null; sinceSec: number; leadId: string | null; leadName: string | null
+  }>>([])
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    let stop = false
+    const load = () => {
+      apiGet<any>('/sales/call?action=now', false)
+        .then(d => { if (!stop) { setLines(d?.lines || []); setTick(0) } })
+        .catch(() => {})
+    }
+    load()
+    const poll = setInterval(load, 10000)
+    // Секундомер тикает локально между опросами — разговор «живёт» на глазах
+    const t = setInterval(() => setTick(x => x + 1), 1000)
+    return () => { stop = true; clearInterval(poll); clearInterval(t) }
+  }, [])
+
+  if (!lines.length) return null
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 mb-1.5">
+        Сейчас на линии
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+        {lines.map((l, i) => {
+          const p = parsePhone(l.number)
+          return (
+            <div key={`${l.number}_${i}`} className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full flex-none ${
+                l.state === 'talking' ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`} />
+              <span className="text-[12.5px] text-gray-800 tabular-nums">
+                {l.direction === 'in' ? '↓' : '↑'} {p.valid ? p.pretty : l.number}
+              </span>
+              {l.leadId && (
+                <Link to={`/sales/leads/${l.leadId}`}
+                  className="text-[11.5px] text-blue-600 hover:underline max-w-[180px] truncate">
+                  {l.leadName || 'лид'}
+                </Link>
+              )}
+              {l.ext && <span className="text-[11px] text-gray-400">внутр. {l.ext}</span>}
+              <span className={`text-[11.5px] tabular-nums ${
+                l.state === 'talking' ? 'text-emerald-700' : 'text-amber-600'}`}>
+                {l.state === 'talking' ? `разговор · ${fmtSince(l.sinceSec + tick)}` : 'звонит…'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function SalesCallsPage() {
   const [days, setDays] = useState(7)
   const [data, setData] = useState<Stats | null>(null)
@@ -164,6 +226,7 @@ export default function SalesCallsPage() {
 
   return (
     <PageShell header={header}>
+      <LiveLines />
       <Kpis items={[
         ['Всего звонков', String(t?.total ?? 0), `↓ ${t?.inbound ?? 0} входящих · ↑ ${t?.outbound ?? 0} исходящих`],
         ['Дозвон', `${answeredRate}%`, `${t?.answered ?? 0} разговоров состоялось`],

@@ -232,6 +232,66 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ calls })
   }
 
+  // Линия прямо сейчас: события вебхука сворачиваются по uuid звонка в
+  // состояния «звонит» / «разговор». Дашборд показывает живую картину —
+  // кто на линии и как давно
+  if (req.method === 'GET' && url.searchParams.get('action') === 'now') {
+    const rows = await sql`
+      SELECT event, caller, callee, raw->>'uuid' AS uuid, raw->>'direction' AS dir, created_at
+      FROM sales_pbx_events
+      WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '2 hours'
+        AND raw->>'uuid' IS NOT NULL
+      ORDER BY created_at ASC
+    `.catch(() => [] as any[]) as any[]
+    interface Line {
+      uuid: string; dir: string; client: string; ext: string | null
+      state: 'ringing' | 'talking' | 'done'; at: string
+    }
+    const byUuid = new Map<string, Line>()
+    for (const r of rows) {
+      const dir = String(r.dir || '')
+      const client = dir === 'inbound' ? String(r.caller || '') : String(r.callee || '')
+      const ext = dir === 'inbound' ? null : String(r.caller || '') || null
+      const cur = byUuid.get(r.uuid) || {
+        uuid: r.uuid, dir, client, ext, state: 'ringing' as const, at: r.created_at,
+      }
+      if (client && !cur.client) cur.client = client
+      const ev = String(r.event || '')
+      if (/answered/.test(ev)) { cur.state = 'talking'; cur.at = r.created_at }
+      else if (/end|missed|hangup/.test(ev)) cur.state = 'done'
+      byUuid.set(r.uuid, cur)
+    }
+    const nowMs = Date.now()
+    const lines: any[] = []
+    for (const l of byUuid.values()) {
+      if (l.state === 'done') continue
+      const ageSec = Math.round((nowMs - new Date(l.at).getTime()) / 1000)
+      // Осиротевшие состояния (событие завершения потерялось) не должны
+      // висеть вечно: гудки живут минуты, разговоры — до пары часов
+      if (l.state === 'ringing' && ageSec > 180) continue
+      if (l.state === 'talking' && ageSec > 2 * 3600) continue
+      const digits = l.client.replace(/\D/g, '')
+      if (digits.length < 7) continue
+      const norm = digits.slice(-9)
+      const [lead] = await sql`
+        SELECT id, name FROM sales_leads
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
+        ORDER BY created_at DESC LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      lines.push({
+        direction: l.dir === 'inbound' ? 'in' : 'out',
+        state: l.state,
+        number: l.client,
+        ext: l.ext,
+        sinceSec: ageSec,
+        leadId: lead?.id || null,
+        leadName: lead?.name || null,
+      })
+      if (lines.length >= 8) break
+    }
+    return json({ lines })
+  }
+
   // История для звонилки: последние звонки из касаний с привязкой к лидам.
   // Синк наполняет их раз в несколько минут — свежайший звонок может чуть
   // запаздывать, и это нормально
