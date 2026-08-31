@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus } from '../_lib/pbx.js'
-import { acceptLead } from '../_lib/sales-intake.js'
+import { leadFromPhone } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -76,51 +76,11 @@ export default async function handler(req: Request): Promise<Response> {
   // существующую карточку, а осиротевшие касания-звонки прикрепляются к новой.
   if (url.searchParams.get('action') === 'lead') {
     const b = await req.json().catch(() => null)
-    const rawNum = String(b?.number || '').trim()
-    const norm = rawNum.replace(/\D/g, '').slice(-9)
-    if (norm.length < 7) return json({ error: 'Номер не распознан' }, 400)
-
-    const [hit] = await sql`
-      SELECT id, name FROM sales_leads
-      WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
-      ORDER BY created_at DESC LIMIT 1
-    ` as any[]
-    if (hit) return json({ leadId: hit.id, name: hit.name, existing: true })
-
-    const res: any = await acceptLead(sql, orgId, {
-      source: 'call',
-      external_id: `pbx_${norm}`,
-      name: String(b?.name || '').trim().slice(0, 255) || `Звонок ${rawNum}`,
-      phone: rawNum,
-      lead_kind: 'call',
-      raw: { created_from: 'dialer', by: ctx.agentId },
-    }).catch((e: any) => ({ ok: false, error: String(e?.message || e).slice(0, 200) }))
-    if (!res?.ok || !res.lead_id) {
-      return json({ error: res?.error || 'Не удалось создать лида' }, 500)
-    }
-    const [lead] = await sql`
-      SELECT id, account_id FROM sales_leads WHERE id = ${res.lead_id} LIMIT 1
-    ` as any[]
-    // Звонки этого номера, лежавшие без хозяина, — в новую карточку.
-    // Номер клиента — начало detail до разделителя; regex параметром: инлайновый
-    // обратный слэш ломается в шаблоне neon
-    await sql`
-      UPDATE sales_touchpoints
-      SET lead_id = ${lead.id}, account_id = ${lead.account_id}
-      WHERE org_id = ${orgId} AND kind = 'call' AND lead_id IS NULL
-        AND regexp_replace(split_part(detail, '·', 1), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
-    `.catch(() => {})
-    // Если среди прикреплённых уже был состоявшийся разговор — это и есть
-    // первое касание, пусть норматив меряется честно
-    await sql`
-      UPDATE sales_leads l SET first_touch_at = sub.t, updated_at = NOW()
-      FROM (
-        SELECT MIN(happened_at) AS t FROM sales_touchpoints
-        WHERE org_id = ${orgId} AND lead_id = ${lead.id} AND kind = 'call' AND title LIKE '%сек%'
-      ) sub
-      WHERE l.id = ${lead.id} AND l.first_touch_at IS NULL AND sub.t IS NOT NULL
-    `.catch(() => {})
-    return json({ leadId: lead.id, existing: false })
+    const r = await leadFromPhone(sql, orgId, String(b?.number || ''), {
+      name: b?.name, createdFrom: 'dialer', byAgent: ctx.agentId,
+    })
+    if (r.error) return json({ error: r.error }, r.error === 'Номер не распознан' ? 400 : 500)
+    return json({ leadId: r.leadId, name: r.name, existing: r.existing })
   }
 
   const cfg = await readPbxConfig(sql, orgId)

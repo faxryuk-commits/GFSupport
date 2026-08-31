@@ -1,6 +1,6 @@
 import { getSQL, json, ensureOnce } from '../_lib/db.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
-import { getBotToken, tgSend, leadCard, leadKeyboard } from '../_lib/sales-bot.js'
+import { getBotToken, tgSend, leadCard, leadKeyboard, notifyCallDone } from '../_lib/sales-bot.js'
 import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../_lib/sales-assistant.js'
 import { assertCron } from '../_lib/cron-auth.js'
 import { sendNotification } from '../_lib/notifications.js'
@@ -192,7 +192,7 @@ export default async function handler(req: Request): Promise<Response> {
           if (!norm || norm.length < 7) continue
           // Кому звонили: лид по нормализованному телефону, свежий важнее
           let [lead] = await sql`
-            SELECT id, account_id, first_touch_at, status FROM sales_leads
+            SELECT id, name, account_id, first_touch_at, status FROM sales_leads
             WHERE org_id = ${ORG} AND archived_at IS NULL
               AND phone_norm LIKE ${'%' + norm}
             ORDER BY created_at DESC LIMIT 1
@@ -211,7 +211,7 @@ export default async function handler(req: Request): Promise<Response> {
             }).catch(() => null as any)
             if (res?.ok && res.lead_id) {
               const [fresh] = await sql`
-                SELECT id, account_id, first_touch_at, status FROM sales_leads
+                SELECT id, name, account_id, first_touch_at, status FROM sales_leads
                 WHERE id = ${res.lead_id} LIMIT 1
               ` as any[]
               lead = fresh
@@ -225,20 +225,29 @@ export default async function handler(req: Request): Promise<Response> {
           const title = c.direction === 'in'
             ? (c.talkSec > 0 ? `Входящий звонок · ${c.talkSec} сек` : 'Входящий звонок · не ответили')
             : (c.talkSec > 0 ? `Исходящий звонок · ${c.talkSec} сек` : 'Исходящий звонок · недозвон')
-          // Кто на нашей стороне: короткий добавочный — как есть; переадресация
-          // на мобильный (ночь, в офисе пусто) — по совпадению с телефоном
-          // сотрудника, чтобы атрибуция звонка не терялась
-          let side = c.ext ? ` · внутр. ${c.ext}` : ''
-          if (!side && c.forwardedTo) {
-            const fwd = c.forwardedTo.replace(/\D/g, '').slice(-9)
-            const [ag] = await sql`
-              SELECT name FROM support_agents
-              WHERE regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + fwd}
+          // Кто на нашей стороне: короткий добавочный — по pbx_ext;
+          // внешний номер (переадресация входящего ночью, мобильная первая
+          // нога исходящего) — по телефону из профиля. Сотрудник нужен дважды:
+          // подпись в касании и пинг в бот после разговора
+          let me: any = null
+          if (c.ext) {
+            ;[me] = await sql`
+              SELECT id, name, telegram_id FROM support_agents
+              WHERE regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') = ${c.ext}
                 AND merged_into IS NULL
               LIMIT 1
             `.catch(() => [] as any[]) as any[]
-            if (ag?.name) side = ` · моб. ${ag.name}`
+          } else if (c.agentExternal) {
+            const own = c.agentExternal.replace(/\D/g, '').slice(-9)
+            ;[me] = await sql`
+              SELECT id, name, telegram_id FROM support_agents
+              WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + own}
+                     OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + own})
+                AND merged_into IS NULL
+              LIMIT 1
+            `.catch(() => [] as any[]) as any[]
           }
+          const side = c.ext ? ` · внутр. ${c.ext}` : (me?.name ? ` · моб. ${me.name}` : '')
           await sql`
             INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
                                            title, detail, identity, happened_at)
@@ -254,6 +263,18 @@ export default async function handler(req: Request): Promise<Response> {
               UPDATE sales_leads SET first_touch_at = NOW(), updated_at = NOW()
               WHERE id = ${lead.id} AND org_id = ${ORG} AND first_touch_at IS NULL
             `
+          }
+          // Пинг по горячим следам: разговор состоялся — тому, кто говорил,
+          // прилетает в бот ссылка на карточку или кнопка «создать лида».
+          // Только состоявшиеся: пинговать каждый недозвон — приучить к спаму
+          if (c.talkSec > 0 && me?.telegram_id) {
+            await notifyCallDone(sql, {
+              telegramId: String(me.telegram_id),
+              direction: c.direction,
+              clientNumber: c.clientNumber,
+              talkSec: c.talkSec,
+              lead: lead ? { id: lead.id, name: lead.name ?? null } : null,
+            }).catch(() => {})
           }
         }
         await sql`

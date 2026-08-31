@@ -29,7 +29,7 @@ export async function getBotToken(sql: SQL): Promise<string | null> {
   }
 }
 
-type Keyboard = Array<Array<{ text: string; callback_data: string }>>
+type Keyboard = Array<Array<{ text: string; callback_data?: string; url?: string }>>
 
 export async function tgSend(token: string, chatId: string | number, text: string, keyboard?: Keyboard) {
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -121,6 +121,38 @@ export async function notifyLeadAssigned(sql: SQL, lead: any, sourceLabel: strin
   const token = await getBotToken(sql)
   if (!token) return
   await tgSend(token, agent.telegram_id, leadCard(lead, sourceLabel), leadKeyboard(lead.id))
+}
+
+const APP_URL = 'https://www.gfsupport.uz'
+
+/**
+ * Пинг после состоявшегося разговора: синк АТС нашёл звонок с ненулевым
+ * временем разговора и вычислил, кто из сотрудников говорил. Сейлз получает
+ * сообщение по горячим следам — с ссылкой на карточку или кнопкой «создать
+ * лида», чтобы разговор не испарился из головы, пока доедет до офиса.
+ */
+export async function notifyCallDone(sql: SQL, args: {
+  telegramId: string
+  direction: 'in' | 'out' | 'unknown'
+  clientNumber: string
+  talkSec: number
+  lead: { id: string; name: string | null } | null
+}): Promise<void> {
+  const token = await getBotToken(sql)
+  if (!token) return
+  const dir = args.direction === 'in' ? 'Входящий' : args.direction === 'out' ? 'Исходящий' : 'Разговор'
+  const head = `📞 ${dir} · ${args.clientNumber} · ${args.talkSec} сек`
+  if (args.lead) {
+    await tgSend(token, args.telegramId,
+      `${head}\n${args.lead.name || 'Лид без названия'}`,
+      [[{ text: 'Открыть карточку', url: `${APP_URL}/sales/leads/${args.lead.id}` }]])
+  } else {
+    // Полный номер с кодом страны — созданный лид не должен терять код
+    const digits = args.clientNumber.replace(/\D/g, '')
+    await tgSend(token, args.telegramId,
+      `${head}\nКарточки в CRM нет.`,
+      [[{ text: '＋ Создать лида', callback_data: `sl:mklead:${digits}` }]])
+  }
 }
 
 /** Очередь дня: то же, что на экране «Очередь», только текстом. */
@@ -245,6 +277,26 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
       await tgEdit(token, cb.message.chat.id, cb.message.message_id,
         `✅ <b>${lead.name}</b> — в работе у вас.\n\nСоздана сделка на этапе «Дозвон». ` +
         `Дальше: дозвон, 7 полей квалификации. Заполнить можно голосовым сообщением сюда.`)
+    }
+    return true
+  }
+
+  if (action === 'mklead') {
+    // Кнопка из пинга после разговора: entityId — цифры номера клиента.
+    // Общая дорога с звонилкой: найти по номеру или создать через приёмник
+    const { leadFromPhone } = await import('./sales-intake.js')
+    const r = await leadFromPhone(sql, agent.org_id, entityId, {
+      createdFrom: 'bot', byAgent: agent.id,
+    })
+    if (r.error || !r.leadId) {
+      if (token) await tgAnswer(token, cb.id, r.error || 'Не удалось создать лида', true)
+      return true
+    }
+    if (token) {
+      await tgAnswer(token, cb.id, r.existing ? 'Карточка уже есть' : 'Карточка создана')
+      await tgEdit(token, cb.message.chat.id, cb.message.message_id,
+        `${r.existing ? '✅ Карточка уже была' : '✅ Лид создан'}: <b>${r.name || 'Без названия'}</b>\n` +
+        `${APP_URL}/sales/leads/${r.leadId}`)
     }
     return true
   }

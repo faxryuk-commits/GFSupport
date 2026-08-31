@@ -287,6 +287,63 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   }
 }
 
+/**
+ * Карточка лида по телефонному номеру: найти или создать.
+ *
+ * Общая дорога звонилки и телеграм-бота: разговор с новым номером состоялся —
+ * одно нажатие превращает его в лида. Совпадение по номеру возвращает
+ * существующую карточку; при создании к ней прикрепляются осиротевшие
+ * касания-звонки этого номера, а состоявшийся разговор среди них становится
+ * первым касанием.
+ */
+export async function leadFromPhone(
+  sql: SQL, orgId: string, rawNumber: string,
+  opts?: { name?: string | null; createdFrom?: string; byAgent?: string | null },
+): Promise<{ leadId?: string; name?: string; existing?: boolean; error?: string }> {
+  const raw = String(rawNumber || '').trim()
+  const norm = raw.replace(/\D/g, '').slice(-9)
+  if (norm.length < 7) return { error: 'Номер не распознан' }
+
+  const [hit] = await sql`
+    SELECT id, name FROM sales_leads
+    WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
+    ORDER BY created_at DESC LIMIT 1
+  ` as any[]
+  if (hit) return { leadId: hit.id, name: hit.name, existing: true }
+
+  const res: any = await acceptLead(sql, orgId, {
+    source: 'call',
+    external_id: `pbx_${norm}`,
+    name: String(opts?.name || '').trim().slice(0, 255) || `Звонок ${raw}`,
+    phone: raw,
+    lead_kind: 'call',
+    raw: { created_from: opts?.createdFrom || 'phone', by: opts?.byAgent || null },
+  }).catch((e: any) => ({ ok: false, error: String(e?.message || e).slice(0, 200) }))
+  if (!res?.ok || !res.lead_id) return { error: res?.error || 'Не удалось создать лида' }
+
+  const [lead] = await sql`
+    SELECT id, name, account_id FROM sales_leads WHERE id = ${res.lead_id} LIMIT 1
+  ` as any[]
+  // Звонки этого номера, лежавшие без хозяина, — в новую карточку. Номер
+  // клиента — начало detail до разделителя; regex параметром: инлайновый
+  // обратный слэш ломается в шаблоне neon
+  await sql`
+    UPDATE sales_touchpoints
+    SET lead_id = ${lead.id}, account_id = ${lead.account_id}
+    WHERE org_id = ${orgId} AND kind = 'call' AND lead_id IS NULL
+      AND regexp_replace(split_part(detail, '·', 1), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+  `.catch(() => {})
+  await sql`
+    UPDATE sales_leads l SET first_touch_at = sub.t, updated_at = NOW()
+    FROM (
+      SELECT MIN(happened_at) AS t FROM sales_touchpoints
+      WHERE org_id = ${orgId} AND lead_id = ${lead.id} AND kind = 'call' AND title LIKE '%сек%'
+    ) sub
+    WHERE l.id = ${lead.id} AND l.first_touch_at IS NULL AND sub.t IS NOT NULL
+  `.catch(() => {})
+  return { leadId: lead.id, name: lead.name, existing: false }
+}
+
 /** Запись сообщения диалога в историю лида и аккаунта. */
 export async function logChatMessage(
   sql: SQL, orgId: string, accountId: string,

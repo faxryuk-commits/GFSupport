@@ -93,11 +93,12 @@ export interface PbxCall {
   /** Внутренний номер сотрудника. */
   ext: string | null
   /**
-   * Куда ушла переадресация: внешний номер (мобильный сотрудника), на который
-   * АТС перевела входящий. Ночью и когда в офисе пусто звонки уходят на
-   * мобильные — по этому полю восстанавливается, кто ответил.
+   * Наша сторона звонка, когда это не короткий добавочный, а внешний номер:
+   * мобильный сотрудника, на который АТС перевела входящий (ночь, в офисе
+   * пусто), или мобильная первая нога исходящего. По нему восстанавливается,
+   * кто разговаривал.
    */
-  forwardedTo: string | null
+  agentExternal: string | null
   /** Секунды разговора; 0 = недозвон. */
   talkSec: number
   durationSec: number
@@ -132,17 +133,18 @@ export async function pbxHistory(cfg: PbxConfig, fromUnix: number, toUnix: numbe
     else if (!isExt(caller) && isExt(dest)) direction = 'in'
     const clientNumber = direction === 'in' ? caller : dest
     const ext = direction === 'in' ? (isExt(dest) ? dest : null) : (isExt(caller) ? caller : null)
-    // Входящий, ушедший не на короткий добавочный, а на внешний номер, —
-    // это переадресация на мобильный
-    const forwardedTo = direction === 'in' && !isExt(dest) && dest.replace(/\D/g, '').length >= 9
-      ? dest : null
+    // Наша сторона внешним номером: у входящего это цель переадресации,
+    // у исходящего — номер, с которого звонили
+    const ourSide = direction === 'in' ? dest : direction === 'out' ? caller : ''
+    const agentExternal = ourSide && !isExt(ourSide) && ourSide.replace(/\D/g, '').length >= 9
+      ? ourSide : null
     calls.push({
       uuid: String(r.uuid || r.id || `${r.start_stamp}_${caller}_${dest}`),
       startStamp: Number(r.start_stamp || 0),
       direction,
       clientNumber,
       ext,
-      forwardedTo,
+      agentExternal,
       talkSec: Number(r.user_talk_time ?? r.talk_time ?? 0),
       durationSec: Number(r.duration ?? 0),
       hangupCause: r.hangup_cause ? String(r.hangup_cause) : null,
