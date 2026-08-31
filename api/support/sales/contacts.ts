@@ -43,9 +43,16 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     const body = await req.json().catch(() => null)
     if (!body?.accountId) return json({ error: 'accountId is required' }, 400)
-    const name = String(body?.name || '').trim()
-    const phone = String(body?.phone || '').trim()
+    let name = String(body?.name || '').trim()
+    let phone = String(body?.phone || '').trim()
     if (!name && !phone) return json({ error: 'Нужно имя или телефон' }, 400)
+    // Форма обещает «хватит имени или телефона» — и телефон регулярно вводят
+    // в поле имени. Номер в имени без телефона — это телефон: иначе контакт
+    // остаётся некликабельным и выпадает из склейки по номеру
+    if (!phone && /^[\d\s+()-]{7,20}$/.test(name) && name.replace(/\D/g, '').length >= 7) {
+      phone = name
+      name = ''
+    }
 
     const [account] = await sql`
       SELECT id FROM sales_accounts WHERE id = ${body.accountId} AND org_id = ${orgId} LIMIT 1

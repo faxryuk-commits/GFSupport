@@ -116,7 +116,13 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
       )}
 
       <div className="divide-y divide-gray-100">
-        {contacts.map(c => (
+        {contacts.map(c => {
+          // Телефон, введённый в поле имени, — всё равно телефон: старые
+          // контакты с таким вводом должны оставаться кликабельными
+          const callNum = c.phone
+            || (/^[\d\s+()-]{7,20}$/.test(c.name || '') && (c.name || '').replace(/\D/g, '').length >= 7
+              ? c.name : null)
+          return (
           <div key={c.id} className="px-4 py-2.5 flex items-start justify-between gap-3 group">
             <div className="min-w-0">
               <div className="text-[12.5px] text-gray-900 flex items-center gap-1.5">
@@ -132,8 +138,8 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
               </div>
             </div>
             <div className="flex items-center gap-2 flex-none">
-              {c.phone && (
-                <CallPhone phone={c.phone} size="sm" className="text-[12px] text-blue-600" />
+              {callNum && (
+                <CallPhone phone={callNum} size="sm" className="text-[12px] text-blue-600" />
               )}
               {!c.is_primary && (
                 <button onClick={() => makePrimary(c)} title="Сделать основным контактом"
@@ -147,7 +153,8 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
               </button>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </Card>
   )
