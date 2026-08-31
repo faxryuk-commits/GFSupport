@@ -184,12 +184,14 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
                 type="text" value={general.pbxExt}
                 onChange={(e) => onGeneralChange({ ...general, pbxExt: e.target.value })}
                 className="px-4 py-3 bg-slate-50 border border-[#e8edf3] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
-                placeholder="Внутр. номер, напр. 100"
+                placeholder="Внутр. 100 или мобильный"
               />
             </div>
             <p className="mt-2 text-xs text-slate-500">
               История звонков ляжет касаниями на лидов, дозвон засчитается первым касанием,
-              а кнопка «Позвонить» на карточке соединит сейлза с клиентом через АТС.
+              а кнопка «Позвонить» соединит сейлза с клиентом через АТС. В третьем поле —
+              внутренний номер или мобильный: АТС сначала позвонит на него, потом клиенту,
+              разговор запишется в обоих случаях.
             </p>
           </div>
 

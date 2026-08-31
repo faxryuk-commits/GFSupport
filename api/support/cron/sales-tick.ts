@@ -45,7 +45,7 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ`
     await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS sla_handoff_at TIMESTAMPTZ`
     await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS sla_handoffs INT DEFAULT 0`
-    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS pbx_ext VARCHAR(10)`
+    await sql`ALTER TABLE support_agents ADD COLUMN IF NOT EXISTS pbx_ext VARCHAR(20)`
   })
 
   const token = await getBotToken(sql)

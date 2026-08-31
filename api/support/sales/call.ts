@@ -13,8 +13,10 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * POST { to, leadId? }         — набрать номер
  * POST ?action=probe {}        — диагностика: живой ли ключ, что отвечает история
  *
- * Внутренний номер сотрудника: сначала личный (support_agents.pbx_ext),
- * иначе общий из настроек (onlinepbx_ext) — на старте у всех один аппарат.
+ * Первая нога звонка: личный номер сотрудника (support_agents.pbx_ext),
+ * иначе общий из настроек (onlinepbx_ext). Годится и внутренний номер АТС
+ * («100»), и мобильный («998…») — АТС принимает внешние номера первой ногой,
+ * проверено на живом вызове; запись разговора идёт в обоих случаях.
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
@@ -68,7 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
       const raw = JSON.stringify(res.raw).slice(0, 200)
       const c = String(res.raw?.comment || '')
       const human = /DND/i.test(c)
-        ? `Ваш внутренний номер ${ext} не в сети или в режиме «не беспокоить» — включите софтфон и попробуйте снова`
+        ? `Номер ${ext} не в сети или в режиме «не беспокоить» — включите софтфон, либо укажите в настройках свой мобильный: АТС позвонит на него`
         : /not (registered|found)|no such user/i.test(c)
           ? `Внутренний номер ${ext} не зарегистрирован на АТС — проверьте номер в настройках`
           : 'АТС не приняла звонок'
