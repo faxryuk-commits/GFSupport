@@ -340,7 +340,9 @@ export default async function handler(req: Request): Promise<Response> {
         ? `Номер ${ext} не в сети или в режиме «не беспокоить» — включите софтфон, либо укажите в настройках свой мобильный: АТС позвонит на него`
         : /not (registered|found)|no such user/i.test(c)
           ? `Внутренний номер ${ext} не зарегистрирован на АТС — проверьте номер в настройках`
-          : 'АТС не приняла звонок'
+          : /busy/i.test(c)
+            ? `Ваш номер ${ext} занят другим разговором — освободите линию и повторите`
+            : `АТС не приняла звонок — проверьте, что ваш номер ${ext} свободен и в сети`
       return json({ error: human, details: raw }, 502)
     }
     const callUuid = String(res.raw?.data?.uuid || '')
