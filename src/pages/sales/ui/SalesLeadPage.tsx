@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { CallPhone } from '@/shared/ui'
 import { useParams, Link } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'

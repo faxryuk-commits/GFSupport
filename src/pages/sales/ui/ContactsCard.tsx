@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { CallPhone } from '@/shared/ui'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { Card, Btn, Combo } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
