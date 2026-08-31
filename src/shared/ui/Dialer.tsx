@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Phone, X } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { parsePhone } from '@/shared/lib/phone'
@@ -21,7 +21,13 @@ export function Dialer() {
   const [recent, setRecent] = useState<Array<{
     number: string; title: string; at: string; leadId: string | null; leadName: string | null
   }>>([])
+  // Чей номер набрали: известный лид → ссылка на карточку, незнакомый →
+  // кнопка «создать лида». Звонок новому клиенту не должен повисать без карточки
+  const [lead, setLead] = useState<{ id: string; name: string } | null>(null)
+  const [noLead, setNoLead] = useState(false)
+  const [creating, setCreating] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!open) return
@@ -57,11 +63,33 @@ export function Dialer() {
       const r = await apiPost<any>('/sales/call', { to: num })
       setStatus('ok')
       setNote('АТС звонит вам — снимите трубку, дальше соединит')
+      setLead(r?.lead || null)
+      setNoLead(!r?.lead)
       if (r?.uuid) watchOutcome(r.uuid)
       else setTimeout(() => { setStatus('idle'); setNote('') }, 8000)
     } catch (e: any) {
       setStatus('error')
       setNote(e?.message || 'Телефония не настроена')
+    }
+  }
+
+  // Карточка по номеру: сервер найдёт существующего лида или создаст нового
+  // (прошлые звонки этого номера прикрепятся сами) — и сразу в карточку,
+  // пока разговор свежий в голове
+  const createLead = async (number: string) => {
+    if (creating) return
+    setCreating(true)
+    try {
+      const r = await apiPost<any>('/sales/call?action=lead', { number })
+      if (r?.leadId) {
+        setOpen(false)
+        navigate(`/sales/leads/${r.leadId}`)
+      }
+    } catch (e: any) {
+      setStatus('error')
+      setNote(e?.message || 'Не удалось создать лида')
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -84,7 +112,11 @@ export function Dialer() {
           <input
             ref={inputRef}
             value={num}
-            onChange={e => { setNum(e.target.value); if (status !== 'calling') { setStatus('idle'); setNote('') } }}
+            onChange={e => {
+              setNum(e.target.value)
+              setLead(null); setNoLead(false)
+              if (status !== 'calling') { setStatus('idle'); setNote('') }
+            }}
             onKeyDown={e => { if (e.key === 'Enter') call() }}
             placeholder="+998 90 123 45 67"
             inputMode="tel"
@@ -114,6 +146,25 @@ export function Dialer() {
               {note}
             </div>
           )}
+          {lead && (
+            <Link
+              to={`/sales/leads/${lead.id}`}
+              onClick={() => setOpen(false)}
+              className="mt-1 block text-[12px] text-blue-600 hover:underline truncate"
+            >
+              Карточка: {lead.name}
+            </Link>
+          )}
+          {noLead && !lead && (
+            <button
+              onClick={() => createLead(num)}
+              disabled={creating}
+              className="mt-2 w-full py-2 rounded-xl border border-emerald-300 text-emerald-700
+                         text-[12.5px] font-medium hover:bg-emerald-50 disabled:opacity-40"
+            >
+              {creating ? 'Создаю карточку…' : '＋ Создать лида с этим номером'}
+            </button>
+          )}
           {recent.length > 0 && (
             <div className="mt-3 border-t border-gray-100 pt-2 max-h-56 overflow-y-auto">
               <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
@@ -141,13 +192,22 @@ export function Dialer() {
                         })}
                       </div>
                     </button>
-                    {r.leadId && (
+                    {r.leadId ? (
                       <Link to={`/sales/leads/${r.leadId}`} onClick={() => setOpen(false)}
                         title={r.leadName || 'карточка лида'}
                         className="flex-none text-[10.5px] text-blue-600 hover:underline max-w-[90px] truncate">
                         {r.leadName || 'лид'}
                       </Link>
-                    )}
+                    ) : r.number.replace(/\D/g, '').length >= 7 ? (
+                      <button
+                        onClick={() => createLead(r.number)}
+                        disabled={creating}
+                        title="Создать карточку лида по этому номеру"
+                        className="flex-none text-[10.5px] text-emerald-700 hover:underline disabled:opacity-40"
+                      >
+                        + лид
+                      </button>
+                    ) : null}
                   </div>
                 )
               })}

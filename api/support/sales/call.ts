@@ -2,6 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus } from '../_lib/pbx.js'
+import { acceptLead } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -11,6 +12,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * а звонок гарантированно проходит через запись.
  *
  * POST { to, leadId? }         — набрать номер
+ * POST ?action=lead {number}   — карточка лида по номеру: найти или создать
  * POST ?action=probe {}        — диагностика: живой ли ключ, что отвечает история
  *
  * Первая нога звонка: личный номер сотрудника (support_agents.pbx_ext),
@@ -49,6 +51,59 @@ export default async function handler(req: Request): Promise<Response> {
         leadName: r.lead_name,
       })),
     })
+  }
+
+  // Карточка из звонилки: разговор с новым номером состоялся — куда его класть?
+  // Одно нажатие превращает номер в лида через общий приёмник (тот же путь,
+  // что у входящих с неизвестных номеров). Совпадение по номеру возвращает
+  // существующую карточку, а осиротевшие касания-звонки прикрепляются к новой.
+  if (url.searchParams.get('action') === 'lead') {
+    const b = await req.json().catch(() => null)
+    const rawNum = String(b?.number || '').trim()
+    const norm = rawNum.replace(/\D/g, '').slice(-9)
+    if (norm.length < 7) return json({ error: 'Номер не распознан' }, 400)
+
+    const [hit] = await sql`
+      SELECT id, name FROM sales_leads
+      WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
+      ORDER BY created_at DESC LIMIT 1
+    ` as any[]
+    if (hit) return json({ leadId: hit.id, name: hit.name, existing: true })
+
+    const res: any = await acceptLead(sql, orgId, {
+      source: 'call',
+      external_id: `pbx_${norm}`,
+      name: String(b?.name || '').trim().slice(0, 255) || `Звонок ${rawNum}`,
+      phone: rawNum,
+      lead_kind: 'call',
+      raw: { created_from: 'dialer', by: ctx.agentId },
+    }).catch((e: any) => ({ ok: false, error: String(e?.message || e).slice(0, 200) }))
+    if (!res?.ok || !res.lead_id) {
+      return json({ error: res?.error || 'Не удалось создать лида' }, 500)
+    }
+    const [lead] = await sql`
+      SELECT id, account_id FROM sales_leads WHERE id = ${res.lead_id} LIMIT 1
+    ` as any[]
+    // Звонки этого номера, лежавшие без хозяина, — в новую карточку.
+    // Номер клиента — начало detail до разделителя; regex параметром: инлайновый
+    // обратный слэш ломается в шаблоне neon
+    await sql`
+      UPDATE sales_touchpoints
+      SET lead_id = ${lead.id}, account_id = ${lead.account_id}
+      WHERE org_id = ${orgId} AND kind = 'call' AND lead_id IS NULL
+        AND regexp_replace(split_part(detail, '·', 1), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+    `.catch(() => {})
+    // Если среди прикреплённых уже был состоявшийся разговор — это и есть
+    // первое касание, пусть норматив меряется честно
+    await sql`
+      UPDATE sales_leads l SET first_touch_at = sub.t, updated_at = NOW()
+      FROM (
+        SELECT MIN(happened_at) AS t FROM sales_touchpoints
+        WHERE org_id = ${orgId} AND lead_id = ${lead.id} AND kind = 'call' AND title LIKE '%сек%'
+      ) sub
+      WHERE l.id = ${lead.id} AND l.first_touch_at IS NULL AND sub.t IS NOT NULL
+    `.catch(() => {})
+    return json({ leadId: lead.id, existing: false })
   }
 
   const cfg = await readPbxConfig(sql, orgId)
@@ -139,6 +194,18 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: human, details: raw }, 502)
     }
     const callUuid = String(res.raw?.data?.uuid || '')
+    // Чей номер: звонилка по ответу либо ведёт в карточку, либо предлагает
+    // создать лида — звонок новому клиенту не должен повисать в воздухе
+    let leadHit: any = null
+    if (!body?.leadId) {
+      const norm = to.replace(/\D/g, '').slice(-9)
+      const hits = await sql`
+        SELECT id, name FROM sales_leads
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
+        ORDER BY created_at DESC LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      leadHit = hits[0] || null
+    }
     // След в пути клиента: сейлз инициировал звонок. Сам разговор и его
     // длительность приедут синком истории и лягут отдельным касанием
     if (body?.leadId) {
@@ -154,7 +221,11 @@ export default async function handler(req: Request): Promise<Response> {
         `.catch(() => {})
       }
     }
-    return json({ ok: true, uuid: callUuid || null })
+    return json({
+      ok: true,
+      uuid: callUuid || null,
+      lead: leadHit ? { id: leadHit.id, name: leadHit.name } : null,
+    })
   } catch (e: any) {
     return json({ error: 'Телефония недоступна', details: String(e?.message || e).slice(0, 200) }, 502)
   }
