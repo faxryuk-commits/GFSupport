@@ -95,10 +95,28 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Сообщения — директ и Messenger — разбираем общим кодом и уходим:
     // у таких уведомлений нет ни заявок, ни полей страницы
+    // Организация — по владельцу страницы из события: приложение одно, а
+    // страницы могут жить в разных организациях (тестовая страница
+    // проверяющего Meta — в демо-орге)
+    const sqlOrg = getSQL()
+    const orgOf = async (entryId: string): Promise<string> => {
+      if (!entryId) return ORG
+      const [acc] = await sqlOrg`
+        SELECT org_id FROM support_meta_accounts
+        WHERE (page_id = ${entryId} OR ig_user_id = ${entryId}) AND is_active = true
+        LIMIT 1
+      ` as any[]
+      return acc?.org_id || ORG
+    }
+
     const hasMessaging = (body.entry || []).some((e: any) => Array.isArray(e?.messaging) && e.messaging.length)
     if (hasMessaging) {
       const sqlM = getSQL()
-      const taken = await handleMetaMessaging(sqlM, ORG, body)
+      let taken = 0
+      for (const entry of body.entry || []) {
+        const org = await orgOf(String(entry?.id || ''))
+        taken += await handleMetaMessaging(sqlM, org, { ...body, entry: [entry] })
+      }
       return json({ ok: true, messages: taken })
     }
 
@@ -108,21 +126,26 @@ export default async function handler(req: Request): Promise<Response> {
     const hasChanges = (body.entry || []).some((e: any) => Array.isArray(e?.changes) && e.changes.length)
     if (hasChanges) {
       const sqlC = getSQL()
-      const fresh = await handleMetaComments(sqlC, ORG, body)
+      let fresh: string[] = []
+      for (const entry of body.entry || []) {
+        const org = await orgOf(String(entry?.id || ''))
+        fresh = fresh.concat(await handleMetaComments(sqlC, org, { ...body, entry: [entry] }))
+      }
       if (fresh.length) console.log('[webhook/meta] принято комментариев:', fresh.length)
       await runCommentAgent(sqlC, fresh)
     }
     if (body.object !== 'page') return json({ ok: true })
 
     const sql = getSQL()
-    await ensureSalesSchema(sql, ORG)
     await ensureMetaSchema(sql)
 
     for (const entry of body.entry || []) {
       // Страница, на которую пришла заявка. С несколькими подключёнными
       // аккаунтами общий токен «на организацию» читал бы не ту страницу
       const pageId = entry.id ? String(entry.id) : null
-      const token = await tokenForPage(ORG, pageId)
+      const entryOrg = await orgOf(String(pageId || ''))
+      await ensureSalesSchema(sql, entryOrg)
+      const token = await tokenForPage(entryOrg, pageId)
       if (!token) {
         console.error('[meta-leads] нет токена для страницы', pageId)
         continue
@@ -164,7 +187,7 @@ export default async function handler(req: Request): Promise<Response> {
         // Пока Amo ещё работает, та же заявка приедет и оттуда. Второй
         // экземпляр карточку не создаёт — иначе у сейлза два одинаковых
         // обращения на каждую заявку с рекламы
-        const twin = await findRecentTwin(sql, ORG, phone, ['meta_leadform', 'unknown'])
+        const twin = await findRecentTwin(sql, entryOrg, phone, ['meta_leadform', 'unknown'])
         if (twin) {
           await sql`
             UPDATE sales_leads
@@ -172,7 +195,7 @@ export default async function handler(req: Request): Promise<Response> {
                 ad_id = COALESCE(${v.ad_id ? String(v.ad_id) : null}, ad_id),
                 utm_campaign = COALESCE(${v.campaign_id ? String(v.campaign_id) : null}, utm_campaign),
                 updated_at = NOW()
-            WHERE id = ${twin.id} AND org_id = ${ORG}
+            WHERE id = ${twin.id} AND org_id = ${entryOrg}
           `
           // Склейка происходила молча: человек видел старое обращение и не
           // знал, что по нему пришло что-то новое. А повторно заполненная
@@ -228,7 +251,7 @@ export default async function handler(req: Request): Promise<Response> {
           `
         }
 
-        const accepted = await acceptLead(sql, ORG, {
+        const accepted = await acceptLead(sql, entryOrg, {
           source: SOURCE,
           external_id: `meta_${leadgenId}`,
           lead_kind: 'form',

@@ -57,10 +57,32 @@ export default async function handler(req: Request): Promise<Response> {
     const body: any = JSON.parse(raw)
     if (body?.object !== 'instagram' && body?.object !== 'page') return json({ ok: true })
     const sql = getSQL()
-    // Сообщения и комментарии приходят на один адрес разными ветками:
-    // первые в entry.messaging, вторые в entry.changes
-    const taken = await handleMetaMessaging(sql, ORG, body)
-    const fresh = await handleMetaComments(sql, ORG, body)
+    // Организация — по владельцу страницы из события, а не константой:
+    // приложение одно, а страницы могут быть подключены в разных организациях
+    // (например, тестовая страница проверяющего Meta живёт в демо-орге).
+    // entry.id — это id страницы или ig-аккаунта
+    const orgByEntry = new Map<string, string>()
+    for (const entry of body?.entry || []) {
+      const entryId = String(entry?.id || '')
+      if (!entryId || orgByEntry.has(entryId)) continue
+      const [acc] = await sql`
+        SELECT org_id FROM support_meta_accounts
+        WHERE (page_id = ${entryId} OR ig_user_id = ${entryId}) AND is_active = true
+        LIMIT 1
+      ` as any[]
+      orgByEntry.set(entryId, acc?.org_id || ORG)
+    }
+    const orgs = new Set([...orgByEntry.values()])
+    let taken = 0
+    let fresh: string[] = []
+    for (const org of orgs) {
+      const slice = {
+        ...body,
+        entry: (body?.entry || []).filter((e: any) => orgByEntry.get(String(e?.id || '')) === org),
+      }
+      taken += await handleMetaMessaging(sql, org, slice)
+      fresh = fresh.concat(await handleMetaComments(sql, org, slice))
+    }
     await runCommentAgent(sql, fresh)
     return json({ ok: true, messages: taken, comments: fresh.length })
   } catch (e) {
