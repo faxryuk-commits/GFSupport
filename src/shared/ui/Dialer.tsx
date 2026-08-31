@@ -26,6 +26,9 @@ export function Dialer() {
   const [lead, setLead] = useState<{ id: string; name: string } | null>(null)
   const [noLead, setNoLead] = useState(false)
   const [creating, setCreating] = useState(false)
+  // С какого номера уйдёт исходящий: личный добавочный сейлза или общий.
+  // Видно до набора — понятно, какая трубка сейчас зазвонит
+  const [ext, setExt] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
@@ -34,12 +37,19 @@ export function Dialer() {
     setTimeout(() => inputRef.current?.focus(), 50)
     // История подгружается на открытие: закрытая звонилка не тратит запросов
     apiGet<any>('/sales/call', false)
-      .then(d => setRecent(d?.calls || []))
+      .then(d => { setRecent(d?.calls || []); setExt(String(d?.ext || '')) })
       .catch(() => {})
   }, [open])
 
   const parsed = parsePhone(num)
   const digits = num.replace(/\D/g, '')
+
+  // Добавочный «101» и мобильный «+998…» читаются по-разному
+  const extLabel = (e: string) => {
+    if (/^\d{2,4}$/.test(e)) return `внутр. ${e}`
+    const p = parsePhone(e)
+    return p.valid ? p.pretty : e
+  }
 
   // АТС принимает заявку мгновенно, а исход известен позже: занято, не
   // ответили, линия не в строю. Поэтому после «звонит вам» опрашиваем судьбу
@@ -62,7 +72,9 @@ export function Dialer() {
     try {
       const r = await apiPost<any>('/sales/call', { to: num })
       setStatus('ok')
-      setNote('АТС звонит вам — снимите трубку, дальше соединит')
+      const via = String(r?.ext || ext)
+      if (via) setExt(via)
+      setNote(`АТС звонит ${via ? `на ${extLabel(via)}` : 'вам'} — снимите трубку, дальше соединит`)
       setLead(r?.lead || null)
       setNoLead(!r?.lead)
       if (r?.uuid) watchOutcome(r.uuid)
@@ -141,6 +153,11 @@ export function Dialer() {
           >
             {status === 'calling' ? 'Соединяю…' : '📞 Позвонить'}
           </button>
+          {ext && (
+            <div className="mt-1 text-[10.5px] text-gray-400">
+              Исходящий пойдёт с {extLabel(ext)}
+            </div>
+          )}
           {note && (
             <div className={`mt-2 text-[12px] ${status === 'error' ? 'text-red-600' : 'text-emerald-700'}`}>
               {note}

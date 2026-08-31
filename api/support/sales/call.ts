@@ -20,6 +20,19 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * («100»), и мобильный («998…») — АТС принимает внешние номера первой ногой,
  * проверено на живом вызове; запись разговора идёт в обоих случаях.
  */
+/** Первая нога звонка: личный номер сотрудника, иначе общий организации. */
+async function resolveExt(sql: any, orgId: string, agentId: string): Promise<string> {
+  const [me] = await sql`
+    SELECT pbx_ext FROM support_agents WHERE id = ${agentId} LIMIT 1
+  `.catch(() => [] as any[]) as any[]
+  const own = String(me?.pbx_ext || '').trim()
+  if (own) return own
+  const rows = await sql`
+    SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'onlinepbx_ext' LIMIT 1
+  ` as any[]
+  return String(rows[0]?.value || '').trim()
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   if (req.method !== 'POST' && req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
@@ -41,7 +54,11 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE t.org_id = ${orgId} AND t.kind = 'call'
       ORDER BY t.happened_at DESC LIMIT 15
     ` as any[]
+    // С какого номера уйдёт исходящий — звонилка показывает это до набора,
+    // чтобы сейлз знал, какая трубка сейчас зазвонит
+    const myExt = await resolveExt(sql, orgId, ctx.agentId)
     return json({
+      ext: myExt || null,
       calls: rows.map((r: any) => ({
         // Номер клиента лежит в начале detail до разделителя
         number: String(r.detail || '').split('·')[0].trim(),
@@ -167,16 +184,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (!to || to.length < 7) return json({ error: 'Номер не распознан' }, 400)
 
   // Внутренний номер: личный сотрудника или общий организации
-  const [me] = await sql`
-    SELECT pbx_ext FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
-  `.catch(() => [] as any[]) as any[]
-  let ext = String(me?.pbx_ext || '').trim()
-  if (!ext) {
-    const rows = await sql`
-      SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'onlinepbx_ext' LIMIT 1
-    ` as any[]
-    ext = String(rows[0]?.value || '').trim()
-  }
+  const ext = await resolveExt(sql, orgId, ctx.agentId)
   if (!ext) {
     return json({ error: 'Не задан внутренний номер: укажите onlinepbx_ext в настройках или личный номер сотрудника' }, 422)
   }
@@ -224,6 +232,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({
       ok: true,
       uuid: callUuid || null,
+      ext,
       lead: leadHit ? { id: leadHit.id, name: leadHit.name } : null,
     })
   } catch (e: any) {

@@ -27,6 +27,9 @@ type Status = 'idle' | 'calling' | 'ringing' | 'error'
 export function CallPhone({ phone, market, leadId, size = 'md', className = '' }: Props) {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
+  // Короткий добавочный (101) показываем в статусе — понятно, чья трубка
+  // зазвонит; мобильный первой ногой остаётся «вам»
+  const [viaExt, setViaExt] = useState('')
 
   if (!phone) return null
   const parsed = parsePhone(phone, market)
@@ -39,7 +42,8 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
     if (status === 'calling') return
     setStatus('calling'); setError('')
     try {
-      await apiPost('/sales/call', { to: phone, ...(leadId ? { leadId } : {}) })
+      const r = await apiPost<any>('/sales/call', { to: phone, ...(leadId ? { leadId } : {}) })
+      setViaExt(/^\d{2,4}$/.test(String(r?.ext || '')) ? String(r.ext) : '')
       setStatus('ringing')
       setTimeout(() => setStatus('idle'), 4000)
     } catch (err: any) {
@@ -62,7 +66,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
           status === 'calling' ? 'opacity-60' : ''}`}
       >
         {status === 'calling' ? 'Соединяю…'
-          : status === 'ringing' ? '📞 АТС звонит вам…'
+          : status === 'ringing' ? `📞 АТС звонит ${viaExt ? `на ${viaExt}` : 'вам'}…`
           : label}
       </button>
       {status === 'error' && size === 'md' && (
