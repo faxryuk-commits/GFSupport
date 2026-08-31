@@ -21,16 +21,16 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * проверено на живом вызове; запись разговора идёт в обоих случаях.
  */
 /** Первая нога звонка: личный номер сотрудника, иначе общий организации. */
-async function resolveExt(sql: any, orgId: string, agentId: string): Promise<string> {
+async function resolveExt(sql: any, orgId: string, agentId: string): Promise<{ ext: string; personal: boolean }> {
   const [me] = await sql`
     SELECT pbx_ext FROM support_agents WHERE id = ${agentId} LIMIT 1
   `.catch(() => [] as any[]) as any[]
   const own = String(me?.pbx_ext || '').trim()
-  if (own) return own
+  if (own) return { ext: own, personal: true }
   const rows = await sql`
     SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'onlinepbx_ext' LIMIT 1
   ` as any[]
-  return String(rows[0]?.value || '').trim()
+  return { ext: String(rows[0]?.value || '').trim(), personal: false }
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -307,7 +307,8 @@ export default async function handler(req: Request): Promise<Response> {
     // чтобы сейлз знал, какая трубка сейчас зазвонит
     const myExt = await resolveExt(sql, orgId, ctx.agentId)
     return json({
-      ext: myExt || null,
+      ext: myExt.ext || null,
+      extPersonal: myExt.personal,
       calls: rows.map((r: any) => ({
         // Номер клиента лежит в начале detail до разделителя
         number: String(r.detail || '').split('·')[0].trim(),
@@ -404,7 +405,8 @@ export default async function handler(req: Request): Promise<Response> {
   if (!to || to.length < 7) return json({ error: 'Номер не распознан' }, 400)
 
   // Внутренний номер: личный сотрудника или общий организации
-  const ext = await resolveExt(sql, orgId, ctx.agentId)
+  const resolved = await resolveExt(sql, orgId, ctx.agentId)
+  const ext = resolved.ext
   if (!ext) {
     return json({ error: 'Не задан внутренний номер: укажите onlinepbx_ext в настройках или личный номер сотрудника' }, 422)
   }

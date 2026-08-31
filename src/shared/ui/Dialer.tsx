@@ -29,6 +29,9 @@ export function Dialer() {
   // С какого номера уйдёт исходящий: личный добавочный сейлза или общий.
   // Видно до набора — понятно, какая трубка сейчас зазвонит
   const [ext, setExt] = useState('')
+  // Личный номер или общий запасной: с общего говорит другой человек,
+  // и это надо называть прямо, а не маскировать под «ваш» номер
+  const [extPersonal, setExtPersonal] = useState(true)
   // Поиск по базе: имя или кусок номера превращаются в подсказки из лидов
   // и контактов — не нужно помнить, в каком списке живёт человек
   const [found, setFound] = useState<Array<{
@@ -47,7 +50,11 @@ export function Dialer() {
     setTimeout(() => inputRef.current?.focus(), 50)
     // История подгружается на открытие: закрытая звонилка не тратит запросов
     apiGet<any>('/sales/call', false)
-      .then(d => { setRecent(d?.calls || []); setExt(String(d?.ext || '')) })
+      .then(d => {
+        setRecent(d?.calls || [])
+        setExt(String(d?.ext || ''))
+        setExtPersonal(d?.extPersonal !== false)
+      })
       .catch(() => {})
   }, [open])
 
@@ -253,8 +260,10 @@ export function Dialer() {
             {status === 'calling' ? 'Соединяю…' : '📞 Позвонить'}
           </button>
           {ext && (
-            <div className="mt-1 text-[10.5px] text-gray-400">
-              Исходящий пойдёт с {extLabel(ext)}
+            <div className={`mt-1 text-[10.5px] ${extPersonal ? 'text-gray-400' : 'text-amber-600'}`}>
+              {extPersonal
+                ? `Исходящий пойдёт с вашего номера: ${extLabel(ext)}`
+                : `У вас не задан личный номер — звонок пойдёт через общий (${extLabel(ext)}), и говорить будет его владелец`}
             </div>
           )}
           {note && (
