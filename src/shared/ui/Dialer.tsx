@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Phone, X } from 'lucide-react'
-import { apiPost } from '@/shared/services/api.service'
+import { apiGet, apiPost } from '@/shared/services/api.service'
 import { parsePhone } from '@/shared/lib/phone'
 
 /**
@@ -17,10 +18,18 @@ export function Dialer() {
   const [num, setNum] = useState('')
   const [status, setStatus] = useState<'idle' | 'calling' | 'ok' | 'error'>('idle')
   const [note, setNote] = useState('')
+  const [recent, setRecent] = useState<Array<{
+    number: string; title: string; at: string; leadId: string | null; leadName: string | null
+  }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+    if (!open) return
+    setTimeout(() => inputRef.current?.focus(), 50)
+    // История подгружается на открытие: закрытая звонилка не тратит запросов
+    apiGet<any>('/sales/call', false)
+      .then(d => setRecent(d?.calls || []))
+      .catch(() => {})
   }, [open])
 
   const parsed = parsePhone(num)
@@ -89,9 +98,48 @@ export function Dialer() {
               {note}
             </div>
           )}
+          {recent.length > 0 && (
+            <div className="mt-3 border-t border-gray-100 pt-2 max-h-56 overflow-y-auto">
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                Недавние
+              </div>
+              {recent.map((r, i) => {
+                const p = parsePhone(r.number)
+                const missed = /недозвон|не ответили/.test(r.title)
+                const inbound = /Входящ/.test(r.title)
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1.5 group">
+                    <button
+                      onClick={() => { setNum(r.number); inputRef.current?.focus() }}
+                      title="Подставить номер"
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className={`text-[12.5px] tabular-nums ${missed ? 'text-red-600' : 'text-gray-800'}`}>
+                        {inbound ? '↓' : '↑'} {p.valid ? p.pretty : r.number}
+                      </div>
+                      <div className="text-[10.5px] text-gray-400 truncate">
+                        {r.title.split('·')[1]?.trim() || r.title}
+                        {' · '}{new Date(r.at).toLocaleString('ru-RU', {
+                          timeZone: 'Asia/Tashkent', day: 'numeric', month: 'short',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </div>
+                    </button>
+                    {r.leadId && (
+                      <Link to={`/sales/leads/${r.leadId}`} onClick={() => setOpen(false)}
+                        title={r.leadName || 'карточка лида'}
+                        className="flex-none text-[10.5px] text-blue-600 hover:underline max-w-[90px] truncate">
+                        {r.leadName || 'лид'}
+                      </Link>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div className="mt-2 text-[10.5px] text-gray-400">
             АТС наберёт ваш номер, после ответа — соединит. Звонок запишется и через
-            несколько минут появится касанием в карточке клиента.
+            несколько минут появится в недавних и в карточке клиента.
           </div>
         </div>
       )}

@@ -20,13 +20,36 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
-  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
+  if (req.method !== 'POST' && req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   const sql = getSQL()
   const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
+
+  // История для звонилки: последние звонки из касаний с привязкой к лидам.
+  // Синк наполняет их раз в несколько минут — свежайший звонок может чуть
+  // запаздывать, и это нормально
+  if (req.method === 'GET') {
+    const rows = await sql`
+      SELECT t.title, t.detail, t.happened_at, t.lead_id, l.name AS lead_name
+      FROM sales_touchpoints t
+      LEFT JOIN sales_leads l ON l.id = t.lead_id
+      WHERE t.org_id = ${orgId} AND t.kind = 'call'
+      ORDER BY t.happened_at DESC LIMIT 15
+    ` as any[]
+    return json({
+      calls: rows.map((r: any) => ({
+        // Номер клиента лежит в начале detail до разделителя
+        number: String(r.detail || '').split('·')[0].trim(),
+        title: r.title,
+        at: r.happened_at,
+        leadId: r.lead_id,
+        leadName: r.lead_name,
+      })),
+    })
+  }
 
   const cfg = await readPbxConfig(sql, orgId)
   if (!cfg) {
