@@ -124,7 +124,7 @@ export default async function handler(req: Request): Promise<Response> {
   let calls: any[] = []
   if (acc) {
     const tps = await sql`
-      SELECT id, title, detail, happened_at FROM sales_touchpoints
+      SELECT id, title, detail, identity, happened_at FROM sales_touchpoints
       WHERE org_id = ${orgId} AND account_id = ${acc} AND kind = 'call'
       ORDER BY happened_at DESC LIMIT 40
     ` as any[]
