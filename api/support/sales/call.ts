@@ -194,6 +194,7 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '60 seconds'
         AND caller IS NOT NULL
         AND length(regexp_replace(caller, ${'\\D'}, '', 'g')) >= 7
+        AND COALESCE(raw->>'direction', '') <> 'outbound'
       ORDER BY caller, created_at DESC
     `.catch(() => [] as any[]) as any[]
     const live = rows.filter(r => !/hangup|bye|end/i.test(String(r.event || '')))

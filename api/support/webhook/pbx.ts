@@ -46,8 +46,10 @@ export default async function handler(req: Request): Promise<Response> {
     }
     return null
   }
-  const caller = pick('caller_id_number', 'caller_id', 'caller', 'from', 'src', 'phone')
-  const callee = pick('destination_number', 'destination', 'to', 'dst', 'user')
+  // Живой формат (сверен по событиям): caller/callee/event/direction прямые
+  // поля, на call_end приезжают hangup_cause и download_url записи
+  const caller = pick('caller', 'caller_id_number', 'caller_id', 'from', 'src', 'phone')
+  const callee = pick('callee', 'destination_number', 'destination', 'to', 'dst', 'user')
   const event = pick('event', 'type', 'status', 'state', 'command', 'hangup_cause')
 
   await ensureOnce('pbx-events', async () => {
