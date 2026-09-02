@@ -77,9 +77,14 @@ export async function allocateSeat(
     }
   }
 
-  // Владелец получает свой добавочный всегда — даже если гость успел его взять:
-  // гостя выкинет verto.punt, и это правильный порядок старшинства
+  // Владелец получает свой добавочный всегда — даже если гость успел его
+  // взять: гостя выкинет verto.punt. Гостевые аренды закрываем сразу, иначе
+  // журнал держит две живые аренды на линию и путает атрибуцию звонков
   if (ownExt && ownExt.length <= 3 && pool.includes(ownExt)) {
+    await sql`
+      UPDATE sales_pbx_seats SET released_at = NOW()
+      WHERE org_id = ${orgId} AND ext = ${ownExt} AND agent_id <> ${agentId} AND released_at IS NULL
+    `
     await lease(ownExt)
     return { ext: ownExt, shared: false }
   }
@@ -117,13 +122,15 @@ export async function allocateSeat(
     if (o.ext && o.ext.length <= 3) ownerOnline.set(o.ext, o.status === 'online')
   }
 
-  const free = pool.filter(e => !busySet.has(e))
-  if (!free.length) return { error: 'Все линии заняты — попробуйте через минуту' }
-  free.sort((a, b) => {
-    const aOn = ownerOnline.get(a) ? 1 : 0
-    const bOn = ownerOnline.get(b) ? 1 : 0
-    return aOn - bOn || a.localeCompare(b)
-  })
+  // Линия онлайн-владельца гостю не выдаётся вовсе: владелец может звонить
+  // с софтфона в любую секунду, и два человека на одной линии — это punt-война
+  // и звонки, приписанные не тому. Гостям достаются линии офлайн-владельцев
+  // и линии без владельца
+  const free = pool.filter(e => !busySet.has(e) && !ownerOnline.get(e))
+  if (!free.length) {
+    return { error: 'Все линии заняты владельцами или коллегами — попробуйте, когда кто-то освободится' }
+  }
+  free.sort((a, b) => a.localeCompare(b))
   await lease(free[0])
   return { ext: free[0], shared: true }
 }
