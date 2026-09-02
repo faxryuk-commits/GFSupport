@@ -57,6 +57,9 @@ export default async function handler(req: Request): Promise<Response> {
   const startPage = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10))
   const pages = Math.min(10, Math.max(1, parseInt(url.searchParams.get('pages') || '2', 10)))
   const dry = url.searchParams.get('dry') === '1'
+  // Точечный довоз по сотруднику: общий скан идёт «свежие сверху» и до
+  // старых открытых лидов конкретного сейлза может не дойти вовсе
+  const amoUser = parseInt(url.searchParams.get('user') || '0', 10) || null
 
   const started = Date.now()
   const sql = getSQL()
@@ -81,7 +84,8 @@ export default async function handler(req: Request): Promise<Response> {
     // самых старых, и открытые оказываются на двадцатой странице. Проверено на
     // боевых данных: первые 1300 сделок — сплошь закрытые.
     const data = await amoGet(creds,
-      `/leads?with=contacts,loss_reason&limit=250&page=${page}&order[updated_at]=desc`)
+      `/leads?with=contacts,loss_reason&limit=250&page=${page}&order[updated_at]=desc`
+      + (amoUser ? `&filter[responsible_user_id]=${amoUser}` : ''))
     const batch: any[] = data?._embedded?.leads || []
     out.pagesScanned++
     out.lastPage = page
