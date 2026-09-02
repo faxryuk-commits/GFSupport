@@ -383,7 +383,7 @@ export default async function handler(req: Request): Promise<Response> {
       FROM sales_touchpoints t
       LEFT JOIN sales_leads l ON l.id = t.lead_id
       WHERE t.org_id = ${orgId} AND t.kind = 'call'
-      ORDER BY t.happened_at DESC LIMIT 15
+      ORDER BY t.happened_at DESC LIMIT 25
     ` as any[]
     // С какого номера уйдёт исходящий — звонилка показывает это до набора,
     // чтобы сейлз знал, какая трубка сейчас зазвонит

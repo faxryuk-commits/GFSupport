@@ -192,9 +192,38 @@ export default async function handler(req: Request): Promise<Response> {
         // записан на «внутр. 101», но трубку снял мобильный из переадресации —
         // только через неё добавочный превращается в имя сотрудника
         let extForward: Map<string, string> | null = null
+        const isStaffNumber = async (last9: string): Promise<boolean> => {
+          const [row] = await sql`
+            SELECT id FROM support_agents
+            WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + last9}
+                   OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + last9})
+              AND merged_into IS NULL
+            LIMIT 1
+          `.catch(() => [] as any[]) as any[]
+          return Boolean(row)
+        }
         for (const c of calls) {
-          const norm = c.clientNumber.replace(/\D/g, '').slice(-9)
+          let norm = c.clientNumber.replace(/\D/g, '').slice(-9)
           if (!norm || norm.length < 7) continue
+          // Служебные звонки — мимо CRM: если «клиентская» сторона совпадает
+          // с телефоном или добавочным сотрудника, это нога вызова на сейлза
+          // (первая нога клика, тест линии, звонок коллеги) — а не клиент.
+          // Такие строки создавали лидов из менеджеров и путали «кто с кем»
+          if (await isStaffNumber(norm)) {
+            // …кроме звонка с мобильного приложения OnlinePBX: сейлз набирает
+            // клиента с телефона, АТС пишет это ВХОДЯЩИМ от мобильного
+            // сотрудника, а клиент лежит второй стороной записи. Такие звонки
+            // терялись целиком — разворачиваем в исходящий сотрудника
+            const other = String(c.agentExternal || '').replace(/\D/g, '')
+            const swappable = c.direction === 'in' && other.length >= 9
+              && !(await isStaffNumber(other.slice(-9)))
+            if (!swappable) continue
+            c.agentExternal = c.clientNumber
+            c.clientNumber = other
+            c.direction = 'out'
+            c.ext = null
+            norm = other.slice(-9)
+          }
           // Кому звонили: лид по нормализованному телефону, свежий важнее
           let [lead] = await sql`
             SELECT id, name, account_id, first_touch_at, status FROM sales_leads
@@ -202,18 +231,6 @@ export default async function handler(req: Request): Promise<Response> {
               AND phone_norm LIKE ${'%' + norm}
             ORDER BY created_at DESC LIMIT 1
           ` as any[]
-          // Служебные звонки — мимо CRM: если «клиентская» сторона совпадает
-          // с телефоном или добавочным сотрудника, это нога вызова на сейлза
-          // (первая нога клика, тест линии, звонок коллеги) — а не клиент.
-          // Такие строки создавали лидов из менеджеров и путали «кто с кем»
-          const [stf] = await sql`
-            SELECT id FROM support_agents
-            WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
-                   OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm})
-              AND merged_into IS NULL
-            LIMIT 1
-          `.catch(() => [] as any[]) as any[]
-          if (stf) continue
           // Входящий с неизвестного номера — это обращение, а не шум:
           // человек сам позвонил. Заводим лида с источником «Входящий
           // звонок» — он падает в общую очередь, и сейлз перезвонит
