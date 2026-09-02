@@ -111,7 +111,10 @@ export default async function handler(req: Request): Promise<Response> {
 
     for (const lead of batch) {
       try {
-        if (!isAllowedPipeline(lead.pipeline_id)) { out.wrongMode++; continue }
+        // Точечный довоз по сотруднику — сознательная ручная операция:
+        // фильтр воронок не применяем, иначе живая работа новичка в
+        // «Повторных продажах» и «Onboarding» никогда не доедет
+        if (!amoUser && !isAllowedPipeline(lead.pipeline_id)) { out.wrongMode++; continue }
         const st = statuses.get(lead.status_id)
         const isWon = Boolean(st?.isWon)
         const isLost = Boolean(st?.isLost)
