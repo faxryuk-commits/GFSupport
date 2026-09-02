@@ -7,7 +7,7 @@ import { ErrorBoundary, Dialer } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
 import { useMarket } from '@/shared/hooks/useMarket'
 import { useOrg, OrgContext } from '@/shared/hooks/useOrg'
-import { playCaseSoundIfEnabled, playMessageSoundIfEnabled } from '@/shared/lib'
+import { playCaseSoundIfEnabled, playMessageSoundIfEnabled, playLeadSoundIfEnabled } from '@/shared/lib'
 import { clearCache } from '@/shared/services/api.service'
 import { OnboardingWizard, DemoBanner } from '@/features/onboarding'
 
@@ -30,12 +30,14 @@ export function MainLayout() {
   const [unreadChats, setUnreadChats] = useState(0)
   const [openCases, setOpenCases] = useState(0)
   const [pendingCommitments, setPendingCommitments] = useState(0)
+  const [newLeads, setNewLeads] = useState(0)
   const [onlineAgentsCount, setOnlineAgentsCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(0) // Timestamp последнего обновления счётчиков
   
   // Track previous values for sound notifications
   const prevCasesRef = useRef<number>(0)
   const prevUnreadRef = useRef<number>(0)
+  const prevLeadsRef = useRef(0)
   const isFirstLoadRef = useRef<boolean>(true)
   
   useBackgroundNotifications()
@@ -68,6 +70,7 @@ export function MainLayout() {
       setOpenCases(data.openCases || 0)
       setPendingCommitments(data.pendingCommitments || 0)
       setOnlineAgentsCount(data.onlineAgents || 0)
+      setNewLeads(data.newLeads || 0)
 
       setLastUpdated(Date.now())
     } catch {
@@ -119,6 +122,7 @@ export function MainLayout() {
     if (isFirstLoadRef.current) {
       prevCasesRef.current = openCases
       prevUnreadRef.current = unreadChats
+      prevLeadsRef.current = newLeads
       isFirstLoadRef.current = false
       return
     }
@@ -134,7 +138,13 @@ export function MainLayout() {
       playMessageSoundIfEnabled()
     }
     prevUnreadRef.current = unreadChats
-  }, [openCases, unreadChats])
+
+    // Новый лид — восходящая трель: сейлз слышит обращение, не глядя в экран
+    if (newLeads > prevLeadsRef.current) {
+      playLeadSoundIfEnabled()
+    }
+    prevLeadsRef.current = newLeads
+  }, [openCases, unreadChats, newLeads])
 
   const handleLogout = async () => {
     // Отправляем logout на сервер

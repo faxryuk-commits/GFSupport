@@ -81,7 +81,8 @@ const QUAL_FIELDS = [
   ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
   ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
   ['aggregators', 'Агрегаторы'], ['delivery_type', 'Тип доставки'],
-  ['dm_name', 'ЛПР'], ['dm_role', 'Роль ЛПР'], ['pain', 'Боль клиента'],
+  ['dm_name', 'ЛПР'], ['dm_role', 'Роль ЛПР'], ['dm_confirmed', 'ЛПР подтверждён'],
+  ['pain', 'Боль клиента'],
 ] as const
 
 const COMMERCIAL_FIELDS = [
@@ -89,7 +90,12 @@ const COMMERCIAL_FIELDS = [
   ['monthly_amount', 'Подписка в месяц'], ['onetime_amount', 'Единоразово'],
   ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'], ['currency', 'Валюта'],
   ['valid_till', 'КП действует до'], ['expected_close_at', 'Ожидаемое закрытие'],
+  ['legal_name', 'Реквизиты'], ['start_date', 'Дата старта'],
+  ['paid_at', 'Депозит или первый платёж'],
 ] as const
+
+/** Поля да/нет — рендерятся одним кликом, а не текстовым вводом. */
+const BOOL_FIELDS = new Set(['dm_confirmed'])
 
 function money(v: any, currency = 'UZS') {
   if (v === null || v === undefined || v === '') return '—'
@@ -513,7 +519,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               {QUAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)}
                   options={optionsFor(refs, f, d.market_id)} when={DATE_FIELDS[f]}
-                  multiple={MULTI_FIELDS.has(f)} />
+                  multiple={MULTI_FIELDS.has(f)} bool={BOOL_FIELDS.has(f)} />
               ))}
             </div>
           </Card>

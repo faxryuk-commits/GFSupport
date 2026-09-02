@@ -153,6 +153,41 @@ export function playMessageSoundIfEnabled() {
   }
 }
 
+/**
+ * Новый лид: восходящая трель до-ми-соль — позитивная и отличимая
+ * от сообщений (два бипа) и кейсов
+ */
+export function playLeadSound() {
+  const ctx = getAudioContext()
+  if (!ctx) return
+  try {
+    const now = ctx.currentTime
+    const notes = [523, 659, 784]
+    notes.forEach((f, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = f
+      osc.type = 'sine'
+      const start = now + i * 0.12
+      gain.gain.setValueAtTime(0, start)
+      gain.gain.linearRampToValueAtTime(0.13, start + 0.02)
+      gain.gain.linearRampToValueAtTime(0, start + 0.11)
+      osc.start(start)
+      osc.stop(start + 0.13)
+    })
+  } catch (e) {
+    console.log('[Sound] Error playing lead sound:', e)
+  }
+}
+
+export function playLeadSoundIfEnabled() {
+  if (isSoundEnabled()) {
+    playLeadSound()
+  }
+}
+
 export function playCaseSoundIfEnabled() {
   if (isSoundEnabled()) {
     playCaseSound()

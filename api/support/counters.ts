@@ -33,7 +33,7 @@ export default async function handler(req: Request): Promise<Response> {
   // «онлайн» (статус ставился при входе и жил вечно — в сети «были» 13
   // человек при одном реальном). Правдивый статус чинит заодно и теги
   // агента: «онлайн» в списках снова значит «в сети сейчас»
-  const [, , chats, cases, commitments, agents] = await sql.transaction([
+  const [, , chats, cases, commitments, agents, leads] = await sql.transaction([
     sql`
       UPDATE support_agents SET last_active_at = NOW(), status = 'online'
       WHERE id = ${ctx.agentId} AND org_id = ${orgId}
@@ -73,5 +73,7 @@ export default async function handler(req: Request): Promise<Response> {
     openCases: (cases as any[])[0]?.open || 0,
     pendingCommitments: (commitments as any[])[0]?.pending || 0,
     onlineAgents: (agents as any[])[0]?.online || 0,
+    // Новые обращения без сейлза: рост числа — звуковой сигнал на фронте
+    newLeads: (leads as any[])[0]?.fresh || 0,
   })
 }
