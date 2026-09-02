@@ -87,7 +87,9 @@ const STAGE_SEED: Array<{
     requiredFields: ['city', 'points', 'orders_per_day', 'pos', 'aggregators', 'delivery_type', 'pain'],
     cadence: [] },
   { key: 'meeting', label: 'Демо назначено', kind: 'open', ownerRole: 'sdr', slaHours: 24, probability: 25,
-    requiredFields: ['meeting_at', 'dm_name'],
+    // Дата демо из критериев убрана: поля для неё в карточке нет, и этап
+    // превращался в непроходимый потолок
+    requiredFields: ['dm_name'],
     cadence: [{ day: 0, title: 'Напомнить о встрече за 2 часа', channel: 'telegram' }] },
   { key: 'demo', label: 'Демо проведено', kind: 'open', ownerRole: 'ae', slaHours: 24, probability: 30,
     requiredFields: ['dm_confirmed', 'budget_stated', 'next_step', 'next_step_at'],
