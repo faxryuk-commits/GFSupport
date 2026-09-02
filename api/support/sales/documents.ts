@@ -15,6 +15,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * PUT    {id, lines?, requisites?, body?, validTill?, title?} — правка вручную
  * POST   ?action=publish {id}   — присвоить номер, выдать ссылку, статус «отправлен»
  * POST   ?action=version {id}   — новая версия документа (старая остаётся в истории)
+ * DELETE ?id=...                — удалить документ; опубликованная ссылка перестаёт открываться
  *
  * Номер внутренний и сквозной: клиенту он не обязателен, а учёту нужен ориентир.
  * Берётся атомарным UPDATE ... RETURNING, поэтому два менеджера одновременно
@@ -222,6 +223,20 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE id = ${body.id}
     `
     return json({ ok: true, total })
+  }
+
+  if (req.method === 'DELETE') {
+    const id = url.searchParams.get('id')
+    if (!id) return json({ error: 'id is required' }, 400)
+    const [doc] = await sql`
+      SELECT id FROM sales_documents WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (!doc) return json({ error: 'not found' }, 404)
+    // КП — рабочий документ, не отчётность: удалять можно и отправленное,
+    // просто ссылка у клиента честно перестанет открываться
+    await sql`DELETE FROM sales_document_views WHERE document_id = ${id}`.catch(() => {})
+    await sql`DELETE FROM sales_documents WHERE id = ${id} AND org_id = ${orgId}`
+    return json({ ok: true, deleted: true })
   }
 
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)

@@ -6,6 +6,7 @@ import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/ti
 import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
+import { EditQuoteModal } from './EditQuoteModal'
 import { TasksCard } from './TasksCard'
 import { SpecCard } from './SpecCard'
 import { ActivityCard } from './ActivityCard'
@@ -135,6 +136,18 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   const [busy, setBusy] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [editingDoc, setEditingDoc] = useState<string | null>(null)
+
+  const removeDoc = async (doc: any) => {
+    const warn = doc.share_token
+      ? 'Удалить КП? Опубликованная ссылка у клиента перестанет открываться.'
+      : 'Удалить черновик КП?'
+    if (!confirm(warn)) return
+    try {
+      await apiDelete(`/sales/documents?id=${doc.id}`)
+      load()
+    } catch (e: any) { setError(e?.message || 'Не удалось удалить') }
+  }
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -562,6 +575,16 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                         Опубликовать и скопировать ссылку
                       </button>
                     )}
+                    <button onClick={() => setEditingDoc(doc.id)}
+                      title="Изменить строки, цены и срок действия"
+                      className="text-[12px] px-2.5 py-1.5 border border-gray-200 text-gray-500 rounded-lg hover:border-blue-400 hover:text-blue-600">
+                      Изменить
+                    </button>
+                    <button onClick={() => removeDoc(doc)}
+                      title={doc.share_token ? 'Удалить: ссылка у клиента перестанет открываться' : 'Удалить черновик'}
+                      className="text-[12px] px-2.5 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:border-red-300 hover:text-red-600">
+                      Удалить
+                    </button>
                   </div>
                 ))}
               </div>
@@ -729,6 +752,9 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
         </div>
       )}
 
+      {editingDoc && (
+        <EditQuoteModal docId={editingDoc} onClose={() => setEditingDoc(null)} onSaved={() => load()} />
+      )}
       {builderOpen && (
         <QuoteBuilder
           deal={d}
