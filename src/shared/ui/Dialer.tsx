@@ -45,27 +45,15 @@ export function Dialer() {
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
-  // Минута без дела — трубка сворачивается в язычок у правого края, чтобы
-  // не висеть над контентом. Взаимодействие или входящий возвращают её
-  const [tucked, setTucked] = useState(false)
-  const tuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const openRef = useRef(false)
-  const incomingRef = useRef(false)
-  const armTuck = useCallback(() => {
-    if (tuckTimer.current) clearTimeout(tuckTimer.current)
-    tuckTimer.current = setTimeout(function fire() {
-      if (openRef.current || incomingRef.current) {
-        tuckTimer.current = setTimeout(fire, 60000)
-      } else {
-        setTucked(true)
-      }
-    }, 60000)
+  // Сворачивание — ручное и липкое: сейлз сам решает, когда трубка мешает.
+  // В свёрнутом виде активность звонков не показывается и не опрашивается
+  const [tucked, setTuckedState] = useState(() => localStorage.getItem('dialer_tucked') === '1')
+  const tuckedRef = useRef(tucked)
+  const setTucked = useCallback((v: boolean) => {
+    tuckedRef.current = v
+    setTuckedState(v)
+    try { v ? localStorage.setItem('dialer_tucked', '1') : localStorage.removeItem('dialer_tucked') } catch { /* приватный режим */ }
   }, [])
-  useEffect(() => {
-    armTuck()
-    return () => { if (tuckTimer.current) clearTimeout(tuckTimer.current) }
-  }, [armTuck])
-  useEffect(() => { openRef.current = open; if (open) { setTucked(false); armTuck() } }, [open, armTuck])
 
   useEffect(() => {
     if (!open) return
@@ -80,20 +68,14 @@ export function Dialer() {
       .catch(() => {})
   }, [open])
 
-  // Опрос живых событий АТС: раз в 12 секунд, всегда — входящий должен
-  // всплыть, даже когда звонилка закрыта
+  // Опрос живых событий АТС: раз в 12 секунд, пока трубка развёрнута.
+  // Свёрнутая молчит целиком — ни пилюль, ни запросов
   useEffect(() => {
     let stop = false
     const tick = () => {
+      if (tuckedRef.current) return
       apiGet<any>('/sales/call?action=live', false)
-        .then(d => {
-          if (stop) return
-          const calls = d?.calls || []
-          setIncoming(calls)
-          incomingRef.current = calls.length > 0
-          // Входящий важнее сна: язычок разворачивается сам
-          if (calls.length) setTucked(false)
-        })
+        .then(d => { if (!stop) setIncoming(d?.calls || []) })
         .catch(() => {})
     }
     tick()
@@ -186,31 +168,41 @@ export function Dialer() {
   return (
     <>
       {/* Трубка — поверх всего, но не поверх модалок (z ниже drawer'ов).
-          Заснувшая — узкий язычок у края: клик вытягивает обратно */}
+          Свёрнутая — узкий язычок у края без какой-либо активности */}
       {tucked ? (
         <button
-          onClick={() => { setTucked(false); armTuck() }}
-          title="Звонилка"
-          className="fixed bottom-8 right-0 z-40 w-6 h-12 rounded-l-full bg-emerald-600/80 text-white
+          onClick={() => setTucked(false)}
+          title="Развернуть звонилку"
+          className="fixed bottom-8 right-0 z-40 w-6 h-12 rounded-l-full bg-emerald-600/70 text-white
                      shadow-md hover:bg-emerald-600 hover:w-8 transition-all flex items-center pl-1.5"
         >
           <Phone className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button
-          onClick={() => { setOpen(o => !o); armTuck() }}
-          title="Позвонить на любой номер"
-          className={`fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full text-white
-                     shadow-lg flex items-center justify-center transition-colors ${
-                     incoming.length ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-        >
-          {open ? <X className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
-        </button>
+        <div className="fixed bottom-5 right-5 z-40">
+          <button
+            onClick={() => setOpen(o => !o)}
+            title="Позвонить на любой номер"
+            className={`w-12 h-12 rounded-full text-white shadow-lg flex items-center justify-center
+                       transition-colors ${
+                       incoming.length ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+          >
+            {open ? <X className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
+          </button>
+          <button
+            onClick={() => { setOpen(false); setTucked(true) }}
+            title="Свернуть к краю экрана"
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white border border-gray-200
+                       shadow text-gray-400 hover:text-gray-700 flex items-center justify-center text-[10px]"
+          >
+            ›
+          </button>
+        </div>
       )}
 
       {/* Входящий прямо сейчас: события вебхука АТС — карточка всплывает
-          ещё до снятой трубки, чтобы сейлз видел, кто звонит */}
-      {incoming.length > 0 && (
+          ещё до снятой трубки. Свёрнутая трубка активность не показывает */}
+      {!tucked && incoming.length > 0 && (
         <div className="fixed bottom-5 right-20 z-40 flex flex-col gap-1.5 items-end">
           {incoming.map((c, i) => {
             const p = parsePhone(c.number)
@@ -240,7 +232,6 @@ export function Dialer() {
 
       {open && !tucked && (
         <div
-          onMouseDown={armTuck}
           className="fixed bottom-20 right-5 z-40 w-80 bg-white border border-gray-200
                         rounded-2xl shadow-2xl p-4">
           <div className="text-[13px] font-semibold text-gray-800 mb-2">Позвонить</div>
