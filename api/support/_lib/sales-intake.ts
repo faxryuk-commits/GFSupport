@@ -304,6 +304,18 @@ export async function leadFromPhone(
   const norm = raw.replace(/\D/g, '').slice(-9)
   if (norm.length < 7) return { error: 'Номер не распознан' }
 
+  // Номер сотрудника лидом не становится: АТС в событиях подставляет служебную
+  // ногу (мобильный из очереди, добавочный), и один клик «создать» превращал
+  // коллегу в клиента — со звонками, задачами и SLA на его же имя
+  const [staff] = await sql`
+    SELECT name FROM support_agents
+    WHERE org_id = ${orgId} AND merged_into IS NULL AND (
+      regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+      OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') = ${norm}
+    ) LIMIT 1
+  ` as any[]
+  if (staff) return { error: `Это номер сотрудника — ${staff.name}. Лид из него не создаётся.` }
+
   const [hit] = await sql`
     SELECT id, name FROM sales_leads
     WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}

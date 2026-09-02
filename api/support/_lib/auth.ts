@@ -7,12 +7,17 @@ export interface AgentContext {
   isGlobalAdmin: boolean
   isSuperAdmin: boolean
   isOrgAdmin: boolean
+  /** Руководящая роль: админы, CCO, тимлиды. Право на разрушающие действия. */
+  isLead: boolean
 }
+
+/** Роли с правом руководителя: удаление, настройки команды, чужие задачи. */
+const LEAD_ROLES = ['admin', 'org_admin', 'cco', 'team_lead', 'lead']
 
 export async function extractAgentContext(req: Request): Promise<AgentContext> {
   const fallback: AgentContext = {
     agentId: null, orgId: null, marketIds: [],
-    isGlobalAdmin: false, isSuperAdmin: false, isOrgAdmin: false,
+    isGlobalAdmin: false, isSuperAdmin: false, isOrgAdmin: false, isLead: false,
   }
 
   const authHeader = req.headers.get('Authorization')
@@ -46,6 +51,7 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
       || isSuperAdmin
       || (Array.isArray(agentRow.permissions) && agentRow.permissions.includes('global_admin'))
     const isOrgAdmin = agentRow.role === 'admin' || agentRow.role === 'org_admin'
+    const isLead = isGlobalAdmin || isOrgAdmin || LEAD_ROLES.includes(String(agentRow.role))
 
     const orgId = agentRow.org_id || null
 
@@ -54,7 +60,7 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
     `
     const marketIds = marketRows.map((r: any) => r.market_id)
 
-    return { agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin }
+    return { agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin, isLead }
   } catch {
     return { ...fallback, agentId: token }
   }

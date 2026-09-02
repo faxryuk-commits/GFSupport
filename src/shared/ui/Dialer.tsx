@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Phone, X } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { parsePhone, PBX_COUNTRY } from '@/shared/lib/phone'
+import { VertoPhone, type VertoState, webrtcEnabled, setWebrtcEnabled } from '@/shared/lib/verto'
 
 /**
  * Звонилка: набрать произвольный номер, не заходя ни в какую карточку.
@@ -44,6 +45,51 @@ export function Dialer() {
   }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+
+  // ПК-режим: разговор прямо в браузере через Verto-шлюз АТС (микрофон и
+  // наушники), без «АТС сначала звонит вам». Включается, когда бекэнд выдал
+  // креды по добавочному из профиля; старый путь остаётся запасным
+  const vertoRef = useRef<VertoPhone | null>(null)
+  const [vState, setVState] = useState<VertoState>('idle')
+  const [vDetail, setVDetail] = useState('')
+  const [vIncoming, setVIncoming] = useState<string | null>(null)
+  const [vNumber, setVNumber] = useState<string | null>(null)
+  const [muted, setMuted] = useState(false)
+  const [pcMode, setPcMode] = useState(() => webrtcEnabled())
+
+  useEffect(() => {
+    if (!pcMode) {
+      vertoRef.current?.disconnect()
+      vertoRef.current = null
+      return
+    }
+    let dead = false
+    apiGet<any>('/sales/call?action=webrtc-creds', false)
+      .then(c => {
+        if (dead || !c?.success || vertoRef.current) return
+        const phone = new VertoPhone(c, {
+          onState: (s, detail) => {
+            setVState(s)
+            setVDetail(detail || '')
+            if (s !== 'ringing_in') setVIncoming(null)
+            setVNumber(phone.currentNumber)
+            if (s === 'registered' || s === 'idle' || s === 'error') setMuted(false)
+          },
+          onIncoming: number => setVIncoming(number),
+        })
+        vertoRef.current = phone
+        phone.connect()
+      })
+      .catch(() => { /* креды не выданы — работаем по старой схеме */ })
+    return () => {
+      dead = true
+      vertoRef.current?.disconnect()
+      vertoRef.current = null
+    }
+  }, [pcMode])
+
+  const vertoReady = pcMode && vState === 'registered'
+  const vertoBusy = vState === 'ringing_out' || vState === 'ringing_in' || vState === 'active'
 
   // Сворачивание — ручное и липкое: сейлз сам решает, когда трубка мешает.
   // В свёрнутом виде активность звонков не показывается и не опрашивается
@@ -128,6 +174,27 @@ export function Dialer() {
 
   const call = async () => {
     if (digits.length < 7 || status === 'calling' || foreign) return
+    // ПК-режим: звонок уходит из браузера — гудки и разговор в наушниках.
+    // Карточку клиента подтягиваем тем же поиском, что и раньше
+    if (vertoReady && !vertoBusy) {
+      setStatus('idle'); setNote('')
+      try {
+        await vertoRef.current!.call(digits)
+        apiGet<any>(`/sales/call?action=search&q=${encodeURIComponent(digits)}`, false)
+          .then(d => {
+            const hit = (d?.results || []).find((f: any) => f.kind === 'lead')
+            setLead(hit ? { id: hit.id, name: hit.name } : null)
+            setNoLead(!hit)
+          })
+          .catch(() => {})
+      } catch (e: any) {
+        setStatus('error')
+        setNote(e?.message === 'Permission denied'
+          ? 'Браузер не дал доступ к микрофону — разрешите его для сайта'
+          : (e?.message || 'Звонок из браузера не прошёл'))
+      }
+      return
+    }
     setStatus('calling'); setNote('')
     try {
       const r = await apiPost<any>('/sales/call', { to: num })
@@ -230,6 +297,73 @@ export function Dialer() {
         </div>
       )}
 
+      {/* Входящий на софтфон: звонит прямо в браузере — ответить можно отсюда,
+          не снимая никаких трубок. Виден даже при свёрнутой звонилке: это не
+          «активность линии», это твой звонящий телефон */}
+      {vState === 'ringing_in' && vIncoming !== null && (
+        <div className="fixed bottom-24 right-5 z-50 bg-white border-2 border-emerald-400 rounded-2xl
+                        shadow-2xl p-3.5 w-72 animate-pulse-border">
+          <div className="text-[11px] text-emerald-700 font-semibold mb-1">Входящий звонок</div>
+          <div className="text-[15px] font-mono tabular-nums text-gray-900">
+            {parsePhone(vIncoming).valid ? parsePhone(vIncoming).pretty : vIncoming || 'номер скрыт'}
+          </div>
+          <div className="mt-2.5 flex gap-2">
+            <button
+              onClick={() => vertoRef.current?.answer().catch(() => setVDetail('не удалось ответить'))}
+              className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700">
+              Ответить
+            </button>
+            <button
+              onClick={() => vertoRef.current?.hangup()}
+              className="flex-1 py-2 rounded-xl bg-red-50 text-red-600 border border-red-200 text-[13px] hover:bg-red-100">
+              Сбросить
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Идущий разговор из браузера: плашка живёт независимо от звонилки —
+          закрыл панель, а сброс и микрофон всегда под рукой */}
+      {(vState === 'ringing_out' || vState === 'active') && (
+        <div className="fixed bottom-24 right-5 z-50 bg-gray-900 text-white rounded-2xl shadow-2xl
+                        px-4 py-3 w-72">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full flex-none ${
+              vState === 'active' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-mono tabular-nums truncate">
+                {vNumber && parsePhone(vNumber).valid ? parsePhone(vNumber).pretty : vNumber || '…'}
+              </div>
+              <div className="text-[10.5px] text-gray-400">
+                {vState === 'active' ? 'разговор идёт · через браузер' : 'гудки…'}
+              </div>
+            </div>
+            {vState === 'active' && (
+              <button
+                onClick={() => setMuted(vertoRef.current?.toggleMute() || false)}
+                title={muted ? 'Включить микрофон' : 'Выключить микрофон'}
+                className={`flex-none w-8 h-8 rounded-full flex items-center justify-center text-[13px] ${
+                  muted ? 'bg-amber-500 text-white' : 'bg-white/10 hover:bg-white/20'}`}>
+                {muted ? '🔇' : '🎙'}
+              </button>
+            )}
+            <button
+              onClick={() => vertoRef.current?.hangup()}
+              title="Завершить звонок"
+              className="flex-none w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 flex items-center
+                         justify-center rotate-[135deg]">
+              <Phone className="w-4 h-4" />
+            </button>
+          </div>
+          {lead && (
+            <Link to={`/sales/leads/${lead.id}`}
+              className="mt-1.5 block text-[11.5px] text-blue-300 hover:underline truncate">
+              Карточка: {lead.name}
+            </Link>
+          )}
+        </div>
+      )}
+
       {open && !tucked && (
         <div
           className="fixed bottom-20 right-5 z-40 w-80 bg-white border border-gray-200
@@ -301,11 +435,20 @@ export function Dialer() {
           >
             {status === 'calling' ? 'Соединяю…' : '📞 Позвонить'}
           </button>
-          {ext && (
+          {vertoReady ? (
+            <div className="mt-1 text-[10.5px] text-emerald-700">
+              ● Софтфон в браузере подключён — разговор пойдёт через микрофон и наушники
+            </div>
+          ) : ext ? (
             <div className={`mt-1 text-[10.5px] ${extPersonal ? 'text-gray-400' : 'text-amber-600'}`}>
               {extPersonal
                 ? `Исходящий пойдёт с вашего номера: ${extLabel(ext)}`
                 : `У вас не задан личный номер — звонок пойдёт через общий (${extLabel(ext)}), и говорить будет его владелец`}
+            </div>
+          ) : null}
+          {pcMode && vState === 'error' && (
+            <div className="mt-1 text-[10.5px] text-amber-600">
+              Софтфон: {vDetail || 'не подключился'} — звонки идут по старой схеме через телефон
             </div>
           )}
           {note && (
@@ -380,10 +523,19 @@ export function Dialer() {
               })}
             </div>
           )}
-          <div className="mt-2 text-[10.5px] text-gray-400">
-            АТС наберёт ваш номер, после ответа — соединит. Микрофон браузера не
-            используется: разговор идёт через ваш телефон или софтфон. Звонок
-            запишется и появится в недавних и в карточке клиента.
+          <div className="mt-2 flex items-start justify-between gap-2">
+            <div className="text-[10.5px] text-gray-400 flex-1">
+              {vertoReady
+                ? 'Звонок идёт прямо из браузера. Запись появится в недавних и в карточке клиента.'
+                : 'АТС наберёт ваш номер, после ответа — соединит. Звонок запишется и появится в недавних и в карточке клиента.'}
+            </div>
+            <label className="flex-none flex items-center gap-1 text-[10.5px] text-gray-400 cursor-pointer select-none"
+              title="Разговор через микрофон браузера вместо схемы «АТС звонит вам»">
+              <input type="checkbox" checked={pcMode}
+                onChange={e => { setWebrtcEnabled(e.target.checked); setPcMode(e.target.checked) }}
+                className="accent-emerald-600" />
+              ПК-режим
+            </label>
           </div>
         </div>
       )}

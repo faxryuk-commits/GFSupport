@@ -118,9 +118,9 @@ export default async function handler(req: Request): Promise<Response> {
     const id = url.searchParams.get('id')
     if (!id) return json({ error: 'id is required' }, 400)
     if (url.searchParams.get('hard') === '1') {
-      // Удаление насовсем — намеренное действие администратора. Выигранные и
-      // проигранные не трогаем: на них стоят отчёты и история аккаунта
-      if (!ctx.isOrgAdmin && !ctx.isGlobalAdmin) return json({ error: 'только администратор' }, 403)
+      // Удаление насовсем — намеренное действие администратора или
+      // руководителя. Защита — роль и явное hard=1
+      if (!ctx.isLead) return json({ error: 'только администратор или руководитель' }, 403)
       const [deal] = await sql`
         SELECT won_at, lost_at FROM sales_deals WHERE id = ${id} AND org_id = ${orgId}
       ` as any[]

@@ -301,24 +301,35 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
             пришло {formatDateTimeShort(l.created_at)}
           </span>
         </div>
-        {open && (
-          <div className="flex gap-2 pt-1">
-            <button disabled={busy} onClick={() => act('assign')}
-              className="text-[12px] px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:brightness-110 disabled:opacity-50">
-              Беру в работу
-            </button>
-            {l.status !== 'nurture' && (
-              <button disabled={busy} onClick={() => act('nurture')}
-                className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400">
-                На прогрев
+        <div className="flex gap-2 pt-1 items-center">
+          {open && (
+            <>
+              <button disabled={busy} onClick={() => act('assign')}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:brightness-110 disabled:opacity-50">
+                Беру в работу
               </button>
-            )}
-            <button disabled={busy} onClick={askReason}
-              className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600">
-              В отказ
-            </button>
-          </div>
-        )}
+              {l.status !== 'nurture' && (
+                <button disabled={busy} onClick={() => act('nurture')}
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400">
+                  На прогрев
+                </button>
+              )}
+              <button disabled={busy} onClick={askReason}
+                className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600">
+                В отказ
+              </button>
+            </>
+          )}
+          <span className="flex-1" />
+          {/* Удаление видно всегда, а не только внутри «отказа»: тестовое или
+              ошибочное обращение убирают и из архива. Право проверяет API —
+              администраторы и руководители */}
+          <button disabled={busy} onClick={remove}
+            title="Насовсем — для тестовых и ошибочных обращений; администраторы и руководители"
+            className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 disabled:opacity-50">
+            Удалить
+          </button>
+        </div>
         {asking && (
           <div className="border border-gray-200 rounded-xl p-3 bg-white space-y-2">
             <div className="text-[12.5px] text-gray-900">Почему не наш клиент?</div>

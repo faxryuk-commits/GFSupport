@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
-import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus, pbxHookSecret } from '../_lib/pbx.js'
+import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus, pbxHookSecret, pbxUserWebrtc } from '../_lib/pbx.js'
 import { leadFromPhone } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -212,24 +212,22 @@ export default async function handler(req: Request): Promise<Response> {
     const calls: any[] = []
     for (const r of live.slice(0, 3)) {
       const norm = String(r.caller).replace(/\D/g, '').slice(-9)
-      const [lead] = await sql`
+      // Свой номер проверяем ПЕРВЫМ: раньше сотрудника искали только когда
+      // лида нет, и одна ошибочно созданная карточка на номер коллеги навсегда
+      // выдавала его за клиента — со всплывашкой и кнопкой «создать лида»
+      const [st] = await sql`
+        SELECT name FROM support_agents
+        WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+               OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm})
+          AND merged_into IS NULL
+        LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      const staff: string | null = st?.name || null
+      const [lead] = staff ? [null] : await sql`
         SELECT id, name FROM sales_leads
         WHERE org_id = ${orgId} AND archived_at IS NULL AND phone_norm LIKE ${'%' + norm}
         ORDER BY created_at DESC LIMIT 1
       `.catch(() => [] as any[]) as any[]
-      // Свой номер — назвать по имени: команда тестирует линию постоянно,
-      // и «номер новый» на коллеге сбивает с толку
-      let staff: string | null = null
-      if (!lead) {
-        const [st] = await sql`
-          SELECT name FROM support_agents
-          WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
-                 OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm})
-            AND merged_into IS NULL
-          LIMIT 1
-        `.catch(() => [] as any[]) as any[]
-        staff = st?.name || null
-      }
       calls.push({
         number: r.caller, at: r.created_at,
         leadId: lead?.id || null, leadName: lead?.name || null,
@@ -354,6 +352,50 @@ export default async function handler(req: Request): Promise<Response> {
     }
     const s = await pbxHookSecret(cfg.authKey)
     return json({ url: `https://www.gfsupport.uz/api/support/webhook/pbx?s=${s}` })
+  }
+
+  // Браузерный софтфон: Verto-креды текущего оператора по его короткому
+  // добавочному из профиля. Добавочный берётся ТОЛЬКО из привязки на сервере —
+  // фронт не может запросить чужой. Пароль живёт у АТС, мы его не храним
+  if (url.searchParams.get('action') === 'webrtc-creds') {
+    const my = await resolveExt(sql, orgId, ctx.agentId)
+    const ext = my.personal ? my.ext.replace(/\D/g, '') : ''
+    if (!ext || ext.length > 3) {
+      return json({
+        success: false, code: 'PBX_OPERATOR_NOT_CONFIGURED',
+        message: 'Короткий добавочный (100/101/102) не привязан к вашему профилю — попросите администратора указать его в карточке сотрудника',
+      }, 404)
+    }
+    try {
+      const w = await pbxUserWebrtc(cfg, ext)
+      if (!w) {
+        return json({ success: false, code: 'PBX_WEBRTC_NOT_AVAILABLE', message: 'АТС не выдала WebRTC-креды для добавочного ' + ext }, 422)
+      }
+      if (!w.enabled) {
+        return json({ success: false, code: 'PBX_ACCESS_DENIED', message: 'Добавочный ' + ext + ' выключен на АТС' }, 403)
+      }
+      // Свой tenant-шлюз из настроек — приоритетом; хост провайдера — рабочий
+      // fallback (проверен реальным Verto-логином на нашей АТС)
+      const [vh] = await sql`
+        SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'onlinepbx_verto_host' LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      const rawHost = String(vh?.value || '').trim() || w.host
+      if (!rawHost) {
+        return json({ success: false, code: 'PBX_VERTO_HOST_NOT_CONFIGURED', message: 'Verto-шлюз не настроен' }, 422)
+      }
+      const host = /^wss?:\/\//i.test(rawHost) ? rawHost : `wss://${rawHost}`
+      const login = w.user.includes('@') ? w.user : `${w.user}@${cfg.domain}`
+      return new Response(JSON.stringify({
+        success: true, protocol: 'verto', host, login,
+        user: login.split('@')[0], extension: ext,
+        verto_password: w.password, expires_at: null,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders(), 'Content-Type': 'application/json', 'Cache-Control': 'no-store, private' },
+      })
+    } catch (e: any) {
+      return json({ success: false, code: 'PBX_PROVIDER_ERROR', message: String(e?.message || e).slice(0, 200) }, 502)
+    }
   }
 
   if (url.searchParams.get('action') === 'probe') {

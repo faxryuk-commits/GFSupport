@@ -210,6 +210,28 @@ export async function pbxUsers(cfg: PbxConfig): Promise<Array<{ num: string; for
 }
 
 /**
+ * Verto-креды добавочного для браузерного софтфона: user/get.json с явным
+ * полем webrtc (в набор по умолчанию оно не входит). Пароль не оседает у нас —
+ * запрашивается перед каждым подключением и уходит клиенту с no-store.
+ * Проверено 02.09.2026: логин на wss://<домен АТС>:8082 отвечает «logged in».
+ */
+export async function pbxUserWebrtc(
+  cfg: PbxConfig, num: string,
+): Promise<{ host: string; user: string; password: string; enabled: boolean } | null> {
+  const data = await pbxPost(cfg, 'user/get.json', { num, fields: 'num,name,enabled,webrtc' })
+  const rows: any[] = Array.isArray(data?.data) ? data.data : data?.data ? [data.data] : []
+  const u = rows.find(r => String(r?.num) === num)
+  const w = u?.webrtc
+  if (!u || !w?.user || !w?.password) return null
+  return {
+    host: String(w.host || '').trim(),
+    user: String(w.user).trim().replace(/^sip:/i, ''),
+    password: String(w.password),
+    enabled: u.enabled !== false,
+  }
+}
+
+/**
  * Секрет вебхука — производная от API-ключа: в URL вебхука нельзя класть сам
  * ключ, а отдельный секрет пришлось бы где-то заводить и синхронизировать.
  * Хеш восстановим с обеих сторон и бесполезен для обратного хода.

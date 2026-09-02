@@ -127,7 +127,7 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ ok: true, changed: ids.length })
       }
       if (op === 'delete') {
-        if (!ctx.isOrgAdmin && !ctx.isGlobalAdmin) return json({ error: 'только администратор' }, 403)
+        if (!ctx.isLead) return json({ error: 'только администратор или руководитель' }, 403)
         // Лиды, из которых уже выросли сделки, не трогаем: удалить их значит
         // оторвать сделку от истории обращения
         const kept = await sql`
@@ -229,7 +229,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
     if (action === 'delete') {
       // Лид удаляем насовсем только если он ни во что не превратился
-      if (!ctx.isOrgAdmin && !ctx.isGlobalAdmin) return json({ error: 'только администратор' }, 403)
+      if (!ctx.isLead) return json({ error: 'только администратор или руководитель' }, 403)
       const [{ deals }] = await sql`
         SELECT COUNT(*)::int AS deals FROM sales_deals
         WHERE source_lead_id = ${body.leadId} AND org_id = ${orgId}
