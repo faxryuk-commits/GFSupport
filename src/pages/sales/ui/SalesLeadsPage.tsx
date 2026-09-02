@@ -90,6 +90,8 @@ export function SalesLeadsPage() {
   const [range, setRange] = useState(() => rangeOf('all'))
   // Отметки для массовых действий
   const [picked, setPicked] = useState<string[]>([])
+  // Выбор сотрудника для массовой передачи: раньше тут был prompt с номерами
+  const [handing, setHanding] = useState(false)
   const toggle = (id: string) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   const [facets, setFacets] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState(false)
@@ -489,12 +491,27 @@ export function SalesLeadsPage() {
           </div>
           <BulkBar count={picked.length} onClear={() => setPicked([])}>
             <Btn onClick={() => bulk('assign')}>Взять себе</Btn>
-            <Btn onClick={() => {
-              const list = (data.agents || []).map((a, i) => `${i + 1}. ${a.name}`).join('\n')
-              const pick = prompt(`Кому передать ${picked.length} лидов?\n\n${list}\n\nНомер:`)
-              const agent = (data.agents || [])[Number(pick) - 1]
-              if (agent) bulk('assign', agent.id)
-            }}>Передать</Btn>
+            <div className="relative">
+              <Btn onClick={() => setHanding(h => !h)}>Передать ▾</Btn>
+              {handing && (
+                <div className="absolute bottom-full mb-1 left-0 z-30 w-56 bg-white border border-gray-200
+                                rounded-xl shadow-xl py-1 max-h-64 overflow-y-auto">
+                  <div className="px-3 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-gray-400">
+                    Кому передать {picked.length} лидов
+                  </div>
+                  {(data.agents || []).map(a => (
+                    <button key={a.id}
+                      onClick={() => { setHanding(false); bulk('assign', a.id) }}
+                      className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-700 hover:bg-blue-50">
+                      {a.name}
+                    </button>
+                  ))}
+                  {!(data.agents || []).length && (
+                    <div className="px-3 py-2 text-[11.5px] text-gray-400">команда не загрузилась</div>
+                  )}
+                </div>
+              )}
+            </div>
             <Btn onClick={() => bulk('nurture')}>На прогрев</Btn>
             <Btn onClick={() => bulk('archive')}>В архив</Btn>
             <Btn kind="danger" onClick={() => bulk('delete')}>Удалить</Btn>

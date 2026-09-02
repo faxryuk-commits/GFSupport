@@ -59,8 +59,18 @@ export default async function handler(req: Request): Promise<Response> {
   const [agent] = await sql`SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`
   const agentName = agent?.name || ctx.agentId
 
+  // Возврат назад по воронке — откат, а не прогресс: критерии выхода и
+  // подтверждение скидки на него не распространяются. Требовать «КП и сумму»
+  // у сделки, которую честно возвращают с КП на демо, — абсурд
+  const [cur] = await sql`
+    SELECT sort_order, kind FROM sales_stages WHERE id = ${deal.stage_id} AND org_id = ${orgId} LIMIT 1
+  ` as any[]
+  const movingBack = cur && target.kind === 'open'
+    && Number(target.sort_order) <= Number(cur.sort_order)
+
   // ─── 1. Критерии выхода ─────────────────────────────────────────────────────
-  const required: string[] = Array.isArray(target.required_fields) ? target.required_fields : []
+  const required: string[] = movingBack ? []
+    : Array.isArray(target.required_fields) ? target.required_fields : []
   const missing = required.filter(f => {
     if (f === 'lost_reason_id') return !body.lostReasonCode && isEmptyValue(deal.lost_reason_id)
     return isEmptyValue(deal[f])
@@ -76,7 +86,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // ─── 2. Скидка выше порога — только с подтверждением ────────────────────────
   const discount = Number(deal.discount_pct || 0)
-  if (target.kind !== 'lost' && discount > MAX_DISCOUNT_WITHOUT_APPROVAL && deal.approval_state !== 'approved') {
+  if (!movingBack && target.kind !== 'lost' && discount > MAX_DISCOUNT_WITHOUT_APPROVAL && deal.approval_state !== 'approved') {
     await sql`UPDATE sales_deals SET approval_state = 'pending' WHERE id = ${deal.id}`
     return json({
       blocked: true,

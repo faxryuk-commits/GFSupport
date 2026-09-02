@@ -4,6 +4,8 @@ import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
 import { resolveRegion, resolveRegionScoped } from '../_lib/sales-amo.js'
 import { acceptLead } from '../_lib/sales-intake.js'
+import { marketByPhoneCity } from '../_lib/region-detect.js'
+import { normPhone } from '../_lib/sales-schema.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -72,7 +74,11 @@ export default async function handler(req: Request): Promise<Response> {
         name: body.name || null,
         phone: body.phone || null,
         city: body.city || null,
-        market: body.market || (await resolveRegion(sql, orgId, url)) || null,
+        // Страна номера главнее региона интерфейса: казахстанский сейлз,
+        // заводя узбекское заведение, не должен пометить его Казахстаном
+        market: body.market
+          || marketByPhoneCity(normPhone(body.phone), body.city)
+          || (await resolveRegion(sql, orgId, url)) || null,
         text: body.text || null,
         pos: body.pos || null,
         orders_per_day: body.orders_per_day || null,
