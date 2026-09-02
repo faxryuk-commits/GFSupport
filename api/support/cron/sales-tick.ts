@@ -350,6 +350,82 @@ export default async function handler(req: Request): Promise<Response> {
     console.error('[sales-tick] call insights:', e)
   }
 
+  // ─── 1д. Реактивация проигранных ────────────────────────────────────────────
+  // Отказ — не приговор: через reactivate_days причины (или 60 дней, если
+  // причина не указана) лид возвращается в «Новые», сделка — на первый
+  // открытый этап своей воронки, с пометкой в истории. Дозировано: партия
+  // раз в сутки, свежие сроки первыми — кладбище прошлых лет не должно
+  // затопить воронку разом. Причины без срока (тест, не наш клиент,
+  // другое) не возвращаются никогда
+  try {
+    const KEY = 'sales_reactivation_last'
+    const [lr] = await sql`SELECT value FROM support_platform_settings WHERE key = ${KEY}` as any[]
+    if (Date.now() - Number(lr?.value || 0) > 20 * 3600 * 1000) {
+      let returned = 0
+      const backLeads = await sql`
+        SELECT l.id, l.account_id, COALESCE(r.label, 'причина не указана') AS reason,
+               GREATEST(1, EXTRACT(DAY FROM NOW() - l.archived_at))::int AS days
+        FROM sales_leads l
+        LEFT JOIN sales_lost_reasons r ON r.id = l.lost_reason_id
+        WHERE l.org_id = ${ORG} AND l.archived_at IS NOT NULL AND l.status = 'junk'
+          AND (l.lost_reason_id IS NULL OR r.reactivate_days IS NOT NULL)
+          AND l.archived_at < NOW() - make_interval(days => COALESCE(r.reactivate_days, 60))
+        ORDER BY l.archived_at DESC LIMIT 20
+      ` as any[]
+      for (const l of backLeads) {
+        await sql`
+          UPDATE sales_leads SET archived_at = NULL, status = 'new', assigned_agent_id = NULL,
+            assigned_at = NULL, sla_due_at = NULL, updated_at = NOW()
+          WHERE id = ${l.id} AND org_id = ${ORG}
+        `
+        await sql`
+          INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel, title, detail)
+          VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG},
+                  ${l.account_id}, ${l.id}, 'note', 'system',
+                  ${'Возвращён из отказа'},
+                  ${`прошло ${l.days} дн · причина отказа была: ${l.reason}`})
+        `.catch(() => {})
+        returned++
+      }
+      const backDeals = await sql`
+        SELECT d.id, d.pipeline, d.stage_id, COALESCE(r.label, 'причина не указана') AS reason,
+               GREATEST(1, EXTRACT(DAY FROM NOW() - d.lost_at))::int AS days
+        FROM sales_deals d
+        LEFT JOIN sales_lost_reasons r ON r.id = d.lost_reason_id
+        WHERE d.org_id = ${ORG} AND d.lost_at IS NOT NULL AND d.archived_at IS NULL
+          AND (d.lost_reason_id IS NULL OR r.reactivate_days IS NOT NULL)
+          AND d.lost_at < NOW() - make_interval(days => COALESCE(r.reactivate_days, 60))
+        ORDER BY d.lost_at DESC LIMIT 10
+      ` as any[]
+      for (const d of backDeals) {
+        const [st] = await sql`
+          SELECT id FROM sales_stages WHERE org_id = ${ORG} AND pipeline = ${d.pipeline || 'sales'}
+            AND kind = 'open' AND is_active = true ORDER BY sort_order LIMIT 1
+        ` as any[]
+        if (!st) continue
+        await sql`
+          UPDATE sales_deals SET lost_at = NULL, lost_reason_id = NULL, stage_id = ${st.id},
+            stage_since = NOW(), stalled_at = NULL, updated_at = NOW()
+          WHERE id = ${d.id} AND org_id = ${ORG}
+        `
+        await sql`
+          INSERT INTO sales_deal_events (org_id, deal_id, old_stage_id, new_stage_id, changed_by)
+          VALUES (${ORG}, ${d.id}, ${d.stage_id}, ${st.id},
+                  ${`Реактивация: ${d.days} дн после отказа (${d.reason})`})
+        `.catch(() => {})
+        returned++
+      }
+      await sql`
+        INSERT INTO support_platform_settings (key, value, updated_at)
+        VALUES (${KEY}, ${String(Date.now())}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${String(Date.now())}, updated_at = NOW()
+      `
+      if (returned) out.reactivated = returned
+    }
+  } catch (e) {
+    console.error('[sales-tick] reactivation:', e)
+  }
+
   // ─── 2. Просроченные задачи и каденции ──────────────────────────────────────
   // Раньше выборка требовала привязанного телеграма, и у сотрудника без бота
   // просроченная задача не всплывала нигде — а отметка «напомнили» ему не

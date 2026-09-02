@@ -152,9 +152,13 @@ export default async function handler(req: Request): Promise<Response> {
       UPDATE sales_accounts SET lifecycle = 'customer' WHERE id = ${deal.account_id}
     `
   } else {
+    // Открытый этап открывает сделку целиком: возврат из проигранных или
+    // выигранных снимает метки закрытия — иначе она двигалась этапом,
+    // но для всех списков оставалась закрытой
     await sql`
       UPDATE sales_deals SET
-        stage_id = ${target.id}, stage_since = ${now}, stalled_at = NULL, updated_at = ${now}
+        stage_id = ${target.id}, stage_since = ${now}, stalled_at = NULL, updated_at = ${now},
+        won_at = NULL, lost_at = NULL, lost_reason_id = NULL
       WHERE id = ${deal.id}
     `
   }
