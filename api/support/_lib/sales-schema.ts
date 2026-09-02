@@ -113,6 +113,46 @@ const STAGE_SEED: Array<{
 ]
 
 /**
+ * Enterprise-воронка: сети и крупные бренды. Цикл живёт неделями, у сделки
+ * почти всегда есть пилот, а согласование ходит через юристов и закупки —
+ * поэтому свои этапы, нормативы в неделях и вероятности для форекаста.
+ * Воронка на каждую страну (enterprise_uz…), как и обычные продажи.
+ */
+const ENTERPRISE_STAGE_SEED: Array<{
+  key: string; label: string; kind: 'open' | 'won' | 'lost'
+  ownerRole: string; slaHours: number | null; probability: number
+  requiredFields: string[]
+  cadence: Array<{ day: number; title: string; channel: string }>
+}> = [
+  { key: 'research', label: 'Разведка', kind: 'open', ownerRole: 'kam', slaHours: 336, probability: 5,
+    requiredFields: [], cadence: [] },
+  { key: 'dm_contact', label: 'Выход на ЛПР', kind: 'open', ownerRole: 'kam', slaHours: 336, probability: 10,
+    requiredFields: ['dm_name'], cadence: [] },
+  { key: 'discovery', label: 'Discovery-встреча', kind: 'open', ownerRole: 'kam', slaHours: 336, probability: 20,
+    requiredFields: ['dm_name', 'points', 'pain'],
+    cadence: [{ day: 0, title: 'Напомнить о встрече за 2 часа', channel: 'telegram' }] },
+  { key: 'pilot', label: 'Пилот / POC', kind: 'open', ownerRole: 'kam', slaHours: 720, probability: 40,
+    requiredFields: ['next_step', 'next_step_at'],
+    cadence: [
+      { day: 7, title: 'Промежуточные итоги пилота', channel: 'call' },
+      { day: 21, title: 'Финальные метрики пилота', channel: 'call' },
+    ] },
+  { key: 'proposal', label: 'КП / Тендер', kind: 'open', ownerRole: 'kam', slaHours: 504, probability: 60,
+    requiredFields: ['kp_file', 'monthly_amount'],
+    cadence: [
+      { day: 3, title: 'Подтвердить получение КП', channel: 'telegram' },
+      { day: 10, title: 'Звонок: вопросы по КП', channel: 'call' },
+    ] },
+  { key: 'contract', label: 'Согласование договора', kind: 'open', ownerRole: 'kam', slaHours: 720, probability: 80,
+    requiredFields: ['legal_name'],
+    cadence: [{ day: 7, title: 'Статус согласования у юристов', channel: 'call' }] },
+  { key: 'won', label: 'Подписан', kind: 'won', ownerRole: 'kam', slaHours: null, probability: 100,
+    requiredFields: [], cadence: [] },
+  { key: 'lost', label: 'Проиграна', kind: 'lost', ownerRole: 'kam', slaHours: null, probability: 0,
+    requiredFields: ['lost_reason_id'], cadence: [] },
+]
+
+/**
  * Партнёрская воронка: дистрибьюторы, агенты, реселлеры, разовые рекомендации.
  * Партнёр — это тоже лид, но продаём мы ему не подписку, а условия сотрудничества,
  * и «выигрыш» здесь — не оплата, а первая приведённая им сделка.
@@ -959,6 +999,17 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       STAGE_MEANING[st.key] || null,
     ])),
     '(org_id, pipeline, key)')
+  // Enterprise — те же страны, свои этапы и нормативы
+  const ENT_PIPELINES = PIPELINES.filter(p => p !== 'sales').map(p => p.replace('sales_', 'enterprise_'))
+  await seedBatch(sql, 'sales_stages',
+    ['id', 'org_id', 'key', 'label', 'kind', 'owner_role', 'sla_hours',
+     'required_fields', 'cadence', 'sort_order', 'probability', 'pipeline', 'description'],
+    ENT_PIPELINES.flatMap(pipeline => ENTERPRISE_STAGE_SEED.map((st, i) => [
+      salesId('sst'), orgId, st.key, st.label, st.kind, st.ownerRole, st.slaHours,
+      JSON.stringify(st.requiredFields), JSON.stringify(st.cadence), i, st.probability, pipeline,
+      null,
+    ])),
+    '(org_id, pipeline, key)')
 
   await seedBatch(sql, 'sales_pipelines',
     ['id', 'org_id', 'key', 'label', 'market_id', 'kind', 'sort_order', 'description'],
@@ -974,6 +1025,14 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       [`spl_${orgId}_ae`, orgId, 'sales_ae', 'ОАЭ', 'ae', 'sales', 7, null],
       [`spl_${orgId}_partner`, orgId, 'partner', 'Партнёры', null, 'partner', 8,
         'Дистрибьюторы, агенты и реселлеры: свой процесс, свои этапы'],
+      [`spl_${orgId}_ent_uz`, orgId, 'enterprise_uz', 'Enterprise Узбекистан', 'uz', 'enterprise', 9,
+        'Сети и крупные бренды: длинный цикл, пилоты, согласования'],
+      [`spl_${orgId}_ent_kz`, orgId, 'enterprise_kz', 'Enterprise Казахстан', 'kz', 'enterprise', 10, null],
+      [`spl_${orgId}_ent_kg`, orgId, 'enterprise_kg', 'Enterprise Кыргызстан', 'kg', 'enterprise', 11, null],
+      [`spl_${orgId}_ent_az`, orgId, 'enterprise_az', 'Enterprise Азербайджан', 'az', 'enterprise', 12, null],
+      [`spl_${orgId}_ent_ge`, orgId, 'enterprise_ge', 'Enterprise Грузия', 'ge', 'enterprise', 13, null],
+      [`spl_${orgId}_ent_cy`, orgId, 'enterprise_cy', 'Enterprise Кипр', 'cy', 'enterprise', 14, null],
+      [`spl_${orgId}_ent_ae`, orgId, 'enterprise_ae', 'Enterprise ОАЭ', 'ae', 'enterprise', 15, null],
     ],
     '(org_id, key)')
 

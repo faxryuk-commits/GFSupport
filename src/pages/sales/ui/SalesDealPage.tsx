@@ -356,6 +356,23 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               </button>
             </>
           )}
+          <button
+            onClick={async () => {
+              const ent = String(data?.deal?.pipeline || '').startsWith('enterprise')
+              if (!confirm(ent
+                ? 'Вернуть сделку в обычную воронку? Она встанет на первый этап.'
+                : 'Перевести в Enterprise-воронку? Сделка встанет на этап «Разведка», нормативы этапов станут недельными.')) return
+              try {
+                await apiPost('/sales/deals?action=set-type', {
+                  id, type: ent ? 'sales' : 'enterprise',
+                })
+                load()
+              } catch (e: any) { setError(e?.message || 'Не удалось перевести') }
+            }}
+            title="Enterprise ведётся отдельной воронкой: свои этапы и нормативы"
+            className="text-[12.5px] px-3 py-1.5 border border-violet-200 text-violet-600 rounded-lg hover:bg-violet-50">
+            {String(data?.deal?.pipeline || '').startsWith('enterprise') ? '→ Обычная' : '→ Enterprise'}
+          </button>
           <button onClick={archive} title="Убрать из списков, сохранив в истории аккаунта"
             className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
             В архив

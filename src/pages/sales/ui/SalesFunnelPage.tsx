@@ -74,6 +74,15 @@ export function SalesFunnelPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const region = useRegion('funnel')
 
+  // Тип воронки: обычные продажи или enterprise — этапы и темп у них разные.
+  // Выбор липнет в localStorage, как и регион
+  const [ptype, setPtype] = useState<'sales' | 'enterprise'>(
+    () => (localStorage.getItem('sales_funnel_type') === 'enterprise' ? 'enterprise' : 'sales'))
+  const switchType = (t: 'sales' | 'enterprise') => {
+    setPtype(t)
+    try { localStorage.setItem('sales_funnel_type', t) } catch { /* приватный режим */ }
+  }
+
   // Что тащим: обращение или сделка — правила перехода у них разные
   // Сколько карточек показываем в колонке. Счётчик внизу был просто текстом:
   // «показано 15 из 142» — и посмотреть остальное было нельзя ничем
@@ -86,11 +95,12 @@ export function SalesFunnelPage() {
     const p = new URLSearchParams({ perColumn: String(perColumn), region: region || 'all' })
     if (owner) p.set('owner', owner)
     if (q) p.set('q', q)
+    if (ptype === 'enterprise') p.set('type', 'enterprise')
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, region, perColumn])
+  }, [owner, q, region, perColumn, ptype])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -202,6 +212,15 @@ export function SalesFunnelPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
+            {([['sales', 'Продажи'], ['enterprise', 'Enterprise']] as const).map(([t, label]) => (
+              <button key={t} onClick={() => switchType(t)}
+                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium ${
+                  ptype === t ? 'bg-violet-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <RegionBadge scope="funnel" />
         </div>
       </div>

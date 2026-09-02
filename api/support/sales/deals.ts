@@ -33,6 +33,41 @@ export default async function handler(req: Request): Promise<Response> {
   // разговор на выставке. Раньше такую можно было завести только через лид
   if (req.method === 'POST') {
     const body = await req.json().catch(() => null)
+
+    // Перевод между типами воронок: половина enterprise сначала выглядит
+    // обычным лидом и вскрывается на квалификации. Сделка встаёт на первый
+    // открытый этап целевой воронки своей же страны
+    if (url.searchParams.get('action') === 'set-type') {
+      const id = String(body?.id || '')
+      const type = body?.type === 'enterprise' ? 'enterprise' : 'sales'
+      if (!id) return json({ error: 'id is required' }, 400)
+      const [deal] = await sql`
+        SELECT id, market_id, pipeline FROM sales_deals WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+      ` as any[]
+      if (!deal) return json({ error: 'сделка не найдена' }, 404)
+      if (!deal.market_id) {
+        return json({ error: 'У сделки не указан рынок — сначала выберите страну' }, 422)
+      }
+      const target = `${type}_${deal.market_id}`
+      if (target === deal.pipeline) return json({ ok: true, pipeline: target })
+      const [stage] = await sql`
+        SELECT id, label FROM sales_stages
+        WHERE org_id = ${orgId} AND pipeline = ${target} AND kind = 'open' AND is_active = true
+        ORDER BY sort_order LIMIT 1
+      ` as any[]
+      if (!stage) return json({ error: `Воронка ${target} не настроена` }, 422)
+      await sql`
+        UPDATE sales_deals
+        SET pipeline = ${target}, stage_id = ${stage.id}, stage_since = NOW(), updated_at = NOW()
+        WHERE id = ${id} AND org_id = ${orgId}
+      `
+      await sql`
+        INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
+        VALUES (${orgId}, ${id}, ${stage.id},
+                ${type === 'enterprise' ? 'переведена в Enterprise' : 'возвращена в обычную воронку'})
+      `
+      return json({ ok: true, pipeline: target, stage: stage.label })
+    }
     const title = String(body?.title || '').trim()
     if (!title) return json({ error: 'нужно название сделки' }, 400)
 

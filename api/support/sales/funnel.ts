@@ -60,7 +60,13 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const market = await resolveRegionScoped(sql, orgId, url, ctx)
-  const pipeline = market ? `sales_${market}` : null
+  // Тип воронки: обычные продажи или enterprise. Этапы у типов разные,
+  // и без этого среза «все регионы» смешивал бы колонки двух миров
+  const ptype = url.searchParams.get('type') === 'enterprise' ? 'enterprise' : 'sales'
+  const pipeline = market ? `${ptype}_${market}` : null
+  // Булево сравнение вместо ветвления: (тип=ЭП) должно совпадать с
+  // (воронка начинается с enterprise) — одна строка на оба направления
+  const isEnt = ptype === 'enterprise'
 
   if (req.method === 'POST' && url.searchParams.get('action') === 'convert') {
     const body = await req.json().catch(() => null)
@@ -184,6 +190,7 @@ export default async function handler(req: Request): Promise<Response> {
         -- открытые этапы это не утяжеляет
         WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
           AND d.pipeline <> 'partner'
+          AND (${isEnt} = (d.pipeline LIKE 'enterprise%'))
           AND (${market} = '' OR d.market_id = ${market})
           AND (${owner} = '' OR d.owner_agent_id = ${owner})
           AND (${like} = '' OR d.title ILIKE ${like} OR a.name ILIKE ${like})
@@ -209,6 +216,7 @@ export default async function handler(req: Request): Promise<Response> {
       ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
         AND s.pipeline <> 'partner'
+        AND (${isEnt} = (s.pipeline LIKE 'enterprise%'))
         AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
       GROUP BY s.key ORDER BY MIN(s.sort_order)
     `,
@@ -233,6 +241,7 @@ export default async function handler(req: Request): Promise<Response> {
       ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind IN ('won', 'lost') AND s.is_active = true
         AND s.pipeline <> 'partner'
+        AND (${isEnt} = (s.pipeline LIKE 'enterprise%'))
         AND (${pipeline || ''} = '' OR s.pipeline = ${pipeline || ''})
       GROUP BY s.key ORDER BY MIN(s.kind) DESC
     `,
@@ -246,6 +255,7 @@ export default async function handler(req: Request): Promise<Response> {
                  SELECT currency, SUM(monthly_amount) AS amt FROM sales_deals
                  WHERE org_id = ${orgId} AND archived_at IS NULL
                    AND won_at IS NULL AND lost_at IS NULL AND pipeline <> 'partner'
+                   AND (${isEnt} = (pipeline LIKE 'enterprise%'))
                    AND COALESCE(monthly_amount, 0) <> 0
                    AND (${market} = '' OR market_id = ${market})
                  GROUP BY currency
@@ -253,7 +263,8 @@ export default async function handler(req: Request): Promise<Response> {
              ), '{}'::jsonb) AS pipeline_amounts
       FROM sales_deals
       WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
-        AND pipeline <> 'partner' AND (${market} = '' OR market_id = ${market})
+        AND pipeline <> 'partner' AND (${isEnt} = (pipeline LIKE 'enterprise%'))
+        AND (${market} = '' OR market_id = ${market})
     `,
     sql`
       SELECT DISTINCT ag.id, ag.name FROM sales_deals d
