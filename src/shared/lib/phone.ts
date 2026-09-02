@@ -122,6 +122,14 @@ function guessCountry(digits: string, hintCc?: string | null): { cc: string; nat
   return null
 }
 
+/**
+ * Регион подключённой АТС. Телефония пока одна — узбекский OnlinePBX
+ * с транком SkyLine: звонки в другие страны через неё не ходят, и кнопки
+ * обязаны честно это говорить. Когда появится АТС второго региона,
+ * константа переедет в настройки рынков.
+ */
+export const PBX_COUNTRY = 'uz'
+
 /** market — код рынка лида ('az'): локальный номер трактуется в его нумерации. */
 export function parsePhone(raw: string | null | undefined, market?: string | null): PhoneInfo {
   const text = String(raw || '').trim()

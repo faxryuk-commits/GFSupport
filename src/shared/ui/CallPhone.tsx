@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { apiPost } from '@/shared/services/api.service'
-import { parsePhone } from '@/shared/lib/phone'
+import { parsePhone, PBX_COUNTRY } from '@/shared/lib/phone'
 
 /**
  * Номер телефона, который звонит.
@@ -30,15 +30,25 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
   // Короткий добавочный (101) показываем в статусе — понятно, чья трубка
   // зазвонит; мобильный первой ногой остаётся «вам»
   const [viaExt, setViaExt] = useState('')
+  const [copied, setCopied] = useState(false)
 
   if (!phone) return null
   const parsed = parsePhone(phone, market)
   const label = parsed.valid ? parsed.pretty : phone
+  // АТС одна и узбекская: номер другого региона не звоним через транк —
+  // клик копирует его, сейлз набирает со своего мобильного
+  const foreign = parsed.valid && parsed.country !== null && parsed.country !== PBX_COUNTRY
 
   const call = async (e: React.MouseEvent) => {
     // Карточки вокруг кликабельны и таскаемы — звонок не должен их открывать
     e.stopPropagation()
     e.preventDefault()
+    if (foreign) {
+      navigator.clipboard?.writeText(parsed.pretty || phone).then(() => {
+        setCopied(true); setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {})
+      return
+    }
     if (status === 'calling') return
     setStatus('calling'); setError('')
     try {
@@ -61,11 +71,14 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
     <span className={`inline-flex items-baseline gap-1 ${className}`}>
       <button
         onClick={call}
-        title={status === 'error' ? error : 'Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется'}
+        title={foreign
+          ? `${parsed.countryName}: АТС подключена только для Узбекистана — клик скопирует номер, наберите с мобильного`
+          : status === 'error' ? error : 'Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется'}
         className={`${base} tabular-nums cursor-pointer bg-transparent p-0 border-0 font-inherit text-left ${
           status === 'calling' ? 'opacity-60' : ''}`}
       >
-        {status === 'calling' ? 'Соединяю…'
+        {copied ? '✓ номер скопирован'
+          : status === 'calling' ? 'Соединяю…'
           : status === 'ringing' ? `📞 АТС звонит ${viaExt ? `на ${viaExt}` : 'вам'}…`
           : label}
       </button>

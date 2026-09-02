@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Phone, X } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { parsePhone } from '@/shared/lib/phone'
+import { parsePhone, PBX_COUNTRY } from '@/shared/lib/phone'
 
 /**
  * Звонилка: набрать произвольный номер, не заходя ни в какую карточку.
@@ -45,6 +45,28 @@ export function Dialer() {
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
+  // Минута без дела — трубка сворачивается в язычок у правого края, чтобы
+  // не висеть над контентом. Взаимодействие или входящий возвращают её
+  const [tucked, setTucked] = useState(false)
+  const tuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const openRef = useRef(false)
+  const incomingRef = useRef(false)
+  const armTuck = useCallback(() => {
+    if (tuckTimer.current) clearTimeout(tuckTimer.current)
+    tuckTimer.current = setTimeout(function fire() {
+      if (openRef.current || incomingRef.current) {
+        tuckTimer.current = setTimeout(fire, 60000)
+      } else {
+        setTucked(true)
+      }
+    }, 60000)
+  }, [])
+  useEffect(() => {
+    armTuck()
+    return () => { if (tuckTimer.current) clearTimeout(tuckTimer.current) }
+  }, [armTuck])
+  useEffect(() => { openRef.current = open; if (open) { setTucked(false); armTuck() } }, [open, armTuck])
+
   useEffect(() => {
     if (!open) return
     setTimeout(() => inputRef.current?.focus(), 50)
@@ -64,7 +86,14 @@ export function Dialer() {
     let stop = false
     const tick = () => {
       apiGet<any>('/sales/call?action=live', false)
-        .then(d => { if (!stop) setIncoming(d?.calls || []) })
+        .then(d => {
+          if (stop) return
+          const calls = d?.calls || []
+          setIncoming(calls)
+          incomingRef.current = calls.length > 0
+          // Входящий важнее сна: язычок разворачивается сам
+          if (calls.length) setTucked(false)
+        })
         .catch(() => {})
     }
     tick()
@@ -89,6 +118,9 @@ export function Dialer() {
 
   const parsed = parsePhone(num)
   const digits = num.replace(/\D/g, '')
+  // АТС одна и узбекская: номер другого региона честно блокируем,
+  // а не жжём заведомо мёртвые попытки через транк
+  const foreign = parsed.valid && parsed.country !== null && parsed.country !== PBX_COUNTRY
 
   // Добавочный «101» и мобильный «+998…» читаются по-разному
   const extLabel = (e: string) => {
@@ -113,7 +145,7 @@ export function Dialer() {
   }
 
   const call = async () => {
-    if (digits.length < 7 || status === 'calling') return
+    if (digits.length < 7 || status === 'calling' || foreign) return
     setStatus('calling'); setNote('')
     try {
       const r = await apiPost<any>('/sales/call', { to: num })
@@ -153,16 +185,28 @@ export function Dialer() {
 
   return (
     <>
-      {/* Трубка — поверх всего, но не поверх модалок (z ниже drawer'ов) */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        title="Позвонить на любой номер"
-        className={`fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full text-white
-                   shadow-lg flex items-center justify-center transition-colors ${
-                   incoming.length ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-      >
-        {open ? <X className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
-      </button>
+      {/* Трубка — поверх всего, но не поверх модалок (z ниже drawer'ов).
+          Заснувшая — узкий язычок у края: клик вытягивает обратно */}
+      {tucked ? (
+        <button
+          onClick={() => { setTucked(false); armTuck() }}
+          title="Звонилка"
+          className="fixed bottom-8 right-0 z-40 w-6 h-12 rounded-l-full bg-emerald-600/80 text-white
+                     shadow-md hover:bg-emerald-600 hover:w-8 transition-all flex items-center pl-1.5"
+        >
+          <Phone className="w-3.5 h-3.5" />
+        </button>
+      ) : (
+        <button
+          onClick={() => { setOpen(o => !o); armTuck() }}
+          title="Позвонить на любой номер"
+          className={`fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full text-white
+                     shadow-lg flex items-center justify-center transition-colors ${
+                     incoming.length ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+        >
+          {open ? <X className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
+        </button>
+      )}
 
       {/* Входящий прямо сейчас: события вебхука АТС — карточка всплывает
           ещё до снятой трубки, чтобы сейлз видел, кто звонит */}
@@ -194,8 +238,10 @@ export function Dialer() {
         </div>
       )}
 
-      {open && (
-        <div className="fixed bottom-20 right-5 z-40 w-80 bg-white border border-gray-200
+      {open && !tucked && (
+        <div
+          onMouseDown={armTuck}
+          className="fixed bottom-20 right-5 z-40 w-80 bg-white border border-gray-200
                         rounded-2xl shadow-2xl p-4">
           <div className="text-[13px] font-semibold text-gray-800 mb-2">Позвонить</div>
           <input
@@ -214,9 +260,14 @@ export function Dialer() {
                        focus:outline-none focus:border-emerald-500"
           />
           <div className="mt-1 min-h-[18px] text-[11.5px]">
-            {digits.length >= 7 && parsed.valid && (
+            {digits.length >= 7 && parsed.valid && !foreign && (
               <span className="text-gray-500">
                 {parsed.pretty}{parsed.operator ? ` · ${parsed.operator}` : ''}{parsed.countryName ? ` · ${parsed.countryName}` : ''}
+              </span>
+            )}
+            {digits.length >= 7 && foreign && (
+              <span className="text-amber-600">
+                {parsed.countryName}: АТС подключена только для Узбекистана — наберите с мобильного
               </span>
             )}
             {digits.length >= 7 && !parsed.valid && (
@@ -253,7 +304,7 @@ export function Dialer() {
           )}
           <button
             onClick={call}
-            disabled={digits.length < 7 || status === 'calling'}
+            disabled={digits.length < 7 || status === 'calling' || foreign}
             className="mt-2 w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium
                        hover:bg-emerald-700 disabled:opacity-40"
           >
