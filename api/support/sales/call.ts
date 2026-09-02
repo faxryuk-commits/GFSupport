@@ -445,11 +445,13 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT id, account_id FROM sales_leads WHERE id = ${body.leadId} AND org_id = ${orgId} LIMIT 1
       ` as any[]
       if (lead) {
+        // В identity — uuid вызова, а не добавочный: по нему кнопка «запись»
+        // достаёт разговор; добавочный там выглядел как uuid и ломал её
         await sql`
           INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel, title, identity)
           VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${orgId},
                   ${lead.account_id}, ${lead.id}, 'call', 'phone',
-                  ${'Звонок из карточки'}, ${ext})
+                  ${'Звонок из карточки'}, ${callUuid || null})
         `.catch(() => {})
       }
     }

@@ -509,7 +509,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                     <a href={t.url} target="_blank" rel="noreferrer"
                        className="text-[11.5px] text-blue-600 hover:underline break-all">{t.url}</a>
                   )}
-                  {t.kind === 'call' && t.identity && (
+                  {t.kind === 'call' && t.identity && /^[0-9a-f-]{32,40}$/i.test(t.identity) && (
                     rec?.id === t.identity ? (
                       <audio controls autoPlay src={rec.url} className="mt-1.5 w-full h-8" />
                     ) : (

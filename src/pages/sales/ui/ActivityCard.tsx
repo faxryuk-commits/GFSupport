@@ -186,7 +186,7 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
                   {a.agent_name ? ` · ${a.agent_name}` : ''}
                   {/* Запись есть только у состоявшихся разговоров — у недозвонов
                       АТС писать нечего */}
-                  {a.record_uuid && playing?.id !== a.id && (
+                  {a.record_uuid && /^[0-9a-f-]{32,40}$/i.test(a.record_uuid) && playing?.id !== a.id && (
                     <button onClick={() => listen(a)} disabled={recBusy === a.id}
                       className="ml-2 text-emerald-700 hover:underline disabled:opacity-50">
                       {recBusy === a.id ? 'загружаю…' : '▶ запись'}
