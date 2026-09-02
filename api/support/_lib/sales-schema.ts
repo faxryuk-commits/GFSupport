@@ -195,6 +195,9 @@ const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
   { key: 'call', label: 'Входящий звонок', kind: 'inbound' },
   { key: 'referral', label: 'Реферал', kind: 'referral' },
   { key: 'manual', label: 'Заведён вручную', kind: 'referral' },
+  // Холодные базы из файлов: спарсенные каталоги, выгрузки с выставок.
+  // Отдельный ярлык, чтобы в отчёте по каналам импорт не косил под входящие
+  { key: 'import', label: 'Импорт базы', kind: 'outbound' },
   // Отдельная строка вместо тихой подмены на «вручную»: неопознанный источник
   // должен быть видно в отчёте, а не прятаться за чужим ярлыком
   { key: 'unknown', label: 'Источник не определён', kind: 'inbound' },

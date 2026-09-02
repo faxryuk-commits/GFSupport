@@ -5,6 +5,7 @@ import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, Tabs, fmtDateTime, pct, Pager, PageShell, Th,
          Modal, Field, Btn, useAutoRefresh, leadStatus, slaTone, slaText, Skeleton , RangePicker, rangeOf , PageNumbers, FilterBar, BulkBar } from './kit'
 import { RegionBadge, useRegion } from './region'
+import { ImportLeadsModal } from './ImportLeadsModal'
 import { useSalesRefs, optionsFor } from './refs'
 import { parsePhone } from '@/shared/lib/phone'
 
@@ -92,6 +93,35 @@ export function SalesLeadsPage() {
   const toggle = (id: string) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   const [facets, setFacets] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  // Выгрузка в CSV: сервер отдаёт строки, файл собирается тут — Excel
+  // открывает «;»-разделитель с русской локалью без танцев с импортом
+  const exportCsv = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const d = await apiGet<{ rows: any[] }>('/sales/leads?action=export', false)
+      const esc = (v: any) => {
+        const s = String(v ?? '')
+        return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }
+      const head = 'Название;Телефон;Город;Тип заведения;Статус;Источник;Ответственный;Создан;Первое касание;Архив'
+      const lines = (d?.rows || []).map(r => [
+        r.name, r.phone, r.city, r.segment, r.status, r.source, r.agent,
+        r.created_at?.slice(0, 10), r.first_touch_at?.slice(0, 10) || '',
+        r.archived ? 'да' : '',
+      ].map(esc).join(';'))
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(new Blob(['﻿' + [head, ...lines].join('\n')],
+        { type: 'text/csv;charset=utf-8' }))
+      a.download = `лиды-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch { /* сеть моргнула — кнопка отпустится, можно повторить */ }
+    finally { setExporting(false) }
+  }
   const refs = useSalesRefs()
   const blank = { name: '', phone: '', city: '', pos: '', orders_per_day: '', text: '', source: 'manual' }
   const [form, setForm] = useState(blank)
@@ -215,6 +245,8 @@ export function SalesLeadsPage() {
         </div>
         <div className="flex items-center gap-2">
           <RegionBadge scope="leads" />
+          <Btn onClick={() => setImporting(true)}>Импорт</Btn>
+          <Btn onClick={exportCsv} disabled={exporting}>{exporting ? 'Выгружаю…' : 'Экспорт'}</Btn>
           <Btn kind="primary" onClick={() => setCreating(true)}>+ Лид</Btn>
           <Link to="/sales/queue" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             Моя очередь
@@ -480,6 +512,9 @@ export function SalesLeadsPage() {
 
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
 
+      {importing && (
+        <ImportLeadsModal onClose={() => setImporting(false)} onDone={() => load()} />
+      )}
       {creating && (
         <Modal
           title="Новый лид"

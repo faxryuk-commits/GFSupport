@@ -39,6 +39,24 @@ export default async function handler(req: Request): Promise<Response> {
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
+  // Выгрузка лидов целиком: фронт собирает из строк CSV. Пять тысяч строк —
+  // потолок здравого смысла для таблицы, не пагинация
+  if (req.method === 'GET' && url.searchParams.get('action') === 'export') {
+    const rows = await sql`
+      SELECT l.name, l.phone, l.city, l.status, l.lead_kind,
+             l.qual->>'segment' AS segment,
+             s.label AS source, a.name AS agent,
+             l.created_at, l.first_touch_at, l.archived_at IS NOT NULL AS archived
+      FROM sales_leads l
+      LEFT JOIN sales_sources s ON s.id = l.source_id
+      LEFT JOIN support_agents a ON a.id = l.assigned_agent_id
+      WHERE l.org_id = ${orgId}
+      ORDER BY l.created_at DESC
+      LIMIT 5000
+    ` as any[]
+    return json({ rows })
+  }
+
   if (req.method === 'POST') {
     const action = url.searchParams.get('action')
     const body = await req.json().catch(() => null)
@@ -118,6 +136,56 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ ok: true, deleted: toDelete.length, skipped: protectedIds.length })
       }
       return json({ error: 'unknown op' }, 400)
+    }
+
+    // Импорт базы: строки уже распарсены фронтом (амо-выгрузка или наш
+    // шаблон) и приезжают пачками по ~25. Дедуп по номеру телефона —
+    // повторная загрузка того же файла не плодит дублей, а лид без номера
+    // не создаётся вовсе: звонить некуда, склеивать не по чему
+    if (action === 'import') {
+      const rows: any[] = Array.isArray(body?.rows) ? body.rows.slice(0, 100) : []
+      if (!rows.length) return json({ error: 'rows is required' }, 400)
+      let created = 0, dupes = 0, noPhone = 0, failed = 0
+      for (const r of rows) {
+        const phone = String(r?.phone || '').trim()
+        const norm = phone.replace(/\D/g, '').slice(-9)
+        if (norm.length < 7) { noPhone++; continue }
+        const [dup] = await sql`
+          SELECT id FROM sales_leads
+          WHERE org_id = ${orgId} AND phone_norm LIKE ${'%' + norm} LIMIT 1
+        ` as any[]
+        if (dup) { dupes++; continue }
+        const res: any = await acceptLead(sql, orgId, {
+          source: 'import',
+          external_id: `imp_${norm}`,
+          name: String(r?.name || '').trim().slice(0, 255) || `Импорт ${phone}`,
+          phone,
+          city: r?.city ? String(r.city).slice(0, 120) : null,
+          contact_name: r?.contactName ? String(r.contactName).slice(0, 255) : null,
+          text: r?.note ? String(r.note).slice(0, 2000) : null,
+          lead_kind: 'manual',
+          raw: {
+            imported: true, by: ctx.agentId,
+            tags: r?.tags || null, segment: r?.segment || null,
+            contact_role: r?.contactRole || null,
+          },
+        }).catch(() => ({ ok: false }))
+        if (res?.ok && res.lead_id) {
+          created++
+          // Тип заведения — в квалификацию: скоринг и фильтры смотрят туда.
+          // Прямым UPDATE, а не action=qual: первое касание тут ни при чём
+          if (r?.segment) {
+            await sql`
+              UPDATE sales_leads
+              SET qual = COALESCE(qual, '{}'::jsonb) || ${JSON.stringify({ segment: String(r.segment).slice(0, 120) })}::jsonb
+              WHERE id = ${res.lead_id} AND org_id = ${orgId}
+            `.catch(() => {})
+          }
+        } else {
+          failed++
+        }
+      }
+      return json({ ok: true, created, dupes, noPhone, failed })
     }
 
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
