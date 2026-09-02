@@ -21,6 +21,9 @@ import { SalesLeadPage } from './SalesLeadPage'
  * Поэтому и карточки разные, и правила перетаскивания разные.
  */
 
+/** ok: true — разговор был, false — не дозвонились, null — исход неизвестен. */
+interface LastCall { dir: 'in' | 'out'; ok: boolean | null; at: string }
+
 interface Lead {
   id: string; name: string; contact_name: string | null; phone: string | null
   market_id: string | null
@@ -28,6 +31,7 @@ interface Lead {
   sla_due_at: string | null; first_touch_at: string | null; created_at: string
   text: string | null; lead_kind: string | null; source: string | null
   agent_name: string | null; nurture_step: number | null; nurture_next_at: string | null
+  last_call: LastCall | null
 }
 
 interface Deal {
@@ -38,6 +42,7 @@ interface Deal {
   updated_at: string | null; owner_name: string | null; phone: string | null
   doc_opens: number | null; stage_key: string; market_id?: string | null
   won_at?: string | null; lost_at?: string | null; lost_reason?: string | null
+  last_call: LastCall | null
 }
 
 interface FunnelData {
@@ -56,6 +61,31 @@ interface FunnelData {
 const KIND_LABEL: Record<string, string> = {
   form: 'форма', message: 'мессенджер', comment: 'комментарий',
   call: 'звонок', email: 'письмо', manual: 'вручную',
+}
+
+/**
+ * Трубка на карточке: был ли звонок и чем кончился — видно с доски, без
+ * открытия. Зелёная — разговор состоялся, красная — «не ответили» на входящем
+ * или «не дозвонились» на исходящем. Нет трубки — не звонили вовсе.
+ */
+function CallChip({ c }: { c: LastCall | null }) {
+  if (!c) return null
+  const label = c.ok ? 'разговор был'
+    : c.ok === false ? (c.dir === 'in' ? 'не ответили' : 'не дозвонились')
+    : 'звонили'
+  return (
+    <Chip tone={c.ok ? 'green' : c.ok === false ? 'red' : 'gray'}
+      title={`${c.dir === 'in' ? 'Входящий' : 'Исходящий'} · ${label} · ${fmtDateTime(c.at)}`}>
+      <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor"
+        strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6
+                 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361
+                 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1
+                 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+      </svg>
+      {c.dir === 'in' ? '↓' : '↑'} {label}
+    </Chip>
+  )
 }
 
 function days(iso: string | null): number {
@@ -300,6 +330,7 @@ export function SalesFunnelPage() {
                         {col.key === 'nurture' && (
                           <Chip tone="gray">шаг {l.nurture_step ?? 0} из 4</Chip>
                         )}
+                        <CallChip c={l.last_call} />
                       </div>
                       {l.text && (
                         <div className="text-[11px] text-gray-600 mt-1 line-clamp-2">«{l.text}»</div>
@@ -426,6 +457,7 @@ export function SalesFunnelPage() {
                         {[d.city, d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day]
                           .filter(Boolean).map(f => <Chip key={String(f)} tone="gray">{f}</Chip>)}
                         {d.doc_opens ? <Chip tone="green">КП открыто {d.doc_opens}×</Chip> : null}
+                        <CallChip c={d.last_call} />
                       </div>
                       <div className={`text-[11px] mt-1 tabular-nums ${
                         d.monthly_amount ? 'text-gray-700 font-medium' : 'text-amber-600'}`}>

@@ -170,7 +170,7 @@ export default async function handler(req: Request): Promise<Response> {
     // Сделки: срез по каждому этапу
     sql`
       SELECT * FROM (
-        SELECT d.id, d.title, d.monthly_amount, d.currency, d.city, d.pos, d.points, d.market_id,
+        SELECT d.id, d.account_id, d.title, d.monthly_amount, d.currency, d.city, d.pos, d.points, d.market_id,
                d.orders_per_day, d.tariff, d.next_step, d.next_step_at, d.stage_since,
                d.stalled_at, d.updated_at, a.name AS account, ag.name AS owner_name,
                (SELECT c.phone FROM sales_contacts c WHERE c.account_id = d.account_id
@@ -277,6 +277,45 @@ export default async function handler(req: Request): Promise<Response> {
   const counts: Record<string, number> = {}
   for (const r of leadCounts as any[]) counts[r.status] = r.total
   const totals = (totalsRows as any[])[0]
+
+  // Последний звонок для каждой карточки: трубка на доске отвечает на «а мы
+  // ему вообще звонили?» без открытия карточки. Лиды ищем по lead_id, сделки —
+  // по счёту клиента (звонок мог случиться ещё на этапе лида). Один заход
+  // пачкой, чтобы не платить вторую кругосветку до Франкфурта
+  const leadIds = (leadRows as any[]).map(l => l.id)
+  const accountIds = [...new Set((dealRows as any[]).map(d => d.account_id).filter(Boolean))]
+  const callByLead = new Map<string, any>()
+  const callByAccount = new Map<string, any>()
+  if (leadIds.length || accountIds.length) {
+    const [byLead, byAcc] = await sql.transaction([
+      sql`
+        SELECT DISTINCT ON (lead_id) lead_id AS id, title, happened_at
+        FROM sales_touchpoints
+        WHERE org_id = ${orgId} AND kind = 'call' AND lead_id = ANY(${leadIds})
+        ORDER BY lead_id, happened_at DESC
+      `,
+      sql`
+        SELECT DISTINCT ON (account_id) account_id AS id, title, happened_at
+        FROM sales_touchpoints
+        WHERE org_id = ${orgId} AND kind = 'call' AND account_id = ANY(${accountIds})
+        ORDER BY account_id, happened_at DESC
+      `,
+    ]).catch(() => [[], []]) as any[]
+    // ok: true — разговор был, false — не дозвонились/не ответили,
+    // null — исход неизвестен (старые заготовки звонилки без длительности)
+    const parse = (r: any) => {
+      const title = String(r.title || '')
+      return {
+        dir: title.startsWith('Входящий') ? 'in' : 'out',
+        ok: /\d+ сек/.test(title) ? true : /недозвон|не ответили/.test(title) ? false : null,
+        at: r.happened_at,
+      }
+    }
+    for (const r of byLead) callByLead.set(r.id, parse(r))
+    for (const r of byAcc) callByAccount.set(r.id, parse(r))
+  }
+  for (const l of leadRows as any[]) l.last_call = callByLead.get(l.id) || null
+  for (const d of dealRows as any[]) d.last_call = callByAccount.get(d.account_id) || null
 
   return json({
     // Колонки входа описываем здесь: у обращений нет справочника этапов, их

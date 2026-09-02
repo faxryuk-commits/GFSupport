@@ -22,7 +22,10 @@ interface Stats {
   }
   byDay: Array<{ day: string; answered: number; missed: number }>
   byHour: Array<{ h: number; answered: number; missed: number }>
-  byAgent: Array<{ name: string; total: number; answered: number; talkSec: number }>
+  byAgent: Array<{
+    name: string; total: number; answered: number; talkSec: number
+    inbound?: number; outbound?: number; days?: Record<string, number>
+  }>
   calls: Array<{
     uuid: string | null; at: string; direction: 'in' | 'out'; answered: boolean
     talkSec: number; number: string; who: string
@@ -229,7 +232,9 @@ export default function SalesCallsPage() {
     <PageShell header={header}>
       <LiveLines />
       <Kpis items={[
-        ['Всего звонков', String(t?.total ?? 0), `↓ ${t?.inbound ?? 0} входящих · ↑ ${t?.outbound ?? 0} исходящих`],
+        ['Всего звонков', String(t?.total ?? 0),
+          `↓ ${t?.inbound ?? 0} входящих · ↑ ${t?.outbound ?? 0} исходящих`
+          + (days > 1 && t?.total ? ` · в среднем ${(t.total / days).toFixed(1).replace('.0', '')} в день` : '')],
         ['Дозвон', `${answeredRate}%`, `${t?.answered ?? 0} разговоров состоялось`],
         ['Пропущено входящих', String(t?.missedIn ?? 0), 'клиент звонил — не ответили'],
         ['Недозвоны исходящие', String(t?.failedOut ?? 0), 'звонили — не дозвонились'],
@@ -254,15 +259,17 @@ export default function SalesCallsPage() {
           />
         </Card>
         {days === 1 && (
-          <Card title="Команда" sub="кто говорил — по добавочным и мобильным из профилей">
-            <AgentTable rows={data?.byAgent || []} />
+          <Card title="Дневные действия команды" sub="входящие, исходящие и дозвон по каждому — сегодня">
+            <AgentTable rows={data?.byAgent || []} dayAxis={[]} periodDays={1} />
           </Card>
         )}
       </div>
 
       {days > 1 && (
-        <Card title="Команда" sub="кто говорил — по добавочным и мобильным из профилей">
-          <AgentTable rows={data?.byAgent || []} />
+        <Card title="Дневные действия команды"
+          sub="входящие, исходящие, дозвон и среднее в день — по добавочным и мобильным из профилей">
+          <AgentTable rows={data?.byAgent || []}
+            dayAxis={(data?.byDay || []).map(d => d.day)} periodDays={days} />
         </Card>
       )}
 
@@ -341,7 +348,19 @@ export default function SalesCallsPage() {
   )
 }
 
-function AgentTable({ rows }: { rows: Array<{ name: string; total: number; answered: number; talkSec: number }> }) {
+/**
+ * Дневные действия команды: каждому сотруднику — входящие, исходящие, дозвон,
+ * среднее в день и мини-график активности по дням периода. Отвечает на вопрос
+ * РОПа «кто сколько реально работает руками» без выгрузок из АТС.
+ */
+function AgentTable({ rows, dayAxis, periodDays }: {
+  rows: Array<{
+    name: string; total: number; answered: number; talkSec: number
+    inbound?: number; outbound?: number; days?: Record<string, number>
+  }>
+  dayAxis: string[]
+  periodDays: number
+}) {
   if (!rows.length) {
     return (
       <div className="px-4 py-5 text-[12px] text-gray-400">
@@ -350,26 +369,55 @@ function AgentTable({ rows }: { rows: Array<{ name: string; total: number; answe
       </div>
     )
   }
-  const maxTalk = Math.max(1, ...rows.map(r => r.talkSec))
+  const maxDaily = Math.max(1, ...rows.flatMap(r => Object.values(r.days || {})))
+  const avg = (r: { total: number }) =>
+    periodDays > 1 ? (r.total / periodDays).toFixed(1).replace('.0', '') : String(r.total)
   return (
-    <div className="divide-y divide-gray-50">
-      {rows.map(r => (
-        <div key={r.name} className="px-4 py-2.5 flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-medium text-gray-800 truncate">{r.name}</div>
-            <div className="mt-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-400 rounded-full"
-                style={{ width: `${(r.talkSec / maxTalk) * 100}%` }} />
-            </div>
-          </div>
-          <div className="flex-none text-right">
-            <div className="text-[12.5px] text-gray-800 tabular-nums">
-              {r.answered}<span className="text-gray-400">/{r.total}</span>
-            </div>
-            <div className="text-[10.5px] text-gray-400 tabular-nums">{fmtDur(r.talkSec)}</div>
-          </div>
-        </div>
-      ))}
+    <div className="overflow-x-auto">
+      <table className="w-full text-[12px]">
+        <thead>
+          <tr className="text-[10.5px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
+            <th className="text-left font-medium px-4 py-2">Сотрудник</th>
+            {periodDays > 1 && <th className="text-left font-medium px-2 py-2">По дням</th>}
+            <th className="text-right font-medium px-2 py-2">↓ Вх</th>
+            <th className="text-right font-medium px-2 py-2">↑ Исх</th>
+            <th className="text-right font-medium px-2 py-2">Всего</th>
+            <th className="text-right font-medium px-2 py-2">Дозвон</th>
+            <th className="text-right font-medium px-2 py-2">Ср/день</th>
+            <th className="text-right font-medium px-4 py-2">Разговоры</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {rows.map(r => (
+            <tr key={r.name} className="hover:bg-gray-50/60">
+              <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">{r.name}</td>
+              {periodDays > 1 && (
+                <td className="px-2 py-2">
+                  <div className="flex items-end gap-[2px] h-6">
+                    {dayAxis.map(day => {
+                      const n = r.days?.[day] || 0
+                      return (
+                        <div key={day} title={`${day}: ${n}`}
+                          className={`w-[5px] rounded-sm ${n ? 'bg-blue-400' : 'bg-gray-100'}`}
+                          style={{ height: n ? `${Math.max(15, (n / maxDaily) * 100)}%` : '3px' }} />
+                      )
+                    })}
+                  </div>
+                </td>
+              )}
+              <td className="px-2 py-2 text-right tabular-nums text-gray-700">{r.inbound ?? '—'}</td>
+              <td className="px-2 py-2 text-right tabular-nums text-gray-700">{r.outbound ?? '—'}</td>
+              <td className="px-2 py-2 text-right tabular-nums font-semibold text-gray-900">{r.total}</td>
+              <td className="px-2 py-2 text-right tabular-nums">
+                <span className="text-emerald-700">{r.answered}</span>
+                <span className="text-gray-400"> · {r.total ? Math.round((r.answered / r.total) * 100) : 0}%</span>
+              </td>
+              <td className="px-2 py-2 text-right tabular-nums text-gray-700">{avg(r)}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-gray-500 whitespace-nowrap">{fmtDur(r.talkSec)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

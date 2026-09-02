@@ -235,10 +235,21 @@ export default async function handler(req: Request): Promise<Response> {
             }
           }
           const [dup] = await sql`
-            SELECT id FROM sales_touchpoints
+            SELECT id, title, lead_id, account_id FROM sales_touchpoints
             WHERE org_id = ${ORG} AND kind = 'call' AND identity = ${c.uuid} LIMIT 1
           ` as any[]
-          if (dup) continue
+          // «Звонок из карточки» — заготовка звонилки, положенная до исхода.
+          // Раньше синк считал её дублем и уходил: звонок навсегда оставался
+          // без длительности, расшифровки и пинга. Теперь заготовку обогащаем
+          const stub = dup && dup.title === 'Звонок из карточки'
+          if (dup && !stub) continue
+          if (stub && !lead && dup.lead_id) {
+            const [own] = await sql`
+              SELECT id, name, account_id, first_touch_at, status FROM sales_leads
+              WHERE id = ${dup.lead_id} LIMIT 1
+            ` as any[]
+            if (own) lead = own
+          }
           const title = c.direction === 'in'
             ? (c.talkSec > 0 ? `Входящий звонок · ${c.talkSec} сек` : 'Входящий звонок · не ответили')
             : (c.talkSec > 0 ? `Исходящий звонок · ${c.talkSec} сек` : 'Исходящий звонок · недозвон')
@@ -291,14 +302,23 @@ export default async function handler(req: Request): Promise<Response> {
           const side = c.ext
             ? ` · ${extLabel}${me?.name ? ` · ${me.name}` : ''}`
             : (me?.name ? ` · моб. ${me.name}` : '')
-          await sql`
-            INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
-                                           title, detail, identity, happened_at)
-            VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG},
-                    ${lead?.account_id || null}, ${lead?.id || null}, 'call', 'phone',
-                    ${title}, ${c.clientNumber + side},
-                    ${c.uuid}, ${new Date(c.startStamp * 1000).toISOString()})
-          `
+          if (stub) {
+            await sql`
+              UPDATE sales_touchpoints
+              SET title = ${title}, detail = ${c.clientNumber + side},
+                  happened_at = ${new Date(c.startStamp * 1000).toISOString()}
+              WHERE id = ${dup.id}
+            `
+          } else {
+            await sql`
+              INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
+                                             title, detail, identity, happened_at)
+              VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG},
+                      ${lead?.account_id || null}, ${lead?.id || null}, 'call', 'phone',
+                      ${title}, ${c.clientNumber + side},
+                      ${c.uuid}, ${new Date(c.startStamp * 1000).toISOString()})
+            `
+          }
           saved++
           // Состоявшийся разговор — настоящее первое касание
           if (lead && !lead.first_touch_at && c.talkSec > 0) {

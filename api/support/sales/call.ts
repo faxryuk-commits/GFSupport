@@ -78,7 +78,10 @@ export default async function handler(req: Request): Promise<Response> {
     const TK = 5 * 3600 * 1000
     const byDay = new Map<string, { answered: number; missed: number }>()
     const byHour = Array.from({ length: 24 }, () => ({ answered: 0, missed: 0 }))
-    const byAgent = new Map<string, { name: string; total: number; answered: number; talkSec: number }>()
+    const byAgent = new Map<string, {
+      name: string; total: number; answered: number; talkSec: number
+      inbound: number; outbound: number; days: Record<string, number>
+    }>()
     let inbound = 0, outbound = 0, answered = 0, missedIn = 0, failedOut = 0, talkSec = 0
     const calls: any[] = []
     for (const r of rows) {
@@ -107,9 +110,13 @@ export default async function handler(req: Request): Promise<Response> {
       if (ok) dd.answered++; else dd.missed++
       if (ok) byHour[hour].answered++; else byHour[hour].missed++
       if (who) {
-        if (!byAgent.has(who)) byAgent.set(who, { name: who, total: 0, answered: 0, talkSec: 0 })
+        if (!byAgent.has(who)) {
+          byAgent.set(who, { name: who, total: 0, answered: 0, talkSec: 0, inbound: 0, outbound: 0, days: {} })
+        }
         const aa = byAgent.get(who)!
         aa.total++
+        if (dirIn) aa.inbound++; else aa.outbound++
+        aa.days[day] = (aa.days[day] || 0) + 1
         if (ok) { aa.answered++; aa.talkSec += talk }
       }
       if (calls.length < 80) {
