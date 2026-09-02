@@ -19,8 +19,9 @@ interface MyAccess {
   restrictedMarketIds: string[] | null
 }
 
-let cache: { at: number; mods: Set<ModuleKey>; restrictedMarketIds: string[] | null } | null = null
-let inflight: Promise<typeof cache> | null = null
+interface AccessCache { at: number; mods: Set<ModuleKey>; restrictedMarketIds: string[] | null }
+let cache: AccessCache | null = null
+let inflight: Promise<AccessCache | null> | null = null
 
 function fromLogin(): Set<ModuleKey> {
   try {
@@ -31,11 +32,11 @@ function fromLogin(): Set<ModuleKey> {
   return modulesFor('admin')
 }
 
-function fetchAccess(): Promise<typeof cache> {
+function fetchAccess(): Promise<AccessCache | null> {
   if (inflight) return inflight
   const myId = localStorage.getItem('support_agent_id')
   if (!myId) return Promise.resolve(null)
-  const p: Promise<typeof cache> = apiGet<{ agents: any[] }>('/agents', true)
+  const p: Promise<AccessCache | null> = apiGet<{ agents: any[] }>('/agents', true)
     .then(d => {
       const me = (d?.agents || []).find(a => a.id === myId)
       if (!me) return null
