@@ -24,6 +24,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   const sql = getSQL()
+  const url = new URL(req.url)
   const orgId = await getRequestOrgId(req)
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
@@ -33,6 +34,32 @@ export default async function handler(req: Request): Promise<Response> {
     SELECT id, name, role FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
   ` as any[]
   if (!me) return json({ error: 'agent not found' }, 404)
+
+  const isLead = ctx.isOrgAdmin || ctx.isGlobalAdmin
+    || ['cco', 'manager', 'team_lead'].includes(String(me.role || ''))
+
+  // Задачи конкретного сотрудника — для попапа мониторинга у руководителя:
+  // список со статусами и сроками, закрытые видны неделю
+  if (url.searchParams.get('action') === 'team-tasks') {
+    if (!isLead) return json({ error: 'только руководителю' }, 403)
+    const agentId = url.searchParams.get('agentId') || ''
+    if (!agentId) return json({ error: 'agentId is required' }, 400)
+    const tasks = await sql`
+      SELECT t.id, t.title, t.kind, t.status, t.status_note, t.due_at, t.done_at,
+             t.done_result, t.created_at, t.deal_id, t.lead_id, t.account_id, t.auto,
+             c.name AS created_by_name, COALESCE(d.title, l.name, ac.name) AS about
+      FROM sales_tasks t
+      LEFT JOIN support_agents c ON c.id = t.created_by_agent_id
+      LEFT JOIN sales_deals d ON d.id = t.deal_id
+      LEFT JOIN sales_leads l ON l.id = t.lead_id
+      LEFT JOIN sales_accounts ac ON ac.id = t.account_id
+      WHERE t.org_id = ${orgId} AND t.assignee_agent_id = ${agentId}
+        AND (t.done_at IS NULL OR t.done_at > NOW() - INTERVAL '7 days')
+      ORDER BY t.done_at IS NOT NULL, t.due_at NULLS LAST, t.created_at DESC
+      LIMIT 50
+    ` as any[]
+    return json({ tasks })
+  }
 
   // Мой username в мессенджерах — из моих же исходящих сообщений
   const unameRows = await sql`
@@ -168,8 +195,6 @@ export default async function handler(req: Request): Promise<Response> {
   // РОП видит команду: у кого что открыто и что горит. Только руководителям —
   // админам и роли cco/manager/team_lead; рядовой сейлз чужие задачи не смотрит
   let team: any = null
-  const isLead = ctx.isOrgAdmin || ctx.isGlobalAdmin
-    || ['cco', 'manager', 'team_lead'].includes(String(me.role || ''))
   if (isLead) {
     const [members, teamOverdue] = await sql.transaction([
       sql`

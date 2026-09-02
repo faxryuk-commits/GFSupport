@@ -88,6 +88,18 @@ export function MyWorkspacePage() {
   const [rating, setRating] = useState<Rating | null>(null)
   const [days, setDays] = useState(7)
   const [tab, setTab] = useState<'all' | 'sales' | 'support' | 'onb'>('all')
+  // Попап мониторинга: клик по сотруднику в «Задачах команды» открывает
+  // его список задач со статусами
+  const [teamAgent, setTeamAgent] = useState<{ id: string; name: string } | null>(null)
+  const [teamTasks, setTeamTasks] = useState<any[] | null>(null)
+  useEffect(() => {
+    if (!teamAgent) { setTeamTasks(null); return }
+    let stop = false
+    apiGet<{ tasks: any[] }>(`/me/workspace?action=team-tasks&agentId=${teamAgent.id}`, false)
+      .then(d => { if (!stop) setTeamTasks(d?.tasks || []) })
+      .catch(() => { if (!stop) setTeamTasks([]) })
+    return () => { stop = true }
+  }, [teamAgent])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -327,8 +339,10 @@ export function MyWorkspacePage() {
             <h3 className="text-sm font-semibold text-slate-800 mb-3">👥 Задачи команды</h3>
             <div className="flex flex-wrap gap-x-6 gap-y-2 mb-3">
               {ws.team.members.map(m => (
-                <div key={m.id} className="flex items-baseline gap-2">
-                  <span className="text-[13px] font-medium text-slate-800">{m.name}</span>
+                <button key={m.id} onClick={() => setTeamAgent({ id: m.id, name: m.name })}
+                  className="flex items-baseline gap-2 hover:bg-slate-50 rounded px-1 -mx-1"
+                  title="Открыть список задач">
+                  <span className="text-[13px] font-medium text-slate-800 underline decoration-dotted underline-offset-2">{m.name}</span>
                   <span className="text-[11.5px] tabular-nums text-slate-500" title="открытых задач">
                     {m.open} откр.
                   </span>
@@ -338,7 +352,7 @@ export function MyWorkspacePage() {
                   )}
                   <span className="text-[11.5px] tabular-nums text-emerald-600"
                     title="закрыто за 7 дней">✓{m.done_week}</span>
-                </div>
+                </button>
               ))}
               {!ws.team.members.length && (
                 <span className="text-[12.5px] text-slate-400">в отделе продаж пока пусто</span>
@@ -648,6 +662,63 @@ export function MyWorkspacePage() {
               <Link to={detail.linkTo} className="inline-flex items-center gap-1.5 mt-4 text-[13px] font-semibold text-blue-600 hover:text-blue-700">
                 <ExternalLink className="w-3.5 h-3.5" /> {detail.linkLabel || 'Открыть'}
               </Link>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Попап мониторинга: задачи одного сотрудника со статусами и сроками */}
+      {teamAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setTeamAgent(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-start justify-between mb-3">
+              <h3 className="text-[15px] font-semibold text-slate-900">Задачи · {teamAgent.name}</h3>
+              <button onClick={() => setTeamAgent(null)}
+                className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+            </div>
+            {!teamTasks ? (
+              <div className="text-[13px] text-slate-400 py-6 text-center">загружаю…</div>
+            ) : !teamTasks.length ? (
+              <div className="text-[13px] text-slate-400 py-6 text-center">
+                Задач нет — ни открытых, ни закрытых за неделю.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {teamTasks.map(t => {
+                  const overdue = !t.done_at && t.due_at && new Date(t.due_at) < new Date()
+                  const st = t.done_at
+                    ? (t.done_result === 'rejected' ? ['отклонена', 'bg-red-50 text-red-600'] : ['выполнена', 'bg-emerald-50 text-emerald-700'])
+                    : t.status === 'in_progress' ? ['в работе', 'bg-blue-50 text-blue-700']
+                    : overdue ? ['просрочена', 'bg-red-50 text-red-600']
+                    : ['открыта', 'bg-slate-100 text-slate-600']
+                  const link = t.deal_id ? `/sales/deals/${t.deal_id}`
+                    : t.lead_id ? `/sales/leads/${t.lead_id}`
+                    : t.account_id ? `/sales/accounts/${t.account_id}` : null
+                  return (
+                    <div key={t.id} className="py-2.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded ${st[1]}`}>{st[0]}</span>
+                        <span className="text-[13px] text-slate-800">{t.title}</span>
+                        {t.auto && <span className="text-[10px] text-slate-400">авто</span>}
+                      </div>
+                      <div className="mt-0.5 text-[11.5px] text-slate-400 flex items-center gap-2 flex-wrap">
+                        {t.due_at && (
+                          <span className={overdue ? 'text-red-600 font-medium' : ''}>
+                            срок {formatDateTimeShort(t.due_at)}
+                          </span>
+                        )}
+                        {t.about && (link
+                          ? <Link to={link} onClick={() => setTeamAgent(null)}
+                              className="text-blue-600 hover:underline truncate max-w-[220px]">{t.about}</Link>
+                          : <span className="truncate max-w-[220px]">{t.about}</span>)}
+                        {t.created_by_name && <span>от {t.created_by_name}</span>}
+                        {t.status_note && <span className="text-slate-500">«{t.status_note}»</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
         </div>
