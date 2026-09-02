@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { RefreshCw, X, Sparkles, ChevronUp } from 'lucide-react'
 import { useVersionCheck } from '../hooks/useVersionCheck'
 
@@ -100,7 +101,22 @@ export function UpdateBanner() {
   })
   const [open, setOpen] = useState(false)
 
-  if (!hasUpdate) return null
+  // Техническая сборка — без новых заметок — не заслуживает баннера:
+  // выкладки идут пачками, и «Доступно обновление» без содержания
+  // приучает закрывать его не глядя. Такую сборку подхватываем молча
+  // на ближайшем переходе между страницами (перезагрузка в этот момент
+  // неотличима от обычной навигации). Баннер остаётся только выпускам,
+  // о которых есть что рассказать
+  const techBuild = hasUpdate && !(info?.notes?.length)
+  const { pathname } = useLocation()
+  const prevPath = useRef(pathname)
+  useEffect(() => {
+    if (prevPath.current === pathname) return
+    prevPath.current = pathname
+    if (techBuild) window.location.reload()
+  }, [pathname, techBuild])
+
+  if (!hasUpdate || techBuild) return null
   const notes = info?.notes || []
 
   return (
