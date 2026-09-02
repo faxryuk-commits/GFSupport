@@ -37,7 +37,9 @@ interface AgentRowProps {
 
 export function AgentRow({ agent, frt, isSelected, onClick, onEdit, onDeactivate }: AgentRowProps) {
   const status = STATUS_CONFIG[agent.status || 'offline'] || STATUS_CONFIG.offline
-  const role = AGENT_ROLE_CONFIG[agent.role] || AGENT_ROLE_CONFIG.agent
+  // Неизвестную роль показываем как есть — «Агент» вместо реального значения
+  // делал вид, что назначение не сохранилось
+  const role = AGENT_ROLE_CONFIG[agent.role] || { label: agent.role || 'агент', color: 'text-slate-600' }
   const level = getAgentLevel(agent.points || 0)
   const color = AVATAR_COLORS[hashName(agent.name) % AVATAR_COLORS.length]
   const msgs = agent.metrics?.messagesHandled || 0
@@ -105,7 +107,9 @@ export function AgentRow({ agent, frt, isSelected, onClick, onEdit, onDeactivate
 
       {/* Actions */}
       <td className="px-2 py-3">
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Кнопки видимы всегда: спрятанные за hover действия месяцами
+            считались отсутствующими — «где назначать роли?» */}
+        <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
           <button
             onClick={e => { e.stopPropagation(); onEdit() }}
             className="p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"

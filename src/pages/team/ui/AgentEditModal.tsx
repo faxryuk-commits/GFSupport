@@ -36,6 +36,7 @@ const ROLE_OPTIONS: Array<{ group: string; options: Array<{ value: string; label
   {
     group: 'Продажи',
     options: [
+      { value: 'cco', label: 'CCO (директор по продажам)' },
       { value: 'kam', label: 'KAM (Key Account Manager)' },
       { value: 'sales', label: 'Sales' },
       { value: 'sdr', label: 'SDR' },

@@ -45,7 +45,7 @@ export function AgentDetailPanel({
   if (!agent) return null
 
   const status = STATUS_MAP[agent.status || 'offline'] || STATUS_MAP.offline
-  const role = AGENT_ROLE_CONFIG[agent.role] || AGENT_ROLE_CONFIG.agent
+  const role = AGENT_ROLE_CONFIG[agent.role] || { label: agent.role || 'агент', color: 'text-slate-600' }
   const level = getAgentLevel(agent.points || 0)
   const color = AVATAR_COLORS[hashName(agent.name) % AVATAR_COLORS.length]
   const m = agent.metrics
