@@ -259,12 +259,25 @@ export default async function handler(req: Request): Promise<Response> {
           // подпись в касании и пинг в бот после разговора
           let me: any = null
           if (c.ext) {
+            // Сперва журнал аренды линий: динамические ext (софтфон в браузере)
+            // принадлежат тому, кто держал линию в момент звонка, а не
+            // постоянному владельцу добавочного
+            const callAt = new Date(c.startStamp * 1000).toISOString()
             ;[me] = await sql`
-              SELECT id, name, telegram_id FROM support_agents
-              WHERE regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') = ${c.ext}
-                AND merged_into IS NULL
-              LIMIT 1
+              SELECT a.id, a.name, a.telegram_id FROM sales_pbx_seats s
+              JOIN support_agents a ON a.id = s.agent_id
+              WHERE s.ext = ${c.ext} AND s.taken_at <= ${callAt}
+                AND COALESCE(s.released_at, s.renewed_at + INTERVAL '3 minutes') >= ${callAt}
+              ORDER BY s.taken_at DESC LIMIT 1
             `.catch(() => [] as any[]) as any[]
+            if (!me) {
+              ;[me] = await sql`
+                SELECT id, name, telegram_id FROM support_agents
+                WHERE regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') = ${c.ext}
+                  AND merged_into IS NULL
+                LIMIT 1
+              `.catch(() => [] as any[]) as any[]
+            }
           } else if (c.agentExternal) {
             const own = c.agentExternal.replace(/\D/g, '').slice(-9)
             ;[me] = await sql`

@@ -17,6 +17,10 @@ export interface VertoCreds {
   user: string
   extension: string
   verto_password: string
+  /** Имя сотрудника — уходит в caller_id_name: в учёте АТС видно человека. */
+  display_name?: string
+  /** 'shared' — линия выдана динамически из пула, её аренду надо продлевать. */
+  seat?: 'personal' | 'shared'
 }
 
 export type VertoState =
@@ -188,7 +192,7 @@ export class VertoPhone {
         dialogParams: {
           callID: this.callId,
           destination_number: destination,
-          caller_id_name: this.creds.extension,
+          caller_id_name: this.creds.display_name || this.creds.extension,
           caller_id_number: this.creds.extension,
           useStereo: false, useMic: true, useSpeak: true,
           tag: 'gfsupport-dialer',

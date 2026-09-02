@@ -56,17 +56,27 @@ export function Dialer() {
   const [vNumber, setVNumber] = useState<string | null>(null)
   const [muted, setMuted] = useState(false)
   const [pcMode, setPcMode] = useState(() => webrtcEnabled())
+  // Динамическая линия: добавочный выдан из пула на время работы — показываем
+  // «вы на линии N» и продлеваем аренду, при выходе возвращаем в пул
+  const [seatExt, setSeatExt] = useState('')
+  const [seatShared, setSeatShared] = useState(false)
 
   useEffect(() => {
     if (!pcMode) {
       vertoRef.current?.disconnect()
       vertoRef.current = null
+      setSeatExt('')
       return
     }
     let dead = false
+    let renewTimer: ReturnType<typeof setInterval> | null = null
+    let leasedExt = ''
     apiGet<any>('/sales/call?action=webrtc-creds', false)
       .then(c => {
         if (dead || !c?.success || vertoRef.current) return
+        leasedExt = String(c.extension || '')
+        setSeatExt(leasedExt)
+        setSeatShared(c.seat === 'shared')
         const phone = new VertoPhone(c, {
           onState: (s, detail) => {
             setVState(s)
@@ -79,12 +89,22 @@ export function Dialer() {
         })
         vertoRef.current = phone
         phone.connect()
+        // Аренда живёт по TTL: продлеваем, пока софтфон подключён, — закрытая
+        // вкладка отпустит линию сама через пару минут даже без release
+        renewTimer = setInterval(() => {
+          if (vertoRef.current && vertoRef.current.state !== 'idle' && vertoRef.current.state !== 'error') {
+            apiPost('/sales/call?action=webrtc-renew', { ext: leasedExt }).catch(() => {})
+          }
+        }, 45000)
       })
       .catch(() => { /* креды не выданы — работаем по старой схеме */ })
     return () => {
       dead = true
+      if (renewTimer) clearInterval(renewTimer)
       vertoRef.current?.disconnect()
       vertoRef.current = null
+      if (leasedExt) apiPost('/sales/call?action=webrtc-release', { ext: leasedExt }).catch(() => {})
+      setSeatExt('')
     }
   }, [pcMode])
 
@@ -437,7 +457,9 @@ export function Dialer() {
           </button>
           {vertoReady ? (
             <div className="mt-1 text-[10.5px] text-emerald-700">
-              ● Софтфон в браузере подключён — разговор пойдёт через микрофон и наушники
+              ● Софтфон подключён{seatExt ? ` — вы на линии ${seatExt}` : ''}
+              {seatShared ? ' (свободная линия, вернётся в пул при выходе)' : ''}
+              {' '}· разговор через микрофон и наушники
             </div>
           ) : ext ? (
             <div className={`mt-1 text-[10.5px] ${extPersonal ? 'text-gray-400' : 'text-amber-600'}`}>

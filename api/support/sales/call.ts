@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
-import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus, pbxHookSecret, pbxUserWebrtc } from '../_lib/pbx.js'
+import { readPbxConfig, pbxCallNow, pbxProbe, pbxRecordUrl, pbxCallStatus, pbxHookSecret, pbxUserWebrtc, pbxUsers } from '../_lib/pbx.js'
 import { leadFromPhone } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -299,21 +299,28 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ lines })
   }
 
-  // Браузерный софтфон: Verto-креды текущего оператора по его короткому
-  // добавочному из профиля. Добавочный берётся ТОЛЬКО из привязки на сервере —
-  // фронт не может запросить чужой. Пароль живёт у АТС, мы его не храним
+  // Браузерный софтфон: Verto-креды по линии текущего оператора. Владелец
+  // короткого добавочного получает свой; остальным (фаундер, поддержка) линия
+  // выдаётся динамически из пула свободных — журнал sales_pbx_seats помнит,
+  // кто какую держал, и звонки в учёте лягут на человека, а не на «внутр. N».
+  // Ext берётся ТОЛЬКО на сервере, фронт чужой запросить не может; пароль АТС
+  // не хранится у нас и не нужен сотруднику
   if (url.searchParams.get('action') === 'webrtc-creds') {
     const cfg = await readPbxConfig(sql, orgId)
     if (!cfg) return json({ success: false, code: 'PBX_SETTINGS_NOT_CONFIGURED', message: 'Телефония не настроена' }, 404)
-    const my = await resolveExt(sql, orgId, ctx.agentId)
-    const ext = my.personal ? my.ext.replace(/\D/g, '') : ''
-    if (!ext || ext.length > 3) {
-      return json({
-        success: false, code: 'PBX_OPERATOR_NOT_CONFIGURED',
-        message: 'Короткий добавочный (100/101/102) не привязан к вашему профилю — попросите администратора указать его в карточке сотрудника',
-      }, 404)
-    }
     try {
+      const { allocateSeat } = await import('../_lib/pbx-seats.js')
+      const pool = (await pbxUsers(cfg))
+        .map(u => u.num.replace(/\D/g, ''))
+        .filter(n => n.length >= 2 && n.length <= 3)
+      if (!pool.length) {
+        return json({ success: false, code: 'PBX_OPERATOR_NOT_CONFIGURED', message: 'На АТС нет коротких добавочных' }, 404)
+      }
+      const seat = await allocateSeat(sql, orgId, ctx.agentId, pool)
+      if ('error' in seat) {
+        return json({ success: false, code: 'PBX_NO_FREE_SEAT', message: seat.error }, 409)
+      }
+      const ext = seat.ext
       const w = await pbxUserWebrtc(cfg, ext)
       if (!w) {
         return json({ success: false, code: 'PBX_WEBRTC_NOT_AVAILABLE', message: 'АТС не выдала WebRTC-креды для добавочного ' + ext }, 422)
@@ -332,10 +339,17 @@ export default async function handler(req: Request): Promise<Response> {
       }
       const host = /^wss?:\/\//i.test(rawHost) ? rawHost : `wss://${rawHost}`
       const login = w.user.includes('@') ? w.user : `${w.user}@${cfg.domain}`
+      const [meName] = await sql`
+        SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
+      `.catch(() => [] as any[]) as any[]
       return new Response(JSON.stringify({
         success: true, protocol: 'verto', host, login,
         user: login.split('@')[0], extension: ext,
         verto_password: w.password, expires_at: null,
+        // Динамическая линия: фронт покажет «вы на линии N» и будет продлевать
+        // аренду; имя уйдёт в caller_id_name — АТС видит, кто реально звонит
+        seat: seat.shared ? 'shared' : 'personal',
+        display_name: meName?.name || ext,
       }), {
         status: 200,
         headers: { ...corsHeaders(), 'Content-Type': 'application/json', 'Cache-Control': 'no-store, private' },
@@ -343,6 +357,21 @@ export default async function handler(req: Request): Promise<Response> {
     } catch (e: any) {
       return json({ success: false, code: 'PBX_PROVIDER_ERROR', message: String(e?.message || e).slice(0, 200) }, 502)
     }
+  }
+
+  // Продление и возврат динамической линии: продление раз в 45с держит аренду,
+  // отпущенная или протухшая линия возвращается в пул для следующего
+  if (url.searchParams.get('action') === 'webrtc-renew') {
+    const b = await req.json().catch(() => null)
+    const { renewSeat } = await import('../_lib/pbx-seats.js')
+    const ok = await renewSeat(sql, orgId, ctx.agentId, String(b?.ext || ''))
+    return json({ ok })
+  }
+  if (url.searchParams.get('action') === 'webrtc-release') {
+    const b = await req.json().catch(() => null)
+    const { releaseSeat } = await import('../_lib/pbx-seats.js')
+    await releaseSeat(sql, orgId, ctx.agentId, b?.ext ? String(b.ext) : undefined)
+    return json({ ok: true })
   }
 
   // История для звонилки: последние звонки из касаний с привязкой к лидам.
