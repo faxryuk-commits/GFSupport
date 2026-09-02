@@ -342,7 +342,7 @@ export default async function handler(req: Request): Promise<Response> {
     conds.push(cond.replace('?', `$${params.length}`))
   }
   const market = await resolveRegionScoped(sql, orgId, url, ctx)
-  if (market) add('l.market_id = ?', market)
+  if (market) add('(l.market_id = ? OR l.market_id IS NULL)', market)
   // Период: даты приходят днями в рабочей зоне, поэтому и границы сдвинуты на +05
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')

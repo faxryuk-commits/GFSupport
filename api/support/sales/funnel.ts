@@ -153,7 +153,7 @@ export default async function handler(req: Request): Promise<Response> {
         LEFT JOIN support_agents ag ON ag.id = l.assigned_agent_id
         WHERE l.org_id = ${orgId} AND l.archived_at IS NULL
           AND l.status IN ('new', 'assigned', 'attempting', 'nurture')
-          AND (${market} = '' OR l.market_id = ${market})
+          AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)
           AND (${owner} = '' OR l.assigned_agent_id = ${owner})
           AND (${like} = '' OR l.name ILIKE ${like} OR l.phone ILIKE ${like})
       ) t WHERE rn <= ${perColumn}
@@ -162,7 +162,7 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT status, COUNT(*)::int AS total FROM sales_leads
       WHERE org_id = ${orgId} AND archived_at IS NULL
         AND status IN ('new', 'assigned', 'attempting', 'nurture')
-        AND (${market} = '' OR market_id = ${market})
+        AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
         AND (${owner} = '' OR assigned_agent_id = ${owner})
         AND (${like} = '' OR name ILIKE ${like} OR phone ILIKE ${like})
       GROUP BY status
@@ -191,7 +191,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
           AND d.pipeline <> 'partner'
           AND (${isEnt} = (d.pipeline LIKE 'enterprise%'))
-          AND (${market} = '' OR d.market_id = ${market})
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
           AND (${owner} = '' OR d.owner_agent_id = ${owner})
           AND (${like} = '' OR d.title ILIKE ${like} OR a.name ILIKE ${like})
       ) t WHERE rn <= ${perColumn}
@@ -210,7 +210,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM sales_deals
         WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
           AND COALESCE(monthly_amount, 0) <> 0
-          AND (${market} = '' OR market_id = ${market})
+          AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
           AND (${owner} = '' OR owner_agent_id = ${owner})
         GROUP BY stage_id, currency
       ) d ON d.stage_id = s.id
@@ -235,7 +235,7 @@ export default async function handler(req: Request): Promise<Response> {
                  WHERE won_at > NOW() - INTERVAL '30 days'), 0) AS won30
         FROM sales_deals
         WHERE org_id = ${orgId} AND archived_at IS NULL
-          AND (${market} = '' OR market_id = ${market})
+          AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
           AND (${owner} = '' OR owner_agent_id = ${owner})
         GROUP BY stage_id, currency
       ) d ON d.stage_id = s.id
@@ -257,14 +257,14 @@ export default async function handler(req: Request): Promise<Response> {
                    AND won_at IS NULL AND lost_at IS NULL AND pipeline <> 'partner'
                    AND (${isEnt} = (pipeline LIKE 'enterprise%'))
                    AND COALESCE(monthly_amount, 0) <> 0
-                   AND (${market} = '' OR market_id = ${market})
+                   AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
                  GROUP BY currency
                ) x
              ), '{}'::jsonb) AS pipeline_amounts
       FROM sales_deals
       WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
         AND pipeline <> 'partner' AND (${isEnt} = (pipeline LIKE 'enterprise%'))
-        AND (${market} = '' OR market_id = ${market})
+        AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
     `,
     sql`
       SELECT DISTINCT ag.id, ag.name FROM sales_deals d

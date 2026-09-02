@@ -289,7 +289,7 @@ export default async function handler(req: Request): Promise<Response> {
     FROM sales_accounts a
     LEFT JOIN sales_partner_programs p ON p.id = a.partner_program_id
     WHERE a.org_id = ${orgId} AND a.account_type = ${type} AND a.archived_at IS NULL
-      AND (${market} = '' OR a.market_id = ${market})
+      AND (${market} = '' OR a.market_id = ${market} OR a.market_id IS NULL)
       AND (${lifecycle} = '' OR a.lifecycle = ${lifecycle})
       AND (${city} = '' OR a.city = ${city})
       AND (${chat} = '' OR (${chat} = 'yes' AND a.channel_id IS NOT NULL)
@@ -309,7 +309,7 @@ export default async function handler(req: Request): Promise<Response> {
            COUNT(*) FILTER (WHERE channel_id IS NOT NULL)::int AS with_chat
     FROM sales_accounts
     WHERE org_id = ${orgId} AND account_type = ${type} AND archived_at IS NULL
-      AND (${market} = '' OR market_id = ${market})
+      AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
       AND (${lifecycle} = '' OR lifecycle = ${lifecycle})
       AND (${city} = '' OR city = ${city})
   ` as any[]

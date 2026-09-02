@@ -189,7 +189,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (load) add('d.orders_per_day = ?', load)
   if (source) add('src.key = ?', source)
   if (owner) add('d.owner_agent_id = ?', owner)
-  if (market) add('d.market_id = ?', market)
+  if (market) add('(d.market_id = ? OR d.market_id IS NULL)', market)
   if (q) {
     // Поиск идёт по двум колонкам одним текстом — поэтому два плейсхолдера
     params.push(`%${q}%`, `%${q}%`)
