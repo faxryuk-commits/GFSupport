@@ -4,14 +4,16 @@ import { updateAgent } from '@/shared/api'
 import { Modal } from '@/shared/ui'
 import type { Agent, AgentRole } from '@/entities/agent'
 
+// Галочка ДОБАВЛЯЕТ модуль сверх дефолта роли (mod:* в permissions);
+// дефолты считает shared/lib/modules.ts — сейлз видит продажи,
+// поддержка — поддержку, аналитика — руководителям
 const PERMISSION_MODULES = [
-  { id: 'cases', label: 'Кейсы' },
-  { id: 'channels', label: 'Каналы' },
-  { id: 'messages', label: 'Сообщения' },
-  { id: 'analytics', label: 'Аналитика' },
-  { id: 'users', label: 'Пользователи' },
-  { id: 'automations', label: 'Автоматизации' },
-  { id: 'settings', label: 'Настройки' },
+  { id: 'mod:sales', label: 'Продажи' },
+  { id: 'mod:support', label: 'Поддержка' },
+  { id: 'mod:onboarding', label: 'Подключение' },
+  { id: 'mod:analytics', label: 'Аналитика и Обзор' },
+  { id: 'mod:broadcast', label: 'Рассылки' },
+  { id: 'mod:settings', label: 'Настройки' },
 ]
 
 // Группированный список ролей. Старые agent/manager/admin сохранены
@@ -308,7 +310,11 @@ export function AgentEditModal({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-3">Доступ к модулям</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Доступ к модулям</label>
+          <p className="text-[11px] text-slate-400 mb-3">
+            Базовый набор определяет роль (сейлз — продажи, поддержка — поддержку,
+            аналитика — руководителям). Галочка добавляет модуль сверх роли.
+          </p>
           <div className="grid grid-cols-2 gap-3">
             {PERMISSION_MODULES.map(mod => (
               <label

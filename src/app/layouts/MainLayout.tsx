@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom'
+import { useMyAccess } from '@/shared/hooks/useMyAccess'
+import { pathAllowedFor } from '@/shared/lib/modules'
 import { Sidebar } from '@/widgets/sidebar'
 import { ErrorBoundary, Dialer } from '@/shared/ui'
 import { useBackgroundNotifications } from '@/shared/hooks/useBackgroundNotifications'
@@ -9,6 +11,18 @@ import { playCaseSoundIfEnabled, playMessageSoundIfEnabled } from '@/shared/lib'
 import { clearCache } from '@/shared/services/api.service'
 import { OnboardingWizard, DemoBanner } from '@/features/onboarding'
 
+
+/**
+ * Прямой заход в чужой модуль уводит в «Моё». Редирект только после точных
+ * данных о правах (ready): по быстрым данным логина нельзя выкидывать
+ * человека из модуля, который ему открыли галочкой.
+ */
+function ModuleGuard({ children }: { children: React.ReactNode }) {
+  const { mods, ready } = useMyAccess()
+  const { pathname } = useLocation()
+  if (ready && !pathAllowedFor(pathname, mods)) return <Navigate to="/me" replace />
+  return <>{children}</>
+}
 
 export function MainLayout() {
   const navigate = useNavigate()
@@ -212,7 +226,9 @@ export function MainLayout() {
           <Dialer />
           <DemoBanner />
           <ErrorBoundary>
-            <Outlet />
+            <ModuleGuard>
+              <Outlet />
+            </ModuleGuard>
           </ErrorBoundary>
         </main>
       </div>

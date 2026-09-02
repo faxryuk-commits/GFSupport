@@ -6,6 +6,8 @@ import {
   Plug, Handshake, Inbox, Building2, Phone,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
+import { useMyAccess } from '@/shared/hooks/useMyAccess'
+import { pathAllowedFor } from '@/shared/lib/modules'
 import { apiGet } from '@/shared/services/api.service'
 import { markNotificationRead } from '@/shared/api'
 
@@ -382,12 +384,19 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
   }, [isCollapsed])
 
   const planConfig = getPlanConfig(orgPlan)
+  // Модули по роли: сейлз не видит поддержку, поддержка — продажи,
+  // аналитика — руководителям. Исключения — галочками в карточке сотрудника
+  const access = useMyAccess()
   // Фильтруем пункты по плану, оставляем только непустые группы.
   const visibleGroups = navGroups
     // Отбираем по правилу «что закрыто», а не «что разрешено»: новый раздел
     // должен появляться в меню сам, а не исчезать до тех пор, пока кто-то не
     // вспомнит про отдельный список путей
-    .map(g => ({ ...g, items: g.items.filter(item => isPathAllowed(item.path, orgPlan)) }))
+    .map(g => ({
+      ...g,
+      items: g.items.filter(item =>
+        isPathAllowed(item.path, orgPlan) && pathAllowedFor(item.path, access.mods)),
+    }))
     .filter(g => g.items.length > 0)
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/')
