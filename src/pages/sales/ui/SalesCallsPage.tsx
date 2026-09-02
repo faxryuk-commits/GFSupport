@@ -4,6 +4,7 @@ import { PhoneIncoming, PhoneOutgoing, Play } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { parsePhone } from '@/shared/lib/phone'
 import { Card, Kpis, PageShell, Empty } from './kit'
+import { CallInsight } from './CallInsight'
 
 /**
  * Дашборд звонков: сколько звонили, дозвонились ли, когда и кто говорил.
@@ -323,6 +324,7 @@ export default function SalesCallsPage() {
                         {recBusy === c.uuid ? '…' : 'запись'}
                       </button>
                     )}
+                    {c.answered && c.uuid && <CallInsight uuid={c.uuid} />}
                   </div>
                   {playing?.uuid === c.uuid && (
                     <audio controls autoPlay src={playing.url} className="mt-2 w-full h-9" />

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Btn } from './kit'
+import { CallInsight } from './CallInsight'
 import { formatDateTimeShort } from '@/shared/lib/time'
 
 /**
@@ -191,6 +192,9 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
                       className="ml-2 text-emerald-700 hover:underline disabled:opacity-50">
                       {recBusy === a.id ? 'загружаю…' : '▶ запись'}
                     </button>
+                  )}
+                  {a.record_uuid && /^[0-9a-f-]{32,40}$/i.test(a.record_uuid) && (
+                    <span className="ml-2 inline-flex flex-wrap"><CallInsight uuid={a.record_uuid} /></span>
                   )}
                 </div>
                 {playing?.id === a.id && (

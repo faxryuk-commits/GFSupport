@@ -385,6 +385,33 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
+  // Расшифровка и разбор звонка: готовое отдаём сразу, отсутствующее ставим
+  // в очередь — крон обработает за минуту-другую
+  if (url.searchParams.get('action') === 'insight') {
+    const b = await req.json().catch(() => null)
+    const uuid = String(b?.uuid || '').trim()
+    if (!/^[0-9a-f-]{20,60}$/i.test(uuid)) return json({ error: 'uuid не распознан' }, 400)
+    const { ensureInsightsSchema, queueInsight } = await import('../_lib/call-insights.js')
+    await ensureInsightsSchema(sql)
+    const [row] = await sql`
+      SELECT status, summary, coach, transcript, error FROM sales_call_insights
+      WHERE call_uuid = ${uuid} AND org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (row?.status === 'done') {
+      return json({ status: 'done', summary: row.summary, coach: row.coach, transcript: row.transcript })
+    }
+    if (row?.status === 'failed') {
+      // Повторная попытка по клику: ссылка на запись могла просто протухнуть
+      await sql`
+        UPDATE sales_call_insights SET status = 'pending', error = NULL
+        WHERE call_uuid = ${uuid} AND org_id = ${orgId}
+      `.catch(() => {})
+      return json({ status: 'pending', note: `прошлая попытка не удалась (${row.error || 'без причины'}) — поставил заново` })
+    }
+    if (!row) await queueInsight(sql, orgId, uuid, 9999)
+    return json({ status: 'pending' })
+  }
+
   // Запись разговора: свежая подписанная ссылка на mp3 по uuid звонка.
   // Доступна любому вошедшему сотруднику — как и сама карточка клиента
   if (url.searchParams.get('action') === 'record') {

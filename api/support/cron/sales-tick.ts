@@ -7,6 +7,7 @@ import { sendNotification } from '../_lib/notifications.js'
 import { tokenForPage } from '../_lib/meta-config.js'
 import { runQualifier } from '../_lib/sales-qualifier.js'
 import { readPbxConfig, pbxHistory, pbxUsers } from '../_lib/pbx.js'
+import { queueInsight, processPendingInsights } from '../_lib/call-insights.js'
 import { acceptLead } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -303,6 +304,11 @@ export default async function handler(req: Request): Promise<Response> {
               WHERE id = ${lead.id} AND org_id = ${ORG} AND first_touch_at IS NULL
             `
           }
+          // Состоявшийся разговор — в очередь на расшифровку и разбор:
+          // саммари и советы тренера появятся в карточке через пару минут
+          if (c.talkSec > 0) {
+            await queueInsight(sql, ORG, c.uuid, c.talkSec, lead?.id || null)
+          }
           // Пинг по горячим следам: разговор состоялся — тому, кто говорил,
           // прилетает в бот ссылка на карточку или кнопка «создать лида».
           // Только состоявшиеся: пинговать каждый недозвон — приучить к спаму
@@ -327,6 +333,18 @@ export default async function handler(req: Request): Promise<Response> {
   } catch (e) {
     // Телефония не должна ронять остальной проход; причину — в лог функции
     console.error('[sales-tick] pbx sync:', e)
+  }
+
+  // ─── 1г. Расшифровка звонков ────────────────────────────────────────────────
+  // По паре звонков за проход: длинный разговор не должен упираться в таймаут
+  try {
+    const cfg = await readPbxConfig(sql, ORG)
+    if (cfg) {
+      const n = await processPendingInsights(sql, ORG, cfg, 2)
+      if (n) out.insights = n
+    }
+  } catch (e) {
+    console.error('[sales-tick] call insights:', e)
   }
 
   // ─── 2. Просроченные задачи и каденции ──────────────────────────────────────

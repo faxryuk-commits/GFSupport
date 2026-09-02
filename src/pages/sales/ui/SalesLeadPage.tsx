@@ -5,6 +5,7 @@ import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, Skeleton, leadStatus, slaTone, slaText } from './kit'
+import { CallInsight } from './CallInsight'
 import { TasksCard } from './TasksCard'
 import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
 
@@ -510,14 +511,17 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                        className="text-[11.5px] text-blue-600 hover:underline break-all">{t.url}</a>
                   )}
                   {t.kind === 'call' && t.identity && /^[0-9a-f-]{32,40}$/i.test(t.identity) && (
-                    rec?.id === t.identity ? (
-                      <audio controls autoPlay src={rec.url} className="mt-1.5 w-full h-8" />
-                    ) : (
-                      <button onClick={() => listenRec(t.identity!)} disabled={recBusy === t.identity}
-                        className="mt-0.5 block text-[11.5px] text-emerald-700 hover:underline disabled:opacity-40">
-                        {recBusy === t.identity ? 'загружаю…' : '▶ запись'}
-                      </button>
-                    )
+                    <div className="mt-0.5 flex items-center gap-3 flex-wrap">
+                      {rec?.id === t.identity ? (
+                        <audio controls autoPlay src={rec.url} className="w-full h-8" />
+                      ) : (
+                        <button onClick={() => listenRec(t.identity!)} disabled={recBusy === t.identity}
+                          className="text-[11.5px] text-emerald-700 hover:underline disabled:opacity-40">
+                          {recBusy === t.identity ? 'загружаю…' : '▶ запись'}
+                        </button>
+                      )}
+                      <CallInsight uuid={t.identity} />
+                    </div>
                   )}
                 </span>
               </div>
