@@ -109,7 +109,9 @@ export default async function handler(req: Request): Promise<Response> {
       const dd = byDay.get(day)!
       if (ok) dd.answered++; else dd.missed++
       if (ok) byHour[hour].answered++; else byHour[hour].missed++
-      if (who) {
+      // Неразрезолвленные узлы АТС («внутр. 10» — группа, «очередь 5200») —
+      // не сотрудники: в таблице людей им делать нечего
+      if (who && !/^(внутр\.|очередь)/.test(who)) {
         if (!byAgent.has(who)) {
           byAgent.set(who, { name: who, total: 0, answered: 0, talkSec: 0, inbound: 0, outbound: 0, days: {} })
         }
