@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/time'
 import { useSalesRefs, optionsFor } from './refs'
-import { InlineField, Skeleton } from './kit'
+import { InlineField, OwnerPicker, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { TasksCard } from './TasksCard'
@@ -38,6 +38,8 @@ interface Stage {
 }
 
 interface DealData {
+  owner?: { id: string; name: string } | null
+  team?: Array<{ id: string; name: string }>
   channelId?: string | null
   messages?: Array<{
     id: string; sender_name: string | null; is_from_client: boolean
@@ -204,6 +206,16 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
     }
   }
 
+  const changeOwner = async (agentId: string) => {
+    setBusy(true)
+    try {
+      await apiPost('/sales/deal?action=owner', { id, agentId })
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось передать сделку')
+    } finally { setBusy(false) }
+  }
+
   const advance = async () => {
     if (!id || !data?.nextStage) return
     setBusy(true); setBlocked(null)
@@ -355,6 +367,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 d.stage_since.includes('Z') ? d.stage_since : d.stage_since + 'Z').getTime()) / 86400000)} дн` : null,
             ].filter(Boolean).join(' · ')}
           </p>
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-gray-400">
+            <span>Ответственный:</span>
+            <OwnerPicker owner={data.owner || null} team={data.team || []}
+              onPick={agentId => changeOwner(agentId)} busy={busy} />
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="text-right mr-2">

@@ -637,6 +637,51 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
  * автообновлении — как подвисание. Скелетон держит форму страницы, поэтому
  * ожидание выглядит короче, чем оно есть.
  */
+/**
+ * Ответственный с передачей: имя видно всегда, «передать» открывает список
+ * команды. Право проверяет API — владелец отдаёт своё, руководитель любое.
+ */
+export function OwnerPicker({ owner, team, onPick, busy }: {
+  owner: { name: string } | null
+  team: Array<{ id: string; name: string }>
+  onPick: (agentId: string) => void
+  busy?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-flex items-center gap-1.5">
+      <span className={`text-[12px] ${owner ? 'font-medium text-gray-800' : 'text-amber-600'}`}>
+        {owner?.name || 'не назначен'}
+      </span>
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={busy}
+        className="text-[11.5px] text-blue-600 hover:underline disabled:opacity-40"
+      >
+        передать ▾
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200
+                          rounded-xl shadow-xl py-1 max-h-56 overflow-y-auto w-52">
+            {team.map(a => (
+              <button key={a.id}
+                onClick={() => { setOpen(false); onPick(a.id) }}
+                className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-700 hover:bg-blue-50">
+                {a.name}
+              </button>
+            ))}
+            {!team.length && (
+              <div className="px-3 py-2 text-[11.5px] text-gray-400">команда не загрузилась</div>
+            )}
+          </div>
+        </>
+      )}
+    </span>
+  )
+}
+
 export const Skeleton = ({ rows = 6, kpis = true }: { rows?: number; kpis?: boolean }) => (
   <div className="p-5 space-y-4 animate-pulse">
     <div className="space-y-2">

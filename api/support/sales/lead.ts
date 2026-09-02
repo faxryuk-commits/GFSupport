@@ -113,7 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
   const id = url.searchParams.get('id')
   if (!id) return json({ error: 'id is required' }, 400)
 
-  const [leadRows, touchRows, assistantRows, dealRows] = await sql.transaction([
+  const [leadRows, touchRows, assistantRows, dealRows, teamRows] = await sql.transaction([
     sql`
       SELECT l.*, s.label AS source, s.key AS source_key,
              ag.name AS agent_name,
@@ -146,6 +146,13 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE d.org_id = ${orgId} AND d.source_lead_id = ${id}
       ORDER BY d.created_at DESC LIMIT 10
     `,
+    // Команда для передачи: ответственного меняют прямо с карточки
+    sql`
+      SELECT id, name FROM support_agents
+      WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
+        AND (department = 'sales' OR role IN ('admin', 'cco'))
+      ORDER BY name
+    `,
   ]) as any[]
 
   const lead = (leadRows as any[])[0]
@@ -170,5 +177,6 @@ export default async function handler(req: Request): Promise<Response> {
     assistant: assistantRows,
     deals: dealRows,
     messages,
+    team: teamRows,
   })
 }

@@ -45,6 +45,44 @@ export default async function handler(req: Request): Promise<Response> {
   // порога. Раньше снять эту пометку было нечем — сделка замирала навсегда
   if (req.method === 'POST') {
     const action = url.searchParams.get('action')
+
+    // Передача сделки: владелец отдаёт сам, руководитель — любую. Открытые
+    // задачи уезжают вместе со сделкой, след остаётся в истории касаний
+    if (action === 'owner') {
+      const body = await req.json().catch(() => null)
+      if (!body?.id || !body?.agentId) return json({ error: 'id and agentId are required' }, 400)
+      const [deal] = await sql`
+        SELECT id, account_id, owner_agent_id, title FROM sales_deals
+        WHERE id = ${body.id} AND org_id = ${orgId} LIMIT 1
+      `
+      if (!deal) return json({ error: 'not found' }, 404)
+      if (!ctx.isLead && deal.owner_agent_id !== ctx.agentId) {
+        return json({ error: 'Передать сделку может её владелец или руководитель' }, 403)
+      }
+      const [to] = await sql`
+        SELECT id, name FROM support_agents WHERE id = ${body.agentId} AND org_id = ${orgId} LIMIT 1
+      `
+      if (!to) return json({ error: 'сотрудник не найден' }, 404)
+      const [fromA] = await sql`SELECT name FROM support_agents WHERE id = ${deal.owner_agent_id} LIMIT 1`
+      const [byA] = await sql`SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`
+      await sql`
+        UPDATE sales_deals SET owner_agent_id = ${to.id}, updated_at = NOW()
+        WHERE id = ${deal.id} AND org_id = ${orgId}
+      `
+      await sql`
+        UPDATE sales_tasks SET assignee_agent_id = ${to.id}
+        WHERE deal_id = ${deal.id} AND done_at IS NULL
+      `
+      await sql`
+        INSERT INTO sales_activities (id, org_id, deal_id, account_id, type, result, text, agent_id)
+        VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)}, ${orgId},
+                ${deal.id}, ${deal.account_id}, 'note', 'handover',
+                ${`Сделка передана: ${fromA?.name || 'без владельца'} → ${to.name} (${byA?.name || ctx.agentId})`},
+                ${ctx.agentId})
+      `.catch(() => { /* след не критичен для передачи */ })
+      return json({ ok: true, owner: { id: to.id, name: to.name } })
+    }
+
     if (action !== 'approve-discount' && action !== 'reject-discount') {
       return json({ error: 'unknown action' }, 400)
     }
@@ -205,6 +243,20 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND is_active = true ORDER BY sort_order`,
   ])
 
+  // Владелец и команда для передачи: ответственный должен быть виден на
+  // карточке, а не восстанавливаться по спискам
+  const [ownerRows, teamRows] = await Promise.all([
+    deal.owner_agent_id
+      ? sql`SELECT id, name FROM support_agents WHERE id = ${deal.owner_agent_id} LIMIT 1`
+      : Promise.resolve([] as any[]),
+    sql`
+      SELECT id, name FROM support_agents
+      WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
+        AND (department = 'sales' OR role IN ('admin', 'cco'))
+      ORDER BY name
+    `,
+  ]) as any[]
+
   const open = stages.filter((s: any) => s.kind === 'open')
   const idx = open.findIndex((s: any) => s.id === deal.stage_id)
   const nextStage = idx >= 0 && idx < open.length - 1
@@ -243,5 +295,7 @@ export default async function handler(req: Request): Promise<Response> {
     // критериев, иначе сейлз увидит имя колонки вместо названия
     labels: FIELD_LABELS,
     tasks, documents, events, contacts, reasons,
+    owner: ownerRows[0] || null,
+    team: teamRows,
   })
 }

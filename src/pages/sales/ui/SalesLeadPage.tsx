@@ -4,7 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
-import { Card, Chip, InlineField, Skeleton, leadStatus, slaTone, slaText } from './kit'
+import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText } from './kit'
 import { CallInsight } from './CallInsight'
 import { TasksCard } from './TasksCard'
 import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
@@ -34,6 +34,7 @@ const MULTI_QUAL = new Set<string>(['aggregators', 'pain', 'delivery_type'])
 
 interface LeadData {
   lead: any
+  team?: Array<{ id: string; name: string }>
   fields: Array<{ label: string; value: string }>
   touchpoints: Array<{ kind: string; channel: string | null; title: string | null
     detail: string | null; url: string | null; identity: string | null; happened_at: string }>
@@ -300,6 +301,14 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           <span className="text-[11.5px] text-gray-400 tabular-nums">
             пришло {formatDateTimeShort(l.created_at)}
           </span>
+          <span className="text-[11.5px] text-gray-400">·</span>
+          <span className="text-[11.5px] text-gray-400">Ответственный:</span>
+          <OwnerPicker
+            owner={l.agent_name ? { name: l.agent_name } : null}
+            team={data.team || []}
+            onPick={agentId => act('reassign', { agentId })}
+            busy={busy}
+          />
         </div>
         <div className="flex gap-2 pt-1 items-center">
           {open && (

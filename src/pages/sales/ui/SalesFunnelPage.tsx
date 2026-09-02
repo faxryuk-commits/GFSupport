@@ -344,6 +344,7 @@ export function SalesFunnelPage() {
                           </>
                         )}
                         {l.source}
+                        {l.agent_name && <span> · {l.agent_name}</span>}
                       </div>
                       {/* Когда обращение пришло — цифра, по которой сейлз решает,
                           звонить сейчас или это вчерашний хвост. «Просрочено на
