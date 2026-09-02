@@ -197,7 +197,11 @@ export default async function handler(req: Request): Promise<Response> {
       for (const k of QUAL_KEYS) {
         if (f[k] !== undefined) patch[k] = f[k] === null ? '' : String(f[k])
       }
-      if (!Object.keys(patch).length) return json({ error: 'nothing to update' }, 400)
+      // Город — не в QUAL_KEYS: он живёт отдельной колонкой и обрабатывается
+      // ниже. Защита от пустого патча не должна рубить сохранение города
+      if (!Object.keys(patch).length && f.city === undefined) {
+        return json({ error: 'nothing to update' }, 400)
+      }
 
       // Город живёт своей колонкой — по ней идут фильтры и региональные срезы
       if (f.city !== undefined) {
