@@ -125,13 +125,18 @@ export default async function handler(req: Request): Promise<Response> {
           .map((c: any) => contacts.get(c.id))
           .find((c: any) => c?.phone)
 
-        const rawName = cf(lead, 'Бренд') || lead.name || ''
+        // «Автосделка: Gold Burger» — бренд живёт после двоеточия; префикс
+        // амо-автоматики в названии карточки не нужен никому
+        const rawName = (cf(lead, 'Бренд') || lead.name || '')
+          .replace(/^автосделка:\s*/i, '')
         const name = /^(facebook|instagram|сделка|автосделка|lead)\s*[#№]?/i.test(rawName)
           ? (contact?.name || rawName) : rawName
         const price = Number(lead.price || 0)
         const looksGarbage = (!name || /^(сделка|автосделка)/i.test(name))
           && !contact?.phone && price < GARBAGE_MIN_PRICE
-        if (looksGarbage) { out.garbageSkipped++; continue }
+        // Точечный довоз — человек сам выбрал, кого везти: эвристика мусора
+        // косила его живые автосделки повторных продаж
+        if (!amoUser && looksGarbage) { out.garbageSkipped++; continue }
 
         let reasonId: string | null = null
         if (isLost) {
