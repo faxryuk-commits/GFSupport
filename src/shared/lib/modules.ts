@@ -57,11 +57,13 @@ export function modulesFor(
   const out = new Set<ModuleKey>()
   if (r === 'manager') for (const m of ALL_MODULES) { if (m !== 'settings') out.add(m) }
   if (r === 'cco') { out.add('sales'); out.add('onboarding'); out.add('analytics') }
-  if (r === 'team_lead') { out.add('support'); out.add('analytics') }
+  if (r === 'team_lead') { out.add('support'); out.add('onboarding'); out.add('analytics') }
   if (['kam', 'sales', 'sale', 'sdr'].includes(r)) { out.add('sales'); out.add('onboarding') }
-  if (['support', 'support_agent', 'agent'].includes(r)) out.add('support')
+  // Подключение — прежде всего мир поддержки: внедрением занимается она,
+  // продажи только передают туда выигранные сделки
+  if (['support', 'support_agent', 'agent'].includes(r)) { out.add('support'); out.add('onboarding') }
   if (d === 'sales' || d === 'sale') { out.add('sales'); out.add('onboarding') }
-  if (d === 'support') out.add('support')
+  if (d === 'support') { out.add('support'); out.add('onboarding') }
   for (const p of perms) {
     if (p.startsWith('mod:') && (ALL_MODULES as string[]).includes(p.slice(4))) {
       out.add(p.slice(4) as ModuleKey)
