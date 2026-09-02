@@ -21,6 +21,7 @@ export function EditQuoteModal({ docId, onClose, onSaved }: {
   const [lines, setLines] = useState<Line[]>([])
   const [title, setTitle] = useState('')
   const [validTill, setValidTill] = useState('')
+  const [discount, setDiscount] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,6 +32,7 @@ export function EditQuoteModal({ docId, onClose, onSaved }: {
         setLines(Array.isArray(d.document?.lines) ? d.document.lines : [])
         setTitle(d.document?.title || '')
         setValidTill(d.document?.valid_till ? String(d.document.valid_till).slice(0, 10) : '')
+        setDiscount(Number(d.document?.discount_pct || 0))
       })
       .catch(e => setError(e?.message || 'Не удалось открыть документ'))
   }, [docId])
@@ -52,6 +54,7 @@ export function EditQuoteModal({ docId, onClose, onSaved }: {
       await apiPut('/sales/documents', {
         id: docId, lines, title: title || null,
         validTill: validTill ? `${validTill}T23:59:59` : null,
+        discountPct: discount,
       })
       onSaved()
       onClose()
@@ -87,7 +90,7 @@ export function EditQuoteModal({ docId, onClose, onSaved }: {
 
         {doc && (
           <div className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid sm:grid-cols-3 gap-3">
               <label className="block">
                 <span className="text-[11px] font-medium text-gray-500">Заголовок</span>
                 <input value={title} onChange={e => setTitle(e.target.value)}
@@ -97,6 +100,12 @@ export function EditQuoteModal({ docId, onClose, onSaved }: {
                 <span className="text-[11px] font-medium text-gray-500">Действует до</span>
                 <input type="date" value={validTill} onChange={e => setValidTill(e.target.value)}
                   className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px]" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-gray-500">Скидка, %</span>
+                <input type="number" min={0} max={100} step={0.5} value={discount}
+                  onChange={e => setDiscount(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px] tabular-nums" />
               </label>
             </div>
 
@@ -138,7 +147,11 @@ export function EditQuoteModal({ docId, onClose, onSaved }: {
 
             <div className="flex items-center justify-between border-t border-gray-100 pt-3">
               <div className="text-[13px] text-gray-700">
-                Итого: <b className="tabular-nums">{fmt(total)}</b>
+                Итого: {discount > 0 && (
+                  <span className="text-gray-400 line-through tabular-nums mr-1">{fmt(total)}</span>
+                )}
+                <b className="tabular-nums">{fmt(Math.round(total * (1 - discount / 100)))}</b>
+                {discount > 0 && <span className="text-emerald-700 text-[12px]"> · −{discount}%</span>}
               </div>
               <div className="flex gap-2">
                 <button onClick={onClose}

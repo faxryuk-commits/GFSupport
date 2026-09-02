@@ -42,7 +42,8 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const [doc] = await sql`
     SELECT id, org_id, kind, number, version, status, title, lines, conditions, body,
-           total, currency, valid_till, requisites, sent_at, accepted_at, paid_at, materials
+           total, currency, valid_till, requisites, sent_at, accepted_at, paid_at, materials,
+           discount_pct
     FROM sales_documents WHERE share_token = ${token} LIMIT 1
   `
   if (!doc) return json({ error: 'not found' }, 404)
@@ -108,6 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
         kind: doc.kind, number: doc.number, version: doc.version, title: doc.title,
         lines: doc.lines, conditions: doc.conditions, body: doc.body,
         total: doc.total, currency: doc.currency,
+        discountPct: Number(doc.discount_pct || 0),
         validTill: doc.valid_till, requisites: doc.requisites, expired,
         acceptedAt: doc.accepted_at, paidAt: doc.paid_at, status: doc.status,
       },

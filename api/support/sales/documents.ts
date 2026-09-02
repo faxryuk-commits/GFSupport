@@ -201,9 +201,15 @@ export default async function handler(req: Request): Promise<Response> {
     if (!doc) return json({ error: 'not found' }, 404)
 
     const lines = body.lines ?? doc.lines
-    const total = Array.isArray(lines)
+    // Скидка фиксированным процентом: применяется к итогу и видна клиенту
+    // на странице КП отдельной строкой
+    const discount = body.discountPct !== undefined
+      ? Math.max(0, Math.min(100, Number(body.discountPct) || 0))
+      : Number(doc.discount_pct || 0)
+    const raw = Array.isArray(lines)
       ? lines.reduce((a: number, l: any) => a + Number(l.total || 0), 0)
-      : doc.total
+      : Number(doc.total || 0)
+    const total = Math.round(raw * (1 - discount / 100))
 
     await sql`
       UPDATE sales_documents SET
@@ -219,10 +225,11 @@ export default async function handler(req: Request): Promise<Response> {
           ? JSON.stringify(body.materials || [])
           : (doc.materials ? JSON.stringify(doc.materials) : null)}::jsonb,
         total = ${total},
+        discount_pct = ${discount},
         updated_at = NOW()
       WHERE id = ${body.id}
     `
-    return json({ ok: true, total })
+    return json({ ok: true, total, discountPct: discount })
   }
 
   if (req.method === 'DELETE') {

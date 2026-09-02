@@ -197,8 +197,14 @@ export function PublicDocPage() {
   // в одну сумму значит показать клиенту цифру, которой он никогда не заплатит
   const sum = (fn: (l: DocLine) => boolean) =>
     lines.filter(fn).reduce((a, l) => a + Number(l.total || 0), 0)
-  const monthly = sum(l => l.category !== 'deposit' && l.recurring !== 'one-time')
-  const onetime = sum(l => l.category !== 'deposit' && l.recurring === 'one-time')
+  // Скидка применяется к платежам, но не к депозиту: депозит — предоплата,
+  // которая и так расходуется в счёт оплаты
+  const disc = Number((doc as any).discountPct || 0)
+  const k = 1 - disc / 100
+  const monthlyRaw = sum(l => l.category !== 'deposit' && l.recurring !== 'one-time')
+  const onetimeRaw = sum(l => l.category !== 'deposit' && l.recurring === 'one-time')
+  const monthly = Math.round(monthlyRaw * k)
+  const onetime = Math.round(onetimeRaw * k)
   const deposit = sum(l => l.category === 'deposit')
 
   return (
@@ -284,10 +290,21 @@ export function PublicDocPage() {
               </table>
             </div>
             <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 space-y-1.5">
+              {disc > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-emerald-700 font-medium">Скидка</span>
+                  <span className="text-[13px] font-semibold text-emerald-700 tabular-nums">−{disc}%</span>
+                </div>
+              )}
               {monthly > 0 && (
                 <div className="flex justify-between items-center">
                   <span className="text-[12px] text-gray-500">Ежемесячный платёж</span>
                   <span className="text-[18px] font-semibold text-gray-900 tabular-nums">
+                    {disc > 0 && (
+                      <span className="text-[12px] font-normal text-gray-400 line-through mr-2">
+                        {money(monthlyRaw, doc.currency)}
+                      </span>
+                    )}
                     {money(monthly, doc.currency)}
                   </span>
                 </div>
