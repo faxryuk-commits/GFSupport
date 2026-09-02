@@ -49,12 +49,16 @@ export default async function handler(req: Request): Promise<Response> {
 
   const expired = doc.valid_till && new Date(doc.valid_till).getTime() < Date.now()
 
+  // Сейлз открывает своё же КП из CRM — просмотр не считается, иначе
+  // «открыто 4×» превращается в статистику самолюбования
+  const staffView = new URL(req.url).searchParams.get('staff') === '1'
+
   // Клик по материалу: пишем отдельно от открытия документа — по этому
   // видно, дочитал ли клиент до презентации или закрыл на первом экране
   if (req.method === 'POST' && new URL(req.url).searchParams.get('action') === 'material') {
     const body = await req.json().catch(() => null)
     const id = String(body?.materialId || '')
-    if (id) {
+    if (id && !staffView) {
       await sql`
         UPDATE sales_materials SET opened_count = opened_count + 1
         WHERE org_id = ${doc.org_id} AND id = ${id}
@@ -68,23 +72,25 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   if (req.method === 'GET') {
-    const hash = await viewerHash(req, token)
     // Открытие фиксируем сразу: даже если клиент закроет вкладку через секунду,
-    // менеджер должен знать, что документ дошёл
-    await sql`
-      INSERT INTO sales_document_views (org_id, document_id, viewer_hash, user_agent, referrer)
-      VALUES (${doc.org_id}, ${doc.id}, ${hash},
-              ${(req.headers.get('user-agent') || '').slice(0, 255)},
-              ${(req.headers.get('referer') || '').slice(0, 255)})
-    `
-    await sql`
-      UPDATE sales_documents SET
-        opened_count = opened_count + 1,
-        first_opened_at = COALESCE(first_opened_at, NOW()),
-        last_opened_at = NOW(),
-        status = CASE WHEN status = 'sent' THEN 'opened' ELSE status END
-      WHERE id = ${doc.id}
-    `
+    // менеджер должен знать, что документ дошёл. Свои — мимо статистики
+    if (!staffView) {
+      const hash = await viewerHash(req, token)
+      await sql`
+        INSERT INTO sales_document_views (org_id, document_id, viewer_hash, user_agent, referrer)
+        VALUES (${doc.org_id}, ${doc.id}, ${hash},
+                ${(req.headers.get('user-agent') || '').slice(0, 255)},
+                ${(req.headers.get('referer') || '').slice(0, 255)})
+      `
+      await sql`
+        UPDATE sales_documents SET
+          opened_count = opened_count + 1,
+          first_opened_at = COALESCE(first_opened_at, NOW()),
+          last_opened_at = NOW(),
+          status = CASE WHEN status = 'sent' THEN 'opened' ELSE status END
+        WHERE id = ${doc.id}
+      `
+    }
     // Материалы: одна ссылка вместо четырёх вложений в директе, и видно,
     // что именно смотрели — открыл предложение, но не открыл презентацию
     // это другой разговор при следующем звонке
@@ -137,7 +143,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
     const seconds = Math.max(0, Math.min(600, Number(body?.seconds) || 0))
-    if (!seconds) return json({ ok: true })
+    if (!seconds || staffView) return json({ ok: true })
     const hash = await viewerHash(req, token)
     // Дописываем к последнему просмотру этого читателя, а не плодим строки
     await sql`

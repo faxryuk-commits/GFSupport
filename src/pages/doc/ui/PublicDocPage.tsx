@@ -79,6 +79,10 @@ const MATERIAL_ICON: Record<string, string> = {
 
 export function PublicDocPage() {
   const { token } = useParams<{ token: string }>()
+  // Свои открытия статистику не портят: сейлз приходит из CRM со ?staff=1,
+  // и просмотр/время чтения по такой ссылке не считаются
+  const staff = new URLSearchParams(window.location.search).get('staff') === '1'
+    ? '&staff=1' : ''
   const [doc, setDoc] = useState<PublicDoc | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -109,7 +113,7 @@ export function PublicDocPage() {
     // Сброс состояния: иначе при смене ссылки на экране остаётся прошлая ошибка
     setError(null)
     setDoc(null)
-    fetch(`/api/support/sales/doc-public?token=${encodeURIComponent(token)}`)
+    fetch(`/api/support/sales/doc-public?token=${encodeURIComponent(token)}${staff}`)
       .then(async r => {
         if (!r.ok) throw new Error(r.status === 404 ? 'Документ не найден' : 'Не удалось открыть документ')
         return r.json()
@@ -120,7 +124,7 @@ export function PublicDocPage() {
 
   /** Клик по материалу считаем отдельно: видно, дочитал ли клиент до него. */
   const openMaterial = (m: Material) => {
-    fetch(`/api/support/sales/doc-public?token=${encodeURIComponent(token || '')}&action=material`, {
+    fetch(`/api/support/sales/doc-public?token=${encodeURIComponent(token || '')}&action=material${staff}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ materialId: m.id }),
@@ -131,7 +135,7 @@ export function PublicDocPage() {
   // будет означать «оставил открытым и ушёл обедать»
   useEffect(() => {
     if (!token || !doc) return
-    const url = `/api/support/sales/doc-public?token=${encodeURIComponent(token)}`
+    const url = `/api/support/sales/doc-public?token=${encodeURIComponent(token)}${staff}`
 
     const send = (seconds: number, viaBeacon = false) => {
       if (seconds <= 0) return

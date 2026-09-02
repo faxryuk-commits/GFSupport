@@ -565,7 +565,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                       </span>
                     )}
                     {doc.share_token ? (
-                      <a href={`/d/${doc.share_token}`} target="_blank" rel="noreferrer"
+                      <a href={`/d/${doc.share_token}?staff=1`} target="_blank" rel="noreferrer"
+                        title="Свой просмотр в статистику не попадёт"
                         className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
                         Открыть
                       </a>
