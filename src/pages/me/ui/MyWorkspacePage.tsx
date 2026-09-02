@@ -32,6 +32,14 @@ type Workspace = {
     assignee_name: string | null; about: string | null
   }>
   week: { confirmed_week?: number; cases_week?: number; kept_week?: number }
+  /** Только у руководителей: задачи команды продаж — у кого что горит. */
+  team?: {
+    members: Array<{ id: string; name: string; open: number; overdue: number; done_week: number }>
+    overdue: Array<{
+      id: string; title: string; due_at: string; assignee_name: string; about: string | null
+      deal_id: string | null; lead_id: string | null; account_id: string | null
+    }>
+  } | null
 }
 type Activity = {
   days: number; total: number; prevTotal: number; activeMinutesPerDay: number | null
@@ -312,6 +320,53 @@ export function MyWorkspacePage() {
       </div>
 
       <div className="max-w-[1240px] mx-auto px-6 py-4 space-y-4">
+        {/* Задачи команды — только руководителю: у кого что открыто и горит.
+            Сейлз своей работой живёт ниже, РОП начинает день с этой карточки */}
+        {ws.team && (
+          <div className="bg-white rounded-xl border border-[#e8edf3] p-4">
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">👥 Задачи команды</h3>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 mb-3">
+              {ws.team.members.map(m => (
+                <div key={m.id} className="flex items-baseline gap-2">
+                  <span className="text-[13px] font-medium text-slate-800">{m.name}</span>
+                  <span className="text-[11.5px] tabular-nums text-slate-500" title="открытых задач">
+                    {m.open} откр.
+                  </span>
+                  {m.overdue > 0 && (
+                    <span className="text-[11.5px] tabular-nums font-semibold text-red-600"
+                      title="просроченных">{m.overdue} горит</span>
+                  )}
+                  <span className="text-[11.5px] tabular-nums text-emerald-600"
+                    title="закрыто за 7 дней">✓{m.done_week}</span>
+                </div>
+              ))}
+              {!ws.team.members.length && (
+                <span className="text-[12.5px] text-slate-400">в отделе продаж пока пусто</span>
+              )}
+            </div>
+            {ws.team.overdue.length > 0 && (
+              <div className="border-t border-slate-100 pt-2 space-y-1.5">
+                <div className="text-[10.5px] font-semibold uppercase tracking-wider text-red-500">
+                  Просрочено у команды
+                </div>
+                {ws.team.overdue.map(t => (
+                  <Link key={t.id}
+                    to={t.deal_id ? `/sales/deals/${t.deal_id}` : t.lead_id ? `/sales/leads/${t.lead_id}`
+                      : t.account_id ? `/sales/accounts/${t.account_id}` : '/sales/queue'}
+                    className="flex items-baseline gap-2 text-[12.5px] hover:bg-slate-50 rounded px-1 -mx-1 py-0.5">
+                    <span className="text-red-600 tabular-nums flex-none">
+                      {formatDateTimeShort(t.due_at)}
+                    </span>
+                    <span className="text-slate-800 truncate">{t.title}</span>
+                    {t.about && <span className="text-slate-400 truncate">· {t.about}</span>}
+                    <span className="text-slate-500 flex-none ml-auto">{t.assignee_name}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Пульс + рейтинг — двумя карточками, как в прототипе */}
         <div className="grid lg:grid-cols-5 gap-4">
           <div className="bg-white rounded-xl border border-[#e8edf3] p-4 lg:col-span-3">

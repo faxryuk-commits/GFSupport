@@ -72,8 +72,10 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
   // просто листают, лишний запрос ни к чему
   useEffect(() => {
     if (!open || agents.length) return
-    apiGet<{ agents: Array<{ id: string; name: string }> }>('/agents', true)
-      .then(r => setAgents((r.agents || []).filter(a => a.name)))
+    apiGet<{ agents: Array<{ id: string; name: string; mergedInto?: string | null; isActive?: boolean }> }>('/agents', true)
+      // Дубли учёток и уволенные в списке исполнителей — прямой путь поставить
+      // задачу в пустоту: канонизация знает главную учётку каждого
+      .then(r => setAgents((r.agents || []).filter(a => a.name && !a.mergedInto && a.isActive !== false)))
       .catch(() => {})
   }, [open, agents.length])
 

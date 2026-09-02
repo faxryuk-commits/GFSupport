@@ -30,7 +30,7 @@ export default async function handler(req: Request): Promise<Response> {
   await ensureWorkSchema(sql)
 
   const [me] = await sql`
-    SELECT id, name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
+    SELECT id, name, role FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
   ` as any[]
   if (!me) return json({ error: 'agent not found' }, 404)
 
@@ -165,8 +165,46 @@ export default async function handler(req: Request): Promise<Response> {
         AND completed_at > NOW() - INTERVAL '7 days') AS kept_week
   ` as any[]
 
+  // РОП видит команду: у кого что открыто и что горит. Только руководителям —
+  // админам и роли cco/manager/team_lead; рядовой сейлз чужие задачи не смотрит
+  let team: any = null
+  const isLead = ctx.isOrgAdmin || ctx.isGlobalAdmin
+    || ['cco', 'manager', 'team_lead'].includes(String(me.role || ''))
+  if (isLead) {
+    const [members, teamOverdue] = await sql.transaction([
+      sql`
+        SELECT a.id, a.name,
+          COUNT(t.id) FILTER (WHERE t.done_at IS NULL)::int AS open,
+          COUNT(t.id) FILTER (WHERE t.done_at IS NULL AND t.due_at < NOW())::int AS overdue,
+          COUNT(t.id) FILTER (WHERE t.done_at IS NOT NULL
+            AND t.done_at > NOW() - INTERVAL '7 days')::int AS done_week
+        FROM support_agents a
+        LEFT JOIN sales_tasks t ON t.assignee_agent_id = a.id AND t.org_id = ${orgId}
+        WHERE a.org_id = ${orgId} AND a.merged_into IS NULL AND a.is_active = true
+          AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr'))
+          AND a.id <> ${ctx.agentId}
+        GROUP BY a.id, a.name
+        ORDER BY overdue DESC, open DESC
+      `,
+      sql`
+        SELECT t.id, t.title, t.due_at, t.deal_id, t.lead_id, t.account_id,
+               a.name AS assignee_name, COALESCE(d.title, l.name, ac.name) AS about
+        FROM sales_tasks t
+        JOIN support_agents a ON a.id = t.assignee_agent_id
+        LEFT JOIN sales_deals d ON d.id = t.deal_id
+        LEFT JOIN sales_leads l ON l.id = t.lead_id
+        LEFT JOIN sales_accounts ac ON ac.id = t.account_id
+        WHERE t.org_id = ${orgId} AND t.done_at IS NULL AND t.due_at < NOW()
+          AND t.assignee_agent_id IS DISTINCT FROM ${ctx.agentId}
+        ORDER BY t.due_at ASC LIMIT 20
+      `,
+    ]) as any[]
+    team = { members, overdue: teamOverdue }
+  }
+
   return json({
     me: { id: me.id, name: me.name, usernames },
+    team,
     mentions,
     unansweredMentions: (mentions as any[]).filter(m => m.unanswered).length,
     workItems: items,
