@@ -194,7 +194,7 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
                     </button>
                   )}
                   {a.record_uuid && /^[0-9a-f-]{32,40}$/i.test(a.record_uuid) && (
-                    <span className="ml-2 inline-flex flex-wrap"><CallInsight uuid={a.record_uuid} /></span>
+                    <span className="ml-2"><CallInsight uuid={a.record_uuid} /></span>
                   )}
                 </div>
                 {playing?.id === a.id && (

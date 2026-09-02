@@ -285,8 +285,11 @@ export default async function handler(req: Request): Promise<Response> {
               `.catch(() => [] as any[]) as any[]
             }
           }
+          // Четырёхзначный «добавочный» — это очередь или группа АТС, а не
+          // сотрудник: подпись «внутр. 5200» сбивала с толку
+          const extLabel = c.ext ? (c.ext.length >= 4 ? `очередь ${c.ext}` : `внутр. ${c.ext}`) : ''
           const side = c.ext
-            ? ` · внутр. ${c.ext}${me?.name ? ` · ${me.name}` : ''}`
+            ? ` · ${extLabel}${me?.name ? ` · ${me.name}` : ''}`
             : (me?.name ? ` · моб. ${me.name}` : '')
           await sql`
             INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,

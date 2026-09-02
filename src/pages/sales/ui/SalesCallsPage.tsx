@@ -276,7 +276,9 @@ export default function SalesCallsPage() {
               const p = parsePhone(c.number)
               return (
                 <div key={c.uuid || i} className="px-4 py-2.5">
-                  <div className="flex items-center gap-3">
+                  {/* wrap обязателен: раскрытая панель разбора занимает всю
+                      ширину и без переноса сжимала номер в столбик */}
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className={`flex-none w-7 h-7 rounded-full flex items-center justify-center ${
                       c.answered ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
                       {c.direction === 'in'
