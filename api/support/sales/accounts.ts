@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
-import { resolveRegion } from '../_lib/sales-amo.js'
+import { resolveRegionScoped } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -258,7 +258,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const type = url.searchParams.get('type') || 'client'
-  const market = await resolveRegion(sql, orgId, url)
+  const market = await resolveRegionScoped(sql, orgId, url, ctx)
   // Те же срезы, что и везде: без них список аккаунтов — просто длинная простыня
   const lifecycle = url.searchParams.get('lifecycle') || ''
   const chat = url.searchParams.get('chat') || ''

@@ -438,6 +438,45 @@ export async function resolveRegion(sql: any, orgId: string, url: URL): Promise<
 }
 
 /**
+ * Коды рынков, доступные агенту; null — без ограничений (админы и
+ * непривязанные). Привязки живут в support_agent_markets и редактируются
+ * в «Рынках»; кэш на инстанс — привязки меняются реже выкладок.
+ */
+const agentCodesCache = new Map<string, { at: number; codes: string[] | null }>()
+export async function agentMarketCodes(sql: any, ctx: {
+  agentId: string | null; marketIds: string[]
+  isOrgAdmin: boolean; isGlobalAdmin: boolean; isSuperAdmin: boolean
+}): Promise<string[] | null> {
+  if (ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin) return null
+  if (!ctx.marketIds?.length) return null
+  const key = ctx.marketIds.join(',')
+  const hit = agentCodesCache.get(key)
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.codes
+  try {
+    const rows = await sql`SELECT code FROM support_markets WHERE id = ANY(${ctx.marketIds})` as any[]
+    const codes = rows.map(r => String(r.code || '').toLowerCase()).filter(Boolean)
+    const out = codes.length ? codes : null
+    agentCodesCache.set(key, { at: Date.now(), codes: out })
+    return out
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Регион с учётом прав: каждый видит только свой рынок, кроме админов.
+ * Чужой или «все регионы» у привязанного агента принудительно сворачивается
+ * в его собственный рынок — сервер не доверяет параметру из браузера.
+ */
+export async function resolveRegionScoped(sql: any, orgId: string, url: URL, ctx: any): Promise<string> {
+  const requested = await resolveRegion(sql, orgId, url)
+  const allowed = await agentMarketCodes(sql, ctx)
+  if (!allowed) return requested
+  if (requested && allowed.includes(requested)) return requested
+  return allowed[0]
+}
+
+/**
  * Примечания сделки Amo — там прячется содержимое заявки.
  *
  * Заявка с лид-формы Meta приезжает в Amo почти пустой: в полях только бренд,

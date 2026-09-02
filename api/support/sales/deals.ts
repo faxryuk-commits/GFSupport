@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { currencyForMarket, ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
-import { resolveRegion } from '../_lib/sales-amo.js'
+import { resolveRegionScoped } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -109,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Рынок приходит из переключателя в шапке приложения. Выбран — работаем с
   // его воронкой, «все рынки» — показываем всё, но колонки берём из общей
-  const market = await resolveRegion(sql, orgId, url)
+  const market = await resolveRegionScoped(sql, orgId, url, ctx)
   const pipeline = url.searchParams.get('pipeline')
     || (market ? `sales_${market}` : null)
   const view = url.searchParams.get('view') || 'all'

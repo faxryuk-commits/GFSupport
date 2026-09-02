@@ -162,6 +162,15 @@ export default async function handler(req: Request): Promise<Response> {
     const agentIds = rows.map((r: any) => r.id)
     if (agentIds.length === 0) return json({ agents: [] }, 200, 5)
 
+    // Привязки к рынкам: по ним интерфейс ограничивает регионы сотрудника
+    const marketRows = await sql`
+      SELECT agent_id, market_id FROM support_agent_markets WHERE agent_id = ANY(${agentIds})
+    `.catch(() => [] as any[])
+    const marketMap: Record<string, string[]> = {}
+    for (const m of marketRows as any[]) {
+      (marketMap[m.agent_id] = marketMap[m.agent_id] || []).push(m.market_id)
+    }
+
     const [activityRows, msgRows, responseRows, escalationRows] = await Promise.all([
       sql`
         SELECT agent_id, MAX(activity_at) as last_seen
@@ -304,6 +313,7 @@ export default async function handler(req: Request): Promise<Response> {
         pbx_ext: r.pbx_ext || null,
         mergedInto: r.merged_into || null,
         isActive: r.is_active !== false,
+        marketIds: marketMap[r.id] || [],
         assignedChannels: m.resolved, activeChats: m.active,
         points: m.messages + m.resolved * 5 + (esc.escalations > 0 ? 0 : 10),
         metrics: {

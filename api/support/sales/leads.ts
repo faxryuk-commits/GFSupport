@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
-import { resolveRegion } from '../_lib/sales-amo.js'
+import { resolveRegion, resolveRegionScoped } from '../_lib/sales-amo.js'
 import { acceptLead } from '../_lib/sales-intake.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -341,7 +341,7 @@ export default async function handler(req: Request): Promise<Response> {
     params.push(value)
     conds.push(cond.replace('?', `$${params.length}`))
   }
-  const market = await resolveRegion(sql, orgId, url)
+  const market = await resolveRegionScoped(sql, orgId, url, ctx)
   if (market) add('l.market_id = ?', market)
   // Период: даты приходят днями в рабочей зоне, поэтому и границы сдвинуты на +05
   const from = url.searchParams.get('from')

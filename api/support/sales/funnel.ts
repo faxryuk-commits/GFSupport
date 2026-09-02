@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { currencyForMarket, ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
-import { resolveRegion, pipelineForMarket } from '../_lib/sales-amo.js'
+import { resolveRegionScoped, pipelineForMarket } from '../_lib/sales-amo.js'
 import { FIELD_LABELS, missingFields } from '../_lib/sales-fields.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -59,7 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ regions }, 200, 60)
   }
 
-  const market = await resolveRegion(sql, orgId, url)
+  const market = await resolveRegionScoped(sql, orgId, url, ctx)
   const pipeline = market ? `sales_${market}` : null
 
   if (req.method === 'POST' && url.searchParams.get('action') === 'convert') {

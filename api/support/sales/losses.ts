@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
-import { resolveRegion } from '../_lib/sales-amo.js'
+import { resolveRegionScoped } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -37,7 +37,7 @@ export default async function handler(req: Request): Promise<Response> {
   const ctx = await extractAgentContext(req)
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
-  const market = await resolveRegion(sql, orgId, url) || ''
+  const market = await resolveRegionScoped(sql, orgId, url, ctx) || ''
   const owner = url.searchParams.get('owner') || ''
   const from = url.searchParams.get('from') || ''
   const to = url.searchParams.get('to') || ''

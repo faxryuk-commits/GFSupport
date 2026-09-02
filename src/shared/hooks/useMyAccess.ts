@@ -12,10 +12,15 @@ import { modulesFor, type ModuleKey } from '@/shared/lib/modules'
  * человека из модуля, который ему открыли галочкой.
  */
 
-interface MyAccess { mods: Set<ModuleKey>; ready: boolean }
+interface MyAccess {
+  mods: Set<ModuleKey>
+  ready: boolean
+  /** Рынки, которыми ограничен сотрудник; null — без ограничений (админы). */
+  restrictedMarketIds: string[] | null
+}
 
-let cache: { at: number; mods: Set<ModuleKey> } | null = null
-let inflight: Promise<Set<ModuleKey> | null> | null = null
+let cache: { at: number; mods: Set<ModuleKey>; restrictedMarketIds: string[] | null } | null = null
+let inflight: Promise<typeof cache | null> | null = null
 
 function fromLogin(): Set<ModuleKey> {
   try {
@@ -26,7 +31,7 @@ function fromLogin(): Set<ModuleKey> {
   return modulesFor('admin')
 }
 
-function fetchAccess(): Promise<Set<ModuleKey> | null> {
+function fetchAccess(): Promise<typeof cache | null> {
   if (inflight) return inflight
   const myId = localStorage.getItem('support_agent_id')
   if (!myId) return Promise.resolve(null)
@@ -35,8 +40,12 @@ function fetchAccess(): Promise<Set<ModuleKey> | null> {
       const me = (d?.agents || []).find(a => a.id === myId)
       if (!me) return null
       const mods = modulesFor(me.role, me.department, me.permissions)
-      cache = { at: Date.now(), mods }
-      return mods
+      // Ограничение рынками: только не-админам и только при явных привязках
+      const admin = ['admin', 'org_admin'].includes(String(me.role || '').toLowerCase())
+      const restricted = !admin && Array.isArray(me.marketIds) && me.marketIds.length
+        ? me.marketIds : null
+      cache = { at: Date.now(), mods, restrictedMarketIds: restricted }
+      return cache
     })
     .catch(() => null)
     .finally(() => { inflight = null })
@@ -46,14 +55,14 @@ function fetchAccess(): Promise<Set<ModuleKey> | null> {
 export function useMyAccess(): MyAccess {
   const [state, setState] = useState<MyAccess>(() =>
     cache && Date.now() - cache.at < 10 * 60_000
-      ? { mods: cache.mods, ready: true }
-      : { mods: fromLogin(), ready: false })
+      ? { mods: cache.mods, ready: true, restrictedMarketIds: cache.restrictedMarketIds }
+      : { mods: fromLogin(), ready: false, restrictedMarketIds: null })
 
   useEffect(() => {
     if (state.ready) return
     let stop = false
-    fetchAccess().then(mods => {
-      if (!stop && mods) setState({ mods, ready: true })
+    fetchAccess().then(c => {
+      if (!stop && c) setState({ mods: c.mods, ready: true, restrictedMarketIds: c.restrictedMarketIds })
     })
     return () => { stop = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps

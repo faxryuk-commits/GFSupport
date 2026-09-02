@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMarket } from '@/shared/hooks/useMarket'
+import { useMyAccess } from '@/shared/hooks/useMyAccess'
 import { apiGet } from '@/shared/services/api.service'
 
 /**
@@ -125,9 +126,28 @@ export const RegionBadge = ({ scope }: { scope: string }) => {
     setOpen(false)
   }
 
-  // Список регионов берём из общего реестра рынков, но выбор — местный
+  // Список регионов берём из общего реестра рынков, но выбор — местный.
+  // Привязанный к рынку сотрудник видит только свои: сервер всё равно
+  // зажмёт выборку, а интерфейс не должен обещать больше
+  const { restrictedMarketIds, ready } = useMyAccess()
+  const allowedCodes = restrictedMarketIds
+    ? markets.filter(m => restrictedMarketIds.includes(m.id))
+        .map(m => (m.code || '').toLowerCase()).filter(Boolean)
+    : null
   const codes = markets.map(m => (m.code || '').toLowerCase()).filter(Boolean)
-  const list = codes.length ? codes : Object.keys(REGION_NAMES)
+  const list = allowedCodes?.length ? allowedCodes : (codes.length ? codes : Object.keys(REGION_NAMES))
+  const restricted = Boolean(allowedCodes?.length)
+
+  // Регион вне доступного (или «все») у ограниченного — переключаем в свой
+  useEffect(() => {
+    if (!ready || !restricted || !allowedCodes) return
+    if (!region || !allowedCodes.includes(region)) {
+      localStorage.setItem(key(scope), allowedCodes[0])
+      window.dispatchEvent(new CustomEvent(EVT))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, restricted, region])
+
   const label = region ? REGION_NAMES[region] || region.toUpperCase() : 'Все регионы'
 
   return (
@@ -149,15 +169,17 @@ export const RegionBadge = ({ scope }: { scope: string }) => {
           style={{ position: 'fixed', top: rect.top, right: rect.right, zIndex: 60 }}
           className="w-60 bg-white border border-gray-200 rounded-lg shadow-xl py-1"
         >
-          <button onMouseDown={e => { e.preventDefault(); choose('') }}
-            className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50
-                        flex items-baseline justify-between gap-2 ${
-              !region ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
-            <span>Все регионы</span>
-            <CountCell c={counts && Object.values(counts).reduce(
-              (a, x) => ({ leads: a.leads + x.leads, deals: a.deals + x.deals }),
-              { leads: 0, deals: 0 })} />
-          </button>
+          {!restricted && (
+            <button onMouseDown={e => { e.preventDefault(); choose('') }}
+              className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50
+                          flex items-baseline justify-between gap-2 ${
+                !region ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}>
+              <span>Все регионы</span>
+              <CountCell c={counts && Object.values(counts).reduce(
+                (a, x) => ({ leads: a.leads + x.leads, deals: a.deals + x.deals }),
+                { leads: 0, deals: 0 })} />
+            </button>
+          )}
           {list.map(code => (
             <button key={code} onMouseDown={e => { e.preventDefault(); choose(code) }}
               className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50

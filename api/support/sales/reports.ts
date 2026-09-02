@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
-import { resolveRegion } from '../_lib/sales-amo.js'
+import { resolveRegionScoped } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -31,7 +31,7 @@ export default async function handler(req: Request): Promise<Response> {
   const from = url.searchParams.get('from') || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
   const to = url.searchParams.get('to') || new Date().toISOString().slice(0, 10)
   // Регион из переключателя в шапке: пусто — сводка по всем рынкам
-  const market = await resolveRegion(sql, orgId, url)
+  const market = await resolveRegionScoped(sql, orgId, url, ctx)
   const pipeline = market ? `sales_${market}` : 'sales'
   const fromTs = `${from}T00:00:00+05:00`
   const toTs = `${to}T23:59:59+05:00`
