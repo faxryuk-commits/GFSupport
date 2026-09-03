@@ -635,15 +635,31 @@ export async function applyAmoStage(
     const createdIso = lead?.created_at
       ? new Date(Number(lead.created_at) * 1000).toISOString()
       : new Date().toISOString()
+    // Поля карточки — из Amo сразу: сделка, созданная синком, приходила
+    // голой, и бэкфиллы потом догоняли то, что можно взять при рождении
+    const points = parseInt(cf(lead, 'Кол филиалов') || cf(lead, 'Филиалов') || '', 10) || null
+    const delivRaw = cf(lead, 'Есть ли свои курьеры').toLowerCase()
+    const delivery = !delivRaw ? null
+      : /^да|есть|свои/.test(delivRaw) ? 'Свои курьеры'
+      : /^нет|отсут/.test(delivRaw) ? 'Доставки нет' : delivRaw.slice(0, 100)
     await sql`
       INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
                                title, deal_type, source_lead_id, external_id, pipeline,
-                               currency, stage_since, created_at)
+                               currency, stage_since, created_at,
+                               city, points, orders_per_day, pos, tariff, aggregators,
+                               delivery_type, segment, monthly_amount)
       VALUES (${dealId}, ${orgId}, ${gfsLead.account_id}, ${entry.id},
               ${gfsLead.assigned_agent_id || null}, ${market},
               ${String(gfsLead.name || lead.name || 'Сделка из Amo').slice(0, 255)},
               'new', ${gfsLead.id}, ${`amo_${lead.id}`}, ${pipeline},
-              ${await currencyForMarket(sql, orgId, market)}, NOW(), ${createdIso})
+              ${await currencyForMarket(sql, orgId, market)}, NOW(), ${createdIso},
+              ${cf(lead, 'Город').slice(0, 100) || null}, ${points},
+              ${cf(lead, 'Заказы в день').slice(0, 50) || null},
+              ${cf(lead, 'POS').slice(0, 100) || null},
+              ${cf(lead, 'Тариф').slice(0, 50) || null},
+              ${cf(lead, 'Работает ли в агрегаторах').slice(0, 100) || null},
+              ${delivery}, ${cf(lead, 'Направление').slice(0, 100) || null},
+              ${Number(lead.price || 0) || null})
     `
     // Раньше здесь стояло «только assigned», и лид, лежавший в «новом» или на
     // прогреве, оставался в колонке обращений после создания сделки: один и
