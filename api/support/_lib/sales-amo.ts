@@ -630,15 +630,20 @@ export async function applyAmoStage(
     ` as any[]
     if (!entry) return null
     const dealId = `sd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    // Дата создания — амовская: сделка началась там, и «движение по дням»
+    // должно видеть её в своём месяце, а не в дне синка
+    const createdIso = lead?.created_at
+      ? new Date(Number(lead.created_at) * 1000).toISOString()
+      : new Date().toISOString()
     await sql`
       INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
                                title, deal_type, source_lead_id, external_id, pipeline,
-                               currency, stage_since)
+                               currency, stage_since, created_at)
       VALUES (${dealId}, ${orgId}, ${gfsLead.account_id}, ${entry.id},
               ${gfsLead.assigned_agent_id || null}, ${market},
               ${String(gfsLead.name || lead.name || 'Сделка из Amo').slice(0, 255)},
               'new', ${gfsLead.id}, ${`amo_${lead.id}`}, ${pipeline},
-              ${await currencyForMarket(sql, orgId, market)}, NOW())
+              ${await currencyForMarket(sql, orgId, market)}, NOW(), ${createdIso})
     `
     // Раньше здесь стояло «только assigned», и лид, лежавший в «новом» или на
     // прогреве, оставался в колонке обращений после создания сделки: один и
@@ -680,11 +685,17 @@ export async function applyAmoStage(
     ` as any[]
     reasonId = lostReasonId(lead, rows)
   }
+  // Дата закрытия — из Amo, не «сейчас»: момент синка ставил сотни отказов
+  // в один день, и весь периодный анализ (win rate, выручка месяца, цикл
+  // сделки) считался по дню миграции вместо реальной жизни
+  const closedIso = lead?.closed_at
+    ? new Date(Number(lead.closed_at) * 1000).toISOString()
+    : new Date().toISOString()
   await sql`
     UPDATE sales_deals SET
       stage_id = ${target.id}, stage_since = NOW(), stalled_at = NULL, updated_at = NOW(),
-      won_at = ${won ? new Date().toISOString() : null},
-      lost_at = ${lost ? new Date().toISOString() : null},
+      won_at = ${won ? closedIso : null},
+      lost_at = ${lost ? closedIso : null},
       lost_reason_id = ${lost ? reasonId : null}
     WHERE id = ${deal.id} AND org_id = ${orgId}
   `
