@@ -299,12 +299,24 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (action === 'assign') {
       const agentId = body.agentId || ctx.agentId
-      await sql`
-        UPDATE sales_leads
-        SET assigned_agent_id = ${agentId}, assigned_at = NOW(), status = 'assigned',
-            sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes'), updated_at = NOW()
-        WHERE id = ${body.leadId} AND org_id = ${orgId}
-      `
+      // keep=true — перенос по доске: статус меняется, но уже назначенный
+      // ответственный остаётся. Без keep — явное «беру себе» или передача
+      if (body.keep) {
+        await sql`
+          UPDATE sales_leads
+          SET assigned_agent_id = COALESCE(assigned_agent_id, ${agentId}),
+              assigned_at = COALESCE(assigned_at, NOW()), status = 'assigned',
+              sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes'), updated_at = NOW()
+          WHERE id = ${body.leadId} AND org_id = ${orgId}
+        `
+      } else {
+        await sql`
+          UPDATE sales_leads
+          SET assigned_agent_id = ${agentId}, assigned_at = NOW(), status = 'assigned',
+              sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes'), updated_at = NOW()
+          WHERE id = ${body.leadId} AND org_id = ${orgId}
+        `
+      }
       return json({ ok: true })
     }
     // Дозвон — это уже касание: таймер норматива останавливаем здесь, иначе

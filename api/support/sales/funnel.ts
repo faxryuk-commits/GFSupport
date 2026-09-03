@@ -73,7 +73,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
 
     const [lead] = await sql`
-      SELECT id, name, account_id, market_id, status, phone, city, qual
+      SELECT id, name, account_id, market_id, status, phone, city, qual, assigned_agent_id
       FROM sales_leads WHERE id = ${body.leadId} AND org_id = ${orgId} LIMIT 1
     ` as any[]
     if (!lead) return json({ error: 'обращение не найдено' }, 404)
@@ -117,7 +117,8 @@ export default async function handler(req: Request): Promise<Response> {
                                title, deal_type, source_lead_id, pipeline, city, currency, stage_since,
                                points, orders_per_day, pos, aggregators, delivery_type,
                                segment, pain, dm_name, dm_role, budget_stated)
-      VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${target.id}, ${ctx.agentId},
+      VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${target.id},
+              ${lead.assigned_agent_id || ctx.agentId},
               ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${leadPipeline},
               ${lead.city || q.city || null}, ${await currencyForMarket(sql, orgId, lead.market_id)}, NOW(),
               ${firstNum(q.points)}, ${q.orders_per_day || null}, ${q.pos || null},
@@ -128,10 +129,12 @@ export default async function handler(req: Request): Promise<Response> {
       INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
       VALUES (${orgId}, ${dealId}, ${target.id}, ${'из обращения на доске'})
     `
-    // Взяли в работу — таймер первого касания останавливается здесь
+    // Взяли в работу — таймер первого касания останавливается здесь.
+    // Ответственный НЕ перезаписывается: сделку двигает и РОП, и коллега,
+    // но владельцем остаётся тот, кто вёл лида — иначе доска «крала» сделки
     await sql`
       UPDATE sales_leads
-      SET status = 'converted', assigned_agent_id = ${ctx.agentId},
+      SET status = 'converted', assigned_agent_id = COALESCE(assigned_agent_id, ${ctx.agentId}),
           assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = COALESCE(first_touch_at, NOW()),
           updated_at = NOW()
       WHERE id = ${lead.id} AND org_id = ${orgId}

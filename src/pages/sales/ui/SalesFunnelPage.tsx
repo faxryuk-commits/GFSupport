@@ -152,7 +152,9 @@ export function SalesFunnelPage() {
       if (to === 'new') await apiPost('/sales/leads?action=restore', { leadId })
       else if (to === 'nurture') await apiPost('/sales/leads?action=nurture', { leadId })
       else if (to === 'attempting') await apiPost('/sales/leads?action=dial', { leadId })
-      else await apiPost('/sales/leads?action=assign', { leadId })
+      // keep: перетаскивание по доске — не «беру себе»: у назначенного лида
+      // ответственный сохраняется, забирают только кнопкой «Беру» или передачей
+      else await apiPost('/sales/leads?action=assign', { leadId, keep: true })
       load()
     } catch (e: any) {
       setError(e?.message || 'Не удалось перенести обращение')
