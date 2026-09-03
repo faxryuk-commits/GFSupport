@@ -73,7 +73,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
 
     const [lead] = await sql`
-      SELECT id, name, account_id, market_id, status, phone, city
+      SELECT id, name, account_id, market_id, status, phone, city, qual
       FROM sales_leads WHERE id = ${body.leadId} AND org_id = ${orgId} LIMIT 1
     ` as any[]
     if (!lead) return json({ error: 'обращение не найдено' }, 404)
@@ -87,9 +87,11 @@ export default async function handler(req: Request): Promise<Response> {
     ` as any[]
     if (!target) return json({ error: 'этап не найден' }, 404)
 
-    // Свежая сделка почти пустая: если у этапа есть критерии выхода, честно
-    // говорим, чего не хватает, вместо того чтобы завести пустышку на «КП»
-    const draft = { city: lead.city, title: lead.name }
+    // Критерии этапа проверяем по НАСТОЯЩЕЙ квалификации лида: сейлз заполнял
+    // её в карточке (lead.qual), и не видеть её здесь значило блокировать
+    // переход вечно — «не хватает точек и POS» при заполненных точках и POS
+    const q = (lead.qual || {}) as Record<string, any>
+    const draft = { ...q, city: lead.city || q.city || null, title: lead.name }
     const missing = missingFields(draft, target.required_fields)
     if (missing.length) {
       return json({
@@ -97,17 +99,30 @@ export default async function handler(req: Request): Promise<Response> {
         stage: target.label,
         missing,
         message: `Для этапа «${target.label}» не хватает: ${missing.map(m => m.label).join(', ')}. `
-          + 'Возьмите обращение в работу и заполните поля — тогда сделка встанет сюда.',
+          + 'Откройте обращение и заполните блок «Квалификация» — тогда сделка встанет сюда.',
       }, 422)
     }
 
+    // Квалификация переезжает в сделку целиком: иначе она рождалась пустой,
+    // и на демо сейлз перезаполнял то, что уже выяснил на первом звонке.
+    // Числовые колонки сделки строже текстовых полей лида: «2-3 точки»
+    // превращаются в первое число, нечисловое — в NULL, а не в ошибку INSERT
+    const firstNum = (v: any): number | null => {
+      const m = String(v ?? '').match(/\d+(?:[.,]\d+)?/)
+      return m ? Number(m[0].replace(',', '.')) : null
+    }
     const dealId = salesId('sd')
     await sql`
       INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                               title, deal_type, source_lead_id, pipeline, city, currency, stage_since)
+                               title, deal_type, source_lead_id, pipeline, city, currency, stage_since,
+                               points, orders_per_day, pos, aggregators, delivery_type,
+                               segment, pain, dm_name, dm_role, budget_stated)
       VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${target.id}, ${ctx.agentId},
               ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${leadPipeline},
-              ${lead.city}, ${await currencyForMarket(sql, orgId, lead.market_id)}, NOW())
+              ${lead.city || q.city || null}, ${await currencyForMarket(sql, orgId, lead.market_id)}, NOW(),
+              ${firstNum(q.points)}, ${q.orders_per_day || null}, ${q.pos || null},
+              ${q.aggregators || null}, ${q.delivery_type || null}, ${q.segment || null},
+              ${q.pain || null}, ${q.dm_name || null}, ${q.dm_role || null}, ${firstNum(q.budget_stated)})
     `
     await sql`
       INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
