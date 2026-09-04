@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { apiGet } from '@/shared/services/api.service'
 import { Card, Chip, Kpis, money, pct, PageShell, Skeleton } from './kit'
 import { RegionBadge, useRegion, REGION_NAMES } from './region'
+import { SalesPulse } from './SalesPulse'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -14,6 +15,9 @@ export function SalesReportsPage() {
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [period, setPeriod] = useState('90')
+  // Свободный диапазон: заданные руками даты выигрывают у пресетов
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   // Верх воронки: сводку по сайту присылает бот delever.io
   const [site, setSite] = useState<any>(null)
   const [tab, setTab] = useState<'sales' | 'site'>('sales')
@@ -24,13 +28,16 @@ export function SalesReportsPage() {
   // как «фильтр не применился»
   const reqRef = useRef(0)
 
+  const fromStr = customFrom || new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10)
+  const toStr = customTo || new Date().toISOString().slice(0, 10)
+
   const load = useCallback(() => {
-    const from = new Date(Date.now() - Number(period) * 86400000).toISOString().slice(0, 10)
+    const from = fromStr
     const my = ++reqRef.current
-    apiGet<any>(`/sales/reports?from=${from}&region=${region || 'all'}`, false)
+    apiGet<any>(`/sales/reports?from=${from}&to=${toStr}&region=${region || 'all'}`, false)
       .then(d => { if (my !== reqRef.current) return; setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить отчёты'))
-  }, [period, region])
+  }, [fromStr, toStr, region])
 
   useEffect(() => { load() }, [load])
 
@@ -90,11 +97,20 @@ export function SalesReportsPage() {
         <RegionBadge scope="reports" />
         <div className="flex gap-1 border border-gray-300 rounded-lg overflow-hidden">
           {[['30', 'Месяц'], ['90', 'Квартал'], ['365', 'Год']].map(([v, l]) => (
-            <button key={v} onClick={() => setPeriod(v)}
-              className={`text-[12.5px] px-3 py-1.5 ${period === v ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+            <button key={v} onClick={() => { setPeriod(v); setCustomFrom(''); setCustomTo('') }}
+              className={`text-[12.5px] px-3 py-1.5 ${period === v && !customFrom ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
               {l}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1 border border-gray-300 rounded-lg px-2 py-1 bg-white">
+          <input type="date" value={customFrom || fromStr} max={toStr}
+            onChange={e => setCustomFrom(e.target.value)}
+            className="text-[12px] text-gray-600 outline-none" />
+          <span className="text-gray-400 text-[12px]">—</span>
+          <input type="date" value={customTo || toStr} min={fromStr}
+            onChange={e => setCustomTo(e.target.value)}
+            className="text-[12px] text-gray-600 outline-none" />
         </div>
         </div>
       </div>
@@ -234,15 +250,7 @@ export function SalesReportsPage() {
       )}
 
       {tab === 'sales' && <>
-      {/* Цифра без сравнения ничего не значит: рядом — тот же период до этого */}
-      <Kpis items={[
-        ['Пайплайн', money(totalPipeline, 'UZS'), 'сумма предложений в месяц'],
-        ['Взвешенный прогноз', money(totalWeighted, 'UZS'), 'с учётом вероятности этапов'],
-        ['Выиграно', String(launch.won ?? 0), delta(launch.won ?? 0, data.prev?.won)],
-        ['Дошли до первого заказа', pct(launch.launched ?? 0, launch.won ?? 0),
-          `${launch.launched ?? 0} из ${launch.won ?? 0}`],
-        ['Подпись → запуск', launch.avg_days ? `${Math.round(launch.avg_days)} дн` : '—', 'в среднем'],
-      ]} />
+      <SalesPulse from={fromStr} to={toStr} region={region} />
 
       <div className="grid lg:grid-cols-2 gap-4 items-start">
         <Card title="Движение по дням" sub={`сколько заводили, выигрывали и теряли · ${scope('period')}`}>
@@ -305,33 +313,7 @@ export function SalesReportsPage() {
           </div>
         </Card>
 
-        <Card title="Воронка по когорте" sub={`сделки, созданные в периоде, доведённые до конца · ${scope('period')}`}>
-          <div className="p-4 space-y-2">
-            {funnel.length === 0 && <div className="text-[12.5px] text-gray-400">Данных за период нет</div>}
-            {funnel.map((f: any, i: number) => {
-              const prev = i > 0 ? funnel[i - 1].reached : f.reached
-              const conv = prev ? Math.round((f.reached / prev) * 100) : 100
-              const leak = i > 0 && conv < 50
-              return (
-                <div key={f.key} className="grid grid-cols-[130px_1fr_92px] gap-3 items-center text-[12.5px]">
-                  <span className="text-gray-700">{f.label}</span>
-                  <div className="h-5 rounded-md bg-blue-50 overflow-hidden">
-                    <div className={`h-full rounded-md ${leak ? 'bg-red-500' : 'bg-blue-500'}`}
-                      style={{ width: `${Math.max(3, (f.reached / Math.max(top, 1)) * 100)}%` }} />
-                  </div>
-                  <span className={`text-right tabular-nums text-[11.5px] ${leak ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                    {f.reached} · {conv}%
-                  </span>
-                </div>
-              )
-            })}
-            <div className="text-[11.5px] text-gray-400 pt-1">
-              Красным помечен переход, где теряется больше половины — это и есть узкое место.
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Деньги в воронке" sub={`обещания, а не выручка · ${scope('now')}`}>
+<Card title="Деньги в воронке" sub={`обещания, а не выручка · ${scope('now')}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>

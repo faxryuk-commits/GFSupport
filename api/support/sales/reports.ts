@@ -43,6 +43,121 @@ export default async function handler(req: Request): Promise<Response> {
   const prevFrom = new Date(new Date(fromTs).getTime() - days * 86400000).toISOString()
   const prevTo = fromTs
 
+  // ─── Пульс продаж: главный экран отчётов одним заходом ────────────────────
+  // KPI периода, воронка с долями источников, потенциал, тренд, источники,
+  // причины потерь, портфель по сейлзам. Периоды: закрытия и воронка — по
+  // выбранному диапазону, потенциал и портфель — состояние на сейчас
+  if (url.searchParams.get('action') === 'pulse') {
+    const [kpi, openNow, reach, potential, monthly, srcRows, losses, portfolio] = await Promise.all([
+      sql`
+        SELECT
+          COUNT(*) FILTER (WHERE won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
+          COUNT(*) FILTER (WHERE lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS lost,
+          COALESCE(SUM(monthly_amount) FILTER (WHERE currency = 'UZS'
+            AND won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz), 0)::bigint AS won_amt,
+          COALESCE(percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (won_at - created_at)) / 86400)
+            FILTER (WHERE won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz), 0)::int AS cycle_med
+        FROM sales_deals
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND pipeline <> 'partner'
+          AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
+      `,
+      sql`
+        SELECT COUNT(*)::int AS open,
+          COUNT(*) FILTER (WHERE COALESCE(monthly_amount, 0) > 0)::int AS with_amt
+        FROM sales_deals
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
+          AND pipeline <> 'partner'
+          AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
+      `,
+      // Воронка достижения этапов за период + доля источников (стек)
+      sql`
+        SELECT sn.key AS stage, COALESCE(ss.label, 'История Amo') AS src,
+               COUNT(DISTINCT e.deal_id)::int AS n
+        FROM sales_deal_events e
+        JOIN sales_stages sn ON sn.id = e.new_stage_id
+        JOIN sales_deals d ON d.id = e.deal_id
+        LEFT JOIN sales_leads l ON l.id = d.source_lead_id
+        LEFT JOIN sales_sources ss ON ss.id = l.source_id
+        WHERE e.org_id = ${orgId} AND sn.pipeline LIKE 'sales%'
+          AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          AND d.archived_at IS NULL
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+        GROUP BY 1, 2
+      `,
+      sql`
+        SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort, MIN(s.probability) AS prob,
+               COUNT(d.id)::int AS cnt,
+               COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.currency = 'UZS'), 0)::bigint AS amt
+        FROM sales_stages s
+        LEFT JOIN sales_deals d ON d.stage_id = s.id
+          AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+        WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
+          AND s.pipeline LIKE 'sales%'
+        GROUP BY s.key ORDER BY MIN(s.sort_order)
+      `,
+      sql`
+        SELECT to_char(won_at, 'YYYY-MM') AS mon, COUNT(*)::int AS n,
+               COALESCE(SUM(monthly_amount) FILTER (WHERE currency = 'UZS'), 0)::bigint AS amt
+        FROM sales_deals
+        WHERE org_id = ${orgId} AND archived_at IS NULL AND pipeline <> 'partner'
+          AND won_at > NOW() - INTERVAL '12 months'
+          AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
+        GROUP BY 1 ORDER BY 1
+      `,
+      sql`
+        SELECT COALESCE(s.label, 'прочее') AS src, COUNT(*)::int AS leads,
+               COUNT(*) FILTER (WHERE l.status = 'converted')::int AS converted
+        FROM sales_leads l
+        LEFT JOIN sales_sources s ON s.id = l.source_id
+        WHERE l.org_id = ${orgId}
+          AND l.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)
+        GROUP BY 1 ORDER BY leads DESC LIMIT 8
+      `,
+      sql`
+        SELECT COALESCE(lr.label, 'без причины') AS reason, COUNT(*)::int AS n
+        FROM sales_deals d
+        LEFT JOIN sales_lost_reasons lr ON lr.id = d.lost_reason_id
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+          AND d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+        GROUP BY 1 ORDER BY n DESC LIMIT 8
+      `,
+      sql`
+        SELECT ag.name, COUNT(*)::int AS cnt,
+               COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.currency = 'UZS'), 0)::bigint AS amt,
+               COUNT(*) FILTER (WHERE d.next_step_at IS NULL)::int AS no_step
+        FROM sales_deals d
+        JOIN support_agents ag ON ag.id = d.owner_agent_id
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+          AND d.won_at IS NULL AND d.lost_at IS NULL AND d.pipeline <> 'partner'
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+        GROUP BY ag.name ORDER BY cnt DESC LIMIT 10
+      `,
+    ]) as any[]
+
+    const pot = (potential as any[]).map(p => ({
+      ...p, weighted: Math.round(Number(p.amt) * Number(p.prob || 0) / 100),
+    }))
+    return json({
+      period: { from, to, days },
+      kpi: {
+        ...(kpi as any[])[0],
+        open: (openNow as any[])[0]?.open || 0,
+        withAmount: (openNow as any[])[0]?.with_amt || 0,
+        weighted: pot.reduce((s2, p) => s2 + p.weighted, 0),
+      },
+      reach,
+      potential: pot,
+      monthly,
+      sources: srcRows,
+      losses,
+      portfolio,
+    })
+  }
+
   const [funnel, money, sources, icp, team, cohort, daily, prev, byRegion] = await Promise.all([
     // Воронка по когорте: сделки, СОЗДАННЫЕ в периоде, доведённые до конца.
     // Считать «прошёл этап» надо по журналу, иначе сделка, проскочившая этап,
