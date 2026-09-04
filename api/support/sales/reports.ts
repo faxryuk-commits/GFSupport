@@ -227,6 +227,11 @@ export default async function handler(req: Request): Promise<Response> {
                MIN(g.activity_at) AS first_at, MAX(g.activity_at) AS last_at
         FROM gaps g JOIN support_agents ag ON ag.id = g.agent_id
         WHERE ag.org_id = ${orgId} AND ag.merged_into IS NULL
+          -- только отдел продаж: это отчёт продаж, и поддержка с нулями по
+          -- сделкам была бы шумом. Тот, кто сделал продажное действие,
+          -- попадёт в таблицу и без этого условия
+          AND (ag.department IN ('sales', 'sale')
+               OR ag.role IN ('cco', 'sales', 'sale', 'kam', 'sdr', 'sales_lead'))
         GROUP BY ag.name
       `,
       sql`
