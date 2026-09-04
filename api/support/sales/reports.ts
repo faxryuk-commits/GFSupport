@@ -48,7 +48,7 @@ export default async function handler(req: Request): Promise<Response> {
   // причины потерь, портфель по сейлзам. Периоды: закрытия и воронка — по
   // выбранному диапазону, потенциал и портфель — состояние на сейчас
   if (url.searchParams.get('action') === 'pulse') {
-    const [kpi, openNow, reach, potential, monthly, srcRows, losses, portfolio] = await Promise.all([
+    const [kpi, openNow, reach, wonSrc, potential, monthly, srcRows, losses, portfolio] = await Promise.all([
       sql`
         SELECT
           COUNT(*) FILTER (WHERE won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
@@ -79,9 +79,21 @@ export default async function handler(req: Request): Promise<Response> {
         JOIN sales_deals d ON d.id = e.deal_id
         LEFT JOIN sales_leads l ON l.id = d.source_lead_id
         LEFT JOIN sales_sources ss ON ss.id = l.source_id
-        WHERE e.org_id = ${orgId} AND sn.pipeline LIKE 'sales%'
+        WHERE e.org_id = ${orgId} AND sn.pipeline LIKE 'sales%' AND sn.kind = 'open'
           AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
           AND d.archived_at IS NULL
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+        GROUP BY 1, 2
+      `,
+      // Выигрыш — по факту won_at, не по событиям: событие могло откатиться,
+      // сделка — уехать в архив, и воронка расходилась с KPI
+      sql`
+        SELECT 'won' AS stage, COALESCE(ss.label, 'История Amo') AS src, COUNT(*)::int AS n
+        FROM sales_deals d
+        LEFT JOIN sales_leads l ON l.id = d.source_lead_id
+        LEFT JOIN sales_sources ss ON ss.id = l.source_id
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+          AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
         GROUP BY 1, 2
       `,
@@ -149,7 +161,7 @@ export default async function handler(req: Request): Promise<Response> {
         withAmount: (openNow as any[])[0]?.with_amt || 0,
         weighted: pot.reduce((s2, p) => s2 + p.weighted, 0),
       },
-      reach,
+      reach: [...(reach as any[]), ...(wonSrc as any[])],
       potential: pot,
       monthly,
       sources: srcRows,

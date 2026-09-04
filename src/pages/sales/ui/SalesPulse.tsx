@@ -148,8 +148,11 @@ export function SalesPulse({ from, to, region }: { from: string; to: string; reg
             </div>
             {stages.length === 0 && <div className="text-[12.5px] text-gray-400 py-2">Движения за период нет</div>}
             {stages.map((s2, i) => {
-              const prev = i > 0 ? stages[i - 1].total : s2.total
-              const conv = prev ? Math.round((s2.total / prev) * 100) : 100
+              // Конверсия — от «бегущего максимума» предыдущих этапов: этап,
+              // который часто пропускают («Демо назначено»), не должен давать
+              // соседям 800%. Больше 100% не показываем — это шум откатов
+              const runMax = Math.max(1, ...stages.slice(0, i).map(x => x.total))
+              const conv = i > 0 ? Math.round((s2.total / runMax) * 100) : 0
               return (
                 <div key={s2.key} className="grid grid-cols-[118px_34px_1fr_52px] gap-2.5 items-center py-[5px]">
                   <span className="text-[12px] text-gray-500 text-right">{s2.label}</span>
@@ -167,7 +170,9 @@ export function SalesPulse({ from, to, region }: { from: string; to: string; reg
                         }} />
                     ))}
                   </div>
-                  <span className="text-[11.5px] text-gray-500 tabular-nums">{i > 0 ? `${conv}%` : ''}</span>
+                  <span className="text-[11.5px] text-gray-500 tabular-nums">
+                    {i > 0 && conv <= 100 ? `${conv}%` : ''}
+                  </span>
                 </div>
               )
             })}
