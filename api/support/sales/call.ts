@@ -316,6 +316,19 @@ export default async function handler(req: Request): Promise<Response> {
       if (!pool.length) {
         return json({ success: false, code: 'PBX_OPERATOR_NOT_CONFIGURED', message: 'На АТС нет коротких добавочных' }, 404)
       }
+      // Линию из пула НЕ выдаём на простое открытие страницы: сотрудник
+      // поддержки заходил в CRM — звонилка молча занимала линию сейлза, и
+      // звонки владельца с софтфона приписывались «держателю» аренды.
+      // Свободная линия берётся только явной кнопкой (take=1); автоматом
+      // подключается лишь владелец личного короткого добавочного
+      const my = await resolveExt(sql, orgId, ctx.agentId)
+      const ownShort = my.personal && my.ext.replace(/\D/g, '').length <= 3
+      if (!ownShort && url.searchParams.get('take') !== '1') {
+        return json({
+          success: false, code: 'PBX_SEAT_AVAILABLE',
+          message: 'Личного добавочного нет — свободную линию можно взять кнопкой в звонилке',
+        }, 200)
+      }
       const seat = await allocateSeat(sql, orgId, ctx.agentId, pool)
       if ('error' in seat) {
         return json({ success: false, code: 'PBX_NO_FREE_SEAT', message: seat.error }, 409)

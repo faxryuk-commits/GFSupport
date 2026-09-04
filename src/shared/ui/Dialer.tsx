@@ -60,20 +60,30 @@ export function Dialer() {
   // «вы на линии N» и продлеваем аренду, при выходе возвращаем в пул
   const [seatExt, setSeatExt] = useState('')
   const [seatShared, setSeatShared] = useState(false)
+  // Свободная линия из пула берётся только явным кликом: авто-захват при
+  // открытии CRM отдавал линии сейлзов сотрудникам поддержки и путал учёт
+  const [seatOffered, setSeatOffered] = useState(false)
+  const [takeSeat, setTakeSeat] = useState(false)
 
   useEffect(() => {
     if (!pcMode) {
       vertoRef.current?.disconnect()
       vertoRef.current = null
       setSeatExt('')
+      setSeatOffered(false)
       return
     }
     let dead = false
     let renewTimer: ReturnType<typeof setInterval> | null = null
     let leasedExt = ''
-    apiGet<any>('/sales/call?action=webrtc-creds', false)
+    apiGet<any>(`/sales/call?action=webrtc-creds${takeSeat ? '&take=1' : ''}`, false)
       .then(c => {
-        if (dead || !c?.success || vertoRef.current) return
+        if (dead || vertoRef.current) return
+        if (!c?.success) {
+          setSeatOffered(c?.code === 'PBX_SEAT_AVAILABLE')
+          return
+        }
+        setSeatOffered(false)
         leasedExt = String(c.extension || '')
         setSeatExt(leasedExt)
         setSeatShared(c.seat === 'shared')
@@ -106,7 +116,7 @@ export function Dialer() {
       if (leasedExt) apiPost('/sales/call?action=webrtc-release', { ext: leasedExt }).catch(() => {})
       setSeatExt('')
     }
-  }, [pcMode])
+  }, [pcMode, takeSeat])
 
   const vertoReady = pcMode && vState === 'registered'
   const vertoBusy = vState === 'ringing_out' || vState === 'ringing_in' || vState === 'active'
@@ -468,6 +478,14 @@ export function Dialer() {
                 : `У вас не задан личный номер — звонок пойдёт через общий (${extLabel(ext)}), и говорить будет его владелец`}
             </div>
           ) : null}
+          {pcMode && seatOffered && !vertoBusy && (
+            <button
+              onClick={() => setTakeSeat(true)}
+              className="mt-1.5 w-full py-2 rounded-xl border border-emerald-300 text-emerald-700
+                         text-[12.5px] font-medium hover:bg-emerald-50">
+              🎧 Взять свободную линию — звонить из браузера
+            </button>
+          )}
           {pcMode && vState === 'error' && (
             <div className="mt-1 text-[10.5px] text-amber-600">
               Софтфон: {vDetail || 'не подключился'} — звонки идут по старой схеме через телефон
