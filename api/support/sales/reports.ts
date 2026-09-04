@@ -170,6 +170,237 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
+  // ─── Активность сотрудников: что человек делал за день ────────────────────
+  //
+  // Руководителю нужен не итог месяца, а рабочий день: сколько набрал, с кем
+  // поговорил, что сдвинул по этапам, каких лидов забрал, что записал. Всё это
+  // уже журналируется в четырёх местах — здесь оно сводится к одному человеку.
+  //
+  // Атрибуция разная по природе: у звонков сотрудник записан именем в detail
+  // касания (АТС не знает наших id), у смен этапов — именем в changed_by, у
+  // остального — честным agent_id. Поэтому сводим по имени.
+  if (url.searchParams.get('action') === 'activity') {
+    const [agents, callRows, stages, notes, presence, leadsTaken, tasksDone, dealsNew, feed] = await Promise.all([
+      sql`
+        SELECT id, name, role, department, pbx_ext FROM support_agents
+        WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
+      `,
+      sql`
+        SELECT title, detail, happened_at FROM sales_touchpoints
+        WHERE org_id = ${orgId} AND kind = 'call'
+          AND happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+      `,
+      sql`
+        SELECT e.changed_by AS who, COUNT(*)::int AS moves,
+               COUNT(*) FILTER (WHERE sn.kind = 'won')::int AS won,
+               COUNT(*) FILTER (WHERE sn.kind = 'lost')::int AS lost
+        FROM sales_deal_events e
+        LEFT JOIN sales_stages sn ON sn.id = e.new_stage_id
+        WHERE e.org_id = ${orgId}
+          AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        GROUP BY 1
+      `,
+      sql`
+        SELECT ag.name AS who, COUNT(*)::int AS n
+        FROM sales_activities sa JOIN support_agents ag ON ag.id = sa.agent_id
+        WHERE sa.org_id = ${orgId} AND sa.type <> 'message'
+          AND sa.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        GROUP BY 1
+      `,
+      // Время в системе: сердцебиение вкладки раз в 45 секунд. Складываем
+      // промежутки между соседними ударами и рвём сессию, если пауза больше
+      // пяти минут — иначе «был в системе» включало бы ночь между закрытой
+      // вечером вкладкой и открытой утром
+      sql`
+        WITH beats AS (
+          SELECT agent_id, activity_at,
+                 LAG(activity_at) OVER (PARTITION BY agent_id ORDER BY activity_at) AS prev
+          FROM support_agent_activity
+          WHERE activity_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        ), gaps AS (
+          SELECT agent_id, activity_at,
+            CASE WHEN prev IS NOT NULL AND activity_at - prev <= INTERVAL '5 minutes'
+                 THEN EXTRACT(EPOCH FROM (activity_at - prev)) ELSE 0 END AS d
+          FROM beats
+        )
+        SELECT ag.name AS who, SUM(g.d)::int AS sec,
+               MIN(g.activity_at) AS first_at, MAX(g.activity_at) AS last_at
+        FROM gaps g JOIN support_agents ag ON ag.id = g.agent_id
+        WHERE ag.org_id = ${orgId} AND ag.merged_into IS NULL
+        GROUP BY ag.name
+      `,
+      sql`
+        SELECT ag.name AS who, COUNT(*)::int AS n
+        FROM sales_leads l JOIN support_agents ag ON ag.id = l.assigned_agent_id
+        WHERE l.org_id = ${orgId}
+          AND l.assigned_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        GROUP BY 1
+      `,
+      sql`
+        SELECT ag.name AS who, COUNT(*)::int AS n
+        FROM sales_tasks t JOIN support_agents ag ON ag.id = t.assignee_agent_id
+        WHERE t.org_id = ${orgId}
+          AND t.done_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        GROUP BY 1
+      `,
+      sql`
+        SELECT ag.name AS who, COUNT(*)::int AS n
+        FROM sales_deals d JOIN support_agents ag ON ag.id = d.owner_agent_id
+        WHERE d.org_id = ${orgId}
+          AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        GROUP BY 1
+      `,
+      // Лента: одно действие — одна строка, с «до → после» там, где оно есть
+      sql`
+        SELECT * FROM (
+          SELECT e.changed_at AS at, e.changed_by AS who, 'deal' AS obj,
+                 COALESCE(a.name, d.title) AS about, 'Смена этапа' AS event,
+                 so.label AS before_val, sn.label AS after_val, d.id AS link
+          FROM sales_deal_events e
+          JOIN sales_deals d ON d.id = e.deal_id
+          LEFT JOIN sales_accounts a ON a.id = d.account_id
+          LEFT JOIN sales_stages so ON so.id = e.old_stage_id
+          LEFT JOIN sales_stages sn ON sn.id = e.new_stage_id
+          WHERE e.org_id = ${orgId}
+            AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          UNION ALL
+          SELECT sa.happened_at, ag.name, 'deal',
+                 COALESCE(ac.name, d2.title, 'без карточки'),
+                 CASE sa.type WHEN 'note' THEN 'Примечание'
+                              WHEN 'approval' THEN 'Решение по скидке'
+                              ELSE sa.type END,
+                 NULL, LEFT(sa.text, 90), sa.deal_id
+          FROM sales_activities sa
+          LEFT JOIN support_agents ag ON ag.id = sa.agent_id
+          LEFT JOIN sales_accounts ac ON ac.id = sa.account_id
+          LEFT JOIN sales_deals d2 ON d2.id = sa.deal_id
+          WHERE sa.org_id = ${orgId}
+            AND sa.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          UNION ALL
+          SELECT t.happened_at, NULL, 'call',
+                 COALESCE(l.name, split_part(t.detail, '·', 1)),
+                 t.title, NULL, t.detail, t.lead_id
+          FROM sales_touchpoints t
+          LEFT JOIN sales_leads l ON l.id = t.lead_id
+          WHERE t.org_id = ${orgId} AND t.kind = 'call'
+            AND t.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          UNION ALL
+          SELECT tk.done_at, ag2.name, 'task', COALESCE(d3.title, l2.name, 'без карточки'),
+                 'Задача выполнена', tk.title, COALESCE(tk.done_result, 'готово'), tk.deal_id
+          FROM sales_tasks tk
+          LEFT JOIN support_agents ag2 ON ag2.id = tk.assignee_agent_id
+          LEFT JOIN sales_deals d3 ON d3.id = tk.deal_id
+          LEFT JOIN sales_leads l2 ON l2.id = tk.lead_id
+          WHERE tk.org_id = ${orgId} AND tk.done_at IS NOT NULL
+            AND tk.done_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        ) x ORDER BY at DESC LIMIT 200
+      `,
+    ]) as any[]
+
+    // Имя сотрудника у звонка: третий сегмент detail пишет синк; у старых
+    // касаний его нет — тогда добавочный из профиля, а мобильная нога уже
+    // содержит имя после «моб.»
+    const extName = new Map<string, string>()
+    for (const a of agents as any[]) {
+      const ext = String(a.pbx_ext || '').replace(/\D/g, '')
+      if (ext) extName.set(ext, a.name)
+    }
+    const callerOf = (detail: string): string => {
+      const parts = String(detail || '').split('·').map(s => s.trim())
+      if (parts[2]) return parts[2]
+      const side = parts[1] || ''
+      if (/^внутр\./.test(side)) return extName.get(side.replace(/\D/g, '')) || ''
+      if (/^моб\./.test(side)) return side.replace(/^моб\.\s*/, '')
+      return ''
+    }
+
+    interface Row {
+      name: string; role: string | null
+      callsIn: number; callsOut: number; answered: number; talkSec: number
+      moves: number; won: number; lost: number
+      notes: number; leads: number; tasks: number; deals: number
+      presenceSec: number; firstAt: string | null; lastAt: string | null
+    }
+    const byName = new Map<string, Row>()
+    const rowFor = (name: string): Row | null => {
+      const key = String(name || '').trim()
+      if (!key) return null
+      if (!byName.has(key)) {
+        const a = (agents as any[]).find(x => x.name === key)
+        byName.set(key, {
+          name: key, role: a?.role || null,
+          callsIn: 0, callsOut: 0, answered: 0, talkSec: 0,
+          moves: 0, won: 0, lost: 0, notes: 0, leads: 0, tasks: 0, deals: 0,
+          presenceSec: 0, firstAt: null, lastAt: null,
+        })
+      }
+      return byName.get(key)!
+    }
+
+    for (const c of callRows as any[]) {
+      const who = callerOf(c.detail)
+      const r = rowFor(who)
+      if (!r) continue
+      const title = String(c.title || '')
+      const m = title.match(/(\d+) сек/)
+      const talk = m ? Number(m[1]) : 0
+      if (title.startsWith('Входящий')) r.callsIn++; else r.callsOut++
+      if (talk > 0) { r.answered++; r.talkSec += talk }
+    }
+    // Автоматические авторы («синхронизация с Amo», «из обращения на доске»)
+    // в таблицу людей не попадают: это не работа сотрудника
+    const isHuman = (n: string) => (agents as any[]).some(a => a.name === n)
+    for (const s of stages as any[]) {
+      if (!isHuman(s.who)) continue
+      const r = rowFor(s.who); if (!r) continue
+      r.moves += s.moves; r.won += s.won; r.lost += s.lost
+    }
+    for (const n of notes as any[]) { const r = rowFor(n.who); if (r) r.notes += n.n }
+    for (const l of leadsTaken as any[]) { const r = rowFor(l.who); if (r) r.leads += l.n }
+    for (const t of tasksDone as any[]) { const r = rowFor(t.who); if (r) r.tasks += t.n }
+    for (const d of dealsNew as any[]) { const r = rowFor(d.who); if (r) r.deals += d.n }
+    // Присутствие — у всех, кто заходил: человек мог быть в системе и не
+    // сделать ни одного действия, и это тоже факт для руководителя
+    for (const p of presence as any[]) {
+      const r = rowFor(p.who); if (!r) continue
+      r.presenceSec = Number(p.sec) || 0
+      r.firstAt = p.first_at; r.lastAt = p.last_at
+    }
+
+    const people = [...byName.values()]
+      .map(r => ({ ...r, total: r.callsIn + r.callsOut + r.moves + r.notes + r.leads + r.tasks + r.deals }))
+      .filter(r => r.total > 0 || r.presenceSec > 0)
+      .sort((a, b) => b.total - a.total)
+
+    // Лента: у звонка автор вычисляется из detail, у прочего он уже есть
+    const events = (feed as any[]).map(e => ({
+      at: e.at,
+      who: e.obj === 'call' ? callerOf(e.after_val) : e.who,
+      obj: e.obj,
+      about: e.about,
+      event: e.event,
+      before: e.before_val,
+      after: e.obj === 'call' ? null : e.after_val,
+      link: e.link,
+    })).filter(e => e.who || e.obj !== 'call')
+
+    return json({
+      period: { from, to, days },
+      people,
+      totals: {
+        people: people.length,
+        calls: people.reduce((s2, p) => s2 + p.callsIn + p.callsOut, 0),
+        answered: people.reduce((s2, p) => s2 + p.answered, 0),
+        talkSec: people.reduce((s2, p) => s2 + p.talkSec, 0),
+        moves: people.reduce((s2, p) => s2 + p.moves, 0),
+        presenceSec: people.reduce((s2, p) => s2 + p.presenceSec, 0),
+        won: people.reduce((s2, p) => s2 + p.won, 0),
+        actions: people.reduce((s2, p) => s2 + p.total, 0),
+      },
+      events,
+    })
+  }
+
   const [funnel, money, sources, icp, team, cohort, daily, prev, byRegion] = await Promise.all([
     // Воронка по когорте: сделки, СОЗДАННЫЕ в периоде, доведённые до конца.
     // Считать «прошёл этап» надо по журналу, иначе сделка, проскочившая этап,
