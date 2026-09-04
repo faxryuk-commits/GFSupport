@@ -66,6 +66,10 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT COUNT(*)::int AS online FROM support_agents
       WHERE org_id = ${orgId} AND status = 'online' AND is_active = true
     `,
+    sql`
+      SELECT COUNT(*)::int AS fresh FROM sales_leads
+      WHERE org_id = ${orgId} AND archived_at IS NULL AND status = 'new'
+    `,
   ]) as any[]
 
   return json({

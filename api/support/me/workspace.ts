@@ -196,32 +196,61 @@ export default async function handler(req: Request): Promise<Response> {
   // админам и роли cco/manager/team_lead; рядовой сейлз чужие задачи не смотрит
   let team: any = null
   if (isLead) {
+    // «События» сотрудника — это и задачи, и следующие шаги его сделок:
+    // сейлзы живут шагами (next_step_at), задачи ставят единицы, и счётчик
+    // только по sales_tasks показывал нули у людей с десятками живых сделок
     const [members, teamOverdue] = await sql.transaction([
       sql`
         SELECT a.id, a.name,
-          COUNT(t.id) FILTER (WHERE t.done_at IS NULL)::int AS open,
-          COUNT(t.id) FILTER (WHERE t.done_at IS NULL AND t.due_at < NOW())::int AS overdue,
-          COUNT(t.id) FILTER (WHERE t.done_at IS NOT NULL
-            AND t.done_at > NOW() - INTERVAL '7 days')::int AS done_week
+          COALESCE(t.open, 0) + COALESCE(ds.steps_open, 0) AS open,
+          COALESCE(t.overdue, 0) + COALESCE(ds.steps_overdue, 0) AS overdue,
+          COALESCE(t.done_week, 0) AS done_week
         FROM support_agents a
-        LEFT JOIN sales_tasks t ON t.assignee_agent_id = a.id AND t.org_id = ${orgId}
+        LEFT JOIN (
+          SELECT assignee_agent_id AS aid,
+            COUNT(*) FILTER (WHERE done_at IS NULL)::int AS open,
+            COUNT(*) FILTER (WHERE done_at IS NULL AND due_at < NOW())::int AS overdue,
+            COUNT(*) FILTER (WHERE done_at IS NOT NULL
+              AND done_at > NOW() - INTERVAL '7 days')::int AS done_week
+          FROM sales_tasks WHERE org_id = ${orgId} GROUP BY 1
+        ) t ON t.aid = a.id
+        LEFT JOIN (
+          SELECT owner_agent_id AS aid,
+            COUNT(*) FILTER (WHERE next_step_at IS NOT NULL)::int AS steps_open,
+            COUNT(*) FILTER (WHERE next_step_at < NOW())::int AS steps_overdue
+          FROM sales_deals
+          WHERE org_id = ${orgId} AND archived_at IS NULL
+            AND won_at IS NULL AND lost_at IS NULL
+          GROUP BY 1
+        ) ds ON ds.aid = a.id
         WHERE a.org_id = ${orgId} AND a.merged_into IS NULL AND a.is_active = true
           AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr'))
           AND a.id <> ${ctx.agentId}
-        GROUP BY a.id, a.name
+        GROUP BY a.id, a.name, t.open, t.overdue, t.done_week, ds.steps_open, ds.steps_overdue
         ORDER BY overdue DESC, open DESC
       `,
       sql`
-        SELECT t.id, t.title, t.due_at, t.deal_id, t.lead_id, t.account_id,
-               a.name AS assignee_name, COALESCE(d.title, l.name, ac.name) AS about
-        FROM sales_tasks t
-        JOIN support_agents a ON a.id = t.assignee_agent_id
-        LEFT JOIN sales_deals d ON d.id = t.deal_id
-        LEFT JOIN sales_leads l ON l.id = t.lead_id
-        LEFT JOIN sales_accounts ac ON ac.id = t.account_id
-        WHERE t.org_id = ${orgId} AND t.done_at IS NULL AND t.due_at < NOW()
-          AND t.assignee_agent_id IS DISTINCT FROM ${ctx.agentId}
-        ORDER BY t.due_at ASC LIMIT 20
+        SELECT * FROM (
+          SELECT t.id, t.title, t.due_at, t.deal_id, t.lead_id, t.account_id,
+                 a.name AS assignee_name, COALESCE(d.title, l.name, ac.name) AS about
+          FROM sales_tasks t
+          JOIN support_agents a ON a.id = t.assignee_agent_id
+          LEFT JOIN sales_deals d ON d.id = t.deal_id
+          LEFT JOIN sales_leads l ON l.id = t.lead_id
+          LEFT JOIN sales_accounts ac ON ac.id = t.account_id
+          WHERE t.org_id = ${orgId} AND t.done_at IS NULL AND t.due_at < NOW()
+            AND t.assignee_agent_id IS DISTINCT FROM ${ctx.agentId}
+          UNION ALL
+          SELECT d.id, COALESCE(d.next_step, 'Следующий шаг') AS title, d.next_step_at AS due_at,
+                 d.id AS deal_id, NULL AS lead_id, d.account_id,
+                 ag.name AS assignee_name, d.title AS about
+          FROM sales_deals d
+          JOIN support_agents ag ON ag.id = d.owner_agent_id
+          WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+            AND d.won_at IS NULL AND d.lost_at IS NULL
+            AND d.next_step_at < NOW()
+            AND d.owner_agent_id IS DISTINCT FROM ${ctx.agentId}
+        ) x ORDER BY due_at ASC LIMIT 20
       `,
     ]) as any[]
     team = { members, overdue: teamOverdue }
