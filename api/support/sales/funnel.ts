@@ -217,17 +217,21 @@ export default async function handler(req: Request): Promise<Response> {
     sql`
       SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
              MIN(s.description) AS description, MAX(s.sla_hours) AS sla_hours,
-             COUNT(d.id)::int AS total,
+             -- Счётчик колонки — ВСЕ открытые сделки этапа. Раньше COUNT сидел
+             -- на денежном подзапросе с фильтром «сумма указана», и колонка с
+             -- тремя карточками показывала «1» — считались только сделки с суммой
+             COALESCE(SUM(d.cnt), 0)::int AS total,
              -- Суммы складываем по валютам: у нас в одной воронке живут
              -- доллары и сумы, и общий итог был бы просто неверным числом
-             COALESCE(jsonb_object_agg(d.currency, d.amt) FILTER (WHERE d.currency IS NOT NULL),
-                      '{}'::jsonb) AS amounts
+             COALESCE(jsonb_object_agg(d.currency, d.amt)
+               FILTER (WHERE d.currency IS NOT NULL AND d.amt IS NOT NULL),
+               '{}'::jsonb) AS amounts
       FROM sales_stages s
       LEFT JOIN (
-        SELECT stage_id, currency, SUM(monthly_amount) AS amt, MIN(id) AS id
+        SELECT stage_id, currency, COUNT(*)::int AS cnt,
+               SUM(monthly_amount) FILTER (WHERE COALESCE(monthly_amount, 0) <> 0) AS amt
         FROM sales_deals
         WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
-          AND COALESCE(monthly_amount, 0) <> 0
           AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
           AND (${owner} = '' OR owner_agent_id = ${owner})
         GROUP BY stage_id, currency
