@@ -350,6 +350,12 @@ export function MyWorkspacePage() {
                     <span className="text-[11.5px] tabular-nums font-semibold text-red-600"
                       title="просроченных">{m.overdue} горит</span>
                   )}
+                  {(m as any).no_step > 0 && (
+                    <span className="text-[11.5px] tabular-nums text-amber-600"
+                      title="открытых сделок без назначенного следующего шага">
+                      {(m as any).no_step} без шага
+                    </span>
+                  )}
                   <span className="text-[11.5px] tabular-nums text-emerald-600"
                     title="закрыто за 7 дней">✓{m.done_week}</span>
                 </button>

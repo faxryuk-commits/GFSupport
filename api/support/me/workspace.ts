@@ -204,7 +204,8 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT a.id, a.name,
           COALESCE(t.open, 0) + COALESCE(ds.steps_open, 0) AS open,
           COALESCE(t.overdue, 0) + COALESCE(ds.steps_overdue, 0) AS overdue,
-          COALESCE(t.done_week, 0) AS done_week
+          COALESCE(t.done_week, 0) AS done_week,
+          COALESCE(ds.no_step, 0) AS no_step
         FROM support_agents a
         LEFT JOIN (
           SELECT assignee_agent_id AS aid,
@@ -217,7 +218,8 @@ export default async function handler(req: Request): Promise<Response> {
         LEFT JOIN (
           SELECT owner_agent_id AS aid,
             COUNT(*) FILTER (WHERE next_step_at IS NOT NULL)::int AS steps_open,
-            COUNT(*) FILTER (WHERE next_step_at < NOW())::int AS steps_overdue
+            COUNT(*) FILTER (WHERE next_step_at < NOW())::int AS steps_overdue,
+            COUNT(*) FILTER (WHERE next_step_at IS NULL)::int AS no_step
           FROM sales_deals
           WHERE org_id = ${orgId} AND archived_at IS NULL
             AND won_at IS NULL AND lost_at IS NULL
@@ -226,7 +228,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE a.org_id = ${orgId} AND a.merged_into IS NULL AND a.is_active = true
           AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr'))
           AND a.id <> ${ctx.agentId}
-        GROUP BY a.id, a.name, t.open, t.overdue, t.done_week, ds.steps_open, ds.steps_overdue
+        GROUP BY a.id, a.name, t.open, t.overdue, t.done_week, ds.steps_open, ds.steps_overdue, ds.no_step
         ORDER BY overdue DESC, open DESC
       `,
       sql`
