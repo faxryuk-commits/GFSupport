@@ -31,6 +31,7 @@ const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const PublicDocPage = lazy(() => import('@/pages/doc/ui/PublicDocPage'))
 const ClientPortalPage = lazy(() => import('@/pages/portal/ui/ClientPortalPage'))
 const SalesQueuePage = lazy(() => import('@/pages/sales/ui/SalesQueuePage'))
+const SalesCalendarPage = lazy(() => import('@/pages/sales/ui/SalesCalendarPage'))
 const SalesDealPage = lazy(() => import('@/pages/sales/ui/SalesDealPage'))
 const SalesDealsPage = lazy(() => import('@/pages/sales/ui/SalesDealsPage'))
 const SalesLeadsPage = lazy(() => import('@/pages/sales/ui/SalesLeadsPage'))
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/commitments" element={<CommitmentsPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/sales/queue" element={<SalesQueuePage />} />
+          <Route path="/sales/calendar" element={<SalesCalendarPage />} />
           <Route path="/sales/deals" element={<SalesDealsPage />} />
           <Route path="/sales/deals/:id" element={<SalesDealPage />} />
           <Route path="/sales/leads" element={<SalesLeadsPage />} />
