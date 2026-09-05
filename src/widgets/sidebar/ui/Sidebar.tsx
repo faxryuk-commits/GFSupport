@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Activity,
+import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
   Plug, Handshake, Inbox, Building2, Phone, Target,
@@ -243,7 +243,6 @@ const navGroups: NavGroup[] = [
       { path: '/sales/calls', label: 'Звонки', icon: Phone },
       // Мотивация: менеджер видит свой KPI, РОП — свод, настройки и историю
       { path: '/sales/kpi', label: 'Мотивация', icon: Target },
-      { path: '/marketing', label: 'Маркетинг', icon: Activity },
     ],
   },
   {

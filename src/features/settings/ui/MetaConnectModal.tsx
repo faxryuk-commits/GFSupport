@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Modal } from '@/shared/ui'
+import { MetaChainHealth } from './MetaChainHealth'
 import { useAuth } from '@/shared/hooks/useAuth'
 
 /**
@@ -242,6 +243,9 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
         {note && (
           <div className="rounded-lg bg-blue-50 border border-blue-200 px-3.5 py-2.5 text-[12.5px] text-blue-800">{note}</div>
         )}
+
+        {/* ── Здоровье цепочки: светофор всего контура ───────────────────────── */}
+        {connected && <MetaChainHealth />}
 
         {/* ── Подключённые аккаунты ──────────────────────────────────────────── */}
         {hasApp && (
