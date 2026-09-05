@@ -947,7 +947,7 @@ function KpiHistory() {
 
 /* ─────────────────────────── Страница ─────────────────────────── */
 
-export function SalesKpiPage() {
+export function SalesKpiPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<'my' | 'team' | 'pf' | 'settings' | 'history'>('my')
   const [month, setMonth] = useState(monthNow())
   const [isLead, setIsLead] = useState(false)
@@ -963,43 +963,52 @@ export function SalesKpiPage() {
     ? [['my', 'Мой KPI'], ['team', 'Свод команды'], ['pf', 'Поступления'], ['settings', 'Настройки'], ['history', 'История выплат']]
     : [['my', 'Мой KPI']]
 
-  return (
-    <PageShell header={
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-[17px] font-bold text-gray-900">Мотивация</h1>
-          <div className="text-[11.5px] text-gray-400">
-            зарплата = фикс + бюджет × % дисциплины + комиссия с поступлений − корректировки
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-1 py-0.5">
-            <button onClick={() => setMonth(m => shiftMonth(m, -1))}
-              className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700">‹</button>
-            <span className="text-[12.5px] font-semibold text-gray-800 min-w-[110px] text-center">{monthLabel(month)}</span>
-            <button onClick={() => setMonth(m => shiftMonth(m, 1))}
-              disabled={month >= monthNow()}
-              className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30">›</button>
-          </div>
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
-            {tabs.map(([k, label]) => (
-              <button key={k} onClick={() => setTab(k)}
-                className={`text-[12px] px-2.5 py-1 rounded-md font-medium ${
-                  tab === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+  const header = (
+    <div className="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h1 className="text-[17px] font-bold text-gray-900">Мотивация</h1>
+        <div className="text-[11.5px] text-gray-400">
+          зарплата = фикс + бюджет × % дисциплины + комиссия с поступлений − корректировки
         </div>
       </div>
-    }>
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-1 py-0.5">
+          <button onClick={() => setMonth(m => shiftMonth(m, -1))}
+            className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700">‹</button>
+          <span className="text-[12.5px] font-semibold text-gray-800 min-w-[110px] text-center">{monthLabel(month)}</span>
+          <button onClick={() => setMonth(m => shiftMonth(m, 1))}
+            disabled={month >= monthNow()}
+            className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30">›</button>
+        </div>
+        <div className="flex gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+          {tabs.map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`text-[12px] px-2.5 py-1 rounded-md font-medium ${
+                tab === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const body = (
+    <>
       {tab === 'my' && <MyKpi month={month} />}
       {tab === 'team' && <TeamKpi month={month} onNeedSetup={() => setTab('settings')} />}
       {tab === 'pf' && <PfInbox />}
       {tab === 'settings' && <KpiSettings month={month} />}
       {tab === 'history' && <KpiHistory />}
-    </PageShell>
+    </>
   )
+
+  // Встроенный режим — внутри настроек команды: без PageShell, свои отступы
+  if (embedded) {
+    return <div className="space-y-4">{header}{body}</div>
+  }
+
+  return <PageShell header={header}>{body}</PageShell>
 }
 
 export default SalesKpiPage

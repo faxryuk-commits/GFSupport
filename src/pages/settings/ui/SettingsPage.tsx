@@ -37,6 +37,7 @@ import {
 import { apiGet } from '@/shared/services/api.service'
 import { PageHint, TabGuide } from '@/features/onboarding'
 import { TeamPage } from '@/pages/team/ui/TeamPage'
+import { SalesKpiPage } from '@/pages/sales/ui/SalesKpiPage'
 import { UsersPage } from '@/pages/users/ui/UsersPage'
 import { AutomationsPage } from '@/pages/automations/ui/AutomationsPage'
 import { formatDateDMY } from '@/shared/lib'
@@ -81,7 +82,13 @@ const initialNotifications: NotificationSetting[] = [
 const initialApiKeys: ApiKey[] = []
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    // Глубокая ссылка вида /settings?tab=team — сюда ведут перенесённые разделы
+    const t = new URLSearchParams(window.location.search).get('tab') as SettingsTab | null
+    return t || 'general'
+  })
+  // Внутри «Команды» два вида: сотрудники и мотивация (переехала из сайдбара продаж)
+  const [teamView, setTeamView] = useState<'agents' | 'kpi'>('agents')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -561,18 +568,32 @@ export function SettingsPage() {
 
               {activeTab === 'team' && (
                 <>
-                <TabGuide
-                  id="settings-team"
-                  text="Добавьте сотрудников в систему. Каждый агент получит доступ для работы с чатами и кейсами."
-                  tips={[
-                    'Роль «Администратор» — полный доступ ко всем настройкам',
-                    'Роль «Менеджер» — управление кейсами и командой',
-                    'Роль «Агент» — работа с чатами и кейсами',
-                  ]}
-                />
-                <div className="-mt-6">
-                  <TeamPage embedded />
+                <div className="flex gap-1 bg-white border border-gray-200 rounded-lg p-0.5 w-fit mb-4">
+                  {([['agents', 'Сотрудники'], ['kpi', 'Мотивация']] as const).map(([k, label]) => (
+                    <button key={k} onClick={() => setTeamView(k)}
+                      className={`text-[12.5px] px-3 py-1.5 rounded-md font-medium ${
+                        teamView === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
+                {teamView === 'agents' && (
+                  <>
+                  <TabGuide
+                    id="settings-team"
+                    text="Добавьте сотрудников в систему. Каждый агент получит доступ для работы с чатами и кейсами."
+                    tips={[
+                      'Роль «Администратор» — полный доступ ко всем настройкам',
+                      'Роль «Менеджер» — управление кейсами и командой',
+                      'Роль «Агент» — работа с чатами и кейсами',
+                    ]}
+                  />
+                  <div className="-mt-6">
+                    <TeamPage embedded />
+                  </div>
+                  </>
+                )}
+                {teamView === 'kpi' && <SalesKpiPage embedded />}
                 </>
               )}
 
