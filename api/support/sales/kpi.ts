@@ -712,7 +712,7 @@ export default async function handler(req: Request): Promise<Response> {
       const from = new Date(Date.now() - days * 86400000 + 5 * 3600 * 1000).toISOString().slice(0, 10)
 
       let offset = 0, fetched = 0, added = 0
-      for (let page = 0; page < 10; page++) {
+      for (let page = 0; page < 30; page++) {
         const r = await pfIncomeOperations(key, from, to, 100, offset)
         if (!r.ok) return json({ error: r.error }, 502)
         const items = r.data?.items || []
@@ -741,7 +741,9 @@ export default async function handler(req: Request): Promise<Response> {
           `
           if (rows.length && rows[0].inserted) added++
         }
-        if (items.length < 100 || fetched >= (r.data?.total || 0)) break
+        // total у ПланФакта не заполняется (приходит 0) — верим только
+        // размеру страницы: неполная страница значит, что данные кончились
+        if (items.length < 100) break
         offset += 100
       }
       const [cnt] = await sql`
