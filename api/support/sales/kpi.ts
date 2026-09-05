@@ -106,6 +106,8 @@ async function ensureKpiSchema(sql: any) {
         PRIMARY KEY (org_id, pf_operation_id)
       )
     `.catch(() => {})
+    await sql`ALTER TABLE sales_pf_inbox ADD COLUMN IF NOT EXISTS currency VARCHAR(8) DEFAULT 'UZS'`.catch(() => {})
+    await sql`ALTER TABLE sales_pf_inbox ADD COLUMN IF NOT EXISTS amount_original BIGINT`.catch(() => {})
     await sql`
       CREATE TABLE IF NOT EXISTS sales_kpi_closures (
         org_id VARCHAR(50) NOT NULL,
@@ -428,24 +430,32 @@ function normName(s: string): string {
     .trim()
 }
 
-/** Кандидаты-сделки для привязки поступления: совпадение по имени. */
+/**
+ * Кандидаты-сделки для привязки поступления.
+ *
+ * Сверяем три подписи операции — контрагента, статью (у Delever это бренд
+ * клиента) и комментарий — с названием сделки и именем аккаунта.
+ * «Физ лицо» и подобные заглушки в матчинг не идут.
+ */
+const NOISE_NAMES = new Set(['физ лицо', 'физлицо', 'не выбран', 'не выбрано'])
+
 function matchDeals(
-  contragent: string, comment: string,
+  signals: Array<string | null | undefined>,
   deals: Array<{ id: string; title: string; account_name: string | null; owner_name: string | null; won_at: string | null }>,
 ): string[] {
-  const target = normName(contragent)
-  const alt = normName(comment)
-  if (!target && !alt) return []
+  const targets = signals
+    .map(s => normName(s || ''))
+    .filter(t => t.length >= 3 && !NOISE_NAMES.has(t))
+  if (!targets.length) return []
   const scored: Array<{ id: string; score: number }> = []
   for (const d of deals) {
     const names = [normName(d.title), normName(d.account_name || '')]
     let score = 0
     for (const n of names) {
-      if (!n) continue
-      for (const t of [target, alt]) {
-        if (!t || t.length < 3) continue
+      if (!n || n.length < 3) continue
+      for (const t of targets) {
         if (n === t) score = Math.max(score, 100)
-        else if (t.length >= 5 && (n.includes(t) || t.includes(n))) score = Math.max(score, 60)
+        else if (t.length >= 5 && n.length >= 5 && (n.includes(t) || t.includes(n))) score = Math.max(score, 60)
       }
     }
     if (score > 0) scored.push({ id: d.id, score })
@@ -541,12 +551,15 @@ export default async function handler(req: Request): Promise<Response> {
       const [inbox, deals] = await Promise.all([
         sql`
           SELECT pf_operation_id, operation_date::text AS operation_date, amount,
-                 contragent, comment, account, category, status, deal_id
+                 contragent, comment, account, category, status, deal_id,
+                 currency, amount_original
           FROM sales_pf_inbox
           WHERE org_id = ${orgId} AND status = ${status}
           ORDER BY operation_date DESC LIMIT 200
         `,
-        // Пул для привязки: живые и недавно выигранные сделки
+        // Пул для привязки: живые и ВСЕ выигранные — исторические клиенты
+        // из Amo платят подписку, их сделки давно выиграны, но именно к ним
+        // и привязываются регулярные поступления
         sql`
           SELECT d.id, d.title, a.name AS account_name, ag.name AS owner_name,
                  d.won_at::text AS won_at
@@ -554,8 +567,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN sales_accounts a ON a.id = d.account_id
           LEFT JOIN support_agents ag ON ag.id = d.owner_agent_id
           WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.lost_at IS NULL
-            AND (d.won_at IS NULL OR d.won_at > NOW() - INTERVAL '180 days')
-          ORDER BY d.updated_at DESC LIMIT 600
+          ORDER BY (d.won_at IS NULL) DESC, d.updated_at DESC LIMIT 2500
         `,
       ])
       const dealPool = deals as any[]
@@ -563,13 +575,17 @@ export default async function handler(req: Request): Promise<Response> {
         id: Number(op.pf_operation_id),
         date: op.operation_date,
         amount: Number(op.amount),
+        amountOriginal: op.amount_original !== null ? Number(op.amount_original) : null,
+        currency: op.currency || 'UZS',
         contragent: op.contragent,
         comment: op.comment,
         account: op.account,
         category: op.category,
         status: op.status,
         dealId: op.deal_id,
-        suggested: status === 'new' ? matchDeals(op.contragent || '', op.comment || '', dealPool) : [],
+        suggested: status === 'new'
+          ? matchDeals([op.contragent, op.category, op.comment], dealPool)
+          : [],
       }))
       return json({
         items,
@@ -703,18 +719,27 @@ export default async function handler(req: Request): Promise<Response> {
         fetched += items.length
         for (const op of items) {
           if (!op.operationId || !(op.value > 0)) continue
+          // Неразобранные строки обновляем: первый синк не умел доставать
+          // контрагента из частей операции, и они легли «безымянными».
+          // Привязанные и отклонённые не трогаем — по ним решение принято
           const rows = await sql`
             INSERT INTO sales_pf_inbox (
               org_id, pf_operation_id, operation_date, amount,
-              contragent, comment, account, category
+              contragent, comment, account, category, currency, amount_original
             ) VALUES (
-              ${orgId}, ${op.operationId}, ${op.operationDate}, ${Math.round(op.value)},
-              ${op.contragent}, ${op.comment}, ${op.account}, ${op.category}
+              ${orgId}, ${op.operationId}, ${op.operationDate}, ${op.value},
+              ${op.contragent}, ${op.comment}, ${op.account}, ${op.category},
+              ${op.currency}, ${op.valueOriginal}
             )
-            ON CONFLICT (org_id, pf_operation_id) DO NOTHING
-            RETURNING pf_operation_id
+            ON CONFLICT (org_id, pf_operation_id) DO UPDATE SET
+              operation_date = EXCLUDED.operation_date, amount = EXCLUDED.amount,
+              contragent = EXCLUDED.contragent, comment = EXCLUDED.comment,
+              account = EXCLUDED.account, category = EXCLUDED.category,
+              currency = EXCLUDED.currency, amount_original = EXCLUDED.amount_original
+            WHERE sales_pf_inbox.status = 'new'
+            RETURNING (xmax = 0) AS inserted
           `
-          if (rows.length) added++
+          if (rows.length && rows[0].inserted) added++
         }
         if (items.length < 100 || fetched >= (r.data?.total || 0)) break
         offset += 100

@@ -646,7 +646,9 @@ function PfInbox() {
   const [error, setError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
-  const [pick, setPick] = useState<Record<number, string>>({})
+  // Один общий выбор сделки с поиском вместо сотни выпадающих списков
+  const [pickFor, setPickFor] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
 
   const load = useCallback(() => {
     apiGet<any>(`/sales/kpi?action=pf_inbox&status=${tab}`, false)
@@ -656,6 +658,10 @@ function PfInbox() {
   useEffect(() => { setData(null); load() }, [load])
 
   const dealById = new Map<string, any>((data?.deals || []).map((d: any) => [d.id, d]))
+  // Имя клиента: аккаунт надёжнее заголовка — у части сделок он «-»
+  const dealName = (d: any) => d ? (d.account && d.account !== '-' ? d.account : d.title) : ''
+  const dealLabel = (d: any) => d
+    ? `${dealName(d)}${d.owner ? ` · ${d.owner}` : ''}${d.won ? ' · выиграна' : ''}` : ''
 
   const sync = async () => {
     setSyncing(true); setSyncMsg(null)
@@ -668,8 +674,11 @@ function PfInbox() {
 
   const link = async (opId: number, dealId: string) => {
     if (!dealId) return
-    try { await apiPost('/sales/kpi', { action: 'pf_link', inboxId: opId, dealId }); load() }
-    catch (e: any) { alert(e?.message || 'Не удалось привязать') }
+    try {
+      await apiPost('/sales/kpi', { action: 'pf_link', inboxId: opId, dealId })
+      setPickFor(null); setSearch('')
+      load()
+    } catch (e: any) { alert(e?.message || 'Не удалось привязать') }
   }
   const act = async (action: string, opId: number) => {
     try { await apiPost('/sales/kpi', { action, inboxId: opId }); load() }
@@ -678,7 +687,9 @@ function PfInbox() {
 
   if (error) return <div className="p-6 text-sm text-gray-500">{error}</div>
 
-  const dealLabel = (d: any) => d ? `${d.title}${d.owner ? ` · ${d.owner}` : ''}` : ''
+  const q = search.trim().toLowerCase()
+  const found = q.length < 2 ? [] : (data?.deals || []).filter((d: any) =>
+    `${d.title} ${d.account || ''} ${d.owner || ''}`.toLowerCase().includes(q)).slice(0, 30)
 
   return (
     <>
@@ -709,56 +720,80 @@ function PfInbox() {
         ) : (
           <div className="divide-y divide-gray-50">
             {data.items.map((op: any) => (
-              <div key={op.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                <div className="flex-1 min-w-[220px]">
-                  <div className="text-[12.5px] text-gray-900">
-                    <span className="text-gray-400 tabular-nums mr-2">{op.date?.slice(5)}</span>
-                    <b>{op.contragent || 'Без контрагента'}</b>
-                    {op.category && <span className="text-gray-400"> · {op.category}</span>}
+              <div key={op.id} className="px-4 py-2.5">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[220px]">
+                    <div className="text-[12.5px] text-gray-900">
+                      <span className="text-gray-400 tabular-nums mr-2">{op.date?.slice(5)}</span>
+                      <b>{op.contragent || op.category || 'Без имени'}</b>
+                      {op.category && op.contragent && op.category !== op.contragent && (
+                        <span className="text-blue-600"> · {op.category}</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-400 truncate">
+                      {[op.comment, op.account ? `счёт: ${op.account}` : null].filter(Boolean).join(' · ')}
+                    </div>
+                    {tab === 'linked' && op.dealId && (
+                      <div className="text-[11px] text-blue-600 truncate">→ {dealLabel(dealById.get(op.dealId)) || op.dealId}</div>
+                    )}
                   </div>
-                  {op.comment && <div className="text-[11px] text-gray-400 truncate">{op.comment}</div>}
-                  {tab === 'linked' && op.dealId && (
-                    <div className="text-[11px] text-blue-600 truncate">→ {dealLabel(dealById.get(op.dealId)) || op.dealId}</div>
+                  <div className="text-right flex-none">
+                    <div className="font-semibold text-emerald-600 tabular-nums text-[13px]">+{fmt(op.amount)} UZS</div>
+                    {op.currency && op.currency !== 'UZS' && (
+                      <div className="text-[10.5px] text-gray-400 tabular-nums">{fmt(op.amountOriginal)} {op.currency}</div>
+                    )}
+                  </div>
+                  {tab === 'new' && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(op.suggested || []).map((sid: string) => (
+                        <button key={sid} onClick={() => link(op.id, sid)}
+                          title={dealLabel(dealById.get(sid))}
+                          className="text-[11.5px] px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-[220px] truncate">
+                          ✓ {dealLabel(dealById.get(sid)) || sid}
+                        </button>
+                      ))}
+                      <button onClick={() => { setPickFor(pickFor === op.id ? null : op.id); setSearch('') }}
+                        className="text-[11.5px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600">
+                        найти сделку…
+                      </button>
+                      <button onClick={() => act('pf_ignore', op.id)}
+                        className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
+                        не продажи
+                      </button>
+                    </div>
+                  )}
+                  {tab === 'linked' && (
+                    <button onClick={() => act('pf_unlink', op.id)}
+                      className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-red-500 border border-gray-200">
+                      отвязать
+                    </button>
+                  )}
+                  {tab === 'ignored' && (
+                    <button onClick={() => act('pf_restore', op.id)}
+                      className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
+                      вернуть в разбор
+                    </button>
                   )}
                 </div>
-                <span className="font-semibold text-emerald-600 tabular-nums text-[13px]">+{fmt(op.amount)}</span>
-                {tab === 'new' && (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {(op.suggested || []).map((sid: string) => (
-                      <button key={sid} onClick={() => link(op.id, sid)}
-                        title={dealLabel(dealById.get(sid))}
-                        className="text-[11.5px] px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-[180px] truncate">
-                        ✓ {dealById.get(sid)?.title || sid}
-                      </button>
-                    ))}
-                    <select value={pick[op.id] || ''} onChange={e => setPick(p => ({ ...p, [op.id]: e.target.value }))}
-                      className="text-[11.5px] border border-gray-200 rounded-lg px-1.5 py-1 bg-white max-w-[180px]">
-                      <option value="">Выбрать сделку…</option>
-                      {(data.deals || []).map((d: any) => (
-                        <option key={d.id} value={d.id}>{d.title}{d.owner ? ` · ${d.owner}` : ''}</option>
-                      ))}
-                    </select>
-                    {pick[op.id] && (
-                      <button onClick={() => link(op.id, pick[op.id])}
-                        className="text-[11.5px] px-2 py-1 rounded-lg bg-blue-600 text-white">Привязать</button>
+                {pickFor === op.id && (
+                  <div className="mt-2 ml-6 max-w-md">
+                    <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+                      placeholder="Название бренда, аккаунта или менеджера…"
+                      className="w-full text-[12.5px] border border-blue-300 rounded-lg px-3 py-1.5" />
+                    {q.length >= 2 && (
+                      <div className="mt-1 border border-gray-200 rounded-lg bg-white shadow-sm max-h-56 overflow-y-auto divide-y divide-gray-50">
+                        {found.length === 0 ? (
+                          <div className="px-3 py-2 text-[12px] text-gray-400">Ничего не нашлось</div>
+                        ) : found.map((d: any) => (
+                          <button key={d.id} onClick={() => link(op.id, d.id)}
+                            className="w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50">
+                            <b>{dealName(d)}</b>
+                            <span className="text-gray-400"> {d.owner ? `· ${d.owner}` : ''}{d.won ? ' · выиграна' : ' · в работе'}</span>
+                          </button>
+                        ))}
+                      </div>
                     )}
-                    <button onClick={() => act('pf_ignore', op.id)}
-                      className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
-                      не продажи
-                    </button>
                   </div>
-                )}
-                {tab === 'linked' && (
-                  <button onClick={() => act('pf_unlink', op.id)}
-                    className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-red-500 border border-gray-200">
-                    отвязать
-                  </button>
-                )}
-                {tab === 'ignored' && (
-                  <button onClick={() => act('pf_restore', op.id)}
-                    className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
-                    вернуть в разбор
-                  </button>
                 )}
               </div>
             ))}
@@ -766,9 +801,11 @@ function PfInbox() {
         )}
       </Card>
       <div className="text-[11.5px] text-gray-400 px-1">
-        Зелёные кнопки — подсказки: контрагент совпал с названием сделки или аккаунта.
-        Привязка создаёт поступление на сделке (источник «ПланФакт»), отвязка убирает его.
-        Дубли исключены: каждая операция ПланФакта привязывается один раз.
+        Суммы приведены к сумам курсом ПланФакта, оригинал в валюте счёта — серым.
+        Синим — статья операции (у нас это бренд клиента). Зелёные кнопки — подсказки:
+        имя совпало со сделкой или аккаунтом, включая старые выигранные сделки из Amo.
+        Привязка создаёт поступление на сделке; комиссия менеджеру идёт, только если
+        у сделки есть владелец. Каждая операция привязывается один раз — дублей не будет.
       </div>
     </>
   )

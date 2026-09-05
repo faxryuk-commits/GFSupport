@@ -64,7 +64,11 @@ export async function pfSummary(apiKey: string, dateStart: string, dateEnd: stri
 export interface PfOperation {
   operationId: number
   operationDate: string
+  /** Сумма в валюте пользователя ПланФакта (у Delever — сумы): сравнимая база. */
   value: number
+  /** Сумма как в выписке + код её валюты — для показа человеку. */
+  valueOriginal: number
+  currency: string
   comment: string | null
   contragent: string | null
   account: string | null
@@ -72,7 +76,13 @@ export interface PfOperation {
   isCommitted: boolean
 }
 
-/** Поступления за период, нормализованные до полей, которые нужны нам. */
+/**
+ * Поступления за период, нормализованные до полей, которые нужны нам.
+ *
+ * Контрагент и статья живут не на операции, а в её частях (operationParts) —
+ * верхний contrAgent приходит null. У Delever статья операции — это бренд
+ * клиента, поэтому тащим и её: для матчинга со сделками она ценнее всего.
+ */
 export async function pfIncomeOperations(
   apiKey: string, dateStart: string, dateEnd: string, limit = 100, offset = 0,
 ): Promise<PfResult<{ items: PfOperation[]; total: number }>> {
@@ -84,15 +94,21 @@ export async function pfIncomeOperations(
     'paging.offset': offset,
   })
   if (!r.ok || !r.data) return { ok: r.ok, error: r.error }
-  const items: PfOperation[] = (r.data.items || []).map((o: any) => ({
-    operationId: o.operationId,
-    operationDate: String(o.operationDate || '').slice(0, 10),
-    value: Number(o.value) || 0,
-    comment: o.comment || null,
-    contragent: o.contrAgent?.title || o.contrAgent?.name || null,
-    account: o.account?.title || null,
-    category: o.operationCategory?.title || null,
-    isCommitted: o.isCommitted !== false,
-  }))
+  const items: PfOperation[] = (r.data.items || []).map((o: any) => {
+    const part = Array.isArray(o.operationParts) ? o.operationParts[0] : null
+    const uzs = Number(o.valueInUserCurrency)
+    return {
+      operationId: o.operationId,
+      operationDate: String(o.operationDate || '').slice(0, 10),
+      value: Math.round(Number.isFinite(uzs) && uzs > 0 ? uzs : Number(o.value) || 0),
+      valueOriginal: Math.round(Number(o.value) || 0),
+      currency: o.accountCurrency?.currencyCode || 'UZS',
+      comment: o.comment || null,
+      contragent: part?.contrAgent?.title || o.contrAgent?.title || null,
+      account: o.account?.title || null,
+      category: part?.operationCategory?.title || o.operationCategory?.title || null,
+      isCommitted: o.isCommitted !== false,
+    }
+  })
   return { ok: true, data: { items, total: Number(r.data.total) || items.length } }
 }
