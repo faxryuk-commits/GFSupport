@@ -53,6 +53,7 @@ interface FunnelData {
   closed: Array<{ key: string; label: string; kind: string; total: number; last30: number; amounts30: Record<string, string> }>
   totals: { open_deals?: number; pipeline_amounts?: Record<string, string>; no_next_step?: number }
   owners: Array<{ id: string; name: string }>
+  sources?: Array<{ id: string; label: string }>
 }
 
 // «other» здесь нет намеренно: это не вид обращения, а его отсутствие.
@@ -99,6 +100,10 @@ export function SalesFunnelPage() {
   const [error, setError] = useState<string | null>(null)
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
+  const [src, setSrc] = useState('')
+  const [city, setCity] = useState('')
+  const [noStep, setNoStep] = useState(false)
+  const [overdue, setOverdue] = useState(false)
   const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -124,13 +129,17 @@ export function SalesFunnelPage() {
   const load = useCallback(() => {
     const p = new URLSearchParams({ perColumn: String(perColumn), region: region || 'all' })
     if (owner) p.set('owner', owner)
+    if (src) p.set('src', src)
+    if (city) p.set('city', city)
+    if (noStep) p.set('nostep', '1')
+    if (overdue) p.set('overdue', '1')
     if (q) p.set('q', q)
     if (ptype === 'enterprise') p.set('type', 'enterprise')
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, region, perColumn, ptype])
+  }, [owner, q, src, city, noStep, overdue, region, perColumn, ptype])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -260,18 +269,48 @@ export function SalesFunnelPage() {
 
       <div className="bg-white border border-gray-200 rounded-xl flex-none">
         <FilterBar
-          active={[q && `поиск: ${q}`, owner && 'сейлз'].filter(Boolean) as string[]}
+          active={[
+            q && `поиск: ${q}`, owner && 'сейлз', src && 'источник',
+            city && `город: ${city}`, noStep && 'без шага', overdue && 'просрочены',
+          ].filter(Boolean) as string[]}
           right={<span className="text-[11.5px] text-gray-400 ml-auto">
             обновляется само · перетаскивание работает сквозь границу
           </span>}
         >
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Бренд, имя или телефон"
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-56" />
+          <input value={q} onChange={e => setQ(e.target.value)}
+            placeholder="Бренд, имя, телефон в любом формате"
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-60" />
           <select value={owner} onChange={e => setOwner(e.target.value)}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
             <option value="">Все сейлзы</option>
             {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
+          <select value={src} onChange={e => setSrc(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+            <option value="">Все источники</option>
+            {(data.sources || []).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+          <input value={city} onChange={e => setCity(e.target.value)} placeholder="Город"
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-32" />
+          <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
+            title="Сделки без назначенного следующего шага">
+            <input type="checkbox" checked={noStep} onChange={e => setNoStep(e.target.checked)}
+              className="accent-amber-500" />
+            без шага
+          </label>
+          <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
+            title="Сделки, висящие на этапе дольше норматива">
+            <input type="checkbox" checked={overdue} onChange={e => setOverdue(e.target.checked)}
+              className="accent-red-500" />
+            просрочены
+          </label>
+          {(q || owner || src || city || noStep || overdue) && (
+            <button
+              onClick={() => { setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false) }}
+              className="text-[12px] text-gray-400 hover:text-red-600 whitespace-nowrap">
+              сбросить ✕
+            </button>
+          )}
         </FilterBar>
       </div>
 

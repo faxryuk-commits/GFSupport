@@ -146,6 +146,18 @@ export default async function handler(req: Request): Promise<Response> {
 
   const owner = url.searchParams.get('owner') || ''
   const q = url.searchParams.get('q') || ''
+  // Фильтры доски: источник лида, город, «без следующего шага», «просрочен
+  // норматив этапа». Пустая строка = фильтр выключен — так условие в SQL
+  // остаётся одной строкой без ветвлений
+  const src = url.searchParams.get('src') || ''
+  const city = url.searchParams.get('city') || ''
+  const cityLike = city ? `%${city}%` : ''
+  const noStep = url.searchParams.get('nostep') === '1'
+  const overdue = url.searchParams.get('overdue') === '1'
+  // Телефон ищем по цифрам: «+998 97 555…» и «998975551555» — один номер,
+  // а текстовый ILIKE их не склеивал
+  const qDigits = q.replace(/\D/g, '')
+  const digitsLike = qDigits.length >= 4 ? `%${qDigits}%` : ''
   // Потолок поднят с полусотни: колонка «на прогреве» бывает и в полторы
   // сотни, а раскрыть её было нечем — счётчик внизу был просто текстом
   const perColumn = Math.min(300, Math.max(5, parseInt(url.searchParams.get('perColumn') || '15', 10)))
@@ -157,7 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
   // ~190 мс кругосветки. Семь заходов — это полторы секунды ожидания на ровном
   // месте; пачка обходится в один. Замер 16.08.2026: 5 запросов подряд 669 мс,
   // те же пять пачкой — 96 мс.
-  const [leadRows, leadCounts, dealRows, stageRows, closed, totalsRows, owners] = await sql.transaction([
+  const [leadRows, leadCounts, dealRows, stageRows, closed, totalsRows, owners, srcList] = await sql.transaction([
     // Обращения: срез по каждой колонке входа, без архива
     sql`
       SELECT * FROM (
@@ -173,7 +185,10 @@ export default async function handler(req: Request): Promise<Response> {
           AND l.status IN ('new', 'assigned', 'attempting', 'nurture')
           AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)
           AND (${owner} = '' OR l.assigned_agent_id = ${owner})
-          AND (${like} = '' OR l.name ILIKE ${like} OR l.phone ILIKE ${like})
+          AND (${src} = '' OR l.source_id = ${src})
+          AND (${cityLike} = '' OR l.city ILIKE ${cityLike})
+          AND (${like} = '' OR l.name ILIKE ${like} OR l.contact_name ILIKE ${like}
+               OR (${digitsLike} <> '' AND l.phone_norm LIKE ${digitsLike}))
       ) t WHERE rn <= ${perColumn}
     `,
     sql`
@@ -182,7 +197,10 @@ export default async function handler(req: Request): Promise<Response> {
         AND status IN ('new', 'assigned', 'attempting', 'nurture')
         AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
         AND (${owner} = '' OR assigned_agent_id = ${owner})
-        AND (${like} = '' OR name ILIKE ${like} OR phone ILIKE ${like})
+        AND (${src} = '' OR source_id = ${src})
+        AND (${cityLike} = '' OR city ILIKE ${cityLike})
+        AND (${like} = '' OR name ILIKE ${like} OR contact_name ILIKE ${like}
+             OR (${digitsLike} <> '' AND phone_norm LIKE ${digitsLike}))
       GROUP BY status
     `,
     // Сделки: срез по каждому этапу
@@ -211,7 +229,17 @@ export default async function handler(req: Request): Promise<Response> {
           AND (${isEnt} = (d.pipeline LIKE 'enterprise%'))
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
           AND (${owner} = '' OR d.owner_agent_id = ${owner})
-          AND (${like} = '' OR d.title ILIKE ${like} OR a.name ILIKE ${like})
+          AND (${src} = '' OR EXISTS (
+            SELECT 1 FROM sales_leads sl WHERE sl.id = d.source_lead_id AND sl.source_id = ${src}))
+          AND (${cityLike} = '' OR d.city ILIKE ${cityLike})
+          AND (${noStep ? 1 : 0} = 0 OR d.next_step_at IS NULL)
+          AND (${overdue ? 1 : 0} = 0 OR (
+            s.sla_hours IS NOT NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+            AND d.stage_since < NOW() - make_interval(hours => s.sla_hours::int)))
+          AND (${like} = '' OR d.title ILIKE ${like} OR a.name ILIKE ${like}
+               OR (${digitsLike} <> '' AND EXISTS (
+                 SELECT 1 FROM sales_contacts c2 WHERE c2.account_id = d.account_id
+                   AND regexp_replace(COALESCE(c2.phone, ''), ${'\\D'}, '', 'g') LIKE ${digitsLike})))
       ) t WHERE rn <= ${perColumn}
     `,
     sql`
@@ -294,6 +322,10 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
       ORDER BY ag.name
     `,
+    sql`
+      SELECT id, label FROM sales_sources
+      WHERE org_id = ${orgId} AND is_active = true ORDER BY label
+    `,
   ]) as any[]
 
   const counts: Record<string, number> = {}
@@ -356,6 +388,7 @@ export default async function handler(req: Request): Promise<Response> {
     closed,
     totals: totals || {},
     owners,
+    sources: srcList,
     labels: FIELD_LABELS,
     market,
   })
