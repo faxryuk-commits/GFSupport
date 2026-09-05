@@ -112,7 +112,12 @@ async function handlerInner(req: Request): Promise<Response> {
       return m ? Number(m[0].replace(',', '.')) : null
     }
     const dealId = salesId('sd')
-    await sql`
+    const dealCurrency = await currencyForMarket(sql, orgId, lead.market_id)
+    // Три записи — одной атомарной пачкой. Раньше шли подряд: сбой между
+    // ними оставлял сделку без «закрытого» лида — на доске возникал дубль.
+    // Заодно одна дорога до базы вместо трёх (~190 мс каждая)
+    await sql.transaction([
+      sql`
       INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
                                title, deal_type, source_lead_id, pipeline, city, currency, stage_since,
                                points, orders_per_day, pos, aggregators, delivery_type,
@@ -120,25 +125,23 @@ async function handlerInner(req: Request): Promise<Response> {
       VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${target.id},
               ${lead.assigned_agent_id || ctx.agentId},
               ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${leadPipeline},
-              ${lead.city || q.city || null}, ${await currencyForMarket(sql, orgId, lead.market_id)}, NOW(),
+              ${lead.city || q.city || null}, ${dealCurrency}, NOW(),
               ${firstNum(q.points)}, ${q.orders_per_day || null}, ${q.pos || null},
               ${q.aggregators || null}, ${q.delivery_type || null}, ${q.segment || null},
               ${q.pain || null}, ${q.dm_name || null}, ${q.dm_role || null}, ${firstNum(q.budget_stated)})
-    `
-    await sql`
+    `,
+      sql`
       INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
       VALUES (${orgId}, ${dealId}, ${target.id}, ${'из обращения на доске'})
-    `
-    // Взяли в работу — таймер первого касания останавливается здесь.
-    // Ответственный НЕ перезаписывается: сделку двигает и РОП, и коллега,
-    // но владельцем остаётся тот, кто вёл лида — иначе доска «крала» сделки
-    await sql`
+    `,
+      sql`
       UPDATE sales_leads
       SET status = 'converted', assigned_agent_id = COALESCE(assigned_agent_id, ${ctx.agentId}),
           assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = COALESCE(first_touch_at, NOW()),
           updated_at = NOW()
       WHERE id = ${lead.id} AND org_id = ${orgId}
-    `
+    `,
+    ])
     return json({ ok: true, dealId, stage: target.key })
   }
 

@@ -296,7 +296,11 @@ export default async function handler(req: Request): Promise<Response> {
         // карточку не создаёт: два одинаковых обращения в очереди за день
         // отучили бы сейлзов ей доверять
         if (lead._fresh_form) {
-          const twin = await findRecentTwin(sql, ORG, payload.phone, ['meta_leadform'])
+          // Список — все каналы, где заявка попадает к нам НАПРЯМУЮ раньше
+          // моста: не только лид-формы Meta. Сайт шлёт и нам, и в Amo — из-за
+          // узкого списка ['meta_leadform'] заявка с сайта дублировалась
+          const twin = await findRecentTwin(sql, ORG, payload.phone,
+            ['meta_leadform', 'site', 'site_chat', 'telegram_bot', 'call', 'unknown'])
           if (twin) { out.deduped++; continue }
         }
 
