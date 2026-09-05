@@ -130,6 +130,144 @@ function IntegrationCard({
   )
 }
 
+/**
+ * ПланФакт: ключ API и проверка связи. Ключ открывает деньги компании,
+ * поэтому бэкенд пускает к сохранению только руководителей, а сюда мы
+ * выводим живую сводку месяца — видно, что связь настоящая, а не «сохранилось».
+ */
+function PlanfactConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [masked, setMasked] = useState('')
+  const [keyInput, setKeyInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [summary, setSummary] = useState<{
+    period: { from: string; to: string }
+    income: { count: number; amount: number }
+    outcome: { count: number; amount: number }
+    recentIncome: { operationDate: string; value: number; contragent: string | null; comment: string | null }[]
+  } | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setError(null); setSummary(null); setKeyInput('')
+    apiGet<{ connected: boolean; masked: string }>('/integrations/planfact?action=status', false)
+      .then(r => setMasked(r.connected ? r.masked : ''))
+      .catch(() => setMasked(''))
+  }, [isOpen])
+
+  const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU')
+
+  const handleSave = async (disconnect = false) => {
+    setSaving(true); setError(null)
+    try {
+      const res = await apiPost<{ ok?: boolean; connected?: boolean; error?: string }>(
+        '/integrations/planfact', { action: 'save', apiKey: disconnect ? '' : keyInput.trim() })
+      if (res?.error) { setError(res.error); return }
+      setMasked(disconnect ? '' : `${keyInput.trim().slice(0, 4)}…${keyInput.trim().slice(-4)}`)
+      setKeyInput(''); setSummary(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить ключ')
+    } finally { setSaving(false) }
+  }
+
+  const handleTest = async () => {
+    setTesting(true); setError(null)
+    try {
+      const res = await apiPost<any>('/integrations/planfact', { action: 'test' })
+      if (res?.error) { setError(res.error); setSummary(null); return }
+      setSummary(res)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Проверка не прошла')
+      setSummary(null)
+    } finally { setTesting(false) }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="ПланФакт" size="md">
+      <div className="space-y-4">
+        {masked ? (
+          <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="text-sm text-emerald-800">
+              Ключ сохранён: <span className="font-mono">{masked}</span>
+            </div>
+            <button onClick={() => handleSave(true)} disabled={saving}
+              className="text-xs text-red-600 hover:text-red-700 font-medium">
+              Отключить
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Ключ выдаёт владелец аккаунта ПланФакта: Настройки → API. Перед сохранением
+            система проверит его живым запросом.
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={keyInput}
+            onChange={e => setKeyInput(e.target.value)}
+            placeholder={masked ? 'Новый ключ (заменит текущий)' : 'Вставьте API-ключ ПланФакта'}
+            className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 font-mono"
+          />
+          <button
+            onClick={() => handleSave(false)}
+            disabled={saving || !keyInput.trim()}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Сохранить'}
+          </button>
+        </div>
+
+        {masked && (
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className="w-full py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+          >
+            {testing ? 'Проверяем…' : 'Проверить связь и показать сводку месяца'}
+          </button>
+        )}
+
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+        )}
+
+        {summary && (
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="grid grid-cols-2 divide-x divide-slate-200 text-center">
+              <div className="p-3">
+                <div className="text-xs text-slate-400 uppercase">Поступления с 1 числа</div>
+                <div className="text-lg font-semibold text-emerald-600 tabular-nums">{fmt(summary.income.amount)}</div>
+                <div className="text-xs text-slate-400">{summary.income.count} операций</div>
+              </div>
+              <div className="p-3">
+                <div className="text-xs text-slate-400 uppercase">Выплаты</div>
+                <div className="text-lg font-semibold text-slate-700 tabular-nums">{fmt(summary.outcome.amount)}</div>
+                <div className="text-xs text-slate-400">{summary.outcome.count} операций</div>
+              </div>
+            </div>
+            {summary.recentIncome.length > 0 && (
+              <div className="border-t border-slate-200 divide-y divide-slate-100">
+                {summary.recentIncome.map((op, i) => (
+                  <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="text-slate-600 truncate mr-3">
+                      <span className="text-slate-400 font-mono text-xs mr-2">{op.operationDate.slice(5)}</span>
+                      {op.contragent || op.comment || 'Без контрагента'}
+                    </span>
+                    <span className="font-medium text-emerald-600 tabular-nums flex-shrink-0">+{fmt(op.value)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(total / 60)
@@ -510,6 +648,16 @@ export function IntegrationsSettings({
   const [waModalOpen, setWaModalOpen] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [metaModalOpen, setMetaModalOpen] = useState(false)
+  const [pfModalOpen, setPfModalOpen] = useState(false)
+  const [pfConnected, setPfConnected] = useState(false)
+
+  // Как и у Meta: перечитываем при закрытии окна, чтобы карточка не врала
+  useEffect(() => {
+    if (pfModalOpen) return
+    apiGet<{ connected: boolean }>('/integrations/planfact?action=status', false)
+      .then(r => setPfConnected(!!r.connected))
+      .catch(() => setPfConnected(false))
+  }, [pfModalOpen])
   type MetaAcc = { pageName: string | null; igUsername: string | null }
   const [metaAccounts, setMetaAccounts] = useState<MetaAcc[]>([])
 
@@ -740,9 +888,37 @@ export function IntegrationsSettings({
               </button>
             }
           />
+
+          {/* ПланФакт: фактические поступления денег — база комиссий в KPI продаж */}
+          <IntegrationCard
+            icon="💼"
+            name="ПланФакт"
+            status={pfConnected ? 'active' : 'inactive'}
+            details={pfConnected ? (
+              <>
+                <p className="text-sm text-slate-600">Поступления и выплаты из управленческого учёта</p>
+                <p className="text-xs text-slate-400 mt-0.5">База для комиссий в KPI продаж</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Не подключено — поступления денег придётся отмечать вручную</p>
+            )}
+            actions={
+              <button
+                onClick={() => setPfModalOpen(true)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  pfConnected
+                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                    : 'text-white bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {pfConnected ? 'Настройки' : 'Подключить'}
+              </button>
+            }
+          />
         </div>
       </div>
 
+      <PlanfactConnectModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
       <MetaConnectModal isOpen={metaModalOpen} onClose={() => setMetaModalOpen(false)} />
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
       <OpenAISettingsModal isOpen={aiModalOpen} onClose={() => setAiModalOpen(false)} onSaved={onRefreshHealth} />

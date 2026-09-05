@@ -16,6 +16,8 @@ const DEFAULT_SETTINGS = {
   onlinepbx_domain: 'pbx27296.onpbx.ru',
   onlinepbx_api_key: '',
   onlinepbx_ext: '',
+  // ПланФакт: фактические поступления денег для KPI продаж
+  planfact_api_key: '',
   openai_api_key: '', // Пустой = использовать env
   auto_create_cases: true,
   min_urgency_for_case: 2,
@@ -115,6 +117,9 @@ export default async function handler(req: Request): Promise<Response> {
           : '',
         onlinepbx_api_key: dbSettings.onlinepbx_api_key
           ? `${String(settings.onlinepbx_api_key).slice(0, 6)}...${String(settings.onlinepbx_api_key).slice(-4)}`
+          : '',
+        planfact_api_key: dbSettings.planfact_api_key
+          ? `${String(settings.planfact_api_key).slice(0, 4)}...${String(settings.planfact_api_key).slice(-4)}`
           : '',
       }
 
