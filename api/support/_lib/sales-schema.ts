@@ -441,10 +441,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
 
       city VARCHAR(100),
       points INT,
-      orders_per_day VARCHAR(50),
+      orders_per_day VARCHAR(255),
       pos VARCHAR(100),
       aggregators VARCHAR(255),
-      delivery_type VARCHAR(50),
+      delivery_type VARCHAR(255),
       pain TEXT,
       dm_name VARCHAR(255),
       dm_confirmed BOOLEAN,
@@ -890,15 +890,15 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
 
   // Профиль клиента: тип заведения и роль ЛПР — то, что сейлз и так выясняет
   // на звонке, но раньше записывал в свободный комментарий
-  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
-  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_role VARCHAR(50)`
+  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS segment VARCHAR(255)`
+  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_role VARCHAR(255)`
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS country VARCHAR(50)`
   // Как клиента найти снаружи: сайт и соцсети. Сейлз всё равно их ищет перед
   // звонком — пусть лежат в карточке, а не в переписке
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS website VARCHAR(200)`
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS instagram VARCHAR(120)`
   await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS telegram VARCHAR(120)`
-  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS segment VARCHAR(50)`
+  await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS segment VARCHAR(255)`
 
   // «Когда трогали в последний раз» — у лида не было вовсе, а без этого
   // непонятно, работа идёт или карточка лежит с марта
