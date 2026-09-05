@@ -40,6 +40,7 @@ const SalesAccountPage = lazy(() => import('@/pages/sales/ui/SalesAccountPage'))
 const SalesReportsPage = lazy(() => import('@/pages/sales/ui/SalesReportsPage'))
 const SalesSettingsPage = lazy(() => import('@/pages/sales/ui/SalesSettingsPage'))
 const SalesAssistantPage = lazy(() => import('@/pages/sales/ui/SalesAssistantPage'))
+const SalesKpiPage = lazy(() => import('@/pages/sales/ui/SalesKpiPage'))
 const SalesFunnelPage = lazy(() => import('@/pages/sales/ui/SalesFunnelPage'))
 const SalesCommentsPage = lazy(() => import('@/pages/sales/ui/SalesCommentsPage'))
 const SalesCallsPage = lazy(() => import('@/pages/sales/ui/SalesCallsPage'))
@@ -123,6 +124,7 @@ export default function App() {
           <Route path="/sales/calls" element={<SalesCallsPage />} />
           <Route path="/whats-new" element={<ReleasesPage />} />
           <Route path="/sales/assistant" element={<SalesAssistantPage />} />
+          <Route path="/sales/kpi" element={<SalesKpiPage />} />
           <Route path="/sales/settings" element={<SalesSettingsPage />} />
           <Route path="/sla-report" element={<Navigate to="/analytics?tab=detail" replace />} />
           <Route path="/sla-report-legacy" element={<Navigate to="/analytics?tab=detail" replace />} />

@@ -8,6 +8,7 @@ import { InlineField, OwnerPicker, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { TasksCard } from './TasksCard'
+import { PaymentsCard } from './PaymentsCard'
 import { SpecCard } from './SpecCard'
 import { ActivityCard } from './ActivityCard'
 import { ContactsCard } from './ContactsCard'
@@ -692,6 +693,9 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               ))}
             </div>
           </Card>
+
+          {/* Поступления: отметку ставит руководитель (team приходит только лидам) */}
+          {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
 
           <TasksCard dealId={id} initial={tasks} />
 
