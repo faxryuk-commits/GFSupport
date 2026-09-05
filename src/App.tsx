@@ -51,6 +51,7 @@ const BenchmarksPage = lazy(() => import('@/pages/benchmarks/ui/BenchmarksPage')
 const AnalyticsPage = lazy(() => import('@/pages/analytics/ui/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })))
 const RoutingPage = lazy(() => import('@/pages/routing/ui/RoutingPage').then(m => ({ default: m.RoutingPage })))
 const SystemMapPage = lazy(() => import('@/pages/system-map/ui/SystemMapPage').then(m => ({ default: m.SystemMapPage })))
+const MarketingHealthPage = lazy(() => import('@/pages/marketing/ui/MarketingHealthPage').then(m => ({ default: m.MarketingHealthPage })))
 
 const SALoginPage = lazy(() => import('@/pages/sa-login/ui/SALoginPage'))
 const SADashboardPage = lazy(() => import('@/pages/sa-dashboard/ui/SADashboardPage'))
@@ -138,6 +139,7 @@ export default function App() {
           <Route path="/ai-agent" element={<AIAgentPage />} />
           <Route path="/routing" element={<RoutingPage />} />
           <Route path="/system-map" element={<SystemMapPage />} />
+          <Route path="/marketing" element={<MarketingHealthPage />} />
           <Route path="/insights-chat" element={<InsightsChatPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

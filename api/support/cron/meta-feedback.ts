@@ -36,6 +36,13 @@ export default async function handler(req: Request): Promise<Response> {
   await ensureSalesSchema(sql, ORG)
   await ensureCapiSchema(sql)
 
+  // Сердцебиение для страницы «Маркетинг»: прогон был, даже если пустой.
+  await sql`
+    INSERT INTO support_settings (key, value, org_id, updated_at)
+    VALUES ('meta_feedback_heartbeat', ${new Date().toISOString()}, ${ORG}, NOW())
+    ON CONFLICT (key, org_id) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `
+
   // Ошибки прошлых прогонов возвращаем в очередь до отбора кандидатов.
   const requeued = await requeueErrors(sql, ORG)
   const events = await collectDealEvents(sql, ORG)
