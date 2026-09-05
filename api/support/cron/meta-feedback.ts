@@ -18,9 +18,9 @@ const ORG = process.env.SALES_ORG || 'org_delever'
  * училась на клиентах, а не на заполнивших форму. Подробности и принцип
  * «факт, а не мнение» — в _lib/meta-capi.ts.
  *
- * Включение: задать META_DATASET_ID и META_CAPI_TOKEN в env. Пока их нет,
- * крон честно отвечает not_configured и ничего не делает — код может жить
- * в проде до появления доступов.
+ * Включение: в настройках интеграции Meta выбрать пиксель (кнопкой, из
+ * списка рекламных кабинетов). Пока пиксель не выбран, крон честно отвечает
+ * not_configured и ничего не делает.
  *
  * Первый прогон с пустым логом помечает все уже случившиеся факты как
  * baseline и НЕ отправляет их: события задним числом с сегодняшней меткой
@@ -31,7 +31,7 @@ export default async function handler(req: Request): Promise<Response> {
   const denied = assertCron(req)
   if (denied) return denied
 
-  const creds = readCapiCreds()
+  const creds = await readCapiCreds(ORG)
   const sql = getSQL()
   await ensureSalesSchema(sql, ORG)
   await ensureCapiSchema(sql)
@@ -43,7 +43,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (!creds) {
     return json({
       ok: true, skipped: 'not_configured', pending: events.length,
-      hint: 'задайте META_DATASET_ID и META_CAPI_TOKEN',
+      hint: 'выберите пиксель в настройках интеграции Meta',
     })
   }
 

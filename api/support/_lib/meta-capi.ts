@@ -22,19 +22,27 @@ import { ensureOnce } from './db.js'
 export interface CapiCreds {
   datasetId: string
   token: string
+  /** Чем подписана отправка — видно в карточке интеграции. */
+  tokenSource: 'manual' | 'oauth' | 'page'
 }
 
 /**
- * Доступы CAPI: пока только переменные окружения — META_DATASET_ID
- * (он же Pixel ID из Events Manager) и META_CAPI_TOKEN (токен System User;
- * до его появления сработает и page token из META_PAGE_TOKEN).
- * В support_meta_integration колонки не заводим, пока нет UI для их ввода.
+ * Доступы CAPI живут в настройках интеграции Meta (support_meta_integration):
+ * пиксель выбирается кнопкой из списка, токеном по умолчанию служит
+ * пользовательский токен OAuth — тот же, которым система ходит за формами.
+ * Ручной токен System User (capi_token) — запасной путь, он главнее.
+ * Переменные окружения META_DATASET_ID / META_CAPI_TOKEN остаются
+ * последним фолбэком (читаются внутри readMetaConfig).
  */
-export function readCapiCreds(): CapiCreds | null {
-  const datasetId = (process.env.META_DATASET_ID || '').trim()
-  const token = (process.env.META_CAPI_TOKEN || process.env.META_PAGE_TOKEN || '').trim()
-  if (!datasetId || !token) return null
-  return { datasetId, token }
+export async function readCapiCreds(orgId: string): Promise<CapiCreds | null> {
+  const { readMetaConfig } = await import('./meta-config.js')
+  const cfg = await readMetaConfig(orgId)
+  const datasetId = (cfg.datasetId || '').trim()
+  if (!datasetId) return null
+  if (cfg.capiToken) return { datasetId, token: cfg.capiToken, tokenSource: 'manual' }
+  if (cfg.userToken) return { datasetId, token: cfg.userToken, tokenSource: 'oauth' }
+  if (cfg.pageToken) return { datasetId, token: cfg.pageToken, tokenSource: 'page' }
+  return null
 }
 
 export async function ensureCapiSchema(sql: any): Promise<void> {

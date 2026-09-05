@@ -25,6 +25,13 @@ export interface MetaConfig {
   connectedByName: string | null
   connectedAt: string | null
   tokenExpiresAt: string | null
+  /** Пользовательский токен OAuth — им ходим за списками и в CAPI. */
+  userToken: string | null
+  /** Пиксель (dataset) для обратной петли рекламы. */
+  datasetId: string | null
+  datasetName: string | null
+  /** Токен System User, введённый руками, — запасной путь для CAPI. */
+  capiToken: string | null
   /** Откуда взялись доступы — это видно в карточке интеграции. */
   source: 'db' | 'env' | 'none'
 }
@@ -32,7 +39,8 @@ export interface MetaConfig {
 const EMPTY: Omit<MetaConfig, 'orgId'> = {
   appId: null, appSecret: null, verifyToken: null, pageId: null, pageName: null,
   pageToken: null, igUserId: null, igUsername: null, connectedByName: null,
-  connectedAt: null, tokenExpiresAt: null, source: 'none',
+  connectedAt: null, tokenExpiresAt: null, userToken: null,
+  datasetId: null, datasetName: null, capiToken: null, source: 'none',
 }
 
 let schemaReady = false
@@ -100,6 +108,11 @@ export async function ensureMetaSchema(sql: any): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS uq_meta_accounts_page
     ON support_meta_accounts(org_id, page_id)
   `
+  // Обратная петля рекламы: пиксель и запасной токен. ALTER на месте —
+  // отдельного механизма миграций в проекте нет.
+  await sql`ALTER TABLE support_meta_integration ADD COLUMN IF NOT EXISTS dataset_id VARCHAR(50)`.catch(() => {})
+  await sql`ALTER TABLE support_meta_integration ADD COLUMN IF NOT EXISTS dataset_name VARCHAR(200)`.catch(() => {})
+  await sql`ALTER TABLE support_meta_integration ADD COLUMN IF NOT EXISTS capi_token TEXT`.catch(() => {})
   await sql`
     CREATE TABLE IF NOT EXISTS support_meta_oauth_state (
       state VARCHAR(80) PRIMARY KEY,
@@ -136,6 +149,8 @@ export async function readMetaConfig(orgId: string, fresh = false): Promise<Meta
     appSecret: process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET || null,
     verifyToken: process.env.META_VERIFY_TOKEN || process.env.IG_VERIFY_TOKEN || null,
     pageToken: process.env.META_PAGE_TOKEN || process.env.IG_PAGE_TOKEN || null,
+    datasetId: process.env.META_DATASET_ID || null,
+    capiToken: process.env.META_CAPI_TOKEN || null,
   }
 
   // База главнее переменных, но по одному полю: наполовину настроенная
@@ -154,6 +169,10 @@ export async function readMetaConfig(orgId: string, fresh = false): Promise<Meta
     connectedByName: row?.connected_by_name || null,
     connectedAt: row?.connected_at || null,
     tokenExpiresAt: row?.token_expires_at || null,
+    userToken: row?.user_token || null,
+    datasetId: row?.dataset_id || envCfg.datasetId,
+    datasetName: row?.dataset_name || null,
+    capiToken: row?.capi_token || envCfg.capiToken,
     source: row?.page_token ? 'db' : (envCfg.pageToken ? 'env' : 'none'),
   }
 

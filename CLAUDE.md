@@ -59,9 +59,13 @@
   означает смену URL вебхука.
 - **Обратная петля Meta** (`cron/meta-feedback` + `_lib/meta-capi.ts`):
   события по фактам сделки (квалификация/встреча/оплата) → Conversions API.
-  Включается переменными `META_DATASET_ID` + `META_CAPI_TOKEN`; без них
-  крон отвечает not_configured. Первый прогон помечает старые факты как
-  baseline и НЕ шлёт их задним числом. Лог — `sales_meta_events`.
+  Включается из UI: настройки → интеграция Meta → «Обратная петля рекламы»
+  (выбор пикселя кнопкой; право ads_read запрашивается ТОЛЬКО оттуда,
+  режим `scopes=ads`, — дефолтный OAuth-диалог не менять, пока идёт
+  App Review). Токен: capi_token (ручной) → user_token (OAuth) →
+  page_token; env META_DATASET_ID/META_CAPI_TOKEN — последний фолбэк.
+  Первый прогон помечает старые факты как baseline и НЕ шлёт их задним
+  числом. Лог — `sales_meta_events`.
 - **Кроны** защищены общим `assertCron` (`CRON_SECRET` задан в проде,
   user-agent не подделывается).
 

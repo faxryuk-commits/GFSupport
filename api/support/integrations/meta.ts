@@ -71,10 +71,18 @@ const COMMENT_SCOPES = [
 // второго Meta отвечает «(#200) Requires pages_manage_ads permission»
 const LEAD_SCOPES = ['leads_retrieval', 'pages_manage_ads', 'business_management']
 
+// ads_read нужен, чтобы перечислить пиксели рекламных кабинетов, —
+// для обратной петли качества (CAPI). Запрашивается ТОЛЬКО отдельной
+// кнопкой из секции петли: дефолтный флоу не трогаем, чтобы не менять
+// диалог согласия, пока идёт App Review.
+const ADS_SCOPES = ['ads_read']
+
 const scopesFor = (mode: string | null) =>
   (mode === 'base'
     ? BASE_SCOPES
-    : [...BASE_SCOPES, ...LEAD_SCOPES, ...COMMENT_SCOPES]).join(',')
+    : mode === 'ads'
+      ? [...BASE_SCOPES, ...LEAD_SCOPES, ...COMMENT_SCOPES, ...ADS_SCOPES]
+      : [...BASE_SCOPES, ...LEAD_SCOPES, ...COMMENT_SCOPES]).join(',')
 
 /**
  * Адрес возврата. Собирался из хоста текущего запроса — и это подводило:
@@ -94,6 +102,38 @@ export function pinnedRedirect(row: any, req: Request): string {
 
 /** Секрет наружу не отдаём никогда — только признак, что он задан. */
 const mask = (v: string | null) => (v ? `••••${v.slice(-4)}` : null)
+
+/**
+ * Состояние обратной петли качества для карточки интеграции: выбранный
+ * пиксель, чем подписывается отправка и счётчики за неделю из лога крона.
+ * Таблицы лога может ещё не быть — тогда счётчики просто нули.
+ */
+async function capiStatus(sql: any, orgId: string, cfg: any) {
+  const token = cfg.capiToken ? 'manual' : cfg.userToken ? 'oauth' : cfg.pageToken ? 'page' : null
+  let stats = { sent: 0, baseline: 0, noMatch: 0, errors: 0 }
+  if (cfg.datasetId) {
+    try {
+      const rows = await sql`
+        SELECT status, COUNT(*)::int AS n FROM sales_meta_events
+        WHERE org_id = ${orgId} AND created_at > NOW() - INTERVAL '7 days'
+        GROUP BY status
+      ` as any[]
+      for (const r of rows) {
+        if (r.status === 'sent') stats.sent = r.n
+        else if (r.status === 'baseline') stats.baseline = r.n
+        else if (r.status === 'no_match') stats.noMatch = r.n
+        else if (r.status === 'error') stats.errors = r.n
+      }
+    } catch { /* таблица появится с первым прогоном крона */ }
+  }
+  return {
+    datasetId: cfg.datasetId,
+    datasetName: cfg.datasetName,
+    tokenSource: cfg.datasetId ? token : null,
+    ready: Boolean(cfg.datasetId && token),
+    stats,
+  }
+}
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
@@ -158,6 +198,29 @@ export default async function handler(req: Request): Promise<Response> {
   // ─── Что нам вообще разрешили ───────────────────────────────────────────────
   // Без этого человек узнаёт об отсутствии права только по ошибке в середине
   // работы — и по тексту Meta понять, чего не хватает, невозможно
+  // ─── Пиксели для обратной петли: список из рекламных кабинетов ────────────
+  if (req.method === 'GET' && action === 'pixels') {
+    const [row] = await sql`
+      SELECT user_token FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (!row?.user_token) return json({ pixels: [], needsAuth: true })
+    const res = await fetch(
+      `${GRAPH}/me/adaccounts?fields=name,adspixels{id,name}&limit=50&access_token=${row.user_token}`)
+    const data = await res.json().catch(() => null)
+    if (data?.error) {
+      // (#200)/(#10) — токену не давали ads_read: просим пройти кнопку заново
+      const needsAds = /permission|#200|#10/i.test(String(data.error.message || ''))
+      return json({ pixels: [], needsAds, error: data.error.message })
+    }
+    const pixels: any[] = []
+    for (const acc of data?.data || []) {
+      for (const px of acc?.adspixels?.data || []) {
+        pixels.push({ id: px.id, name: px.name, account: acc.name })
+      }
+    }
+    return json({ pixels })
+  }
+
   if (req.method === 'GET' && action === 'permissions') {
     const [row] = await sql`
       SELECT user_token FROM support_meta_integration WHERE org_id = ${orgId} LIMIT 1
@@ -213,6 +276,7 @@ export default async function handler(req: Request): Promise<Response> {
       connectedAt: cfg.connectedAt,
       source: cfg.source,
       authorized: Boolean(row?.has_user),
+      capi: await capiStatus(sql, orgId, cfg),
       webhookUrl: `${url.origin}/api/support/webhook/meta-leads`,
       redirectUri: pinnedRedirect(row, req),
       forms,
@@ -344,6 +408,43 @@ export default async function handler(req: Request): Promise<Response> {
   // ─── Формы страницы ─────────────────────────────────────────────────────────
   // Формы тянем по всем подключённым аккаунтам сразу: у каждой страницы
   // свои формы, и заставлять выбирать страницу перед обновлением незачем
+  // ─── Обратная петля: выбор пикселя кнопкой ────────────────────────────────
+  if (action === 'select-pixel') {
+    if (!(ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin)) {
+      return json({ error: 'Менять доступы может только администратор' }, 403)
+    }
+    const datasetId = String(body?.datasetId || '').trim()
+    const datasetName = String(body?.datasetName || '').trim() || null
+    if (!datasetId) return json({ error: 'Нужен ID пикселя' }, 400)
+    await sql`
+      UPDATE support_meta_integration
+      SET dataset_id = ${datasetId}, dataset_name = ${datasetName}, updated_at = NOW()
+      WHERE org_id = ${orgId}
+    `
+    invalidateMetaConfig(orgId)
+    return json({ ok: true })
+  }
+
+  // Запасной путь: пиксель и токен System User руками. Пустой токен = не трогать.
+  if (action === 'capi-manual') {
+    if (!(ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin)) {
+      return json({ error: 'Менять доступы может только администратор' }, 403)
+    }
+    const datasetId = String(body?.datasetId || '').trim()
+    const capiToken = String(body?.capiToken || '').trim()
+    if (!datasetId) return json({ error: 'Нужен ID пикселя (Events Manager)' }, 400)
+    await sql`
+      UPDATE support_meta_integration
+      SET dataset_id = ${datasetId},
+          dataset_name = COALESCE(dataset_name, 'вручную'),
+          capi_token = COALESCE(NULLIF(${capiToken}, ''), capi_token),
+          updated_at = NOW()
+      WHERE org_id = ${orgId}
+    `
+    invalidateMetaConfig(orgId)
+    return json({ ok: true })
+  }
+
   if (action === 'sync-forms') {
     const accounts = await readMetaAccounts(orgId)
     const targets = body?.accountId

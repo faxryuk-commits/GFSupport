@@ -36,8 +36,15 @@ type State = {
   pageId: string | null; pageName: string | null; pageToken: string | null
   igUsername: string | null; connectedByName: string | null; connectedAt: string | null
   source: 'db' | 'env' | 'none'; authorized: boolean
+  capi: {
+    datasetId: string | null; datasetName: string | null
+    tokenSource: 'manual' | 'oauth' | 'page' | null; ready: boolean
+    stats: { sent: number; baseline: number; noMatch: number; errors: number }
+  }
   webhookUrl: string; redirectUri: string; forms: Form[]
 }
+
+type Pixel = { id: string; name: string; account: string }
 
 const REGIONS: Array<[string, string]> = [
   ['uz', 'Узбекистан'], ['kz', 'Казахстан'], ['kg', 'Кыргызстан'],
@@ -74,6 +81,11 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
   const [appSecret, setAppSecret] = useState('')
   const [verifyToken, setVerifyToken] = useState('')
   const [pages, setPages] = useState<Array<{ id: string; name: string }>>([])
+  const [pixels, setPixels] = useState<Pixel[]>([])
+  const [needsAds, setNeedsAds] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualDataset, setManualDataset] = useState('')
+  const [manualToken, setManualToken] = useState('')
   const [perms, setPerms] = useState<{ leadsOk: boolean; messagesOk: boolean } | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -120,8 +132,8 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
     setAppSecret(''); setNote('Ключи сохранены — больше их вводить не придётся')
   })
 
-  const startAuth = (scopes?: 'base') => act('auth', async () => {
-    const q = scopes ? '&scopes=base' : ''
+  const startAuth = (scopes?: 'base' | 'ads') => act('auth', async () => {
+    const q = scopes ? `&scopes=${scopes}` : ''
     const r = await apiGet<{ url: string }>(`/integrations/meta?action=auth-url${q}`, false)
     window.open(r.url, '_blank', 'noopener')
     setNote('Окно Facebook открылось в новой вкладке. Разрешите доступ и вернитесь сюда.')
@@ -140,6 +152,28 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
     setNote(r.subscribed
       ? `Готово: «${r.pageName}»${r.igUsername ? `, Instagram @${r.igUsername}` : ''}`
       : `Страница подключена, но подписать вебхуки не вышло: ${r.subscribeError || 'неизвестно'}`)
+  })
+
+  const loadPixels = () => act('pixels', async () => {
+    const r = await apiGet<{ pixels: Pixel[]; needsAds?: boolean; needsAuth?: boolean }>(
+      '/integrations/meta?action=pixels', false)
+    setPixels(r.pixels || [])
+    setNeedsAds(Boolean(r.needsAds))
+    if (r.needsAuth) setNote('Сначала пройдите подключение — кнопка «Войти через Facebook» выше')
+    else if (r.needsAds) setNote('Токену не хватает права на рекламу — нажмите «Дать доступ к рекламе»')
+    else if (!r.pixels?.length) setNote('Пикселей не нашлось: проверьте, что у аккаунта есть доступ к рекламному кабинету')
+  })
+
+  const selectPixel = (px: Pixel) => act('selpx', async () => {
+    await apiPost('/integrations/meta?action=select-pixel', { datasetId: px.id, datasetName: px.name })
+    setPixels([])
+    setNote(`Пиксель «${px.name}» выбран — петля включится в течение часа`)
+  })
+
+  const saveManualCapi = () => act('capiman', async () => {
+    await apiPost('/integrations/meta?action=capi-manual', { datasetId: manualDataset, capiToken: manualToken })
+    setManualToken(''); setManualOpen(false)
+    setNote('Сохранено — петля включится в течение часа')
   })
 
   const syncForms = () => act('forms', async () => {
@@ -388,6 +422,110 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Обратная петля рекламы: события сделок → Meta ──────────────────── */}
+        {connected && (
+          <div className="rounded-xl border border-slate-200 bg-white">
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-semibold text-slate-800">Обратная петля рекламы</div>
+                  <div className="text-[12px] text-slate-500 mt-0.5">
+                    Система сообщает Meta, какие заявки дошли до квалификации и оплаты, —
+                    реклама учится искать клиентов, а не «заполнивших форму»
+                  </div>
+                </div>
+                {st?.capi?.ready
+                  ? <span className="flex-none text-[11.5px] px-2 py-1 rounded-md bg-emerald-100 text-emerald-700">включена</span>
+                  : <span className="flex-none text-[11.5px] px-2 py-1 rounded-md bg-slate-100 text-slate-500">не настроена</span>}
+              </div>
+            </div>
+
+            <div className="px-4 py-3.5">
+              {st?.capi?.datasetId ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-slate-700">
+                  <span>
+                    Пиксель <b>{st.capi.datasetName || st.capi.datasetId}</b>
+                    <span className="text-slate-400 font-mono text-[12px] ml-1.5">{st.capi.datasetId}</span>
+                  </span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[12.5px] text-slate-500">
+                    {st.capi.tokenSource === 'manual' ? 'токен System User'
+                      : st.capi.tokenSource === 'oauth' ? 'токен подключения Facebook'
+                      : st.capi.tokenSource === 'page' ? 'токен страницы' : 'токена нет'}
+                  </span>
+                  <button onClick={loadPixels} disabled={busy === 'pixels'}
+                    className="text-[12px] text-blue-600 hover:text-blue-700 underline">
+                    {busy === 'pixels' ? 'Ищем…' : 'сменить'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={loadPixels} disabled={busy === 'pixels'}
+                    className="text-[12.5px] px-3.5 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50">
+                    {busy === 'pixels' ? 'Ищем пиксели…' : 'Выбрать пиксель'}
+                  </button>
+                  <span className="text-[12px] text-slate-500">
+                    — из рекламных кабинетов, к которым есть доступ
+                  </span>
+                </div>
+              )}
+
+              {needsAds && (
+                <button onClick={() => startAuth('ads')} disabled={busy === 'auth'}
+                  className="mt-2.5 text-[12.5px] px-3.5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                  Дать доступ к рекламе
+                </button>
+              )}
+
+              {pixels.length > 0 && (
+                <div className="mt-3 rounded-lg border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+                  {pixels.map(px => (
+                    <button key={px.id} onClick={() => selectPixel(px)} disabled={busy === 'selpx'}
+                      className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left hover:bg-blue-50/60 disabled:opacity-50">
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13px] font-medium text-slate-800 truncate">{px.name}</span>
+                        <span className="block text-[11.5px] text-slate-500 truncate">{px.account}</span>
+                      </span>
+                      <span className="flex-none font-mono text-[11.5px] text-slate-400">{px.id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {st?.capi?.ready && (
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-500">
+                  <span>За 7 дней: отправлено <b className="text-slate-700">{st.capi.stats.sent}</b></span>
+                  {st.capi.stats.baseline > 0 && <span>база (не шлём задним числом): {st.capi.stats.baseline}</span>}
+                  {st.capi.stats.noMatch > 0 && <span>без ключа для сопоставления: {st.capi.stats.noMatch}</span>}
+                  {st.capi.stats.errors > 0 && <span className="text-red-500">ошибок: {st.capi.stats.errors}</span>}
+                </div>
+              )}
+
+              {isAdmin && (
+                <div className="mt-3">
+                  <button onClick={() => setManualOpen(o => !o)} className="text-[12px] text-slate-400 hover:text-slate-600">
+                    {manualOpen ? 'Скрыть ручной ввод' : 'Ввести пиксель и токен вручную'}
+                  </button>
+                  {manualOpen && (
+                    <div className="mt-2 grid sm:grid-cols-2 gap-2">
+                      <input value={manualDataset} onChange={e => setManualDataset(e.target.value)}
+                        placeholder="ID пикселя (Events Manager)"
+                        className="text-[13px] px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-400" />
+                      <input value={manualToken} onChange={e => setManualToken(e.target.value)} type="password"
+                        placeholder="Токен System User (не обязателен)"
+                        className="text-[13px] px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-400" />
+                      <button onClick={saveManualCapi} disabled={busy === 'capiman' || !manualDataset.trim()}
+                        className="text-[12.5px] px-3.5 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50">
+                        {busy === 'capiman' ? 'Сохраняем…' : 'Сохранить'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
