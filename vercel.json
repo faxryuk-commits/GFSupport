@@ -124,6 +124,10 @@
     {
       "path": "/api/support/cron/teacher",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/support/cron/meta-feedback",
+      "schedule": "20 * * * *"
     }
   ]
 }

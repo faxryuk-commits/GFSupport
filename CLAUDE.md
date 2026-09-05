@@ -57,6 +57,11 @@
   в `sales_amo_last_run`.
 - **Вебхук OnlinePBX** подписан `sha256(api_key)`: смена ключа АТС
   означает смену URL вебхука.
+- **Обратная петля Meta** (`cron/meta-feedback` + `_lib/meta-capi.ts`):
+  события по фактам сделки (квалификация/встреча/оплата) → Conversions API.
+  Включается переменными `META_DATASET_ID` + `META_CAPI_TOKEN`; без них
+  крон отвечает not_configured. Первый прогон помечает старые факты как
+  baseline и НЕ шлёт их задним числом. Лог — `sales_meta_events`.
 - **Кроны** защищены общим `assertCron` (`CRON_SECRET` задан в проде,
   user-agent не подделывается).
 
