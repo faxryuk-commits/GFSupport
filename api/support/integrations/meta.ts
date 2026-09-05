@@ -71,11 +71,12 @@ const COMMENT_SCOPES = [
 // второго Meta отвечает «(#200) Requires pages_manage_ads permission»
 const LEAD_SCOPES = ['leads_retrieval', 'pages_manage_ads', 'business_management']
 
-// ads_read нужен, чтобы перечислить пиксели рекламных кабинетов, —
-// для обратной петли качества (CAPI). Запрашивается ТОЛЬКО отдельной
-// кнопкой из секции петли: дефолтный флоу не трогаем, чтобы не менять
-// диалог согласия, пока идёт App Review.
-const ADS_SCOPES = ['ads_read']
+// ads_management нужен обратной петле (CAPI): ads_read хватает, чтобы
+// перечислить пиксели, но НЕ хватает, чтобы отправлять события в датасет.
+// Запрашивается ТОЛЬКО отдельной кнопкой из секции петли: дефолтный флоу
+// не трогаем, чтобы не менять диалог согласия, пока идёт App Review.
+// Для админов приложения право работает в standard access без ревью.
+const ADS_SCOPES = ['ads_management']
 
 const scopesFor = (mode: string | null) =>
   (mode === 'base'
