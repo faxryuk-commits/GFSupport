@@ -135,25 +135,25 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT
         (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
            AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
-           AND d.archived_at IS NULL) AS active_deals,
+           AND d.archived_at IS NULL)::int AS active_deals,
         (SELECT COALESCE(SUM(d.monthly_amount), 0) FROM sales_deals d WHERE d.org_id = ${orgId}
            AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
            AND d.archived_at IS NULL) AS pipeline_amount,
         (SELECT COUNT(*) FROM sales_tasks t WHERE t.org_id = ${orgId}
-           AND t.assignee_agent_id = ${agentId} AND t.done_at IS NULL AND t.due_at < NOW()) AS overdue_tasks,
+           AND t.assignee_agent_id = ${agentId} AND t.done_at IS NULL AND t.due_at < NOW())::int AS overdue_tasks,
         (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
-           AND d.owner_agent_id = ${agentId} AND d.won_at >= date_trunc('month', NOW())) AS won_this_month,
+           AND d.owner_agent_id = ${agentId} AND d.won_at >= date_trunc('month', NOW()))::int AS won_this_month,
         -- Для значков в меню: что горит лично у этого сейлза
         (SELECT COUNT(*) FROM sales_deals d WHERE d.org_id = ${orgId}
            AND d.owner_agent_id = ${agentId} AND d.won_at IS NULL AND d.lost_at IS NULL
            AND d.archived_at IS NULL
-           AND (d.stalled_at IS NOT NULL OR d.next_step_at IS NULL)) AS hot_deals,
+           AND (d.stalled_at IS NOT NULL OR d.next_step_at IS NULL))::int AS hot_deals,
         -- Тоже лично по сейлзу, как и сделки рядом: соседние значки должны
         -- мерить одно и то же. Раньше сделки считались по владельцу, а лиды —
         -- по всей организации, и «10» с «72» стояли рядом, означая разное
         (SELECT COUNT(*) FROM sales_leads l WHERE l.org_id = ${orgId}
            AND l.archived_at IS NULL AND l.assigned_agent_id = ${agentId}
-           AND l.first_touch_at IS NULL) AS new_leads
+           AND l.first_touch_at IS NULL)::int AS new_leads
     `,
     // Комментарии — общая корзина, а не личная: под постом вопрос видят все,
     // и владельца у него нет. Поэтому считаем по организации, в отличие от

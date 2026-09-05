@@ -291,11 +291,13 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
         .then(r => (r.ok ? r.json() : null))
         .then(d => {
           if (!alive || !d) return
+          // Number() обязателен: COUNT(*) без ::int приезжает из базы строкой,
+          // и сумма по группе меню склеивала «7»+«14»+«18» в 71418 → «99+»
           setSalesBadges({
             salesQueue: (d.sla?.length || 0) + (d.tasks?.length || 0),
-            salesDeals: d.stats?.hot_deals ?? 0,
-            salesLeads: d.stats?.new_leads ?? 0,
-            metaComments: d.stats?.meta_comments ?? 0,
+            salesDeals: Number(d.stats?.hot_deals) || 0,
+            salesLeads: Number(d.stats?.new_leads) || 0,
+            metaComments: Number(d.stats?.meta_comments) || 0,
           })
         })
         .catch(() => {})
