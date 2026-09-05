@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
+import { getPlanfactKey, pfIncomeOperations } from '../_lib/planfact.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -85,6 +86,26 @@ async function ensureKpiSchema(sql: any) {
       )
     `.catch(() => {})
     await sql`CREATE INDEX IF NOT EXISTS sales_payments_org_paid ON sales_payments(org_id, paid_at)`.catch(() => {})
+    await sql`ALTER TABLE sales_payments ADD COLUMN IF NOT EXISTS external_id VARCHAR(80)`.catch(() => {})
+    // Входящие из ПланФакта: операция лежит здесь, пока РОП не привяжет её
+    // к сделке или не отметит «не продажи» (займы, возвраты, прочее)
+    await sql`
+      CREATE TABLE IF NOT EXISTS sales_pf_inbox (
+        org_id VARCHAR(50) NOT NULL,
+        pf_operation_id BIGINT NOT NULL,
+        operation_date DATE NOT NULL,
+        amount BIGINT NOT NULL,
+        contragent TEXT,
+        comment TEXT,
+        account TEXT,
+        category TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'new',
+        deal_id VARCHAR(80),
+        payment_id BIGINT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (org_id, pf_operation_id)
+      )
+    `.catch(() => {})
     await sql`
       CREATE TABLE IF NOT EXISTS sales_kpi_closures (
         org_id VARCHAR(50) NOT NULL,
@@ -392,6 +413,46 @@ function currentMonthTashkent(): string {
   return new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 7)
 }
 
+/**
+ * Нормализация названия для сверки «контрагент ПланФакта ↔ сделка CRM»:
+ * регистр, кавычки и организационные приставки (ООО, MCHJ, ИП…) — шум,
+ * по которому имена расходятся, хотя компания одна.
+ */
+function normName(s: string): string {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/["'«»“”„()]/g, ' ')
+    .replace(/\b(ооо|оoo|мчж|mchj|xk|ип|яттб|llc|ltd|inc|co)\b/g, ' ')
+    .replace(/[^a-zа-яё0-9\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Кандидаты-сделки для привязки поступления: совпадение по имени. */
+function matchDeals(
+  contragent: string, comment: string,
+  deals: Array<{ id: string; title: string; account_name: string | null; owner_name: string | null; won_at: string | null }>,
+): string[] {
+  const target = normName(contragent)
+  const alt = normName(comment)
+  if (!target && !alt) return []
+  const scored: Array<{ id: string; score: number }> = []
+  for (const d of deals) {
+    const names = [normName(d.title), normName(d.account_name || '')]
+    let score = 0
+    for (const n of names) {
+      if (!n) continue
+      for (const t of [target, alt]) {
+        if (!t || t.length < 3) continue
+        if (n === t) score = Math.max(score, 100)
+        else if (t.length >= 5 && (n.includes(t) || t.includes(n))) score = Math.max(score, 60)
+      }
+    }
+    if (score > 0) scored.push({ id: d.id, score })
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, 3).map(x => x.id)
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
@@ -469,6 +530,51 @@ export default async function handler(req: Request): Promise<Response> {
           people: r.payload?.people || [],
           rop: r.payload?.rop || null,
           adjustments: r.payload?.adjustments || [],
+        })),
+      })
+    }
+
+    // Входящие ПланФакта с подсказками привязки
+    if (action === 'pf_inbox') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const status = url.searchParams.get('status') || 'new'
+      const [inbox, deals] = await Promise.all([
+        sql`
+          SELECT pf_operation_id, operation_date::text AS operation_date, amount,
+                 contragent, comment, account, category, status, deal_id
+          FROM sales_pf_inbox
+          WHERE org_id = ${orgId} AND status = ${status}
+          ORDER BY operation_date DESC LIMIT 200
+        `,
+        // Пул для привязки: живые и недавно выигранные сделки
+        sql`
+          SELECT d.id, d.title, a.name AS account_name, ag.name AS owner_name,
+                 d.won_at::text AS won_at
+          FROM sales_deals d
+          LEFT JOIN sales_accounts a ON a.id = d.account_id
+          LEFT JOIN support_agents ag ON ag.id = d.owner_agent_id
+          WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.lost_at IS NULL
+            AND (d.won_at IS NULL OR d.won_at > NOW() - INTERVAL '180 days')
+          ORDER BY d.updated_at DESC LIMIT 600
+        `,
+      ])
+      const dealPool = deals as any[]
+      const items = (inbox as any[]).map(op => ({
+        id: Number(op.pf_operation_id),
+        date: op.operation_date,
+        amount: Number(op.amount),
+        contragent: op.contragent,
+        comment: op.comment,
+        account: op.account,
+        category: op.category,
+        status: op.status,
+        dealId: op.deal_id,
+        suggested: status === 'new' ? matchDeals(op.contragent || '', op.comment || '', dealPool) : [],
+      }))
+      return json({
+        items,
+        deals: dealPool.map(d => ({
+          id: d.id, title: d.title, account: d.account_name, owner: d.owner_name, won: !!d.won_at,
         })),
       })
     }
@@ -576,6 +682,114 @@ export default async function handler(req: Request): Promise<Response> {
           `
         }
       }
+      return json({ ok: true })
+    }
+
+    // Забрать поступления из ПланФакта во «входящие»
+    if (action === 'pf_sync') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const key = await getPlanfactKey(sql, orgId)
+      if (!key) return json({ error: 'ПланФакт не подключён — вставьте ключ в Настройки → Интеграции' }, 400)
+
+      const days = Math.min(365, Number(body.days) || 60)
+      const to = new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10)
+      const from = new Date(Date.now() - days * 86400000 + 5 * 3600 * 1000).toISOString().slice(0, 10)
+
+      let offset = 0, fetched = 0, added = 0
+      for (let page = 0; page < 10; page++) {
+        const r = await pfIncomeOperations(key, from, to, 100, offset)
+        if (!r.ok) return json({ error: r.error }, 502)
+        const items = r.data?.items || []
+        fetched += items.length
+        for (const op of items) {
+          if (!op.operationId || !(op.value > 0)) continue
+          const rows = await sql`
+            INSERT INTO sales_pf_inbox (
+              org_id, pf_operation_id, operation_date, amount,
+              contragent, comment, account, category
+            ) VALUES (
+              ${orgId}, ${op.operationId}, ${op.operationDate}, ${Math.round(op.value)},
+              ${op.contragent}, ${op.comment}, ${op.account}, ${op.category}
+            )
+            ON CONFLICT (org_id, pf_operation_id) DO NOTHING
+            RETURNING pf_operation_id
+          `
+          if (rows.length) added++
+        }
+        if (items.length < 100 || fetched >= (r.data?.total || 0)) break
+        offset += 100
+      }
+      const [cnt] = await sql`
+        SELECT COUNT(*)::int AS n FROM sales_pf_inbox WHERE org_id = ${orgId} AND status = 'new'
+      `
+      return json({ ok: true, fetched, added, pending: cnt?.n || 0, from, to })
+    }
+
+    // Привязка операции к сделке: рождается поступление, комиссия оживает
+    if (action === 'pf_link') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const opId = Number(body.inboxId)
+      const dealId = String(body.dealId || '')
+      if (!opId || !dealId) return json({ error: 'нужны inboxId и dealId' }, 400)
+      const [op] = await sql`
+        SELECT pf_operation_id, operation_date, amount, contragent, status
+        FROM sales_pf_inbox WHERE org_id = ${orgId} AND pf_operation_id = ${opId}
+      `
+      if (!op) return json({ error: 'операция не найдена' }, 404)
+      if (op.status === 'linked') return json({ error: 'уже привязана' }, 400)
+      const [deal] = await sql`
+        SELECT id, owner_agent_id FROM sales_deals WHERE id = ${dealId} AND org_id = ${orgId}
+      `
+      if (!deal) return json({ error: 'сделка не найдена' }, 404)
+
+      const [pay] = await sql`
+        INSERT INTO sales_payments (org_id, deal_id, agent_id, amount, paid_at, source, note, created_by, external_id)
+        VALUES (${orgId}, ${dealId}, ${deal.owner_agent_id}, ${op.amount},
+                ${op.operation_date}, 'planfact', ${op.contragent || 'ПланФакт'},
+                ${ctx.agentId}, ${'pf_' + opId})
+        RETURNING id
+      `
+      await sql`
+        UPDATE sales_pf_inbox SET status = 'linked', deal_id = ${dealId}, payment_id = ${Number(pay.id)}
+        WHERE org_id = ${orgId} AND pf_operation_id = ${opId}
+      `
+      return json({ ok: true, paymentId: Number(pay.id) })
+    }
+
+    // «Не продажи»: займ, возврат, перевод — убрать из разбора
+    if (action === 'pf_ignore') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      await sql`
+        UPDATE sales_pf_inbox SET status = 'ignored'
+        WHERE org_id = ${orgId} AND pf_operation_id = ${Number(body.inboxId)} AND status = 'new'
+      `
+      return json({ ok: true })
+    }
+
+    // Отвязать: поступление удаляется, операция возвращается в разбор
+    if (action === 'pf_unlink') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const opId = Number(body.inboxId)
+      const [op] = await sql`
+        SELECT payment_id FROM sales_pf_inbox
+        WHERE org_id = ${orgId} AND pf_operation_id = ${opId} AND status = 'linked'
+      `
+      if (op?.payment_id) {
+        await sql`DELETE FROM sales_payments WHERE id = ${Number(op.payment_id)} AND org_id = ${orgId}`
+      }
+      await sql`
+        UPDATE sales_pf_inbox SET status = 'new', deal_id = NULL, payment_id = NULL
+        WHERE org_id = ${orgId} AND pf_operation_id = ${opId}
+      `
+      return json({ ok: true })
+    }
+
+    if (action === 'pf_restore') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      await sql`
+        UPDATE sales_pf_inbox SET status = 'new'
+        WHERE org_id = ${orgId} AND pf_operation_id = ${Number(body.inboxId)} AND status = 'ignored'
+      `
       return json({ ok: true })
     }
 

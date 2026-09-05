@@ -638,6 +638,142 @@ function KpiSettings({ month }: { month: string }) {
   )
 }
 
+/* ─────────────────────────── Поступления из ПланФакта ─────────────────────────── */
+
+function PfInbox() {
+  const [tab, setTab] = useState<'new' | 'linked' | 'ignored'>('new')
+  const [data, setData] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [pick, setPick] = useState<Record<number, string>>({})
+
+  const load = useCallback(() => {
+    apiGet<any>(`/sales/kpi?action=pf_inbox&status=${tab}`, false)
+      .then(d => { setData(d); setError(null) })
+      .catch(e => setError(e?.message || 'Нет доступа'))
+  }, [tab])
+  useEffect(() => { setData(null); load() }, [load])
+
+  const dealById = new Map<string, any>((data?.deals || []).map((d: any) => [d.id, d]))
+
+  const sync = async () => {
+    setSyncing(true); setSyncMsg(null)
+    try {
+      const r = await apiPost<any>('/sales/kpi', { action: 'pf_sync', days: 60 })
+      setSyncMsg(`Получено ${r.fetched}, новых ${r.added} · в разборе ${r.pending}`)
+      load()
+    } catch (e: any) { setSyncMsg(e?.message || 'Синхронизация не прошла') } finally { setSyncing(false) }
+  }
+
+  const link = async (opId: number, dealId: string) => {
+    if (!dealId) return
+    try { await apiPost('/sales/kpi', { action: 'pf_link', inboxId: opId, dealId }); load() }
+    catch (e: any) { alert(e?.message || 'Не удалось привязать') }
+  }
+  const act = async (action: string, opId: number) => {
+    try { await apiPost('/sales/kpi', { action, inboxId: opId }); load() }
+    catch (e: any) { alert(e?.message || 'Не получилось') }
+  }
+
+  if (error) return <div className="p-6 text-sm text-gray-500">{error}</div>
+
+  const dealLabel = (d: any) => d ? `${d.title}${d.owner ? ` · ${d.owner}` : ''}` : ''
+
+  return (
+    <>
+      <Card title="Поступления из ПланФакта"
+        sub="операции падают сюда, вы привязываете их к сделкам — комиссия менеджера считается от привязанного"
+        right={
+          <button onClick={sync} disabled={syncing}
+            className="text-[12px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 disabled:opacity-50">
+            {syncing ? 'Забираем…' : 'Забрать из ПланФакта'}
+          </button>
+        }>
+        {syncMsg && <div className="px-4 py-2 text-[12px] text-gray-500 border-b border-gray-100">{syncMsg}</div>}
+        <div className="flex gap-1 px-4 pt-2 border-b border-gray-100">
+          {([['new', 'Разбор'], ['linked', 'Привязаны'], ['ignored', 'Не продажи']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`text-[12px] px-3 py-2 border-b-2 ${
+                tab === k ? 'border-blue-600 text-blue-600 font-semibold' : 'border-transparent text-gray-500'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {!data ? <Skeleton rows={3} kpis={false} /> : (data.items || []).length === 0 ? (
+          <div className="px-4 py-5 text-[12.5px] text-gray-400">
+            {tab === 'new'
+              ? 'Пусто. Нажмите «Забрать из ПланФакта» — нужен сохранённый ключ в Настройки → Интеграции.'
+              : 'Здесь пока ничего нет.'}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {data.items.map((op: any) => (
+              <div key={op.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[220px]">
+                  <div className="text-[12.5px] text-gray-900">
+                    <span className="text-gray-400 tabular-nums mr-2">{op.date?.slice(5)}</span>
+                    <b>{op.contragent || 'Без контрагента'}</b>
+                    {op.category && <span className="text-gray-400"> · {op.category}</span>}
+                  </div>
+                  {op.comment && <div className="text-[11px] text-gray-400 truncate">{op.comment}</div>}
+                  {tab === 'linked' && op.dealId && (
+                    <div className="text-[11px] text-blue-600 truncate">→ {dealLabel(dealById.get(op.dealId)) || op.dealId}</div>
+                  )}
+                </div>
+                <span className="font-semibold text-emerald-600 tabular-nums text-[13px]">+{fmt(op.amount)}</span>
+                {tab === 'new' && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {(op.suggested || []).map((sid: string) => (
+                      <button key={sid} onClick={() => link(op.id, sid)}
+                        title={dealLabel(dealById.get(sid))}
+                        className="text-[11.5px] px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 max-w-[180px] truncate">
+                        ✓ {dealById.get(sid)?.title || sid}
+                      </button>
+                    ))}
+                    <select value={pick[op.id] || ''} onChange={e => setPick(p => ({ ...p, [op.id]: e.target.value }))}
+                      className="text-[11.5px] border border-gray-200 rounded-lg px-1.5 py-1 bg-white max-w-[180px]">
+                      <option value="">Выбрать сделку…</option>
+                      {(data.deals || []).map((d: any) => (
+                        <option key={d.id} value={d.id}>{d.title}{d.owner ? ` · ${d.owner}` : ''}</option>
+                      ))}
+                    </select>
+                    {pick[op.id] && (
+                      <button onClick={() => link(op.id, pick[op.id])}
+                        className="text-[11.5px] px-2 py-1 rounded-lg bg-blue-600 text-white">Привязать</button>
+                    )}
+                    <button onClick={() => act('pf_ignore', op.id)}
+                      className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
+                      не продажи
+                    </button>
+                  </div>
+                )}
+                {tab === 'linked' && (
+                  <button onClick={() => act('pf_unlink', op.id)}
+                    className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-red-500 border border-gray-200">
+                    отвязать
+                  </button>
+                )}
+                {tab === 'ignored' && (
+                  <button onClick={() => act('pf_restore', op.id)}
+                    className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
+                    вернуть в разбор
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <div className="text-[11.5px] text-gray-400 px-1">
+        Зелёные кнопки — подсказки: контрагент совпал с названием сделки или аккаунта.
+        Привязка создаёт поступление на сделке (источник «ПланФакт»), отвязка убирает его.
+        Дубли исключены: каждая операция ПланФакта привязывается один раз.
+      </div>
+    </>
+  )
+}
+
 /* ─────────────────────────── История ─────────────────────────── */
 
 function KpiHistory() {
@@ -728,7 +864,7 @@ function KpiHistory() {
 /* ─────────────────────────── Страница ─────────────────────────── */
 
 export function SalesKpiPage() {
-  const [tab, setTab] = useState<'my' | 'team' | 'settings' | 'history'>('my')
+  const [tab, setTab] = useState<'my' | 'team' | 'pf' | 'settings' | 'history'>('my')
   const [month, setMonth] = useState(monthNow())
   const [isLead, setIsLead] = useState(false)
 
@@ -739,8 +875,8 @@ export function SalesKpiPage() {
       .catch(() => setIsLead(false))
   }, [])
 
-  const tabs: Array<['my' | 'team' | 'settings' | 'history', string]> = isLead
-    ? [['my', 'Мой KPI'], ['team', 'Свод команды'], ['settings', 'Настройки'], ['history', 'История выплат']]
+  const tabs: Array<['my' | 'team' | 'pf' | 'settings' | 'history', string]> = isLead
+    ? [['my', 'Мой KPI'], ['team', 'Свод команды'], ['pf', 'Поступления'], ['settings', 'Настройки'], ['history', 'История выплат']]
     : [['my', 'Мой KPI']]
 
   return (
@@ -775,6 +911,7 @@ export function SalesKpiPage() {
     }>
       {tab === 'my' && <MyKpi month={month} />}
       {tab === 'team' && <TeamKpi month={month} onNeedSetup={() => setTab('settings')} />}
+      {tab === 'pf' && <PfInbox />}
       {tab === 'settings' && <KpiSettings month={month} />}
       {tab === 'history' && <KpiHistory />}
     </PageShell>
