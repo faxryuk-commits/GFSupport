@@ -24,6 +24,12 @@ export interface PfResult<T> {
   data?: T
 }
 
+/**
+ * ИНВАРИАНТ: интеграция ТОЛЬКО ЧИТАЕТ. Никаких POST/PUT/DELETE в ПланФакт —
+ * там управленческий учёт компании, и запись из CRM сломала бы его целостность.
+ * Привязки операций к сделкам живут целиком на нашей стороне (sales_pf_inbox).
+ * Метод зашит в GET намеренно: писать через этот клиент нельзя в принципе.
+ */
 export async function pfFetch<T = any>(
   apiKey: string, path: string, params?: Record<string, string | number>,
 ): Promise<PfResult<T>> {
@@ -32,6 +38,7 @@ export async function pfFetch<T = any>(
   let res: Response
   try {
     res = await fetch(url.toString(), {
+      method: 'GET',
       headers: { 'X-ApiKey': apiKey, Accept: 'application/json' },
     })
   } catch (e) {
