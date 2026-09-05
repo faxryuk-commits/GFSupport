@@ -206,6 +206,32 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
     }
   }
 
+  // Новая итерация продажи тому же клиенту: сделка заводится на тот же
+  // account_id (дубль клиента не плодится), с квалификацией из прошлой
+  // сделки — суммы и КП начинаются с чистого листа
+  const repeatSale = async () => {
+    if (!data) return
+    const d0 = data.deal
+    if (!confirm('Создать новую сделку для повторной продажи этому клиенту? Текущая останется закрытой, история сохранится.')) return
+    setBusy(true)
+    try {
+      const res: any = await apiPost('/sales/deals', {
+        title: data.account?.name || d0.title,
+        accountId: d0.account_id,
+        market: d0.market_id || undefined,
+        city: d0.city || undefined,
+        pos: d0.pos || undefined,
+        points: d0.points || undefined,
+        ordersPerDay: d0.orders_per_day || undefined,
+        tariff: d0.tariff || undefined,
+        dealType: 'repeat',
+      })
+      if (res?.id) window.location.href = `/sales/deals/${res.id}`
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось создать повторную сделку')
+    } finally { setBusy(false) }
+  }
+
   const changeOwner = async (agentId: string) => {
     setBusy(true)
     try {
@@ -479,12 +505,22 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div className="space-y-4">
           {closed ? (
-            <div className={`rounded-xl border p-4 text-[13px] ${
+            <div className={`rounded-xl border p-4 text-[13px] flex items-center justify-between gap-3 flex-wrap ${
               d.won_at ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                        : 'bg-red-50 border-red-200 text-red-800'}`}>
-              {d.won_at
-                ? 'Сделка выиграна. Проект внедрения создан — дальше работа в «Подключениях».'
-                : `Сделка закрыта${d.reactivate_at ? `, вернётся в очередь ${fmtDate(d.reactivate_at)}` : ''}.`}
+              <span>
+                {d.won_at
+                  ? 'Сделка выиграна. Проект внедрения создан — дальше работа в «Подключениях».'
+                  : `Сделка закрыта${d.reactivate_at ? `, вернётся в очередь ${fmtDate(d.reactivate_at)}` : ''}.`}
+              </span>
+              {/* Повторная продажа — НОВАЯ сделка на том же клиенте: история
+                  старой не трогается, отчёты не портятся. Возврат этой же
+                  сделки в работу — отдельный жест, кнопкой «Двинуть этап» */}
+              <button onClick={repeatSale} disabled={busy}
+                className="text-[12.5px] px-3 py-1.5 rounded-lg bg-white border border-current
+                           font-medium hover:brightness-95 disabled:opacity-50 flex-none">
+                🔁 Повторная продажа
+              </button>
             </div>
           ) : (
             <Card
