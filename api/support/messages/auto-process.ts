@@ -110,9 +110,13 @@ export default async function handler(req: Request): Promise<Response> {
   const orgId = await getRequestOrgId(req)
   
   try {
-    // Get settings
-    const settingsResult = await sql`SELECT * FROM support_settings WHERE id = 'default' LIMIT 1`
-    const settings = settingsResult[0] || { auto_create_cases: true }
+    // Настройки — key/value, НЕ строка с id: колонки id в support_settings нет,
+    // и запрос `WHERE id = 'default'` ронял весь прогон каждые две минуты
+    const settingsResult = await sql`
+      SELECT value FROM support_settings
+      WHERE org_id = ${orgId} AND key = 'auto_create_cases' LIMIT 1
+    `
+    const settings = { auto_create_cases: settingsResult[0]?.value !== 'false' }
     
     // Get unprocessed messages (last hour, not yet analyzed)
     const messages = await sql`

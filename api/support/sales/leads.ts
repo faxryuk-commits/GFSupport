@@ -30,7 +30,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
 export const QUAL_KEYS = ['pos', 'orders_per_day', 'points', 'aggregators',
   'delivery_type', 'segment', 'pain', 'dm_name', 'dm_role', 'budget_stated']
 
-export default async function handler(req: Request): Promise<Response> {
+async function handlerInner(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
   const sql = getSQL()
@@ -526,4 +526,20 @@ export default async function handler(req: Request): Promise<Response> {
     agents,
     view, hasMore, offset, limit, market,
   })
+}
+
+
+/**
+ * Ловушка ошибок. Раньше любой невыловленный сбой превращался в опаковый
+ * FUNCTION_INVOCATION_FAILED: браузер видел 500 без текста, логи — ничего,
+ * а сейлз — зависшую карточку. Теперь сбой возвращается текстом и попадает
+ * в лог со стеком — следующий плавающий случай назовёт себя сам.
+ */
+export default async function handler(req: Request): Promise<Response> {
+  try {
+    return await handlerInner(req)
+  } catch (e) {
+    console.error('[leads] unhandled:', e instanceof Error ? (e.stack || e.message) : e)
+    return json({ error: 'Внутренняя ошибка: ' + (e instanceof Error ? e.message : String(e)) }, 500)
+  }
 }

@@ -24,7 +24,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const MAX_DISCOUNT_WITHOUT_APPROVAL = 15
 
-export default async function handler(req: Request): Promise<Response> {
+async function handlerInner(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
@@ -242,4 +242,20 @@ export default async function handler(req: Request): Promise<Response> {
     tasksCreated: cadence.length,
     onboardingBrandId,
   })
+}
+
+
+/**
+ * Ловушка ошибок. Раньше любой невыловленный сбой превращался в опаковый
+ * FUNCTION_INVOCATION_FAILED: браузер видел 500 без текста, логи — ничего,
+ * а сейлз — зависшую карточку. Теперь сбой возвращается текстом и попадает
+ * в лог со стеком — следующий плавающий случай назовёт себя сам.
+ */
+export default async function handler(req: Request): Promise<Response> {
+  try {
+    return await handlerInner(req)
+  } catch (e) {
+    console.error('[stage] unhandled:', e instanceof Error ? (e.stack || e.message) : e)
+    return json({ error: 'Внутренняя ошибка: ' + (e instanceof Error ? e.message : String(e)) }, 500)
+  }
 }
