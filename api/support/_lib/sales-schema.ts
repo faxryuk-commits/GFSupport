@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-08-26.15-lead-qual'
+const SCHEMA_VERSION = '2026-09-06.16-meeting-calendar'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -778,6 +778,13 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS click_id VARCHAR(200)`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS landing_url TEXT`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS referrer TEXT`
+
+  // Встреча — это задача с kind='meeting'. Связь с Google держим здесь, а не
+  // отдельной таблицей: у встречи и так есть исполнитель, срок и привязки
+  // к лиду и сделке, а дублирующая сущность разошлась бы с задачей при
+  // первом же переносе времени.
+  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS google_event_id VARCHAR(200)`
+  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS meet_url TEXT`
 
   // Что делает ассистент — видно построчно. Автоматика, работающая молча,
   // через неделю становится чёрным ящиком: непонятно, кому он писал, что

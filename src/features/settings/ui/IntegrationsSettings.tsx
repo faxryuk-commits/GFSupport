@@ -8,6 +8,7 @@ import { Modal } from '@/shared/ui'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { OpenAISettingsModal } from './OpenAISettingsModal'
 import { MetaConnectModal } from './MetaConnectModal'
+import { GoogleCalendarModal } from './GoogleCalendarModal'
 
 /** «12 минут назад» вместо голого числа: карточку читают, а не считают. */
 function fmtAgo(minutes: number): string {
@@ -650,6 +651,8 @@ export function IntegrationsSettings({
   const [metaModalOpen, setMetaModalOpen] = useState(false)
   const [pfModalOpen, setPfModalOpen] = useState(false)
   const [pfConnected, setPfConnected] = useState(false)
+  const [gcalModalOpen, setGcalModalOpen] = useState(false)
+  const [gcal, setGcal] = useState<{ connected: boolean; alive: boolean; calendarEmail: string | null } | null>(null)
 
   // Как и у Meta: перечитываем при закрытии окна, чтобы карточка не врала
   useEffect(() => {
@@ -667,6 +670,15 @@ export function IntegrationsSettings({
   // Перечитываем при закрытии окна настройки: там подключают и отключают
   // страницы, и карточка должна отвечать состоянию, а не тому, что было
   // на момент загрузки страницы
+  // Состояние календаря перечитываем при закрытии окна: там подключают
+  // и отключают доступ, и карточка должна отвечать состоянию
+  useEffect(() => {
+    if (gcalModalOpen) return
+    apiGet<{ connected: boolean; alive: boolean; calendarEmail: string | null }>('/integrations/google-calendar', false)
+      .then(r => setGcal(r))
+      .catch(() => setGcal(null))
+  }, [gcalModalOpen])
+
   useEffect(() => {
     if (metaModalOpen) return
     apiGet<{ accounts: MetaAcc[] }>('/integrations/meta', false)
@@ -915,9 +927,42 @@ export function IntegrationsSettings({
               </button>
             }
           />
+
+          <IntegrationCard
+            icon="📅"
+            name="Google Календарь"
+            status={gcal?.connected && gcal?.alive ? 'active' : gcal?.connected ? 'error' : 'inactive'}
+            details={gcal?.connected ? (
+              <>
+                <p className="text-sm text-slate-600">
+                  Общий календарь встреч{gcal.calendarEmail ? ` · ${gcal.calendarEmail}` : ''}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {gcal.alive
+                    ? 'Встречи из CRM создаются со ссылкой Meet'
+                    : 'Доступ отозван в Google — встречи не создаются'}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Не подключено — встречи придётся заводить в календаре руками</p>
+            )}
+            actions={
+              <button
+                onClick={() => setGcalModalOpen(true)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  gcal?.connected
+                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                    : 'text-white bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {gcal?.connected ? 'Настройки' : 'Подключить'}
+              </button>
+            }
+          />
         </div>
       </div>
 
+      <GoogleCalendarModal isOpen={gcalModalOpen} onClose={() => setGcalModalOpen(false)} />
       <PlanfactConnectModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
       <MetaConnectModal isOpen={metaModalOpen} onClose={() => setMetaModalOpen(false)} />
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
