@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Search, AlertCircle, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
+import { Loader2, Search, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react'
 import { Agent360Modal } from '@/features/analytics'
 import {
   fetchMetricPerAgent,
@@ -382,17 +382,7 @@ export function DetailTab({ period, source, roles }: DetailTabProps) {
       </div>
 
       <div className="text-xs text-slate-500 px-3">
-        Клик по имени агента открывает 360°-профиль с динамикой метрик по неделям. Расширенные
-        таблицы (SLA-violations, expertise по категориям, weekly heatmap, экспорт в xlsx) пока
-        живут на старом{' '}
-        <Link
-          to="/sla-report-legacy"
-          className="underline text-blue-600 hover:text-blue-700"
-        >
-          legacy SLA-отчёте
-          <ExternalLink className="inline w-3 h-3 ml-0.5" />
-        </Link>
-        . Мигрируем постепенно.
+        Клик по имени агента открывает 360°-профиль с динамикой метрик по неделям.
       </div>
 
       {selectedAgent && (frtData || slaData) && (
