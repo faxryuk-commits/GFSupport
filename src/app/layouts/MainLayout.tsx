@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom'
+import { UpdateBanner } from '@/shared/ui/UpdateNotification'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
 import { pathAllowedFor } from '@/shared/lib/modules'
 import { Sidebar } from '@/widgets/sidebar'
@@ -217,6 +218,9 @@ export function MainLayout() {
   return (
     <OrgContext.Provider value={orgState}>
       <div className="flex h-screen bg-slate-50 overflow-hidden">
+        {/* Баннер «что нового»: жил в shared/ui, но при переезде лэйаута
+            потерял точку монтирования — попапы обновлений молчали */}
+        <UpdateBanner />
         <Sidebar 
           unreadChats={unreadChats} 
           openCases={openCases}
