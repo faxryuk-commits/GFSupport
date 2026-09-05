@@ -420,14 +420,24 @@ function currentMonthTashkent(): string {
  * регистр, кавычки и организационные приставки (ООО, MCHJ, ИП…) — шум,
  * по которому имена расходятся, хотя компания одна.
  */
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+  с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh',
+  щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+}
+
 function normName(s: string): string {
-  return String(s || '')
+  const base = String(s || '')
     .toLowerCase()
     .replace(/["'«»“”„()]/g, ' ')
-    .replace(/\b(ооо|оoo|мчж|mchj|xk|ип|яттб|llc|ltd|inc|co)\b/g, ' ')
+    .replace(/\b(ооо|оoo|мчж|mchj|xk|ип|тоо|яттб|llc|ltd|inc|co)\b/g, ' ')
     .replace(/[^a-zа-яё0-9\s]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+  // В ПланФакте латиница, в CRM кириллица (и наоборот): сводим всё к латинице,
+  // иначе «SYROVARNYA» никогда не встретит «Сыроварню»
+  return base.replace(/[а-яё]/g, ch => TRANSLIT[ch] ?? ch)
 }
 
 /**
@@ -555,7 +565,7 @@ export default async function handler(req: Request): Promise<Response> {
                  currency, amount_original
           FROM sales_pf_inbox
           WHERE org_id = ${orgId} AND status = ${status}
-          ORDER BY operation_date DESC LIMIT 200
+          ORDER BY operation_date DESC LIMIT 600
         `,
         // Пул для привязки: живые и ВСЕ выигранные — исторические клиенты
         // из Amo платят подписку, их сделки давно выиграны, но именно к ним
