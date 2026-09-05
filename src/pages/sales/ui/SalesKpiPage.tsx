@@ -229,9 +229,17 @@ function TeamKpi({ month, onNeedSetup }: { month: string; onNeedSetup: () => voi
         </div>
       )}
 
-      {tiles.length > 0 && (
+      {(tiles.length > 0 || goals.subscription?.paid > 0) && (
         <Card title="Выполнение планов" sub={`${monthLabel(month)} · только поступившие деньги · темп — против нормы на сегодня`}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-200">
+            {goals.subscription?.paid > 0 && (
+              <div className="bg-white px-4 py-3">
+                <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400">Подписка · старая база</div>
+                <div className="text-[20px] font-bold tabular-nums text-gray-900">{fmt(goals.subscription.paid)}</div>
+                <div className="text-[11px] text-gray-400 mt-1 tabular-nums">{goals.subscription.count} платежей</div>
+                <div className="mt-1"><Chip tone="gray">вне комиссии</Chip></div>
+              </div>
+            )}
             {tiles.map((t: any) => (
               <div key={t.label} className="bg-white px-4 py-3">
                 <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400">{t.label}</div>
@@ -641,11 +649,12 @@ function KpiSettings({ month }: { month: string }) {
 /* ─────────────────────────── Поступления из ПланФакта ─────────────────────────── */
 
 function PfInbox() {
-  const [tab, setTab] = useState<'new' | 'linked' | 'ignored'>('new')
+  const [tab, setTab] = useState<'new' | 'subscription' | 'linked' | 'ignored'>('new')
   const [data, setData] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [indexing, setIndexing] = useState(false)
   // Один общий выбор сделки с поиском вместо сотни выпадающих списков
   const [pickFor, setPickFor] = useState<number | null>(null)
   const [search, setSearch] = useState('')
@@ -667,9 +676,28 @@ function PfInbox() {
     setSyncing(true); setSyncMsg(null)
     try {
       const r = await apiPost<any>('/sales/kpi', { action: 'pf_sync', days: 60 })
-      setSyncMsg(`Получено ${r.fetched}, новых ${r.added} · в разборе ${r.pending}`)
+      setSyncMsg(`Получено ${r.fetched}, новых ${r.added}, в подписку ушло ${r.reclassified || 0} · в разборе ${r.pending}`)
       load()
     } catch (e: any) { setSyncMsg(e?.message || 'Синхронизация не прошла') } finally { setSyncing(false) }
+  }
+
+  // История с 2021 года порциями: пока done не true, зовём со сдвигом дальше
+  const indexHistory = async () => {
+    setIndexing(true); setSyncMsg('Индексируем историю платежей с 2021 года…')
+    let offset = 0, total = 0
+    try {
+      for (let i = 0; i < 60; i++) {
+        const r = await apiPost<any>('/sales/kpi', { action: 'pf_index', offset })
+        total += r.processed || 0
+        if (r.done) {
+          setSyncMsg(`История загружена: ${total} операций, клиентов в базе ${r.clients} · подписок размечено ${r.reclassified}`)
+          break
+        }
+        setSyncMsg(`Индексируем историю… ${total} операций`)
+        offset = r.nextOffset
+      }
+      load()
+    } catch (e: any) { setSyncMsg(e?.message || 'Индексация не прошла') } finally { setIndexing(false) }
   }
 
   const link = async (opId: number, dealId: string) => {
@@ -696,18 +724,26 @@ function PfInbox() {
       <Card title="Поступления из ПланФакта"
         sub="операции падают сюда, вы привязываете их к сделкам — комиссия менеджера считается от привязанного"
         right={
-          <button onClick={sync} disabled={syncing}
-            className="text-[12px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 disabled:opacity-50">
-            {syncing ? 'Забираем…' : 'Забрать из ПланФакта'}
-          </button>
+          <div className="flex gap-2">
+            <button onClick={indexHistory} disabled={indexing || syncing}
+              title="Прогнать всю историю платежей с 2021 года: кто платил раньше — подписка"
+              className="text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-1.5 disabled:opacity-50">
+              {indexing ? 'Индексируем…' : 'История с 2021'}
+            </button>
+            <button onClick={sync} disabled={syncing || indexing}
+              className="text-[12px] font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1.5 disabled:opacity-50">
+              {syncing ? 'Забираем…' : 'Забрать из ПланФакта'}
+            </button>
+          </div>
         }>
         {syncMsg && <div className="px-4 py-2 text-[12px] text-gray-500 border-b border-gray-100">{syncMsg}</div>}
-        <div className="flex gap-1 px-4 pt-2 border-b border-gray-100">
-          {([['new', 'Разбор'], ['linked', 'Привязаны'], ['ignored', 'Не продажи']] as const).map(([k, label]) => (
+        <div className="flex gap-1 px-4 pt-2 border-b border-gray-100 overflow-x-auto">
+          {([['new', 'Новые деньги'], ['subscription', 'Подписка'], ['linked', 'Привязаны'], ['ignored', 'Не продажи']] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={`text-[12px] px-3 py-2 border-b-2 ${
+              className={`text-[12px] px-3 py-2 border-b-2 whitespace-nowrap ${
                 tab === k ? 'border-blue-600 text-blue-600 font-semibold' : 'border-transparent text-gray-500'}`}>
               {label}
+              {data?.counts?.[k] ? <span className="ml-1 text-[10.5px] text-gray-400 tabular-nums">{data.counts[k]}</span> : null}
             </button>
           ))}
         </div>
@@ -756,11 +792,21 @@ function PfInbox() {
                         className="text-[11.5px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600 hover:border-blue-400 hover:text-blue-600">
                         найти сделку…
                       </button>
+                      <button onClick={async () => { await apiPost('/sales/kpi', { action: 'pf_mark', inboxId: op.id, to: 'subscription' }); load() }}
+                        className="text-[11.5px] px-2 py-1 rounded-lg text-gray-500 hover:text-blue-600 border border-gray-200">
+                        подписка
+                      </button>
                       <button onClick={() => act('pf_ignore', op.id)}
                         className="text-[11.5px] px-2 py-1 rounded-lg text-gray-400 hover:text-gray-600 border border-gray-200">
                         не продажи
                       </button>
                     </div>
+                  )}
+                  {tab === 'subscription' && (
+                    <button onClick={async () => { await apiPost('/sales/kpi', { action: 'pf_mark', inboxId: op.id, to: 'new' }); load() }}
+                      className="text-[11.5px] px-2 py-1 rounded-lg text-gray-500 hover:text-emerald-600 border border-gray-200">
+                      это новая продажа
+                    </button>
                   )}
                   {tab === 'linked' && (
                     <button onClick={() => act('pf_unlink', op.id)}
@@ -801,11 +847,12 @@ function PfInbox() {
         )}
       </Card>
       <div className="text-[11.5px] text-gray-400 px-1">
+        Кнопка «История с 2021» выучивает всю историю платежей: клиент, плативший раньше,
+        автоматически уходит в «Подписку» — вне комиссий и планов. В «Новых деньгах» остаются
+        только первые платежи — их привязываете к сделкам, и они идут в комиссию менеджера.
+        Ошибку классификации правят кнопки «подписка» / «это новая продажа».
         Суммы приведены к сумам курсом ПланФакта, оригинал в валюте счёта — серым.
-        Синим — статья операции (у нас это бренд клиента). Зелёные кнопки — подсказки:
-        имя совпало со сделкой или аккаунтом, включая старые выигранные сделки из Amo.
-        Привязка создаёт поступление на сделке; комиссия менеджеру идёт, только если
-        у сделки есть владелец. Каждая операция привязывается один раз — дублей не будет.
+        Каждая операция привязывается один раз — дублей не будет.
       </div>
     </>
   )

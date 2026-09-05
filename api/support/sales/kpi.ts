@@ -108,6 +108,22 @@ async function ensureKpiSchema(sql: any) {
     `.catch(() => {})
     await sql`ALTER TABLE sales_pf_inbox ADD COLUMN IF NOT EXISTS currency VARCHAR(8) DEFAULT 'UZS'`.catch(() => {})
     await sql`ALTER TABLE sales_pf_inbox ADD COLUMN IF NOT EXISTS amount_original BIGINT`.catch(() => {})
+    // Клиентская база из истории ПланФакта: дата первого платежа по бренду.
+    // CRM внедрялась в этом году, а продажи идут с 2021-го — сделок старых
+    // клиентов в системе нет, и только история платежей отличает подписку
+    // старой базы от новых денег, которые привели сейлзы
+    await sql`
+      CREATE TABLE IF NOT EXISTS sales_pf_clients (
+        org_id VARCHAR(50) NOT NULL,
+        client_key TEXT NOT NULL,
+        title TEXT,
+        first_paid_at DATE NOT NULL,
+        last_paid_at DATE NOT NULL,
+        ops_count INT NOT NULL DEFAULT 0,
+        total_paid BIGINT NOT NULL DEFAULT 0,
+        PRIMARY KEY (org_id, client_key)
+      )
+    `.catch(() => {})
     await sql`
       CREATE TABLE IF NOT EXISTS sales_kpi_closures (
         org_id VARCHAR(50) NOT NULL,
@@ -201,7 +217,7 @@ async function computeMonth(sql: any, orgId: string, month: string) {
   const monthDate = `${month}-01`
   const elapsedFrac = workElapsed / workTotal
 
-  const [agents, callRows, meetRows, docRows, payRows, adjRows] = await Promise.all([
+  const [agents, callRows, meetRows, docRows, payRows, adjRows, subRows] = await Promise.all([
     sql`
       SELECT id, name FROM support_agents
       WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
@@ -250,6 +266,13 @@ async function computeMonth(sql: any, orgId: string, month: string) {
       WHERE org_id = ${orgId} AND month = ${monthDate}
       ORDER BY created_at
     `,
+    // Подписка старой базы — справочно, вне комиссий и планов сейлзов
+    sql`
+      SELECT COALESCE(SUM(amount), 0)::bigint AS s, COUNT(*)::int AS n
+      FROM sales_pf_inbox
+      WHERE org_id = ${orgId} AND status = 'subscription'
+        AND operation_date BETWEEN ${monthStart}::date AND ${monthEnd}::date
+    `.catch(() => [{ s: 0, n: 0 }]),
   ])
 
   const nameById = new Map<string, string>()
@@ -392,6 +415,10 @@ async function computeMonth(sql: any, orgId: string, month: string) {
     rop,
     fund,
     goals: {
+      subscription: {
+        paid: Number((subRows as any[])[0]?.s) || 0,
+        count: Number((subRows as any[])[0]?.n) || 0,
+      },
       team: { plan: template.teamPlan, paid: paidTotal, pace: paceOf(paidTotal, template.teamPlan) },
       enterprise: { plan: template.enterprisePlan, paid: paidEnterprise, pace: paceOf(paidEnterprise, template.enterprisePlan) },
       regions: Object.entries({ ...(template.regionPlans as Record<string, number>) }).map(([rid, plan]) => ({
@@ -448,6 +475,54 @@ function normName(s: string): string {
  * «Физ лицо» и подобные заглушки в матчинг не идут.
  */
 const NOISE_NAMES = new Set(['физ лицо', 'физлицо', 'не выбран', 'не выбрано'])
+
+/**
+ * Ключ клиента для истории платежей: статья (бренд) надёжнее контрагента —
+ * юрлица у франшиз разные, а бренд один. Контрагент — запасной вариант.
+ */
+function clientKeyOf(contragent?: string | null, category?: string | null): string {
+  const cat = normName(category || '')
+  if (cat.length >= 3 && !NOISE_NAMES.has(cat) && cat !== 'okazanie uslug') return cat
+  const ca = normName(contragent || '')
+  if (ca.length >= 3 && !NOISE_NAMES.has(ca)) return ca
+  return ''
+}
+
+/** Подписка = клиент впервые платил давно (раньше, чем 45 дней до операции). */
+const SUBSCRIPTION_AGE_DAYS = 45
+
+async function reclassifyNew(sql: any, orgId: string): Promise<number> {
+  const rows = await sql`
+    SELECT pf_operation_id, operation_date::text AS d, contragent, category
+    FROM sales_pf_inbox WHERE org_id = ${orgId} AND status = 'new'
+  `
+  if (!rows.length) return 0
+  const keys = [...new Set(
+    (rows as any[]).map(r => clientKeyOf(r.contragent, r.category)).filter(Boolean),
+  )]
+  if (!keys.length) return 0
+  const clients = await sql`
+    SELECT client_key, first_paid_at::text AS f FROM sales_pf_clients
+    WHERE org_id = ${orgId} AND client_key = ANY(${keys})
+  `
+  const firstBy = new Map((clients as any[]).map(c => [c.client_key, c.f]))
+  const toSub: number[] = []
+  for (const r of rows as any[]) {
+    const k = clientKeyOf(r.contragent, r.category)
+    if (!k) continue
+    const f = firstBy.get(k)
+    if (!f) continue
+    const age = (Date.parse(r.d) - Date.parse(f)) / 86400000
+    if (age > SUBSCRIPTION_AGE_DAYS) toSub.push(Number(r.pf_operation_id))
+  }
+  if (toSub.length) {
+    await sql`
+      UPDATE sales_pf_inbox SET status = 'subscription'
+      WHERE org_id = ${orgId} AND pf_operation_id = ANY(${toSub}) AND status = 'new'
+    `
+  }
+  return toSub.length
+}
 
 function matchDeals(
   signals: Array<string | null | undefined>,
@@ -558,7 +633,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (action === 'pf_inbox') {
       if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
       const status = url.searchParams.get('status') || 'new'
-      const [inbox, deals] = await Promise.all([
+      const [inbox, countRows, deals] = await Promise.all([
         sql`
           SELECT pf_operation_id, operation_date::text AS operation_date, amount,
                  contragent, comment, account, category, status, deal_id,
@@ -567,6 +642,10 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE org_id = ${orgId} AND status = ${status}
           ORDER BY operation_date DESC LIMIT 600
         `,
+        sql`
+          SELECT status, COUNT(*)::int AS n
+          FROM sales_pf_inbox WHERE org_id = ${orgId} GROUP BY status
+        `.then((r: any) => r),
         // Пул для привязки: живые и ВСЕ выигранные — исторические клиенты
         // из Amo платят подписку, их сделки давно выиграны, но именно к ним
         // и привязываются регулярные поступления
@@ -597,8 +676,11 @@ export default async function handler(req: Request): Promise<Response> {
           ? matchDeals([op.contragent, op.category, op.comment], dealPool)
           : [],
       }))
+      const counts: Record<string, number> = {}
+      for (const c of countRows as any[]) counts[c.status] = c.n
       return json({
         items,
+        counts,
         deals: dealPool.map(d => ({
           id: d.id, title: d.title, account: d.account_name, owner: d.owner_name, won: !!d.won_at,
         })),
@@ -756,10 +838,72 @@ export default async function handler(req: Request): Promise<Response> {
         if (items.length < 100) break
         offset += 100
       }
+      // Свежие строки сразу прогоняем через историю: платил раньше — подписка
+      const reclassified = await reclassifyNew(sql, orgId)
       const [cnt] = await sql`
         SELECT COUNT(*)::int AS n FROM sales_pf_inbox WHERE org_id = ${orgId} AND status = 'new'
       `
-      return json({ ok: true, fetched, added, pending: cnt?.n || 0, from, to })
+      return json({ ok: true, fetched, added, reclassified, pending: cnt?.n || 0, from, to })
+    }
+
+    /**
+     * Индексация истории платежей с 2021 года — фундамент разделения
+     * «подписка vs новые деньги». Порциями по ~1200 операций: фронт зовёт
+     * повторно с nextOffset, пока done не станет true. Старт с нуля чистит
+     * прежний индекс, чтобы счётчики не задваивались.
+     */
+    if (action === 'pf_index') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const key = await getPlanfactKey(sql, orgId)
+      if (!key) return json({ error: 'ПланФакт не подключён' }, 400)
+
+      const from = String(body.from || '').match(/^\d{4}-\d{2}-\d{2}$/) ? String(body.from) : '2021-01-01'
+      const to = new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10)
+      let offset = Math.max(0, Number(body.offset) || 0)
+      if (offset === 0) {
+        await sql`DELETE FROM sales_pf_clients WHERE org_id = ${orgId}`
+      }
+
+      let processed = 0, done = false
+      for (let page = 0; page < 12; page++) {
+        const r = await pfIncomeOperations(key, from, to, 100, offset)
+        if (!r.ok) return json({ error: r.error }, 502)
+        const items = r.data?.items || []
+        processed += items.length
+        for (const op of items) {
+          const k = clientKeyOf(op.contragent, op.category)
+          if (!k || !(op.value > 0)) continue
+          await sql`
+            INSERT INTO sales_pf_clients (org_id, client_key, title, first_paid_at, last_paid_at, ops_count, total_paid)
+            VALUES (${orgId}, ${k}, ${op.category || op.contragent}, ${op.operationDate}, ${op.operationDate}, 1, ${op.value})
+            ON CONFLICT (org_id, client_key) DO UPDATE SET
+              first_paid_at = LEAST(sales_pf_clients.first_paid_at, EXCLUDED.first_paid_at),
+              last_paid_at = GREATEST(sales_pf_clients.last_paid_at, EXCLUDED.last_paid_at),
+              ops_count = sales_pf_clients.ops_count + 1,
+              total_paid = sales_pf_clients.total_paid + EXCLUDED.total_paid,
+              title = COALESCE(EXCLUDED.title, sales_pf_clients.title)
+          `
+        }
+        if (items.length < 100) { done = true; break }
+        offset += 100
+      }
+
+      let reclassified = 0
+      if (done) reclassified = await reclassifyNew(sql, orgId)
+      const [c] = await sql`SELECT COUNT(*)::int AS n FROM sales_pf_clients WHERE org_id = ${orgId}`
+      return json({ ok: true, done, nextOffset: offset, processed, reclassified, clients: c?.n || 0 })
+    }
+
+    // Ручной перенос: «это подписка» ↔ «это новая продажа»
+    if (action === 'pf_mark') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const to = body.to === 'subscription' ? 'subscription' : 'new'
+      await sql`
+        UPDATE sales_pf_inbox SET status = ${to}
+        WHERE org_id = ${orgId} AND pf_operation_id = ${Number(body.inboxId)}
+          AND status IN ('new', 'subscription')
+      `
+      return json({ ok: true })
     }
 
     // Привязка операции к сделке: рождается поступление, комиссия оживает
