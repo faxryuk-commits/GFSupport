@@ -178,6 +178,24 @@ export async function listConnectedAgents(orgId: string): Promise<Array<{
   }))
 }
 
+/**
+ * Подключён ли календарь — одним запросом, без обмена токена.
+ *
+ * Раньше признак для интерфейса считался через getAgentToken, а это поход
+ * в Google на каждый показ календаря. Для галочки в UI достаточно факта
+ * наличия доступа: живость всё равно проверяется там, где событие создаётся.
+ */
+export async function hasAgentCalendar(orgId: string, agentId: string | null): Promise<boolean> {
+  if (!agentId) return false
+  const sql = getSQL()
+  await ensureGoogleCalSchema(sql)
+  const [row] = await sql`
+    SELECT 1 AS ok FROM support_google_agent
+    WHERE org_id = ${orgId} AND agent_id = ${agentId} AND refresh_token IS NOT NULL LIMIT 1
+  ` as any[]
+  return Boolean(row)
+}
+
 export function invalidateAgentToken(orgId: string, agentId: string) {
   tokenCache.delete(`${orgId}:${agentId}`)
 }

@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
-import { readGoogleCalConfig, getAgentToken } from '../_lib/google-cal-config.js'
+import { readGoogleCalConfig, getAgentToken, hasAgentCalendar } from '../_lib/google-cal-config.js'
 import { sendNotification } from '../_lib/notifications.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -406,7 +406,10 @@ export default async function handler(req: Request): Promise<Response> {
   const rangeStart = wallToUtc(from, 0)
   const rangeEnd = wallToUtc(to, 24 * 60)
 
-  const rows = await sql`
+  // Один заход в базу вместо двух подряд: дорога до неё ≈190 мс, и признак
+  // подключения незачем ждать отдельно от самих встреч
+  const [rows, connected] = await Promise.all([
+    sql`
     SELECT t.id, t.due_at, t.title, t.status, t.done_at, t.done_result,
            t.assignee_agent_id, t.meet_url, t.deal_id, t.lead_id, t.account_id,
            ag.name AS assignee_name,
@@ -419,7 +422,9 @@ export default async function handler(req: Request): Promise<Response> {
     WHERE t.org_id = ${orgId} AND t.kind = 'meeting'
       AND t.due_at >= ${rangeStart.toISOString()} AND t.due_at < ${rangeEnd.toISOString()}
     ORDER BY t.due_at
-  ` as any[]
+  ` as Promise<any[]>,
+    hasAgentCalendar(orgId, ctx.agentId),
+  ])
 
   return json({
     from, to,
@@ -427,8 +432,8 @@ export default async function handler(req: Request): Promise<Response> {
     workDays: cfg.workDays,
     workFrom: cfg.workFrom,
     workTo: cfg.workTo,
-    googleConnected: Boolean(await getAgentToken(orgId, ctx.agentId)),
-    meetings: rows.map(r => ({
+    googleConnected: connected,
+    meetings: (rows as any[]).map(r => ({
       id: r.id,
       startAt: r.due_at,
       title: r.title,

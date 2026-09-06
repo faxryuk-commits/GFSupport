@@ -97,8 +97,10 @@ export function MeetingsPanel() {
 
   const load = useCallback(async () => {
     try {
+      // Кэш включён намеренно: панель живёт и на воронке, и в очереди дня,
+      // а данные недели не меняются ежесекундно
       const r = await apiGet<Data>(
-        `/sales/meetings?from=${isoDay(days[0])}&to=${isoDay(days[5])}`, false,
+        `/sales/meetings?from=${isoDay(days[0])}&to=${isoDay(days[5])}`,
       )
       setData(r)
     } catch { setData(null) }
@@ -139,7 +141,11 @@ export function MeetingsPanel() {
     try {
       await apiPost(`/sales/meetings?action=${path}`, body)
       setMoving(null)
-      await load()
+      // Свой же кэш обходим: после действия нужен свежий ответ
+      const fresh = await apiGet<Data>(
+        `/sales/meetings?from=${isoDay(days[0])}&to=${isoDay(days[5])}`, false,
+      )
+      setData(fresh)
     } catch (e: any) {
       const msg = String(e?.message || '')
       setError(msg.includes('slot_taken') || msg.includes('409')
