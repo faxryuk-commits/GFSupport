@@ -14,12 +14,17 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * уже есть исполнитель, срок и привязки к лиду, сделке и клиенту. Отдельная
  * таблица разошлась бы с задачей при первом переносе времени.
  *
- * Календарь один на команду. Свободное время считается по нему целиком, а не
- * по расписанию конкретного менеджера: встречу назначают на компанию, а кто
- * её проведёт — решает CRM и может переиграть в любой момент.
+ * Календарь один на команду — но занятость персональная. Четыре менеджера
+ * могут вести четыре встречи в одно время, каждый по своей ссылке Meet;
+ * запрещено только двойное бронирование одного человека.
+ *
+ * Отсюда важное следствие: занятость считается по нашей базе, а не по
+ * freeBusy общего календаря Google. На общем аккаунте freeBusy показывает
+ * занятым любое время, где стоит хоть чья-то встреча, и параллельные встречи
+ * стали бы невозможны. Кто именно занят, знает только CRM.
  *
  * GET                      ?from=&to=  встречи за период (полотно календаря)
- * GET  ?action=slots&date= свободные слоты дня
+ * GET  ?action=slots&date=&assignee= свободные слоты дня для конкретного менеджера
  * POST ?action=create      { dealId?, leadId?, startAt, durationMin?, title?, assigneeAgentId?, guestEmail?, guestName? }
  * POST ?action=reassign    { id, assigneeAgentId }  — подхватить чужую встречу
  * POST ?action=reschedule  { id, startAt, durationMin? }  — перенести на другое время
@@ -81,33 +86,43 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ date, slots: [], reason: 'выходной' })
     }
 
-    const token = await getGoogleAccessToken(cfg)
-    const [busy, taken] = await Promise.all([
-      token ? busyRanges(token, dayStart, dayEnd) : Promise.resolve([] as Array<[number, number]>),
-      // Своя база тоже нужна: Google мог быть недоступен в момент создания,
-      // и встреча существует у нас, но не в календаре
-      sql`
-        SELECT due_at FROM sales_tasks
-        WHERE org_id = ${orgId} AND kind = 'meeting' AND status <> 'cancelled'
-          AND due_at >= ${dayStart.toISOString()} AND due_at < ${dayEnd.toISOString()}
-      ` as Promise<any[]>,
-    ])
+    // Занятость персональная: без исполнителя показываем свободным всё,
+    // потому что занят может быть кто-то один, а провести встречу — другой
+    const who = String(url.searchParams.get('assignee') || '')
+    const taken = who
+      ? await sql`
+          SELECT due_at FROM sales_tasks
+          WHERE org_id = ${orgId} AND kind = 'meeting' AND status <> 'cancelled'
+            AND assignee_agent_id = ${who}
+            AND due_at >= ${dayStart.toISOString()} AND due_at < ${dayEnd.toISOString()}
+        ` as any[]
+      : []
     const takenMs = new Set((taken as any[]).map(r => new Date(r.due_at).getTime()))
 
-    const slots: Array<{ startAt: string; hhmm: string; free: boolean }> = []
+    // Кто ещё занят в этот час — показываем в подсказке, чтобы при выборе
+    // времени было видно нагрузку команды, а не только своё расписание
+    const load = await sql`
+      SELECT due_at, COUNT(*)::int AS n FROM sales_tasks
+      WHERE org_id = ${orgId} AND kind = 'meeting' AND status <> 'cancelled'
+        AND due_at >= ${dayStart.toISOString()} AND due_at < ${dayEnd.toISOString()}
+      GROUP BY due_at
+    ` as any[]
+    const loadMs = new Map((load as any[]).map(r => [new Date(r.due_at).getTime(), r.n]))
+
+    const slots: Array<{ startAt: string; hhmm: string; free: boolean; busyCount: number }> = []
     const step = cfg.slotMinutes
     for (let min = cfg.workFrom * 60; min + step <= cfg.workTo * 60; min += step) {
       const start = wallToUtc(date, min)
       const ms = start.getTime()
-      const overlap = busy.some(([bs, be]) => ms < be && ms + step * 60_000 > bs)
       slots.push({
         startAt: start.toISOString(),
         hhmm: `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`,
         // Прошедшее время недоступно: назначить встречу назад нельзя
-        free: !overlap && !takenMs.has(ms) && ms > Date.now(),
+        free: !takenMs.has(ms) && ms > Date.now(),
+        busyCount: loadMs.get(ms) || 0,
       })
     }
-    return json({ date, slots, slotMinutes: step, googleReady: Boolean(token) })
+    return json({ date, slots, slotMinutes: step, assignee: who || null })
   }
 
   // ─── Создание встречи ───────────────────────────────────────────────────────
@@ -124,14 +139,18 @@ export default async function handler(req: Request): Promise<Response> {
       ? Number(body.durationMin) : cfg.slotMinutes
     const end = new Date(start.getTime() + duration * 60_000)
 
-    // Слот мог занять коллега, пока окно было открыто. Календарь общий,
-    // и две встречи на одно время — это не «почти успели», а сорванный день
+    const assignee = String(body.assigneeAgentId || ctx.agentId)
+
+    // Двойное бронирование запрещено только одному человеку: коллеги в это же
+    // время ведут свои встречи по своим ссылкам, и это нормальная работа отдела
     const [clash] = await sql`
       SELECT id FROM sales_tasks
       WHERE org_id = ${orgId} AND kind = 'meeting' AND status <> 'cancelled'
-        AND due_at = ${start.toISOString()} LIMIT 1
+        AND due_at = ${start.toISOString()} AND assignee_agent_id = ${assignee} LIMIT 1
     ` as any[]
-    if (clash) return json({ error: 'slot_taken', message: 'Это время только что заняли — выберите другое' }, 409)
+    if (clash) {
+      return json({ error: 'slot_taken', message: 'У этого менеджера на это время уже есть встреча' }, 409)
+    }
 
     // Аккаунт достаём из сделки или лида: по нему встреча видна в карточке
     // клиента, даже когда сделок у него несколько
@@ -153,8 +172,6 @@ export default async function handler(req: Request): Promise<Response> {
       if (!clientName) clientName = l?.name || ''
     }
     if (!clientName) clientName = 'Встреча'
-
-    const assignee = String(body.assigneeAgentId || ctx.agentId)
 
     // Событие в Google. Если календарь не подключён или Google ответил
     // отказом, встречу всё равно заводим: она нужна в CRM, а ссылку
@@ -259,11 +276,13 @@ export default async function handler(req: Request): Promise<Response> {
     ` as any[]
     if (!row) return json({ error: 'Встреча не найдена' }, 404)
 
-    // Новое время могло быть занято, пока окно открыто, — календарь общий
+    // Занято — значит занято у этого же менеджера; у коллег своё расписание
     const [clash] = await sql`
       SELECT id FROM sales_tasks
       WHERE org_id = ${orgId} AND kind = 'meeting' AND status <> 'cancelled'
-        AND due_at = ${start.toISOString()} AND id <> ${body.id} LIMIT 1
+        AND due_at = ${start.toISOString()} AND id <> ${body.id}
+        AND assignee_agent_id = (SELECT assignee_agent_id FROM sales_tasks WHERE id = ${body.id})
+      LIMIT 1
     ` as any[]
     if (clash) return json({ error: 'slot_taken', message: 'Это время только что заняли — выберите другое' }, 409)
 
