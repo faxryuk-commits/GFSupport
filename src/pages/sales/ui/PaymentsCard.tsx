@@ -51,7 +51,7 @@ export function PaymentsCard({ dealId, canManage }: { dealId: string; canManage:
   const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0)
 
   return (
-    <Card
+    <Card dense
       title="Поступления"
       sub={total > 0 ? `пришло ${fmt(total)} — идёт в комиссию менеджера` : 'фактически пришедшие деньги · база комиссии'}
       right={canManage ? (

@@ -4,7 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
-import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText } from './kit'
+import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText, Fold, MoreMenu } from './kit'
 import { CallInsight } from './CallInsight'
 import { TasksCard } from './TasksCard'
 import { TeamThread } from './TeamThread'
@@ -73,10 +73,10 @@ const ASSISTANT_ACTION: Record<string, string> = {
   reply: 'получен ответ', stop: 'прогрев остановлен', skip: 'шаг пропущен',
 }
 
-const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div className="flex gap-3 py-1.5 px-4 border-b border-dashed border-gray-100 last:border-0">
-    <span className="text-[12px] text-gray-500 w-40 flex-none">{label}</span>
-    <span className="text-[12.5px] text-gray-900 break-words min-w-0">{children}</span>
+const Row = ({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) => (
+  <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100 last:border-0 text-[12px]" title={title}>
+    <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+    <span className="text-gray-900 font-medium min-w-0 text-right ml-auto truncate">{children}</span>
   </div>
 )
 
@@ -131,11 +131,11 @@ const Rename = ({ value, onSave, children }: {
   )
 }
 
-const Block = ({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) => (
+const Block = ({ title, sub, count, children }: { title: string; sub?: string; count?: React.ReactNode; children: React.ReactNode }) => (
   <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-    <header className="px-4 py-2.5 border-b border-gray-100">
-      <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
-      {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
+    <header className="px-3 py-1.5 border-b border-gray-100 flex items-baseline gap-2" title={sub}>
+      <h3 className="text-[12.5px] font-semibold text-gray-900">{title}</h3>
+      {count !== undefined && <span className="text-[11px] text-gray-400 tabular-nums">{count}</span>}
     </header>
     {children}
   </section>
@@ -313,54 +313,55 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
   return (
     <div className="p-4 space-y-3">
-      <header className="space-y-1.5">
-        <div className="text-[11px] text-gray-400">
-          <Link to="/sales/funnel" className="hover:text-blue-600">Воронка</Link>
-          {' / '}{l.name}
-        </div>
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <h1 className="text-[19px] font-semibold text-gray-900 tracking-tight">
+      <header className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-2.5">
+        {/* Одна строка сути: имя, компания, статус, откуда, ответственный,
+            когда пришло. Раньше — четыре строки и метки вразнобой */}
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <h1 className="text-[17px] font-semibold text-gray-900 tracking-tight leading-tight">
             <Rename value={l.name} onSave={v => act('update', { fields: { name: v } })}>
               {l.contact_name || l.name}
             </Rename>
           </h1>
           {l.contact_name && l.name !== l.contact_name && (
-            <span className="text-[13px] text-gray-500">{l.name}</span>
+            <span className="text-[12.5px] text-gray-500">{l.name}</span>
           )}
-        </div>
-        <div className="flex flex-wrap gap-1.5 items-center">
-          <Chip tone="violet">{KIND_LABEL[l.lead_kind || ''] || 'обращение'}</Chip>
-          {/* Заявка из инструмента проверки Meta: настоящих данных в ней нет,
-              и звонить по ней некому */}
-          {l.raw?._test && <Chip tone="amber">тестовая</Chip>}
           <Chip tone={leadStatus(l.status).tone}>{leadStatus(l.status).label}</Chip>
+          <Chip tone="violet">
+            {[KIND_LABEL[l.lead_kind || ''] || 'обращение', l.source].filter(Boolean).join(' · ')}
+          </Chip>
+          {l.raw?._test && <Chip tone="amber">тестовая</Chip>}
           {l.sla_due_at && !l.first_touch_at && open && (
             <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
           )}
-          <span className="text-[11.5px] text-gray-400 tabular-nums">
-            пришло {formatDateTimeShort(l.created_at)}
+          <span className="flex items-center gap-1.5 text-[11.5px] text-gray-400 ml-auto whitespace-nowrap">
+            <OwnerPicker
+              owner={l.agent_name ? { name: l.agent_name } : null}
+              team={data.team || []}
+              onPick={agentId => act('reassign', { agentId })}
+              busy={busy}
+            />
+            <span>·</span>
+            <span className="tabular-nums">пришло {formatDateTimeShort(l.created_at)}</span>
           </span>
-          <span className="text-[11.5px] text-gray-400">·</span>
-          <span className="text-[11.5px] text-gray-400">Ответственный:</span>
-          <OwnerPicker
-            owner={l.agent_name ? { name: l.agent_name } : null}
-            team={data.team || []}
-            onPick={agentId => act('reassign', { agentId })}
-            busy={busy}
-          />
         </div>
-        <div className="flex gap-2 pt-1 items-center">
+        {/* Один ряд действий в том же порядке, что у сделки: главное · встреча ·
+            этап · позвонить · ⋯ (отказ, удаление) */}
+        <div className="flex items-center gap-2 flex-wrap">
           {open && (
             <>
               <button disabled={busy} onClick={() => act('assign')}
-                className="text-[12px] px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:brightness-110 disabled:opacity-50">
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold hover:brightness-110 disabled:opacity-50">
                 Беру в работу
+              </button>
+              <button disabled={busy} onClick={() => setMeetingOpen(true)}
+                className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-700 disabled:opacity-50">
+                Назначить встречу
               </button>
               {(data.stages?.length || 0) > 0 && (
                 <select disabled={busy} value="" onChange={e => convertTo(e.target.value)}
                   title="Перевести в сделку сразу на выбранный этап"
-                  className="text-[12px] px-2.5 py-1.5 rounded-lg border border-blue-300 text-blue-700 bg-white
-                             hover:border-blue-500 disabled:opacity-50">
+                  className="text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 bg-white
+                             hover:border-blue-400 disabled:opacity-50">
                   <option value="">В сделку на этап…</option>
                   {data.stages!.map(s => <option key={s.id} value={s.key}>{s.label}</option>)}
                 </select>
@@ -368,38 +369,29 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
               {l.status !== 'nurture' && l.assistant_can_write && (
                 <button disabled={busy} onClick={() => act('nurture')}
                   title="Ассистент напишет клиенту сам: 4 сообщения за 10 дней. Ответ клиента вернёт обращение вам"
-                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400">
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400 disabled:opacity-50">
                   → Ассистенту
                 </button>
               )}
               {l.status === 'nurture' && (
                 <button disabled={busy} onClick={() => act('dial')}
                   title="Забрать у ассистента и дозваниваться самому"
-                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-500">
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-500 disabled:opacity-50">
                   Вернуть себе
                 </button>
               )}
-              {/* Встреча — следующий шаг по обращению; раньше кнопка висела
-                  отдельной строкой между шапкой и задачами */}
-              <button disabled={busy} onClick={() => setMeetingOpen(true)}
-                className="text-[12px] px-3 py-1.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50">
-                Назначить встречу
-              </button>
-              <button disabled={busy} onClick={askReason}
-                className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600">
-                В отказ
-              </button>
             </>
           )}
+          {l.phone && (
+            <span className="text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-emerald-400">
+              <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
+            </span>
+          )}
           <span className="flex-1" />
-          {/* Удаление видно всегда, а не только внутри «отказа»: тестовое или
-              ошибочное обращение убирают и из архива. Право проверяет API —
-              администраторы и руководители */}
-          <button disabled={busy} onClick={remove}
-            title="Насовсем — для тестовых и ошибочных обращений; администраторы и руководители"
-            className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 disabled:opacity-50">
-            Удалить
-          </button>
+          <MoreMenu items={[
+            open && { label: 'В отказ…', onClick: askReason, danger: true },
+            { label: 'Удалить насовсем', title: 'Для тестовых и ошибочных обращений; администраторы и руководители', onClick: remove, danger: true },
+          ]} />
         </div>
         {asking && (
           <div className="border border-gray-200 rounded-xl p-3 bg-white space-y-2">
@@ -452,7 +444,9 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         <div className="space-y-3 min-w-0">
         {/* Квалификация нашими руками. Эти поля менеджер заполнял в Amo, а мы
             читали их из сырых данных заявки — без Amo они бы осиротели */}
-        <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
+        <Card dense title="Квалификация"
+          count={`${QUAL_FIELDS.filter(([f]) => { const v = qual(f); return v !== null && v !== undefined && v !== '' }).length} из ${QUAL_FIELDS.length} · для сделки нужны ${[...GATING].length}`}
+          hint="Заполняется на звонке, правится по клику. Поля с точкой нужны, чтобы обращение стало сделкой">
           <div className="grid sm:grid-cols-2">
             {QUAL_FIELDS.map(([f, label]) => {
               const v = qual(f)
@@ -470,16 +464,15 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           </div>
         </Card>
 
-        <Block title="Кто обратился">
-          <div>
+        {/* «Кто» и «откуда» — один блок в две колонки: это одна страница
+            паспорта, а не два раздела */}
+        <Block title="Кто и откуда">
+          <div className="grid sm:grid-cols-2">
             {l.contact_name && <Row label="Контакт">{l.contact_name}</Row>}
-            <Row label="Телефон">
+            <Row label="Телефон" title={phone.valid && phone.operator ? phone.operator : undefined}>
               {l.phone
-                ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} />
+                ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
                 : <span className="text-gray-400">не оставил</span>}
-              {phone.valid && phone.operator && (
-                <span className="text-gray-400 text-[11.5px]"> · {phone.operator}</span>
-              )}
             </Row>
             {l.city && <Row label="Город">{l.city}</Row>}
             <Row label="Компания">
@@ -496,27 +489,21 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                 {[l.instagram, l.telegram, l.website].filter(Boolean).join(' · ')}
               </Row>
             )}
-          </div>
-        </Block>
-
-        <Block title="Откуда пришло" sub="канал, кампания и метки перехода">
-          <div>
             <Row label="Источник">{l.source || 'не определён'}</Row>
             {l.campaign && <Row label="Кампания">{l.campaign}</Row>}
-            {l.agent_name && <Row label="Ответственный">{l.agent_name}</Row>}
             {l.icp_score !== null && l.icp_score !== undefined && (
-              <Row label="Оценка соответствия">
+              // Причины оценки — по наведению: голая цифра «0» читается как
+              // «не посчитали», а список причин в строку не помещается
+              <Row label="Оценка"
+                title={Array.isArray(l.icp_reasons) && l.icp_reasons.length
+                  ? l.icp_reasons.map((r: any) => `${r.label}${r.points ? ` (${r.points > 0 ? '+' : ''}${r.points})` : ''}`).join(' · ')
+                  : undefined}>
                 <span className={l.icp_score >= 50 ? 'text-emerald-700 font-semibold'
                   : l.icp_score >= 20 ? 'text-amber-700' : 'text-gray-900'}>
                   {l.icp_score}
                 </span>
-                {/* Голая цифра «0» читается как «не посчитали». Причины показывают,
-                    что оценка сделана и на чём основана */}
                 {Array.isArray(l.icp_reasons) && l.icp_reasons.length > 0 && (
-                  <span className="block text-[11.5px] text-gray-500 mt-0.5">
-                    {l.icp_reasons.map((r: any) =>
-                      `${r.label}${r.points ? ` (${r.points > 0 ? '+' : ''}${r.points})` : ''}`).join(' · ')}
-                  </span>
+                  <span className="text-[11px] text-gray-400 font-normal"> · {l.icp_reasons.length} причин ⓘ</span>
                 )}
               </Row>
             )}
@@ -524,47 +511,53 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           </div>
         </Block>
 
-        {l.text && (
-          <Block title="Что написал">
-            {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
-                вместо пробелов. Правим только при показе: в самой форме
-                названия полей не наши, а рекламного кабинета */}
-            <p className="px-4 py-3 text-[12.5px] text-gray-800 whitespace-pre-wrap">
-              {String(l.text || '').split('\n').map(humanValue).join('\n')}
-            </p>
-          </Block>
-        )}
-
-        {data.fields.length > 0 && (
-          <Block title="Что заполнил" sub="поля формы и карточки как есть">
-            <div>{data.fields.map(f => (
-              <Row key={f.label} label={humanLabel(f.label)}>{humanValue(f.value)}</Row>
-            ))}</div>
-          </Block>
-        )}
-
-        {data.deals.length > 0 && (
-          <Block title="Во что вылилось">
-            <div>
-              {data.deals.map(d => (
-                <Link key={d.id} to={`/sales/deals/${d.id}`}
-                  className="flex justify-between gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50">
-                  <span className="text-[12.5px] text-blue-600">{d.title}</span>
-                  <span className="text-[11.5px] text-gray-500">
-                    {d.won_at ? 'выиграна' : d.lost_at ? 'проиграна' : d.stage || 'в работе'}
-                    {d.monthly_amount ? ` · ${Number(d.monthly_amount).toLocaleString('ru-RU')} ${d.currency}` : ''}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </Block>
+        {/* Редкое — свёрнуто в строки с содержимым: текст заявки, ответы
+            формы и сделки не нужны при каждом открытии, а места занимали */}
+        {(l.text || data.fields.length > 0 || data.deals.length > 0) && (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            {l.text && (
+              <Fold title="Что написал" sub={`«${String(l.text).replace(/\s+/g, ' ').slice(0, 90)}${l.text.length > 90 ? '…' : ''}»`}>
+                {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
+                    вместо пробелов. Правим только при показе */}
+                <p className="px-3 py-2 text-[12.5px] text-gray-800 whitespace-pre-wrap">
+                  {String(l.text || '').split('\n').map(humanValue).join('\n')}
+                </p>
+              </Fold>
+            )}
+            {data.fields.length > 0 && (
+              <Fold title="Что заполнил" sub={`${data.fields.length} полей формы и карточки`}>
+                <div className="grid sm:grid-cols-2">{data.fields.map(f => (
+                  <Row key={f.label} label={humanLabel(f.label)}>{humanValue(f.value)}</Row>
+                ))}</div>
+              </Fold>
+            )}
+            {data.deals.length > 0 && (
+              <Fold title="Во что вылилось" defaultOpen sub={`${data.deals.length} ${data.deals.length === 1 ? 'сделка' : 'сделки'}`}>
+                {data.deals.map(d => (
+                  <Link key={d.id} to={`/sales/deals/${d.id}`}
+                    className="flex justify-between gap-3 px-3 h-7 items-center border-b border-gray-100 last:border-0 hover:bg-gray-50 text-[12px]">
+                    <span className="text-blue-600 truncate">{d.title}</span>
+                    <span className="text-[11.5px] text-gray-500 whitespace-nowrap">
+                      {d.won_at ? 'выиграна' : d.lost_at ? 'проиграна' : d.stage || 'в работе'}
+                      {d.monthly_amount ? ` · ${Number(d.monthly_amount).toLocaleString('ru-RU')} ${d.currency}` : ''}
+                    </span>
+                  </Link>
+                ))}
+              </Fold>
+            )}
+          </div>
         )}
         </div>
         <div className="space-y-3 min-w-0">
         <TasksCard leadId={id} accountId={l.account_id || undefined} />
 
-        {/* Разговор о клиенте между своими — при карточке, а не в Telegram */}
-        <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} />
+        {/* Разговор о клиенте между своими — при карточке, а не в Telegram.
+            Свёрнут, пока не нужен: пустая ветка занимала полэкрана */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <Fold title="Команда" sub="внутреннее — клиент не видит · @имя зовёт коллегу">
+            <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} />
+          </Fold>
+        </div>
 
         {data.messages.length > 0 && (
           <Block title="Переписка" sub={`${data.messages.length} сообщений в канале`}>
