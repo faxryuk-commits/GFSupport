@@ -984,11 +984,13 @@ export const FilterBar = ({ active, children, right }: {
 export const MultiPick = ({ label, values, options, onChange }: {
   label: string
   values: string[]
-  options: string[]
+  /** Строка — значение и подпись сразу; объект — когда ключ не равен подписи (этапы). */
+  options: Array<string | { value: string; label: string }>
   onChange: (v: string[]) => void
 }) => {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+  const opts = options.map(o => (typeof o === 'string' ? { value: o, label: o } : o))
 
   useEffect(() => {
     if (!open) return
@@ -1012,16 +1014,16 @@ export const MultiPick = ({ label, values, options, onChange }: {
       {open && (
         <div className="absolute left-0 top-full mt-1 z-40 min-w-[190px] max-h-64 overflow-y-auto
                         bg-white border border-gray-200 rounded-xl shadow-lg py-1">
-          {!options.length && (
+          {!opts.length && (
             <div className="px-3 py-2 text-[12px] text-gray-400">Значений пока нет</div>
           )}
-          {options.map(o => (
-            <label key={o}
+          {opts.map(o => (
+            <label key={o.value}
               className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-gray-700
                          hover:bg-gray-50 cursor-pointer">
-              <input type="checkbox" checked={values.includes(o)} onChange={() => toggle(o)}
+              <input type="checkbox" checked={values.includes(o.value)} onChange={() => toggle(o.value)}
                 className="accent-blue-500" />
-              <span className="truncate">{o}</span>
+              <span className="truncate">{o.label}</span>
             </label>
           ))}
           {values.length > 0 && (

@@ -134,6 +134,9 @@ export function SalesFunnelPage() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [dateBy, setDateBy] = useState<'created' | 'updated'>('created')
+  // Этапы: ключи этапов сделок и колонки обращений (lead:new). На доске
+  // остаются только выбранные колонки — пустые рамки ничего не говорят
+  const [stagesF, setStagesF] = useState<string[]>([])
   const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -188,12 +191,13 @@ export function SalesFunnelPage() {
     if (from) p.set('from', from)
     if (to) p.set('to', to)
     if ((from || to) && dateBy === 'updated') p.set('dateBy', 'updated')
+    if (stagesF.length) p.set('stage', stagesF.join(','))
     if (ptype === 'enterprise') p.set('type', 'enterprise')
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, from, to, dateBy, region, perColumn, ptype, view])
+  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, from, to, dateBy, stagesF, region, perColumn, ptype, view])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -360,7 +364,7 @@ export function SalesFunnelPage() {
       <div className="-mx-1">
         <FilterBar
           active={[
-            q && `поиск: ${q}`, owner && 'сейлз', src && 'источник',
+            q && `поиск: ${q}`, stagesF.length && `этапы: ${stagesF.length}`, owner && 'сейлз', src && 'источник',
             pos.length && `POS: ${pos.length}`, segment.length && `тип: ${segment.length}`,
             tariff.length && `тариф: ${tariff.length}`, opd.length && `заказов: ${opd.length}`,
             attention && 'требуют внимания',
@@ -374,11 +378,13 @@ export function SalesFunnelPage() {
             <MeetingsPanel />
           </div>}
         >
-          <input value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Бренд, имя, телефон, город, комментарий, ЛПР"
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-64" />
-          {/* Период: по дате создания или последнего изменения карточки */}
-          <div className="flex items-center gap-1.5">
+          {/* Строки по смыслу: что ищем и когда → где в воронке и у кого →
+              какой клиент → признаки состояния. Раньше поля лежали в порядке
+              появления в коде, и попап читался как беспорядок */}
+          <div className="w-full flex gap-2 flex-wrap items-center">
+            <input value={q} onChange={e => setQ(e.target.value)}
+              placeholder="Бренд, имя, телефон, город, комментарий, ЛПР"
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-64" />
             <select value={dateBy} onChange={e => setDateBy(e.target.value as 'created' | 'updated')}
               className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
               <option value="created">Созданы</option>
@@ -390,56 +396,69 @@ export function SalesFunnelPage() {
             <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)}
               className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]" />
           </div>
-          <select value={owner} onChange={e => setOwner(e.target.value)}
-            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
-            <option value="">Все сейлзы</option>
-            {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-          <select value={src} onChange={e => setSrc(e.target.value)}
-            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
-            <option value="">Все источники</option>
-            {(data.sources || []).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
-          <input value={city} onChange={e => setCity(e.target.value)} placeholder="Город"
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-32" />
-          <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
-            title="Сделки без назначенного следующего шага">
-            <input type="checkbox" checked={noStep} onChange={e => setNoStep(e.target.checked)}
-              className="accent-amber-500" />
-            без шага
-          </label>
-          <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
-            title="Сделки, висящие на этапе дольше норматива">
-            <input type="checkbox" checked={overdue} onChange={e => setOverdue(e.target.checked)}
-              className="accent-red-500" />
-            просрочены
-          </label>
-          <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
-            title="Застряли, без следующего шага или дольше норматива этапа">
-            <input type="checkbox" checked={attention} onChange={e => setAttention(e.target.checked)}
-              className="accent-red-500" />
-            требуют внимания
-          </label>
-          <MultiPick label="POS-система" values={pos} onChange={setPos}
-            options={optionsFor(refs, 'pos')} />
-          <MultiPick label="Тип заведения" values={segment} onChange={setSegment}
-            options={optionsFor(refs, 'segment')} />
-          <MultiPick label="Тариф" values={tariff} onChange={setTariff}
-            options={optionsFor(refs, 'tariff')} />
-          <MultiPick label="Заказов в день" values={opd} onChange={setOpd}
-            options={optionsFor(refs, 'orders_per_day')} />
-          {(q || owner || src || city || noStep || overdue || attention || from || to
-            || pos.length || segment.length || tariff.length || opd.length) && (
-            <button
-              onClick={() => {
-                setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false)
-                setPos([]); setSegment([]); setTariff([]); setOpd([]); setAttention(false)
-                setFrom(''); setTo(''); setDateBy('created')
-              }}
-              className="text-[12px] text-gray-400 hover:text-red-600 whitespace-nowrap">
-              сбросить ✕
-            </button>
-          )}
+          <div className="w-full flex gap-2 flex-wrap items-center">
+            <MultiPick label="Этап" values={stagesF} onChange={setStagesF}
+              options={[
+                ...data.leadColumns.map(c => ({ value: `lead:${c.key}`, label: `Обращения · ${c.label}` })),
+                ...data.stages.map(s => ({ value: s.key, label: s.label })),
+                { value: 'won', label: 'Выиграна' }, { value: 'lost', label: 'Проиграна' },
+              ]} />
+            <select value={owner} onChange={e => setOwner(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+              <option value="">Все сейлзы</option>
+              {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+            <select value={src} onChange={e => setSrc(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+              <option value="">Все источники</option>
+              {(data.sources || []).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+            <input value={city} onChange={e => setCity(e.target.value)} placeholder="Город"
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-32" />
+          </div>
+          <div className="w-full flex gap-2 flex-wrap items-center">
+            <MultiPick label="Тип заведения" values={segment} onChange={setSegment}
+              options={optionsFor(refs, 'segment')} />
+            <MultiPick label="POS-система" values={pos} onChange={setPos}
+              options={optionsFor(refs, 'pos')} />
+            <MultiPick label="Заказов в день" values={opd} onChange={setOpd}
+              options={optionsFor(refs, 'orders_per_day')} />
+            <MultiPick label="Тариф" values={tariff} onChange={setTariff}
+              options={optionsFor(refs, 'tariff')} />
+          </div>
+          <div className="w-full flex gap-4 flex-wrap items-center">
+            <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
+              title="Сделки без назначенного следующего шага">
+              <input type="checkbox" checked={noStep} onChange={e => setNoStep(e.target.checked)}
+                className="accent-amber-500" />
+              без шага
+            </label>
+            <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
+              title="Сделки, висящие на этапе дольше норматива">
+              <input type="checkbox" checked={overdue} onChange={e => setOverdue(e.target.checked)}
+                className="accent-red-500" />
+              просрочены
+            </label>
+            <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
+              title="Застряли, без следующего шага или дольше норматива этапа">
+              <input type="checkbox" checked={attention} onChange={e => setAttention(e.target.checked)}
+                className="accent-red-500" />
+              требуют внимания
+            </label>
+            {/* Boolean обязателен: «0» от пустого массива React рисует как текст */}
+            {Boolean(q || owner || src || city || noStep || overdue || attention || from || to
+              || stagesF.length || pos.length || segment.length || tariff.length || opd.length) && (
+              <button
+                onClick={() => {
+                  setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false)
+                  setPos([]); setSegment([]); setTariff([]); setOpd([]); setAttention(false)
+                  setFrom(''); setTo(''); setDateBy('created'); setStagesF([])
+                }}
+                className="ml-auto text-[12px] text-gray-400 hover:text-red-600 whitespace-nowrap">
+                сбросить ✕
+              </button>
+            )}
+          </div>
         </FilterBar>
       </div>
       </div>
@@ -455,7 +474,7 @@ export function SalesFunnelPage() {
       <div className="flex-1 min-h-0 flex gap-2.5 overflow-x-auto items-stretch pb-2">
         {/* ─── Зона входа: обращения ─────────────────────────────── */}
         <div className="flex gap-2.5 p-2 rounded-xl bg-violet-50/60 border border-dashed border-violet-200 flex-none">
-          {data.leadColumns.map(col => (
+          {data.leadColumns.filter(col => !stagesF.length || stagesF.includes(`lead:${col.key}`)).map(col => (
             <section
               key={col.key}
               onDragOver={e => { e.preventDefault(); setOver(col.key) }}
@@ -587,7 +606,7 @@ export function SalesFunnelPage() {
 
         {/* ─── Зона работы: сделки ───────────────────────────────── */}
         <div className="flex gap-2.5 p-2 rounded-xl bg-blue-50/50 border border-dashed border-blue-200 flex-none">
-          {data.stages.map(st => (
+          {data.stages.filter(st => !stagesF.length || stagesF.includes(st.key)).map(st => (
             <section
               key={st.key}
               onDragOver={e => { e.preventDefault(); setOver(st.key) }}
@@ -708,7 +727,7 @@ export function SalesFunnelPage() {
         {/* Раньше здесь были узкие зоны со счётчиком: закрытое можно было
             только пополнить, но не посмотреть. Колонки такие же, как у
             этапов, — с карточками и «показать ещё» */}
-        {data.closed.map(cl => {
+        {data.closed.filter(cl => !stagesF.length || stagesF.includes(cl.stage || cl.key)).map(cl => {
           const won = cl.kind === 'won'
           const items = closedIn(cl)
           // Проигранное свёрнуто в узкую полосу: на доске оно нужно редко, а

@@ -170,6 +170,16 @@ async function handlerInner(req: Request): Promise<Response> {
   // Период — по дате создания или по дате последнего изменения: «кто пришёл
   // на неделе» и «кого трогали на неделе» — разные вопросы, оба нужны
   const byUpdated = url.searchParams.get('dateBy') === 'updated' ? 1 : 0
+  // Этапы через запятую: ключи этапов сделок и колонки обращений
+  // (lead:new, lead:attempting). Пусто — все. Колонка обращений разворачивается
+  // в свои статусы здесь, чтобы фронт не знал, из чего она склеена
+  const stage = url.searchParams.get('stage') || ''
+  const stageKeys = stage ? stage.split(',').filter(Boolean) : []
+  const LEAD_COL: Record<string, string[]> = { 'lead:new': ['new', 'assigned'], 'lead:attempting': ['attempting', 'nurture'] }
+  const leadStatuses = stageKeys.flatMap(k => LEAD_COL[k] || [])
+  const leadFilter = stageKeys.length ? (leadStatuses.length ? leadStatuses.join(',') : '__none__') : ''
+  const dealStages = stageKeys.filter(k => !k.startsWith('lead:')).join(',')
+  const dealFilter = stageKeys.length ? (dealStages || '__none__') : ''
   const noStep = url.searchParams.get('nostep') === '1'
   const overdue = url.searchParams.get('overdue') === '1'
   // Телефон ищем по цифрам: «+998 97 555…» и «998975551555» — один номер,
@@ -204,6 +214,7 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)
           AND (${owner} = '' OR l.assigned_agent_id = ${owner})
           AND (${src} = '' OR l.source_id = ${src})
+          AND (${leadFilter} = '' OR l.status = ANY(string_to_array(${leadFilter}, ',')))
           AND (${cityLike} = '' OR l.city ILIKE ${cityLike})
           AND (${from} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(l.updated_at, l.created_at) ELSE l.created_at END)
                >= NULLIF(${from}, '')::timestamptz)
@@ -223,6 +234,7 @@ async function handlerInner(req: Request): Promise<Response> {
         AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
         AND (${owner} = '' OR assigned_agent_id = ${owner})
         AND (${src} = '' OR source_id = ${src})
+        AND (${leadFilter} = '' OR status = ANY(string_to_array(${leadFilter}, ',')))
         AND (${cityLike} = '' OR city ILIKE ${cityLike})
         AND (${from} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(updated_at, created_at) ELSE created_at END)
              >= NULLIF(${from}, '')::timestamptz)
@@ -263,6 +275,7 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${src} = '' OR EXISTS (
             SELECT 1 FROM sales_leads sl WHERE sl.id = d.source_lead_id AND sl.source_id = ${src}))
           AND (${cityLike} = '' OR d.city ILIKE ${cityLike})
+          AND (${dealFilter} = '' OR s.key = ANY(string_to_array(${dealFilter}, ',')))
           -- Значений может быть несколько через запятую: вопросы у сейлза
           -- множественные — «все на iiko и Poster», «Start вместе с Medium»
           AND (${pos} = '' OR d.pos = ANY(string_to_array(${pos}, ',')))
