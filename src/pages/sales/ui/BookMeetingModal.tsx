@@ -53,7 +53,12 @@ export function BookMeetingModal({
     () => Array.from({ length: 14 }, (_, i) => new Date(Date.now() + i * 86400_000)),
     [],
   )
-  const [dayIdx, setDayIdx] = useState(0)
+  // Открываемся на первом рабочем дне, а не на сегодня: в воскресенье окно
+  // встречало пустым списком, и надо было догадаться переключить день
+  const [dayIdx, setDayIdx] = useState(() => {
+    const i = days.findIndex(d => tk(d).dow !== 0)
+    return i < 0 ? 0 : i
+  })
   const [data, setData] = useState<SlotsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [slot, setSlot] = useState<Slot | null>(null)
