@@ -118,6 +118,9 @@ export function GoogleCalendarModal({ isOpen, onClose }: { isOpen: boolean; onCl
         workDays: next.workDays, workFrom: next.workFrom, workTo: next.workTo,
         slotMinutes: next.slotMinutes, publicBooking: next.publicBooking,
       })
+      // Перечитываем ответ сервера: токен публичной брони заводится там,
+      // и при оптимистичном обновлении ссылка не появлялась до переоткрытия окна
+      if (patch.publicBooking !== undefined) await load()
     } catch (e: any) {
       setError(e?.message || 'Не удалось сохранить расписание')
       await load()
