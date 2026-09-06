@@ -725,6 +725,13 @@ export default async function handler(req: Request): Promise<Response> {
         VALUES (${orgId}, ${dealId}, ${deal.owner_agent_id}, ${amount}, ${paidAt}, ${body.note || null}, ${ctx.agentId})
         RETURNING id
       `
+      // Факт оплаты на сделке — тот же факт, что и платёж, и вносить его
+      // дважды нельзя: выигрыш требует paid_at, а сейлз отмечал деньги здесь
+      // и упирался в «не хватает для перехода» на пустом поле
+      await sql`
+        UPDATE sales_deals SET paid_at = COALESCE(paid_at, ${paidAt})
+        WHERE id = ${dealId} AND org_id = ${orgId}
+      `
       return json({ ok: true, id: Number(row.id) })
     }
 

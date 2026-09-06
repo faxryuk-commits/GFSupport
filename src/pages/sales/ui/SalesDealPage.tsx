@@ -100,13 +100,16 @@ const COMMERCIAL_FIELDS = [
   ['tariff', 'Тариф'], ['monthly_amount', 'Подписка в месяц'],
   ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'],
   ['onetime_amount', 'Единоразово'], ['valid_till', 'КП действует до'],
+  ['start_date', 'Дата старта'],
 ] as const
 
 /** Нужное после подписания — не мешает на этапе переговоров. */
-const AFTER_SIGN_FIELDS = [
-  ['legal_name', 'Реквизиты'], ['start_date', 'Дата старта'],
-  ['paid_at', 'Депозит или первый платёж'],
-] as const
+// Блок «После подписания» убран целиком:
+// — реквизиты живут в карточке юрлица клиента, где их десять полей, а не одно;
+//   генерация договора и так берёт их оттуда, если в сделке пусто;
+// — «депозит или первый платёж» дублировал «Поступления»: деньги отмечают там,
+//   и теперь оплата сама проставляет факт на сделке;
+// — «дата старта» переехала в коммерческие условия, где ей и место.
 // «Ожидаемое закрытие» убрано: единственным его читателем был SELECT для
 // списка сделок, которого больше нет. Форекаст по нему никто не строил,
 // напоминаний по нему не было — поле просили заполнять впустую.
@@ -655,22 +658,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             )}
           </Card>
 
-          {/* Нужно после подписания: на переговорах эти поля только мешают */}
-          <details className="bg-white border border-gray-200 rounded-xl">
-            <summary className="px-4 py-3 text-[13px] font-semibold text-gray-700 cursor-pointer select-none">
-              После подписания
-              <span className="ml-2 text-[11.5px] font-normal text-gray-400">
-                реквизиты, дата старта, первый платёж
-              </span>
-            </summary>
-            <div className="grid sm:grid-cols-2 border-t border-gray-100">
-              {AFTER_SIGN_FIELDS.map(([f, label]) => (
-                <InlineField key={f} label={label} value={d[f]} money={MONEY_FIELDS.has(f)}
-                  onSave={v => patch(f, v)} when={DATE_FIELDS[f]}
-                  options={optionsFor(refs, f, d.market_id)} />
-              ))}
-            </div>
-          </details>
+
 
           <Card
             title="Документы"
