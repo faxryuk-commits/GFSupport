@@ -33,8 +33,6 @@ const ClientPortalPage = lazy(() => import('@/pages/portal/ui/ClientPortalPage')
 const PublicBookPage = lazy(() => import('@/pages/book/ui/PublicBookPage'))
 const SalesQueuePage = lazy(() => import('@/pages/sales/ui/SalesQueuePage'))
 const SalesDealPage = lazy(() => import('@/pages/sales/ui/SalesDealPage'))
-const SalesDealsPage = lazy(() => import('@/pages/sales/ui/SalesDealsPage'))
-const SalesLeadsPage = lazy(() => import('@/pages/sales/ui/SalesLeadsPage'))
 const SalesLeadPage = lazy(() => import('@/pages/sales/ui/SalesLeadPage'))
 const SalesAccountsPage = lazy(() => import('@/pages/sales/ui/SalesAccountsPage'))
 const SalesAccountPage = lazy(() => import('@/pages/sales/ui/SalesAccountPage'))
@@ -113,9 +111,7 @@ export default function App() {
           <Route path="/commitments" element={<CommitmentsPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/sales/queue" element={<SalesQueuePage />} />
-          <Route path="/sales/deals" element={<SalesDealsPage />} />
           <Route path="/sales/deals/:id" element={<SalesDealPage />} />
-          <Route path="/sales/leads" element={<SalesLeadsPage />} />
           <Route path="/sales/leads/:id" element={<SalesLeadPage />} />
           <Route path="/sales/accounts" element={<SalesAccountsPage />} />
           <Route path="/sales/partners" element={<SalesAccountsPage />} />

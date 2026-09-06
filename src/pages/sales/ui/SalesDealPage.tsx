@@ -194,7 +194,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
     if (!confirm('Удалить сделку насовсем? Это нельзя отменить. Закрытые сделки удалить нельзя — они в отчётах.')) return
     try {
       await apiDelete(`/sales/deals?id=${id}&hard=1`)
-      window.location.href = '/sales/deals'
+      window.location.href = '/sales/funnel'
     } catch (e: any) {
       setError(e?.message || 'Не удалось удалить')
     }
@@ -205,7 +205,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
     if (!confirm('Убрать сделку в архив? Она исчезнет из списков и отчётов по воронке, но останется в истории аккаунта.')) return
     try {
       await apiDelete(`/sales/deals?id=${id}`)
-      window.location.href = '/sales/deals'
+      window.location.href = '/sales/funnel'
     } catch (e: any) {
       setError(e?.message || 'Не удалось убрать в архив')
     }
@@ -361,7 +361,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[11.5px] text-gray-400 mb-1 flex items-center gap-1.5 flex-wrap">
-            <Link to="/sales/deals" className="hover:text-blue-600">Сделки</Link>
+            <Link to="/sales/funnel" className="hover:text-blue-600">Воронка</Link>
             <span>/</span>
             <span className="text-gray-500">{data.account?.name || d.title}</span>
             {/* Переходы в соседние разделы: чат клиента и проект внедрения —

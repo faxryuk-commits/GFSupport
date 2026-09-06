@@ -216,8 +216,8 @@ export function SalesQueuePage() {
           {/* Свои встречи там же, где планируется день: иначе сейлз собирает
               расписание в одном месте, а работает по нему в другом */}
           <MeetingsPanel />
-          <Link to="/sales/deals" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-            Все сделки
+          <Link to="/sales/funnel" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
+            Воронка
           </Link>
         </div>
       </div>

@@ -155,6 +155,15 @@ async function handlerInner(req: Request): Promise<Response> {
   const src = url.searchParams.get('src') || ''
   const city = url.searchParams.get('city') || ''
   const cityLike = city ? `%${city}%` : ''
+  // Перенесено со страницы сделок: она дублировала воронку списком, и фильтры
+  // жили только там. Держать один и тот же срез в двух местах — значит рано
+  // или поздно получить два разных ответа на один вопрос
+  const pos = url.searchParams.get('pos') || ''
+  const segment = url.searchParams.get('segment') || ''
+  const tariff = url.searchParams.get('tariff') || ''
+  const ordersPerDay = url.searchParams.get('orders_per_day') || ''
+  const from = url.searchParams.get('from') || ''
+  const to = url.searchParams.get('to') || ''
   const noStep = url.searchParams.get('nostep') === '1'
   const overdue = url.searchParams.get('overdue') === '1'
   // Телефон ищем по цифрам: «+998 97 555…» и «998975551555» — один номер,
@@ -235,6 +244,12 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${src} = '' OR EXISTS (
             SELECT 1 FROM sales_leads sl WHERE sl.id = d.source_lead_id AND sl.source_id = ${src}))
           AND (${cityLike} = '' OR d.city ILIKE ${cityLike})
+          AND (${pos} = '' OR d.pos = ${pos})
+          AND (${segment} = '' OR d.segment = ${segment})
+          AND (${tariff} = '' OR d.tariff = ${tariff})
+          AND (${ordersPerDay} = '' OR d.orders_per_day = ${ordersPerDay})
+          AND (${from} = '' OR d.created_at >= ${from}::timestamptz)
+          AND (${to} = '' OR d.created_at < (${to}::timestamptz + INTERVAL '1 day'))
           AND (${noStep ? 1 : 0} = 0 OR d.next_step_at IS NULL)
           AND (${overdue ? 1 : 0} = 0 OR (
             s.sla_hours IS NOT NULL AND d.won_at IS NULL AND d.lost_at IS NULL

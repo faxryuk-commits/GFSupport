@@ -201,7 +201,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     setBusy(true)
     try {
       await apiPost('/sales/leads?action=delete', { leadId: id })
-      navigate('/sales/leads')
+      navigate('/sales/funnel')
     } catch (e: any) {
       setError(e?.message || 'Не удалось удалить')
       setBusy(false)
@@ -282,7 +282,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     <div className="p-4 space-y-3">
       <header className="space-y-1.5">
         <div className="text-[11px] text-gray-400">
-          <Link to="/sales/leads" className="hover:text-blue-600">Обращения</Link>
+          <Link to="/sales/funnel" className="hover:text-blue-600">Воронка</Link>
           {' / '}{l.name}
         </div>
         <div className="flex items-baseline gap-2 flex-wrap">

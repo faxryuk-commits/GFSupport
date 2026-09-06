@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CallPhone } from '@/shared/ui'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { MeetingsPanel } from './MeetingsPanel'
-import { Chip, PageShell, Skeleton, money, moneyList, fmtDateTime, slaTone, slaText,
+import { Chip, PageShell, Skeleton, Modal, money, moneyList, fmtDateTime, slaTone, slaText,
          useAutoRefresh, Drawer, FilterBar , workMorningIn, MarketFlag } from './kit'
+import { useSalesRefs, optionsFor } from './refs'
 import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
@@ -100,12 +101,26 @@ function days(iso: string | null): number {
 export function SalesFunnelPage() {
   const [data, setData] = useState<FunnelData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const refs = useSalesRefs()
+  // Ручное заведение переехало сюда со страниц списков: воронка — единственное
+  // место, где видно всю картину, и заводить оттуда логичнее, чем уходить
+  // в отдельный экран ради двух полей
+  const [creating, setCreating] = useState<'lead' | 'deal' | null>(null)
+  const [cForm, setCForm] = useState({ name: '', phone: '', city: '', text: '' })
+  const [cBusy, setCBusy] = useState(false)
+  const [cErr, setCErr] = useState('')
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
   const [src, setSrc] = useState('')
   const [city, setCity] = useState('')
   const [noStep, setNoStep] = useState(false)
   const [overdue, setOverdue] = useState(false)
+  // Перенесено со страницы сделок: она дублировала воронку списком, а срез
+  // по POS, сегменту и тарифу был только там
+  const [pos, setPos] = useState('')
+  const [segment, setSegment] = useState('')
+  const [tariff, setTariff] = useState('')
+  const [opd, setOpd] = useState('')
   const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -136,12 +151,16 @@ export function SalesFunnelPage() {
     if (noStep) p.set('nostep', '1')
     if (overdue) p.set('overdue', '1')
     if (q) p.set('q', q)
+    if (pos) p.set('pos', pos)
+    if (segment) p.set('segment', segment)
+    if (tariff) p.set('tariff', tariff)
+    if (opd) p.set('orders_per_day', opd)
     if (ptype === 'enterprise') p.set('type', 'enterprise')
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, src, city, noStep, overdue, region, perColumn, ptype])
+  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, region, perColumn, ptype])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -261,6 +280,10 @@ export function SalesFunnelPage() {
           <MeetingsPanel />
         </div>
         <div className="flex items-center gap-2 flex-none">
+          <button onClick={() => { setCForm({ name: '', phone: '', city: '', text: '' }); setCErr(''); setCreating('lead') }}
+            className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700">
+            + Завести
+          </button>
           <div className="flex gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
             {([['sales', 'Продажи'], ['enterprise', 'Enterprise']] as const).map(([t, label]) => (
               <button key={t} onClick={() => switchType(t)}
@@ -279,6 +302,8 @@ export function SalesFunnelPage() {
         <FilterBar
           active={[
             q && `поиск: ${q}`, owner && 'сейлз', src && 'источник',
+            pos && `POS: ${pos}`, segment && segment, tariff && `тариф: ${tariff}`,
+            opd && `заказов: ${opd}`,
             city && `город: ${city}`, noStep && 'без шага', overdue && 'просрочены',
           ].filter(Boolean) as string[]}
           right={<span className="text-[11.5px] text-gray-400 ml-auto">
@@ -312,9 +337,32 @@ export function SalesFunnelPage() {
               className="accent-red-500" />
             просрочены
           </label>
-          {(q || owner || src || city || noStep || overdue) && (
+          <select value={pos} onChange={e => setPos(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+            <option value="">POS-система</option>
+            {optionsFor(refs, 'pos').map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select value={segment} onChange={e => setSegment(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+            <option value="">Тип заведения</option>
+            {optionsFor(refs, 'segment').map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select value={tariff} onChange={e => setTariff(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+            <option value="">Тариф</option>
+            {optionsFor(refs, 'tariff').map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select value={opd} onChange={e => setOpd(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+            <option value="">Заказов в день</option>
+            {optionsFor(refs, 'orders_per_day').map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          {(q || owner || src || city || noStep || overdue || pos || segment || tariff || opd) && (
             <button
-              onClick={() => { setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false) }}
+              onClick={() => {
+                setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false)
+                setPos(''); setSegment(''); setTariff(''); setOpd('')
+              }}
               className="text-[12px] text-gray-400 hover:text-red-600 whitespace-nowrap">
               сбросить ✕
             </button>
@@ -665,6 +713,86 @@ export function SalesFunnelPage() {
       >
         {openLead && <SalesLeadPage leadId={openLead} />}
       </Drawer>
+      {creating && (
+        <Modal
+          title={creating === 'lead' ? 'Новое обращение' : 'Новая сделка'}
+          sub={creating === 'lead'
+            ? 'клиент, с которым ещё не говорили — попадёт в очередь дня'
+            : 'клиент уже квалифицирован, сделка сразу в работе'}
+          onClose={() => setCreating(null)}
+          footer={
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5 mr-auto">
+                {([['lead', 'Обращение'], ['deal', 'Сделка']] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => setCreating(k)}
+                    className={`px-2.5 py-1 rounded-md text-[11.5px] font-semibold ${
+                      creating === k ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setCreating(null)}
+                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg border border-gray-300 text-gray-600">
+                Отмена
+              </button>
+              <button
+                disabled={cBusy}
+                onClick={async () => {
+                  const isLead = creating === 'lead'
+                  if (isLead && !cForm.name.trim() && !cForm.phone.trim()) {
+                    setCErr('Укажите бренд или телефон'); return
+                  }
+                  if (!isLead && !cForm.name.trim()) { setCErr('Укажите название сделки'); return }
+                  setCBusy(true); setCErr('')
+                  try {
+                    if (isLead) {
+                      await apiPost('/sales/leads?action=create', {
+                        name: cForm.name, phone: cForm.phone, city: cForm.city,
+                        text: cForm.text, source: 'manual', market: region || undefined,
+                      })
+                    } else {
+                      await apiPost('/sales/deals', {
+                        title: cForm.name, city: cForm.city, dealType: 'new',
+                        market: region || undefined,
+                      })
+                    }
+                    setCreating(null)
+                    load()
+                  } catch (e: any) {
+                    setCErr(e?.message || 'Не удалось завести')
+                  } finally { setCBusy(false) }
+                }}
+                className="px-3.5 py-1.5 text-[12.5px] font-semibold rounded-lg bg-violet-600 text-white disabled:opacity-50">
+                {cBusy ? 'Заводим…' : 'Завести'}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            {cErr && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] text-red-700">{cErr}</div>
+            )}
+            <input value={cForm.name} onChange={e => setCForm(f => ({ ...f, name: e.target.value }))}
+              placeholder={creating === 'lead' ? 'Бренд или имя' : 'Название сделки'}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]" />
+            {creating === 'lead' && (
+              <input value={cForm.phone} onChange={e => setCForm(f => ({ ...f, phone: e.target.value }))}
+                placeholder="Телефон" type="tel"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]" />
+            )}
+            <input value={cForm.city} onChange={e => setCForm(f => ({ ...f, city: e.target.value }))}
+              placeholder="Город"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px]" />
+            {creating === 'lead' && (
+              <textarea value={cForm.text} rows={2}
+                onChange={e => setCForm(f => ({ ...f, text: e.target.value }))}
+                placeholder="Что известно о клиенте (необязательно)"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] resize-none" />
+            )}
+          </div>
+        </Modal>
+      )}
+
     </PageShell>
   )
 }
