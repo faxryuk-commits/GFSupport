@@ -10,6 +10,7 @@ import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
 import { SalesLeadPage } from './SalesLeadPage'
 import { FunnelList } from './FunnelList'
+import { LeadCard, DealCard } from './BoardCards'
 
 /**
  * Единая воронка: обращения и сделки на одном экране.
@@ -27,7 +28,7 @@ import { FunnelList } from './FunnelList'
 /** ok: true — разговор был, false — не дозвонились, null — исход неизвестен. */
 interface LastCall { dir: 'in' | 'out'; ok: boolean | null; at: string }
 
-interface Lead {
+export interface Lead {
   id: string; name: string; contact_name: string | null; phone: string | null
   market_id: string | null
   city: string | null; status: string; icp_score: number | null
@@ -39,7 +40,7 @@ interface Lead {
   last_call: LastCall | null
 }
 
-interface Deal {
+export interface Deal {
   id: string; title: string; account: string | null; monthly_amount: string | null
   currency: string; city: string | null; pos: string | null; points: number | null
   orders_per_day: string | null; tariff: string | null; next_step: string | null
@@ -476,7 +477,7 @@ export function SalesFunnelPage() {
               onDragOver={e => { e.preventDefault(); setOver(col.key) }}
               onDragLeave={() => setOver(o => (o === col.key ? null : o))}
               onDrop={e => { e.preventDefault(); drop(col.key, 'lead') }}
-              className={`flex-none w-[212px] bg-white border rounded-lg flex flex-col
+              className={`flex-none w-[232px] bg-white border rounded-lg flex flex-col
                           transition-colors ${zoneCls(over === col.key, 'lead')}`}
             >
               <header className="px-2.5 py-2 border-b border-gray-100">
@@ -490,101 +491,17 @@ export function SalesFunnelPage() {
                 {leadsIn(col).map(l => {
                   const phone = parsePhone(l.phone, l.market_id)
                   return (
-                    <article
-                      key={l.id}
-                      draggable
+                    <LeadCard
+                      l={l}
+                      showFlag={!region}
+                      busy={busy === l.id}
+                      dragging={drag?.id === l.id}
                       onDragStart={() => setDrag({ kind: 'lead', id: l.id, from: col.key })}
                       onDragEnd={() => { setDrag(null); setOver(null) }}
-                      className={`bg-white border border-gray-200 border-l-[3px] border-l-violet-500 rounded-lg
-                                  p-2 cursor-grab active:cursor-grabbing hover:shadow-md transition-all
-                                  ${drag?.id === l.id ? 'opacity-30' : ''}`}
-                    >
-                      {/* Имя — вход в карточку: «кто это и что просит» нельзя
-                          понять по строке из двух слов */}
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          onClick={() => setOpenLead(l.id)}
-                          className="text-[12px] font-semibold text-gray-900 leading-tight text-left
-                                     hover:text-violet-700"
-                        >
-                          {l.contact_name || l.name}
-                        </button>
-                        {!region && <MarketFlag market={l.market_id} />}
-                      </div>
-                      {l.contact_name && l.name !== l.contact_name && (
-                        <div className="text-[10.5px] text-gray-500">{l.name}</div>
-                      )}
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {KIND_LABEL[l.lead_kind || ''] && (
-                          <Chip tone="violet">{KIND_LABEL[l.lead_kind || '']}</Chip>
-                        )}
-                        {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
-                          <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
-                        )}
-                        {/* Разница между слитыми статусами — меткой: «назначен» в
-                            «Новых» значит, что ответственный есть, но не тронул;
-                            «прогрев» в «Недозвоне» — что клиента греет ассистент */}
-                        {l.status === 'assigned' && <Chip tone="gray">назначен</Chip>}
-                        {l.status === 'nurture' && (
-                          <Chip tone="gray">прогрев · шаг {l.nurture_step ?? 0} из 4</Chip>
-                        )}
-                        <CallChip c={l.last_call} />
-                      </div>
-                      {l.text && (
-                        <div className="text-[11px] text-gray-600 mt-1 line-clamp-2">«{l.text}»</div>
-                      )}
-                      <div className="text-[10px] text-gray-400 mt-1">
-                        {l.city && <span>{l.city} · </span>}
-                        {l.phone && (
-                          <>
-                            <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
-                            {' · '}
-                          </>
-                        )}
-                        {l.source}
-                        {l.agent_name && <span> · {l.agent_name}</span>}
-                      </div>
-                      {/* Когда обращение пришло — цифра, по которой сейлз решает,
-                          звонить сейчас или это вчерашний хвост. «Просрочено на
-                          19 ч» говорит о нормативе, но не о времени события */}
-                      <div className="text-[10px] text-gray-400 tabular-nums">
-                        {fmtDateTime(l.created_at)}
-                      </div>
-                      <div className="flex gap-1 mt-1.5">
-                        <button
-                          disabled={busy === l.id}
-                          onClick={() => convert(l.id, 'qualified')}
-                          className="text-[10px] px-2 py-1 rounded-md bg-violet-600 text-white
-                                     hover:brightness-110 disabled:opacity-50"
-                        >
-                          Беру
-                        </button>
-                        {/* Ассистент пишет только в чат: без чата кнопки нет —
-                            иначе она лишь прятала обращение из «Новых» */}
-                        {l.status !== 'nurture' && l.assistant_can_write && (
-                          <button
-                            disabled={busy === l.id}
-                            onClick={() => moveLead(l.id, 'nurture')}
-                            title="Ассистент напишет клиенту сам: 4 сообщения за 10 дней. Ответ клиента вернёт обращение вам"
-                            className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
-                                       hover:border-violet-400 hover:text-violet-700"
-                          >
-                            → Ассистенту
-                          </button>
-                        )}
-                        {l.status === 'nurture' && (
-                          <button
-                            disabled={busy === l.id}
-                            onClick={() => moveLead(l.id, 'attempting')}
-                            title="Забрать у ассистента и дозваниваться самому"
-                            className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
-                                       hover:border-gray-400"
-                          >
-                            Вернуть себе
-                          </button>
-                        )}
-                      </div>
-                    </article>
+                      onOpen={() => setOpenLead(l.id)}
+                      onTake={() => convert(l.id, 'qualified')}
+                      onReturn={() => moveLead(l.id, 'attempting')}
+                    />
                   )
                 })}
                 {leadsIn(col).length === 0 && (
@@ -646,73 +563,16 @@ export function SalesFunnelPage() {
                 {dealsIn(st.key).map(d => {
                   const stuck = Boolean(d.stalled_at) || !d.next_step_at
                   return (
-                    <article
-                      key={d.id}
-                      draggable
+                    <DealCard
+                      d={d}
+                      showFlag={!region}
+                      busy={busy === d.id}
+                      dragging={drag?.id === d.id}
                       onDragStart={() => setDrag({ kind: 'deal', id: d.id, from: st.key })}
                       onDragEnd={() => { setDrag(null); setOver(null) }}
-                      className={`bg-white border border-gray-200 border-l-[3px] rounded-lg p-2
-                                  cursor-grab active:cursor-grabbing hover:shadow-md transition-all
-                                  ${stuck ? 'border-l-red-500' : 'border-l-blue-500'}
-                                  ${drag?.id === d.id ? 'opacity-30' : ''}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <button onClick={() => setOpenDeal(d.id)}
-                          className="text-[12px] font-semibold text-gray-900 hover:text-blue-600 text-left leading-tight">
-                          {d.account || d.title}
-                        </button>
-                        <span className="flex items-center gap-1.5 flex-none">
-                          {!region && <MarketFlag market={d.market_id} />}
-                          <Chip tone={days(d.stage_since) > 14 ? 'red' : 'gray'}>{days(d.stage_since)} дн</Chip>
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {[d.city, d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day]
-                          .filter(Boolean).map(f => <Chip key={String(f)} tone="gray">{f}</Chip>)}
-                        {d.doc_opens ? <Chip tone="green">КП открыто {d.doc_opens}×</Chip> : null}
-                        <CallChip c={d.last_call} />
-                      </div>
-                      <div className={`text-[11px] mt-1 tabular-nums ${
-                        d.monthly_amount ? 'text-gray-700 font-medium' : 'text-amber-600'}`}>
-                        {d.monthly_amount
-                          ? `${money(d.monthly_amount, d.currency)}${d.tariff ? ` · ${d.tariff}` : ''}`
-                          : 'сумма не указана'}
-                      </div>
-                      <div className="text-[10px] text-gray-400 mt-1">
-                        {d.next_step
-                          ? `${d.next_step}${d.next_step_at ? ` · ${fmtDateTime(d.next_step_at)}` : ''}`
-                          : 'шаг не назначен'}
-                        {d.owner_name ? ` · ${d.owner_name}` : ''}
-                      </div>
-                      {/* Назначенная встреча — это и есть следующий шаг, только
-                          подтверждённый клиентом: на доске её видно без захода в карточку */}
-                      {d.meeting_at && (
-                        <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded
-                                        bg-blue-50 text-blue-700 text-[9.5px] font-bold">
-                          📅 {fmtDateTime(d.meeting_at)}
-                        </div>
-                      )}
-                      {/* Карточки стоят по времени последнего движения, значит
-                          это время должно быть видно — иначе порядок необъясним */}
-                      <div className="text-[10px] text-gray-400 tabular-nums">
-                        изменена {fmtDateTime(d.updated_at || d.stage_since)}
-                      </div>
-                      <div className="flex gap-1 mt-1.5">
-                        {!d.next_step_at && (
-                          <button disabled={busy === d.id} onClick={() => planStep(d.id)}
-                            className="text-[10px] px-2 py-1 rounded-md bg-blue-600 text-white
-                                       hover:brightness-110 disabled:opacity-50">
-                            Шаг на завтра
-                          </button>
-                        )}
-                        {d.phone && (
-                          <span className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
-                                           hover:border-emerald-400">
-                            <CallPhone phone={d.phone} market={d.market_id} size="sm" />
-                          </span>
-                        )}
-                      </div>
-                    </article>
+                      onOpen={() => setOpenDeal(d.id)}
+                      onPlanStep={() => planStep(d.id)}
+                    />
                   )
                 })}
                 {dealsIn(st.key).length === 0 && (
