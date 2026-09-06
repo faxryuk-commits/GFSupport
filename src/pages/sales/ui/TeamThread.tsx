@@ -120,8 +120,8 @@ export function TeamThread({ dealId, leadId, accountId, team }: Props) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl flex flex-col max-h-[60vh]">
-      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold text-gray-900">Команда</h3>
+      <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2">
+        <h3 className="text-[12.5px] font-semibold text-gray-900">Команда</h3>
         <span className="text-[11px] text-gray-400">внутреннее — клиент не видит · @имя зовёт коллегу</span>
       </div>
 

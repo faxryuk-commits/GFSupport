@@ -76,18 +76,27 @@ export const Chip = ({ tone = 'gray', children, title }: { tone?: string; childr
   </span>
 )
 
-export const Card = ({ title, sub, right, children, fill }: {
+export const Card = ({ title, sub, count, hint, right, children, fill, dense }: {
   title: string; sub?: string; right?: ReactNode; children: ReactNode
+  /** Счётчик рядом с заголовком: «4 из 9» говорит больше, чем подзаголовок. */
+  count?: ReactNode
+  /** Объяснение по наведению: читается один раз, а не при каждом открытии. */
+  hint?: string
   /** Растянуть на всю доступную высоту: для списков в режиме одного окна. */
   fill?: boolean
+  /** Плотный заголовок для карточек сделки и обращения. */
+  dense?: boolean
 }) => (
   <section className={`bg-white border border-gray-200 rounded-xl overflow-hidden ${
     fill ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
     {(title || sub || right) && (
-    <header className="px-4 py-3 border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap">
-      <div>
-        <h3 className="text-[13.5px] font-semibold text-gray-900">{title}</h3>
-        {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
+    <header className={`${dense ? 'px-3 py-1.5' : 'px-4 py-3'} border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap`}
+      title={hint}>
+      <div className="flex items-baseline gap-2 min-w-0 flex-1">
+        <h3 className={`${dense ? 'text-[12.5px]' : 'text-[13.5px]'} font-semibold text-gray-900 whitespace-nowrap`}>{title}</h3>
+        {count !== undefined && <span className="text-[11px] text-gray-400 tabular-nums whitespace-nowrap">{count}</span>}
+        {sub && !dense && <div className="text-[11px] text-gray-400">{sub}</div>}
+        {sub && dense && <div className="text-[11px] text-gray-400 truncate">{sub}</div>}
       </div>
       {right}
     </header>
@@ -95,6 +104,68 @@ export const Card = ({ title, sub, right, children, fill }: {
     {children}
   </section>
 )
+
+/**
+ * Свёрнутый блок в одну строку: заголовок, краткое содержимое, шеврон.
+ *
+ * Пустые «Документов пока нет» и «Оплат по сделке пока нет» занимали по
+ * полэкрана каждый. Строка говорит то же самое, а разворачивается, когда
+ * нужна.
+ */
+export const Fold = ({ title, sub, right, defaultOpen = false, children }: {
+  title: string; sub?: ReactNode; right?: ReactNode; defaultOpen?: boolean; children: ReactNode
+}) => {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border-b border-gray-100 last:border-b-0">
+      <div className="flex items-center gap-2 px-3 h-8 text-[12px]">
+        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
+          <span className="text-gray-400 text-[10px] w-3 flex-none">{open ? '▾' : '▸'}</span>
+          <span className="font-semibold text-gray-900 whitespace-nowrap">{title}</span>
+          {sub && <span className="text-gray-400 truncate">{sub}</span>}
+        </button>
+        {right}
+      </div>
+      {open && <div className="border-t border-gray-100">{children}</div>}
+    </div>
+  )
+}
+
+/** Меню «⋯» для редких и опасных действий: они не должны стоять в ряд с главным. */
+export const MoreMenu = ({ items }: {
+  items: Array<{ label: string; onClick: () => void; danger?: boolean; title?: string } | null | false>
+}) => {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  const list = items.filter(Boolean) as Array<{ label: string; onClick: () => void; danger?: boolean; title?: string }>
+  if (!list.length) return null
+  return (
+    <div ref={box} className="relative">
+      <button onClick={() => setOpen(o => !o)} title="Ещё действия"
+        className="text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-800">
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-40 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {list.map(it => (
+            <button key={it.label} title={it.title}
+              onClick={() => { setOpen(false); it.onClick() }}
+              className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-gray-50 ${
+                it.danger ? 'text-red-600' : 'text-gray-700'}`}>
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export const Kpis = ({ items, compact }: {
   items: Array<[string, string, string?]>
@@ -540,8 +611,9 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
   if (bool) {
     const on = value === true || value === 'true'
     return (
-      <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100 hover:bg-gray-50">
-        <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+      <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100 hover:bg-gray-50">
+        <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+        <span className="flex-1" />
         <button
           onClick={() => onSave(on ? '' : 'true')}
           className={`text-[12.5px] ${on ? 'text-emerald-700 font-medium' : 'text-blue-600 hover:underline'}`}
@@ -557,8 +629,9 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
   // напоминание, ни отчёт
   if (editing && when) {
     return (
-      <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
-        <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+      <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100">
+        <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+        <span className="flex-1" />
         <input
           autoFocus
           type={withTime ? 'datetime-local' : 'date'}
@@ -577,8 +650,9 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
 
   if (editing) {
     return (
-      <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
-        <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+      <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100">
+        <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+        <span className="flex-1" />
         {options?.length ? (
           <div className="w-52">
             <Combo
@@ -610,19 +684,23 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
   }
 
   return (
-    <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100 hover:bg-gray-50">
-      <span className="text-[12.5px] text-gray-500 flex-1">{label}</span>
+    // Строка 28 px, подпись одной ширины, значение справа. Пустое — «—»
+    // пунктиром, одинаково у всех полей: «выбрать ▾», «заполнить» и
+    // «выбрать дату 🗓» были тремя разными словами про одно и то же
+    <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100 hover:bg-gray-50">
+      <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+      <span className="flex-1" />
       <button
         onClick={() => {
           setDraft(when ? toDateInput(value, withTime) : empty ? '' : String(value))
           setEditing(true)
         }}
-        className={`text-[12.5px] text-right ${empty ? 'text-blue-600 hover:underline' : 'text-gray-900'}`}
+        title={empty ? (when ? 'выбрать дату' : options?.length ? 'выбрать из списка' : 'заполнить') : 'изменить'}
+        className={`text-[12px] text-right truncate max-w-[60%] ${
+          empty ? 'text-gray-400 border-b border-dotted border-gray-400 leading-tight' : 'text-gray-900 font-medium'}`}
       >
-        {/* У поля со справочником видно, что это выбор, а не свободный ввод —
-            иначе про список узнаёшь, только ткнув наугад */}
         {empty
-          ? (when ? 'выбрать дату 🗓' : options?.length ? 'выбрать ▾' : 'заполнить')
+          ? '—'
           : when ? (withTime ? formatDateTimeShort(value) : formatDateDMY(value))
           : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
       </button>

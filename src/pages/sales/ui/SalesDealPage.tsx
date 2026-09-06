@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { CallPhone } from '@/shared/ui'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/time'
 import { useSalesRefs, optionsFor } from './refs'
-import { InlineField, OwnerPicker, Skeleton } from './kit'
+import { InlineField, OwnerPicker, Skeleton, Fold, MoreMenu, Chip, fmtDateTime } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { BookMeetingModal } from './BookMeetingModal'
@@ -370,146 +371,122 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   const closed = Boolean(d.won_at || d.lost_at)
 
   return (
-    <div className="p-5 space-y-4">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="text-[11.5px] text-gray-400 mb-1 flex items-center gap-1.5 flex-wrap">
-            <Link to="/sales/funnel" className="hover:text-blue-600">Воронка</Link>
-            <span>/</span>
-            <span className="text-gray-500">{data.account?.name || d.title}</span>
-            {/* Переходы в соседние разделы: чат клиента и проект внедрения —
-                тот же аккаунт, просто в другом модуле системы */}
-            {data.account?.channel_id && (
-              <>
-                <span>·</span>
-                <Link to={`/chats/${data.account.channel_id}`} className="text-blue-600 hover:underline">
-                  чат клиента
-                </Link>
-              </>
-            )}
-            {data.account?.onboarding_brand_id && (
-              <>
-                <span>·</span>
-                <Link to="/onboarding" className="text-blue-600 hover:underline">проект внедрения</Link>
-              </>
-            )}
-          </div>
-          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight flex items-center gap-2">
+    <div className="p-4 space-y-3">
+      {/* Шапка в одну строку сути и один ряд действий. Раньше — четыре
+          строки текста слева, «— в месяц» и семь кнопок одинакового веса
+          справа; главное, редкое и опасное стояли вперемешку */}
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-2.5">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <h1 className="text-[17px] font-semibold text-gray-900 tracking-tight leading-tight truncate max-w-[40%]"
+            title={data.account?.name || d.title}>
             {data.account?.name || d.title}
-            <button
-              title="Переименовать сделку"
-              onClick={() => {
-                const next = prompt('Название сделки', d.title || '')
-                if (next && next.trim() && next !== d.title) patch('title', next.trim())
-              }}
-              className="text-[12px] font-normal text-gray-400 hover:text-blue-600"
-            >
-              переименовать
-            </button>
           </h1>
-          <p className="text-[12.5px] text-gray-500 mt-0.5">
-            {[data.currentStage?.label, d.city, d.pos, d.points ? `${d.points} точек` : null]
-              .filter(Boolean).join(' · ')}
-          </p>
-          {/* Возраст сделки — первое, что спрашивают на разборе: когда завели,
-              когда трогали в последний раз и сколько висит на этапе */}
-          <p className="text-[11.5px] text-gray-400 mt-1">
-            {[
-              `создана ${fmtDate(d.created_at)}`,
-              d.updated_at ? `изменена ${fmtDate(d.updated_at)}` : null,
-              d.stage_since ? `на этапе ${Math.floor((Date.now() - new Date(
-                d.stage_since.includes('Z') ? d.stage_since : d.stage_since + 'Z').getTime()) / 86400000)} дн` : null,
-            ].filter(Boolean).join(' · ')}
-          </p>
-          <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-gray-400">
-            <span>Ответственный:</span>
+          <button
+            title="Переименовать сделку"
+            onClick={() => {
+              const next = prompt('Название сделки', d.title || '')
+              if (next && next.trim() && next !== d.title) patch('title', next.trim())
+            }}
+            className="text-[11px] text-gray-400 hover:text-blue-600"
+          >✎</button>
+          {data.currentStage?.label && <Chip tone="blue">{data.currentStage.label}</Chip>}
+          {[d.points ? `${d.points} точ.` : null, d.city, d.pos].filter(Boolean).length > 0 && (
+            <Chip tone="gray">{[d.points ? `${d.points} точ.` : null, d.city, d.pos].filter(Boolean).join(' · ')}</Chip>
+          )}
+          {d.monthly_amount ? <Chip tone="green">{money(d.monthly_amount, d.currency)} / мес</Chip> : null}
+          {d.stage_since && (() => {
+            const n = Math.floor((Date.now() - new Date(
+              d.stage_since.includes('Z') ? d.stage_since : d.stage_since + 'Z').getTime()) / 86400000)
+            return <Chip tone={n > 14 ? 'red' : n > 3 ? 'amber' : 'gray'}>{n} дн на этапе</Chip>
+          })()}
+          <span className="flex items-center gap-1.5 text-[11.5px] text-gray-400 ml-auto whitespace-nowrap">
             <OwnerPicker owner={data.owner || null} team={data.team || []}
               onPick={agentId => changeOwner(agentId)} busy={busy} />
-          </div>
+            <span>·</span>
+            <span title={`создана ${fmtDate(d.created_at)}`}>изменена {fmtDate(d.updated_at || d.created_at)}</span>
+            {data.account?.channel_id && (
+              <><span>·</span><Link to={`/chats/${data.account.channel_id}`} className="text-blue-600 hover:underline">чат</Link></>
+            )}
+            {data.account?.onboarding_brand_id && (
+              <><span>·</span><Link to="/onboarding" className="text-blue-600 hover:underline">внедрение</Link></>
+            )}
+          </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="text-right mr-2">
-            <div className="text-[17px] font-semibold text-gray-900 tabular-nums">
-              {money(d.monthly_amount, d.currency)}
-            </div>
-            <div className="text-[11px] text-gray-400">в месяц</div>
-          </div>
-          {!closed && (
-            <>
-              <button onClick={() => setLostOpen(true)}
-                className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-red-400 hover:text-red-600">
-                Закрыть LOST
-              </button>
-              <select value={d.stage_id || ''} disabled={busy}
-                onChange={e => {
-                  // Закрытие — тоже этап: выигрыш уходит в движок сразу,
-                  // проигрыш сначала спрашивает причину, без неё он не пишется
-                  if (e.target.value === '__won') { moveTo('won'); return }
-                  if (e.target.value === '__lost') { setLostOpen(true); return }
-                  const s = openStages.find(x => x.id === e.target.value); if (s) moveTo(s.key)
-                }}
-                title="Перевести на любой этап"
-                className="text-[12.5px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-800
-                           hover:border-blue-400 disabled:opacity-50">
-                {openStages.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                <option disabled>──────</option>
-                <option value="__won">✓ Выиграна</option>
-                <option value="__lost">✕ Проиграна…</option>
-              </select>
-              {data.nextStage && (
-                <button onClick={advance} disabled={busy}
-                  className="text-[12.5px] px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:brightness-110 disabled:opacity-50">
-                  {busy ? '…' : `→ ${data.nextStage.label}`}
-                </button>
-              )}
-            </>
+          {!closed && data.nextStage && (
+            <button onClick={advance} disabled={busy}
+              className="text-[12px] px-3 py-1.5 bg-blue-600 text-white rounded-lg font-semibold hover:brightness-110 disabled:opacity-50">
+              {busy ? '…' : `→ ${data.nextStage.label}`}
+            </button>
           )}
-          <button
-            onClick={async () => {
-              const ent = String(data?.deal?.pipeline || '').startsWith('enterprise')
-              if (!confirm(ent
-                ? 'Вернуть сделку в обычную воронку? Она встанет на первый этап.'
-                : 'Перевести в Enterprise-воронку? Сделка встанет на этап «Разведка», нормативы этапов станут недельными.')) return
-              try {
-                await apiPost('/sales/deals?action=set-type', {
-                  id, type: ent ? 'sales' : 'enterprise',
-                })
-                load()
-              } catch (e: any) { setError(e?.message || 'Не удалось перевести') }
-            }}
-            title="Enterprise ведётся отдельной воронкой: свои этапы и нормативы"
-            className="text-[12.5px] px-3 py-1.5 border border-violet-200 text-violet-600 rounded-lg hover:bg-violet-50">
-            {String(data?.deal?.pipeline || '').startsWith('enterprise') ? '→ Обычная' : '→ Enterprise'}
+          <button onClick={() => setMeetingOpen(true)}
+            className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-700">
+            Назначить встречу
           </button>
-          <button onClick={archive} title="Убрать из списков, сохранив в истории аккаунта"
-            className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
-            В архив
-          </button>
-          <button onClick={removeForever} title="Удалить насовсем — только открытую сделку"
-            className="text-[12.5px] px-3 py-1.5 border border-gray-200 text-gray-400 rounded-lg hover:text-red-600 hover:border-red-200">
-            Удалить
-          </button>
+          {!closed && (
+            <select value={d.stage_id || ''} disabled={busy}
+              onChange={e => {
+                // Закрытие — тоже этап: выигрыш уходит в движок сразу,
+                // проигрыш сначала спрашивает причину, без неё он не пишется
+                if (e.target.value === '__won') { moveTo('won'); return }
+                if (e.target.value === '__lost') { setLostOpen(true); return }
+                const s = openStages.find(x => x.id === e.target.value); if (s) moveTo(s.key)
+              }}
+              title="Перевести на любой этап"
+              className="text-[12px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700
+                         hover:border-blue-400 disabled:opacity-50">
+              {openStages.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              <option disabled>──────</option>
+              <option value="__won">✓ Выиграна</option>
+              <option value="__lost">✕ Проиграна…</option>
+            </select>
+          )}
+          {contacts[0]?.phone && (
+            <span className="text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-emerald-400">
+              <CallPhone phone={contacts[0].phone} market={d.market_id} size="sm" />
+            </span>
+          )}
+          <span className="flex-1" />
+          <MoreMenu items={[
+            {
+              label: String(data?.deal?.pipeline || '').startsWith('enterprise') ? '→ Обычная воронка' : '→ Enterprise-воронка',
+              title: 'Enterprise ведётся отдельной воронкой: свои этапы и нормативы',
+              onClick: async () => {
+                const ent = String(data?.deal?.pipeline || '').startsWith('enterprise')
+                if (!confirm(ent
+                  ? 'Вернуть сделку в обычную воронку? Она встанет на первый этап.'
+                  : 'Перевести в Enterprise-воронку? Сделка встанет на этап «Разведка», нормативы этапов станут недельными.')) return
+                try {
+                  await apiPost('/sales/deals?action=set-type', { id, type: ent ? 'sales' : 'enterprise' })
+                  load()
+                } catch (e: any) { setError(e?.message || 'Не удалось перевести') }
+              },
+            },
+            !closed && { label: 'Закрыть как проигранную…', onClick: () => setLostOpen(true), danger: true },
+            { label: 'В архив', title: 'Убрать из списков, сохранив в истории аккаунта', onClick: archive },
+            { label: 'Удалить насовсем', title: 'Только открытую сделку', onClick: removeForever, danger: true },
+          ]} />
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-3">
+      <div className="bg-white border border-gray-200 rounded-xl p-1.5">
         <div className="flex gap-1 flex-wrap">
           {openStages.map((s, i) => (
             <button key={s.id} type="button"
               disabled={busy || closed || i === curIdx}
               onClick={() => moveTo(s.key)}
               title={s.description ? `${s.description}\n\nНажмите, чтобы перевести` : 'Нажмите, чтобы перевести'}
-              className={`flex-1 min-w-[72px] rounded-lg px-2 py-1.5 border text-left transition-colors ${
+              className={`flex-1 min-w-[72px] rounded-md px-2 py-1 border text-left transition-colors flex items-baseline gap-1.5 ${
                 i < curIdx ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-400' :
-                i === curIdx ? 'bg-blue-600 border-blue-600 cursor-default' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}
+                i === curIdx ? 'bg-gray-900 border-gray-900 cursor-default' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}
                 disabled:opacity-100`}>
-              <div className={`text-[9px] font-bold ${i === curIdx ? 'text-white/70' : 'text-gray-400'}`}>
+              <span className={`text-[9px] font-bold ${i === curIdx ? 'text-white/60' : 'text-gray-400'}`}>
                 {String(i).padStart(2, '0')}
-              </div>
-              <div className={`text-[11px] leading-tight ${
+              </span>
+              <span className={`text-[11px] leading-tight truncate ${
                 i === curIdx ? 'text-white font-medium' : i < curIdx ? 'text-emerald-700' : 'text-gray-500'}`}>
                 {s.label}
-              </div>
+              </span>
             </button>
           ))}
         </div>
@@ -553,8 +530,10 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
       {/* Правая колонка почти равна левой: там лента, встречи и ветка
           команды — то, ради чего карточку открывают, а не справочные поля */}
-      <div className="grid lg:grid-cols-[1.15fr_0.95fr] gap-4 items-start">
-        <div className="space-y-4">
+      <div className="grid lg:grid-cols-[1.15fr_0.95fr] gap-3 items-start">
+        {/* min-w-0 обязателен: без него колонка сетки не ужимается под
+            содержимое с nowrap и выталкивает правую за край окна */}
+        <div className="space-y-3 min-w-0">
           {closed ? (
             <div className={`rounded-xl border p-4 text-[13px] flex items-center justify-between gap-3 flex-wrap ${
               d.won_at ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
@@ -574,85 +553,57 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               </button>
             </div>
           ) : (
-            <Card
-              title={`Критерии выхода → ${data.nextStage?.label || ''}`}
-              sub={data.nextStage ? `владелец: ${data.nextStage.owner_role.toUpperCase()} · вероятность ${data.nextStage.probability}%` : ''}
-              right={
-                <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md ${
-                  missing.length ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                  {(data.nextStage?.required_fields?.length || 0) - missing.length} из {data.nextStage?.required_fields?.length || 0}
-                </span>
-              }
-            >
-              {/* Не второй редактор, а подсказка. Раньше здесь стояли те же поля,
-                  что и в «Коммерческих условиях», — одно и то же правилось в
-                  двух местах одного экрана, и было непонятно, зачем их два */}
-              <div className="px-4 py-3">
-                {!data.nextStage?.required_fields?.length ? (
-                  <div className="text-[12.5px] text-gray-400">Для этого перехода полей не требуется</div>
-                ) : missing.length ? (
-                  <>
-                    <div className="text-[12.5px] text-gray-600 mb-2">
-                      Не хватает для перехода — заполните в блоках ниже:
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {missing.map(m => (
-                        <span key={m.field}
-                          className="text-[11.5px] px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-100">
-                          {m.label || data.labels?.[m.field] || m.field}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-[12.5px] text-emerald-700">
-                    Всё заполнено — сделку можно переводить дальше.
-                  </div>
-                )}
-              </div>
-              {blocked && (
-                <div className="m-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] text-red-700">
-                  {blocked}
+            <>
+              {/* Критерии — одной строкой и только когда есть что сказать:
+                  пустая коробка «полей не требуется» занимала место зря */}
+              {(data.nextStage?.required_fields?.length || 0) > 0 && (
+                <div className={`rounded-xl border px-3 py-2 text-[12px] flex items-center gap-2 flex-wrap ${
+                  missing.length ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                  <span className="font-semibold whitespace-nowrap">
+                    → {data.nextStage?.label}: {missing.length ? 'не хватает' : 'всё заполнено'}
+                  </span>
+                  {missing.map(m => (
+                    <span key={m.field} className="text-[11px] px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-900">
+                      {m.label || data.labels?.[m.field] || m.field}
+                    </span>
+                  ))}
+                  <span className="ml-auto text-[11px] opacity-70 tabular-nums">
+                    {(data.nextStage?.required_fields?.length || 0) - missing.length} из {data.nextStage?.required_fields?.length || 0}
+                  </span>
                 </div>
               )}
-            </Card>
+              {blocked && (
+                <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] text-red-700">{blocked}</div>
+              )}
+            </>
           )}
 
-          <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
-            {/* ЛПР — это контакт клиента, а не три отдельных поля: имя, роль
-                и телефон уже хранятся у контакта. Раньше одного человека
-                заводили четырежды — здесь, в роли, в отметке и в контактах */}
-            <div className="px-4 py-2.5 border-b border-gray-100 flex items-start gap-2.5 flex-wrap">
-              <span className="text-[11.5px] text-gray-400 font-medium w-[92px] flex-none pt-0.5">ЛПР</span>
-              <div className="flex-1 min-w-0">
+          <Card dense title="Квалификация"
+            count={`${QUAL_FIELDS.filter(([f]) => d[f] !== null && d[f] !== undefined && d[f] !== '').length} из ${QUAL_FIELDS.length}`}
+            hint="Заполняется на звонке, правится по клику"
+            right={
+              // ЛПР — это контакт клиента, а не три отдельных поля: имя, роль
+              // и телефон уже хранятся у контакта
+              <span className="flex items-center gap-1.5 text-[11.5px] text-gray-500">
+                <span>ЛПР</span>
                 {contacts.length === 0 ? (
-                  <span className="text-[12px] text-gray-400">
-                    Сначала добавьте контакт клиента — блок «Контакты» ниже
-                  </span>
+                  <span className="text-gray-400">добавьте контакт ниже</span>
                 ) : (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <select
-                      value={d.dm_contact_id || ''}
-                      onChange={e => patch('dm_contact_id', e.target.value)}
-                      className="border border-gray-200 rounded-lg px-2 py-1 text-[12.5px] font-medium text-gray-800"
-                    >
-                      <option value="">не выбран</option>
-                      {contacts.filter((c: any) => c.id).map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {[c.name, c.role].filter(Boolean).join(' · ') || c.phone}
-                        </option>
-                      ))}
-                    </select>
-                    {d.dm_contact_id && (() => {
-                      const c = contacts.find((x: any) => x.id === d.dm_contact_id)
-                      return c?.phone
-                        ? <span className="text-[11.5px] text-gray-400">{c.phone}</span>
-                        : null
-                    })()}
-                  </div>
+                  <select
+                    value={d.dm_contact_id || ''}
+                    onChange={e => patch('dm_contact_id', e.target.value)}
+                    className="border border-gray-200 rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-gray-800 max-w-[220px]"
+                  >
+                    <option value="">не выбран</option>
+                    {contacts.filter((c: any) => c.id).map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {[c.name, c.role].filter(Boolean).join(' · ') || c.phone}
+                      </option>
+                    ))}
+                  </select>
                 )}
-              </div>
-            </div>
+              </span>
+            }>
             <div className="grid sm:grid-cols-2">
               {QUAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)}
@@ -662,8 +613,15 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             </div>
           </Card>
 
-          <Card title="Коммерческие условия"
-                sub={`то, что мы пообещали клиенту · ${d.currency || 'UZS'}`}>
+          <Card dense title="Коммерческие условия"
+            count={`${COMMERCIAL_FIELDS.filter(([f]) => d[f] !== null && d[f] !== undefined && d[f] !== '').length} из ${COMMERCIAL_FIELDS.length} · ${d.currency || 'UZS'}`}
+            hint="То, что мы пообещали клиенту"
+            right={
+              <button onClick={() => setBuilderOpen(true)}
+                className="text-[11.5px] px-2.5 py-1 border border-gray-300 rounded-md hover:border-blue-500 hover:text-blue-600">
+                Собрать КП
+              </button>
+            }>
             <div className="grid sm:grid-cols-2">
               {COMMERCIAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} money={MONEY_FIELDS.has(f)}
@@ -680,18 +638,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
 
 
-          <Card
-            title="Документы"
-            sub="ссылка вместо файла: видно, кто открыл и сколько читал"
-            right={
-              <button onClick={() => setBuilderOpen(true)}
-                className="text-[12px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
-                Собрать КП
-              </button>
-            }
-          >
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <Fold title="Документы" defaultOpen={documents.length > 0}
+            sub={documents.length ? `${documents.length} · ссылка вместо файла: видно, кто открыл и сколько читал` : 'пока нет'}>
             {documents.length === 0 ? (
-              <div className="px-4 py-4 text-[12.5px] text-gray-400">Документов пока нет</div>
+              <div className="px-3 py-2 text-[12px] text-gray-400">Документов пока нет — «Собрать КП» в условиях выше</div>
             ) : (
               <div className="divide-y divide-gray-100">
                 {documents.map(doc => (
@@ -737,40 +688,40 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 ))}
               </div>
             )}
-          </Card>
+          </Fold>
+          </div>
 
-          {/* Под документами: ТЗ нужно к моменту, когда собирают КП, и рядом
-              с ним ему самое место. Свёрнуто по умолчанию — карточка сделки
-              и так длинная, а разворачивают его не каждый раз */}
+          {/* Редкое — ниже основного: ТЗ нужно к моменту КП, поступления —
+              после подписания. Оба сами по себе свёрнуты */}
           {id && <SpecCard dealId={id} />}
+          {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
         </div>
 
-        <div className="space-y-4">
-          <Card title="Следующий шаг" sub="без него сделка через 48 ч помечается брошенной">
-            <div className="p-4">
-              <div className={`rounded-lg px-3 py-2 text-[12.5px] ${
-                d.next_step ? 'bg-blue-50 text-blue-800' : 'bg-amber-50 text-amber-800'}`}>
-                {d.next_step || 'Не назначен'}
-                {d.next_step_at && <span className="block text-[11px] opacity-80 mt-0.5">{fmtDate(d.next_step_at)}</span>}
-              </div>
-            </div>
+        <div className="space-y-3 min-w-0">
+          <Card dense title="Следующий шаг" hint="Без него сделка через 48 ч помечается брошенной"
+            right={
+              <span className={`text-[11.5px] font-medium ${d.next_step ? 'text-blue-700' : 'text-amber-700'}`}>
+                {d.next_step ? `${d.next_step}${d.next_step_at ? ` · ${fmtDate(d.next_step_at)}` : ''}` : 'не назначен'}
+              </span>
+            }>
             {/* Действие — из списка типовых: свободная строка означала, что
                 «позвонить», «созвон» и «набрать» — три разных шага, и отчёт по
                 ним не собрать. Дата — календарём, а не строкой формата */}
             <InlineField label="Что делаем" value={d.next_step} onSave={v => patch('next_step', v)}
               options={optionsFor(refs, 'next_step')} />
-            <div className="flex items-center gap-2 py-2 px-4 border-b border-dashed border-gray-100">
-              <span className="text-[12.5px] text-gray-500 flex-1">Когда</span>
+            <div className="flex items-center gap-2 h-8 px-3 border-b border-gray-100">
+              <span className="text-[11.5px] text-gray-500 w-[104px] flex-none">Когда</span>
+              <span className="flex-1" />
               {/* Показывали в рабочей зоне, а сохраняли выбранное как есть —
                   время уезжало вперёд на пять часов при каждой правке */}
               <input
                 type="datetime-local"
                 value={toDateInput(d.next_step_at, true)}
                 onChange={e => patch('next_step_at', fromDateInput(e.target.value, true))}
-                className="border border-gray-300 rounded-md px-2 py-1 text-[12.5px]"
+                className="border border-gray-300 rounded-md px-1.5 py-0.5 text-[11.5px]"
               />
             </div>
-            <div className="px-4 py-2.5 flex flex-wrap gap-1.5 border-b border-dashed border-gray-100">
+            <div className="px-3 py-1.5 flex flex-wrap gap-1">
               {[['Сегодня', 0], ['Завтра', 1], ['Через 3 дня', 3], ['Через неделю', 7]].map(([label, days]) => (
                 <button key={String(label)}
                   onClick={() => patch('next_step_at', inDays(Number(days)))}
@@ -781,17 +732,21 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             </div>
           </Card>
 
-          {/* Поступления: отметку ставит руководитель (team приходит только лидам) */}
-          {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
-
-          {/* Встреча заводится отсюда: назначать её в календаре отдельно значит
-              каждый раз сверять, кто свободен, и терять привязку к сделке */}
-          <div className="flex justify-end">
-            <button
-              onClick={() => setMeetingOpen(true)}
-              className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600"
-            >Назначить встречу</button>
-          </div>
+          {/* Встреча — одной строкой: есть дата — видно когда, нет — кнопка.
+              Кнопка-сирота в правой колонке была третьим местом для одного действия */}
+          <Card dense title="Встречи">
+            <div className="flex items-center gap-2 h-8 px-3 text-[12px]">
+              {d.meeting_at ? (
+                <span className="text-blue-700 font-medium">📅 {fmtDateTime(d.meeting_at)}</span>
+              ) : (
+                <span className="text-gray-400">не назначена</span>
+              )}
+              <span className="flex-1" />
+              <button onClick={() => setMeetingOpen(true)} className="text-[11.5px] text-blue-600 hover:underline">
+                {d.meeting_at ? 'ещё одну' : 'Назначить'}
+              </button>
+            </div>
+          </Card>
 
 
           {meetingOpen && (
@@ -824,8 +779,13 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             onChanged={load}
           />
 
-          {/* Разговор о клиенте между своими — при карточке, а не в Telegram */}
-          <TeamThread dealId={id} accountId={data.account?.id} team={data.team || []} />
+          {/* Разговор о клиенте между своими — при карточке, а не в Telegram.
+              Свёрнут, пока не нужен: пустая ветка занимала полэкрана */}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <Fold title="Команда" sub="внутреннее — клиент не видит · @имя зовёт коллегу">
+              <TeamThread dealId={id} accountId={data.account?.id} team={data.team || []} />
+            </Fold>
+          </div>
 
         </div>
       </div>

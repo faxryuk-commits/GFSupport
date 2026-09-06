@@ -147,9 +147,10 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
   const done = tasks.filter(t => t.done_at)
 
   return (
-    <Card
+    <Card dense
       title="Задачи"
-      sub={active.length ? `${active.length} в работе` : 'что дальше по этой сделке'}
+      count={active.length ? `${active.length} в работе` : undefined}
+      hint="Что дальше по этой сделке: задача попадёт в очередь дня и напомнит о себе"
       right={
         <Btn kind={open ? 'ghost' : 'primary'} onClick={() => setOpen(o => !o)}>
           {open ? 'Отмена' : '+ Задача'}

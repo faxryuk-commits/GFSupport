@@ -88,7 +88,7 @@ export function SpecCard({ dealId }: { dealId: string }) {
   }
 
   return (
-    <Card
+    <Card dense
       title="ТЗ на подключение"
       sub={filled
         ? `заполнено блоков: ${filled} из ${data.tasks.length}`
