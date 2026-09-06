@@ -69,7 +69,7 @@ function colorOf(id: string | null): string {
 const initials = (n: string | null) =>
   (n || '?').split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()
 
-export function MeetingsPanel() {
+export function MeetingsPanel({ compact = false }: { compact?: boolean } = {}) {
   const { agent } = useAuth()
   const [weekAnchor, setWeekAnchor] = useState(() => new Date())
   const [data, setData] = useState<Data | null>(null)
@@ -184,9 +184,25 @@ export function MeetingsPanel() {
   const total = data?.meetings.filter(m => m.status !== 'cancelled').length || 0
   const todayKey = isoDay(new Date())
 
+  const todayCount = (byDay.get(todayKey) || []).length
+  const todayIdx = Math.max(0, days.findIndex(d => isoDay(d) === todayKey))
+
   return (
     <div ref={box} className="relative">
-      {/* полоска в шапке */}
+      {/* Компактно: одна кнопка с числом на сегодня. Шесть дней с точками
+          в шапке отвечали на вопрос, который задают раз в день, а место
+          занимали всегда; неделя целиком — в раскрытом окне */}
+      {compact ? (
+        <button
+          onClick={() => (open ? setOpen(false) : openOn(todayIdx))}
+          className={`text-[12px] px-2.5 py-1.5 rounded-lg border whitespace-nowrap ${
+            open ? 'border-gray-900 bg-gray-900 text-white'
+              : todayCount ? 'border-blue-300 text-blue-700 bg-blue-50 hover:border-blue-500'
+                : 'border-gray-300 text-gray-600 hover:border-gray-500'}`}
+        >
+          📅 Встречи · сегодня {todayCount}{total > todayCount ? ` · неделя ${total}` : ''}
+        </button>
+      ) : (
       <div className="flex items-stretch border border-gray-200 rounded-lg overflow-hidden bg-white">
         <div className="flex items-center gap-1.5 px-2.5 border-r border-gray-200 bg-gray-50/70 text-[11px] font-bold text-gray-500 whitespace-nowrap">
           📅 Встречи
@@ -225,6 +241,7 @@ export function MeetingsPanel() {
           className="flex items-center px-2.5 border-l border-gray-200 bg-gray-50/70 text-[11px] font-bold text-blue-600 whitespace-nowrap hover:bg-blue-50"
         >развернуть →</button>
       </div>
+      )}
 
       {open && (
         <div className="absolute right-0 top-full mt-1.5 z-40 w-[min(560px,calc(100vw-3rem))]

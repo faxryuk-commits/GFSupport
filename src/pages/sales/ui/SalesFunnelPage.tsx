@@ -317,30 +317,17 @@ export function SalesFunnelPage() {
   return (
     <PageShell fill header={
       <div className="space-y-2">
+      {/* Строка управления: заголовок, одинаковые серые переключатели и
+          один цветной элемент — «Завести». Раньше здесь было четыре группы
+          кнопок в четырёх цветах, и глаз не понимал, что главное */}
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-wrap min-w-0">
-          <div className="flex items-baseline gap-3 flex-wrap">
-          <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight">Воронка</h1>
-          <div className="flex items-center gap-3 text-[11.5px] text-gray-500 flex-wrap">
-            <span>обращений <b className="text-gray-900">
-              {data.leadColumns.reduce((s, c) => s + c.total, 0)}
-            </b></span>
-            <span>сделок <b className="text-gray-900">{t.open_deals ?? 0}</b></span>
-            <span>на <b className="text-gray-900">{moneyList(t.pipeline_amounts, '—')}</b> в месяц</span>
-            {t.no_next_step ? <span>без следующего шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
-          </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-none">
-          <button onClick={() => { setCForm({ name: '', phone: '', city: '', text: '' }); setCErr(''); setCreating('lead') }}
-            className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700">
-            + Завести
-          </button>
-          <div className="flex gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight mr-1">Воронка</h1>
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
             {([['sales', 'Продажи'], ['enterprise', 'Enterprise']] as const).map(([t, label]) => (
               <button key={t} onClick={() => switchType(t)}
-                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium ${
-                  ptype === t ? 'bg-violet-600 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium transition-colors ${
+                  ptype === t ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
                 {label}
               </button>
             ))}
@@ -348,7 +335,7 @@ export function SalesFunnelPage() {
           <div className="flex bg-gray-100 rounded-lg p-0.5" title="Канбан — где что стоит; список — действия над многими">
             {([['board', 'Канбан'], ['list', 'Список']] as const).map(([v, label]) => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium ${
+                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium transition-colors ${
                   view === v ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
                 {label}
               </button>
@@ -356,11 +343,14 @@ export function SalesFunnelPage() {
           </div>
           <RegionBadge scope="funnel" />
         </div>
+        <button onClick={() => { setCForm({ name: '', phone: '', city: '', text: '' }); setCErr(''); setCreating('lead') }}
+          className="flex-none px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+          + Завести
+        </button>
       </div>
 
-      {/* Вторая строка шапки: фильтры слева, календарь справа. Раньше фильтры
-          жили в теле и уезжали при прокрутке доски, а полоска встреч
-          переносилась и двигала переключатели */}
+      {/* Строка данных: фильтры, счётчики фишками, встречи одной кнопкой.
+          Подсказка «обновляется само» убрана — она ни на что не отвечала */}
       <div className="-mx-1">
         <FilterBar
           active={[
@@ -371,11 +361,23 @@ export function SalesFunnelPage() {
             city && `город: ${city}`, noStep && 'без шага', overdue && 'просрочены',
             (from || to) && `${dateBy === 'updated' ? 'изменены' : 'созданы'}: ${from || '…'} — ${to || '…'}`,
           ].filter(Boolean) as string[]}
-          right={<div className="ml-auto flex items-center gap-3">
-            <span className="text-[11.5px] text-gray-400 hidden xl:inline">
-              обновляется само · перетаскивание работает сквозь границу
+          right={<div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+            <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums whitespace-nowrap">
+              обращений <b className="text-gray-900 font-semibold">{data.leadColumns.reduce((s, c) => s + c.total, 0)}</b>
             </span>
-            <MeetingsPanel />
+            <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums whitespace-nowrap">
+              сделок <b className="text-gray-900 font-semibold">{t.open_deals ?? 0}</b>
+            </span>
+            <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums whitespace-nowrap hidden lg:inline">
+              <b className="text-gray-900 font-semibold">{moneyList(t.pipeline_amounts, '—')}</b> в месяц
+            </span>
+            {t.no_next_step ? (
+              <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 tabular-nums whitespace-nowrap">
+                <b className="font-semibold">{t.no_next_step}</b> без шага
+              </span>
+            ) : null}
+            <span className="w-1" />
+            <MeetingsPanel compact />
           </div>}
         >
           {/* Строки по смыслу: что ищем и когда → где в воронке и у кого →

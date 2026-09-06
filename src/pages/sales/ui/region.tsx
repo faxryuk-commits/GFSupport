@@ -155,11 +155,14 @@ export const RegionBadge = ({ scope }: { scope: string }) => {
       <button
         onClick={() => setOpen(o => !o)}
         title="Регион этого раздела"
-        className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg border ${
-          region ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-white text-gray-600 border-gray-300'
+        // Тот же серый, что у переключателей рядом: регион — такой же
+        // переключатель, а синий он выглядел как ещё одна кнопка действия
+        className={`inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2.5 py-1.5 rounded-lg
+                    bg-gray-100 hover:bg-gray-200 transition-colors ${
+          region ? 'text-gray-900' : 'text-gray-500'
         }`}
       >
-        <span className={`w-1.5 h-1.5 rounded-full ${region ? 'bg-blue-600' : 'bg-gray-400'}`} />
+        <span className={`w-1.5 h-1.5 rounded-full ${region ? 'bg-gray-900' : 'bg-gray-400'}`} />
         {label}
         <span className="text-[9px] opacity-60">▾</span>
       </button>
