@@ -167,6 +167,9 @@ async function handlerInner(req: Request): Promise<Response> {
   const attention = url.searchParams.get('attention') === '1'
   const from = url.searchParams.get('from') || ''
   const to = url.searchParams.get('to') || ''
+  // Период — по дате создания или по дате последнего изменения: «кто пришёл
+  // на неделе» и «кого трогали на неделе» — разные вопросы, оба нужны
+  const byUpdated = url.searchParams.get('dateBy') === 'updated' ? 1 : 0
   const noStep = url.searchParams.get('nostep') === '1'
   const overdue = url.searchParams.get('overdue') === '1'
   // Телефон ищем по цифрам: «+998 97 555…» и «998975551555» — один номер,
@@ -202,7 +205,14 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${owner} = '' OR l.assigned_agent_id = ${owner})
           AND (${src} = '' OR l.source_id = ${src})
           AND (${cityLike} = '' OR l.city ILIKE ${cityLike})
+          AND (${from} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(l.updated_at, l.created_at) ELSE l.created_at END)
+               >= NULLIF(${from}, '')::timestamptz)
+          AND (${to} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(l.updated_at, l.created_at) ELSE l.created_at END)
+               < NULLIF(${to}, '')::timestamptz + INTERVAL '1 day')
+          -- Поиск как в Amo: не только имя, но и комментарий, город и телефон
+          -- в любом написании — сейлз помнит «тот, что писал про доставку»
           AND (${like} = '' OR l.name ILIKE ${like} OR l.contact_name ILIKE ${like}
+               OR l.text ILIKE ${like} OR l.city ILIKE ${like} OR l.phone ILIKE ${like}
                OR (${digitsLike} <> '' AND l.phone_norm LIKE ${digitsLike}))
       ) t WHERE rn <= ${perColumn}
     `,
@@ -214,7 +224,12 @@ async function handlerInner(req: Request): Promise<Response> {
         AND (${owner} = '' OR assigned_agent_id = ${owner})
         AND (${src} = '' OR source_id = ${src})
         AND (${cityLike} = '' OR city ILIKE ${cityLike})
+        AND (${from} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(updated_at, created_at) ELSE created_at END)
+             >= NULLIF(${from}, '')::timestamptz)
+        AND (${to} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(updated_at, created_at) ELSE created_at END)
+             < NULLIF(${to}, '')::timestamptz + INTERVAL '1 day')
         AND (${like} = '' OR name ILIKE ${like} OR contact_name ILIKE ${like}
+             OR text ILIKE ${like} OR city ILIKE ${like} OR phone ILIKE ${like}
              OR (${digitsLike} <> '' AND phone_norm LIKE ${digitsLike}))
       GROUP BY status
     `,
@@ -256,8 +271,10 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${ordersPerDay} = '' OR d.orders_per_day = ANY(string_to_array(${ordersPerDay}, ',')))
           -- NULLIF обязателен: пустую строку Postgres приводит к timestamptz
           -- до проверки левой части OR и падает на «invalid input syntax»
-          AND (${from} = '' OR d.created_at >= NULLIF(${from}, '')::timestamptz)
-          AND (${to} = '' OR d.created_at < NULLIF(${to}, '')::timestamptz + INTERVAL '1 day')
+          AND (${from} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(d.updated_at, d.created_at) ELSE d.created_at END)
+               >= NULLIF(${from}, '')::timestamptz)
+          AND (${to} = '' OR (CASE WHEN ${byUpdated} = 1 THEN COALESCE(d.updated_at, d.created_at) ELSE d.created_at END)
+               < NULLIF(${to}, '')::timestamptz + INTERVAL '1 day')
           AND (${noStep ? 1 : 0} = 0 OR d.next_step_at IS NULL)
           AND (${attention ? 1 : 0} = 0 OR (
             d.won_at IS NULL AND d.lost_at IS NULL AND (
@@ -269,6 +286,10 @@ async function handlerInner(req: Request): Promise<Response> {
             s.sla_hours IS NOT NULL AND d.won_at IS NULL AND d.lost_at IS NULL
             AND d.stage_since < NOW() - make_interval(hours => s.sla_hours::int)))
           AND (${like} = '' OR d.title ILIKE ${like} OR a.name ILIKE ${like}
+               OR d.city ILIKE ${like} OR d.next_step ILIKE ${like} OR d.legal_name ILIKE ${like}
+               OR EXISTS (
+                 SELECT 1 FROM sales_contacts c3 WHERE c3.account_id = d.account_id
+                   AND (c3.name ILIKE ${like} OR c3.email ILIKE ${like}))
                OR (${digitsLike} <> '' AND EXISTS (
                  SELECT 1 FROM sales_contacts c2 WHERE c2.account_id = d.account_id
                    AND regexp_replace(COALESCE(c2.phone, ''), ${'\\D'}, '', 'g') LIKE ${digitsLike})))

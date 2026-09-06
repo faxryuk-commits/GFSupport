@@ -129,6 +129,10 @@ export function SalesFunnelPage() {
   const [tariff, setTariff] = useState<string[]>([])
   const [opd, setOpd] = useState<string[]>([])
   const [attention, setAttention] = useState(false)
+  // Период и по чему его считать — по созданию карточки или по её изменению
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [dateBy, setDateBy] = useState<'created' | 'updated'>('created')
   const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -172,12 +176,15 @@ export function SalesFunnelPage() {
     if (tariff.length) p.set('tariff', tariff.join(','))
     if (opd.length) p.set('orders_per_day', opd.join(','))
     if (attention) p.set('attention', '1')
+    if (from) p.set('from', from)
+    if (to) p.set('to', to)
+    if ((from || to) && dateBy === 'updated') p.set('dateBy', 'updated')
     if (ptype === 'enterprise') p.set('type', 'enterprise')
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, region, perColumn, ptype])
+  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, from, to, dateBy, region, perColumn, ptype])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -340,6 +347,7 @@ export function SalesFunnelPage() {
             tariff.length && `тариф: ${tariff.length}`, opd.length && `заказов: ${opd.length}`,
             attention && 'требуют внимания',
             city && `город: ${city}`, noStep && 'без шага', overdue && 'просрочены',
+            (from || to) && `${dateBy === 'updated' ? 'изменены' : 'созданы'}: ${from || '…'} — ${to || '…'}`,
           ].filter(Boolean) as string[]}
           right={<div className="ml-auto flex items-center gap-3">
             <span className="text-[11.5px] text-gray-400 hidden xl:inline">
@@ -349,8 +357,21 @@ export function SalesFunnelPage() {
           </div>}
         >
           <input value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Бренд, имя, телефон в любом формате"
-            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-60" />
+            placeholder="Бренд, имя, телефон, город, комментарий, ЛПР"
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-64" />
+          {/* Период: по дате создания или последнего изменения карточки */}
+          <div className="flex items-center gap-1.5">
+            <select value={dateBy} onChange={e => setDateBy(e.target.value as 'created' | 'updated')}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
+              <option value="created">Созданы</option>
+              <option value="updated">Изменены</option>
+            </select>
+            <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]" />
+            <span className="text-gray-400 text-[12px]">—</span>
+            <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]" />
+          </div>
           <select value={owner} onChange={e => setOwner(e.target.value)}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
             <option value="">Все сейлзы</option>
@@ -389,12 +410,13 @@ export function SalesFunnelPage() {
             options={optionsFor(refs, 'tariff')} />
           <MultiPick label="Заказов в день" values={opd} onChange={setOpd}
             options={optionsFor(refs, 'orders_per_day')} />
-          {(q || owner || src || city || noStep || overdue || attention
+          {(q || owner || src || city || noStep || overdue || attention || from || to
             || pos.length || segment.length || tariff.length || opd.length) && (
             <button
               onClick={() => {
                 setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false)
                 setPos([]); setSegment([]); setTariff([]); setOpd([]); setAttention(false)
+                setFrom(''); setTo(''); setDateBy('created')
               }}
               className="text-[12px] text-gray-400 hover:text-red-600 whitespace-nowrap">
               сбросить ✕
