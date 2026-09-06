@@ -2,24 +2,26 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import {
-  ensureGoogleCalSchema, readGoogleCalConfig, getGoogleAccessToken,
-  invalidateGoogleToken, GOOGLE_CAL_SCOPES,
+  ensureGoogleCalSchema, readGoogleCalConfig, getAgentToken,
+  invalidateAgentToken, listConnectedAgents, GOOGLE_CAL_SCOPES,
 } from '../_lib/google-cal-config.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
- * Подключение общего календаря продаж из настроек системы.
+ * Подключение календарей команды из настроек системы.
  *
- * Календарь один на команду: встречи распределяет CRM, но видят их все —
- * если менеджер не успевает, коллега подхватывает встречу, а для этого
- * чужое расписание должно лежать на одном полотне с собственным.
+ * Каждый сотрудник подключает свой ящик сам: только так Google знает
+ * настоящую занятость человека — включая то, что заведено вне CRM. Общий
+ * календарь этого не умел и показывал лишь конфликты, созданные нами же.
+ *
+ * Реквизиты приложения общие на организацию, согласие проходит каждый за себя.
  *
  * GET                       состояние интеграции
  * GET  ?action=auth-url     ссылка на согласие Google
  * POST ?action=credentials  { clientId, clientSecret }
  * POST ?action=settings     { workDays, workFrom, workTo, slotMinutes, publicBooking }
- * POST ?action=disconnect   отзываем доступ, ключи приложения оставляем
+ * POST ?action=disconnect   отключаем свой календарь, ключи приложения оставляем
  */
 
 /**
@@ -89,7 +91,8 @@ export default async function handler(req: Request): Promise<Response> {
         redirect_uri = EXCLUDED.redirect_uri,
         updated_at = NOW()
     `
-    invalidateGoogleToken(orgId)
+    // Смена ключей приложения обесценивает все выданные токены сразу
+    invalidateAgentToken(orgId, ctx.agentId)
     return json({ ok: true, redirectUri: redirect })
   }
 
@@ -119,34 +122,36 @@ export default async function handler(req: Request): Promise<Response> {
 
   // ─── Отключение ─────────────────────────────────────────────────────────────
   if (req.method === 'POST' && action === 'disconnect') {
-    // Ключи приложения оставляем: заводить их заново ради переподключения
-    // календаря — лишняя работа, а секрет уже и так у нас
-    await sql`
-      UPDATE support_google_calendar
-      SET refresh_token = NULL, calendar_email = NULL,
-          connected_by = NULL, connected_by_name = NULL, connected_at = NULL, updated_at = NOW()
-      WHERE org_id = ${orgId}
-    `
-    invalidateGoogleToken(orgId)
+    // Отключить можно только себя: чужой доступ — чужое дело, и снимать его
+    // за человека значит тихо сломать ему встречи
+    await sql`DELETE FROM support_google_agent WHERE org_id = ${orgId} AND agent_id = ${ctx.agentId}`
+    invalidateAgentToken(orgId, ctx.agentId)
     return json({ ok: true })
   }
 
   // ─── Состояние ──────────────────────────────────────────────────────────────
-  // Живость проверяем обменом refresh-токена: сам факт записи в базе ничего
-  // не значит — доступ могли отозвать в аккаунте Google, и об этом надо
-  // сказать до того, как сорвётся назначение встречи
-  const alive = cfg.refreshToken ? Boolean(await getGoogleAccessToken(cfg)) : false
+  // Живость проверяем реальным обменом токена: сам факт записи в базе ничего
+  // не значит — доступ могли отозвать в аккаунте Google, и сказать об этом
+  // надо до того, как сорвётся назначение встречи
+  const [connected, myToken] = await Promise.all([
+    listConnectedAgents(orgId),
+    getAgentToken(orgId, ctx.agentId),
+  ])
+  const mine = connected.find(c => c.agentId === ctx.agentId) || null
 
   return json({
     appConfigured: Boolean(cfg.clientId && cfg.clientSecret),
     clientId: cfg.clientId,
     clientSecret: mask(cfg.clientSecret),
     redirectUri: cfg.redirectUri || computeRedirect(req),
-    connected: Boolean(cfg.refreshToken),
-    alive,
-    calendarEmail: cfg.calendarEmail,
-    connectedByName: cfg.connectedByName,
-    connectedAt: cfg.connectedAt,
+    // моё подключение
+    connected: Boolean(mine),
+    alive: Boolean(myToken),
+    calendarEmail: mine?.email || null,
+    connectedAt: mine?.connectedAt || null,
+    // кто ещё из команды подключился — чтобы было видно, у кого встречи
+    // будут создаваться, а у кого нет
+    team: connected,
     workDays: cfg.workDays,
     workFrom: cfg.workFrom,
     workTo: cfg.workTo,

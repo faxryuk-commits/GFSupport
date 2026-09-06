@@ -652,7 +652,7 @@ export function IntegrationsSettings({
   const [pfModalOpen, setPfModalOpen] = useState(false)
   const [pfConnected, setPfConnected] = useState(false)
   const [gcalModalOpen, setGcalModalOpen] = useState(false)
-  const [gcal, setGcal] = useState<{ connected: boolean; alive: boolean; calendarEmail: string | null } | null>(null)
+  const [gcal, setGcal] = useState<{ connected: boolean; alive: boolean; calendarEmail: string | null; team?: Array<{ agentId: string }> } | null>(null)
 
   // Как и у Meta: перечитываем при закрытии окна, чтобы карточка не врала
   useEffect(() => {
@@ -674,7 +674,7 @@ export function IntegrationsSettings({
   // и отключают доступ, и карточка должна отвечать состоянию
   useEffect(() => {
     if (gcalModalOpen) return
-    apiGet<{ connected: boolean; alive: boolean; calendarEmail: string | null }>('/integrations/google-calendar', false)
+    apiGet<{ connected: boolean; alive: boolean; calendarEmail: string | null; team?: Array<{ agentId: string }> }>('/integrations/google-calendar', false)
       .then(r => setGcal(r))
       .catch(() => setGcal(null))
   }, [gcalModalOpen])
@@ -931,20 +931,21 @@ export function IntegrationsSettings({
           <IntegrationCard
             icon="📅"
             name="Google Календарь"
-            status={gcal?.connected && gcal?.alive ? 'active' : gcal?.connected ? 'error' : 'inactive'}
-            details={gcal?.connected ? (
+            status={(gcal?.team?.length ?? 0) > 0 ? 'active' : 'inactive'}
+            details={(gcal?.team?.length ?? 0) > 0 ? (
               <>
                 <p className="text-sm text-slate-600">
-                  Общий календарь встреч{gcal.calendarEmail ? ` · ${gcal.calendarEmail}` : ''}
+                  Календари подключили: {gcal?.team?.length}
+                  {gcal?.connected ? ` · вы — ${gcal.calendarEmail || 'подключены'}` : ' · вы не подключены'}
                 </p>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  {gcal.alive
-                    ? 'Встречи из CRM создаются со ссылкой Meet'
-                    : 'Доступ отозван в Google — встречи не создаются'}
+                  {gcal?.connected && !gcal?.alive
+                    ? 'Ваш доступ отозван в Google — встречи не создаются'
+                    : 'Встречи из CRM попадают в календарь исполнителя со ссылкой Meet'}
                 </p>
               </>
             ) : (
-              <p className="text-sm text-slate-500">Не подключено — встречи придётся заводить в календаре руками</p>
+              <p className="text-sm text-slate-500">Никто не подключил календарь — встречи придётся заводить руками</p>
             )}
             actions={
               <button

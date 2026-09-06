@@ -5,13 +5,14 @@ import { Modal } from './kit'
 /**
  * Назначение встречи из карточки сделки или лида.
  *
- * Свободное время считается по общему календарю команды, а не по расписанию
- * одного менеджера: занятый слот занят для всех, и показывать его свободным
- * значит обещать клиенту время, которого нет.
+ * Свободное время считается по календарю того, кто будет проводить встречу:
+ * у каждого своё расписание, и занятость одного не должна закрывать время
+ * остальным. Смена исполнителя перезапрашивает слоты — иначе показали бы
+ * чужую занятость как свою.
  */
 
-interface Slot { startAt: string; hhmm: string; free: boolean }
-interface SlotsData { date: string; slots: Slot[]; slotMinutes: number; reason?: string }
+interface Slot { startAt: string; hhmm: string; free: boolean; busyCount?: number }
+interface SlotsData { date: string; slots: Slot[]; slotMinutes: number; reason?: string; googleReady?: boolean }
 
 interface Props {
   dealId?: string | null
@@ -63,12 +64,13 @@ export function BookMeetingModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const loadSlots = useCallback(async (d: Date) => {
+  const loadSlots = useCallback(async (d: Date, who: string) => {
     setLoading(true)
     setError('')
     setSlot(null)
     try {
-      const r = await apiGet<SlotsData>(`/sales/meetings?action=slots&date=${isoDay(d)}`, false)
+      const q = who ? `&assignee=${encodeURIComponent(who)}` : ''
+      const r = await apiGet<SlotsData>(`/sales/meetings?action=slots&date=${isoDay(d)}${q}`, false)
       setData(r)
       if (duration === null) setDuration(r.slotMinutes)
     } catch (e: any) {
@@ -79,7 +81,9 @@ export function BookMeetingModal({
     }
   }, [duration])
 
-  useEffect(() => { loadSlots(days[dayIdx]) }, [dayIdx, days, loadSlots])
+  // Перезапрашиваем и при смене дня, и при смене исполнителя: расписание
+  // персональное, у другого менеджера свободно другое время
+  useEffect(() => { loadSlots(days[dayIdx], assignee) }, [dayIdx, days, assignee, loadSlots])
 
   const submit = async () => {
     if (!slot) { setError('Выберите время'); return }
@@ -100,11 +104,11 @@ export function BookMeetingModal({
       onClose()
     } catch (e: any) {
       const msg = String(e?.message || '')
-      // Слот мог занять коллега, пока окно было открыто: календарь общий
+      // Занять время мог сам менеджер из другого места — расписание живое
       setError(msg.includes('slot_taken') || msg.includes('409')
         ? 'Это время только что заняли — выберите другое'
         : msg || 'Не удалось назначить встречу')
-      loadSlots(days[dayIdx])
+      loadSlots(days[dayIdx], assignee)
     } finally {
       setBusy(false)
     }
@@ -123,8 +127,8 @@ export function BookMeetingModal({
       footer={
         <div className="flex items-center gap-3">
           <span className="text-[11.5px] text-gray-400 flex-1 leading-snug">
-            Создаст событие в общем календаре со ссылкой Meet и поставит задачу
-            {assigneeName ? ` на ${assigneeName}` : ''}.
+            Создаст событие в календаре{assigneeName ? ` ${assigneeName}` : ''} со ссылкой Meet
+            и поставит задачу.
           </span>
           <button
             onClick={onClose}
@@ -176,6 +180,7 @@ export function BookMeetingModal({
                   key={s.startAt}
                   disabled={!s.free}
                   onClick={() => setSlot(s)}
+                  title={s.busyCount ? `в это время у команды встреч: ${s.busyCount}` : undefined}
                   className={`py-1.5 rounded-lg text-[12px] font-bold border transition-colors ${
                     slot?.startAt === s.startAt
                       ? 'bg-blue-500 text-white border-blue-500'
@@ -243,6 +248,12 @@ export function BookMeetingModal({
           <p className="mt-1 text-[11px] text-gray-400">
             Без почты встреча создастся, но клиент не получит приглашение и ссылку.
           </p>
+          {data && data.googleReady === false && (
+            <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+              У этого менеджера календарь не подключён — встреча появится в CRM,
+              но без события в Google и без ссылки Meet.
+            </p>
+          )}
         </label>
       </div>
     </Modal>

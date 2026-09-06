@@ -1,14 +1,14 @@
 import { getSQL } from '../_lib/db.js'
-import { ensureGoogleCalSchema, invalidateGoogleToken } from '../_lib/google-cal-config.js'
+import { ensureGoogleCalSchema, invalidateAgentToken } from '../_lib/google-cal-config.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
  * Возврат из согласия Google.
  *
- * Сюда браузер приходит после того, как владелец календаря разрешил доступ.
- * Меняем временный код на refresh-токен и кладём его в базу — дальше встречи
- * из CRM создаются от имени этого ящика.
+ * Сюда браузер приходит после того, как сотрудник разрешил доступ к своему
+ * календарю. Меняем временный код на refresh-токен и кладём его в базу —
+ * дальше встречи этого менеджера создаются в его собственном календаре.
  *
  * Адрес этого маршрута прописывается в OAuth-клиенте Google как «Разрешённый
  * URI перенаправления». Он показан в карточке интеграции, чтобы не набирать
@@ -121,21 +121,20 @@ export default async function handler(req: Request): Promise<Response> {
     } catch { /* имя необязательно */ }
 
     await sql`
-      INSERT INTO support_google_calendar
-        (org_id, refresh_token, calendar_email, connected_by, connected_by_name, connected_at, updated_at)
-      VALUES (${row.org_id}, ${tok.refresh_token}, ${email}, ${row.agent_id}, ${agentName}, NOW(), NOW())
-      ON CONFLICT (org_id) DO UPDATE SET
+      INSERT INTO support_google_agent
+        (org_id, agent_id, refresh_token, calendar_email, connected_at, updated_at)
+      VALUES (${row.org_id}, ${row.agent_id}, ${tok.refresh_token}, ${email}, NOW(), NOW())
+      ON CONFLICT (org_id, agent_id) DO UPDATE SET
         refresh_token = ${tok.refresh_token},
         calendar_email = ${email},
-        connected_by = ${row.agent_id},
-        connected_by_name = ${agentName},
         connected_at = NOW(),
         updated_at = NOW()
     `
-    invalidateGoogleToken(row.org_id)
+    invalidateAgentToken(row.org_id, row.agent_id)
 
     return page('Календарь подключён',
-      `${email ? esc(email) + ' — в' : 'В'}стречи из CRM будут появляться в этом календаре со ссылкой Google Meet.`, true)
+      `${agentName ? esc(agentName) + ', в' : 'В'}аши встречи из CRM будут появляться в календаре ${
+        email ? esc(email) : 'этого аккаунта'} со ссылкой Google Meet.`, true)
   } catch (e: any) {
     console.error('[google-callback] error:', e)
     return page('Не удалось подключить', esc(e?.message || 'Неизвестная ошибка при обмене кода.'), false)

@@ -4,16 +4,16 @@ import { Modal } from '@/shared/ui'
 import { formatDateTimeShort, WORK_TZ_LABEL } from '@/shared/lib/time'
 
 /**
- * Подключение общего календаря продаж.
+ * Подключение календарей команды.
  *
  * Экран разделён так же, как у Meta, и по той же причине: настройка
  * OAuth-клиента делается администратором один раз за всё время и свёрнута
- * с глаз, а подключение календаря — обычная работа, которую делает тот,
- * у кого есть доступ к ящику продаж.
+ * с глаз, а подключение календаря — обычная работа каждого за себя.
  *
- * Календарь один на команду намеренно. Встречи распределяет CRM, но видеть
- * их должны все: если менеджер не успевает, встречу подхватывает коллега,
- * а для этого чужое расписание должно лежать на одном полотне с собственным.
+ * Календарь у каждого свой. Общий на всех не годился: на одном аккаунте
+ * Google не может сказать, кто именно занят, и мы видели только конфликты,
+ * созданные нами же — отпуск или встреча вне CRM оставались невидимыми.
+ * Подключить чужой ящик нельзя: согласие проходит сам человек.
  */
 
 type State = {
@@ -24,8 +24,8 @@ type State = {
   connected: boolean
   alive: boolean
   calendarEmail: string | null
-  connectedByName: string | null
   connectedAt: string | null
+  team: Array<{ agentId: string; name: string | null; email: string | null; connectedAt: string | null }>
   workDays: number[]
   workFrom: number
   workTo: number
@@ -163,44 +163,35 @@ export function GoogleCalendarModal({ isOpen, onClose }: { isOpen: boolean; onCl
 
         {st && (
           <>
-            {/* Состояние календаря */}
+            {/* Мой календарь */}
             <div className="rounded-xl border border-[#e8edf3] p-4">
               <div className="flex items-center gap-2.5 mb-2">
-                <h3 className="text-[14px] font-semibold text-slate-800">Календарь команды</h3>
+                <h3 className="text-[14px] font-semibold text-slate-800">Мой календарь</h3>
                 {statusChip}
               </div>
 
               {st.connected ? (
                 <>
-                  <div className="text-[12.5px] text-slate-600 space-y-1">
-                    <div><span className="text-slate-400">Аккаунт: </span><b className="font-semibold">{st.calendarEmail || '—'}</b></div>
-                    {st.connectedByName && (
-                      <div>
-                        <span className="text-slate-400">Подключил: </span>
-                        {st.connectedByName}
-                        {st.connectedAt ? ` · ${formatDateTimeShort(st.connectedAt)}` : ''}
-                      </div>
-                    )}
+                  <div className="text-[12.5px] text-slate-600">
+                    <span className="text-slate-400">Аккаунт: </span>
+                    <b className="font-semibold">{st.calendarEmail || '—'}</b>
+                    {st.connectedAt ? (
+                      <span className="text-slate-400"> · с {formatDateTimeShort(st.connectedAt)}</span>
+                    ) : null}
                   </div>
                   {!st.alive && (
                     <div className="mt-2.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-800">
-                      Google больше не отдаёт доступ по сохранённому токену — вероятно, его отозвали в аккаунте.
-                      Встречи создаваться не будут: подключите заново.
+                      Google больше не отдаёт доступ по сохранённому токену — вероятно, его отозвали
+                      в аккаунте. Ваши встречи не будут попадать в календарь: подключитесь заново.
                     </div>
                   )}
                   <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={connect}
-                      disabled={busy === 'connect'}
-                      className="px-3 py-1.5 text-[12.5px] font-medium rounded-lg border border-[#e8edf3] text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    >
+                    <button onClick={connect} disabled={busy === 'connect'}
+                      className="px-3 py-1.5 text-[12.5px] font-medium rounded-lg border border-[#e8edf3] text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                       Переподключить
                     </button>
-                    <button
-                      onClick={disconnect}
-                      disabled={busy === 'disconnect'}
-                      className="px-3 py-1.5 text-[12.5px] font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
+                    <button onClick={disconnect} disabled={busy === 'disconnect'}
+                      className="px-3 py-1.5 text-[12.5px] font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50">
                       Отключить
                     </button>
                   </div>
@@ -208,29 +199,47 @@ export function GoogleCalendarModal({ isOpen, onClose }: { isOpen: boolean; onCl
               ) : (
                 <>
                   <p className="text-[12.5px] text-slate-500 leading-relaxed">
-                    Встречи из CRM будут появляться в общем календаре продаж со ссылкой Google&nbsp;Meet,
-                    а занятое время — учитываться при выборе слота. Подключать нужно тем аккаунтом,
-                    в чьём календаре должны жить встречи.
+                    Ваши встречи из CRM будут появляться в вашем календаре со ссылкой Google&nbsp;Meet,
+                    а занятое время — учитываться при выборе слота. Включая то, что вы завели вне CRM.
                   </p>
-                  <button
-                    onClick={connect}
-                    disabled={!st.appConfigured || busy === 'connect'}
-                    className="mt-3 px-3.5 py-2 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
-                  >
-                    {busy === 'connect' ? 'Открываем Google…' : 'Подключить календарь'}
+                  <button onClick={connect} disabled={!st.appConfigured || busy === 'connect'}
+                    className="mt-3 px-3.5 py-2 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40">
+                    {busy === 'connect' ? 'Открываем Google…' : 'Подключить мой календарь'}
                   </button>
                   {!st.appConfigured && (
-                    <p className="mt-2 text-[11.5px] text-slate-400">
-                      Сначала задайте ключи приложения — ниже.
-                    </p>
+                    <p className="mt-2 text-[11.5px] text-slate-400">Сначала задайте ключи приложения — ниже.</p>
                   )}
                 </>
               )}
             </div>
 
-            {/* Расписание */}
-            {st.connected && (
-              <div className="rounded-xl border border-[#e8edf3] p-4">
+            {/* Команда */}
+            <div className="rounded-xl border border-[#e8edf3] p-4">
+              <h3 className="text-[14px] font-semibold text-slate-800 mb-1">Календари команды</h3>
+              <p className="text-[11.5px] text-slate-400 mb-3">
+                Подключает каждый сам — за другого это сделать нельзя, согласие даёт сам человек.
+              </p>
+              {st.team.length ? (
+                <div className="space-y-1.5">
+                  {st.team.map(m => (
+                    <div key={m.agentId} className="flex items-center gap-2 text-[12.5px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-none" />
+                      <b className="font-semibold text-slate-700">{m.name || m.agentId}</b>
+                      <span className="text-slate-400 truncate">{m.email || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[12.5px] text-slate-400">Пока никто не подключил календарь.</p>
+              )}
+              <p className="mt-3 text-[11.5px] text-slate-400 leading-relaxed">
+                У кого календарь не подключён, встреча всё равно создастся в CRM — но без события
+                в Google и без ссылки Meet.
+              </p>
+            </div>
+
+            {/* Расписание — общее на организацию, а не на человека */}
+            <div className="rounded-xl border border-[#e8edf3] p-4">
                 <h3 className="text-[14px] font-semibold text-slate-800 mb-1">Когда назначаем встречи</h3>
                 <p className="text-[11.5px] text-slate-400 mb-3">{WORK_TZ_LABEL}</p>
 
@@ -301,8 +310,7 @@ export function GoogleCalendarModal({ isOpen, onClose }: { isOpen: boolean; onCl
                     </span>
                   </span>
                 </label>
-              </div>
-            )}
+            </div>
 
             {/* Ключи приложения — разовая настройка */}
             <div className="rounded-xl border border-[#e8edf3]">

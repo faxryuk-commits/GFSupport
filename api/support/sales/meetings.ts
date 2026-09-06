@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
-import { readGoogleCalConfig, getGoogleAccessToken } from '../_lib/google-cal-config.js'
+import { readGoogleCalConfig, getAgentToken } from '../_lib/google-cal-config.js'
 import { sendNotification } from '../_lib/notifications.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -14,14 +14,17 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * уже есть исполнитель, срок и привязки к лиду, сделке и клиенту. Отдельная
  * таблица разошлась бы с задачей при первом переносе времени.
  *
- * Календарь один на команду — но занятость персональная. Четыре менеджера
- * могут вести четыре встречи в одно время, каждый по своей ссылке Meet;
- * запрещено только двойное бронирование одного человека.
+ * Календари персональные: у каждого менеджера свой. Четверо могут вести
+ * четыре встречи в одно время, каждый по своей ссылке Meet; запрещено только
+ * двойное бронирование одного человека.
  *
- * Отсюда важное следствие: занятость считается по нашей базе, а не по
- * freeBusy общего календаря Google. На общем аккаунте freeBusy показывает
- * занятым любое время, где стоит хоть чья-то встреча, и параллельные встречи
- * стали бы невозможны. Кто именно занят, знает только CRM.
+ * Занятость берём из freeBusy его собственного календаря — тогда видно и то,
+ * что заведено вне CRM: стоматолог, отпуск, чужое совещание. На общем ящике
+ * это было невозможно, Google не мог сказать, кто именно занят.
+ *
+ * Событие живёт в календаре того, кто назначал, и при подхвате не переезжает:
+ * коллега добавляется участником. Иначе клиенту пришли бы отмена и новое
+ * приглашение с другой ссылкой Meet из-за нашей внутренней перестановки.
  *
  * GET                      ?from=&to=  встречи за период (полотно календаря)
  * GET  ?action=slots&date=&assignee= свободные слоты дня для конкретного менеджера
@@ -88,7 +91,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Занятость персональная: без исполнителя показываем свободным всё,
     // потому что занят может быть кто-то один, а провести встречу — другой
-    const who = String(url.searchParams.get('assignee') || '')
+    const who = String(url.searchParams.get('assignee') || ctx.agentId || '')
     const taken = who
       ? await sql`
           SELECT due_at FROM sales_tasks
@@ -109,6 +112,11 @@ export default async function handler(req: Request): Promise<Response> {
     ` as any[]
     const loadMs = new Map((load as any[]).map(r => [new Date(r.due_at).getTime(), r.n]))
 
+    // Личный календарь знает и то, что заведено вне CRM: без этого мы обещали бы
+    // клиенту время, на котором у менеджера стоматолог
+    const token = await getAgentToken(orgId, who || null)
+    const busy = token ? await busyRanges(token, dayStart, dayEnd) : []
+
     const slots: Array<{ startAt: string; hhmm: string; free: boolean; busyCount: number }> = []
     const step = cfg.slotMinutes
     for (let min = cfg.workFrom * 60; min + step <= cfg.workTo * 60; min += step) {
@@ -118,11 +126,12 @@ export default async function handler(req: Request): Promise<Response> {
         startAt: start.toISOString(),
         hhmm: `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`,
         // Прошедшее время недоступно: назначить встречу назад нельзя
-        free: !takenMs.has(ms) && ms > Date.now(),
+        free: !takenMs.has(ms) && ms > Date.now()
+          && !busy.some(([bs, be]) => ms < be && ms + step * 60_000 > bs),
         busyCount: loadMs.get(ms) || 0,
       })
     }
-    return json({ date, slots, slotMinutes: step, assignee: who || null })
+    return json({ date, slots, slotMinutes: step, assignee: who || null, googleReady: Boolean(token) })
   }
 
   // ─── Создание встречи ───────────────────────────────────────────────────────
@@ -173,12 +182,13 @@ export default async function handler(req: Request): Promise<Response> {
     }
     if (!clientName) clientName = 'Встреча'
 
-    // Событие в Google. Если календарь не подключён или Google ответил
-    // отказом, встречу всё равно заводим: она нужна в CRM, а ссылку
-    // менеджер добавит руками — потерять встречу хуже, чем остаться без Meet
+    // Событие заводим в календаре исполнителя — у него оно и должно быть,
+    // с уведомлением на телефоне. Если он не подключил календарь или Google
+    // ответил отказом, встречу всё равно создаём: потерять её хуже, чем
+    // остаться без ссылки Meet
     let googleEventId: string | null = null
     let meetUrl: string | null = null
-    const token = await getGoogleAccessToken(cfg)
+    const token = await getAgentToken(orgId, assignee)
     if (token) {
       try {
         const guests = body.guestEmail ? [{ email: String(body.guestEmail) }] : undefined
@@ -220,10 +230,10 @@ export default async function handler(req: Request): Promise<Response> {
     await sql`
       INSERT INTO sales_tasks (id, org_id, deal_id, account_id, lead_id, kind, title,
                                due_at, assignee_agent_id, created_by_agent_id, auto,
-                               google_event_id, meet_url)
+                               google_event_id, meet_url, google_cal_agent_id)
       VALUES (${id}, ${orgId}, ${body.dealId || null}, ${accountId}, ${body.leadId || null},
               'meeting', ${title}, ${start.toISOString()}, ${assignee}, ${ctx.agentId}, false,
-              ${googleEventId}, ${meetUrl})
+              ${googleEventId}, ${meetUrl}, ${googleEventId ? assignee : null})
     `
 
     // Сделка идёт дальше сама: назначенная встреча — это и есть «демо назначено»,
@@ -253,10 +263,51 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'POST' && action === 'reassign') {
     const body = await req.json().catch(() => null) as any
     if (!body?.id || !body?.assigneeAgentId) return json({ error: 'Нужны встреча и исполнитель' }, 400)
-    // Событие в Google не трогаем: время и участники те же, меняется только
-    // кто из команды проводит — пересоздание сбросило бы приглашение клиенту
+    const next = String(body.assigneeAgentId)
+
+    const [row] = await sql`
+      SELECT google_event_id, google_cal_agent_id FROM sales_tasks
+      WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting' LIMIT 1
+    ` as any[]
+    if (!row) return json({ error: 'Встреча не найдена' }, 404)
+
+    // Событие остаётся в календаре автора, подхвативший добавляется участником.
+    // Переносить его в чужой календарь пришлось бы через удаление и создание
+    // заново — клиент получил бы отмену и новое приглашение с другой ссылкой
+    // Meet из-за нашей внутренней перестановки
+    const token = await getAgentToken(orgId, row.google_cal_agent_id)
+    if (token && row.google_event_id) {
+      try {
+        const [who] = await sql`
+          SELECT calendar_email FROM support_google_agent
+          WHERE org_id = ${orgId} AND agent_id = ${next} LIMIT 1
+        ` as any[]
+        if (who?.calendar_email) {
+          const cur = await fetch(
+            `${CAL_API}/calendars/primary/events/${encodeURIComponent(row.google_event_id)}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          )
+          if (cur.ok) {
+            const ev = await cur.json() as any
+            const people: any[] = Array.isArray(ev.attendees) ? ev.attendees : []
+            if (!people.some(a => a.email === who.calendar_email)) {
+              people.push({ email: who.calendar_email })
+              await fetch(
+                `${CAL_API}/calendars/primary/events/${encodeURIComponent(row.google_event_id)}?sendUpdates=all`,
+                {
+                  method: 'PATCH',
+                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ attendees: people }),
+                },
+              )
+            }
+          }
+        }
+      } catch { /* в CRM исполнителя меняем в любом случае */ }
+    }
+
     await sql`
-      UPDATE sales_tasks SET assignee_agent_id = ${String(body.assigneeAgentId)}
+      UPDATE sales_tasks SET assignee_agent_id = ${next}
       WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting'
     `
     return json({ ok: true })
@@ -271,7 +322,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (start.getTime() < Date.now()) return json({ error: 'Это время уже прошло' }, 400)
 
     const [row] = await sql`
-      SELECT google_event_id FROM sales_tasks
+      SELECT google_event_id, google_cal_agent_id FROM sales_tasks
       WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting' LIMIT 1
     ` as any[]
     if (!row) return json({ error: 'Встреча не найдена' }, 404)
@@ -292,7 +343,8 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Событие патчим, а не пересоздаём: ссылка Meet и приглашение клиента
     // должны выжить, иначе перенос выглядит как отмена и новая встреча
-    const token = await getGoogleAccessToken(cfg)
+    // Правим в том календаре, где событие лежит: исполнитель мог смениться
+    const token = await getAgentToken(orgId, row.google_cal_agent_id)
     if (token && row.google_event_id) {
       try {
         await fetch(
@@ -328,10 +380,10 @@ export default async function handler(req: Request): Promise<Response> {
     const body = await req.json().catch(() => null) as any
     if (!body?.id) return json({ error: 'Не указана встреча' }, 400)
     const [row] = await sql`
-      SELECT google_event_id FROM sales_tasks
+      SELECT google_event_id, google_cal_agent_id FROM sales_tasks
       WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting' LIMIT 1
     ` as any[]
-    const token = await getGoogleAccessToken(cfg)
+    const token = await getAgentToken(orgId, row?.google_cal_agent_id)
     if (token && row?.google_event_id) {
       try {
         await fetch(`${CAL_API}/calendars/primary/events/${encodeURIComponent(row.google_event_id)}?sendUpdates=all`,
@@ -375,7 +427,7 @@ export default async function handler(req: Request): Promise<Response> {
     workDays: cfg.workDays,
     workFrom: cfg.workFrom,
     workTo: cfg.workTo,
-    googleConnected: Boolean(cfg.refreshToken),
+    googleConnected: Boolean(await getAgentToken(orgId, ctx.agentId)),
     meetings: rows.map(r => ({
       id: r.id,
       startAt: r.due_at,

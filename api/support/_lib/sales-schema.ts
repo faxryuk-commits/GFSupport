@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-09-06.16-meeting-calendar'
+const SCHEMA_VERSION = '2026-09-06.17-personal-calendars'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -785,6 +785,10 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   // первом же переносе времени.
   await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS google_event_id VARCHAR(200)`
   await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS meet_url TEXT`
+  // Календари персональные: чтобы позже перенести или отменить событие, надо
+  // помнить, в чьём именно календаре оно лежит. Исполнитель к тому времени
+  // мог смениться — событие при подхвате остаётся у автора
+  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS google_cal_agent_id VARCHAR(60)`
 
   // Что делает ассистент — видно построчно. Автоматика, работающая молча,
   // через неделю становится чёрным ящиком: непонятно, кому он писал, что
