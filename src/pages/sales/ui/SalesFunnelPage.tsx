@@ -9,6 +9,7 @@ import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
 import { SalesLeadPage } from './SalesLeadPage'
+import { FunnelList } from './FunnelList'
 
 /**
  * Единая воронка: обращения и сделки на одном экране.
@@ -151,6 +152,14 @@ export function SalesFunnelPage() {
   // Сколько карточек показываем в колонке. Счётчик внизу был просто текстом:
   // «показано 15 из 142» — и посмотреть остальное было нельзя ничем
   const [perColumn, setPerColumn] = useState(15)
+  // Доска или список: список — для действий над многими сразу. Выбор помнится
+  const [view, setViewRaw] = useState<'board' | 'list'>(() => {
+    try { return localStorage.getItem('funnel.view') === 'list' ? 'list' : 'board' } catch { return 'board' }
+  })
+  const setView = (v: 'board' | 'list') => {
+    setViewRaw(v)
+    try { localStorage.setItem('funnel.view', v) } catch { /* приватный режим */ }
+  }
   const [drag, setDrag] = useState<{ kind: 'lead' | 'deal'; id: string; from: string } | null>(null)
   // Проигранное на доске свёрнуто, пока его не попросят — помним выбор
   const [lostOpen, setLostOpenRaw] = useState<boolean>(() => {
@@ -164,7 +173,7 @@ export function SalesFunnelPage() {
   const reqRef = useRef(0)
 
   const load = useCallback(() => {
-    const p = new URLSearchParams({ perColumn: String(perColumn), region: region || 'all' })
+    const p = new URLSearchParams({ perColumn: String(view === 'list' ? 300 : perColumn), region: region || 'all' })
     if (owner) p.set('owner', owner)
     if (src) p.set('src', src)
     if (city) p.set('city', city)
@@ -184,7 +193,7 @@ export function SalesFunnelPage() {
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, from, to, dateBy, region, perColumn, ptype])
+  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, from, to, dateBy, region, perColumn, ptype, view])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -332,6 +341,15 @@ export function SalesFunnelPage() {
               </button>
             ))}
           </div>
+          <div className="flex bg-gray-100 rounded-lg p-0.5" title="Канбан — где что стоит; список — действия над многими">
+            {([['board', 'Канбан'], ['list', 'Список']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium ${
+                  view === v ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <RegionBadge scope="funnel" />
         </div>
       </div>
@@ -427,6 +445,13 @@ export function SalesFunnelPage() {
       </div>
     }>
 
+      {view === 'list' ? (
+        <FunnelList
+          leads={data.leads} deals={data.deals} leadColumns={data.leadColumns}
+          stages={data.stages} owners={data.owners}
+          onOpenLead={setOpenLead} onOpenDeal={setOpenDeal} onChanged={load} onError={setError}
+        />
+      ) : (
       <div className="flex-1 min-h-0 flex gap-2.5 overflow-x-auto items-stretch pb-2">
         {/* ─── Зона входа: обращения ─────────────────────────────── */}
         <div className="flex gap-2.5 p-2 rounded-xl bg-violet-50/60 border border-dashed border-violet-200 flex-none">
@@ -776,6 +801,7 @@ export function SalesFunnelPage() {
           )
         })}
       </div>
+      )}
 
       {error && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-red-600 text-white text-[12.5px]
