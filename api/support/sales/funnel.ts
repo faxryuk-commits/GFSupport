@@ -261,6 +261,8 @@ async function handlerInner(req: Request): Promise<Response> {
                d.stalled_at, d.updated_at, a.name AS account, ag.name AS owner_name,
                (SELECT c.phone FROM sales_contacts c WHERE c.account_id = d.account_id
                  ORDER BY c.is_primary DESC LIMIT 1) AS phone,
+               (SELECT c.name FROM sales_contacts c WHERE c.account_id = d.account_id
+                 ORDER BY c.is_primary DESC LIMIT 1) AS contact_name,
                (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens,
                s.key AS stage_key, d.won_at, d.lost_at, lr.label AS lost_reason,
                lr.reactivate_days AS lost_return_days,

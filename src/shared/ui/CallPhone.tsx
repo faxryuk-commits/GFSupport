@@ -17,8 +17,9 @@ type Props = {
   /** Код рынка клиента ('uz' | 'kz' | 'az'…) — локальный номер читается в его нумерации. */
   market?: string | null
   leadId?: string | null
-  /** sm — в строку метаданных карточки, md — в поле карточки клиента. */
-  size?: 'sm' | 'md'
+  /** sm — в строку метаданных карточки, md — в поле карточки клиента,
+   *  icon — одна трубка, номер по наведению: для тесных мест вроде подвала карточки. */
+  size?: 'sm' | 'md' | 'icon'
   className?: string
 }
 
@@ -65,19 +66,23 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
 
   const base = size === 'sm'
     ? 'text-inherit underline decoration-dotted underline-offset-2 hover:text-emerald-700'
-    : 'text-blue-600 hover:text-emerald-700 hover:underline'
+    : size === 'icon'
+      ? 'text-gray-600 hover:text-emerald-700'
+      : 'text-blue-600 hover:text-emerald-700 hover:underline'
 
   return (
     <span className={`inline-flex items-baseline gap-1 ${className}`}>
       <button
         onClick={call}
         title={foreign
-          ? `${parsed.countryName}: АТС подключена только для Узбекистана — клик скопирует номер, наберите с мобильного`
-          : status === 'error' ? error : 'Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется'}
+          ? `${label} · ${parsed.countryName}: АТС подключена только для Узбекистана — клик скопирует номер, наберите с мобильного`
+          : status === 'error' ? error : `${label} · Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется`}
         className={`${base} tabular-nums cursor-pointer bg-transparent p-0 border-0 font-inherit text-left ${
           status === 'calling' ? 'opacity-60' : ''}`}
       >
-        {copied ? '✓ номер скопирован'
+        {size === 'icon'
+          ? (copied ? '✓' : status === 'calling' ? '…' : status === 'ringing' ? '📞…' : '📞')
+          : copied ? '✓ номер скопирован'
           : status === 'calling' ? 'Соединяю…'
           : status === 'ringing' ? `📞 АТС звонит ${viaExt ? `на ${viaExt}` : 'вам'}…`
           : label}
@@ -85,7 +90,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
       {status === 'error' && size === 'md' && (
         <span className="text-[11px] text-red-600">{error}</span>
       )}
-      {status === 'error' && size === 'sm' && (
+      {status === 'error' && size !== 'md' && (
         <span title={error} className="text-red-600">⚠︎</span>
       )}
     </span>

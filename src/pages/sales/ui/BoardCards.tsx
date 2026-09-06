@@ -30,16 +30,32 @@ const TONE: Record<Tone, string> = {
 
 const shortDate = (iso: string | null | undefined) => (iso ? fmtDateTime(iso) : '')
 
-/** Инициал ответственного: буква вместо имени, когда места мало. */
+/**
+ * Ответственный — одним словом. Кружок с буквой рядом с именем читался как
+ * два человека, а в тесноте от имени оставалась одна буква. Нет владельца —
+ * красное «ничей»: это сигнал, а не пустота.
+ */
 function Owner({ name }: { name: string | null | undefined }) {
-  if (!name) return <span className="text-[10.5px] font-medium text-red-600">ничей</span>
-  const short = name.split(' ')[0]
+  if (!name) return <span className="text-[10.5px] font-medium text-red-600 flex-none">ничей</span>
   return (
-    <span className="inline-flex items-center gap-1 min-w-0 text-[10.5px] text-gray-500" title={name}>
-      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-800 grid place-items-center text-[9px] font-semibold flex-none">
-        {name.trim().charAt(0).toUpperCase()}
-      </span>
-      <span className="truncate">{short}</span>
+    <span className="text-[10.5px] text-gray-500 truncate min-w-0" title={name}>{name.split(' ')[0]}</span>
+  )
+}
+
+/**
+ * Псевдоназвания, которые приёмник даёт клиенту без бренда: «Заявка с сайта:
+ * Фахриддин», «Звонок 998…». Это не компания — показывать их заголовком
+ * значит смешивать источник, человека и бренд в одной строке.
+ */
+const PSEUDO = /^(заявка с сайта|звонок|входящий|исходящий|сделка #|facebook №|instagram|обращение)/i
+const isPseudo = (s: string | null | undefined) => !s || PSEUDO.test(s.trim())
+
+/** Кнопка звонка в подвале: одна трубка, номер — по наведению. */
+function CallBtn({ phone, market, leadId }: { phone: string | null; market?: string | null; leadId?: string }) {
+  if (!phone) return null
+  return (
+    <span className="text-[11px] w-6 h-6 rounded-md border border-gray-200 grid place-items-center hover:border-emerald-400">
+      <CallPhone phone={phone} market={market} leadId={leadId} size="icon" />
     </span>
   )
 }
@@ -83,9 +99,14 @@ export function LeadCard({
     state = { text: 'касаний не было', tone: 'mute' }
   }
 
+  // Заголовок — человек; бренд, если он есть и отличается, — первым в фактах.
+  // Порядок фактов по ценности: с кем говорим → откуда → где
+  const title = l.contact_name || l.name
+  const brand = l.contact_name && l.name !== l.contact_name && !isPseudo(l.name) ? l.name : null
   const phone = parsePhone(l.phone, l.market_id)
-  const facts = [l.source, l.city, phone.valid ? phone.pretty : l.phone].filter(Boolean).join(' · ')
-  const hover = [l.text ? `«${l.text}»` : '', KIND_LABEL[l.lead_kind || ''] ? `тип: ${KIND_LABEL[l.lead_kind || '']}` : '',
+  const facts = [brand, l.source, l.city].filter(Boolean).join(' · ')
+  const hover = [phone.valid ? phone.pretty : l.phone, l.text ? `«${l.text}»` : '',
+    KIND_LABEL[l.lead_kind || ''] ? `тип: ${KIND_LABEL[l.lead_kind || '']}` : '',
     `пришло ${shortDate(l.created_at)}`].filter(Boolean).join('\n')
 
   return (
@@ -94,7 +115,7 @@ export function LeadCard({
       <div className="flex items-baseline justify-between gap-2">
         <button onClick={onOpen}
           className="text-[12px] font-semibold text-gray-900 hover:text-violet-700 text-left truncate min-w-0 flex-1">
-          {l.contact_name || l.name}
+          {title}
         </button>
         <span className="flex items-center gap-1 flex-none">
           {showFlag && <MarketFlag market={l.market_id} />}
@@ -106,11 +127,7 @@ export function LeadCard({
       <div className="mt-auto flex items-center justify-between gap-2">
         <Owner name={l.agent_name} />
         <span className="flex items-center gap-1 flex-none">
-          {l.phone && (
-            <span className="text-[10px] px-1.5 py-1 rounded-md border border-gray-200 text-gray-600 hover:border-emerald-400">
-              <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
-            </span>
-          )}
+          <CallBtn phone={l.phone} market={l.market_id} leadId={l.id} />
           {l.status === 'nurture' ? (
             <button disabled={busy} onClick={onReturn} title="Забрать у ассистента и дозваниваться самому"
               className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-700 hover:border-gray-400 disabled:opacity-50">
@@ -148,11 +165,16 @@ export function DealCard({
   }
   else state = { text: `шаг не назначен${d.monthly_amount ? '' : ' · сумма не указана'}`, tone: 'red' }
 
+  // Заголовок — бренд. Когда приёмник дал клиенту псевдоимя («Заявка с
+  // сайта: Фахриддин»), заголовком идёт контакт, а не источник
+  const title = !isPseudo(d.account) ? d.account! : (d.contact_name || d.title)
+  const contact = d.contact_name && d.contact_name !== title ? d.contact_name : null
+  // Порядок фактов по ценности: деньги → с кем говорим → чем пользуется → масштаб → где
   const facts = [
     d.monthly_amount ? `${money(d.monthly_amount, d.currency)}${d.tariff ? ` · ${d.tariff}` : ''}` : null,
-    d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day ? `${d.orders_per_day} в день` : null, d.city,
+    contact, d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day ? `${d.orders_per_day} в день` : null, d.city,
   ].filter(Boolean).join(' · ')
-  const hover = [facts, d.doc_opens ? `КП открыто ${d.doc_opens}×` : '',
+  const hover = [d.phone || '', facts, d.doc_opens ? `КП открыто ${d.doc_opens}×` : '',
     d.last_call ? `звонок ${shortDate(d.last_call.at)}${d.last_call.ok === false ? ' · не дозвонились' : ''}` : '',
     `на этапе с ${shortDate(d.stage_since)} · изменена ${shortDate(d.updated_at || d.stage_since)}`]
     .filter(Boolean).join('\n')
@@ -163,7 +185,7 @@ export function DealCard({
       <div className="flex items-baseline justify-between gap-2">
         <button onClick={onOpen}
           className="text-[12px] font-semibold text-gray-900 hover:text-blue-600 text-left truncate min-w-0 flex-1">
-          {d.account || d.title}
+          {title}
         </button>
         <span className="flex items-center gap-1 flex-none">
           {showFlag && <MarketFlag market={d.market_id} />}
@@ -178,11 +200,7 @@ export function DealCard({
       <div className="mt-auto flex items-center justify-between gap-2">
         <Owner name={d.owner_name} />
         <span className="flex items-center gap-1 flex-none">
-          {d.phone && (
-            <span className="text-[10px] px-1.5 py-1 rounded-md border border-gray-200 text-gray-600 hover:border-emerald-400">
-              <CallPhone phone={d.phone} market={d.market_id} size="sm" />
-            </span>
-          )}
+          <CallBtn phone={d.phone} market={d.market_id} />
           {!d.next_step_at ? (
             <button disabled={busy} onClick={onPlanStep} title="Поставить шаг «Позвонить» на завтра"
               className="text-[10px] px-2 py-1 rounded-md bg-blue-600 text-white hover:brightness-110 disabled:opacity-50">

@@ -48,6 +48,8 @@ export interface Deal {
   meeting_at: string | null
   updated_at: string | null; owner_name: string | null; phone: string | null
   doc_opens: number | null; stage_key: string; market_id?: string | null
+  /** Основной контакт клиента — человек, которому звонят. */
+  contact_name?: string | null
   won_at?: string | null; lost_at?: string | null; lost_reason?: string | null
   /** Срок возврата у причины отказа: есть — к клиенту ещё вернутся. */
   lost_return_days?: number | null
