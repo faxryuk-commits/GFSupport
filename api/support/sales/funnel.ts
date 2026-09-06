@@ -248,8 +248,10 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${segment} = '' OR d.segment = ${segment})
           AND (${tariff} = '' OR d.tariff = ${tariff})
           AND (${ordersPerDay} = '' OR d.orders_per_day = ${ordersPerDay})
-          AND (${from} = '' OR d.created_at >= ${from}::timestamptz)
-          AND (${to} = '' OR d.created_at < (${to}::timestamptz + INTERVAL '1 day'))
+          -- NULLIF обязателен: пустую строку Postgres приводит к timestamptz
+          -- до проверки левой части OR и падает на «invalid input syntax»
+          AND (${from} = '' OR d.created_at >= NULLIF(${from}, '')::timestamptz)
+          AND (${to} = '' OR d.created_at < NULLIF(${to}, '')::timestamptz + INTERVAL '1 day')
           AND (${noStep ? 1 : 0} = 0 OR d.next_step_at IS NULL)
           AND (${overdue ? 1 : 0} = 0 OR (
             s.sla_hours IS NOT NULL AND d.won_at IS NULL AND d.lost_at IS NULL
