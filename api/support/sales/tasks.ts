@@ -73,6 +73,19 @@ export default async function handler(req: Request): Promise<Response> {
               ${body.dueAt || null}, ${assignee}, ${ctx.agentId}, false)
     `
 
+    // Запланированная задача и есть следующий шаг сделки. Без этой строки доска
+    // показывала «шаг не назначен» при живой задаче, а через 48 часов помечала
+    // сделку брошенной — сейлз работал, а система считала иначе
+    if (body.dealId && body.dueAt) {
+      await sql`
+        UPDATE sales_deals
+        SET next_step = COALESCE(next_step, ${title.slice(0, 200)}),
+            next_step_at = LEAST(COALESCE(next_step_at, ${body.dueAt}), ${body.dueAt}),
+            stalled_at = NULL
+        WHERE id = ${body.dealId} AND org_id = ${orgId}
+      `
+    }
+
     // Задачу поставили другому — он должен узнать об этом, не открывая раздел
     if (assignee !== ctx.agentId) {
       const [from] = await sql`SELECT name FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1`

@@ -399,9 +399,25 @@ export default async function handler(req: Request): Promise<Response> {
           { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
       } catch { /* в CRM отменяем в любом случае */ }
     }
+    // Время встречи продублировано в сделке — для метки на доске и для якоря
+    // напоминания. Отменённая встреча обязана исчезнуть и оттуда, иначе доска
+    // показывает встречу, которой нет, а напоминание срабатывает впустую
+    await sql`
+      UPDATE sales_deals SET meeting_at = NULL
+      WHERE org_id = ${orgId} AND meeting_at = (
+        SELECT due_at FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId})
+        AND id = (SELECT deal_id FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId})
+    `
     await sql`
       UPDATE sales_tasks SET status = 'cancelled', status_at = NOW(), status_note = ${String(body.note || '').slice(0, 500) || null}
       WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting'
+    `
+    // Напоминание о встрече тоже снимаем: без этого оно придёт по отменённой
+    await sql`
+      UPDATE sales_tasks SET status = 'cancelled', status_at = NOW()
+      WHERE org_id = ${orgId} AND kind = 'cadence' AND done_at IS NULL
+        AND deal_id = (SELECT deal_id FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId})
+        AND title ILIKE '%встрече%'
     `
     return json({ ok: true })
   }
