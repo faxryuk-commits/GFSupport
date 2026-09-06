@@ -43,9 +43,9 @@ export const FIELD_LABELS: Record<string, string> = {
 export const EDITABLE_FIELDS = [
   'title', 'city', 'points', 'orders_per_day', 'pos', 'aggregators', 'delivery_type',
   'segment', 'dm_role',
-  'pain', 'dm_name', 'dm_confirmed', 'meeting_at', 'budget_stated', 'tariff',
+  'pain', 'dm_name', 'dm_confirmed', 'dm_contact_id', 'meeting_at', 'budget_stated', 'tariff',
   'monthly_amount', 'onetime_amount', 'discount_pct', 'term_months', 'valid_till',
-  'kp_file', 'legal_name', 'start_date', 'paid_at', 'expected_close_at', 'probability',
+  'kp_file', 'legal_name', 'start_date', 'paid_at', 'probability',
   'next_step', 'next_step_at', 'items', 'currency',
 ] as const
 
