@@ -89,7 +89,15 @@ export async function collectDealEvents(sql: any, orgId: string): Promise<DealEv
     WITH base AS (
       SELECT d.id, d.org_id, d.points, d.delivery_type, d.meeting_at, d.paid_at,
              d.monthly_amount, d.amount_usd, d.currency,
-             l.external_id AS lead_external_id, l.phone,
+             l.external_id AS lead_external_id,
+             -- Сделка без лида (заведена вручную) — телефон берём из контактов
+             -- аккаунта: главный контакт первым. Иначе такие сделки вечно
+             -- висели no_match, хотя номер в системе есть
+             COALESCE(l.phone, (
+               SELECT c.phone FROM sales_contacts c
+               WHERE c.account_id = d.account_id AND c.phone IS NOT NULL
+               ORDER BY c.is_primary DESC, c.created_at LIMIT 1
+             )) AS phone,
              (SELECT p.amount FROM sales_payments p
                WHERE p.deal_id = d.id ORDER BY p.paid_at, p.id LIMIT 1) AS first_payment
       FROM sales_deals d
