@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { fmtDateTime } from './kit'
+import { useAuth } from '@/shared/hooks/useAuth'
 
 /**
  * Единая лента сделки: звонки, сообщения, заметки, задачи и движения по этапам
@@ -12,8 +13,9 @@ import { fmtDateTime } from './kit'
  * сверяя даты глазами. Порядок событий — это и есть история сделки, и она
  * должна читаться сверху вниз, как разговор.
  *
- * Запись итога здесь же: сейлз кладёт трубку и пишет результат, не уходя
- * из карточки. Отправка сообщений остаётся в чате — здесь на неё ссылка.
+ * Запись итога и ответ клиенту здесь же: сейлз кладёт трубку и пишет
+ * результат, не уходя из карточки. Это была главная претензия при сравнении
+ * с amo — там из карточки пишут, у нас приходилось уходить в чат.
  */
 
 type Activity = {
@@ -43,8 +45,13 @@ export function DealFeed({
   events?: any[]
   channelId?: string | null
 }) {
+  const { agent } = useAuth()
   const [acts, setActs] = useState<Activity[]>([])
-  const [kind, setKind] = useState<'note' | 'call' | 'meeting'>('note')
+  const [kind, setKind] = useState<'note' | 'call' | 'meeting' | 'message'>(
+    channelId ? 'message' : 'note')
+  // Отправленное показываем сразу: ответ канала доедет с обновлением карточки,
+  // а сейлзу нужно видеть, что письмо ушло, в момент отправки
+  const [sent, setSent] = useState<Item[]>([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -94,10 +101,11 @@ export function DealFeed({
         tone: 'system',
       })
     }
+    out.push(...sent)
     return out
       .filter(i => i.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-  }, [acts, messages, tasks, events])
+  }, [acts, messages, tasks, events, sent])
 
   const play = async (uuid: string) => {
     try {
@@ -107,14 +115,28 @@ export function DealFeed({
   }
 
   const submit = async () => {
-    if (!text.trim()) return
+    const body = text.trim()
+    if (!body) return
     setBusy(true); setErr('')
     try {
-      await apiPost('/sales/activities', { dealId, accountId, type: kind, text: text.trim() })
+      if (kind === 'message') {
+        if (!channelId) { setErr('Канал не привязан — сообщение отправить некуда'); return }
+        await apiPost('/messages/send', {
+          channelId, text: body,
+          senderName: agent?.name || undefined,
+          senderId: agent?.id || undefined,
+        })
+        setSent(s => [...s, {
+          key: `s_${Date.now()}`, at: new Date().toISOString(), icon: '💬',
+          who: agent?.name || 'Мы', text: body,
+        }])
+      } else {
+        await apiPost('/sales/activities', { dealId, accountId, type: kind, text: body })
+        load()
+      }
       setText('')
-      load()
     } catch (e: any) {
-      setErr(e?.message || 'Не удалось записать')
+      setErr(e?.message || (kind === 'message' ? 'Не удалось отправить' : 'Не удалось записать'))
     } finally { setBusy(false) }
   }
 
@@ -123,10 +145,12 @@ export function DealFeed({
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
         <h3 className="text-[13px] font-semibold text-gray-900">Лента</h3>
         <span className="text-[11px] text-gray-400">звонки, сообщения, заметки и этапы</span>
-        {channelId && (
+        {channelId ? (
           <Link to={`/chats/${channelId}`} className="ml-auto text-[12px] text-blue-600 hover:underline">
             Открыть чат
           </Link>
+        ) : (
+          <span className="ml-auto text-[11px] text-gray-400">канал не привязан</span>
         )}
       </div>
 
@@ -169,7 +193,10 @@ export function DealFeed({
       <div className="border-t border-gray-100 p-3">
         {err && <div className="mb-2 text-[11.5px] text-red-600">{err}</div>}
         <div className="flex gap-1.5 mb-2">
-          {([['note', 'Заметка'], ['call', 'Звонок'], ['meeting', 'Встреча']] as const).map(([k, label]) => (
+          {([
+            ...(channelId ? [['message', 'Клиенту'] as const] : []),
+            ['note', 'Заметка'], ['call', 'Звонок'], ['meeting', 'Встреча'],
+          ] as const).map(([k, label]) => (
             <button key={k} onClick={() => setKind(k)}
               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
                 kind === k ? 'bg-gray-900 text-white border-gray-900'
@@ -183,11 +210,11 @@ export function DealFeed({
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-            placeholder="Что произошло — одной строкой"
+            placeholder={kind === 'message' ? 'Сообщение клиенту' : 'Что произошло — одной строкой'}
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12.5px]" />
           <button onClick={submit} disabled={busy || !text.trim()}
             className="px-3 py-2 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white disabled:opacity-40">
-            {busy ? '…' : 'Записать'}
+            {busy ? '…' : kind === 'message' ? 'Отправить' : 'Записать'}
           </button>
         </div>
       </div>
