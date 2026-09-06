@@ -162,6 +162,9 @@ async function handlerInner(req: Request): Promise<Response> {
   const segment = url.searchParams.get('segment') || ''
   const tariff = url.searchParams.get('tariff') || ''
   const ordersPerDay = url.searchParams.get('orders_per_day') || ''
+  // «Требуют внимания» — те же признаки, по которым крон помечает сделку
+  // проблемной: застряла, нет следующего шага или превышен норматив этапа
+  const attention = url.searchParams.get('attention') === '1'
   const from = url.searchParams.get('from') || ''
   const to = url.searchParams.get('to') || ''
   const noStep = url.searchParams.get('nostep') === '1'
@@ -253,6 +256,12 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${from} = '' OR d.created_at >= NULLIF(${from}, '')::timestamptz)
           AND (${to} = '' OR d.created_at < NULLIF(${to}, '')::timestamptz + INTERVAL '1 day')
           AND (${noStep ? 1 : 0} = 0 OR d.next_step_at IS NULL)
+          AND (${attention ? 1 : 0} = 0 OR (
+            d.won_at IS NULL AND d.lost_at IS NULL AND (
+              d.stalled_at IS NOT NULL
+              OR d.next_step_at IS NULL
+              OR (s.sla_hours IS NOT NULL
+                  AND d.stage_since < NOW() - make_interval(hours => s.sla_hours::int)))))
           AND (${overdue ? 1 : 0} = 0 OR (
             s.sla_hours IS NOT NULL AND d.won_at IS NULL AND d.lost_at IS NULL
             AND d.stage_since < NOW() - make_interval(hours => s.sla_hours::int)))

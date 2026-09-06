@@ -121,6 +121,7 @@ export function SalesFunnelPage() {
   const [segment, setSegment] = useState('')
   const [tariff, setTariff] = useState('')
   const [opd, setOpd] = useState('')
+  const [attention, setAttention] = useState(false)
   const [openDeal, setOpenDeal] = useState<string | null>(null)
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -155,12 +156,13 @@ export function SalesFunnelPage() {
     if (segment) p.set('segment', segment)
     if (tariff) p.set('tariff', tariff)
     if (opd) p.set('orders_per_day', opd)
+    if (attention) p.set('attention', '1')
     if (ptype === 'enterprise') p.set('type', 'enterprise')
     const my = ++reqRef.current
     apiGet<FunnelData>(`/sales/funnel?${p.toString()}`, false)
       .then(d => { if (my === reqRef.current) { setData(d); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить воронку'))
-  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, region, perColumn, ptype])
+  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, region, perColumn, ptype])
 
   useEffect(() => {
     const t = setTimeout(load, q ? 350 : 0)
@@ -305,7 +307,7 @@ export function SalesFunnelPage() {
           active={[
             q && `поиск: ${q}`, owner && 'сейлз', src && 'источник',
             pos && `POS: ${pos}`, segment && segment, tariff && `тариф: ${tariff}`,
-            opd && `заказов: ${opd}`,
+            opd && `заказов: ${opd}`, attention && 'требуют внимания',
             city && `город: ${city}`, noStep && 'без шага', overdue && 'просрочены',
           ].filter(Boolean) as string[]}
           right={<div className="ml-auto flex items-center gap-3">
@@ -342,6 +344,12 @@ export function SalesFunnelPage() {
               className="accent-red-500" />
             просрочены
           </label>
+          <label className="flex items-center gap-1.5 text-[12px] text-gray-600 cursor-pointer select-none whitespace-nowrap"
+            title="Застряли, без следующего шага или дольше норматива этапа">
+            <input type="checkbox" checked={attention} onChange={e => setAttention(e.target.checked)}
+              className="accent-red-500" />
+            требуют внимания
+          </label>
           <select value={pos} onChange={e => setPos(e.target.value)}
             className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
             <option value="">POS-система</option>
@@ -362,11 +370,11 @@ export function SalesFunnelPage() {
             <option value="">Заказов в день</option>
             {optionsFor(refs, 'orders_per_day').map(v => <option key={v} value={v}>{v}</option>)}
           </select>
-          {(q || owner || src || city || noStep || overdue || pos || segment || tariff || opd) && (
+          {(q || owner || src || city || noStep || overdue || pos || segment || tariff || opd || attention) && (
             <button
               onClick={() => {
                 setQ(''); setOwner(''); setSrc(''); setCity(''); setNoStep(false); setOverdue(false)
-                setPos(''); setSegment(''); setTariff(''); setOpd('')
+                setPos(''); setSegment(''); setTariff(''); setOpd(''); setAttention(false)
               }}
               className="text-[12px] text-gray-400 hover:text-red-600 whitespace-nowrap">
               сбросить ✕
