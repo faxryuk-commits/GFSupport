@@ -29,7 +29,7 @@ const ensuredOrgs = new Set<string>()
  * строке настроек снимает проблему: проверка — один запрос, полный прогон
  * случается ровно один раз на изменение.
  */
-const SCHEMA_VERSION = '2026-09-06.17-personal-calendars'
+const SCHEMA_VERSION = '2026-08-26.15-lead-qual'
 
 export function salesId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -311,34 +311,68 @@ const REQUIRED_TRIM: Array<[string, string[]]> = [
 let lateFixesDone = false
 
 /**
- * Поздние правки, которые нельзя нести через SCHEMA_VERSION: смена версии
- * гоняет весь DDL продаж, сто с лишним запросов подряд.
+ * Поздние правки в обход SCHEMA_VERSION.
+ *
+ * Смена версии гоняет весь DDL продаж — сто с лишним запросов подряд, около
+ * двадцати секунд. Версия при этом пишется последней, а лимит ответа функции
+ * близок к этому времени: не уложившийся прогон убивается, версия не
+ * записывается, и следующий запрос начинает заново. Система при этом
+ * не падает — она просто перестаёт отвечать вовремя.
+ *
+ * Поэтому новые колонки добавляются точечно и идемпотентно, а версия остаётся
+ * прежней. Полный прогон — только когда меняется сама структура воронки.
  */
 async function trimRequiredFields(sql: SQL): Promise<void> {
   if (lateFixesDone) return
-  // ЛПР — это контакт, а не три поля в сделке: имя, роль и телефон уже
-  // хранятся у контакта, и дублировать их значит вести четыре записи
-  // об одном человеке
-  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_contact_id VARCHAR(50)`
-  // Сначала один дешёвый вопрос «есть ли что править»: на холодном старте
-  // после выкладки правки уже не нужны, и платить за пять UPDATE каждый раз
-  // незачем — дорога до базы ≈190 мс
-  const [pending] = await sql`
-    SELECT 1 AS x FROM sales_stages
-    WHERE (key = 'qualified' AND jsonb_array_length(required_fields) > 4)
-       OR (key = 'demo'      AND jsonb_array_length(required_fields) > 1)
-       OR (key = 'kp'        AND jsonb_array_length(required_fields) > 2)
-       OR (key = 'contract'  AND jsonb_array_length(required_fields) > 1)
-       OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)
-    LIMIT 1
-  ` as any[]
-  if (!pending) { lateFixesDone = true; return }
 
-  for (const [key, fields] of REQUIRED_TRIM) {
+  // Один вопрос вместо пяти: всё ли уже на месте. Функция вызывается на каждом
+  // холодном старте, а дорога до базы ≈190 мс — платить за пять запросов там,
+  // где обычно делать нечего, значит тормозить каждый первый запрос
+  const [state] = await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND ((table_name = 'sales_deals' AND column_name = 'dm_contact_id')
+            OR (table_name = 'sales_tasks' AND column_name IN
+                ('google_event_id', 'meet_url', 'google_cal_agent_id')))) AS cols,
+      (SELECT COUNT(*)::int FROM sales_stages
+        WHERE (key = 'qualified' AND jsonb_array_length(required_fields) > 4)
+           OR (key = 'demo'      AND jsonb_array_length(required_fields) > 1)
+           OR (key = 'kp'        AND jsonb_array_length(required_fields) > 2)
+           OR (key = 'contract'  AND jsonb_array_length(required_fields) > 1)
+           OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)) AS stages
+  ` as any[]
+
+  if (state?.cols === 4 && state?.stages === 0) {
+    lateFixesDone = true
+    return
+  }
+
+  if (state?.cols !== 4) {
+    // ЛПР — это контакт, а не три поля в сделке: имя, роль и телефон уже
+    // хранятся у контакта, и дублировать их значит вести четыре записи
+    // об одном человеке
+    await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_contact_id VARCHAR(50)`
+    // Встреча — это задача с kind='meeting': у неё уже есть исполнитель, срок
+    // и привязки к лиду и сделке. Связь с Google держим здесь же, а не отдельной
+    // таблицей, которая разошлась бы с задачей при первом переносе времени.
+    // Календарь персональный, поэтому помним и в чьём именно лежит событие:
+    // исполнитель к моменту переноса мог смениться
     await sql`
-      UPDATE sales_stages SET required_fields = ${JSON.stringify(fields)}::jsonb
-      WHERE key = ${key} AND required_fields IS DISTINCT FROM ${JSON.stringify(fields)}::jsonb
+      ALTER TABLE sales_tasks
+        ADD COLUMN IF NOT EXISTS google_event_id VARCHAR(200),
+        ADD COLUMN IF NOT EXISTS meet_url TEXT,
+        ADD COLUMN IF NOT EXISTS google_cal_agent_id VARCHAR(60)
     `
+  }
+
+  if (state?.stages) {
+    for (const [key, fields] of REQUIRED_TRIM) {
+      await sql`
+        UPDATE sales_stages SET required_fields = ${JSON.stringify(fields)}::jsonb
+        WHERE key = ${key} AND required_fields IS DISTINCT FROM ${JSON.stringify(fields)}::jsonb
+      `
+    }
   }
   lateFixesDone = true
 }
@@ -841,16 +875,6 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS landing_url TEXT`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS referrer TEXT`
 
-  // Встреча — это задача с kind='meeting'. Связь с Google держим здесь, а не
-  // отдельной таблицей: у встречи и так есть исполнитель, срок и привязки
-  // к лиду и сделке, а дублирующая сущность разошлась бы с задачей при
-  // первом же переносе времени.
-  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS google_event_id VARCHAR(200)`
-  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS meet_url TEXT`
-  // Календари персональные: чтобы позже перенести или отменить событие, надо
-  // помнить, в чьём именно календаре оно лежит. Исполнитель к тому времени
-  // мог смениться — событие при подхвате остаётся у автора
-  await sql`ALTER TABLE sales_tasks ADD COLUMN IF NOT EXISTS google_cal_agent_id VARCHAR(60)`
 
   // Что делает ассистент — видно построчно. Автоматика, работающая молча,
   // через неделю становится чёрным ящиком: непонятно, кому он писал, что
