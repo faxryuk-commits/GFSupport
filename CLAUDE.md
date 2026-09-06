@@ -18,6 +18,9 @@
   тем же паттерном, а не отдельной миграцией.
 - **Смена `SCHEMA_VERSION` в `_lib/sales-schema.ts`** гоняет весь DDL
   продаж. Применять миграцию до пуша; сиды — только пачками.
+- **`sales_leads.updated_at` — наивный `timestamp`**, в отличие от остальных
+  `sales_*` (timestamptz). Сравнивать с timestamptz можно (сессия базы в UTC),
+  но конверсия для Ташкента у него — как у `support_*`, двойная.
 - **Справочник схемы** генерируется: `node scripts/db-schema.mjs`
   → `DATABASE_SCHEMA.md`. Руками не править, после миграций перегенерировать.
 
@@ -68,6 +71,13 @@
   page_token; env META_DATASET_ID/META_CAPI_TOKEN — последний фолбэк.
   Первый прогон помечает старые факты как baseline и НЕ шлёт их задним
   числом. Лог — `sales_meta_events`.
+- **Google Календарь: «Ошибка 403: access_denied» у коллег** — это не наш
+  код (он 403 не отдаёт), а режим Testing OAuth-приложения в Google Cloud:
+  согласие могут дать только адреса из Test users. Лечится там: добавить
+  людей или переключить приложение на Internal для домена.
+- **Примечания Amo** едут в `sales_activities` кроном `cron/amo-notes`
+  (по 25 сделок за проход, каждую один раз — отметка в
+  `sales_amo_notes_state`, дедуп по `message_id = amo_note_<id>`).
 - **Кроны** защищены общим `assertCron` (`CRON_SECRET` задан в проде,
   user-agent не подделывается).
 
