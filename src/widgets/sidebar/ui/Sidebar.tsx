@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, Activity,
+  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
@@ -227,6 +227,9 @@ const navGroups: NavGroup[] = [
       // Иконки у продаж свои: раньше «Лиды» и «Чаты» делили один значок, а
       // «Аккаунты» и «Каналы» — решётку, и в свёрнутом меню они были неразличимы
       { path: '/sales/funnel', label: 'Воронка', icon: Waypoints },
+      // Задачи отдела одним экраном: срезы по сроку, фильтры, колонки по этапам
+      { path: '/sales/tasks', label: 'Задачи', icon: ListChecks, badgeKey: 'salesQueue',
+        badgeHint: 'горит по нормативу и задачам' },
       // Списки сделок и лидов убраны: они дублировали воронку тем же срезом,
       // а два места с одним вопросом рано или поздно дают два разных ответа.
       // Фильтры оттуда переехали в воронку, карточки открываются как раньше

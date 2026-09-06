@@ -182,6 +182,86 @@ export default async function handler(req: Request): Promise<Response> {
 
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
+  // ─── Раздел «Задачи»: срез по всему отделу ──────────────────────────────────
+  // Раньше задачи жили только внутри карточек и в очереди дня, и вопрос
+  // «что у команды на завтра» не имел экрана. Здесь — один список с
+  // фильтрами по сроку, человеку, типу и этапу сделки; группировку по этапам
+  // делает фронт из тех же строк
+  if (url.searchParams.get('view') === 'list') {
+    const scope = url.searchParams.get('scope') || 'mine'
+    const assignee = url.searchParams.get('assignee') || ''
+    const author = url.searchParams.get('author') || ''
+    const kind = url.searchParams.get('kind') || ''
+    const stage = url.searchParams.get('stage') || ''
+    const q = url.searchParams.get('q') || ''
+    const like = q ? `%${q}%` : ''
+    // Границы дней — ташкентские: «сегодня» у команды заканчивается в полночь
+    // по Ташкенту, а не по UTC. Даты фильтра приходят как YYYY-MM-DD и
+    // получают явный сдвиг, чтобы Postgres не толковал их по своей зоне
+    const TZ = 5
+    const tk = new Date(Date.now() + TZ * 3600_000)
+    const day0 = new Date(Date.UTC(tk.getUTCFullYear(), tk.getUTCMonth(), tk.getUTCDate()) - TZ * 3600_000)
+    const d0 = day0.toISOString()
+    const d1 = new Date(day0.getTime() + 86_400_000).toISOString()
+    const d2 = new Date(day0.getTime() + 2 * 86_400_000).toISOString()
+    const fromRaw = url.searchParams.get('from') || ''
+    const toRaw = url.searchParams.get('to') || ''
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(fromRaw) ? `${fromRaw}T00:00:00+05:00` : ''
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(toRaw) ? `${toRaw}T23:59:59.999+05:00` : ''
+
+    const [tasks, stages, people] = await sql.transaction([
+      sql`
+        SELECT t.id, t.title, t.kind, t.status, t.status_note, t.due_at, t.done_at, t.done_result,
+               t.created_at, t.auto, t.deal_id, t.lead_id, t.account_id,
+               t.assignee_agent_id, t.created_by_agent_id,
+               a.name AS assignee_name, c.name AS created_by_name,
+               COALESCE(ac.name, d.title, l.contact_name, l.name) AS about,
+               s.key AS stage_key, s.label AS stage_label,
+               CASE WHEN t.deal_id IS NOT NULL THEN 'deal'
+                    WHEN t.lead_id IS NOT NULL THEN 'lead' ELSE 'account' END AS obj
+        FROM sales_tasks t
+        LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
+        LEFT JOIN support_agents c ON c.id = t.created_by_agent_id
+        LEFT JOIN sales_deals d ON d.id = t.deal_id
+        LEFT JOIN sales_stages s ON s.id = d.stage_id
+        LEFT JOIN sales_leads l ON l.id = t.lead_id
+        LEFT JOIN sales_accounts ac ON ac.id = COALESCE(t.account_id, d.account_id)
+        WHERE t.org_id = ${orgId}
+          AND (${assignee} = '' OR t.assignee_agent_id = ${assignee})
+          AND (${author} = '' OR t.created_by_agent_id = ${author})
+          AND (${kind} = '' OR t.kind = ${kind})
+          AND (${stage} = '' OR s.key = ${stage})
+          AND (${like} = '' OR t.title ILIKE ${like} OR ac.name ILIKE ${like}
+               OR d.title ILIKE ${like} OR l.name ILIKE ${like} OR l.contact_name ILIKE ${like})
+          AND (${from} = '' OR t.due_at >= NULLIF(${from}, '')::timestamptz)
+          AND (${to} = '' OR t.due_at <= NULLIF(${to}, '')::timestamptz)
+          AND (
+            (${scope} = 'mine' AND t.assignee_agent_id = ${ctx.agentId} AND t.done_at IS NULL)
+            OR (${scope} = 'overdue' AND t.done_at IS NULL AND t.due_at < NOW())
+            OR (${scope} = 'today' AND t.done_at IS NULL AND t.due_at >= ${d0}::timestamptz AND t.due_at < ${d1}::timestamptz)
+            OR (${scope} = 'tomorrow' AND t.done_at IS NULL AND t.due_at >= ${d1}::timestamptz AND t.due_at < ${d2}::timestamptz)
+            OR (${scope} = 'open' AND t.done_at IS NULL)
+            OR (${scope} = 'done' AND t.done_at IS NOT NULL AND t.done_at > NOW() - INTERVAL '30 days')
+            OR (${scope} = 'all' AND (t.done_at IS NULL OR t.done_at > NOW() - INTERVAL '7 days'))
+          )
+        ORDER BY t.done_at IS NOT NULL, t.due_at NULLS LAST, t.created_at DESC
+        LIMIT 500
+      `,
+      sql`
+        SELECT key, MIN(label) AS label, MIN(pipeline) AS pipeline, MIN(sort_order) AS sort_order
+        FROM sales_stages
+        WHERE org_id = ${orgId} AND is_active = true AND kind = 'open' AND pipeline <> 'partner'
+        GROUP BY key ORDER BY MIN(pipeline), MIN(sort_order)
+      `,
+      sql`
+        SELECT id, name FROM support_agents
+        WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
+        ORDER BY name
+      `,
+    ]) as any[]
+    return json({ tasks, stages, people, today: d0 })
+  }
+
   // ─── Списки ─────────────────────────────────────────────────────────────────
   const dealId = url.searchParams.get('dealId')
   const leadId = url.searchParams.get('leadId')
