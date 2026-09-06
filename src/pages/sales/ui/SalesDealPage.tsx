@@ -551,7 +551,9 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
+      {/* Правая колонка почти равна левой: там лента, встречи и ветка
+          команды — то, ради чего карточку открывают, а не справочные поля */}
+      <div className="grid lg:grid-cols-[1.15fr_0.95fr] gap-4 items-start">
         <div className="space-y-4">
           {closed ? (
             <div className={`rounded-xl border p-4 text-[13px] flex items-center justify-between gap-3 flex-wrap ${

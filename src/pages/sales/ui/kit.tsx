@@ -759,7 +759,9 @@ export const Drawer = ({ open, onClose, title, fullLink, children }: {
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-gray-900/30" onClick={onClose} />
       <aside
-        className="relative h-full w-full max-w-[880px] bg-[#f5f7fa] shadow-2xl flex flex-col
+        // Ширина под две полноценные колонки: лента справа — половина
+        // карточки, а не узкий столбец. 880 хватало только левой
+        className="relative h-full w-full max-w-[1150px] bg-[#f5f7fa] shadow-2xl flex flex-col
                    animate-[slideIn_.16s_ease-out]"
         style={{ animationName: 'none' }}
       >
