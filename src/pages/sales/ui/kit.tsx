@@ -909,24 +909,65 @@ export const PageNumbers = ({ offset, limit, total, onChange }: {
  * они пару раз в день. В свёрнутом виде показываем, что уже выбрано: иначе
  * человек не поймёт, почему список короткий.
  */
+/**
+ * Фильтры кнопкой с попапом.
+ *
+ * Раньше набор разворачивался внутри строки и сдвигал доску вниз — на экране
+ * с колонками это выглядит как прыжок всего содержимого. Попап ложится
+ * поверх: доска остаётся на месте, а выбранное видно чипами на самой кнопке,
+ * даже когда попап закрыт.
+ */
 export const FilterBar = ({ active, children, right }: {
   active: string[]; children: ReactNode; right?: ReactNode
 }) => {
   const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    // Клик мимо и Esc закрывают: попап не должен требовать попадания
+    // ровно в ту же кнопку, которой его открыли
+    const onDoc = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
+
   return (
     <div className="border-b border-gray-100">
-      <div className="px-4 py-2 flex items-center gap-2 flex-wrap">
+      <div ref={box} className="px-4 py-2 flex items-center gap-2 flex-wrap relative">
         <button onClick={() => setOpen(o => !o)}
           className={`text-[12px] px-2.5 py-1.5 rounded-lg border ${
             active.length ? 'border-blue-400 text-blue-700 bg-blue-50' : 'border-gray-300 text-gray-600'}`}>
           Фильтры{active.length ? ` · ${active.length}` : ''} {open ? '▴' : '▾'}
         </button>
-        {!open && active.map(a => (
+        {active.map(a => (
           <span key={a} className="text-[11.5px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{a}</span>
         ))}
         {right}
+
+        {open && (
+          <div className="absolute left-4 top-full mt-1.5 z-30 w-[min(720px,calc(100vw-3rem))]
+                          bg-white border border-gray-200 rounded-xl shadow-xl p-3.5">
+            <div className="flex gap-2 flex-wrap items-center">{children}</div>
+            <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center gap-2">
+              <span className="text-[11.5px] text-gray-400 flex-1">
+                Фильтр применяется сразу и остаётся, когда попап закрыт
+              </span>
+              <button onClick={() => setOpen(false)}
+                className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white">
+                Готово
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-      {open && <div className="px-4 pb-3 flex gap-2 flex-wrap items-center">{children}</div>}
     </div>
   )
 }

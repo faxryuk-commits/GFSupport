@@ -240,10 +240,14 @@ export function SalesFunnelPage() {
       ? tone === 'lead' ? 'border-violet-400 ring-2 ring-violet-100' : 'border-blue-500 ring-2 ring-blue-100'
       : 'border-gray-200'
 
+  // Переключатель воронки и регион закреплены справа и не переносятся: это
+  // основная строка экрана, и она не должна прыгать с места на место, когда
+  // слева меняется ширина сводки или полоски встреч
   return (
     <PageShell fill header={
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-baseline gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <div className="flex items-baseline gap-3 flex-wrap">
           <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight">Воронка</h1>
           <div className="flex items-center gap-3 text-[11.5px] text-gray-500 flex-wrap">
             <span>обращений <b className="text-gray-900">
@@ -253,8 +257,10 @@ export function SalesFunnelPage() {
             <span>на <b className="text-gray-900">{moneyList(t.pipeline_amounts, '—')}</b> в месяц</span>
             {t.no_next_step ? <span>без следующего шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
           </div>
+          </div>
+          <MeetingsPanel />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-none">
           <div className="flex gap-0.5 bg-white border border-gray-200 rounded-lg p-0.5">
             {([['sales', 'Продажи'], ['enterprise', 'Enterprise']] as const).map(([t, label]) => (
               <button key={t} onClick={() => switchType(t)}
@@ -264,7 +270,6 @@ export function SalesFunnelPage() {
               </button>
             ))}
           </div>
-          <MeetingsPanel />
           <RegionBadge scope="funnel" />
         </div>
       </div>
