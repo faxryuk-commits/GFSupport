@@ -37,7 +37,12 @@ export function PublicBookPage() {
     () => Array.from({ length: 14 }, (_, i) => new Date(Date.now() + i * 86400_000)),
     [],
   )
-  const [dayIdx, setDayIdx] = useState(0)
+  // Открываемся на первом рабочем дне: в воскресенье клиент видел пустой
+  // список и должен был сам догадаться переключить день
+  const [dayIdx, setDayIdx] = useState(() => {
+    const i = days.findIndex(d => tk(d).dow !== 0)
+    return i < 0 ? 0 : i
+  })
   const [slots, setSlots] = useState<Slot[] | null>(null)
   const [slot, setSlot] = useState<Slot | null>(null)
   const [form, setForm] = useState({ name: '', phone: '', email: '', comment: '' })
