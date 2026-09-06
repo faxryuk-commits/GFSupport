@@ -441,11 +441,20 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 Закрыть LOST
               </button>
               <select value={d.stage_id || ''} disabled={busy}
-                onChange={e => { const s = openStages.find(x => x.id === e.target.value); if (s) moveTo(s.key) }}
+                onChange={e => {
+                  // Закрытие — тоже этап: выигрыш уходит в движок сразу,
+                  // проигрыш сначала спрашивает причину, без неё он не пишется
+                  if (e.target.value === '__won') { moveTo('won'); return }
+                  if (e.target.value === '__lost') { setLostOpen(true); return }
+                  const s = openStages.find(x => x.id === e.target.value); if (s) moveTo(s.key)
+                }}
                 title="Перевести на любой этап"
                 className="text-[12.5px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-800
                            hover:border-blue-400 disabled:opacity-50">
                 {openStages.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                <option disabled>──────</option>
+                <option value="__won">✓ Выиграна</option>
+                <option value="__lost">✕ Проиграна…</option>
               </select>
               {data.nextStage && (
                 <button onClick={advance} disabled={busy}

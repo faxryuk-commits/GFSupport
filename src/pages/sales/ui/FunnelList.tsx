@@ -26,6 +26,8 @@ interface Props {
   leads: any[]; deals: any[]
   leadColumns: Array<{ key: string; label: string; statuses?: string[] }>
   stages: Array<{ key: string; label: string }>
+  /** Причины отказа: проигрыш без причины движок не принимает. */
+  reasons: Array<{ id: string; code: string; label: string }>
   owners: Array<{ id: string; name: string }>
   onOpenLead: (id: string) => void
   onOpenDeal: (id: string) => void
@@ -35,10 +37,11 @@ interface Props {
 
 type Act = 'owner' | 'stage' | 'task' | 'archive' | null
 
-export function FunnelList({ leads, deals, leadColumns, stages, owners, onOpenLead, onOpenDeal, onChanged, onError }: Props) {
+export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners, onOpenLead, onOpenDeal, onChanged, onError }: Props) {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [act, setAct] = useState<Act>(null)
   const [pick, setPick] = useState('')
+  const [reason, setReason] = useState('')
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDue, setTaskDue] = useState<'today' | 'tomorrow' | 'in3'>('tomorrow')
   const [busy, setBusy] = useState(false)
@@ -82,7 +85,7 @@ export function FunnelList({ leads, deals, leadColumns, stages, owners, onOpenLe
   const key = (r: Row) => `${r.kind}:${r.id}`
   const toggle = (r: Row) => setSel(s => { const n = new Set(s); n.has(key(r)) ? n.delete(key(r)) : n.add(key(r)); return n })
   const toggleAll = () => setSel(allOn ? new Set() : new Set(rows.map(key)))
-  const close = () => { setAct(null); setPick(''); setTaskTitle(''); setReport(null) }
+  const close = () => { setAct(null); setPick(''); setReason(''); setTaskTitle(''); setReport(null) }
 
   /** По одному и до конца: отказ по одной карточке не должен ронять остальные. */
   const each = async (items: Row[], fn: (r: Row) => Promise<void>) => {
@@ -106,9 +109,17 @@ export function FunnelList({ leads, deals, leadColumns, stages, owners, onOpenLe
         failed = await each(selDeals, r => apiPost('/sales/deal?action=owner', { id: r.id, agentId: pick }))
       } else if (act === 'stage') {
         if (!pick) { onError('Выберите этап'); return }
+        if (pick === 'lost' && !reason) { onError('Проигрыш без причины движок не примет — выберите причину'); return }
+        // Обращения в «выиграна/проиграна» не переводятся: у них нет сделки.
+        // Проигранное обращение — это «в отказ», оно отдельным действием
+        const closing = pick === 'won' || pick === 'lost'
         failed = [
-          ...await each(selDeals, r => apiPost('/sales/stage', { dealId: r.id, toStage: pick })),
-          ...await each(selLeads, r => apiPost('/sales/funnel?action=convert', { leadId: r.id, toStage: pick })),
+          ...await each(selDeals, r => apiPost('/sales/stage', {
+            dealId: r.id, toStage: pick, lostReasonCode: pick === 'lost' ? reason : undefined,
+          })),
+          ...(closing
+            ? selLeads.map(r => `${r.title} — обращение нельзя закрыть как сделку, для него есть «в отказ»`)
+            : await each(selLeads, r => apiPost('/sales/funnel?action=convert', { leadId: r.id, toStage: pick }))),
         ]
       } else if (act === 'task') {
         const title = taskTitle.trim()
@@ -244,11 +255,21 @@ export function FunnelList({ leads, deals, leadColumns, stages, owners, onOpenLe
             )}
             {act === 'stage' && (
               <>
-                <select value={pick} onChange={e => setPick(e.target.value)} autoFocus
+                <select value={pick} onChange={e => { setPick(e.target.value); setReason('') }} autoFocus
                   className="w-full border border-gray-300 rounded-lg px-2.5 py-2">
                   <option value="">На какой этап…</option>
                   {stages.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  <option disabled>──────</option>
+                  <option value="won">✓ Выиграна</option>
+                  <option value="lost">✕ Проиграна</option>
                 </select>
+                {pick === 'lost' && (
+                  <select value={reason} onChange={e => setReason(e.target.value)}
+                    className="w-full border border-red-200 rounded-lg px-2.5 py-2">
+                    <option value="">Причина проигрыша…</option>
+                    {reasons.map(r => <option key={r.id} value={r.code}>{r.label}</option>)}
+                  </select>
+                )}
                 <p className="text-[11.5px] text-gray-400 leading-relaxed">
                   Критерии выхода проверяются по каждой карточке: кого движок не пустит —
                   покажу поимённо, остальные переведутся. Обращения станут сделками на этом этапе.

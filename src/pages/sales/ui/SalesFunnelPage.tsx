@@ -448,7 +448,7 @@ export function SalesFunnelPage() {
       {view === 'list' ? (
         <FunnelList
           leads={data.leads} deals={data.deals} leadColumns={data.leadColumns}
-          stages={data.stages} owners={data.owners}
+          stages={data.stages} reasons={refs?.reasons || []} owners={data.owners}
           onOpenLead={setOpenLead} onOpenDeal={setOpenDeal} onChanged={load} onError={setError}
         />
       ) : (
