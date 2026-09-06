@@ -138,6 +138,23 @@ export default async function handler(req: Request): Promise<Response> {
         case 'pain': await sql`UPDATE sales_deals SET pain = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'segment': await sql`UPDATE sales_deals SET segment = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'dm_role': await sql`UPDATE sales_deals SET dm_role = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        // ЛПР выбирается из контактов клиента. Имя и роль при этом копируем
+        // в сделку: на них завязаны критерий перехода и выгрузки, и ломать
+        // их ради нормализации незачем — контакт остаётся источником правды
+        case 'dm_contact_id': {
+          const [c] = await sql`
+            SELECT name, role FROM sales_contacts
+            WHERE id = ${v} AND org_id = ${orgId} LIMIT 1
+          ` as any[]
+          await sql`
+            UPDATE sales_deals
+            SET dm_contact_id = ${v || null},
+                dm_name = ${c?.name || null},
+                dm_role = COALESCE(${c?.role || null}, dm_role)
+            WHERE id = ${body.id} AND org_id = ${orgId}
+          `
+          break
+        }
         case 'dm_name': await sql`UPDATE sales_deals SET dm_name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'dm_confirmed': await sql`UPDATE sales_deals SET dm_confirmed = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'meeting_at': await sql`UPDATE sales_deals SET meeting_at = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break

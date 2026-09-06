@@ -85,7 +85,6 @@ const QUAL_FIELDS = [
   ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
   ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
   ['aggregators', 'Агрегаторы'], ['delivery_type', 'Тип доставки'],
-  ['dm_name', 'ЛПР'], ['dm_role', 'Роль ЛПР'], ['dm_confirmed', 'ЛПР подтверждён'],
   ['pain', 'Боль клиента'],
 ] as const
 
@@ -572,6 +571,51 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           )}
 
           <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
+            {/* ЛПР — это контакт клиента, а не три отдельных поля: имя, роль
+                и телефон уже хранятся у контакта. Раньше одного человека
+                заводили четырежды — здесь, в роли, в отметке и в контактах */}
+            <div className="px-4 py-2.5 border-b border-gray-100 flex items-start gap-2.5 flex-wrap">
+              <span className="text-[11.5px] text-gray-400 font-medium w-[92px] flex-none pt-0.5">ЛПР</span>
+              <div className="flex-1 min-w-0">
+                {contacts.length === 0 ? (
+                  <span className="text-[12px] text-gray-400">
+                    Сначала добавьте контакт клиента — блок «Контакты» ниже
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={d.dm_contact_id || ''}
+                      onChange={e => patch('dm_contact_id', e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2 py-1 text-[12.5px] font-medium text-gray-800"
+                    >
+                      <option value="">не выбран</option>
+                      {contacts.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {[c.name, c.role].filter(Boolean).join(' · ') || c.phone}
+                        </option>
+                      ))}
+                    </select>
+                    {d.dm_contact_id && (() => {
+                      const c = contacts.find((x: any) => x.id === d.dm_contact_id)
+                      return c?.phone
+                        ? <span className="text-[11.5px] text-gray-400">{c.phone}</span>
+                        : null
+                    })()}
+                    <button
+                      onClick={() => patch('dm_confirmed', d.dm_confirmed ? '' : 'true')}
+                      className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors ${
+                        d.dm_confirmed
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                          : 'bg-white border-gray-200 text-gray-500 hover:border-emerald-300'
+                      }`}
+                      title="Отметьте, когда убедились, что решение принимает именно он"
+                    >
+                      {d.dm_confirmed ? '✓ подтверждён' : 'подтвердить'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="grid sm:grid-cols-2">
               {QUAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} onSave={v => patch(f, v)}

@@ -308,10 +308,18 @@ const REQUIRED_TRIM: Array<[string, string[]]> = [
   ['pilot', []],
 ]
 
-let requiredTrimmed = false
+let lateFixesDone = false
 
+/**
+ * Поздние правки, которые нельзя нести через SCHEMA_VERSION: смена версии
+ * гоняет весь DDL продаж, сто с лишним запросов подряд.
+ */
 async function trimRequiredFields(sql: SQL): Promise<void> {
-  if (requiredTrimmed) return
+  if (lateFixesDone) return
+  // ЛПР — это контакт, а не три поля в сделке: имя, роль и телефон уже
+  // хранятся у контакта, и дублировать их значит вести четыре записи
+  // об одном человеке
+  await sql`ALTER TABLE sales_deals ADD COLUMN IF NOT EXISTS dm_contact_id VARCHAR(50)`
   // Сначала один дешёвый вопрос «есть ли что править»: на холодном старте
   // после выкладки правки уже не нужны, и платить за пять UPDATE каждый раз
   // незачем — дорога до базы ≈190 мс
@@ -324,7 +332,7 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
        OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)
     LIMIT 1
   ` as any[]
-  if (!pending) { requiredTrimmed = true; return }
+  if (!pending) { lateFixesDone = true; return }
 
   for (const [key, fields] of REQUIRED_TRIM) {
     await sql`
@@ -332,7 +340,7 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
       WHERE key = ${key} AND required_fields IS DISTINCT FROM ${JSON.stringify(fields)}::jsonb
     `
   }
-  requiredTrimmed = true
+  lateFixesDone = true
 }
 
 export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> {
