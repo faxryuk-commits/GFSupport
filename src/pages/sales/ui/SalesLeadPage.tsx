@@ -7,6 +7,7 @@ import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText } from './kit'
 import { CallInsight } from './CallInsight'
 import { TasksCard } from './TasksCard'
+import { BookMeetingModal } from './BookMeetingModal'
 import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
 
 /** Что выясняем о заведении на первом звонке — те же поля, что у сделки. */
@@ -169,6 +170,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   const [rec, setRec] = useState<{ id: string; url: string } | null>(null)
   const [recBusy, setRecBusy] = useState<string | null>(null)
   const [reasons, setReasons] = useState<Array<{ id: string; label: string }>>([])
+  // Встречу можно назначить прямо с обращения: назначенное демо и есть то,
+  // из-за чего лид становится сделкой, — заставлять сначала конвертировать
+  // значит ставить процесс впереди работы
+  const [meetingOpen, setMeetingOpen] = useState(false)
 
   const load = useCallback(() => {
     if (!id) return
@@ -379,7 +384,25 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
       {/* Следующий шаг по лиду ставится здесь же: раньше его записывали в Amo,
           потому что в карточке для этого не было ничего */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setMeetingOpen(true)}
+          className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+        >Назначить встречу</button>
+      </div>
+
       <TasksCard leadId={id} accountId={l.account_id || undefined} />
+
+      {meetingOpen && (
+        <BookMeetingModal
+          leadId={id}
+          guestName={l.contact_name || l.name}
+          guestEmail={null}
+          defaultAssigneeName={l.assigned_agent_name || null}
+          onClose={() => setMeetingOpen(false)}
+          onDone={load}
+        />
+      )}
 
       {/* Квалификация нашими руками. Эти поля менеджер заполнял в Amo, а мы
           читали их из сырых данных заявки — без Amo они бы осиротели */}
