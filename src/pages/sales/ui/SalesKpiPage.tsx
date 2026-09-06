@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { Card, Chip, PageShell, Skeleton } from './kit'
+import { Card, Chip, PageShell, Skeleton, Seg } from './kit'
 
 /**
  * KPI-мотивация продаж по согласованному макету: «Мой KPI» для менеджера,
@@ -980,15 +980,7 @@ export function SalesKpiPage({ embedded = false }: { embedded?: boolean } = {}) 
             disabled={month >= monthNow()}
             className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30">›</button>
         </div>
-        <div className="flex gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
-          {tabs.map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={`text-[12px] px-2.5 py-1 rounded-md font-medium ${
-                tab === k ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Seg value={tab} onChange={setTab} items={tabs.map(([k, label]) => ({ key: k, label }))} />
       </div>
     </div>
   )

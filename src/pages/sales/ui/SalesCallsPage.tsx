@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { PhoneIncoming, PhoneOutgoing, Play } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { parsePhone } from '@/shared/lib/phone'
-import { Card, Kpis, PageShell, Empty } from './kit'
+import { Card, Kpis, PageShell, Empty, Seg } from './kit'
 import { CallInsight } from './CallInsight'
 
 /**
@@ -208,15 +208,8 @@ export default function SalesCallsPage() {
           телефония продаж: динамика, команда, записи разговоров
         </div>
       </div>
-      <div className="flex gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
-        {[[1, 'Сегодня'], [7, 'Неделя'], [30, 'Месяц']].map(([d, label]) => (
-          <button key={d} onClick={() => setDays(Number(d))}
-            className={`px-3 py-1.5 text-[12px] rounded-md ${
-              days === d ? 'bg-blue-600 text-white font-medium' : 'text-gray-600 hover:bg-gray-50'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <Seg value={String(days)} onChange={v => setDays(Number(v))}
+        items={[{ key: '1', label: 'Сегодня' }, { key: '7', label: 'Неделя' }, { key: '30', label: 'Месяц' }]} />
     </div>
   )
 

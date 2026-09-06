@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPatch } from '@/shared/services/api.service'
-import { Chip, PageShell, Skeleton, fmtDateTime, useAutoRefresh } from './kit'
+import { Chip, PageShell, Skeleton, fmtDateTime, useAutoRefresh, Seg } from './kit'
 
 /**
  * Раздел «Задачи»: всё, что поставлено команде, одним экраном.
@@ -157,27 +157,13 @@ export function SalesTasksPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
-              {([['list', 'Список'], ['stages', 'По этапам']] as const).map(([v, label]) => (
-                <button key={v} onClick={() => setView(v)}
-                  className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium ${
-                    view === v ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            <Seg value={view} onChange={setView}
+              items={[{ key: 'list', label: 'Список' }, { key: 'stages', label: 'По этапам' }]} />
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-            {SCOPES.map(([k, label], i) => (
-              <button key={k} onClick={() => setScope(k)}
-                className={`text-[12px] px-2.5 py-1.5 ${i ? 'border-l border-gray-300' : ''} ${
-                  scope === k ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <Seg value={scope} onChange={setScope}
+            items={SCOPES.map(([k, label]) => ({ key: k, label }))} />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Задача, клиент, сделка"
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-[12.5px] w-52" />
           <select value={assignee} onChange={e => setAssignee(e.target.value)}

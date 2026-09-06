@@ -3,7 +3,7 @@ import { CallPhone } from '@/shared/ui'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { MeetingsPanel } from './MeetingsPanel'
 import { Chip, PageShell, Skeleton, Modal, MultiPick, money, moneyList, fmtDateTime, slaTone, slaText,
-         useAutoRefresh, Drawer, FilterBar , workMorningIn, MarketFlag } from './kit'
+         useAutoRefresh, Drawer, FilterBar , workMorningIn, MarketFlag, Seg } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
 import { RegionBadge, useRegion } from './region'
 import { parsePhone } from '@/shared/lib/phone'
@@ -323,24 +323,10 @@ export function SalesFunnelPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight mr-1">Воронка</h1>
-          <div className="flex bg-gray-100 rounded-lg p-0.5">
-            {([['sales', 'Продажи'], ['enterprise', 'Enterprise']] as const).map(([t, label]) => (
-              <button key={t} onClick={() => switchType(t)}
-                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium transition-colors ${
-                  ptype === t ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex bg-gray-100 rounded-lg p-0.5" title="Канбан — где что стоит; список — действия над многими">
-            {([['board', 'Канбан'], ['list', 'Список']] as const).map(([v, label]) => (
-              <button key={v} onClick={() => setView(v)}
-                className={`px-2.5 py-1 rounded-md text-[11.5px] font-medium transition-colors ${
-                  view === v ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <Seg value={ptype} onChange={switchType}
+            items={[{ key: 'sales', label: 'Продажи' }, { key: 'enterprise', label: 'Enterprise' }]} />
+          <Seg value={view} onChange={setView} title="Канбан — где что стоит; список — действия над многими"
+            items={[{ key: 'board', label: 'Канбан' }, { key: 'list', label: 'Список' }]} />
           <RegionBadge scope="funnel" />
         </div>
         <button onClick={() => { setCForm({ name: '', phone: '', city: '', text: '' }); setCErr(''); setCreating('lead') }}

@@ -702,12 +702,12 @@ export function CasesPage() {
                   <button
                     key={chip.key}
                     onClick={() => setQuickFilter(active ? 'all' : chip.key)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm transition-colors ${
-                      active ? 'bg-blue-500 text-white' : 'text-slate-500 hover:bg-slate-100'
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${
+                      active ? 'bg-gray-900 text-white' : 'text-slate-500 hover:bg-slate-100'
                     }`}
                   >
                     {chip.label}
-                    <span className={`tabular-nums text-xs ${active ? 'text-blue-100' : 'text-slate-400'}`}>{chip.count}</span>
+                    <span className={`tabular-nums text-xs ${active ? 'text-gray-300' : 'text-slate-400'}`}>{chip.count}</span>
                   </button>
                 )
               })}

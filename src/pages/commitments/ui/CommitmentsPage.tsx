@@ -303,8 +303,8 @@ export function CommitmentsPage() {
             onClick={() => setStatusFilter('pending')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               statusFilter === 'pending'
-                ? 'bg-blue-500 text-white'
-                : 'bg-white text-slate-600 border border-[#e8edf3] hover:bg-slate-50'
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-slate-600 hover:text-slate-900'
             }`}
           >
             В ожидании ({stats.pending + stats.overdue})
@@ -314,7 +314,7 @@ export function CommitmentsPage() {
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               statusFilter === 'completed'
                 ? 'bg-green-500 text-white'
-                : 'bg-white text-slate-600 border border-[#e8edf3] hover:bg-slate-50'
+                : 'bg-gray-100 text-slate-600 hover:text-slate-900'
             }`}
           >
             Выполнено ({stats.completed})

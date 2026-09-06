@@ -927,7 +927,7 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                  filter === f ? 'bg-blue-500 text-white' : 'text-slate-600 hover:bg-slate-100'
+                  filter === f ? 'bg-gray-900 text-white' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 {f === 'all' ? 'Все' : f === 'unread' ? 'Непрочитанные' : f === 'open' ? 'Открытые' : f === 'pending' ? 'Ожидают' : 'Решённые'}

@@ -301,10 +301,10 @@ export function BroadcastPage() {
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                statusFilter === status 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-[#e8edf3]'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === status
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-slate-600 hover:text-slate-900'
               }`}
             >
               {status === 'all' ? 'Все' : statusConfig[status]?.label}

@@ -318,9 +318,9 @@ export function ChannelsListPage() {
                 key={status}
                 onClick={() => setFilterStatus(status)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  filterStatus === status 
-                    ? 'bg-blue-500 text-white' 
-                    : 'text-slate-600 hover:bg-slate-100'
+                  filterStatus === status
+                    ? 'bg-gray-900 text-white'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {labels[status]}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Kpis } from './kit'
+import { Card, Kpis, Seg } from './kit'
 
 /**
  * Активность сотрудников за день: чем человек занимался с утра до вечера.
@@ -80,7 +80,6 @@ export function SalesActivity({ region }: { region: string | null }) {
 
   const day = from
   const isToday = from === tashkentDay() && to === tashkentDay()
-  const isRange = (f: string, tt: string) => from === f && to === tt
   const setRange = (f: string, tt: string) => { setFrom(f); setTo(tt) }
   const toggleKind = (k: string) =>
     setKinds(ks => ks.includes(k) ? ks.filter(x => x !== k) : [...ks, k])
@@ -91,20 +90,13 @@ export function SalesActivity({ region }: { region: string | null }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-          {([
-            ['Сегодня', tashkentDay(), tashkentDay()],
-            ['Вчера', tashkentDay(-1), tashkentDay(-1)],
-            ['7 дней', tashkentDay(-6), tashkentDay()],
-            ['30 дней', tashkentDay(-29), tashkentDay()],
-          ] as const).map(([label, f, tt], i) => (
-            <button key={label} onClick={() => setRange(f, tt)}
-              className={`text-[12.5px] px-3 py-1.5 ${i ? 'border-l border-gray-300' : ''} ${
-                isRange(f, tt) ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Seg value={`${from}|${to}`} onChange={k => { const [f, tt] = k.split('|'); setRange(f, tt) }}
+          items={[
+            { key: `${tashkentDay()}|${tashkentDay()}`, label: 'Сегодня' },
+            { key: `${tashkentDay(-1)}|${tashkentDay(-1)}`, label: 'Вчера' },
+            { key: `${tashkentDay(-6)}|${tashkentDay()}`, label: '7 дней' },
+            { key: `${tashkentDay(-29)}|${tashkentDay()}`, label: '30 дней' },
+          ]} />
         <input type="date" value={from} max={to}
           onChange={e => setFrom(e.target.value)}
           className="text-[12.5px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700" />
@@ -117,7 +109,7 @@ export function SalesActivity({ region }: { region: string | null }) {
             <button key={k} onClick={() => toggleKind(k)}
               className={`text-[11.5px] px-2.5 py-1 rounded-md border ${
                 kinds.includes(k) ? 'bg-gray-900 text-white border-gray-900'
-                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+                                  : 'bg-gray-100 text-gray-500 border-transparent hover:text-gray-800'}`}>
               {label}
             </button>
           ))}

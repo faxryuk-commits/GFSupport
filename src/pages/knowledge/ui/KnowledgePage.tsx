@@ -68,7 +68,7 @@ export function KnowledgePage() {
                   onClick={() => setSelectedCategory(undefined)}
                   className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                     !selectedCategory
-                      ? 'bg-blue-500 text-white'
+                      ? 'bg-gray-900 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -80,7 +80,7 @@ export function KnowledgePage() {
                     onClick={() => setSelectedCategory(key)}
                     className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                       selectedCategory === key
-                        ? 'bg-blue-500 text-white'
+                        ? 'bg-gray-900 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >

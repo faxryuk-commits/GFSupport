@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Kpis, money, pct, PageShell, Skeleton } from './kit'
+import { Card, Chip, Kpis, money, pct, PageShell, Skeleton, Seg } from './kit'
 import { RegionBadge, useRegion, REGION_NAMES } from './region'
 import { SalesPulse } from './SalesPulse'
 import { SalesActivity } from './SalesActivity'
@@ -87,23 +87,11 @@ export function SalesReportsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-          {([['sales', 'Продажи'], ['activity', 'Активность'], ['site', 'Сайт']] as const).map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={`text-[12.5px] px-3 py-1.5 ${tab === k ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+        <Seg value={tab} onChange={setTab}
+          items={[{ key: 'sales', label: 'Продажи' }, { key: 'activity', label: 'Активность' }, { key: 'site', label: 'Сайт' }]} />
         <RegionBadge scope="reports" />
-        <div className="flex gap-1 border border-gray-300 rounded-lg overflow-hidden">
-          {[['30', 'Месяц'], ['90', 'Квартал'], ['365', 'Год']].map(([v, l]) => (
-            <button key={v} onClick={() => { setPeriod(v); setCustomFrom(''); setCustomTo('') }}
-              className={`text-[12.5px] px-3 py-1.5 ${period === v && !customFrom ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+        <Seg value={customFrom ? '' : period} onChange={v => { setPeriod(v); setCustomFrom(''); setCustomTo('') }}
+          items={[{ key: '30', label: 'Месяц' }, { key: '90', label: 'Квартал' }, { key: '365', label: 'Год' }]} />
         <div className="flex items-center gap-1 border border-gray-300 rounded-lg px-2 py-1 bg-white">
           <input type="date" value={customFrom || fromStr} max={toStr}
             onChange={e => setCustomFrom(e.target.value)}

@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { RefreshCw, Loader2, Bell, CheckCircle2, X, ExternalLink } from 'lucide-react'
+import { Seg } from '@/shared/ui/Seg'
 import { apiGet } from '@/shared/services/api.service'
 import { fetchNotifications, markNotificationRead, type AppNotification } from '@/shared/api'
 import { completeCommitment } from '@/shared/api/commitments'
@@ -322,12 +323,8 @@ export function MyWorkspacePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-0.5 bg-white border border-[#e8edf3] rounded-lg p-0.5">
-            {PERIODS.map(([d, l]) => (
-              <button key={d} onClick={() => setDays(d)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold ${days === d ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-800'}`}>{l}</button>
-            ))}
-          </div>
+          <Seg value={String(days)} onChange={v => setDays(Number(v) as typeof days)}
+            items={PERIODS.map(([d, l]) => ({ key: String(d), label: l }))} />
           <button onClick={() => load()} className="p-2 rounded-lg border border-[#e8edf3] text-slate-400 hover:text-slate-700 bg-white">
             <RefreshCw className="w-4 h-4" />
           </button>

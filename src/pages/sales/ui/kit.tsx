@@ -221,6 +221,7 @@ export const Empty = ({ title, hint }: { title: string; hint?: string }) => (
  * это и есть вся информация.
  */
 export { formatDateTimeShort as fmtDateTime, formatDateShort } from '@/shared/lib/time'
+export { Seg } from '@/shared/ui/Seg'
 
 /**
  * Тон срока: сколько осталось до дедлайна. Считаем в минутах, потому что у
