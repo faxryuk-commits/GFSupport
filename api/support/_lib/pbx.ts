@@ -250,3 +250,20 @@ export async function pbxProbe(cfg: PbxConfig): Promise<any> {
   })
   return data
 }
+
+
+/**
+ * Пробник методов API: для каждого пути — сырой ответ АТС на фиктивный uuid.
+ * Нужен один раз, чтобы узнать, умеет ли АТС сбрасывать звонок по API.
+ */
+export async function pbxProbeMethods(cfg: PbxConfig, paths: string[]): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const path of paths) {
+    try {
+      out[path] = await pbxPost(cfg, path, { uuid: 'probe-00000000-0000-0000-0000-000000000000' })
+    } catch (e: any) {
+      out[path] = { thrown: String(e?.message || e).slice(0, 200) }
+    }
+  }
+  return out
+}

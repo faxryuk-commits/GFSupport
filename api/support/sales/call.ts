@@ -197,6 +197,21 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ results })
   }
 
+  // Разведка API АТС: есть ли у OnlinePBX метод сброса звонка. В документации
+  // его нет, но user/get и group/get тоже были недокументированными и
+  // работают. Только администратору, ничего не меняет — по фиктивному uuid
+  // метод либо ответит «не найден», либо «нет такого звонка», и это разные ответы
+  if (req.method === 'GET' && url.searchParams.get('action') === 'pbx-probe') {
+    if (!(ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin)) return json({ error: 'только администратор' }, 403)
+    const { pbxProbeMethods } = await import('../_lib/pbx.js')
+    const cfgP = await readPbxConfig(sql, orgId)
+    if (!cfgP) return json({ error: 'АТС не настроена' }, 400)
+    const out = await pbxProbeMethods(cfgP, [
+      'hangup.json', 'call/hangup.json', 'now/hangup.json', 'calls/hangup.json', 'channel/hangup.json',
+    ])
+    return json({ out })
+  }
+
   // Живые входящие: события вебхука АТС за последнюю минуту. Пока АТС шлёт
   // события — человек звонит или разговор идёт; отбой убирает карточку сам,
   // когда события кончаются
