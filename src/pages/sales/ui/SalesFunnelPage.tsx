@@ -264,6 +264,7 @@ export function SalesFunnelPage() {
   // слева меняется ширина сводки или полоски встреч
   return (
     <PageShell fill header={
+      <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-wrap min-w-0">
           <div className="flex items-baseline gap-3 flex-wrap">
@@ -277,7 +278,6 @@ export function SalesFunnelPage() {
             {t.no_next_step ? <span>без следующего шага <b className="text-amber-600">{t.no_next_step}</b></span> : null}
           </div>
           </div>
-          <MeetingsPanel />
         </div>
         <div className="flex items-center gap-2 flex-none">
           <button onClick={() => { setCForm({ name: '', phone: '', city: '', text: '' }); setCErr(''); setCreating('lead') }}
@@ -296,9 +296,11 @@ export function SalesFunnelPage() {
           <RegionBadge scope="funnel" />
         </div>
       </div>
-    }>
 
-      <div className="bg-white border border-gray-200 rounded-xl flex-none">
+      {/* Вторая строка шапки: фильтры слева, календарь справа. Раньше фильтры
+          жили в теле и уезжали при прокрутке доски, а полоска встреч
+          переносилась и двигала переключатели */}
+      <div className="-mx-1">
         <FilterBar
           active={[
             q && `поиск: ${q}`, owner && 'сейлз', src && 'источник',
@@ -306,9 +308,12 @@ export function SalesFunnelPage() {
             opd && `заказов: ${opd}`,
             city && `город: ${city}`, noStep && 'без шага', overdue && 'просрочены',
           ].filter(Boolean) as string[]}
-          right={<span className="text-[11.5px] text-gray-400 ml-auto">
-            обновляется само · перетаскивание работает сквозь границу
-          </span>}
+          right={<div className="ml-auto flex items-center gap-3">
+            <span className="text-[11.5px] text-gray-400 hidden xl:inline">
+              обновляется само · перетаскивание работает сквозь границу
+            </span>
+            <MeetingsPanel />
+          </div>}
         >
           <input value={q} onChange={e => setQ(e.target.value)}
             placeholder="Бренд, имя, телефон в любом формате"
@@ -369,6 +374,8 @@ export function SalesFunnelPage() {
           )}
         </FilterBar>
       </div>
+      </div>
+    }>
 
       <div className="flex-1 min-h-0 flex gap-2.5 overflow-x-auto items-stretch pb-2">
         {/* ─── Зона входа: обращения ─────────────────────────────── */}

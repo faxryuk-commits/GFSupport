@@ -940,8 +940,10 @@ export const FilterBar = ({ active, children, right }: {
   }, [open])
 
   return (
-    <div className="border-b border-gray-100">
-      <div ref={box} className="px-4 py-2 flex items-center gap-2 flex-wrap relative">
+    // Границы у панели нет: она стоит в шапке страницы, у которой своя,
+    // и вторая линия читалась бы как лишний разделитель
+    <div>
+      <div ref={box} className="px-1 py-0.5 flex items-center gap-2 flex-wrap relative">
         <button onClick={() => setOpen(o => !o)}
           className={`text-[12px] px-2.5 py-1.5 rounded-lg border ${
             active.length ? 'border-blue-400 text-blue-700 bg-blue-50' : 'border-gray-300 text-gray-600'}`}>
