@@ -399,11 +399,19 @@ async function handlerInner(req: Request): Promise<Response> {
         AND pipeline <> 'partner' AND (${isEnt} = (pipeline LIKE 'enterprise%'))
         AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
     `,
+    // Сейлзы для фильтра и для «сменить ответственного»: весь отдел продаж
+    // плюс те, у кого есть открытые сделки или обращения. Раньше список
+    // собирался только по владельцам сделок — сотрудник без сделок в нём
+    // не появлялся, и передать ему ничего было нельзя
     sql`
-      SELECT DISTINCT ag.id, ag.name FROM sales_deals d
-      JOIN support_agents ag ON ag.id = d.owner_agent_id
-      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
-      ORDER BY ag.name
+      SELECT a.id, a.name FROM support_agents a
+      WHERE a.org_id = ${orgId} AND a.is_active = true AND a.merged_into IS NULL
+        AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr')
+             OR EXISTS (SELECT 1 FROM sales_deals d WHERE d.org_id = ${orgId}
+                          AND d.owner_agent_id = a.id AND d.archived_at IS NULL)
+             OR EXISTS (SELECT 1 FROM sales_leads l WHERE l.org_id = ${orgId}
+                          AND l.assigned_agent_id = a.id AND l.archived_at IS NULL))
+      ORDER BY a.name
     `,
     sql`
       SELECT id, label FROM sales_sources
