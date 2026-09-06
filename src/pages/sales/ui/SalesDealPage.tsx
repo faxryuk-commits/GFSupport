@@ -262,11 +262,17 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
     } finally { setBusy(false) }
   }
 
-  const advance = async () => {
-    if (!id || !data?.nextStage) return
+  /**
+   * Перевод на любой этап, не только на следующий. Ход назад тоже отсюда:
+   * договорённость сорвалась — сделка возвращается на «КП», а не тащится
+   * по доске через три колонки. Критерии выхода проверяет движок; его отказ
+   * показываем как список того, что заполнить.
+   */
+  const moveTo = async (toStage: string) => {
+    if (!id || !toStage) return
     setBusy(true); setBlocked(null)
     try {
-      await apiPost('/sales/stage', { dealId: id, toStage: data.nextStage.key })
+      await apiPost('/sales/stage', { dealId: id, toStage })
       load()
     } catch (e: any) {
       // 422 от движка — это не ошибка системы, а несоблюдённое условие
@@ -275,6 +281,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       setBusy(false)
     }
   }
+  const advance = () => { if (data?.nextStage) moveTo(data.nextStage.key) }
 
   const lose = async (code: string) => {
     if (!id) return
@@ -432,10 +439,19 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-red-400 hover:text-red-600">
                 Закрыть LOST
               </button>
-              <button onClick={advance} disabled={busy}
-                className="text-[12.5px] px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:brightness-110 disabled:opacity-50">
-                {busy ? '…' : `Двинуть этап → ${data.nextStage?.label || ''}`}
-              </button>
+              <select value={d.stage_id || ''} disabled={busy}
+                onChange={e => { const s = openStages.find(x => x.id === e.target.value); if (s) moveTo(s.key) }}
+                title="Перевести на любой этап"
+                className="text-[12.5px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-800
+                           hover:border-blue-400 disabled:opacity-50">
+                {openStages.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              {data.nextStage && (
+                <button onClick={advance} disabled={busy}
+                  className="text-[12.5px] px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:brightness-110 disabled:opacity-50">
+                  {busy ? '…' : `→ ${data.nextStage.label}`}
+                </button>
+              )}
             </>
           )}
           <button
@@ -469,11 +485,14 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       <div className="bg-white border border-gray-200 rounded-xl p-3">
         <div className="flex gap-1 flex-wrap">
           {openStages.map((s, i) => (
-            <div key={s.id}
-              title={s.description || undefined}
-              className={`flex-1 min-w-[72px] rounded-lg px-2 py-1.5 border cursor-help ${
-                i < curIdx ? 'bg-emerald-50 border-emerald-200' :
-                i === curIdx ? 'bg-blue-600 border-blue-600' : 'bg-gray-50 border-gray-200'}`}>
+            <button key={s.id} type="button"
+              disabled={busy || closed || i === curIdx}
+              onClick={() => moveTo(s.key)}
+              title={s.description ? `${s.description}\n\nНажмите, чтобы перевести` : 'Нажмите, чтобы перевести'}
+              className={`flex-1 min-w-[72px] rounded-lg px-2 py-1.5 border text-left transition-colors ${
+                i < curIdx ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-400' :
+                i === curIdx ? 'bg-blue-600 border-blue-600 cursor-default' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}
+                disabled:opacity-100`}>
               <div className={`text-[9px] font-bold ${i === curIdx ? 'text-white/70' : 'text-gray-400'}`}>
                 {String(i).padStart(2, '0')}
               </div>
@@ -481,7 +500,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 i === curIdx ? 'text-white font-medium' : i < curIdx ? 'text-emerald-700' : 'text-gray-500'}`}>
                 {s.label}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>

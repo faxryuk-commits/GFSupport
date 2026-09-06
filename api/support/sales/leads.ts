@@ -247,6 +247,21 @@ async function handlerInner(req: Request): Promise<Response> {
       `
       return json({ ok: true })
     }
+    /**
+     * Ничейное обращение становится твоим в момент, когда ты начал его
+     * заполнять. Раньше для этого была отдельная кнопка «Беру» — лишний клик,
+     * который сейлзы пропускали, и карточка с заполненной квалификацией
+     * висела без ответственного. Чужого лида это не трогает: только NULL.
+     */
+    const claimOnEdit = async (leadId: string) => {
+      await sql`
+        UPDATE sales_leads
+        SET assigned_agent_id = ${ctx.agentId}, assigned_at = NOW(),
+            status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END
+        WHERE id = ${leadId} AND org_id = ${orgId} AND assigned_agent_id IS NULL
+      `
+    }
+
     if (action === 'update') {
       const f = body.fields || {}
       await sql`
@@ -258,6 +273,7 @@ async function handlerInner(req: Request): Promise<Response> {
           updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
+      await claimOnEdit(body.leadId)
       return json({ ok: true })
     }
 
@@ -294,6 +310,7 @@ async function handlerInner(req: Request): Promise<Response> {
           updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
+      await claimOnEdit(body.leadId)
       return json({ ok: true })
     }
 

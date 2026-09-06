@@ -34,7 +34,11 @@ type Workspace = {
   week: { confirmed_week?: number; cases_week?: number; kept_week?: number }
   /** Только у руководителей: задачи команды продаж — у кого что горит. */
   team?: {
-    members: Array<{ id: string; name: string; open: number; overdue: number; done_week: number }>
+    members: Array<{
+      id: string; name: string; open: number; overdue: number; done_week: number
+      /** Открытые сделки без назначенного следующего шага — они и стоят. */
+      no_step: number
+    }>
     overdue: Array<{
       id: string; title: string; due_at: string; assignee_name: string; about: string | null
       deal_id: string | null; lead_id: string | null; account_id: string | null
@@ -350,10 +354,10 @@ export function MyWorkspacePage() {
                     <span className="text-[11.5px] tabular-nums font-semibold text-red-600"
                       title="просроченных">{m.overdue} горит</span>
                   )}
-                  {(m as any).no_step > 0 && (
+                  {m.no_step > 0 && (
                     <span className="text-[11.5px] tabular-nums text-amber-600"
                       title="открытых сделок без назначенного следующего шага">
-                      {(m as any).no_step} без шага
+                      {m.no_step} без шага
                     </span>
                   )}
                   <span className="text-[11.5px] tabular-nums text-emerald-600"
@@ -687,13 +691,21 @@ export function MyWorkspacePage() {
               <div className="text-[13px] text-slate-400 py-6 text-center">загружаю…</div>
             ) : !teamTasks.length ? (
               <div className="text-[13px] text-slate-400 py-6 text-center">
-                Задач нет — ни открытых, ни закрытых за неделю.
+                Ни задач, ни сделок, требующих шага.
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {teamTasks.map(t => {
                   const overdue = !t.done_at && t.due_at && new Date(t.due_at) < new Date()
-                  const st = t.done_at
+                  // Сделка — не задача: у неё нет исполнения, есть следующий шаг.
+                  // Отсутствие шага и есть главный сигнал, поэтому он красный,
+                  // а не «нет данных»
+                  const isDeal = t.kind === 'deal_step'
+                  const st = isDeal
+                    ? (!t.due_at ? ['шаг не назначен', 'bg-red-50 text-red-600']
+                      : overdue ? ['шаг просрочен', 'bg-red-50 text-red-600']
+                      : ['шаг запланирован', 'bg-slate-100 text-slate-600'])
+                    : t.done_at
                     ? (t.done_result === 'rejected' ? ['отклонена', 'bg-red-50 text-red-600'] : ['выполнена', 'bg-emerald-50 text-emerald-700'])
                     : t.status === 'in_progress' ? ['в работе', 'bg-blue-50 text-blue-700']
                     : overdue ? ['просрочена', 'bg-red-50 text-red-600']
@@ -705,7 +717,16 @@ export function MyWorkspacePage() {
                     <div key={t.id} className="py-2.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded ${st[1]}`}>{st[0]}</span>
-                        <span className="text-[13px] text-slate-800">{t.title}</span>
+                        {isDeal && link ? (
+                          <Link to={link} onClick={() => setTeamAgent(null)}
+                            className="text-[13px] text-slate-800 hover:text-blue-600 hover:underline">
+                            {t.about || 'Сделка'}
+                          </Link>
+                        ) : (
+                          <span className="text-[13px] text-slate-800">
+                            {isDeal ? (t.about || 'Сделка') : t.title}
+                          </span>
+                        )}
                         {t.auto && <span className="text-[10px] text-slate-400">авто</span>}
                       </div>
                       <div className="mt-0.5 text-[11.5px] text-slate-400 flex items-center gap-2 flex-wrap">
@@ -714,10 +735,12 @@ export function MyWorkspacePage() {
                             срок {formatDateTimeShort(t.due_at)}
                           </span>
                         )}
-                        {t.about && (link
+                        {isDeal && t.title && <span className="text-slate-600">шаг: {t.title}</span>}
+                        {!isDeal && t.about && (link
                           ? <Link to={link} onClick={() => setTeamAgent(null)}
                               className="text-blue-600 hover:underline truncate max-w-[220px]">{t.about}</Link>
                           : <span className="truncate max-w-[220px]">{t.about}</span>)}
+                        {t.stage_name && <span>этап {t.stage_name}</span>}
                         {t.created_by_name && <span>от {t.created_by_name}</span>}
                         {t.status_note && <span className="text-slate-500">«{t.status_note}»</span>}
                       </div>

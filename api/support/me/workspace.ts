@@ -38,13 +38,21 @@ export default async function handler(req: Request): Promise<Response> {
   const isLead = ctx.isOrgAdmin || ctx.isGlobalAdmin
     || ['cco', 'manager', 'team_lead'].includes(String(me.role || ''))
 
-  // Задачи конкретного сотрудника — для попапа мониторинга у руководителя:
-  // список со статусами и сроками, закрытые видны неделю
+  /**
+   * Что сейчас на человеке — для попапа мониторинга у руководителя.
+   *
+   * Не только задачи: сейлзы живут следующими шагами сделок, и у человека
+   * с одной задачей может стоять полсотни сделок. Показывать в такой карточке
+   * одну строку — значит говорить руководителю, что работы нет.
+   */
   if (url.searchParams.get('action') === 'team-tasks') {
     if (!isLead) return json({ error: 'только руководителю' }, 403)
     const agentId = url.searchParams.get('agentId') || ''
     if (!agentId) return json({ error: 'agentId is required' }, 400)
-    const tasks = await sql`
+    // Одной поездкой: до базы ~190 мс, два подряд запроса — это полсекунды
+    // ожидания на каждый клик по фамилии
+    const [tasks, deals] = await sql.transaction([
+      sql`
       SELECT t.id, t.title, t.kind, t.status, t.status_note, t.due_at, t.done_at,
              t.done_result, t.created_at, t.deal_id, t.lead_id, t.account_id, t.auto,
              c.name AS created_by_name, COALESCE(d.title, l.name, ac.name) AS about
@@ -57,8 +65,25 @@ export default async function handler(req: Request): Promise<Response> {
         AND (t.done_at IS NULL OR t.done_at > NOW() - INTERVAL '7 days')
       ORDER BY t.done_at IS NOT NULL, t.due_at NULLS LAST, t.created_at DESC
       LIMIT 50
-    ` as any[]
-    return json({ tasks })
+    `,
+      sql`
+      SELECT d.id, d.next_step AS title,
+             'deal_step' AS kind, NULL::text AS status, NULL::text AS status_note,
+             d.next_step_at AS due_at, NULL::timestamptz AS done_at,
+             NULL::text AS done_result, d.created_at,
+             d.id AS deal_id, NULL::text AS lead_id, d.account_id, false AS auto,
+             NULL::text AS created_by_name, d.title AS about,
+             s.name AS stage_name
+      FROM sales_deals d
+      LEFT JOIN sales_stages s ON s.id = d.stage_id
+      WHERE d.org_id = ${orgId} AND d.owner_agent_id = ${agentId}
+        AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+        AND (d.next_step_at IS NULL OR d.next_step_at < NOW() + INTERVAL '7 days')
+      ORDER BY d.next_step_at ASC NULLS FIRST
+      LIMIT 60
+    `,
+    ]) as any[]
+    return json({ tasks: [...(tasks as any[]), ...(deals as any[])] })
   }
 
   // Мой username в мессенджерах — из моих же исходящих сообщений
@@ -232,8 +257,16 @@ export default async function handler(req: Request): Promise<Response> {
         ORDER BY overdue DESC, open DESC
       `,
       sql`
+        /*
+         * По три самых горящих на человека, а не двадцать подряд по дате:
+         * у одного менеджера просрочка старше, и он один забирал весь список —
+         * руководитель видел его фамилию восемь раз и ни одной чужой.
+         */
         SELECT * FROM (
+          SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x.aid ORDER BY x.due_at ASC) AS rn
+          FROM (
           SELECT t.id, t.title, t.due_at, t.deal_id, t.lead_id, t.account_id,
+                 t.assignee_agent_id AS aid,
                  a.name AS assignee_name, COALESCE(d.title, l.name, ac.name) AS about
           FROM sales_tasks t
           JOIN support_agents a ON a.id = t.assignee_agent_id
@@ -245,6 +278,7 @@ export default async function handler(req: Request): Promise<Response> {
           UNION ALL
           SELECT d.id, COALESCE(d.next_step, 'Следующий шаг') AS title, d.next_step_at AS due_at,
                  d.id AS deal_id, NULL AS lead_id, d.account_id,
+                 d.owner_agent_id AS aid,
                  ag.name AS assignee_name, d.title AS about
           FROM sales_deals d
           JOIN support_agents ag ON ag.id = d.owner_agent_id
@@ -252,7 +286,8 @@ export default async function handler(req: Request): Promise<Response> {
             AND d.won_at IS NULL AND d.lost_at IS NULL
             AND d.next_step_at < NOW()
             AND d.owner_agent_id IS DISTINCT FROM ${ctx.agentId}
-        ) x ORDER BY due_at ASC LIMIT 20
+        ) x
+      ) y WHERE rn <= 3 ORDER BY due_at ASC LIMIT 24
       `,
     ]) as any[]
     team = { members, overdue: teamOverdue }

@@ -1,5 +1,6 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { pipelineForMarket } from '../_lib/sales-amo.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
 
@@ -170,6 +171,15 @@ export default async function handler(req: Request): Promise<Response> {
       `
     : []
 
+  // Этапы воронки этого рынка: из карточки обращение переводят сразу на
+  // нужный этап сделки, а не только на первый — как в Amo, одним выбором
+  const stageRows = await sql`
+    SELECT id, key, label, sort_order FROM sales_stages
+    WHERE org_id = ${orgId} AND pipeline = ${pipelineForMarket(lead.market_id)}
+      AND is_active = true AND kind = 'open'
+    ORDER BY sort_order
+  ` as any[]
+
   return json({
     lead,
     fields: readableRaw(lead.raw),
@@ -178,5 +188,6 @@ export default async function handler(req: Request): Promise<Response> {
     deals: dealRows,
     messages,
     team: teamRows,
+    stages: stageRows,
   })
 }

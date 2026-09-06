@@ -45,15 +45,22 @@ interface Deal {
   updated_at: string | null; owner_name: string | null; phone: string | null
   doc_opens: number | null; stage_key: string; market_id?: string | null
   won_at?: string | null; lost_at?: string | null; lost_reason?: string | null
+  /** Срок возврата у причины отказа: есть — к клиенту ещё вернутся. */
+  lost_return_days?: number | null
   last_call: LastCall | null
 }
 
 interface FunnelData {
-  leadColumns: Array<{ key: string; label: string; hint: string; total: number }>
+  /** Колонка объединяет несколько статусов: на доске их меньше, чем в данных. */
+  leadColumns: Array<{ key: string; label: string; hint: string; total: number; statuses: string[] }>
   leads: Lead[]
   stages: Array<{ key: string; label: string; description: string | null; sla_hours: string | null; total: number; amounts: Record<string, string> }>
   deals: Deal[]
-  closed: Array<{ key: string; label: string; kind: string; total: number; last30: number; amounts30: Record<string, string> }>
+  closed: Array<{
+    key: string; label: string; kind: string; total: number; last30: number; amounts30: Record<string, string>
+    /** У проигранного две колонки на один этап: stage — куда переносить, group — что показывать. */
+    stage?: string; group?: 'return' | 'junk'
+  }>
   totals: { open_deals?: number; pipeline_amounts?: Record<string, string>; no_next_step?: number }
   owners: Array<{ id: string; name: string }>
   sources?: Array<{ id: string; label: string }>
@@ -141,6 +148,14 @@ export function SalesFunnelPage() {
   // «показано 15 из 142» — и посмотреть остальное было нельзя ничем
   const [perColumn, setPerColumn] = useState(15)
   const [drag, setDrag] = useState<{ kind: 'lead' | 'deal'; id: string; from: string } | null>(null)
+  // Проигранное на доске свёрнуто, пока его не попросят — помним выбор
+  const [lostOpen, setLostOpenRaw] = useState<boolean>(() => {
+    try { return localStorage.getItem('funnel.lostOpen') === '1' } catch { return false }
+  })
+  const setLostOpen = (v: boolean) => {
+    setLostOpenRaw(v)
+    try { localStorage.setItem('funnel.lostOpen', v ? '1' : '0') } catch { /* приватный режим */ }
+  }
   const [over, setOver] = useState<string | null>(null)
   const reqRef = useRef(0)
 
@@ -263,8 +278,14 @@ export function SalesFunnelPage() {
   if (!data) return <Skeleton rows={6} />
 
   const t = data.totals || {}
-  const leadsIn = (status: string) => data.leads.filter(l => l.status === status)
+  const leadsIn = (col: { key: string; statuses?: string[] }) =>
+    data.leads.filter(l => (col.statuses || [col.key]).includes(l.status))
   const dealsIn = (key: string) => data.deals.filter(d => d.stage_key === key)
+  // Проигранное делится по справочнику причин: со сроком возврата — «вернуться»,
+  // без срока — «не наш». Это не два этапа, а два среза одного
+  const closedIn = (cl: { key: string; stage?: string; group?: string }) =>
+    data.deals.filter(d => d.stage_key === (cl.stage || cl.key) && (
+      !cl.group || (cl.group === 'return') === (d.lost_return_days != null)))
   const zoneCls = (active: boolean, tone: 'lead' | 'deal') =>
     active
       ? tone === 'lead' ? 'border-violet-400 ring-2 ring-violet-100' : 'border-blue-500 ring-2 ring-blue-100'
@@ -404,7 +425,7 @@ export function SalesFunnelPage() {
                 <div className="text-[10.5px] text-gray-400">{col.hint}</div>
               </header>
               <div className="p-2 flex flex-col gap-2 overflow-y-auto">
-                {leadsIn(col.key).map(l => {
+                {leadsIn(col).map(l => {
                   const phone = parsePhone(l.phone, l.market_id)
                   return (
                     <article
@@ -435,11 +456,15 @@ export function SalesFunnelPage() {
                         {KIND_LABEL[l.lead_kind || ''] && (
                           <Chip tone="violet">{KIND_LABEL[l.lead_kind || '']}</Chip>
                         )}
-                        {l.sla_due_at && !l.first_touch_at && col.key !== 'nurture' && (
+                        {l.sla_due_at && !l.first_touch_at && l.status !== 'nurture' && (
                           <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
                         )}
-                        {col.key === 'nurture' && (
-                          <Chip tone="gray">шаг {l.nurture_step ?? 0} из 4</Chip>
+                        {/* Разница между слитыми статусами — меткой: «назначен» в
+                            «Новых» значит, что ответственный есть, но не тронул;
+                            «прогрев» в «Недозвоне» — что клиента греет ассистент */}
+                        {l.status === 'assigned' && <Chip tone="gray">назначен</Chip>}
+                        {l.status === 'nurture' && (
+                          <Chip tone="gray">прогрев · шаг {l.nurture_step ?? 0} из 4</Chip>
                         )}
                         <CallChip c={l.last_call} />
                       </div>
@@ -472,7 +497,7 @@ export function SalesFunnelPage() {
                         >
                           Беру
                         </button>
-                        {col.key !== 'nurture' && (
+                        {l.status !== 'nurture' && (
                           <button
                             disabled={busy === l.id}
                             onClick={() => moveLead(l.id, 'nurture')}
@@ -486,17 +511,17 @@ export function SalesFunnelPage() {
                     </article>
                   )
                 })}
-                {leadsIn(col.key).length === 0 && (
+                {leadsIn(col).length === 0 && (
                   <div className="text-[11px] text-gray-300 text-center py-3 border border-dashed border-gray-200 rounded-lg">
                     перетащите сюда
                   </div>
                 )}
-                {leadsIn(col.key).length < col.total && (
+                {leadsIn(col).length < col.total && (
                   <button
                     onClick={() => setPerColumn(p => Math.min(300, p + 50))}
                     className="w-full text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50
                                text-center py-2 rounded-lg border border-dashed border-blue-200 transition-colors">
-                    Показать ещё · {leadsIn(col.key).length} из {col.total}
+                    Показать ещё · {leadsIn(col).length} из {col.total}
                   </button>
                 )}
               </div>
@@ -638,13 +663,34 @@ export function SalesFunnelPage() {
             этапов, — с карточками и «показать ещё» */}
         {data.closed.map(cl => {
           const won = cl.kind === 'won'
-          const items = dealsIn(cl.key)
+          const items = closedIn(cl)
+          // Проигранное свёрнуто в узкую полосу: на доске оно нужно редко, а
+          // две колонки съедали ширину у живых этапов. Раскрывается одним
+          // кликом, состояние помнится
+          if (!won && !lostOpen) {
+            if (cl.group === 'junk') return null
+            const lostTotal = data.closed.filter(c => c.kind === 'lost').reduce((s, c) => s + c.total, 0)
+            return (
+              <button
+                key="lost_collapsed"
+                onClick={() => setLostOpen(true)}
+                onDragOver={e => { e.preventDefault(); setLostOpen(true) }}
+                title="Показать проигранное"
+                className="flex-none w-[36px] rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-red-300
+                           flex flex-col items-center py-2 gap-2 transition-colors"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-red-600
+                                 [writing-mode:vertical-rl] rotate-180">Проиграно</span>
+                <span className="text-[11.5px] text-gray-500 tabular-nums">{lostTotal}</span>
+              </button>
+            )
+          }
           return (
             <section
               key={cl.key}
               onDragOver={e => { e.preventDefault(); setOver(cl.key) }}
               onDragLeave={() => setOver(o => (o === cl.key ? null : o))}
-              onDrop={e => { e.preventDefault(); drop(cl.key, 'closed') }}
+              onDrop={e => { e.preventDefault(); drop(cl.stage || cl.key, 'closed') }}
               className={`flex-none w-[232px] rounded-lg border-2 flex flex-col transition-colors ${
                 over === cl.key
                   ? won ? 'border-emerald-500 bg-emerald-50' : 'border-red-400 bg-red-50'
@@ -654,7 +700,13 @@ export function SalesFunnelPage() {
                 <div className="flex justify-between items-baseline gap-2">
                   <span className={`text-[10px] font-bold uppercase tracking-wider ${
                     won ? 'text-emerald-700' : 'text-red-600'}`}>{cl.label}</span>
-                  <span className="text-[11.5px] text-gray-400 tabular-nums">{cl.total}</span>
+                  <span className="text-[11.5px] text-gray-400 tabular-nums flex items-center gap-1.5">
+                    {cl.total}
+                    {cl.group === 'junk' && (
+                      <button onClick={() => setLostOpen(false)} title="Свернуть проигранное"
+                        className="text-gray-400 hover:text-gray-700 leading-none">«</button>
+                    )}
+                  </span>
                 </div>
                 <div className="text-[10.5px] text-gray-400 tabular-nums">
                   за 30 дней: {cl.last30}
@@ -678,6 +730,7 @@ export function SalesFunnelPage() {
                            d.won_at ? fmtDateTime(d.won_at).split(',')[0] : null].filter(Boolean).join(' · ')
                           || 'сумма не указана'
                         : [d.lost_reason || 'причина не указана',
+                           d.lost_return_days != null ? `вернуться через ${d.lost_return_days} дн.` : null,
                            d.lost_at ? fmtDateTime(d.lost_at).split(',')[0] : null].filter(Boolean).join(' · ')}
                     </div>
                   </button>

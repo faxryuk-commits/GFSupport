@@ -58,6 +58,8 @@ interface LeadData {
     currency: string; won_at: string | null; lost_at: string | null; created_at: string }>
   messages: Array<{ id: string; sender_name: string | null; is_from_client: boolean
     text_content: string | null; content_type: string | null; created_at: string }>
+  /** Открытые этапы воронки рынка — для перевода в сделку сразу на нужный. */
+  stages?: Array<{ id: string; key: string; label: string }>
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -192,6 +194,24 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   useEffect(() => { load() }, [load])
 
   const refs = useSalesRefs()
+
+  /**
+   * Перевод в сделку на выбранный этап. Раньше с карточки был только путь
+   * через «Беру» на первый этап, а дальше — перетаскивание по доске; когда
+   * разговор уже прошёл демо, это три лишних хода. Отказ движка (422) —
+   * не поломка: показываем, чего не хватает, и остаёмся в карточке.
+   */
+  const convertTo = async (toStage: string) => {
+    if (!toStage) return
+    setBusy(true); setError('')
+    try {
+      const res: any = await apiPost('/sales/funnel?action=convert', { leadId: id, toStage })
+      if (res?.dealId) navigate(`/sales/deals/${res.dealId}`)
+      else load()
+    } catch (e: any) {
+      setError(e?.message || 'Переход заблокирован')
+    } finally { setBusy(false) }
+  }
 
   const act = async (action: string, extra?: Record<string, unknown>) => {
     setBusy(true)
@@ -335,6 +355,15 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                 className="text-[12px] px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:brightness-110 disabled:opacity-50">
                 Беру в работу
               </button>
+              {(data.stages?.length || 0) > 0 && (
+                <select disabled={busy} value="" onChange={e => convertTo(e.target.value)}
+                  title="Перевести в сделку сразу на выбранный этап"
+                  className="text-[12px] px-2.5 py-1.5 rounded-lg border border-blue-300 text-blue-700 bg-white
+                             hover:border-blue-500 disabled:opacity-50">
+                  <option value="">В сделку на этап…</option>
+                  {data.stages!.map(s => <option key={s.id} value={s.key}>{s.label}</option>)}
+                </select>
+              )}
               {l.status !== 'nurture' && (
                 <button disabled={busy} onClick={() => act('nurture')}
                   className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400">

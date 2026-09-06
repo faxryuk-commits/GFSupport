@@ -228,6 +228,7 @@ async function handlerInner(req: Request): Promise<Response> {
                  ORDER BY c.is_primary DESC LIMIT 1) AS phone,
                (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens,
                s.key AS stage_key, d.won_at, d.lost_at, lr.label AS lost_reason,
+               lr.reactivate_days AS lost_return_days,
                ROW_NUMBER() OVER (PARTITION BY s.key
                  ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC) AS rn
         FROM sales_deals d
@@ -305,20 +306,27 @@ async function handlerInner(req: Request): Promise<Response> {
       SELECT s.key, MIN(s.label) AS label, MIN(s.kind) AS kind,
              COALESCE(SUM(d.cnt), 0)::int AS total,
              COALESCE(SUM(d.last30), 0)::int AS last30,
+             -- Проигранное делится по справочнику причин: у причины со сроком
+             -- возврата к клиенту ещё вернутся, без срока — это не наш клиент
+             -- или ошибка. Отдельного этапа для этого не нужно
+             COALESCE(SUM(d.cnt) FILTER (WHERE d.is_return), 0)::int AS total_return,
+             COALESCE(SUM(d.last30) FILTER (WHERE d.is_return), 0)::int AS last30_return,
              COALESCE(jsonb_object_agg(d.currency, d.won30) FILTER (
                WHERE d.currency IS NOT NULL AND d.won30 > 0), '{}'::jsonb) AS amounts30
       FROM sales_stages s
       LEFT JOIN (
-        SELECT stage_id, currency, MIN(id) AS id,
+        SELECT dd.stage_id, dd.currency, MIN(dd.id) AS id,
+               (lr.reactivate_days IS NOT NULL) AS is_return,
                COUNT(*)::int AS cnt,
-               COUNT(*) FILTER (WHERE COALESCE(won_at, lost_at) > NOW() - INTERVAL '30 days')::int AS last30,
-               COALESCE(SUM(monthly_amount) FILTER (
-                 WHERE won_at > NOW() - INTERVAL '30 days'), 0) AS won30
-        FROM sales_deals
-        WHERE org_id = ${orgId} AND archived_at IS NULL
-          AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
-          AND (${owner} = '' OR owner_agent_id = ${owner})
-        GROUP BY stage_id, currency
+               COUNT(*) FILTER (WHERE COALESCE(dd.won_at, dd.lost_at) > NOW() - INTERVAL '30 days')::int AS last30,
+               COALESCE(SUM(dd.monthly_amount) FILTER (
+                 WHERE dd.won_at > NOW() - INTERVAL '30 days'), 0) AS won30
+        FROM sales_deals dd
+        LEFT JOIN sales_lost_reasons lr ON lr.id = dd.lost_reason_id
+        WHERE dd.org_id = ${orgId} AND dd.archived_at IS NULL
+          AND (${market} = '' OR dd.market_id = ${market} OR dd.market_id IS NULL)
+          AND (${owner} = '' OR dd.owner_agent_id = ${owner})
+        GROUP BY dd.stage_id, dd.currency, (lr.reactivate_days IS NOT NULL)
       ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind IN ('won', 'lost') AND s.is_active = true
         AND s.pipeline <> 'partner'
@@ -405,18 +413,28 @@ async function handlerInner(req: Request): Promise<Response> {
   return json({
     // Колонки входа описываем здесь: у обращений нет справочника этапов, их
     // «этапы» — это статусы, и правила у них другие
+    // Две колонки вместо четырёх. Статусы в данных остаются прежними —
+    // «назначен» и «на прогреве» нужны нормативу касания и ассистенту, — но
+    // на доске они были лишними столбцами, между которыми карточки таскали
+    // ради самого перетаскивания. Колонка объединяет статусы, а разница
+    // видна меткой на карточке
     leadColumns: [
-      { key: 'new', label: 'Новые', hint: 'норматив касания 15 минут', total: counts.new || 0 },
-      { key: 'assigned', label: 'Ждут касания', hint: 'назначены, но не тронуты', total: counts.assigned || 0 },
-      // Дозвон — работа по выяснению, наш ли это клиент, то есть сама
+      { key: 'new', label: 'Новые', hint: 'норматив касания 15 минут',
+        statuses: ['new', 'assigned'], total: (counts.new || 0) + (counts.assigned || 0) },
+      // Недозвон — работа по выяснению, наш ли это клиент, то есть сама
       // квалификация. Сделка рождается уже после неё, поэтому колонка здесь
-      { key: 'attempting', label: 'Дозвон', hint: 'выясняем, наш ли клиент', total: counts.attempting || 0 },
-      { key: 'nurture', label: 'На прогреве', hint: 'греет ассистент', total: counts.nurture || 0 },
+      { key: 'attempting', label: 'Недозвон', hint: 'дозваниваемся, греет ассистент',
+        statuses: ['attempting', 'nurture'], total: (counts.attempting || 0) + (counts.nurture || 0) },
     ],
     leads: leadRows,
     stages: stageRows,
     deals: dealRows,
-    closed,
+    closed: (closed as any[]).flatMap(c => c.kind !== 'lost' ? [c] : [
+      { ...c, key: 'lost_return', stage: c.key, group: 'return',
+        label: 'Не купили — вернуться', total: c.total_return, last30: c.last30_return },
+      { ...c, key: 'lost_junk', stage: c.key, group: 'junk',
+        label: 'Не наш / ошибка', total: c.total - c.total_return, last30: c.last30 - c.last30_return },
+    ]),
     totals: totals || {},
     owners,
     sources: srcList,
