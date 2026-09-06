@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { PageShell, Empty, Skeleton, Modal } from './kit'
+import { useAuth } from '@/shared/hooks/useAuth'
 
 /**
  * Полотно встреч команды.
@@ -89,7 +90,7 @@ export function SalesCalendarPage() {
   const [error, setError] = useState('')
   const [picked, setPicked] = useState<Meeting | null>(null)
   const [busy, setBusy] = useState(false)
-  const [me, setMe] = useState<{ id: string; name: string } | null>(null)
+  const { agent } = useAuth()
 
   const start = useMemo(() => weekStart(anchor), [anchor])
   const days = useMemo(
@@ -113,10 +114,6 @@ export function SalesCalendarPage() {
   }, [days])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    apiGet<{ id: string; name: string }>('/me', false).then(setMe).catch(() => setMe(null))
-  }, [])
-
   const byDay = useMemo(() => {
     const map = new Map<string, Meeting[]>()
     for (const m of data?.meetings || []) {
@@ -140,10 +137,10 @@ export function SalesCalendarPage() {
   }, [data])
 
   const takeOver = async (m: Meeting) => {
-    if (!me?.id) return
+    if (!agent?.id) return
     setBusy(true)
     try {
-      await apiPost('/sales/meetings?action=reassign', { id: m.id, assigneeAgentId: me.id })
+      await apiPost('/sales/meetings?action=reassign', { id: m.id, assigneeAgentId: agent.id })
       setPicked(null)
       await load()
     } catch (e: any) {
@@ -331,7 +328,7 @@ export function SalesCalendarPage() {
                   className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
                 >Отменить встречу</button>
               )}
-              {me && picked.assigneeAgentId !== me.id && picked.status !== 'cancelled' && (
+              {agent?.id && picked.assigneeAgentId !== agent.id && picked.status !== 'cancelled' && (
                 <button
                   onClick={() => takeOver(picked)}
                   disabled={busy}
