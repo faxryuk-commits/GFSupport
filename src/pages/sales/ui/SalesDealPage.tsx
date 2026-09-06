@@ -375,9 +375,9 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       {/* Шапка в одну строку сути и один ряд действий. Раньше — четыре
           строки текста слева, «— в месяц» и семь кнопок одинакового веса
           справа; главное, редкое и опасное стояли вперемешку */}
-      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-2.5">
+      <div className="bg-white border border-gray-200 rounded-xl px-5 py-3.5 space-y-3">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <h1 className="text-[17px] font-semibold text-gray-900 tracking-tight leading-tight truncate max-w-[40%]"
+          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight leading-tight truncate max-w-[40%]"
             title={data.account?.name || d.title}>
             {data.account?.name || d.title}
           </h1>
@@ -476,15 +476,16 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               disabled={busy || closed || i === curIdx}
               onClick={() => moveTo(s.key)}
               title={s.description ? `${s.description}\n\nНажмите, чтобы перевести` : 'Нажмите, чтобы перевести'}
-              className={`flex-1 min-w-[72px] rounded-md px-2 py-1 border text-left transition-colors flex items-baseline gap-1.5 ${
+              className={`flex-1 min-w-[72px] rounded-md px-2.5 py-1.5 border text-left transition-colors flex items-center gap-1.5 ${
                 i < curIdx ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-400' :
-                i === curIdx ? 'bg-gray-900 border-gray-900 cursor-default' : 'bg-gray-50 border-gray-200 hover:border-blue-400'}
+                i === curIdx ? 'bg-blue-600 border-blue-600 cursor-default shadow-sm' : 'bg-white border-gray-200 hover:border-blue-400'}
                 disabled:opacity-100`}>
-              <span className={`text-[9px] font-bold ${i === curIdx ? 'text-white/60' : 'text-gray-400'}`}>
-                {String(i).padStart(2, '0')}
+              <span className={`text-[10px] font-bold w-4 flex-none ${
+                i === curIdx ? 'text-white/70' : i < curIdx ? 'text-emerald-600' : 'text-gray-400'}`}>
+                {i < curIdx ? '✓' : String(i + 1).padStart(2, '0')}
               </span>
-              <span className={`text-[11px] leading-tight truncate ${
-                i === curIdx ? 'text-white font-medium' : i < curIdx ? 'text-emerald-700' : 'text-gray-500'}`}>
+              <span className={`text-[11.5px] leading-tight truncate ${
+                i === curIdx ? 'text-white font-semibold' : i < curIdx ? 'text-emerald-800' : 'text-gray-600'}`}>
                 {s.label}
               </span>
             </button>
@@ -698,19 +699,21 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
         </div>
 
         <div className="space-y-3 min-w-0">
-          <Card dense title="Следующий шаг" hint="Без него сделка через 48 ч помечается брошенной"
-            right={
-              <span className={`text-[11.5px] font-medium ${d.next_step ? 'text-blue-700' : 'text-amber-700'}`}>
-                {d.next_step ? `${d.next_step}${d.next_step_at ? ` · ${fmtDate(d.next_step_at)}` : ''}` : 'не назначен'}
-              </span>
-            }>
+          <Card dense title="Следующий шаг" hint="Без него сделка через 48 ч помечается брошенной">
+            {/* Панель состояния — первое, что видно справа: есть шаг или нет.
+                Одной строкой в заголовке это терялось */}
+            <div className={`mx-4 mt-3 mb-1 rounded-lg px-3 py-2 text-[13px] font-semibold ${
+              d.next_step ? 'bg-blue-50 text-blue-800' : 'bg-amber-50 text-amber-800'}`}>
+              {d.next_step || 'Шаг не назначен'}
+              {d.next_step_at && <span className="ml-2 text-[11.5px] font-normal opacity-80">{fmtDateTime(d.next_step_at)}</span>}
+            </div>
             {/* Действие — из списка типовых: свободная строка означала, что
                 «позвонить», «созвон» и «набрать» — три разных шага, и отчёт по
                 ним не собрать. Дата — календарём, а не строкой формата */}
             <InlineField label="Что делаем" value={d.next_step} onSave={v => patch('next_step', v)}
               options={optionsFor(refs, 'next_step')} />
-            <div className="flex items-center gap-2 h-8 px-3 border-b border-gray-100">
-              <span className="text-[11.5px] text-gray-500 w-[104px] flex-none">Когда</span>
+            <div className="flex items-center gap-2 h-8 px-4 border-b border-gray-100">
+              <span className="text-[12px] text-gray-500 w-[116px] flex-none">Когда</span>
               <span className="flex-1" />
               {/* Показывали в рабочей зоне, а сохраняли выбранное как есть —
                   время уезжало вперёд на пять часов при каждой правке */}
@@ -721,7 +724,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 className="border border-gray-300 rounded-md px-1.5 py-0.5 text-[11.5px]"
               />
             </div>
-            <div className="px-3 py-1.5 flex flex-wrap gap-1">
+            <div className="px-4 py-2 flex flex-wrap gap-1.5">
               {[['Сегодня', 0], ['Завтра', 1], ['Через 3 дня', 3], ['Через неделю', 7]].map(([label, days]) => (
                 <button key={String(label)}
                   onClick={() => patch('next_step_at', inDays(Number(days)))}
@@ -735,7 +738,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           {/* Встреча — одной строкой: есть дата — видно когда, нет — кнопка.
               Кнопка-сирота в правой колонке была третьим местом для одного действия */}
           <Card dense title="Встречи">
-            <div className="flex items-center gap-2 h-8 px-3 text-[12px]">
+            <div className="flex items-center gap-2 h-9 px-4 text-[12.5px]">
               {d.meeting_at ? (
                 <span className="text-blue-700 font-medium">📅 {fmtDateTime(d.meeting_at)}</span>
               ) : (

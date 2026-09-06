@@ -90,11 +90,15 @@ export const Card = ({ title, sub, count, hint, right, children, fill, dense }: 
   <section className={`bg-white border border-gray-200 rounded-xl overflow-hidden ${
     fill ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
     {(title || sub || right) && (
-    <header className={`${dense ? 'px-3 py-1.5' : 'px-4 py-3'} border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap`}
+    <header className={`${dense ? 'px-4 py-2 bg-gray-50/80' : 'px-4 py-3'} border-b border-gray-100 flex justify-between items-center gap-3 flex-wrap`}
       title={hint}>
-      <div className="flex items-baseline gap-2 min-w-0 flex-1">
-        <h3 className={`${dense ? 'text-[12.5px]' : 'text-[13.5px]'} font-semibold text-gray-900 whitespace-nowrap`}>{title}</h3>
-        {count !== undefined && <span className="text-[11px] text-gray-400 tabular-nums whitespace-nowrap">{count}</span>}
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <h3 className={`${dense ? 'text-[13px]' : 'text-[13.5px]'} font-semibold text-gray-900 whitespace-nowrap`}>{title}</h3>
+        {count !== undefined && (
+          <span className="text-[10.5px] font-medium text-gray-500 bg-white border border-gray-200 rounded-md px-1.5 py-px tabular-nums whitespace-nowrap">
+            {count}
+          </span>
+        )}
         {sub && !dense && <div className="text-[11px] text-gray-400">{sub}</div>}
         {sub && dense && <div className="text-[11px] text-gray-400 truncate">{sub}</div>}
       </div>
@@ -118,9 +122,9 @@ export const Fold = ({ title, sub, right, defaultOpen = false, children }: {
   const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="border-b border-gray-100 last:border-b-0">
-      <div className="flex items-center gap-2 px-3 h-8 text-[12px]">
-        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
-          <span className="text-gray-400 text-[10px] w-3 flex-none">{open ? '▾' : '▸'}</span>
+      <div className={`flex items-center gap-2 px-4 h-9 text-[12.5px] ${open ? 'bg-gray-50/80' : 'hover:bg-gray-50/60'}`}>
+        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
+          <span className={`text-gray-400 text-[11px] w-3 flex-none transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
           <span className="font-semibold text-gray-900 whitespace-nowrap">{title}</span>
           {sub && <span className="text-gray-400 truncate">{sub}</span>}
         </button>
@@ -611,8 +615,8 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
   if (bool) {
     const on = value === true || value === 'true'
     return (
-      <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100 hover:bg-gray-50">
-        <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+      <div className="flex items-center gap-2 h-8 px-4 border-b border-gray-100 hover:bg-gray-50">
+        <span className="text-[12px] text-gray-500 w-[116px] flex-none truncate" title={label}>{label}</span>
         <span className="flex-1" />
         <button
           onClick={() => onSave(on ? '' : 'true')}
@@ -629,8 +633,8 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
   // напоминание, ни отчёт
   if (editing && when) {
     return (
-      <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100">
-        <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+      <div className="flex items-center gap-2 h-8 px-4 border-b border-gray-100">
+        <span className="text-[12px] text-gray-500 w-[116px] flex-none truncate" title={label}>{label}</span>
         <span className="flex-1" />
         <input
           autoFocus
@@ -650,8 +654,8 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
 
   if (editing) {
     return (
-      <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100">
-        <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+      <div className="flex items-center gap-2 h-8 px-4 border-b border-gray-100">
+        <span className="text-[12px] text-gray-500 w-[116px] flex-none truncate" title={label}>{label}</span>
         <span className="flex-1" />
         {options?.length ? (
           <div className="w-52">
@@ -687,8 +691,8 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
     // Строка 28 px, подпись одной ширины, значение справа. Пустое — «—»
     // пунктиром, одинаково у всех полей: «выбрать ▾», «заполнить» и
     // «выбрать дату 🗓» были тремя разными словами про одно и то же
-    <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100 hover:bg-gray-50">
-      <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+    <div className="flex items-center gap-2 h-8 px-4 border-b border-gray-100 hover:bg-gray-50 group">
+      <span className="text-[12px] text-gray-500 w-[116px] flex-none truncate" title={label}>{label}</span>
       <span className="flex-1" />
       <button
         onClick={() => {
@@ -696,11 +700,15 @@ export function InlineField({ label, value, onSave, placeholder, money: isMoney,
           setEditing(true)
         }}
         title={empty ? (when ? 'выбрать дату' : options?.length ? 'выбрать из списка' : 'заполнить') : 'изменить'}
-        className={`text-[12px] text-right truncate max-w-[60%] ${
-          empty ? 'text-gray-400 border-b border-dotted border-gray-400 leading-tight' : 'text-gray-900 font-medium'}`}
+        className={`text-[12.5px] text-right truncate max-w-[60%] ${
+          empty
+            ? 'text-blue-600/70 group-hover:text-blue-600 group-hover:underline'
+            : 'text-gray-900 font-medium'}`}
       >
+        {/* Пустое — приглашение, а не прочерк: «—» читался как «нет данных
+            и не будет», и карточка выглядела брошенной */}
         {empty
-          ? '—'
+          ? (when ? 'дата' : 'указать')
           : when ? (withTime ? formatDateTimeShort(value) : formatDateDMY(value))
           : isMoney ? Number(value).toLocaleString('ru-RU') : String(value)}
       </button>

@@ -74,8 +74,8 @@ const ASSISTANT_ACTION: Record<string, string> = {
 }
 
 const Row = ({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) => (
-  <div className="flex items-center gap-2 h-7 px-3 border-b border-gray-100 last:border-0 text-[12px]" title={title}>
-    <span className="text-[11.5px] text-gray-500 w-[104px] flex-none truncate" title={label}>{label}</span>
+  <div className="flex items-center gap-2 h-8 px-4 border-b border-gray-100 last:border-0 text-[12.5px]" title={title}>
+    <span className="text-[12px] text-gray-500 w-[116px] flex-none truncate" title={label}>{label}</span>
     <span className="text-gray-900 font-medium min-w-0 text-right ml-auto truncate">{children}</span>
   </div>
 )
@@ -133,9 +133,11 @@ const Rename = ({ value, onSave, children }: {
 
 const Block = ({ title, sub, count, children }: { title: string; sub?: string; count?: React.ReactNode; children: React.ReactNode }) => (
   <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-    <header className="px-3 py-1.5 border-b border-gray-100 flex items-baseline gap-2" title={sub}>
-      <h3 className="text-[12.5px] font-semibold text-gray-900">{title}</h3>
-      {count !== undefined && <span className="text-[11px] text-gray-400 tabular-nums">{count}</span>}
+    <header className="px-4 py-2 bg-gray-50/80 border-b border-gray-100 flex items-center gap-2" title={sub}>
+      <h3 className="text-[13px] font-semibold text-gray-900">{title}</h3>
+      {count !== undefined && (
+        <span className="text-[10.5px] font-medium text-gray-500 bg-white border border-gray-200 rounded-md px-1.5 py-px tabular-nums">{count}</span>
+      )}
     </header>
     {children}
   </section>
@@ -313,11 +315,11 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
   return (
     <div className="p-4 space-y-3">
-      <header className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-2.5">
+      <header className="bg-white border border-gray-200 rounded-xl px-5 py-3.5 space-y-3">
         {/* Одна строка сути: имя, компания, статус, откуда, ответственный,
             когда пришло. Раньше — четыре строки и метки вразнобой */}
         <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <h1 className="text-[17px] font-semibold text-gray-900 tracking-tight leading-tight">
+          <h1 className="text-[20px] font-semibold text-gray-900 tracking-tight leading-tight">
             <Rename value={l.name} onSave={v => act('update', { fields: { name: v } })}>
               {l.contact_name || l.name}
             </Rename>
@@ -519,7 +521,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
               <Fold title="Что написал" sub={`«${String(l.text).replace(/\s+/g, ' ').slice(0, 90)}${l.text.length > 90 ? '…' : ''}»`}>
                 {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
                     вместо пробелов. Правим только при показе */}
-                <p className="px-3 py-2 text-[12.5px] text-gray-800 whitespace-pre-wrap">
+                <p className="px-4 py-2.5 text-[12.5px] text-gray-800 whitespace-pre-wrap">
                   {String(l.text || '').split('\n').map(humanValue).join('\n')}
                 </p>
               </Fold>
