@@ -285,7 +285,10 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE e.deal_id = ${id} ORDER BY e.changed_at DESC LIMIT 30
     `,
     sql`
-      SELECT name, role, phone, telegram, is_primary FROM sales_contacts
+      -- id обязателен: по нему сделка ссылается на ЛПР. Без него выбор в списке
+      -- писал в dm_contact_id текст пункта — option без value подставляет свой
+      -- текст, и ошибки при этом не видно
+      SELECT id, name, role, phone, telegram, is_primary FROM sales_contacts
       WHERE account_id = ${deal.account_id} ORDER BY is_primary DESC LIMIT 10
     `,
     sql`SELECT id, code, label, reactivate_days FROM sales_lost_reasons

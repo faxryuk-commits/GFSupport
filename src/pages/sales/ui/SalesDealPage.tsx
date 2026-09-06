@@ -606,7 +606,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                       className="border border-gray-200 rounded-lg px-2 py-1 text-[12.5px] font-medium text-gray-800"
                     >
                       <option value="">не выбран</option>
-                      {contacts.map((c: any) => (
+                      {contacts.filter((c: any) => c.id).map((c: any) => (
                         <option key={c.id} value={c.id}>
                           {[c.name, c.role].filter(Boolean).join(' · ') || c.phone}
                         </option>
