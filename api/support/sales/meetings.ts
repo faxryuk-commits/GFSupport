@@ -236,13 +236,48 @@ export default async function handler(req: Request): Promise<Response> {
               ${googleEventId}, ${meetUrl}, ${googleEventId ? assignee : null})
     `
 
-    // Сделка идёт дальше сама: назначенная встреча — это и есть «демо назначено»,
-    // и заставлять двигать стадию руками значит терять её в отчётах
     if (body.dealId) {
       await sql`
         UPDATE sales_deals SET meeting_at = ${start.toISOString()}
         WHERE id = ${body.dealId} AND org_id = ${orgId}
       `
+
+      /**
+       * Назначенная встреча — это и есть «Демо назначено», и заставлять
+       * двигать этап руками значит терять его в отчётах: встречи стоят,
+       * а воронка показывает сделку на квалификации.
+       *
+       * Двигаем через настоящий переход, а не UPDATE: там проверка критериев,
+       * событие в истории и каденция — которая, кстати, теперь возьмёт
+       * meeting_at, уже проставленный выше, и напомнит за два часа до встречи.
+       *
+       * Назад не двигаем и на отказ не падаем: если этап уже дальше или
+       * критерии не пущены, встреча всё равно назначена.
+       */
+      try {
+        const [pos] = await sql`
+          SELECT cur.sort_order AS cur_order, tgt.sort_order AS tgt_order
+          FROM sales_deals d
+          JOIN sales_stages cur ON cur.id = d.stage_id
+          JOIN sales_stages tgt ON tgt.pipeline = cur.pipeline AND tgt.key = 'meeting'
+                                AND tgt.org_id = d.org_id
+          WHERE d.id = ${body.dealId} AND d.org_id = ${orgId}
+          LIMIT 1
+        ` as any[]
+        if (pos && Number(pos.cur_order) < Number(pos.tgt_order)) {
+          await fetch(new URL('/api/support/sales/stage', req.url).toString(), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: req.headers.get('Authorization') || '',
+              'X-Org-Id': req.headers.get('X-Org-Id') || orgId,
+            },
+            body: JSON.stringify({ dealId: body.dealId, toStage: 'meeting' }),
+          })
+        }
+      } catch (e) {
+        console.error('[sales/meetings] stage move failed:', e)
+      }
     }
 
     if (assignee !== ctx.agentId) {
