@@ -84,7 +84,10 @@ const STAGE_SEED: Array<{
   // Дозвона у сделок нет: выяснение «наш ли клиент» происходит на стороне
   // обращений, и сделка рождается уже квалифицированной
   { key: 'qualified', label: 'Квалифицирован', kind: 'open', ownerRole: 'sdr', slaHours: 24, probability: 20,
-    requiredFields: ['city', 'points', 'orders_per_day', 'pos', 'aggregators', 'delivery_type', 'pain'],
+    // Обязательным оставлено только то, без чего этап не закрыт по существу:
+    // масштаб, объём, касса и боль. Город, агрегаторы и тип доставки полезны,
+    // но не мешают продавать дальше — их заполняют по ходу
+    requiredFields: ['points', 'orders_per_day', 'pos', 'pain'],
     cadence: [] },
   { key: 'meeting', label: 'Демо назначено', kind: 'open', ownerRole: 'sdr', slaHours: 24, probability: 25,
     // Дата демо из критериев убрана: поля для неё в карточке нет, и этап
@@ -92,10 +95,15 @@ const STAGE_SEED: Array<{
     requiredFields: ['dm_name'],
     cadence: [{ day: 0, title: 'Напомнить о встрече за 2 часа', channel: 'telegram' }] },
   { key: 'demo', label: 'Демо проведено', kind: 'open', ownerRole: 'ae', slaHours: 24, probability: 30,
-    requiredFields: ['dm_confirmed', 'budget_stated', 'next_step', 'next_step_at'],
+    // Следующий шаг уже требуется глобально: без него сделка через 48 ч
+    // помечается брошенной, и дублировать это критерием — двойной учёт.
+    // Бюджет со слов клиент часто не называет, а принуждение к цифре даёт
+    // выдуманную: он остаётся обязательным на КП, где сумма настоящая
+    requiredFields: ['dm_confirmed'],
     cadence: [] },
   { key: 'kp', label: 'КП отправлено', kind: 'open', ownerRole: 'ae', slaHours: 336, probability: 40,
-    requiredFields: ['kp_file', 'monthly_amount', 'valid_till'],
+    // Срок действия КП не гейт: каденция работает от дня отправки
+    requiredFields: ['kp_file', 'monthly_amount'],
     cadence: [
       { day: 1, title: 'Подтвердить получение КП', channel: 'telegram' },
       { day: 3, title: 'Звонок: что вызывает сомнения', channel: 'call' },
@@ -103,7 +111,8 @@ const STAGE_SEED: Array<{
       { day: 14, title: 'Финальный звонок, срок КП истекает', channel: 'call' },
     ] },
   { key: 'contract', label: 'Договор', kind: 'open', ownerRole: 'ae', slaHours: 336, probability: 70,
-    requiredFields: ['legal_name', 'start_date'],
+    // Дату старта на подписании обычно ещё не знают
+    requiredFields: ['legal_name'],
     cadence: [
       { day: 2, title: 'Напомнить про реквизиты', channel: 'telegram' },
       { day: 5, title: 'Звонок по договору', channel: 'call' },
@@ -134,7 +143,7 @@ const ENTERPRISE_STAGE_SEED: Array<{
     requiredFields: ['dm_name', 'points', 'pain'],
     cadence: [{ day: 0, title: 'Напомнить о встрече за 2 часа', channel: 'telegram' }] },
   { key: 'pilot', label: 'Пилот / POC', kind: 'open', ownerRole: 'kam', slaHours: 720, probability: 40,
-    requiredFields: ['next_step', 'next_step_at'],
+    requiredFields: [],
     cadence: [
       { day: 7, title: 'Промежуточные итоги пилота', channel: 'call' },
       { day: 21, title: 'Финальные метрики пилота', channel: 'call' },
@@ -282,7 +291,52 @@ async function seedBatch(
   )
 }
 
+/**
+ * Обязательные поля этапов: приведение уже заведённых воронок к сиду.
+ *
+ * Сид не трогает существующие строки (ON CONFLICT DO NOTHING), а проверка
+ * перехода читает required_fields из базы — значит сокращение списка нужно
+ * донести отдельным UPDATE. Через SCHEMA_VERSION делать нельзя: смена версии
+ * гоняет весь DDL продаж, сто с лишним запросов подряд, и это ощущается
+ * как зависание системы.
+ */
+const REQUIRED_TRIM: Array<[string, string[]]> = [
+  ['qualified', ['points', 'orders_per_day', 'pos', 'pain']],
+  ['demo', ['dm_confirmed']],
+  ['kp', ['kp_file', 'monthly_amount']],
+  ['contract', ['legal_name']],
+  ['pilot', []],
+]
+
+let requiredTrimmed = false
+
+async function trimRequiredFields(sql: SQL): Promise<void> {
+  if (requiredTrimmed) return
+  // Сначала один дешёвый вопрос «есть ли что править»: на холодном старте
+  // после выкладки правки уже не нужны, и платить за пять UPDATE каждый раз
+  // незачем — дорога до базы ≈190 мс
+  const [pending] = await sql`
+    SELECT 1 AS x FROM sales_stages
+    WHERE (key = 'qualified' AND jsonb_array_length(required_fields) > 4)
+       OR (key = 'demo'      AND jsonb_array_length(required_fields) > 1)
+       OR (key = 'kp'        AND jsonb_array_length(required_fields) > 2)
+       OR (key = 'contract'  AND jsonb_array_length(required_fields) > 1)
+       OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)
+    LIMIT 1
+  ` as any[]
+  if (!pending) { requiredTrimmed = true; return }
+
+  for (const [key, fields] of REQUIRED_TRIM) {
+    await sql`
+      UPDATE sales_stages SET required_fields = ${JSON.stringify(fields)}::jsonb
+      WHERE key = ${key} AND required_fields IS DISTINCT FROM ${JSON.stringify(fields)}::jsonb
+    `
+  }
+  requiredTrimmed = true
+}
+
 export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> {
+  await trimRequiredFields(sql)
   if (ensuredOrgs.has(orgId)) return
 
   // Быстрый путь: одна строка с версией схемы
