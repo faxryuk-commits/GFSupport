@@ -8,6 +8,7 @@ import { InlineField, OwnerPicker, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { TasksCard } from './TasksCard'
+import { BookMeetingModal } from './BookMeetingModal'
 import { PaymentsCard } from './PaymentsCard'
 import { SpecCard } from './SpecCard'
 import { ActivityCard } from './ActivityCard'
@@ -172,6 +173,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
       .then(d => { setData(d); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить сделку'))
   }, [id])
+
+  const [meetingOpen, setMeetingOpen] = useState(false)
 
   useEffect(() => { load() }, [load])
 
@@ -697,7 +700,29 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           {/* Поступления: отметку ставит руководитель (team приходит только лидам) */}
           {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
 
+          {/* Встреча заводится отсюда: назначать её в календаре отдельно значит
+              каждый раз сверять, кто свободен, и терять привязку к сделке */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setMeetingOpen(true)}
+              className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+            >Назначить встречу</button>
+          </div>
+
           <TasksCard dealId={id} initial={tasks} />
+
+          {meetingOpen && (
+            <BookMeetingModal
+              dealId={id}
+              guestName={contacts[0]?.name || null}
+              guestEmail={contacts[0]?.email || null}
+              team={data.team || []}
+              defaultAssigneeId={data.owner?.id || null}
+              defaultAssigneeName={data.owner?.name || null}
+              onClose={() => setMeetingOpen(false)}
+              onDone={load}
+            />
+          )}
 
           {/* ТЗ собирается по ходу продажи: на финише сейлз хочет закрыть
               сделку, а не заполнять анкету, и форма превращается в «уточним» */}
