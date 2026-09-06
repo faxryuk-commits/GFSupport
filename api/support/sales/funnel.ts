@@ -247,10 +247,12 @@ async function handlerInner(req: Request): Promise<Response> {
           AND (${src} = '' OR EXISTS (
             SELECT 1 FROM sales_leads sl WHERE sl.id = d.source_lead_id AND sl.source_id = ${src}))
           AND (${cityLike} = '' OR d.city ILIKE ${cityLike})
-          AND (${pos} = '' OR d.pos = ${pos})
-          AND (${segment} = '' OR d.segment = ${segment})
-          AND (${tariff} = '' OR d.tariff = ${tariff})
-          AND (${ordersPerDay} = '' OR d.orders_per_day = ${ordersPerDay})
+          -- Значений может быть несколько через запятую: вопросы у сейлза
+          -- множественные — «все на iiko и Poster», «Start вместе с Medium»
+          AND (${pos} = '' OR d.pos = ANY(string_to_array(${pos}, ',')))
+          AND (${segment} = '' OR d.segment = ANY(string_to_array(${segment}, ',')))
+          AND (${tariff} = '' OR d.tariff = ANY(string_to_array(${tariff}, ',')))
+          AND (${ordersPerDay} = '' OR d.orders_per_day = ANY(string_to_array(${ordersPerDay}, ',')))
           -- NULLIF обязателен: пустую строку Postgres приводит к timestamptz
           -- до проверки левой части OR и падает на «invalid input syntax»
           AND (${from} = '' OR d.created_at >= NULLIF(${from}, '')::timestamptz)

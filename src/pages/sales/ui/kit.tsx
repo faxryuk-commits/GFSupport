@@ -975,6 +975,68 @@ export const FilterBar = ({ active, children, right }: {
 }
 
 /**
+ * Выбор нескольких значений сразу.
+ *
+ * Обычный select умеет одно, а вопросы у сейлза множественные: «покажи всех
+ * на iiko и Poster», «Start и Medium вместе». Одиночный выбор заставлял
+ * прогонять один и тот же отчёт по очереди и складывать в голове.
+ */
+export const MultiPick = ({ label, values, options, onChange }: {
+  label: string
+  values: string[]
+  options: string[]
+  onChange: (v: string[]) => void
+}) => {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const toggle = (v: string) =>
+    onChange(values.includes(v) ? values.filter(x => x !== v) : [...values, v])
+
+  return (
+    <div ref={box} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className={`border rounded-lg px-2.5 py-1.5 text-[12.5px] whitespace-nowrap ${
+          values.length ? 'border-blue-400 text-blue-700 bg-blue-50' : 'border-gray-300 text-gray-600'}`}>
+        {label}{values.length ? ` · ${values.length}` : ''} ▾
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-40 min-w-[190px] max-h-64 overflow-y-auto
+                        bg-white border border-gray-200 rounded-xl shadow-lg py-1">
+          {!options.length && (
+            <div className="px-3 py-2 text-[12px] text-gray-400">Значений пока нет</div>
+          )}
+          {options.map(o => (
+            <label key={o}
+              className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-gray-700
+                         hover:bg-gray-50 cursor-pointer">
+              <input type="checkbox" checked={values.includes(o)} onChange={() => toggle(o)}
+                className="accent-blue-500" />
+              <span className="truncate">{o}</span>
+            </label>
+          ))}
+          {values.length > 0 && (
+            <button onClick={() => onChange([])}
+              className="w-full text-left px-3 py-1.5 text-[11.5px] text-gray-400 hover:text-red-600 border-t border-gray-100 mt-1">
+              очистить
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * Панель массовых действий: появляется, когда что-то отмечено.
  * Отмечать по одному и повторять действие двадцать раз — не работа.
  */

@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { useAuth } from '@/shared/hooks/useAuth'
-import { Drawer } from './kit'
+
 
 /**
  * Встречи рядом с работой, а не на отдельной странице.
  *
- * Полоска в шапке показывает нагрузку недели, боковое окно разворачивает
- * подробности. Отдельная страница здесь была лишней: воронка — рабочая
+ * Полоска в шапке показывает нагрузку недели, попап под ней разворачивает
+ * подробности. Боковое окно уводило внимание к краю экрана и перекрывало
+ * доску — календарь смотрят мельком, между делом, и он должен раскрываться
+ * там же, где на него посмотрели. Отдельная страница здесь была лишней: воронка — рабочая
  * поверхность, и уходить с неё ради расписания значит терять контекст.
  *
  * Календарь общий на команду: занятое время занято для всех, а чужую встречу
@@ -80,6 +82,23 @@ export function MeetingsPanel() {
     return dow === 0 ? 0 : Math.min(5, dow - 1)
   })
   const [sel, setSel] = useState<string | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setMoving(null) }
+    }
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setOpen(false); setMoving(null) }
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -166,7 +185,7 @@ export function MeetingsPanel() {
   const todayKey = isoDay(new Date())
 
   return (
-    <>
+    <div ref={box} className="relative">
       {/* полоска в шапке */}
       <div className="flex items-stretch border border-gray-200 rounded-lg overflow-hidden bg-white">
         <div className="flex items-center gap-1.5 px-2.5 border-r border-gray-200 bg-gray-50/70 text-[11px] font-bold text-gray-500 whitespace-nowrap">
@@ -207,8 +226,11 @@ export function MeetingsPanel() {
         >развернуть →</button>
       </div>
 
-      <Drawer open={open} onClose={() => { setOpen(false); setMoving(null) }} title="Встречи">
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100">
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-40 w-[min(560px,calc(100vw-3rem))]
+                        max-h-[70vh] overflow-hidden flex flex-col
+                        bg-white border border-gray-200 rounded-xl shadow-xl">
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 flex-none">
           <div className="flex border border-gray-200 rounded-lg overflow-hidden">
             {(['day', 'week'] as const).map(m => (
               <button key={m} onClick={() => setMode(m)}
@@ -234,7 +256,7 @@ export function MeetingsPanel() {
             className="px-2 py-1 text-[11px] font-bold border border-gray-200 rounded-md text-gray-500">→</button>
         </div>
 
-        <div className="px-4 py-3 space-y-2">
+        <div className="px-4 py-3 space-y-2 overflow-y-auto">
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[12px] text-red-700">{error}</div>
           )}
@@ -369,7 +391,8 @@ export function MeetingsPanel() {
             <p className="text-[11px] text-gray-400 text-center pt-1">Всего за неделю: {total}</p>
           )}
         </div>
-      </Drawer>
-    </>
+        </div>
+      )}
+    </div>
   )
 }
