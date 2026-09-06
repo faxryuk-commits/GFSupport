@@ -206,7 +206,9 @@ export default async function handler(req: Request): Promise<Response> {
     const { pbxProbeMethods } = await import('../_lib/pbx.js')
     const cfgP = await readPbxConfig(sql, orgId)
     if (!cfgP) return json({ error: 'АТС не настроена' }, 400)
-    const out = await pbxProbeMethods(cfgP, [
+    const custom = String(url.searchParams.get('paths') || '').split(',')
+      .map(s => s.trim()).filter(s => /^[a-z_]+(\/[a-z_]+)*\.json$/.test(s)).slice(0, 12)
+    const out = await pbxProbeMethods(cfgP, custom.length ? custom : [
       'hangup.json', 'call/hangup.json', 'now/hangup.json', 'calls/hangup.json', 'channel/hangup.json',
     ])
     return json({ out })

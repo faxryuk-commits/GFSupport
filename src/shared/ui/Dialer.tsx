@@ -43,6 +43,9 @@ export function Dialer() {
   const [incoming, setIncoming] = useState<Array<{
     number: string; leadId: string | null; leadName: string | null; staff?: string | null
   }>>([])
+  // Скрытые плашки: сбросить звонок на телефоне из браузера нельзя (у АТС
+  // нет такого метода — проверено), но убрать уведомление с экрана — можно
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
@@ -299,14 +302,15 @@ export function Dialer() {
 
       {/* Входящий прямо сейчас: события вебхука АТС — карточка всплывает
           ещё до снятой трубки. Свёрнутая трубка активность не показывает */}
-      {!tucked && incoming.length > 0 && (
+      {!tucked && incoming.filter(c => !dismissed.has(c.number)).length > 0 && (
         <div className="fixed bottom-5 right-20 z-40 flex flex-col gap-1.5 items-end">
-          {incoming.map((c, i) => {
+          {incoming.filter(c => !dismissed.has(c.number)).map((c, i) => {
             const p = parsePhone(c.number)
             return (
               <div key={`${c.number}_${i}`}
+                title="Это уведомление АТС: звонок идёт на телефон или приложение OnlinePBX. Ответить или сбросить — там; из браузера АТС сброс не принимает"
                 className="flex items-center gap-2 bg-white border border-emerald-300 rounded-full
-                           shadow-lg pl-3 pr-2 py-1.5">
+                           shadow-lg pl-3 pr-1.5 py-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-none" />
                 <span className="text-[12px] text-gray-800 tabular-nums">
                   ↓ {p.valid ? p.pretty : c.number}
@@ -321,6 +325,15 @@ export function Dialer() {
                 ) : (
                   <span className="text-[11px] text-gray-400">номер новый</span>
                 )}
+                {/* Где звонит — словами: плашка без кнопок читалась как звонилка,
+                    в которой «нельзя сбросить». Это не звонилка, это табло */}
+                <span className="text-[10.5px] text-gray-400 whitespace-nowrap">· на телефоне</span>
+                <button
+                  onClick={() => setDismissed(s => new Set(s).add(c.number))}
+                  title="Скрыть уведомление"
+                  className="w-5 h-5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 text-[11px] leading-none">
+                  ✕
+                </button>
               </div>
             )
           })}
