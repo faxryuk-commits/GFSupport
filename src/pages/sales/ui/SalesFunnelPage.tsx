@@ -491,7 +491,7 @@ export function SalesFunnelPage() {
                 {leadsIn(col).map(l => {
                   const phone = parsePhone(l.phone, l.market_id)
                   return (
-                    <LeadCard
+                    <LeadCard key={l.id}
                       l={l}
                       showFlag={!region}
                       busy={busy === l.id}
@@ -563,7 +563,7 @@ export function SalesFunnelPage() {
                 {dealsIn(st.key).map(d => {
                   const stuck = Boolean(d.stalled_at) || !d.next_step_at
                   return (
-                    <DealCard
+                    <DealCard key={d.id}
                       d={d}
                       showFlag={!region}
                       busy={busy === d.id}
