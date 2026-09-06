@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CallPhone } from '@/shared/ui'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
+import { MeetingsPanel } from './MeetingsPanel'
 import { Chip, PageShell, Skeleton, money, moneyList, fmtDateTime, slaTone, slaText,
          useAutoRefresh, Drawer, FilterBar , workMorningIn, MarketFlag } from './kit'
 import { RegionBadge, useRegion } from './region'
@@ -39,6 +40,7 @@ interface Deal {
   currency: string; city: string | null; pos: string | null; points: number | null
   orders_per_day: string | null; tariff: string | null; next_step: string | null
   next_step_at: string | null; stage_since: string; stalled_at: string | null
+  meeting_at: string | null
   updated_at: string | null; owner_name: string | null; phone: string | null
   doc_opens: number | null; stage_key: string; market_id?: string | null
   won_at?: string | null; lost_at?: string | null; lost_reason?: string | null
@@ -262,6 +264,7 @@ export function SalesFunnelPage() {
               </button>
             ))}
           </div>
+          <MeetingsPanel />
           <RegionBadge scope="funnel" />
         </div>
       </div>
@@ -513,6 +516,14 @@ export function SalesFunnelPage() {
                           : 'шаг не назначен'}
                         {d.owner_name ? ` · ${d.owner_name}` : ''}
                       </div>
+                      {/* Назначенная встреча — это и есть следующий шаг, только
+                          подтверждённый клиентом: на доске её видно без захода в карточку */}
+                      {d.meeting_at && (
+                        <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded
+                                        bg-blue-50 text-blue-700 text-[9.5px] font-bold">
+                          📅 {fmtDateTime(d.meeting_at)}
+                        </div>
+                      )}
                       {/* Карточки стоят по времени последнего движения, значит
                           это время должно быть видно — иначе порядок необъясним */}
                       <div className="text-[10px] text-gray-400 tabular-nums">

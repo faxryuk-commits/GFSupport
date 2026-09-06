@@ -210,7 +210,7 @@ async function handlerInner(req: Request): Promise<Response> {
     sql`
       SELECT * FROM (
         SELECT d.id, d.account_id, d.title, d.monthly_amount, d.currency, d.city, d.pos, d.points, d.market_id,
-               d.orders_per_day, d.tariff, d.next_step, d.next_step_at, d.stage_since,
+               d.orders_per_day, d.tariff, d.next_step, d.next_step_at, d.stage_since, d.meeting_at,
                d.stalled_at, d.updated_at, a.name AS account, ag.name AS owner_name,
                (SELECT c.phone FROM sales_contacts c WHERE c.account_id = d.account_id
                  ORDER BY c.is_primary DESC LIMIT 1) AS phone,

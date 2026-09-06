@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, CalendarDays,
+  Plug, Handshake, Inbox, Building2, Phone,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
@@ -232,9 +232,6 @@ const navGroups: NavGroup[] = [
       { path: '/sales/leads', label: 'Лиды', icon: Inbox, badgeKey: 'salesLeads',
         badgeHint: 'назначены на вас и ещё не тронуты' },
       { path: '/sales/accounts', label: 'Аккаунты', icon: Building2 },
-      // Календарь общий на команду: своё расписание без чужого бесполезно —
-      // подхватить встречу можно только увидев, что коллега не успевает
-      { path: '/sales/calendar', label: 'Календарь', icon: CalendarDays },
       // Диалоги продаж отдельно от поддержки: там незнакомый человек, которого
       // убеждают, тут действующий клиент с проблемой — общий список
       // из четырёхсот чатов не годится ни тем, ни другим

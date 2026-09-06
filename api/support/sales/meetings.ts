@@ -22,6 +22,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * GET  ?action=slots&date= свободные слоты дня
  * POST ?action=create      { dealId?, leadId?, startAt, durationMin?, title?, assigneeAgentId?, guestEmail?, guestName? }
  * POST ?action=reassign    { id, assigneeAgentId }  — подхватить чужую встречу
+ * POST ?action=reschedule  { id, startAt, durationMin? }  — перенести на другое время
  * POST ?action=cancel      { id }
  */
 
@@ -242,6 +243,65 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting'
     `
     return json({ ok: true })
+  }
+
+  // ─── Перенос ────────────────────────────────────────────────────────────────
+  if (req.method === 'POST' && action === 'reschedule') {
+    const body = await req.json().catch(() => null) as any
+    if (!body?.id) return json({ error: 'Не указана встреча' }, 400)
+    const start = new Date(String(body.startAt || ''))
+    if (isNaN(start.getTime())) return json({ error: 'Неверное время' }, 400)
+    if (start.getTime() < Date.now()) return json({ error: 'Это время уже прошло' }, 400)
+
+    const [row] = await sql`
+      SELECT google_event_id FROM sales_tasks
+      WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting' LIMIT 1
+    ` as any[]
+    if (!row) return json({ error: 'Встреча не найдена' }, 404)
+
+    // Новое время могло быть занято, пока окно открыто, — календарь общий
+    const [clash] = await sql`
+      SELECT id FROM sales_tasks
+      WHERE org_id = ${orgId} AND kind = 'meeting' AND status <> 'cancelled'
+        AND due_at = ${start.toISOString()} AND id <> ${body.id} LIMIT 1
+    ` as any[]
+    if (clash) return json({ error: 'slot_taken', message: 'Это время только что заняли — выберите другое' }, 409)
+
+    const duration = [15, 30, 45, 60, 90, 120].includes(Number(body.durationMin))
+      ? Number(body.durationMin) : cfg.slotMinutes
+    const end = new Date(start.getTime() + duration * 60_000)
+
+    // Событие патчим, а не пересоздаём: ссылка Meet и приглашение клиента
+    // должны выжить, иначе перенос выглядит как отмена и новая встреча
+    const token = await getGoogleAccessToken(cfg)
+    if (token && row.google_event_id) {
+      try {
+        await fetch(
+          `${CAL_API}/calendars/primary/events/${encodeURIComponent(row.google_event_id)}?sendUpdates=all`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              start: { dateTime: start.toISOString(), timeZone: 'Asia/Tashkent' },
+              end: { dateTime: end.toISOString(), timeZone: 'Asia/Tashkent' },
+            }),
+          },
+        )
+      } catch { /* в CRM переносим в любом случае */ }
+    }
+
+    await sql`
+      UPDATE sales_tasks SET due_at = ${start.toISOString()}
+      WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting'
+    `
+    // Сделка знает время встречи отдельно — иначе в карточке останется старое
+    await sql`
+      UPDATE sales_deals SET meeting_at = ${start.toISOString()}
+      WHERE org_id = ${orgId} AND id = (
+        SELECT deal_id FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId}
+      )
+    `
+    return json({ ok: true, startAt: start.toISOString() })
   }
 
   // ─── Отмена ─────────────────────────────────────────────────────────────────
