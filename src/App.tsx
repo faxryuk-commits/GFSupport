@@ -30,6 +30,7 @@ const OrgRegisterPage = lazy(() => import('@/pages/org-register/ui/OrgRegisterPa
 const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const PublicDocPage = lazy(() => import('@/pages/doc/ui/PublicDocPage'))
 const ClientPortalPage = lazy(() => import('@/pages/portal/ui/ClientPortalPage'))
+const PublicBookPage = lazy(() => import('@/pages/book/ui/PublicBookPage'))
 const SalesQueuePage = lazy(() => import('@/pages/sales/ui/SalesQueuePage'))
 const SalesDealPage = lazy(() => import('@/pages/sales/ui/SalesDealPage'))
 const SalesDealsPage = lazy(() => import('@/pages/sales/ui/SalesDealsPage'))
@@ -93,6 +94,8 @@ export default function App() {
         <Route path="/d/:token" element={<PublicDocPage />} />
         {/* Клиентский статус-портал: ссылка живёт в группе клиента */}
         <Route path="/r/:token" element={<ClientPortalPage />} />
+        {/* Публичная бронь встречи: ссылку ставит сайт, авторизация не нужна */}
+        <Route path="/b/:token" element={<PublicBookPage />} />
 
         <Route element={<MainLayout />}>
           <Route path="/overview" element={<DashboardPage />} />

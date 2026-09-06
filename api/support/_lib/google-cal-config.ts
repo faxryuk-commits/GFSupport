@@ -25,6 +25,7 @@ export interface GoogleCalConfig {
   workTo: number
   slotMinutes: number
   publicBooking: boolean
+  publicToken: string | null
 }
 
 const DEFAULTS = {
@@ -50,6 +51,7 @@ export async function ensureGoogleCalSchema(sql: any): Promise<void> {
         work_to SMALLINT NOT NULL DEFAULT 19,
         slot_minutes SMALLINT NOT NULL DEFAULT 60,
         public_booking BOOLEAN NOT NULL DEFAULT false,
+        public_token VARCHAR(60),
         connected_by VARCHAR(50),
         connected_by_name VARCHAR(150),
         connected_at TIMESTAMPTZ,
@@ -66,6 +68,8 @@ export async function ensureGoogleCalSchema(sql: any): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `
+    // Столбец мог не появиться, если таблица создана прошлой версией
+    await sql`ALTER TABLE support_google_calendar ADD COLUMN IF NOT EXISTS public_token VARCHAR(60)`
     // Доступ персональный: у каждого свой ящик и своё расписание
     await sql`
       CREATE TABLE IF NOT EXISTS support_google_agent (
@@ -112,6 +116,7 @@ export async function readGoogleCalConfig(orgId: string): Promise<GoogleCalConfi
     workTo: row?.work_to ?? DEFAULTS.workTo,
     slotMinutes: row?.slot_minutes ?? DEFAULTS.slotMinutes,
     publicBooking: Boolean(row?.public_booking),
+    publicToken: row?.public_token ?? null,
   }
 }
 

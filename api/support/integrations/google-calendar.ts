@@ -106,15 +106,21 @@ export default async function handler(req: Request): Promise<Response> {
     const to = Math.max(from + 1, Math.min(24, parseInt(body.workTo, 10) || cfg.workTo))
     const slot = [15, 30, 45, 60, 90].includes(parseInt(body.slotMinutes, 10))
       ? parseInt(body.slotMinutes, 10) : cfg.slotMinutes
+    // Токен публичной брони заводим один раз и больше не меняем: он уже стоит
+    // ссылкой на сайте, и перевыпуск тихо сломал бы её
+    const publicOn = Boolean(body.publicBooking)
+    const token = cfg.publicToken
+      || (publicOn ? `bk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}` : null)
     await sql`
-      INSERT INTO support_google_calendar (org_id, work_days, work_from, work_to, slot_minutes, public_booking, updated_at)
-      VALUES (${orgId}, ${days.join(',')}, ${from}, ${to}, ${slot}, ${Boolean(body.publicBooking)}, NOW())
+      INSERT INTO support_google_calendar (org_id, work_days, work_from, work_to, slot_minutes, public_booking, public_token, updated_at)
+      VALUES (${orgId}, ${days.join(',')}, ${from}, ${to}, ${slot}, ${publicOn}, ${token}, NOW())
       ON CONFLICT (org_id) DO UPDATE SET
         work_days = EXCLUDED.work_days,
         work_from = EXCLUDED.work_from,
         work_to = EXCLUDED.work_to,
         slot_minutes = EXCLUDED.slot_minutes,
         public_booking = EXCLUDED.public_booking,
+        public_token = COALESCE(support_google_calendar.public_token, EXCLUDED.public_token),
         updated_at = NOW()
     `
     return json({ ok: true })
@@ -157,5 +163,6 @@ export default async function handler(req: Request): Promise<Response> {
     workTo: cfg.workTo,
     slotMinutes: cfg.slotMinutes,
     publicBooking: cfg.publicBooking,
+    publicToken: cfg.publicToken,
   })
 }
