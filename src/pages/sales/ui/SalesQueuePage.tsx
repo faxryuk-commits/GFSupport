@@ -3,6 +3,7 @@ import { CallPhone } from '@/shared/ui'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { SalesDealPage } from './SalesDealPage'
+import { MeetingsPanel } from './MeetingsPanel'
 import { PageShell, useAutoRefresh, fmtDateTime, slaTone, slaText, Skeleton , Drawer , workMorningIn } from './kit'
 
 /**
@@ -211,7 +212,10 @@ export function SalesQueuePage() {
             кому обещали перезвонить. Пусто — значит на сегодня всё.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Свои встречи там же, где планируется день: иначе сейлз собирает
+              расписание в одном месте, а работает по нему в другом */}
+          <MeetingsPanel />
           <Link to="/sales/deals" className="text-[12.5px] px-3 py-1.5 border border-gray-300 rounded-lg hover:border-blue-500 hover:text-blue-600">
             Все сделки
           </Link>
