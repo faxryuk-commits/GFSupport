@@ -365,6 +365,15 @@ export default async function handler(req: Request): Promise<Response> {
       UPDATE sales_tasks SET due_at = ${start.toISOString()}
       WHERE id = ${body.id} AND org_id = ${orgId} AND kind = 'meeting'
     `
+    // Напоминание каденции привязано ко времени встречи — при переносе оно
+    // должно поехать следом, иначе напомнит о встрече, которой уже нет
+    await sql`
+      UPDATE sales_tasks
+      SET due_at = ${new Date(start.getTime() - 2 * 3600_000).toISOString()}, reminded_at = NULL
+      WHERE org_id = ${orgId} AND kind = 'cadence' AND done_at IS NULL
+        AND deal_id = (SELECT deal_id FROM sales_tasks WHERE id = ${body.id} AND org_id = ${orgId})
+        AND title ILIKE '%встрече%'
+    `
     // Сделка знает время встречи отдельно — иначе в карточке останется старое
     await sql`
       UPDATE sales_deals SET meeting_at = ${start.toISOString()}

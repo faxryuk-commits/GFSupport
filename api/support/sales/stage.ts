@@ -178,13 +178,33 @@ async function handlerInner(req: Request): Promise<Response> {
   // ─── 4. Каденция целевого этапа ─────────────────────────────────────────────
   const cadence: Array<{ day: number; title: string; channel?: string }> =
     Array.isArray(target.cadence) ? target.cadence : []
+
+  /**
+   * Срок шага каденции.
+   *
+   * Шаги с day > 0 отсчитываются от смены этапа — «через 3 дня позвонить».
+   * А day = 0 на этапе с назначенным демо означает «перед встречей», и
+   * отсчитывать его от смены этапа неверно: задача «напомнить о встрече
+   * за 2 часа» вставала на текущий момент и срабатывала, когда встреча
+   * ещё через неделю. Теперь у сделки есть настоящее время встречи —
+   * привязываемся к нему.
+   */
+  const MEETING_LEAD_MS = 2 * 3600_000
+  const meetingAt = deal.meeting_at ? new Date(deal.meeting_at) : null
+  const dueFor = (day: number): string => {
+    if (day === 0 && meetingAt && meetingAt.getTime() - MEETING_LEAD_MS > Date.now()) {
+      return new Date(meetingAt.getTime() - MEETING_LEAD_MS).toISOString()
+    }
+    return new Date(Date.now() + day * 86_400_000).toISOString()
+  }
+
   for (const step of cadence) {
     await sql`
       INSERT INTO sales_tasks (id, org_id, deal_id, account_id, kind, title, channel,
                                due_at, assignee_agent_id, cadence_step, auto)
       VALUES (${salesId('stk')}, ${orgId}, ${deal.id}, ${deal.account_id}, 'cadence',
               ${step.title}, ${step.channel || null},
-              ${new Date(Date.now() + (step.day || 0) * 86_400_000).toISOString()},
+              ${dueFor(step.day || 0)},
               ${deal.owner_agent_id}, ${step.day || 0}, true)
     `
   }
