@@ -3,7 +3,7 @@ import { acceptLead } from '../_lib/sales-intake.js'
 import {
   ensureGoogleCalSchema, listConnectedAgents, getAgentToken,
 } from '../_lib/google-cal-config.js'
-import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
+import { ensureSalesSchema, salesId, normPhone } from '../_lib/sales-schema.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -30,6 +30,13 @@ function wallToUtc(dateStr: string, minutes: number): Date {
   return new Date(Date.UTC(y, (m || 1) - 1, d || 1) + minutes * 60_000 - TZ * 3600_000)
 }
 const tkDow = (d: Date) => new Date(d.getTime() + TZ * 3600_000).getUTCDay()
+const DOW_RU = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
+const MON_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+function tkParts(d: Date) {
+  const t = new Date(d.getTime() + TZ * 3600_000)
+  return { m: t.getUTCMonth(), day: t.getUTCDate(), dow: t.getUTCDay(), h: t.getUTCHours(), min: t.getUTCMinutes() }
+}
 
 /** Настройки брони по токену. Токен короче 12 знаков не рассматриваем. */
 async function byToken(sql: any, token: string) {
@@ -143,21 +150,73 @@ export default async function handler(req: Request): Promise<Response> {
   if (!free.length) return json({ error: 'Это время только что заняли — выберите другое' }, 409)
   const assignee = leastBusy(free)
 
-  // Лид заводим общим путём: там дедуп по телефону, скоринг и SLA. Своя
-  // вставка означала бы вторую правду о том, как выглядит входящая заявка
-  const lead = await acceptLead(sql, cfg.orgId, {
-    source: 'site',
-    lead_kind: 'form',
-    name,
-    phone,
-    contact_name: name,
-    text: [comment, email ? `Email: ${email}` : ''].filter(Boolean).join('\n') || null,
-    landing_url: String(body?.landingUrl || '') || null,
-    utm_source: String(body?.utmSource || '') || null,
-    utm_medium: String(body?.utmMedium || '') || null,
-    utm_campaign: String(body?.utmCampaign || '') || null,
-    raw: { booking: true, startAt: start.toISOString(), email },
-  })
+  /**
+   * Куда прицепить встречу.
+   *
+   * Человек, который уже есть в воронке, не должен появляться там второй раз.
+   * acceptLead дедуплицирует только по внешнему идентификатору, которого
+   * у брони с сайта нет, — поэтому ищем сами по телефону:
+   *   1. есть открытая сделка у этого телефона — встреча к ней;
+   *   2. есть открытое обращение — встреча к нему;
+   *   3. никого нет — заводим обращение обычным путём.
+   */
+  const pn = normPhone(phone)
+  let dealId: string | null = null
+  let leadId: string | null = null
+
+  if (pn) {
+    const [d] = await sql`
+      SELECT d.id FROM sales_deals d
+      JOIN sales_contacts c ON c.account_id = d.account_id
+      WHERE d.org_id = ${cfg.orgId} AND c.phone_norm = ${pn}
+        AND d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL
+      ORDER BY d.updated_at DESC NULLS LAST LIMIT 1
+    ` as any[]
+    dealId = d?.id || null
+    if (!dealId) {
+      const [l] = await sql`
+        SELECT id FROM sales_leads
+        WHERE org_id = ${cfg.orgId} AND phone_norm = ${pn}
+          AND status NOT IN ('rejected', 'converted')
+        ORDER BY created_at DESC LIMIT 1
+      ` as any[]
+      leadId = l?.id || null
+    }
+  }
+
+  // Время встречи — главный факт этой заявки, и он должен читаться первым:
+  // раньше в карточке был только комментарий, и понять, что человек
+  // записался на встречу, было нельзя
+  const p = tkParts(start)
+  const when = `${DOW_RU[p.dow]}, ${p.day} ${MON_RU[p.m]} ${String(p.h).padStart(2, '0')}:${String(p.min).padStart(2, '0')}`
+  const note = [
+    `Забронировал встречу с сайта: ${when} (Ташкент)`,
+    comment ? `Комментарий: ${comment}` : '',
+    email ? `Email: ${email}` : '',
+  ].filter(Boolean).join('\n')
+
+  if (!dealId && !leadId) {
+    const lead = await acceptLead(sql, cfg.orgId, {
+      source: 'site',
+      lead_kind: 'form',
+      name,
+      phone,
+      contact_name: name,
+      text: note,
+      landing_url: String(body?.landingUrl || '') || null,
+      utm_source: String(body?.utmSource || '') || null,
+      utm_medium: String(body?.utmMedium || '') || null,
+      utm_campaign: String(body?.utmCampaign || '') || null,
+      raw: { booking: true, startAt: start.toISOString(), email },
+    })
+    leadId = lead.lead_id || null
+  } else if (leadId) {
+    // Обращение уже есть — дописываем факт брони, а не заводим второе
+    await sql`
+      UPDATE sales_leads SET text = ${note}, raw = ${JSON.stringify({ booking: true, startAt: start.toISOString(), email })}::jsonb
+      WHERE id = ${leadId} AND org_id = ${cfg.orgId}
+    `
+  }
 
   const end = new Date(start.getTime() + cfg.slotMinutes * 60_000)
 
@@ -199,12 +258,21 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   await sql`
-    INSERT INTO sales_tasks (id, org_id, lead_id, kind, title, due_at,
+    INSERT INTO sales_tasks (id, org_id, deal_id, lead_id, kind, title, due_at,
                              assignee_agent_id, auto, google_event_id, meet_url, google_cal_agent_id)
-    VALUES (${salesId('stk')}, ${cfg.orgId}, ${lead.lead_id || null}, 'meeting',
-            ${`Встреча · ${name}`.slice(0, 500)}, ${start.toISOString()},
+    VALUES (${salesId('stk')}, ${cfg.orgId}, ${dealId}, ${leadId}, 'meeting',
+            ${`Встреча с сайта · ${name}`.slice(0, 500)}, ${start.toISOString()},
             ${assignee}, false, ${googleEventId}, ${meetUrl}, ${googleEventId ? assignee : null})
   `
+
+  // Сделке проставляем время встречи — по нему метка на доске и якорь
+  // напоминания, ровно как при назначении изнутри
+  if (dealId) {
+    await sql`
+      UPDATE sales_deals SET meeting_at = ${start.toISOString()}
+      WHERE id = ${dealId} AND org_id = ${cfg.orgId}
+    `
+  }
 
   // Наружу — только то, что касается самого клиента
   return json({ ok: true, startAt: start.toISOString(), meetUrl })
