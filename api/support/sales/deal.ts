@@ -137,6 +137,39 @@ export default async function handler(req: Request): Promise<Response> {
         case 'delivery_type': await sql`UPDATE sales_deals SET delivery_type = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'pain': await sql`UPDATE sales_deals SET pain = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'segment': await sql`UPDATE sales_deals SET segment = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        // Цена тарифа известна из прайса — спрашивать её отдельно значит
+        // разрешить сделке разойтись с прайс-листом. Подставляем при выборе
+        // тарифа, но не затираем уже проставленную: индивидуальная цена
+        // должна оставаться возможной
+        case 'tariff': {
+          const [d0] = await sql`
+            SELECT market_id, monthly_amount FROM sales_deals
+            WHERE id = ${body.id} AND org_id = ${orgId} LIMIT 1
+          ` as any[]
+          let price: number | null = null
+          if (v && !d0?.monthly_amount) {
+            const [cur] = await sql`
+              SELECT currency FROM sales_market_settings
+              WHERE org_id = ${orgId} AND market_id = ${d0?.market_id || null} LIMIT 1
+            ` as any[]
+            const currency = cur?.currency || 'UZS'
+            const [item] = await sql`
+              SELECT prices FROM sales_price_items
+              WHERE org_id = ${orgId} AND category = 'plan' AND is_active = true
+                AND lower(name) LIKE ${'%' + String(v).toLowerCase()}
+              LIMIT 1
+            ` as any[]
+            const p = item?.prices?.[currency]
+            if (typeof p === 'number') price = p
+          }
+          await sql`
+            UPDATE sales_deals
+            SET tariff = ${v || null},
+                monthly_amount = COALESCE(monthly_amount, ${price})
+            WHERE id = ${body.id} AND org_id = ${orgId}
+          `
+          break
+        }
         case 'dm_role': await sql`UPDATE sales_deals SET dm_role = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         // ЛПР выбирается из контактов клиента. Имя и роль при этом копируем
         // в сделку: на них завязаны критерий перехода и выгрузки, и ломать
@@ -159,7 +192,6 @@ export default async function handler(req: Request): Promise<Response> {
         case 'dm_confirmed': await sql`UPDATE sales_deals SET dm_confirmed = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'meeting_at': await sql`UPDATE sales_deals SET meeting_at = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'budget_stated': await sql`UPDATE sales_deals SET budget_stated = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
-        case 'tariff': await sql`UPDATE sales_deals SET tariff = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'monthly_amount': await sql`UPDATE sales_deals SET monthly_amount = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'onetime_amount': await sql`UPDATE sales_deals SET onetime_amount = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         // Изменили размер скидки — прежнее подтверждение больше не действует:

@@ -85,16 +85,28 @@ const QUAL_FIELDS = [
   ['city', 'Город'], ['segment', 'Тип заведения'], ['points', 'Точек'],
   ['orders_per_day', 'Заказов в день'], ['pos', 'POS-система'],
   ['aggregators', 'Агрегаторы'], ['delivery_type', 'Тип доставки'],
-  ['pain', 'Боль клиента'],
+  ['pain', 'Боль клиента'], ['budget_stated', 'Бюджет со слов'],
 ] as const
 
+/**
+ * То, что решается на КП. Всё остальное отсюда убрано:
+ * — «Подписка в месяц» подставляется из прайса при выборе тарифа
+ *   (остаётся правимой: индивидуальная цена возможна);
+ * — «Валюта» выводится из рынка и показана подписью, а не полем;
+ * — «Бюджет со слов» — факт квалификации, а не наше обещание, и переехал туда;
+ * — реквизиты, дата старта и первый платёж нужны после подписания
+ *   и лежат в свёрнутом блоке ниже.
+ */
 const COMMERCIAL_FIELDS = [
-  ['budget_stated', 'Бюджет со слов'], ['tariff', 'Тариф'],
-  ['monthly_amount', 'Подписка в месяц'], ['onetime_amount', 'Единоразово'],
-  ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'], ['currency', 'Валюта'],
-  ['valid_till', 'КП действует до'], ['expected_close_at', 'Ожидаемое закрытие'],
+  ['tariff', 'Тариф'], ['monthly_amount', 'Подписка в месяц'],
+  ['term_months', 'Срок, мес'], ['discount_pct', 'Скидка, %'],
+  ['onetime_amount', 'Единоразово'], ['valid_till', 'КП действует до'],
+] as const
+
+/** Нужное после подписания — не мешает на этапе переговоров. */
+const AFTER_SIGN_FIELDS = [
   ['legal_name', 'Реквизиты'], ['start_date', 'Дата старта'],
-  ['paid_at', 'Депозит или первый платёж'],
+  ['paid_at', 'Депозит или первый платёж'], ['expected_close_at', 'Ожидаемое закрытие'],
 ] as const
 
 /** Поля да/нет — рендерятся одним кликом, а не текстовым вводом. */
@@ -625,7 +637,8 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             </div>
           </Card>
 
-          <Card title="Коммерческие условия" sub="то, что мы пообещали клиенту">
+          <Card title="Коммерческие условия"
+                sub={`то, что мы пообещали клиенту · ${d.currency || 'UZS'}`}>
             <div className="grid sm:grid-cols-2">
               {COMMERCIAL_FIELDS.map(([f, label]) => (
                 <InlineField key={f} label={label} value={d[f]} money={MONEY_FIELDS.has(f)}
@@ -639,6 +652,23 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               </div>
             )}
           </Card>
+
+          {/* Нужно после подписания: на переговорах эти поля только мешают */}
+          <details className="bg-white border border-gray-200 rounded-xl">
+            <summary className="px-4 py-3 text-[13px] font-semibold text-gray-700 cursor-pointer select-none">
+              После подписания
+              <span className="ml-2 text-[11.5px] font-normal text-gray-400">
+                реквизиты, дата старта, первый платёж
+              </span>
+            </summary>
+            <div className="grid sm:grid-cols-2 border-t border-gray-100">
+              {AFTER_SIGN_FIELDS.map(([f, label]) => (
+                <InlineField key={f} label={label} value={d[f]} money={MONEY_FIELDS.has(f)}
+                  onSave={v => patch(f, v)} when={DATE_FIELDS[f]}
+                  options={optionsFor(refs, f, d.market_id)} />
+              ))}
+            </div>
+          </details>
 
           <Card
             title="Документы"
