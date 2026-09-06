@@ -9,6 +9,7 @@ import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { BookMeetingModal } from './BookMeetingModal'
 import { DealFeed } from './DealFeed'
+import { TeamThread } from './TeamThread'
 import { PaymentsCard } from './PaymentsCard'
 import { SpecCard } from './SpecCard'
 import { ContactsCard } from './ContactsCard'
@@ -822,6 +823,9 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             channelId={data.channelId}
             onChanged={load}
           />
+
+          {/* Разговор о клиенте между своими — при карточке, а не в Telegram */}
+          <TeamThread dealId={id} accountId={data.account?.id} team={data.team || []} />
 
         </div>
       </div>

@@ -7,6 +7,7 @@ import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText } from './kit'
 import { CallInsight } from './CallInsight'
 import { TasksCard } from './TasksCard'
+import { TeamThread } from './TeamThread'
 import { BookMeetingModal } from './BookMeetingModal'
 import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
 
@@ -428,6 +429,9 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
       </div>
 
       <TasksCard leadId={id} accountId={l.account_id || undefined} />
+
+      {/* Разговор о клиенте между своими — при карточке, а не в Telegram */}
+      <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} />
 
       {meetingOpen && (
         <BookMeetingModal

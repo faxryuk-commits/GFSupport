@@ -78,6 +78,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/support/cron/amo-notes",
+      "schedule": "*/3 * * * *"
+    },
+    {
       "path": "/api/support/learning/outcome-scan",
       "schedule": "*/30 * * * *"
     },

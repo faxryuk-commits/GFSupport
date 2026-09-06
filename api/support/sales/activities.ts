@@ -103,7 +103,7 @@ export default async function handler(req: Request): Promise<Response> {
                OR (ac.deal_id IS NULL AND ac.account_id = (
                      SELECT account_id FROM sales_deals WHERE id = ${dealId} AND org_id = ${orgId})))
         ORDER BY ac.happened_at DESC
-        LIMIT 60
+        LIMIT 200
       `
     : await sql`
         SELECT ac.*, ag.name AS agent_name FROM sales_activities ac
