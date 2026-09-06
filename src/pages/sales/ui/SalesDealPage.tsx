@@ -7,11 +7,10 @@ import { useSalesRefs, optionsFor } from './refs'
 import { InlineField, OwnerPicker, Skeleton } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
-import { TasksCard } from './TasksCard'
 import { BookMeetingModal } from './BookMeetingModal'
+import { DealFeed } from './DealFeed'
 import { PaymentsCard } from './PaymentsCard'
 import { SpecCard } from './SpecCard'
-import { ActivityCard } from './ActivityCard'
 import { ContactsCard } from './ContactsCard'
 import { sendMessage } from '@/shared/api/messages'
 import { useAuth } from '@/shared/hooks/useAuth'
@@ -783,7 +782,6 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             >Назначить встречу</button>
           </div>
 
-          <TasksCard dealId={id} initial={tasks} />
 
           {meetingOpen && (
             <BookMeetingModal
@@ -801,88 +799,19 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           {/* ТЗ собирается по ходу продажи: на финише сейлз хочет закрыть
               сделку, а не заполнять анкету, и форма превращается в «уточним» */}
 
-          <ActivityCard dealId={id} accountId={data.account?.id} />
 
-          {/* Переписка рядом со сделкой: иначе диалог читают в одном месте,
-              а работают в другом, и контекст теряется по дороге */}
-          <Card
-            title="Переписка"
-            sub={data.channelId
-              ? 'последние сообщения из чата клиента'
-              : 'чат не привязан — привяжите канал в карточке аккаунта'}
-            right={data.channelId ? (
-              <Link to={`/chats/${data.channelId}`} className="text-[12px] text-blue-600 hover:underline">
-                Открыть чат
-              </Link>
-            ) : null}
-          >
-            {!(data.messages || []).length ? (
-              <div className="px-4 py-4 text-[12.5px] text-gray-400">
-                {data.channelId
-                  ? 'Сообщений пока нет'
-                  : 'Сообщения появятся, когда аккаунт свяжут с каналом: чат из Telegram, WhatsApp или Instagram.'}
-              </div>
-            ) : (
-              <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
-                {(data.messages || []).map((m: any) => (
-                  <div key={m.id} className="px-4 py-2">
-                    <div className="flex justify-between gap-2">
-                      <span className={`text-[11px] font-semibold ${
-                        m.is_from_client ? 'text-blue-700' : 'text-gray-500'}`}>
-                        {m.is_from_client ? (m.sender_name || 'Клиент') : (m.sender_name || 'Мы')}
-                      </span>
-                      <span className="text-[10.5px] text-gray-400">{fmtDate(m.created_at)}</span>
-                    </div>
-                    <div className="text-[12px] text-gray-800 mt-0.5">
-                      {m.text_content || `[${m.content_type || 'вложение'}]`}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* Ответ прямо отсюда: раньше каждая реплика выбрасывала сейлза
-                из сделки в раздел чатов, и возвращался он не всегда */}
-            {data.channelId && (
-              <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/60">
-                <textarea
-                  value={draft} onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendToClient() }}
-                  rows={2} placeholder="Ответить клиенту…"
-                  className="w-full text-[13px] px-3 py-2 border border-gray-200 rounded-lg resize-y
-                             focus:outline-none focus:border-blue-400"
-                />
-                <div className="flex items-center gap-2 mt-2">
-                  <button onClick={sendToClient} disabled={sending || !draft.trim()}
-                    className="text-[12.5px] px-3 py-1.5 rounded-lg bg-blue-600 text-white
-                               hover:bg-blue-700 disabled:opacity-50">
-                    {sending ? 'Отправляем…' : 'Отправить'}
-                  </button>
-                  <span className="text-[11px] text-gray-400">⌘↵ чтобы отправить</span>
-                  {sent && <span className="text-[11.5px] text-emerald-600">Отправлено ✓</span>}
-                </div>
-              </div>
-            )}
-          </Card>
+          {/* Единая лента вместо четырёх блоков: задачи, касания, переписка
+              и движения по этапам — один поток. Порядок событий и есть
+              история сделки, и читаться она должна сверху вниз */}
+          <DealFeed
+            dealId={id}
+            accountId={data.account?.id}
+            messages={data.messages}
+            tasks={tasks}
+            events={events}
+            channelId={data.channelId}
+          />
 
-          <ContactsCard accountId={data.account?.id} market={d.market_id} />
-
-          <Card title="История этапов" sub="каждое движение — событие">
-            <div className="divide-y divide-gray-100">
-              {events.slice(0, 8).map((e, i) => (
-                <div key={i} className="px-4 py-2.5">
-                  <div className="text-[12.5px] text-gray-900">
-                    {e.from_stage ? `${e.from_stage} → ` : ''}{e.to_stage}
-                  </div>
-                  <div className="text-[11px] text-gray-400">
-                    {fmtDate(e.changed_at)} · {e.changed_by || '—'}
-                  </div>
-                </div>
-              ))}
-              {events.length === 0 && (
-                <div className="px-4 py-4 text-[12.5px] text-gray-400">История пуста</div>
-              )}
-            </div>
-          </Card>
         </div>
       </div>
 
