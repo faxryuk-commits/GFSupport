@@ -34,6 +34,8 @@ interface Lead {
   sla_due_at: string | null; first_touch_at: string | null; created_at: string
   text: string | null; lead_kind: string | null; source: string | null
   agent_name: string | null; nurture_step: number | null; nurture_next_at: string | null
+  /** Ассистенту есть куда писать: у клиента есть чат в Telegram или Meta. */
+  assistant_can_write?: boolean
   last_call: LastCall | null
 }
 
@@ -173,6 +175,7 @@ export function SalesFunnelPage() {
     try { localStorage.setItem('funnel.lostOpen', v ? '1' : '0') } catch { /* приватный режим */ }
   }
   const [over, setOver] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const reqRef = useRef(0)
 
   const load = useCallback(() => {
@@ -217,7 +220,12 @@ export function SalesFunnelPage() {
     setBusy(leadId)
     try {
       if (to === 'new') await apiPost('/sales/leads?action=restore', { leadId })
-      else if (to === 'nurture') await apiPost('/sales/leads?action=nurture', { leadId })
+      else if (to === 'nurture') {
+        await apiPost('/sales/leads?action=nurture', { leadId })
+        // Человек должен понять, что произошло: карточка сменила колонку,
+        // и без слов это выглядит как «ушла куда-то»
+        setNotice('Передано ассистенту: он напишет клиенту сам — 4 сообщения за 10 дней. Карточка теперь в «Недозвоне» с меткой «прогрев»; ответ клиента вернёт её вам')
+      }
       else if (to === 'attempting') await apiPost('/sales/leads?action=dial', { leadId })
       // keep: перетаскивание по доске — не «беру себе»: у назначенного лида
       // ответственный сохраняется, забирают только кнопкой «Беру» или передачей
@@ -551,14 +559,28 @@ export function SalesFunnelPage() {
                         >
                           Беру
                         </button>
-                        {l.status !== 'nurture' && (
+                        {/* Ассистент пишет только в чат: без чата кнопки нет —
+                            иначе она лишь прятала обращение из «Новых» */}
+                        {l.status !== 'nurture' && l.assistant_can_write && (
                           <button
                             disabled={busy === l.id}
                             onClick={() => moveLead(l.id, 'nurture')}
+                            title="Ассистент напишет клиенту сам: 4 сообщения за 10 дней. Ответ клиента вернёт обращение вам"
                             className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
                                        hover:border-violet-400 hover:text-violet-700"
                           >
-                            Прогрев
+                            → Ассистенту
+                          </button>
+                        )}
+                        {l.status === 'nurture' && (
+                          <button
+                            disabled={busy === l.id}
+                            onClick={() => moveLead(l.id, 'attempting')}
+                            title="Забрать у ассистента и дозваниваться самому"
+                            className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-600
+                                       hover:border-gray-400"
+                          >
+                            Вернуть себе
                           </button>
                         )}
                       </div>
@@ -815,6 +837,13 @@ export function SalesFunnelPage() {
                         px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 max-w-[560px]">
           {error}
           <button onClick={() => setError(null)} className="font-semibold flex-none">Понятно</button>
+        </div>
+      )}
+      {notice && !error && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white text-[12.5px]
+                        px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 max-w-[560px]">
+          {notice}
+          <button onClick={() => setNotice(null)} className="font-semibold flex-none">Понятно</button>
         </div>
       )}
 

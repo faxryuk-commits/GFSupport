@@ -350,7 +350,25 @@ async function handlerInner(req: Request): Promise<Response> {
       `
       return json({ ok: true })
     }
+    // Прогрев — это цепочка сообщений ассистента в чат клиента: четыре
+    // касания за десять дней, ответ клиента возвращает обращение человеку.
+    // Без чата ассистенту некуда писать, и раньше кнопка просто прятала
+    // обращение из «Новых» — оно «уходило куда-то» и там молчало
     if (action === 'nurture') {
+      const [l] = await sql`
+        SELECT EXISTS (
+                 SELECT 1 FROM sales_accounts a2 JOIN support_channels ch2 ON ch2.id = a2.channel_id
+                 WHERE a2.id = l.account_id
+                   AND (ch2.telegram_chat_id IS NOT NULL
+                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL))) AS can_write
+        FROM sales_leads l WHERE l.id = ${body.leadId} AND l.org_id = ${orgId} LIMIT 1
+      ` as any[]
+      if (!l) return json({ error: 'обращение не найдено' }, 404)
+      if (!l.can_write) {
+        return json({
+          error: 'Ассистенту некуда писать: у обращения нет чата в Telegram, Instagram или Messenger. По телефону он не звонит — позвоните сами или переведите в отказ',
+        }, 409)
+      }
       await sql`
         UPDATE sales_leads SET status = 'nurture', sla_due_at = NULL, updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}

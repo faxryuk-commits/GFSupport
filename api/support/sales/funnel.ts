@@ -204,6 +204,14 @@ async function handlerInner(req: Request): Promise<Response> {
         SELECT l.id, l.name, l.contact_name, l.phone, l.city, l.status, l.icp_score, l.market_id,
                l.sla_due_at, l.first_touch_at, l.created_at, l.text, l.lead_kind,
                l.nurture_step, l.nurture_next_at,
+               -- Прогрев — это сообщения ассистента в чат клиента. Без чата
+               -- (звонок, импорт, форма с одним телефоном) ему некуда писать,
+               -- и кнопка только прятала бы обращение из «Новых»
+               EXISTS (
+                 SELECT 1 FROM sales_accounts a2 JOIN support_channels ch2 ON ch2.id = a2.channel_id
+                 WHERE a2.id = l.account_id
+                   AND (ch2.telegram_chat_id IS NOT NULL
+                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL))) AS assistant_can_write,
                s.label AS source, ag.name AS agent_name,
                ROW_NUMBER() OVER (PARTITION BY l.status ORDER BY l.created_at DESC) AS rn
         FROM sales_leads l

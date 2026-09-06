@@ -118,6 +118,11 @@ export default async function handler(req: Request): Promise<Response> {
     sql`
       SELECT l.*, s.label AS source, s.key AS source_key,
              ag.name AS agent_name,
+             EXISTS (
+                 SELECT 1 FROM sales_accounts a2 JOIN support_channels ch2 ON ch2.id = a2.channel_id
+                 WHERE a2.id = l.account_id
+                   AND (ch2.telegram_chat_id IS NOT NULL
+                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL))) AS assistant_can_write,
              a.id AS account_id, a.name AS account_name, a.city AS account_city,
              a.channel_id, a.instagram, a.telegram, a.website, a.inn
       FROM sales_leads l

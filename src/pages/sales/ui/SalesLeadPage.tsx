@@ -365,10 +365,18 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                   {data.stages!.map(s => <option key={s.id} value={s.key}>{s.label}</option>)}
                 </select>
               )}
-              {l.status !== 'nurture' && (
+              {l.status !== 'nurture' && l.assistant_can_write && (
                 <button disabled={busy} onClick={() => act('nurture')}
+                  title="Ассистент напишет клиенту сам: 4 сообщения за 10 дней. Ответ клиента вернёт обращение вам"
                   className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-violet-400">
-                  На прогрев
+                  → Ассистенту
+                </button>
+              )}
+              {l.status === 'nurture' && (
+                <button disabled={busy} onClick={() => act('dial')}
+                  title="Забрать у ассистента и дозваниваться самому"
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-500">
+                  Вернуть себе
                 </button>
               )}
               <button disabled={busy} onClick={askReason}
