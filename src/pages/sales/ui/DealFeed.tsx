@@ -36,7 +36,7 @@ type Item = {
 const ICONS: Record<string, string> = { call: '📞', meeting: '🤝', note: '📝' }
 
 export function DealFeed({
-  dealId, accountId, messages = [], tasks = [], events = [], channelId,
+  dealId, accountId, messages = [], tasks = [], events = [], channelId, onChanged,
 }: {
   dealId?: string
   accountId?: string | null
@@ -44,11 +44,15 @@ export function DealFeed({
   tasks?: any[]
   events?: any[]
   channelId?: string | null
+  /** Задачи живут в данных сделки — после создания карточку надо перечитать. */
+  onChanged?: () => void
 }) {
   const { agent } = useAuth()
   const [acts, setActs] = useState<Activity[]>([])
-  const [kind, setKind] = useState<'note' | 'call' | 'meeting' | 'message'>(
+  const [kind, setKind] = useState<'note' | 'call' | 'meeting' | 'message' | 'task'>(
     channelId ? 'message' : 'note')
+  // Срок задачи: без него задача не попадёт в очередь дня и не напомнит о себе
+  const [due, setDue] = useState<'today' | 'tomorrow' | 'in3'>('tomorrow')
   // Отправленное показываем сразу: ответ канала доедет с обновлением карточки,
   // а сейлзу нужно видеть, что письмо ушло, в момент отправки
   const [sent, setSent] = useState<Item[]>([])
@@ -130,6 +134,15 @@ export function DealFeed({
           key: `s_${Date.now()}`, at: new Date().toISOString(), icon: '💬',
           who: agent?.name || 'Мы', text: body,
         }])
+      } else if (kind === 'task') {
+        const at = new Date()
+        if (due === 'tomorrow') at.setDate(at.getDate() + 1)
+        if (due === 'in3') at.setDate(at.getDate() + 3)
+        at.setHours(10, 0, 0, 0)
+        await apiPost('/sales/tasks', {
+          dealId, title: body, kind: 'task', dueAt: at.toISOString(),
+        })
+        onChanged?.()
       } else {
         await apiPost('/sales/activities', { dealId, accountId, type: kind, text: body })
         load()
@@ -196,6 +209,7 @@ export function DealFeed({
           {([
             ...(channelId ? [['message', 'Клиенту'] as const] : []),
             ['note', 'Заметка'], ['call', 'Звонок'], ['meeting', 'Встреча'],
+            ['task', 'Задача'],
           ] as const).map(([k, label]) => (
             <button key={k} onClick={() => setKind(k)}
               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
@@ -205,16 +219,32 @@ export function DealFeed({
             </button>
           ))}
         </div>
+        {kind === 'task' && (
+          <div className="flex gap-1.5 mb-2 items-center">
+            <span className="text-[11px] text-gray-400 font-semibold">Когда:</span>
+            {([['today', 'сегодня'], ['tomorrow', 'завтра'], ['in3', 'через 3 дня']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setDue(k)}
+                className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                  due === k ? 'bg-blue-500 text-white border-blue-500'
+                            : 'bg-white text-gray-500 border-gray-200'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-            placeholder={kind === 'message' ? 'Сообщение клиенту' : 'Что произошло — одной строкой'}
+            placeholder={
+              kind === 'message' ? 'Сообщение клиенту'
+                : kind === 'task' ? 'Что нужно сделать'
+                  : 'Что произошло — одной строкой'}
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12.5px]" />
           <button onClick={submit} disabled={busy || !text.trim()}
             className="px-3 py-2 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white disabled:opacity-40">
-            {busy ? '…' : kind === 'message' ? 'Отправить' : 'Записать'}
+            {busy ? '…' : kind === 'message' ? 'Отправить' : kind === 'task' ? 'Поставить' : 'Записать'}
           </button>
         </div>
       </div>

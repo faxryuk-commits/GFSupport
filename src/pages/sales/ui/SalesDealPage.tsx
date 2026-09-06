@@ -813,6 +813,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             tasks={tasks}
             events={events}
             channelId={data.channelId}
+            onChanged={load}
           />
 
         </div>
