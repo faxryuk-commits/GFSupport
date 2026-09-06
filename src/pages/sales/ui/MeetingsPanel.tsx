@@ -49,7 +49,10 @@ const hhmm = (d: Date) => {
 }
 function weekStart(base: Date): Date {
   const p = tk(base)
-  return new Date(Date.UTC(p.y, p.m, p.day - ((p.dow + 6) % 7)) - TZ * 3600_000)
+  // Воскресенье не входит в рабочую неделю Пн–Сб: показываем наступающую,
+  // а не только что закончившуюся — иначе в выходной панель полна прошлого
+  const shift = p.dow === 0 ? -1 : p.dow - 1
+  return new Date(Date.UTC(p.y, p.m, p.day - shift) - TZ * 3600_000)
 }
 
 /** Цвет закреплён за человеком, а не за позицией в списке: иначе доска
@@ -70,7 +73,12 @@ export function MeetingsPanel() {
   const [data, setData] = useState<Data | null>(null)
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<'day' | 'week'>('day')
-  const [dayIdx, setDayIdx] = useState(() => (tk(new Date()).dow + 6) % 7)
+  // В неделе Пн–Сб шесть дней: воскресный индекс 6 выходил за границы массива
+  // и ронял страницу на обращении к days[6]
+  const [dayIdx, setDayIdx] = useState(() => {
+    const dow = tk(new Date()).dow
+    return dow === 0 ? 0 : Math.min(5, dow - 1)
+  })
   const [sel, setSel] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -140,7 +148,8 @@ export function MeetingsPanel() {
     } finally { setBusy(false) }
   }
 
-  const dayList = (byDay.get(isoDay(days[dayIdx])) || [])
+  const activeDay = days[Math.min(Math.max(dayIdx, 0), days.length - 1)]
+  const dayList = (byDay.get(isoDay(activeDay)) || [])
     .sort((a, b) => a.startAt.localeCompare(b.startAt))
   const weekList = (data?.meetings || [])
     .filter(m => m.status !== 'cancelled')
