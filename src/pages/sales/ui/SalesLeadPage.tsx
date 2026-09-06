@@ -379,6 +379,12 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
                   Вернуть себе
                 </button>
               )}
+              {/* Встреча — следующий шаг по обращению; раньше кнопка висела
+                  отдельной строкой между шапкой и задачами */}
+              <button disabled={busy} onClick={() => setMeetingOpen(true)}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50">
+                Назначить встречу
+              </button>
               <button disabled={busy} onClick={askReason}
                 className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600">
                 В отказ
@@ -427,20 +433,6 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         {error && <div className="text-[12px] text-red-600">{error}</div>}
       </header>
 
-      {/* Следующий шаг по лиду ставится здесь же: раньше его записывали в Amo,
-          потому что в карточке для этого не было ничего */}
-      <div className="flex justify-end">
-        <button
-          onClick={() => setMeetingOpen(true)}
-          className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600"
-        >Назначить встречу</button>
-      </div>
-
-      <TasksCard leadId={id} accountId={l.account_id || undefined} />
-
-      {/* Разговор о клиенте между своими — при карточке, а не в Telegram */}
-      <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} />
-
       {meetingOpen && (
         <BookMeetingModal
           leadId={id}
@@ -452,204 +444,219 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         />
       )}
 
-      {/* Квалификация нашими руками. Эти поля менеджер заполнял в Amo, а мы
-          читали их из сырых данных заявки — без Amo они бы осиротели */}
-      <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
-        <div className="grid sm:grid-cols-2">
-          {QUAL_FIELDS.map(([f, label]) => {
-            const v = qual(f)
-            const need = GATING.has(f) && (v === null || v === undefined || v === '')
-            return (
-              <div key={f} className={need ? 'bg-amber-50/60 border-l-2 border-amber-400' : ''}
-                   title={need ? 'Без этого поля обращение не станет сделкой' : undefined}>
-                <InlineField label={need ? `${label} •` : label} value={v}
-                  onSave={x => saveQual(f, x)}
-                  options={optionsFor(refs, f, l.market_id)}
-                  multiple={MULTI_QUAL.has(f)} />
-              </div>
-            )
-          })}
-        </div>
-      </Card>
-
-      <Block title="Кто обратился">
-        <div>
-          {l.contact_name && <Row label="Контакт">{l.contact_name}</Row>}
-          <Row label="Телефон">
-            {l.phone
-              ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} />
-              : <span className="text-gray-400">не оставил</span>}
-            {phone.valid && phone.operator && (
-              <span className="text-gray-400 text-[11.5px]"> · {phone.operator}</span>
-            )}
-          </Row>
-          {l.city && <Row label="Город">{l.city}</Row>}
-          <Row label="Компания">
-            {l.account_id
-              ? <Rename value={l.account_name || ''} onSave={renameAccount}>
-                  <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
-                    {l.account_name}
-                  </Link>
-                </Rename>
-              : <span className="text-gray-400">аккаунт не заведён</span>}
-          </Row>
-          {(l.instagram || l.telegram || l.website) && (
-            <Row label="Профили">
-              {[l.instagram, l.telegram, l.website].filter(Boolean).join(' · ')}
-            </Row>
-          )}
-        </div>
-      </Block>
-
-      <Block title="Откуда пришло" sub="канал, кампания и метки перехода">
-        <div>
-          <Row label="Источник">{l.source || 'не определён'}</Row>
-          {l.campaign && <Row label="Кампания">{l.campaign}</Row>}
-          {l.agent_name && <Row label="Ответственный">{l.agent_name}</Row>}
-          {l.icp_score !== null && l.icp_score !== undefined && (
-            <Row label="Оценка соответствия">
-              <span className={l.icp_score >= 50 ? 'text-emerald-700 font-semibold'
-                : l.icp_score >= 20 ? 'text-amber-700' : 'text-gray-900'}>
-                {l.icp_score}
-              </span>
-              {/* Голая цифра «0» читается как «не посчитали». Причины показывают,
-                  что оценка сделана и на чём основана */}
-              {Array.isArray(l.icp_reasons) && l.icp_reasons.length > 0 && (
-                <span className="block text-[11.5px] text-gray-500 mt-0.5">
-                  {l.icp_reasons.map((r: any) =>
-                    `${r.label}${r.points ? ` (${r.points > 0 ? '+' : ''}${r.points})` : ''}`).join(' · ')}
-                </span>
-              )}
-            </Row>
-          )}
-          {l.external_id && <Row label="Идентификатор">{l.external_id}</Row>}
-        </div>
-      </Block>
-
-      {l.text && (
-        <Block title="Что написал">
-          {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
-              вместо пробелов. Правим только при показе: в самой форме
-              названия полей не наши, а рекламного кабинета */}
-          <p className="px-4 py-3 text-[12.5px] text-gray-800 whitespace-pre-wrap">
-            {String(l.text || '').split('\n').map(humanValue).join('\n')}
-          </p>
-        </Block>
-      )}
-
-      {data.fields.length > 0 && (
-        <Block title="Что заполнил" sub="поля формы и карточки как есть">
-          <div>{data.fields.map(f => (
-            <Row key={f.label} label={humanLabel(f.label)}>{humanValue(f.value)}</Row>
-          ))}</div>
-        </Block>
-      )}
-
-      {data.messages.length > 0 && (
-        <Block title="Переписка" sub={`${data.messages.length} сообщений в канале`}>
-          <div className="max-h-96 overflow-y-auto p-3 space-y-1.5">
-            {data.messages.map(m => {
-              const day = formatDayLabel(m.created_at)
-              const divider = day !== lastDay ? (lastDay = day) : null
+      {/* Две колонки, как в карточке сделки: слева — кто это и что о нём
+          известно, справа — общение и работа: задачи, ветка команды,
+          переписка, касания. Раньше всё шло одним столбцом, и до переписки
+          нужно было проскроллить три экрана */}
+      <div className="grid lg:grid-cols-[1.15fr_0.95fr] gap-4 items-start">
+        <div className="space-y-3 min-w-0">
+        {/* Квалификация нашими руками. Эти поля менеджер заполнял в Amo, а мы
+            читали их из сырых данных заявки — без Amo они бы осиротели */}
+        <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
+          <div className="grid sm:grid-cols-2">
+            {QUAL_FIELDS.map(([f, label]) => {
+              const v = qual(f)
+              const need = GATING.has(f) && (v === null || v === undefined || v === '')
               return (
-                <div key={m.id}>
-                  {divider && (
-                    <div className="text-center text-[10.5px] text-gray-400 py-1">{divider}</div>
-                  )}
-                  <div className={`flex ${m.is_from_client ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-[75%] rounded-xl px-3 py-1.5 ${
-                      m.is_from_client ? 'bg-gray-100 text-gray-900' : 'bg-blue-50 text-blue-900'}`}>
-                      <div className="text-[10px] opacity-70">
-                        {m.sender_name || (m.is_from_client ? 'Клиент' : 'Команда')} · {formatTimeHM(m.created_at)}
-                      </div>
-                      <div className="text-[12.5px] whitespace-pre-wrap break-words">
-                        {m.text_content || `[${m.content_type || 'вложение'}]`}
-                      </div>
-                    </div>
-                  </div>
+                <div key={f} className={need ? 'bg-amber-50/60 border-l-2 border-amber-400' : ''}
+                     title={need ? 'Без этого поля обращение не станет сделкой' : undefined}>
+                  <InlineField label={need ? `${label} •` : label} value={v}
+                    onSave={x => saveQual(f, x)}
+                    options={optionsFor(refs, f, l.market_id)}
+                    multiple={MULTI_QUAL.has(f)} />
                 </div>
               )
             })}
           </div>
-        </Block>
-      )}
+        </Card>
 
-      {data.assistant.length > 0 && (
-        <Block title="Работа ассистента" sub="что и когда он написал вместо человека">
+        <Block title="Кто обратился">
           <div>
-            {data.assistant.map((a, i) => (
-              <div key={i} className="px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
-                <div className="flex justify-between gap-2 text-[11.5px]">
-                  <span className="text-gray-700">
-                    {ASSISTANT_ACTION[a.action] || a.action}
-                    {a.step ? ` · шаг ${a.step}` : ''}
-                    {a.channel ? ` · ${a.channel}` : ''}
+            {l.contact_name && <Row label="Контакт">{l.contact_name}</Row>}
+            <Row label="Телефон">
+              {l.phone
+                ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} />
+                : <span className="text-gray-400">не оставил</span>}
+              {phone.valid && phone.operator && (
+                <span className="text-gray-400 text-[11.5px]"> · {phone.operator}</span>
+              )}
+            </Row>
+            {l.city && <Row label="Город">{l.city}</Row>}
+            <Row label="Компания">
+              {l.account_id
+                ? <Rename value={l.account_name || ''} onSave={renameAccount}>
+                    <Link to={`/sales/accounts/${l.account_id}`} className="text-blue-600 hover:underline">
+                      {l.account_name}
+                    </Link>
+                  </Rename>
+                : <span className="text-gray-400">аккаунт не заведён</span>}
+            </Row>
+            {(l.instagram || l.telegram || l.website) && (
+              <Row label="Профили">
+                {[l.instagram, l.telegram, l.website].filter(Boolean).join(' · ')}
+              </Row>
+            )}
+          </div>
+        </Block>
+
+        <Block title="Откуда пришло" sub="канал, кампания и метки перехода">
+          <div>
+            <Row label="Источник">{l.source || 'не определён'}</Row>
+            {l.campaign && <Row label="Кампания">{l.campaign}</Row>}
+            {l.agent_name && <Row label="Ответственный">{l.agent_name}</Row>}
+            {l.icp_score !== null && l.icp_score !== undefined && (
+              <Row label="Оценка соответствия">
+                <span className={l.icp_score >= 50 ? 'text-emerald-700 font-semibold'
+                  : l.icp_score >= 20 ? 'text-amber-700' : 'text-gray-900'}>
+                  {l.icp_score}
+                </span>
+                {/* Голая цифра «0» читается как «не посчитали». Причины показывают,
+                    что оценка сделана и на чём основана */}
+                {Array.isArray(l.icp_reasons) && l.icp_reasons.length > 0 && (
+                  <span className="block text-[11.5px] text-gray-500 mt-0.5">
+                    {l.icp_reasons.map((r: any) =>
+                      `${r.label}${r.points ? ` (${r.points > 0 ? '+' : ''}${r.points})` : ''}`).join(' · ')}
                   </span>
-                  <span className="text-gray-400 tabular-nums flex-none">
-                    {formatDateTimeShort(a.created_at)}
+                )}
+              </Row>
+            )}
+            {l.external_id && <Row label="Идентификатор">{l.external_id}</Row>}
+          </div>
+        </Block>
+
+        {l.text && (
+          <Block title="Что написал">
+            {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
+                вместо пробелов. Правим только при показе: в самой форме
+                названия полей не наши, а рекламного кабинета */}
+            <p className="px-4 py-3 text-[12.5px] text-gray-800 whitespace-pre-wrap">
+              {String(l.text || '').split('\n').map(humanValue).join('\n')}
+            </p>
+          </Block>
+        )}
+
+        {data.fields.length > 0 && (
+          <Block title="Что заполнил" sub="поля формы и карточки как есть">
+            <div>{data.fields.map(f => (
+              <Row key={f.label} label={humanLabel(f.label)}>{humanValue(f.value)}</Row>
+            ))}</div>
+          </Block>
+        )}
+
+        {data.deals.length > 0 && (
+          <Block title="Во что вылилось">
+            <div>
+              {data.deals.map(d => (
+                <Link key={d.id} to={`/sales/deals/${d.id}`}
+                  className="flex justify-between gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50">
+                  <span className="text-[12.5px] text-blue-600">{d.title}</span>
+                  <span className="text-[11.5px] text-gray-500">
+                    {d.won_at ? 'выиграна' : d.lost_at ? 'проиграна' : d.stage || 'в работе'}
+                    {d.monthly_amount ? ` · ${Number(d.monthly_amount).toLocaleString('ru-RU')} ${d.currency}` : ''}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </Block>
+        )}
+        </div>
+        <div className="space-y-3 min-w-0">
+        <TasksCard leadId={id} accountId={l.account_id || undefined} />
+
+        {/* Разговор о клиенте между своими — при карточке, а не в Telegram */}
+        <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} />
+
+        {data.messages.length > 0 && (
+          <Block title="Переписка" sub={`${data.messages.length} сообщений в канале`}>
+            <div className="max-h-96 overflow-y-auto p-3 space-y-1.5">
+              {data.messages.map(m => {
+                const day = formatDayLabel(m.created_at)
+                const divider = day !== lastDay ? (lastDay = day) : null
+                return (
+                  <div key={m.id}>
+                    {divider && (
+                      <div className="text-center text-[10.5px] text-gray-400 py-1">{divider}</div>
+                    )}
+                    <div className={`flex ${m.is_from_client ? 'justify-start' : 'justify-end'}`}>
+                      <div className={`max-w-[75%] rounded-xl px-3 py-1.5 ${
+                        m.is_from_client ? 'bg-gray-100 text-gray-900' : 'bg-blue-50 text-blue-900'}`}>
+                        <div className="text-[10px] opacity-70">
+                          {m.sender_name || (m.is_from_client ? 'Клиент' : 'Команда')} · {formatTimeHM(m.created_at)}
+                        </div>
+                        <div className="text-[12.5px] whitespace-pre-wrap break-words">
+                          {m.text_content || `[${m.content_type || 'вложение'}]`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Block>
+        )}
+
+        {data.assistant.length > 0 && (
+          <Block title="Работа ассистента" sub="что и когда он написал вместо человека">
+            <div>
+              {data.assistant.map((a, i) => (
+                <div key={i} className="px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
+                  <div className="flex justify-between gap-2 text-[11.5px]">
+                    <span className="text-gray-700">
+                      {ASSISTANT_ACTION[a.action] || a.action}
+                      {a.step ? ` · шаг ${a.step}` : ''}
+                      {a.channel ? ` · ${a.channel}` : ''}
+                    </span>
+                    <span className="text-gray-400 tabular-nums flex-none">
+                      {formatDateTimeShort(a.created_at)}
+                    </span>
+                  </div>
+                  {a.message && <div className="text-[12px] text-gray-600 mt-0.5">«{a.message}»</div>}
+                  {a.reply && <div className="text-[12px] text-emerald-700 mt-0.5">ответ: «{a.reply}»</div>}
+                  {a.error && <div className="text-[12px] text-red-600 mt-0.5">{a.error}</div>}
+                </div>
+              ))}
+            </div>
+          </Block>
+        )}
+
+        {data.touchpoints.length > 0 && (
+          <Block title="История касаний">
+            <div>
+              {data.touchpoints.map((t, i) => (
+                <div key={i} className="flex gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
+                  <span className="text-[11.5px] text-gray-400 w-28 flex-none tabular-nums">
+                    {formatDateTimeShort(t.happened_at)}
+                  </span>
+                  <span className="text-[12.5px] text-gray-800 min-w-0 flex-1">
+                    {t.title || t.kind}
+                    {t.channel && <span className="text-gray-400"> · {t.channel}</span>}
+                    {t.detail && <div className="text-[11.5px] text-gray-500">{t.detail}</div>}
+                    {t.url && (
+                      <a href={t.url} target="_blank" rel="noreferrer"
+                         className="text-[11.5px] text-blue-600 hover:underline break-all">{t.url}</a>
+                    )}
+                    {t.kind === 'call' && t.identity && /^[0-9a-f-]{32,40}$/i.test(t.identity) && (
+                      <div className="mt-0.5 flex items-center gap-3 flex-wrap">
+                        {rec?.id === t.identity ? (
+                          <audio controls autoPlay src={rec.url} className="w-full h-8" />
+                        ) : (
+                          <button onClick={() => listenRec(t.identity!)} disabled={recBusy === t.identity}
+                            className="text-[11.5px] text-emerald-700 hover:underline disabled:opacity-40">
+                            {recBusy === t.identity ? 'загружаю…' : '▶ запись'}
+                          </button>
+                        )}
+                        <CallInsight uuid={t.identity} />
+                      </div>
+                    )}
                   </span>
                 </div>
-                {a.message && <div className="text-[12px] text-gray-600 mt-0.5">«{a.message}»</div>}
-                {a.reply && <div className="text-[12px] text-emerald-700 mt-0.5">ответ: «{a.reply}»</div>}
-                {a.error && <div className="text-[12px] text-red-600 mt-0.5">{a.error}</div>}
-              </div>
-            ))}
-          </div>
-        </Block>
-      )}
+              ))}
+            </div>
+          </Block>
+        )}
 
-      {data.touchpoints.length > 0 && (
-        <Block title="История касаний">
-          <div>
-            {data.touchpoints.map((t, i) => (
-              <div key={i} className="flex gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
-                <span className="text-[11.5px] text-gray-400 w-28 flex-none tabular-nums">
-                  {formatDateTimeShort(t.happened_at)}
-                </span>
-                <span className="text-[12.5px] text-gray-800 min-w-0 flex-1">
-                  {t.title || t.kind}
-                  {t.channel && <span className="text-gray-400"> · {t.channel}</span>}
-                  {t.detail && <div className="text-[11.5px] text-gray-500">{t.detail}</div>}
-                  {t.url && (
-                    <a href={t.url} target="_blank" rel="noreferrer"
-                       className="text-[11.5px] text-blue-600 hover:underline break-all">{t.url}</a>
-                  )}
-                  {t.kind === 'call' && t.identity && /^[0-9a-f-]{32,40}$/i.test(t.identity) && (
-                    <div className="mt-0.5 flex items-center gap-3 flex-wrap">
-                      {rec?.id === t.identity ? (
-                        <audio controls autoPlay src={rec.url} className="w-full h-8" />
-                      ) : (
-                        <button onClick={() => listenRec(t.identity!)} disabled={recBusy === t.identity}
-                          className="text-[11.5px] text-emerald-700 hover:underline disabled:opacity-40">
-                          {recBusy === t.identity ? 'загружаю…' : '▶ запись'}
-                        </button>
-                      )}
-                      <CallInsight uuid={t.identity} />
-                    </div>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Block>
-      )}
-
-      {data.deals.length > 0 && (
-        <Block title="Во что вылилось">
-          <div>
-            {data.deals.map(d => (
-              <Link key={d.id} to={`/sales/deals/${d.id}`}
-                className="flex justify-between gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0 hover:bg-gray-50">
-                <span className="text-[12.5px] text-blue-600">{d.title}</span>
-                <span className="text-[11.5px] text-gray-500">
-                  {d.won_at ? 'выиграна' : d.lost_at ? 'проиграна' : d.stage || 'в работе'}
-                  {d.monthly_amount ? ` · ${Number(d.monthly_amount).toLocaleString('ru-RU')} ${d.currency}` : ''}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </Block>
-      )}
+        </div>
+      </div>
     </div>
   )
 }
