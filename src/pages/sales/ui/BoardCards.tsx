@@ -60,7 +60,7 @@ function CallBtn({ phone, market, leadId }: { phone: string | null; market?: str
   )
 }
 
-const CARD = 'bg-white border border-gray-200 border-l-[3px] rounded-lg px-2.5 py-2 h-[108px] flex flex-col ' +
+const CARD = 'bg-white border border-gray-200 border-l-[3px] rounded-lg px-2.5 py-2 h-[128px] flex flex-col ' +
   'cursor-grab active:cursor-grabbing hover:shadow-md transition-all'
 
 interface DragProps {
@@ -124,6 +124,12 @@ export function LeadCard({
       </div>
       <div className={`mt-1 text-[11.5px] font-medium truncate ${TONE[state.tone]}`}>{state.text}</div>
       <div className="mt-0.5 text-[11px] text-gray-400 truncate" title={facts}>{facts || '—'}</div>
+      {/* Пятая строка — как связаться и что сказал: телефон цифрами и слова
+          клиента. По наведению они были, но наведение — это ещё один жест */}
+      <div className="mt-0.5 text-[11px] text-gray-500 truncate">
+        {l.phone ? <span className="tabular-nums text-gray-700">{phone.valid ? phone.pretty : l.phone}</span> : <span className="text-gray-300">без телефона</span>}
+        {l.text ? <span className="text-gray-400"> · «{String(l.text).replace(/\s+/g, ' ')}»</span> : null}
+      </div>
       <div className="mt-auto flex items-center justify-between gap-2">
         <Owner name={l.agent_name} />
         <span className="flex items-center gap-1 flex-none">
@@ -172,7 +178,7 @@ export function DealCard({
   // Порядок фактов по ценности: деньги → с кем говорим → чем пользуется → масштаб → где
   const facts = [
     d.monthly_amount ? `${money(d.monthly_amount, d.currency)}${d.tariff ? ` · ${d.tariff}` : ''}` : null,
-    contact, d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day ? `${d.orders_per_day} в день` : null, d.city,
+    d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day ? `${d.orders_per_day} в день` : null, d.city,
   ].filter(Boolean).join(' · ')
   const hover = [d.phone || '', facts, d.doc_opens ? `КП открыто ${d.doc_opens}×` : '',
     d.last_call ? `звонок ${shortDate(d.last_call.at)}${d.last_call.ok === false ? ' · не дозвонились' : ''}` : '',
@@ -197,19 +203,22 @@ export function DealCard({
       <div className="mt-0.5 text-[11px] text-gray-400 truncate" title={facts}>
         {facts || <span className="text-amber-600">сумма не указана</span>}
       </div>
+      <div className="mt-0.5 text-[11px] text-gray-500 truncate">
+        {contact ? <span className="text-gray-700">{contact}</span> : null}
+        {contact && d.phone ? ' · ' : ''}
+        {d.phone ? <span className="tabular-nums text-gray-700">{parsePhone(d.phone, d.market_id).valid ? parsePhone(d.phone, d.market_id).pretty : d.phone}</span> : null}
+        {!contact && !d.phone ? <span className="text-gray-300">контакт не указан</span> : null}
+      </div>
       <div className="mt-auto flex items-center justify-between gap-2">
         <Owner name={d.owner_name} />
         <span className="flex items-center gap-1 flex-none">
           <CallBtn phone={d.phone} market={d.market_id} />
-          {!d.next_step_at ? (
+          {/* «Открыть» убрана: заголовок и так открывает карточку. Остаётся
+              только то, что экономит открытие — шаг на завтра, когда его нет */}
+          {!d.next_step_at && (
             <button disabled={busy} onClick={onPlanStep} title="Поставить шаг «Позвонить» на завтра"
               className="text-[10px] px-2 py-1 rounded-md bg-blue-600 text-white hover:brightness-110 disabled:opacity-50">
               Шаг
-            </button>
-          ) : (
-            <button onClick={onOpen}
-              className="text-[10px] px-2 py-1 rounded-md border border-gray-200 text-gray-700 hover:border-blue-400">
-              Открыть
             </button>
           )}
         </span>
