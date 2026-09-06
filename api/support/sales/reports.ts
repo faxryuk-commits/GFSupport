@@ -269,7 +269,8 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE e.org_id = ${orgId}
             AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
           UNION ALL
-          SELECT sa.happened_at, ag.name, 'deal',
+          -- Заметка — свой тип в ленте: по ней фильтруют отдельно от этапов
+          SELECT sa.happened_at, ag.name, CASE WHEN sa.type = 'note' THEN 'note' ELSE 'deal' END,
                  COALESCE(ac.name, d2.title, 'без карточки'),
                  CASE sa.type WHEN 'note' THEN 'Примечание'
                               WHEN 'approval' THEN 'Решение по скидке'
@@ -298,6 +299,15 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN sales_leads l2 ON l2.id = tk.lead_id
           WHERE tk.org_id = ${orgId} AND tk.done_at IS NOT NULL
             AND tk.done_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          UNION ALL
+          -- Взятые в работу обращения: в сводке они считались, а в ленте
+          -- их не было — и «Лиды: 4» нельзя было развернуть в «какие»
+          SELECT l3.assigned_at, ag3.name, 'lead', COALESCE(l3.contact_name, l3.name),
+                 'Взял в работу', NULL, NULL, l3.id
+          FROM sales_leads l3
+          JOIN support_agents ag3 ON ag3.id = l3.assigned_agent_id
+          WHERE l3.org_id = ${orgId} AND l3.assigned_at IS NOT NULL
+            AND l3.assigned_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
         ) x ORDER BY at DESC LIMIT 200
       `,
     ]) as any[]

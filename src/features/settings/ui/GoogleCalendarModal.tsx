@@ -213,6 +213,16 @@ export function GoogleCalendarModal({ isOpen, onClose }: { isOpen: boolean; onCl
                   {!st.appConfigured && (
                     <p className="mt-2 text-[11.5px] text-slate-400">Сначала задайте ключи приложения — ниже.</p>
                   )}
+                  {/* Самая частая причина, по которой у коллег «не подключается»:
+                      приложение в Google Cloud в режиме Testing, и согласие могут
+                      дать только адреса из списка Test users. Это не наша ошибка,
+                      и в нашем коде её не видно — Google показывает свою страницу */}
+                  <p className="mt-2 text-[11.5px] text-slate-400 leading-relaxed">
+                    Если Google показывает «Ошибка 403: access_denied» — ваш адрес не добавлен
+                    в Test users приложения в Google Cloud (OAuth consent screen), либо приложение
+                    нужно переключить на Internal для домена компании. Это делает администратор
+                    Google Cloud, не CRM.
+                  </p>
                 </>
               )}
             </div>

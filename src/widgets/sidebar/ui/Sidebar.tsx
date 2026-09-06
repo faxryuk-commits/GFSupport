@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone,
+  Plug, Handshake, Inbox, Building2, Phone, Activity,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
@@ -240,6 +240,9 @@ const navGroups: NavGroup[] = [
       { path: '/sales/comments', label: 'Комментарии', icon: MessagesSquare,
         badgeKey: 'metaComments', badgeHint: 'комментарии без ответа' },
       { path: '/sales/calls', label: 'Звонки', icon: Phone },
+      // Лента активности отдела: кто что сделал, по людям и типам событий.
+      // Жила вкладкой в отчётах, и её не находили
+      { path: '/sales/activity', label: 'Активность', icon: Activity },
     ],
   },
   {

@@ -44,6 +44,8 @@ const OBJ: Record<string, { label: string; cls: string }> = {
   deal: { label: 'сделка', cls: 'text-violet-700 bg-violet-50' },
   call: { label: 'звонок', cls: 'text-emerald-700 bg-emerald-50' },
   task: { label: 'задача', cls: 'text-blue-700 bg-blue-50' },
+  lead: { label: 'лид', cls: 'text-amber-700 bg-amber-50' },
+  note: { label: 'заметка', cls: 'text-gray-700 bg-gray-100' },
 }
 
 /** Дата в формате YYYY-MM-DD по рабочей зоне, а не по зоне браузера. */
@@ -52,41 +54,74 @@ function tashkentDay(shiftDays = 0): string {
   return t.toISOString().slice(0, 10)
 }
 
+/** Типы событий для фильтра ленты; ключ — значение obj из API. */
+const EVENT_KINDS: Array<[string, string]> = [
+  ['deal', 'этапы'], ['call', 'звонки'], ['task', 'задачи'], ['lead', 'лиды'], ['note', 'заметки'],
+]
+
 export function SalesActivity({ region }: { region: string | null }) {
-  const [day, setDay] = useState(() => tashkentDay())
+  // Период, а не один день: вопрос руководителя чаще «что делали на неделе»,
+  // чем «что делали в среду». Пресеты — сегодня / вчера / 7 дней / 30 дней
+  const [from, setFrom] = useState(() => tashkentDay())
+  const [to, setTo] = useState(() => tashkentDay())
   const [d, setD] = useState<Data | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [who, setWho] = useState<string | null>(null)
+  const [kinds, setKinds] = useState<string[]>([])
   const reqRef = useRef(0)
 
   useEffect(() => {
     const my = ++reqRef.current
     setD(null)
-    apiGet<Data>(`/sales/reports?action=activity&from=${day}&to=${day}&region=${region || 'all'}`, false)
+    apiGet<Data>(`/sales/reports?action=activity&from=${from}&to=${to}&region=${region || 'all'}`, false)
       .then(r => { if (my === reqRef.current) { setD(r); setError(null) } })
       .catch(e => setError(e?.message || 'Не удалось загрузить активность'))
-  }, [day, region])
+  }, [from, to, region])
 
-  const isToday = day === tashkentDay()
-  const events = d?.events.filter(e => !who || e.who === who) || []
+  const day = from
+  const isToday = from === tashkentDay() && to === tashkentDay()
+  const isRange = (f: string, tt: string) => from === f && to === tt
+  const setRange = (f: string, tt: string) => { setFrom(f); setTo(tt) }
+  const toggleKind = (k: string) =>
+    setKinds(ks => ks.includes(k) ? ks.filter(x => x !== k) : [...ks, k])
+  const events = (d?.events || [])
+    .filter(e => !who || e.who === who)
+    .filter(e => !kinds.length || kinds.includes(e.obj))
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-          <button onClick={() => setDay(tashkentDay())}
-            className={`text-[12.5px] px-3 py-1.5 ${isToday ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
-            Сегодня
-          </button>
-          <button onClick={() => setDay(tashkentDay(-1))}
-            className={`text-[12.5px] px-3 py-1.5 border-l border-gray-300 ${
-              day === tashkentDay(-1) ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
-            Вчера
-          </button>
+          {([
+            ['Сегодня', tashkentDay(), tashkentDay()],
+            ['Вчера', tashkentDay(-1), tashkentDay(-1)],
+            ['7 дней', tashkentDay(-6), tashkentDay()],
+            ['30 дней', tashkentDay(-29), tashkentDay()],
+          ] as const).map(([label, f, tt], i) => (
+            <button key={label} onClick={() => setRange(f, tt)}
+              className={`text-[12.5px] px-3 py-1.5 ${i ? 'border-l border-gray-300' : ''} ${
+                isRange(f, tt) ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+              {label}
+            </button>
+          ))}
         </div>
-        <input type="date" value={day} max={tashkentDay()}
-          onChange={e => setDay(e.target.value)}
+        <input type="date" value={from} max={to}
+          onChange={e => setFrom(e.target.value)}
           className="text-[12.5px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700" />
+        <span className="text-gray-400 text-[12px]">—</span>
+        <input type="date" value={to} min={from} max={tashkentDay()}
+          onChange={e => setTo(e.target.value)}
+          className="text-[12.5px] px-2.5 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700" />
+        <div className="flex gap-1 ml-1">
+          {EVENT_KINDS.map(([k, label]) => (
+            <button key={k} onClick={() => toggleKind(k)}
+              className={`text-[11.5px] px-2.5 py-1 rounded-md border ${
+                kinds.includes(k) ? 'bg-gray-900 text-white border-gray-900'
+                                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
         {who && (
           <button onClick={() => setWho(null)}
             className="text-[12px] px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
@@ -104,14 +139,14 @@ export function SalesActivity({ region }: { region: string | null }) {
             ['Работали', String(d.totals.people), 'сотрудников с активностью'],
             ['Действий', String(d.totals.actions), 'звонки, этапы, задачи, заметки'],
             ['Звонков', String(d.totals.calls), `${d.totals.answered} разговоров состоялось`],
-            ['На линии', fmtDur(d.totals.talkSec), 'суммарно за день'],
+            ['На линии', fmtDur(d.totals.talkSec), 'суммарно за период'],
             ['Движений по воронке', String(d.totals.moves), `${d.totals.won} выигрышей`],
           ]} />
 
           <Card title="Кто что сделал" sub="клик по строке — отфильтровать ленту по сотруднику">
             {!d.people.length ? (
               <div className="px-4 py-6 text-[12.5px] text-gray-400">
-                За этот день активности не записано.
+                За период активности не записано.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -157,21 +192,26 @@ export function SalesActivity({ region }: { region: string | null }) {
           </Card>
 
           <Card
-            title={who ? `Лента дня — ${who}` : 'Лента дня'}
+            title={who ? `Лента — ${who}` : 'Лента'}
             sub="каждое действие по времени · «до → после» там, где значение менялось"
-            right={<span className="text-[11.5px] text-gray-400">{fmtDay(day + 'T12:00:00')} · {events.length} событий</span>}
+            right={<span className="text-[11.5px] text-gray-400">
+              {isToday ? 'сегодня' : from === to ? fmtDay(from + 'T12:00:00')
+                : `${fmtDay(from + 'T12:00:00')} — ${fmtDay(to + 'T12:00:00')}`} · {events.length} событий
+            </span>}
           >
             {!events.length ? (
-              <div className="px-4 py-6 text-[12.5px] text-gray-400">Событий за этот день нет.</div>
+              <div className="px-4 py-6 text-[12.5px] text-gray-400">Событий за период нет.</div>
             ) : (
               <div className="divide-y divide-gray-50">
                 {events.map((e, i) => {
                   const o = OBJ[e.obj] || { label: e.obj, cls: 'text-gray-600 bg-gray-100' }
-                  const href = e.obj === 'deal' && e.link ? `/sales/deals/${e.link}`
-                    : e.obj === 'call' && e.link ? `/sales/leads/${e.link}` : null
+                  const href = (e.obj === 'deal' || e.obj === 'note') && e.link ? `/sales/deals/${e.link}`
+                    : (e.obj === 'call' || e.obj === 'lead') && e.link ? `/sales/leads/${e.link}` : null
                   return (
                     <div key={i} className="px-4 py-2 flex items-baseline gap-3 flex-wrap hover:bg-gray-50">
-                      <span className="text-[11.5px] text-gray-400 tabular-nums w-11 flex-none">{fmtTime(e.at)}</span>
+                      <span className="text-[11.5px] text-gray-400 tabular-nums flex-none w-[84px]">
+                        {from !== to ? `${fmtDay(e.at)} ` : ''}{fmtTime(e.at)}
+                      </span>
                       <span className="text-[12.5px] font-medium text-gray-800 w-28 flex-none truncate">
                         {e.who || '—'}
                       </span>
