@@ -320,7 +320,7 @@ export function SalesFunnelPage() {
       {/* Строка управления: заголовок, одинаковые серые переключатели и
           один цветной элемент — «Завести». Раньше здесь было четыре группы
           кнопок в четырёх цветах, и глаз не понимал, что главное */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight mr-1">Воронка</h1>
           <div className="flex bg-gray-100 rounded-lg p-0.5">
@@ -344,7 +344,7 @@ export function SalesFunnelPage() {
           <RegionBadge scope="funnel" />
         </div>
         <button onClick={() => { setCForm({ name: '', phone: '', city: '', text: '' }); setCErr(''); setCreating('lead') }}
-          className="flex-none px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+          className="flex-none ml-auto px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700">
           + Завести
         </button>
       </div>
