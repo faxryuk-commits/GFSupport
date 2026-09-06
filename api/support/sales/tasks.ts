@@ -163,7 +163,20 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'DELETE') {
     const id = url.searchParams.get('id')
     if (!id) return json({ error: 'id is required' }, 400)
+    // Задача, поставленная как следующий шаг, прописала себя в сделку. Удалить
+    // её и оставить шаг значит показывать на доске работу, которой больше нет
+    const [gone] = await sql`
+      SELECT deal_id, title, due_at FROM sales_tasks
+      WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+    ` as any[]
     await sql`DELETE FROM sales_tasks WHERE id = ${id} AND org_id = ${orgId}`
+    if (gone?.deal_id) {
+      await sql`
+        UPDATE sales_deals SET next_step = NULL, next_step_at = NULL
+        WHERE id = ${gone.deal_id} AND org_id = ${orgId}
+          AND next_step = ${gone.title} AND next_step_at = ${gone.due_at}
+      `
+    }
     return json({ ok: true })
   }
 

@@ -28,6 +28,13 @@ const QUAL_FIELDS = [
 const MULTI_QUAL = new Set<string>(['aggregators', 'pain', 'delivery_type'])
 
 /**
+ * Без этих полей обращение не станет сделкой: их требует этап «Квалифицирован».
+ * Пустые помечаем сразу, а не после неудачного перетаскивания — иначе человек
+ * узнаёт о них, только упёршись.
+ */
+const GATING = new Set<string>(['points', 'orders_per_day', 'pos', 'pain'])
+
+/**
  * Карточка обращения: кто написал, откуда и что именно сказал.
  *
  * В списке видна строка с именем и обрезанным текстом, и на вопрос «что это
@@ -408,12 +415,19 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           читали их из сырых данных заявки — без Amo они бы осиротели */}
       <Card title="Квалификация" sub="заполняется на звонке, правится по клику">
         <div className="grid sm:grid-cols-2">
-          {QUAL_FIELDS.map(([f, label]) => (
-            <InlineField key={f} label={label} value={qual(f)}
-              onSave={v => saveQual(f, v)}
-              options={optionsFor(refs, f, l.market_id)}
-              multiple={MULTI_QUAL.has(f)} />
-          ))}
+          {QUAL_FIELDS.map(([f, label]) => {
+            const v = qual(f)
+            const need = GATING.has(f) && (v === null || v === undefined || v === '')
+            return (
+              <div key={f} className={need ? 'bg-amber-50/60 border-l-2 border-amber-400' : ''}
+                   title={need ? 'Без этого поля обращение не станет сделкой' : undefined}>
+                <InlineField label={need ? `${label} •` : label} value={v}
+                  onSave={x => saveQual(f, x)}
+                  options={optionsFor(refs, f, l.market_id)}
+                  multiple={MULTI_QUAL.has(f)} />
+              </div>
+            )
+          })}
         </div>
       </Card>
 

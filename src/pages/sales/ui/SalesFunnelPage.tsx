@@ -193,7 +193,14 @@ export function SalesFunnelPage() {
     } finally { setBusy(null) }
   }
 
-  /** Пересечение границы: обращение становится сделкой на выбранном этапе. */
+  /**
+   * Пересечение границы: обращение становится сделкой на выбранном этапе.
+   *
+   * Если этап не пустил, сразу открываем карточку: читать список недостающих
+   * полей в всплывашке, закрывать её, искать карточку и вспоминать, чего
+   * не хватало, — дольше, чем заполнить. Всплывашка остаётся как объяснение,
+   * но работа начинается там, где её делают.
+   */
   const convert = async (leadId: string, toStage: string) => {
     setBusy(leadId)
     try {
@@ -203,6 +210,7 @@ export function SalesFunnelPage() {
     } catch (e: any) {
       // 422 движка — не поломка, а несоблюдённое условие этапа
       setError(e?.message || 'Переход заблокирован')
+      setOpenLead(leadId)
     } finally { setBusy(null) }
   }
 
@@ -213,6 +221,7 @@ export function SalesFunnelPage() {
       load()
     } catch (e: any) {
       setError(e?.message || 'Переход заблокирован')
+      setOpenDeal(dealId)
     } finally { setBusy(null) }
   }
 
