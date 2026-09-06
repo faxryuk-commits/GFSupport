@@ -647,17 +647,6 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                         ? <span className="text-[11.5px] text-gray-400">{c.phone}</span>
                         : null
                     })()}
-                    <button
-                      onClick={() => patch('dm_confirmed', d.dm_confirmed ? '' : 'true')}
-                      className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition-colors ${
-                        d.dm_confirmed
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                          : 'bg-white border-gray-200 text-gray-500 hover:border-emerald-300'
-                      }`}
-                      title="Отметьте, когда убедились, что решение принимает именно он"
-                    >
-                      {d.dm_confirmed ? '✓ подтверждён' : 'подтвердить'}
-                    </button>
                   </div>
                 )}
               </div>

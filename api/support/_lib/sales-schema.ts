@@ -90,16 +90,18 @@ const STAGE_SEED: Array<{
     requiredFields: ['points', 'orders_per_day', 'pos', 'pain'],
     cadence: [] },
   { key: 'meeting', label: 'Демо назначено', kind: 'open', ownerRole: 'sdr', slaHours: 24, probability: 25,
-    // Дата демо из критериев убрана: поля для неё в карточке нет, и этап
-    // превращался в непроходимый потолок
-    requiredFields: ['dm_name'],
+    // Критериев нет: назначенная встреча и есть факт этапа. Имя ЛПР
+    // требовалось, но поля для него в карточке не осталось — этап стоял стеной
+    requiredFields: [],
     cadence: [{ day: 0, title: 'Напомнить о встрече за 2 часа', channel: 'telegram' }] },
   { key: 'demo', label: 'Демо проведено', kind: 'open', ownerRole: 'ae', slaHours: 24, probability: 30,
     // Следующий шаг уже требуется глобально: без него сделка через 48 ч
     // помечается брошенной, и дублировать это критерием — двойной учёт.
     // Бюджет со слов клиент часто не называет, а принуждение к цифре даёт
-    // выдуманную: он остаётся обязательным на КП, где сумма настоящая
-    requiredFields: ['dm_confirmed'],
+    // выдуманную: он остаётся обязательным на КП, где сумма настоящая.
+    // «ЛПР подтверждён» убран: отметка ставилась ради отметки, а с кем
+    // говорили — видно по контакту
+    requiredFields: [],
     cadence: [] },
   { key: 'kp', label: 'КП отправлено', kind: 'open', ownerRole: 'ae', slaHours: 336, probability: 40,
     // Срок действия КП не гейт: каденция работает от дня отправки
@@ -137,10 +139,10 @@ const ENTERPRISE_STAGE_SEED: Array<{
 }> = [
   { key: 'research', label: 'Разведка', kind: 'open', ownerRole: 'kam', slaHours: 336, probability: 5,
     requiredFields: [], cadence: [] },
-  { key: 'dm_contact', label: 'Выход на ЛПР', kind: 'open', ownerRole: 'kam', slaHours: 336, probability: 10,
-    requiredFields: ['dm_name'], cadence: [] },
+  // «Выход на ЛПР» как отдельный этап убран: это работа внутри разведки,
+  // а не веха, — и он требовал имени ЛПР, которого в карточке нет
   { key: 'discovery', label: 'Discovery-встреча', kind: 'open', ownerRole: 'kam', slaHours: 336, probability: 20,
-    requiredFields: ['dm_name', 'points', 'pain'],
+    requiredFields: ['points', 'pain'],
     cadence: [{ day: 0, title: 'Напомнить о встрече за 2 часа', channel: 'telegram' }] },
   { key: 'pilot', label: 'Пилот / POC', kind: 'open', ownerRole: 'kam', slaHours: 720, probability: 40,
     requiredFields: [],
@@ -302,7 +304,9 @@ async function seedBatch(
  */
 const REQUIRED_TRIM: Array<[string, string[]]> = [
   ['qualified', ['points', 'orders_per_day', 'pos', 'pain']],
-  ['demo', ['dm_confirmed']],
+  ['meeting', []],
+  ['demo', []],
+  ['discovery', ['points', 'pain']],
   ['kp', ['kp_file', 'monthly_amount']],
   ['contract', ['legal_name']],
   ['pilot', []],
@@ -337,10 +341,13 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
                 ('google_event_id', 'meet_url', 'google_cal_agent_id')))) AS cols,
       (SELECT COUNT(*)::int FROM sales_stages
         WHERE (key = 'qualified' AND jsonb_array_length(required_fields) > 4)
-           OR (key = 'demo'      AND jsonb_array_length(required_fields) > 1)
+           OR (key = 'meeting'   AND jsonb_array_length(required_fields) > 0)
+           OR (key = 'demo'      AND jsonb_array_length(required_fields) > 0)
+           OR (key = 'discovery' AND jsonb_array_length(required_fields) > 2)
            OR (key = 'kp'        AND jsonb_array_length(required_fields) > 2)
            OR (key = 'contract'  AND jsonb_array_length(required_fields) > 1)
-           OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)) AS stages
+           OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)
+           OR (key = 'dm_contact' AND is_active = true)) AS stages
   ` as any[]
 
   if (state?.cols === 4 && state?.stages === 0) {
@@ -367,6 +374,15 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
   }
 
   if (state?.stages) {
+    // Этап «Выход на ЛПР» гасим, сделки с него — в «Разведку»: та же работа,
+    // только без отдельной колонки и без требования имени ЛПР
+    await sql`
+      UPDATE sales_deals d SET stage_id = r.id, updated_at = NOW()
+      FROM sales_stages s
+      JOIN sales_stages r ON r.org_id = s.org_id AND r.pipeline = s.pipeline AND r.key = 'research'
+      WHERE d.stage_id = s.id AND s.key = 'dm_contact'
+    `
+    await sql`UPDATE sales_stages SET is_active = false WHERE key = 'dm_contact'`
     for (const [key, fields] of REQUIRED_TRIM) {
       await sql`
         UPDATE sales_stages SET required_fields = ${JSON.stringify(fields)}::jsonb

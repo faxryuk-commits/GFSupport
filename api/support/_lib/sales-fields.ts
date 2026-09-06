@@ -17,7 +17,6 @@ export const FIELD_LABELS: Record<string, string> = {
   segment: 'Тип заведения',
   dm_role: 'Роль ЛПР',
   dm_name: 'ЛПР',
-  dm_confirmed: 'ЛПР подтверждён',
   budget_stated: 'Бюджет со слов клиента',
   meeting_at: 'Дата демо',
   next_step: 'Следующий шаг',
