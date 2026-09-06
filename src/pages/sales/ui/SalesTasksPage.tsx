@@ -94,11 +94,11 @@ export function SalesTasksPage() {
     if (!data) return []
     const cols: Array<{ key: string; label: string; items: Task[] }> = [
       { key: 'lead', label: 'Обращения', items: [] },
-      ...data.stages.map(s => ({ key: s.key, label: s.label, items: [] as Task[] })),
+      ...(data.stages || []).map(s => ({ key: s.key, label: s.label, items: [] as Task[] })),
       { key: 'none', label: 'Без сделки', items: [] },
     ]
     const byKey = new Map(cols.map(c => [c.key, c]))
-    for (const t of data.tasks) {
+    for (const t of data.tasks || []) {
       const k = t.obj === 'lead' ? 'lead' : (t.stage_key && byKey.has(t.stage_key) ? t.stage_key : 'none')
       byKey.get(k)!.items.push(t)
     }
@@ -152,7 +152,7 @@ export function SalesTasksPage() {
             <h1 className="text-[18px] font-semibold text-gray-900 tracking-tight">Задачи</h1>
             {data && (
               <span className="text-[11.5px] text-gray-500">
-                {data.tasks.length} · просрочено <b className="text-red-600">{data.tasks.filter(overdueOf).length}</b>
+                {(data.tasks || []).length} · просрочено <b className="text-red-600">{(data.tasks || []).filter(overdueOf).length}</b>
               </span>
             )}
           </div>
@@ -217,12 +217,12 @@ export function SalesTasksPage() {
 
       {data && view === 'list' && (
         <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-50 overflow-y-auto max-h-full">
-          {!data.tasks.length && (
+          {!(data.tasks || []).length && (
             <div className="px-4 py-10 text-center text-[12.5px] text-gray-400">
               {scope === 'mine' ? 'У вас нет открытых задач.' : 'По этому срезу задач нет.'}
             </div>
           )}
-          {data.tasks.map(t => <Row key={t.id} t={t} />)}
+          {(data.tasks || []).map(t => <Row key={t.id} t={t} />)}
         </div>
       )}
 

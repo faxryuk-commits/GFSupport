@@ -253,10 +253,15 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND is_active = true AND kind = 'open' AND pipeline <> 'partner'
         GROUP BY key ORDER BY MIN(pipeline), MIN(sort_order)
       `,
+      // Люди для фильтра — отдел продаж и те, у кого есть задачи: список
+      // всей организации с поддержкой в нём — тридцать фамилий не по делу
       sql`
-        SELECT id, name FROM support_agents
-        WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
-        ORDER BY name
+        SELECT a.id, a.name FROM support_agents a
+        WHERE a.org_id = ${orgId} AND a.is_active = true AND a.merged_into IS NULL
+          AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr')
+               OR EXISTS (SELECT 1 FROM sales_tasks x WHERE x.org_id = ${orgId}
+                            AND (x.assignee_agent_id = a.id OR x.created_by_agent_id = a.id)))
+        ORDER BY a.name
       `,
     ]) as any[]
     return json({ tasks, stages, people, today: d0 })
