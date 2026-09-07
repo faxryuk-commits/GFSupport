@@ -39,6 +39,7 @@ export function TeamThread({ dealId, leadId, accountId, team, embedded = false }
   const [items, setItems] = useState<Comment[] | null>(null)
   const [text, setText] = useState('')
   const [mentions, setMentions] = useState<Set<string>>(new Set())
+  const [pickDown, setPickDown] = useState(false)
   const [files, setFiles] = useState<Att[]>([])
   const [asTask, setAsTask] = useState(false)
   const [due, setDue] = useState<'today' | 'tomorrow' | 'in3'>('tomorrow')
@@ -68,6 +69,9 @@ export function TeamThread({ dealId, leadId, accountId, team, embedded = false }
     const before = v.slice(0, caret)
     const m = before.match(/@([^\s@]*)$/)
     setPick(m ? { q: m[1].toLowerCase(), at: caret - m[0].length } : null)
+    // Куда раскрывать подсказку: вверх, если над полем есть место, иначе вниз —
+    // у верхнего края экрана список уезжал за пределы окна
+    if (m && taRef.current) setPickDown(taRef.current.getBoundingClientRect().top < 260)
   }
   const choose = (t: { id: string; name: string }) => {
     if (!pick) return
@@ -179,7 +183,8 @@ export function TeamThread({ dealId, leadId, accountId, team, embedded = false }
           </div>
         )}
         {candidates.length > 0 && (
-          <div className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 w-60 py-1 max-h-56 overflow-y-auto">
+          <div className={`absolute left-3 bg-white border border-gray-200 rounded-lg shadow-lg z-30 w-60 py-1 max-h-56 overflow-y-auto ${
+            pickDown ? 'top-full mt-1' : 'bottom-full mb-1'}`}>
             {candidates.map(t => (
               <button key={t.id} onMouseDown={e => { e.preventDefault(); choose(t) }}
                 className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-800 hover:bg-blue-50">@{t.name}</button>
