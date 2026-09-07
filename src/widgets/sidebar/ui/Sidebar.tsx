@@ -263,6 +263,9 @@ const navGroups: NavGroup[] = [
   { label: '', items: [{ path: '/hiring', label: 'Наём', icon: UserRoundSearch }] },
   { label: '', items: [{ path: '/broadcast', label: 'Рассылка', icon: Megaphone }] },
   { label: '', items: [{ path: '/settings', label: 'Настройки', icon: Settings }] },
+  // Что нового: команда должна видеть, что её проблемы решаются. Точка
+  // горит, пока не открыли свежий выпуск
+  { label: '', items: [{ path: '/whats-new', label: 'Что нового', icon: Sparkles, badgeKey: 'whatsNew', badgeHint: 'новый выпуск' }] },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
@@ -289,6 +292,28 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
 
   // Счётчики продаж: сколько ждёт лично тебя, а не сколько всего в системе
   const [salesBadges, setSalesBadges] = useState<Record<string, number>>({})
+  // «Что нового»: точка горит, пока свежий выпуск не открыт. Версию берём
+  // с сервера — сборка и заметки выходят вместе
+  const [whatsNew, setWhatsNew] = useState(0)
+  useEffect(() => {
+    const token = localStorage.getItem('support_agent_token') || ''
+    if (!token) return
+    let alive = true
+    const check = () => fetch('/api/support/release-notes', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!alive || !d?.latest) return
+        let seen = ''
+        try { seen = localStorage.getItem('whatsnew.seen') || '' } catch { /* приватный режим */ }
+        setWhatsNew(seen === d.latest ? 0 : 1)
+      })
+      .catch(() => {})
+    check()
+    const onSeen = () => setWhatsNew(0)
+    window.addEventListener('whatsnew:seen', onSeen)
+    const timer = setInterval(check, 10 * 60_000)
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('whatsnew:seen', onSeen) }
+  }, [])
   useEffect(() => {
     let alive = true
     const load = () => {
@@ -348,6 +373,7 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
     openCases,
     pendingCommitments,
     ...salesBadges,
+    whatsNew,
   }
 
   // Trigger animation when data is updated (every 30 seconds)
