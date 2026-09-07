@@ -21,6 +21,8 @@ export function Dialer() {
   const [note, setNote] = useState('')
   const [recent, setRecent] = useState<Array<{
     number: string; title: string; at: string; leadId: string | null; leadName: string | null
+    /** Кто из сотрудников звонил — из журнала АТС. */
+    staff?: string | null
   }>>([])
   // Чей номер набрали: известный лид → ссылка на карточку, незнакомый →
   // кнопка «создать лида». Звонок новому клиенту не должен повисать без карточки
@@ -578,6 +580,9 @@ export function Dialer() {
                           timeZone: 'Asia/Tashkent', day: 'numeric', month: 'short',
                           hour: '2-digit', minute: '2-digit',
                         })}
+                        {/* Кто звонил: список общий на отдел, и без имени
+                            «недозвон в 15:52» ничей */}
+                        {r.staff && <span className="text-gray-600"> · {r.staff.split(' ')[0]}</span>}
                       </div>
                     </button>
                     {r.leadId ? (

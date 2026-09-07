@@ -421,14 +421,21 @@ export default async function handler(req: Request): Promise<Response> {
     return json({
       ext: myExt.ext || null,
       extPersonal: myExt.personal,
-      calls: rows.map((r: any) => ({
-        // Номер клиента лежит в начале detail до разделителя
-        number: String(r.detail || '').split('·')[0].trim(),
-        title: r.title,
-        at: r.happened_at,
-        leadId: r.lead_id,
-        leadName: r.lead_name,
-      })),
+      calls: rows.map((r: any) => {
+        // detail: «номер · внутр. 101 · Имя» — синк пишет сотрудника последним
+        // сегментом; для звонилки он нужен отдельно: кто из команды звонил
+        const parts = String(r.detail || '').split('·').map((s: string) => s.trim())
+        const staff = parts.length >= 3 && !/^(внутр\.|очередь)/.test(parts[parts.length - 1])
+          ? parts[parts.length - 1] : null
+        return {
+          number: parts[0] || '',
+          title: r.title,
+          at: r.happened_at,
+          leadId: r.lead_id,
+          leadName: r.lead_name,
+          staff,
+        }
+      }),
     })
   }
 
