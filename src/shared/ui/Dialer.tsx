@@ -205,6 +205,28 @@ export function Dialer() {
     }, d))
   }
 
+  // Прямой звонок из браузера доступен и трубкам на карточках: пока софтфон
+  // подключён и свободен, они звонят одной ногой, а не через «АТС наберёт вас».
+  // Мост через window — трубки живут в общем компоненте и о звонилке не знают
+  useEffect(() => {
+    const w = window as any
+    if (vertoReady && !vertoBusy) {
+      w.__gfDirectCall = async (num: string) => {
+        await vertoRef.current!.call(num.replace(/\D/g, ''))
+        apiGet<any>(`/sales/call?action=search&q=${encodeURIComponent(num.replace(/\D/g, ''))}`, false)
+          .then(d => {
+            const hit = (d?.results || []).find((f: any) => f.kind === 'lead')
+            setLead(hit ? { id: hit.id, name: hit.name } : null)
+            setNoLead(!hit)
+          })
+          .catch(() => {})
+      }
+    } else {
+      w.__gfDirectCall = null
+    }
+    return () => { w.__gfDirectCall = null }
+  }, [vertoReady, vertoBusy])
+
   const call = async () => {
     if (digits.length < 7 || status === 'calling' || foreign) return
     // ПК-режим: звонок уходит из браузера — гудки и разговор в наушниках.

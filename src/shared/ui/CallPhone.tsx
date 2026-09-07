@@ -52,6 +52,24 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
     }
     if (status === 'calling') return
     setStatus('calling'); setError('')
+    // ПК-режим: софтфон подключён — звоним прямо из браузера, одной ногой.
+    // Иначе старый путь: АТС набирает вас, потом клиента
+    const direct = (window as any).__gfDirectCall as ((num: string) => Promise<void>) | null | undefined
+    if (direct) {
+      try {
+        await direct(parsed.valid ? parsed.e164 : phone)
+        setViaExt('browser')
+        setStatus('ringing')
+        setTimeout(() => setStatus('idle'), 4000)
+      } catch (err: any) {
+        setStatus('error')
+        setError(err?.message === 'Permission denied'
+          ? 'Браузер не дал доступ к микрофону — разрешите его для сайта'
+          : err?.message || 'Звонок из браузера не прошёл')
+        setTimeout(() => setStatus('idle'), 6000)
+      }
+      return
+    }
     try {
       const r = await apiPost<any>('/sales/call', { to: phone, ...(leadId ? { leadId } : {}) })
       setViaExt(/^\d{2,4}$/.test(String(r?.ext || '')) ? String(r.ext) : '')
@@ -76,7 +94,10 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
         onClick={call}
         title={foreign
           ? `${label} · ${parsed.countryName}: АТС подключена только для Узбекистана — клик скопирует номер, наберите с мобильного`
-          : status === 'error' ? error : `${label} · Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется`}
+          : status === 'error' ? error
+          : (window as any).__gfDirectCall
+            ? `${label} · Позвонить из браузера (ПК-режим): гудки и разговор в наушниках. Разговор запишется`
+            : `${label} · Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется`}
         className={`${base} tabular-nums cursor-pointer bg-transparent p-0 border-0 font-inherit text-left ${
           status === 'calling' ? 'opacity-60' : ''}`}
       >
@@ -84,7 +105,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
           ? (copied ? '✓' : status === 'calling' ? '…' : status === 'ringing' ? '📞…' : '📞')
           : copied ? '✓ номер скопирован'
           : status === 'calling' ? 'Соединяю…'
-          : status === 'ringing' ? `📞 АТС звонит ${viaExt ? `на ${viaExt}` : 'вам'}…`
+          : status === 'ringing' ? (viaExt === 'browser' ? '📞 звоним из браузера…' : `📞 АТС звонит ${viaExt ? `на ${viaExt}` : 'вам'}…`)
           : label}
       </button>
       {status === 'error' && size === 'md' && (
