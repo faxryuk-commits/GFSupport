@@ -59,6 +59,17 @@ export default async function handler(req: Request): Promise<Response> {
         case 'referred_by_account_id': await sql`UPDATE sales_accounts SET referred_by_account_id = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'notes': await sql`UPDATE sales_accounts SET notes = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
         case 'owner_agent_id': await sql`UPDATE sales_accounts SET owner_agent_id = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        // Реквизиты были в списке разрешённых, но веток записи для них не было —
+        // поле принималось, ответ был «ок», а в базу ничего не ложилось
+        case 'legal_name': await sql`UPDATE sales_accounts SET legal_name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'legal_address': await sql`UPDATE sales_accounts SET legal_address = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'tax_code': await sql`UPDATE sales_accounts SET tax_code = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'bank_name': await sql`UPDATE sales_accounts SET bank_name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'bank_code': await sql`UPDATE sales_accounts SET bank_code = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'bank_account': await sql`UPDATE sales_accounts SET bank_account = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'signer_name': await sql`UPDATE sales_accounts SET signer_name = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'signer_title': await sql`UPDATE sales_accounts SET signer_title = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
+        case 'signer_basis': await sql`UPDATE sales_accounts SET signer_basis = ${v} WHERE id = ${body.id} AND org_id = ${orgId}`; break
       }
     }
     return json({ ok: true })
