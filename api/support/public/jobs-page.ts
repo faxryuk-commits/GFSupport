@@ -243,9 +243,11 @@ function setTyping(on){var ti=$('t-ind');if(on&&!ti){ti=document.createElement('
   if(!on&&ti)ti.remove()}
 function setNo(n){no=n;$('qno').textContent=t().q+' '+Math.min(n,V.total)+' / '+V.total;
   $('pfill').style.width=Math.round(n/V.total*100)+'%'}
-function finish(text){setTyping(false);var d=document.createElement('div');d.className='bye';
+var doneFlag=false;
+function finish(text){setTyping(false);doneFlag=true;
+  var d=document.createElement('div');d.className='bye';
   d.textContent=text;$('chat').appendChild(d);$('chat').scrollTop=1e9;
-  $('composer').style.display='none';$('pfill').style.width='100%'}
+  $('micBtn').style.display='none';$('pfill').style.width='100%'}
 function toChat(){$('landing').style.display='none';$('chatwrap').style.display='flex';
   $('ctitle').textContent='Delever · '+c().title;$('answer').placeholder=t().input}
 
@@ -289,6 +291,13 @@ function send(){
   var inp=$('answer'),text=inp.value.trim();
   if(!text||waiting||!token)return;
   addMsg('me',text);inp.value='';
+  if(doneFlag){
+    post({action:'message',token:token,text:text}).then(function(d){
+      if(d.ack)addMsg('ai',d.ack);
+      else $('composer').style.display='none'
+    }).catch(function(){});
+    return
+  }
   ask({action:'message',token:token,text:text})
 }
 $('sendBtn').onclick=send;

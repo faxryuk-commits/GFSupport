@@ -1,6 +1,6 @@
 import { getSQL, json, corsHeaders, getOpenAIKey } from '../_lib/db.js'
 import {
-  ensureHireSchema, hireId, nextQuestion, scoreCandidate, farewell,
+  ensureHireSchema, hireId, nextQuestion, scoreCandidate, farewell, postFinishAck,
 } from '../_lib/hire.js'
 import { getBotToken, tgSend } from '../_lib/sales-bot.js'
 
@@ -194,6 +194,22 @@ export default async function handler(req: Request): Promise<Response> {
       const cand = await loadSession(sql, String(body.token || ''))
       if (!cand) return json({ error: 'session not found' }, 404)
       if (cand.finished_at) {
+        // Прощание зовёт «напишите канал последним сообщением» — держим слово:
+        // после финала принимаем до трёх коротких сообщений в карточку
+        const extra = String(body.text || '').trim().slice(0, 1000)
+        if (action === 'message' && extra) {
+          const [cnt] = await sql`
+            SELECT COUNT(*)::int AS n FROM hire_messages
+            WHERE candidate_id = ${cand.id} AND role = 'candidate' AND question_no IS NULL
+          `
+          if ((cnt?.n || 0) < 3) {
+            await sql`
+              INSERT INTO hire_messages (org_id, candidate_id, role, text, question_no)
+              VALUES (${cand.org_id}, ${cand.id}, 'candidate', ${extra}, NULL)
+            `
+            return json({ done: true, saved: true, ack: postFinishAck(cand.lang) })
+          }
+        }
         return json({ done: true, farewell: farewell(cand.lang, cand.phone) })
       }
 

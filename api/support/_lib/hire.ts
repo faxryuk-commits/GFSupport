@@ -201,6 +201,8 @@ export async function nextQuestion(orgId: string, v: VacancyRow, profile: any,
     `Требуй конкретику: цифры, имена, сроки. Привязывай вопросы к анкете и предыдущим ответам.`,
     `ПУСТОЙ ОТВЕТ НЕ ПРИНИМАЕТСЯ. Если кандидат ответил парой слов без цифр и примеров («новый опыт», «надо смотреть», «понимаю что к чему») — следующим вопросом вежливо, но прямо переспроси ИМЕННО ЭТО, попросив конкретику: цифру, пример, диапазон. Один переспрос на тему; если снова пусто — двигайся дальше.`,
     `Если на сценарий о продукте кандидат отвечает общими словами («изучу», «посчитаю», «пообщаюсь») — попроси сыграть сцену: «Представьте, что я и есть владелец — что вы скажете мне прямо сейчас?»`,
+    `Сценарий проверяет ПОДХОД, а не знание наших данных: НЕ требуй от кандидата цифр про клиентов Delever или внутреннюю статистику — их у него нет и быть не может. Ответ «данных у меня нет, но я показал бы X» — полноценный: прими и двигайся дальше.`,
+    `Никогда не задавай вопрос, внутри которого уже содержится ответ. Одну тему не пережёвывай дольше двух вопросов подряд — третий заход по тому же месту раздражает сильного кандидата.`,
     `Про деньги добивайся числа или диапазона: «надо смотреть» — не ответ.`,
     `Никогда не сообщай оценок и не отказывай.`,
     `Ответ верни JSON: {"question": "..."}`,
@@ -269,6 +271,18 @@ export function farewell(lang: string, phone: string): string {
     uz: `Rahmat, suhbat yakunlandi! Javoblaringiz Delever savdo rahbarida. 3 ish kuni ichida u siz bilan ${phone} raqami orqali WhatsApp yoki qo‘ng‘iroq bilan bog‘lanadi.`,
     kz: `Рақмет, сұхбат аяқталды! Жауаптарыңыз Delever сату жетекшісінде. 3 жұмыс күні ішінде ол сізбен ${phone} нөмірі арқылы WhatsApp немесе қоңырау арқылы хабарласады.`,
     en: `Thank you, the interview is complete! Your answers are with the Delever head of sales. Within 3 business days they will contact you via WhatsApp or a call to ${phone}.`,
+  }
+  return texts[lang] || texts.ru
+}
+
+/** Подтверждение сообщению, написанному ПОСЛЕ интервью (канал связи и т.п.). */
+export function postFinishAck(lang: string): string {
+  const texts: Record<string, string> = {
+    ru: 'Записали и передадим руководителю. Спасибо!',
+    az: 'Qeyd etdik və rəhbərə çatdıracağıq. Təşəkkürlər!',
+    uz: 'Yozib oldik va rahbarga yetkazamiz. Rahmat!',
+    kz: 'Жазып алдық, жетекшіге жеткіземіз. Рақмет!',
+    en: 'Noted — we will pass it to the manager. Thank you!',
   }
   return texts[lang] || texts.ru
 }
