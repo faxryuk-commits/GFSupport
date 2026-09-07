@@ -16,9 +16,9 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
 const STAGES = ['applied', 'interview', 'scored', 'invited', 'interviewed', 'offer', 'rejected', 'reserve']
 
 // Кандидатские ссылки живут на домене Delever: GFSupport наружу не светим.
-// jobs.delever.io добавлен доменом в этот же Vercel-проект, фронт по этому
-// хосту отдаёт ТОЛЬКО страницы вакансий (см. isJobs в App.tsx)
-const JOBS_BASE = 'https://jobs.delever.io'
+// Сайт delever.io проксирует /jobs/<slug> и /jobs/_api в систему (rewrites
+// в vercel.json сайта), страница — самодостаточный HTML (jobs-page.ts)
+const JOBS_BASE = 'https://delever.io'
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
