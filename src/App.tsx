@@ -13,9 +13,6 @@ function PageLoader() {
 }
 
 const isAdmin = window.location.hostname.startsWith('admin.')
-// jobs.delever.io — кандидатский домен: наружу только страницы вакансий,
-// вся остальная система на этом хосте недоступна и не светится
-const isJobs = window.location.hostname.startsWith('jobs.')
 
 const DashboardPage = lazy(() => import('@/pages/dashboard/ui/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const ChatsPage = lazy(() => import('@/pages/chats/ui/ChatsPage').then(m => ({ default: m.ChatsPage })))
