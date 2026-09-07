@@ -321,12 +321,72 @@ if(token){
 </body></html>`
 }
 
+/** Индекс вакансий: delever.io/jobs без слага — список всех открытых. */
+function renderIndex(rows: any[]): string {
+  const cards = rows.map(v => {
+    const langs = (Array.isArray(v.langs) && v.langs.length ? v.langs : [v.lang])
+      .map((l: string) => LANG_LABELS[l] || l).join(' · ')
+    const pay = (Number(v.pay_fix) > 0 || Number(v.pay_kpi) > 0)
+      ? `${Number(v.pay_fix).toLocaleString('ru-RU')} + ${Number(v.pay_kpi).toLocaleString('ru-RU')} ${esc(v.currency)}`
+      : ''
+    return `<a class="vac" href="/jobs/${esc(v.slug)}">
+      <div class="vt">${esc(v.title)}</div>
+      <div class="vm">${[v.location, pay].filter(Boolean).map(esc).join(' · ')}</div>
+      <div class="vl">${esc(langs)}</div>
+    </a>`
+  }).join('')
+  return `<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Работа в Delever</title>
+<meta name="description" content="Открытые вакансии Delever — международной IT-компании: онлайн-заказы, доставка и QR-меню для ресторанного бизнеса.">
+<link rel="icon" type="image/svg+xml" href="https://delever.io/logo/logo-compact.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="https://delever.io/favicon-32.png">
+<style>
+  * { box-sizing:border-box; margin:0 }
+  body { background:#f6f7fa; color:#101623; font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; justify-content:center; padding:28px 12px }
+  .wrap { width:100%; max-width:640px }
+  .brand { font-size:12px; font-weight:700; letter-spacing:.1em; color:#2b5cd9; text-transform:uppercase }
+  h1 { font-size:26px; margin:4px 0 4px }
+  .sub { color:#4b5768; font-size:14px; margin-bottom:18px }
+  .vac { display:block; background:#fff; border:1px solid #e5e9f0; border-radius:14px;
+    padding:16px 18px; margin-bottom:10px; text-decoration:none; color:inherit }
+  .vac:hover { border-color:#2b5cd9 }
+  .vt { font-size:17px; font-weight:700; color:#101623 }
+  .vm { font-size:13px; color:#4b5768; margin-top:2px }
+  .vl { font-size:11.5px; color:#8a94a3; margin-top:4px }
+  .empty { color:#8a94a3; font-size:14px; background:#fff; border:1px solid #e5e9f0;
+    border-radius:14px; padding:24px; text-align:center }
+</style></head><body>
+<div class="wrap">
+  <div class="brand">Delever</div>
+  <h1>Работа в Delever</h1>
+  <div class="sub">Международная IT-компания: онлайн-заказы, доставка и QR-меню для ресторанного бизнеса.
+    Выберите вакансию — отклик и короткое интервью займут 10 минут, язык выбирается на странице.</div>
+  ${cards || '<div class="empty">Открытых вакансий сейчас нет · Hozircha ochiq vakansiyalar yo‘q</div>'}
+</div>
+</body></html>`
+}
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
   const sql = getSQL()
   await ensureHireSchema(sql)
   const url = new URL(req.url)
   const slug = (url.searchParams.get('slug') || '').toLowerCase()
+
+  // Без слага — список открытых вакансий
+  if (!slug) {
+    const rows = await sql`
+      SELECT slug, title, lang, langs, location, pay_fix, pay_kpi, currency
+      FROM hire_vacancies WHERE status = 'active' ORDER BY created_at DESC
+    `
+    return new Response(renderIndex(rows as any[]), {
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=60' },
+    })
+  }
+
   const [v] = await sql`
     SELECT * FROM hire_vacancies WHERE slug = ${slug} AND status = 'active' LIMIT 1
   `
