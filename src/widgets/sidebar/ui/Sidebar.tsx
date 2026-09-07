@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch,
+  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
