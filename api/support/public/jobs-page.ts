@@ -18,7 +18,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
 const T: Record<string, Record<string, string>> = {
   ru: {
     name: 'Имя и фамилия', phone: 'Телефон', city: 'Город',
-    exp: 'Опыт в ресторанной сфере (где, кем, сколько)', salary: 'Ожидания по зарплате',
+    exp: 'Опыт работы: где, кем, сколько', salary: 'Ожидания по зарплате',
     consent: 'Согласен(на) на обработку персональных данных',
     start: 'Начать разговор (5–7 минут)', apply: 'Откликнуться',
     note: 'Дальше — короткий разговор: несколько вопросов, можно отвечать голосом.',
@@ -28,7 +28,7 @@ const T: Record<string, Record<string, string>> = {
   },
   az: {
     name: 'Ad və soyad', phone: 'Telefon', city: 'Şəhər',
-    exp: 'Restoran sahəsində təcrübə (harada, kim kimi, nə qədər)', salary: 'Maaş gözləntisi',
+    exp: 'İş təcrübəsi: harada, kim kimi, nə qədər', salary: 'Maaş gözləntisi',
     consent: 'Şəxsi məlumatlarımın emalına razıyam',
     start: 'Söhbətə başla (5–7 dəqiqə)', apply: 'Müraciət et',
     note: 'Sonra qısa söhbət olacaq: bir neçə sual, cavabları səslə də vermək olar.',
@@ -38,7 +38,7 @@ const T: Record<string, Record<string, string>> = {
   },
   uz: {
     name: 'Ism va familiya', phone: 'Telefon', city: 'Shahar',
-    exp: 'Restoran sohasidagi tajriba (qayerda, kim bo‘lib, qancha)', salary: 'Maosh bo‘yicha kutilma',
+    exp: 'Ish tajribasi: qayerda, kim bo‘lib, qancha', salary: 'Maosh bo‘yicha kutilma',
     consent: 'Shaxsiy ma’lumotlarimni qayta ishlashga roziman',
     start: 'Suhbatni boshlash (5–7 daqiqa)', apply: 'Ariza berish',
     note: 'Keyin qisqa suhbat bo‘ladi: bir nechta savol, ovozda ham javob berish mumkin.',
@@ -48,7 +48,7 @@ const T: Record<string, Record<string, string>> = {
   },
   kz: {
     name: 'Аты-жөні', phone: 'Телефон', city: 'Қала',
-    exp: 'Мейрамхана саласындағы тәжірибе (қайда, кім болып, қанша)', salary: 'Жалақы бойынша күтілім',
+    exp: 'Жұмыс тәжірибесі: қайда, кім болып, қанша', salary: 'Жалақы бойынша күтілім',
     consent: 'Жеке деректерімді өңдеуге келісемін',
     start: 'Әңгімені бастау (5–7 минут)', apply: 'Өтініш беру',
     note: 'Кейін қысқа әңгіме болады: бірнеше сұрақ, дауыспен де жауап беруге болады.',

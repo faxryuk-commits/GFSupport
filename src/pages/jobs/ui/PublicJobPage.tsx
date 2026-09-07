@@ -15,7 +15,7 @@ const API = '/api/support/public/jobs'
 const T: Record<string, Record<string, string>> = {
   ru: {
     apply: 'Откликнуться', name: 'Имя и фамилия', phone: 'Телефон', city: 'Город',
-    exp: 'Опыт в ресторанной сфере (где, кем, сколько)', salary: 'Ожидания по зарплате',
+    exp: 'Опыт работы: где, кем, сколько', salary: 'Ожидания по зарплате',
     consent: 'Согласен(на) на обработку персональных данных',
     start: 'Начать разговор (5–7 минут)', note: 'Дальше — короткий разговор: несколько вопросов, можно отвечать голосом.',
     prep: 'Совет: загляните на delever.io — пара вопросов будет о продукте.',
@@ -24,7 +24,7 @@ const T: Record<string, Record<string, string>> = {
   },
   az: {
     apply: 'Müraciət et', name: 'Ad və soyad', phone: 'Telefon', city: 'Şəhər',
-    exp: 'Restoran sahəsində təcrübə (harada, kim kimi, nə qədər)', salary: 'Maaş gözləntisi',
+    exp: 'İş təcrübəsi: harada, kim kimi, nə qədər', salary: 'Maaş gözləntisi',
     consent: 'Şəxsi məlumatlarımın emalına razıyam',
     start: 'Söhbətə başla (5–7 dəqiqə)', note: 'Sonra qısa söhbət olacaq: bir neçə sual, cavabları səslə də vermək olar.',
     prep: 'Məsləhət: delever.io saytına baxın — bir neçə sual məhsul haqqında olacaq.',
@@ -33,7 +33,7 @@ const T: Record<string, Record<string, string>> = {
   },
   uz: {
     apply: 'Ariza berish', name: 'Ism va familiya', phone: 'Telefon', city: 'Shahar',
-    exp: 'Restoran sohasidagi tajriba (qayerda, kim bo‘lib, qancha)', salary: 'Maosh bo‘yicha kutilma',
+    exp: 'Ish tajribasi: qayerda, kim bo‘lib, qancha', salary: 'Maosh bo‘yicha kutilma',
     consent: 'Shaxsiy ma’lumotlarimni qayta ishlashga roziman',
     start: 'Suhbatni boshlash (5–7 daqiqa)', note: 'Keyin qisqa suhbat bo‘ladi: bir nechta savol, ovozda ham javob berish mumkin.',
     prep: 'Maslahat: delever.io saytiga qarang — bir nechta savol mahsulot haqida bo‘ladi.',
