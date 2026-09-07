@@ -43,15 +43,24 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
   const [data, setData] = useState<any>(null)
   const [invite, setInvite] = useState<any>(null)
   const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
     apiGet<any>(`/hiring?action=candidate&id=${id}`, false).then(setData).catch(() => {})
   }, [id])
   useEffect(() => { setData(null); setInvite(null); load() }, [load])
 
+  // Отказ и резерв закрывают карточку — работа с кандидатом окончена;
+  // «на собеседование» оставляет её открытой: дальше нужен текст приглашения
   const move = async (stage: string) => {
-    await apiPost('/hiring', { action: 'stage', id, stage })
-    load(); onChanged()
+    if (busy) return
+    setBusy(true)
+    try {
+      await apiPost('/hiring', { action: 'stage', id, stage })
+      onChanged()
+      if (stage === 'rejected' || stage === 'reserve') onClose()
+      else load()
+    } catch (e: any) { alert(e?.message || 'Не получилось') } finally { setBusy(false) }
   }
   const loadInvite = () => apiGet<any>(`/hiring?action=invite&id=${id}`, false).then(setInvite).catch(() => {})
 
@@ -68,7 +77,17 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
       sub={`${c.vacancy_title} · ${c.city || '—'} · ${c.phone} · отклик ${fmtAgo(c.created_at)}${
         c.finished_at && c.started_at
           ? ` · интервью ${Math.round((new Date(c.finished_at).getTime() - new Date(c.started_at).getTime()) / 60000)} мин` : ''}`}
-      right={<button onClick={onClose} className="text-gray-400 hover:text-gray-700">✕</button>}
+      right={
+        <span className="flex items-center gap-2">
+          <Chip tone={c.stage === 'rejected' ? 'red' : c.stage === 'offer' ? 'green' : 'blue'}>
+            {STAGE_LABELS[c.stage] || c.stage}
+          </Chip>
+          <button onClick={onClose}
+            className="text-[12px] font-semibold text-gray-500 bg-gray-100 rounded-lg px-3 py-1.5 hover:text-gray-800">
+            ← к доске
+          </button>
+        </span>
+      }
     >
       <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-gray-100">
         <span className={`flex items-center justify-center w-12 h-12 rounded-xl text-white text-[22px] font-bold ${
@@ -85,14 +104,31 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
           </div>
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {c.stage !== 'invited' && (
-            <button onClick={() => move('invited')}
-              className="text-[12px] font-semibold text-white bg-blue-600 rounded-lg px-3 py-1.5">На собеседование</button>
+          {['rejected', 'reserve'].includes(c.stage) ? (
+            <button onClick={() => move('scored')} disabled={busy}
+              className="text-[12px] font-semibold text-white bg-blue-600 rounded-lg px-3 py-1.5 disabled:opacity-50">
+              Вернуть в работу
+            </button>
+          ) : (
+            <>
+              {c.stage !== 'invited' && c.stage !== 'offer' && (
+                <button onClick={() => move('invited')} disabled={busy}
+                  className="text-[12px] font-semibold text-white bg-blue-600 rounded-lg px-3 py-1.5 disabled:opacity-50">
+                  На собеседование
+                </button>
+              )}
+              {c.stage === 'invited' && (
+                <button onClick={() => move('offer')} disabled={busy}
+                  className="text-[12px] font-semibold text-white bg-emerald-600 rounded-lg px-3 py-1.5 disabled:opacity-50">
+                  Оффер
+                </button>
+              )}
+              <button onClick={() => move('reserve')} disabled={busy}
+                className="text-[12px] font-semibold text-gray-600 bg-gray-100 rounded-lg px-3 py-1.5 disabled:opacity-50">В резерв</button>
+              <button onClick={() => move('rejected')} disabled={busy}
+                className="text-[12px] font-semibold text-red-600 bg-red-50 rounded-lg px-3 py-1.5 disabled:opacity-50">Отказ</button>
+            </>
           )}
-          <button onClick={() => move('reserve')}
-            className="text-[12px] font-semibold text-gray-600 bg-gray-100 rounded-lg px-3 py-1.5">В резерв</button>
-          <button onClick={() => move('rejected')}
-            className="text-[12px] font-semibold text-red-600 bg-red-50 rounded-lg px-3 py-1.5">Отказ</button>
         </div>
       </div>
 
@@ -329,8 +365,17 @@ export function HiringPage() {
           onSaved={() => { setEditVacancy(null); loadVacancies() }} />
       )}
 
+      {/* Карточка — оверлей поверх доски: раньше она вставала над колонками,
+          выталкивала их за экран, и изменения этапов происходили «за кадром» */}
       {openCand && (
-        <CandidateCard id={openCand} onClose={() => { setOpenCand(null); setParams({}) }} onChanged={loadBoard} />
+        <div
+          className="fixed inset-0 z-50 bg-black/30 overflow-y-auto p-3 md:p-6"
+          onClick={() => { setOpenCand(null); setParams({}) }}
+        >
+          <div className="max-w-3xl mx-auto" onClick={e => e.stopPropagation()}>
+            <CandidateCard id={openCand} onClose={() => { setOpenCand(null); setParams({}) }} onChanged={loadBoard} />
+          </div>
+        </div>
       )}
 
       {vacancies.length === 0 && !editVacancy ? (

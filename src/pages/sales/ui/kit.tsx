@@ -753,12 +753,14 @@ export function OwnerPicker({ owner, team, onPick, busy }: {
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          {/* Колонкой и с переносом: в шапке карточки список сидит внутри
+              строки с nowrap, и inline-кнопки выстраивались в ряд с прокруткой */}
           <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200
-                          rounded-xl shadow-xl py-1 max-h-56 overflow-y-auto w-52">
+                          rounded-xl shadow-xl py-1 max-h-56 overflow-y-auto w-56 flex flex-col whitespace-normal">
             {team.map(a => (
               <button key={a.id}
                 onClick={() => { setOpen(false); onPick(a.id) }}
-                className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-700 hover:bg-blue-50">
+                className="block w-full text-left px-3 py-1.5 text-[12.5px] text-gray-700 hover:bg-blue-50 truncate">
                 {a.name}
               </button>
             ))}

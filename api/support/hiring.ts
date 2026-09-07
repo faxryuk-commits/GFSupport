@@ -15,6 +15,11 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const STAGES = ['applied', 'interview', 'scored', 'invited', 'interviewed', 'offer', 'rejected', 'reserve']
 
+// Кандидатские ссылки живут на домене Delever: GFSupport наружу не светим.
+// jobs.delever.io добавлен доменом в этот же Vercel-проект, фронт по этому
+// хосту отдаёт ТОЛЬКО страницы вакансий (см. isJobs в App.tsx)
+const JOBS_BASE = 'https://jobs.delever.io'
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
 
@@ -77,7 +82,7 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE c.id = ${id} AND c.org_id = ${orgId}
       `
       if (!cand) return json({ error: 'not found' }, 404)
-      const link = `https://www.gfsupport.uz/jobs/${cand.slug}?t=${cand.token}`
+      const link = `${JOBS_BASE}/jobs/${cand.slug}?t=${cand.token}`
       const texts: Record<string, string> = {
         az: `Salam, ${cand.name}! "${cand.title}" vakansiyasına müraciətiniz üçün təşəkkür edirik. Növbəti addım — 5-7 dəqiqəlik qısa onlayn söhbət: ${link}`,
         ru: `Здравствуйте, ${cand.name}! Спасибо за отклик на вакансию «${cand.title}». Следующий шаг — короткий онлайн-разговор на 5–7 минут: ${link}`,
@@ -138,7 +143,7 @@ export default async function handler(req: Request): Promise<Response> {
           weights = EXCLUDED.weights, threshold = EXCLUDED.threshold,
           shadow = EXCLUDED.shadow, status = EXCLUDED.status
       `
-      return json({ ok: true, id, url: `https://www.gfsupport.uz/jobs/${slug}` })
+      return json({ ok: true, id, url: `${JOBS_BASE}/jobs/${slug}` })
     }
 
     if (action === 'stage') {
