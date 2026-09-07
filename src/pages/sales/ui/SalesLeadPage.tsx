@@ -192,7 +192,9 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     if (!id) return
     apiGet<LeadData>(`/sales/lead?id=${id}`, false)
       .then(d => { setData(d); setError(null) })
-      .catch(e => setError(e?.message || 'Не удалось открыть обращение'))
+      .catch(e => setError(/404/.test(String(e?.message || ''))
+        ? 'Этого обращения больше нет — его удалили или объединили с другим. Клиента ищите в воронке или в «Аккаунтах».'
+        : e?.message || 'Не удалось открыть обращение'))
   }, [id])
 
   useEffect(() => { load() }, [load])
@@ -303,7 +305,14 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
     } catch { /* без справочника отказ всё равно можно оформить */ }
   }
 
-  if (error && !data) return <div className="p-6 text-[13px] text-gray-900">{error}</div>
+  if (error && !data) return (
+    <div className="p-6 space-y-3">
+      <div className="text-[13px] text-gray-900">{error}</div>
+      <Link to="/sales/funnel" className="inline-block text-[12.5px] px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-blue-400">
+        В воронку
+      </Link>
+    </div>
+  )
   if (!data) return <Skeleton rows={5} kpis={false} />
 
   const l = data.lead

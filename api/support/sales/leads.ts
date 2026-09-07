@@ -137,6 +137,15 @@ async function handlerInner(req: Request): Promise<Response> {
         const protectedIds = kept.map(k => k.source_lead_id)
         const toDelete = ids.filter(id => !protectedIds.includes(id))
         if (toDelete.length) {
+          await sql`
+            UPDATE sales_tasks t
+            SET lead_id = NULL,
+                deal_id = COALESCE(t.deal_id, (
+                  SELECT d.id FROM sales_deals d WHERE d.account_id = t.account_id
+                    AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+                  ORDER BY d.updated_at DESC NULLS LAST LIMIT 1))
+            WHERE t.org_id = ${orgId} AND t.lead_id = ANY(${toDelete})
+          `
           await sql`DELETE FROM sales_leads WHERE id = ANY(${toDelete}) AND org_id = ${orgId}`
         }
         return json({ ok: true, deleted: toDelete.length, skipped: protectedIds.length })
@@ -237,6 +246,18 @@ async function handlerInner(req: Request): Promise<Response> {
       if (deals > 0) {
         return json({ error: 'По лиду уже есть сделка — удалить нельзя, уберите в архив.' }, 409)
       }
+      // Встречи и задачи обращения переезжают к сделке клиента, если она есть,
+      // иначе остаются на клиенте: раньше они держали ссылку на удалённое
+      // обращение, и «К лиду» из панели встреч вело в 404
+      await sql`
+        UPDATE sales_tasks t
+        SET lead_id = NULL,
+            deal_id = COALESCE(t.deal_id, (
+              SELECT d.id FROM sales_deals d WHERE d.account_id = t.account_id
+                AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+              ORDER BY d.updated_at DESC NULLS LAST LIMIT 1))
+        WHERE t.org_id = ${orgId} AND t.lead_id = ${body.leadId}
+      `
       await sql`DELETE FROM sales_leads WHERE id = ${body.leadId} AND org_id = ${orgId}`
       return json({ ok: true, deleted: true })
     }

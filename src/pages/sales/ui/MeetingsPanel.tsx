@@ -26,6 +26,9 @@ interface Meeting {
   assigneeAgentId: string | null
   assigneeName: string | null
   accountName: string | null
+  /** Куда вести из панели — сервер уже проверил, что адрес живой. */
+  link?: string | null
+  linkLabel?: string | null
   dealId: string | null
   leadId: string | null
   meetUrl: string | null
@@ -341,10 +344,10 @@ export function MeetingsPanel({ compact = false }: { compact?: boolean } = {}) {
                           Открыть Meet
                         </a>
                       )}
-                      {(m.dealId || m.leadId) && (
-                        <Link to={m.dealId ? `/sales/deals/${m.dealId}` : `/sales/leads/${m.leadId}`}
+                      {(m.link || m.dealId || m.leadId) && (
+                        <Link to={m.link || (m.dealId ? `/sales/deals/${m.dealId}` : `/sales/leads/${m.leadId}`)}
                               className="px-2.5 py-1 text-[11px] font-extrabold rounded-md border border-gray-200 bg-white text-gray-600">
-                          {m.dealId ? 'В сделку' : 'К лиду'}
+                          {m.linkLabel || (m.dealId ? 'В сделку' : 'К лиду')}
                         </Link>
                       )}
                       {!m.doneAt && (

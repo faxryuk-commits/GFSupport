@@ -474,11 +474,19 @@ export default async function handler(req: Request): Promise<Response> {
            t.assignee_agent_id, t.meet_url, t.deal_id, t.lead_id, t.account_id,
            ag.name AS assignee_name,
            a.name  AS account_name,
-           d.stage_id AS deal_stage
+           d.stage_id AS deal_stage,
+           -- Обращение могли удалить как дубль, а встреча осталась: ссылка
+           -- «К лиду» вела в 404. Проверяем, живо ли оно, и есть ли у клиента
+           -- сделка, к которой встречу честнее вести
+           (l.id IS NOT NULL) AS lead_exists,
+           (SELECT d2.id FROM sales_deals d2 WHERE d2.account_id = t.account_id
+              AND d2.archived_at IS NULL AND d2.won_at IS NULL AND d2.lost_at IS NULL
+              ORDER BY d2.updated_at DESC NULLS LAST LIMIT 1) AS account_deal_id
     FROM sales_tasks t
     LEFT JOIN support_agents ag ON ag.id = t.assignee_agent_id
     LEFT JOIN sales_accounts a  ON a.id = t.account_id
     LEFT JOIN sales_deals d     ON d.id = t.deal_id
+    LEFT JOIN sales_leads l     ON l.id = t.lead_id
     WHERE t.org_id = ${orgId} AND t.kind = 'meeting'
       AND t.due_at >= ${rangeStart.toISOString()} AND t.due_at < ${rangeEnd.toISOString()}
     ORDER BY t.due_at
@@ -507,6 +515,15 @@ export default async function handler(req: Request): Promise<Response> {
       leadId: r.lead_id,
       dealStage: r.deal_stage,
       meetUrl: r.meet_url,
+      // Куда вести: сделка → живое обращение → сделка клиента → карточка клиента
+      link: r.deal_id ? `/sales/deals/${r.deal_id}`
+        : r.lead_exists && r.lead_id ? `/sales/leads/${r.lead_id}`
+        : r.account_deal_id ? `/sales/deals/${r.account_deal_id}`
+        : r.account_id ? `/sales/accounts/${r.account_id}` : null,
+      linkLabel: r.deal_id ? 'В сделку'
+        : r.lead_exists && r.lead_id ? 'К лиду'
+        : r.account_deal_id ? 'В сделку клиента'
+        : r.account_id ? 'К клиенту' : null,
     })),
   })
 }
