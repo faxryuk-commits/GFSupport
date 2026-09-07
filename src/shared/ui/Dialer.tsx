@@ -224,7 +224,10 @@ export function Dialer() {
     } else {
       w.__gfDirectCall = null
     }
-    return () => { w.__gfDirectCall = null }
+    // Трубки на карточках читают мост при отрисовке — без сигнала их подсказка
+    // продолжала обещать «АТС наберёт вас» уже после подключения софтфона
+    window.dispatchEvent(new CustomEvent('gf:direct-call', { detail: Boolean(w.__gfDirectCall) }))
+    return () => { w.__gfDirectCall = null; window.dispatchEvent(new CustomEvent('gf:direct-call', { detail: false })) }
   }, [vertoReady, vertoBusy])
 
   const call = async () => {

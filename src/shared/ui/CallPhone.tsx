@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiPost } from '@/shared/services/api.service'
 import { parsePhone, PBX_COUNTRY } from '@/shared/lib/phone'
 
@@ -32,6 +32,14 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
   // зазвонит; мобильный первой ногой остаётся «вам»
   const [viaExt, setViaExt] = useState('')
   const [copied, setCopied] = useState(false)
+  // Есть ли прямой звонок из браузера — держим в состоянии и слушаем звонилку:
+  // софтфон подключается позже первой отрисовки, и подсказка должна обновиться
+  const [direct, setDirect] = useState<boolean>(() => Boolean((window as any).__gfDirectCall))
+  useEffect(() => {
+    const on = (e: Event) => setDirect(Boolean((e as CustomEvent).detail))
+    window.addEventListener('gf:direct-call', on)
+    return () => window.removeEventListener('gf:direct-call', on)
+  }, [])
 
   if (!phone) return null
   const parsed = parsePhone(phone, market)
@@ -95,7 +103,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', className = '' }
         title={foreign
           ? `${label} · ${parsed.countryName}: АТС подключена только для Узбекистана — клик скопирует номер, наберите с мобильного`
           : status === 'error' ? error
-          : (window as any).__gfDirectCall
+          : direct
             ? `${label} · Позвонить из браузера (ПК-режим): гудки и разговор в наушниках. Разговор запишется`
             : `${label} · Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется`}
         className={`${base} tabular-nums cursor-pointer bg-transparent p-0 border-0 font-inherit text-left ${
