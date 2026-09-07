@@ -342,7 +342,10 @@ export default async function handler(req: Request): Promise<Response> {
     stages,
     currentStage: stages.find((s: any) => s.id === deal.stage_id) || null,
     nextStage,
-    missing: nextStage ? missingFields(deal, nextStage.required_fields) : [],
+    // Реквизиты — с карточки клиента: у сделки такого поля нет
+    missing: nextStage
+      ? missingFields({ ...deal, legal_name: deal.legal_name || account[0]?.legal_name || null }, nextStage.required_fields)
+      : [],
     // Подписи полей отдаём целиком: на карточке они нужны и для заполненных
     // критериев, иначе сейлз увидит имя колонки вместо названия
     labels: FIELD_LABELS,

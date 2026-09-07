@@ -71,6 +71,19 @@ async function handlerInner(req: Request): Promise<Response> {
   // ─── 1. Критерии выхода ─────────────────────────────────────────────────────
   const required: string[] = movingBack ? []
     : Array.isArray(target.required_fields) ? target.required_fields : []
+  // Реквизиты живут в карточке клиента, а не сделки: поля «legal_name» в
+  // карточке сделки нет, и «Договор» упирался в критерий, который негде
+  // выполнить. Если у клиента юрлицо заполнено — считаем выполненным и
+  // переносим на сделку, чтобы договор собрался из неё
+  if (required.includes('legal_name') && isEmptyValue(deal.legal_name) && deal.account_id) {
+    const [acc] = await sql`
+      SELECT legal_name FROM sales_accounts WHERE id = ${deal.account_id} LIMIT 1
+    ` as any[]
+    if (acc?.legal_name) {
+      await sql`UPDATE sales_deals SET legal_name = ${acc.legal_name} WHERE id = ${deal.id}`
+      deal.legal_name = acc.legal_name
+    }
+  }
   const missing = required.filter(f => {
     if (f === 'lost_reason_id') return !body.lostReasonCode && isEmptyValue(deal.lost_reason_id)
     return isEmptyValue(deal[f])

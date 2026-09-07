@@ -563,7 +563,15 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                   <span className="font-semibold whitespace-nowrap">
                     → {data.nextStage?.label}: {missing.length ? 'не хватает' : 'всё заполнено'}
                   </span>
-                  {missing.map(m => (
+                  {missing.map(m => m.field === 'legal_name' && data.account?.id ? (
+                    // Реквизиты заполняются в карточке клиента — ведём туда,
+                    // а не оставляем искать поле, которого в сделке нет
+                    <Link key={m.field} to={`/sales/accounts/${data.account.id}`}
+                      title="Реквизиты юрлица заполняются в карточке клиента; договор соберётся из них"
+                      className="text-[11px] px-2 py-0.5 rounded-md bg-white border border-amber-300 text-amber-900 hover:border-blue-400 hover:text-blue-700">
+                      Реквизиты → карточка клиента
+                    </Link>
+                  ) : (
                     <span key={m.field} className="text-[11px] px-2 py-0.5 rounded-md bg-white border border-amber-200 text-amber-900">
                       {m.label || data.labels?.[m.field] || m.field}
                     </span>
