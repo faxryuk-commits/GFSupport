@@ -18,6 +18,7 @@ const T: Record<string, Record<string, string>> = {
     exp: 'Опыт в ресторанной сфере (где, кем, сколько)', salary: 'Ожидания по зарплате',
     consent: 'Согласен(на) на обработку персональных данных',
     start: 'Начать разговор (5–7 минут)', note: 'Дальше — короткий разговор: несколько вопросов, можно отвечать голосом.',
+    prep: 'Совет: загляните на delever.io — пара вопросов будет о продукте.',
     typing: 'Печатает…', input: 'Ваш ответ…', duties: 'Что делать', reqs: 'Требования', offer: 'Условия',
     q: 'Вопрос', fix: 'фикс', kpi: 'KPI', voiceStop: 'Остановить запись',
   },
@@ -26,6 +27,7 @@ const T: Record<string, Record<string, string>> = {
     exp: 'Restoran sahəsində təcrübə (harada, kim kimi, nə qədər)', salary: 'Maaş gözləntisi',
     consent: 'Şəxsi məlumatlarımın emalına razıyam',
     start: 'Söhbətə başla (5–7 dəqiqə)', note: 'Sonra qısa söhbət olacaq: bir neçə sual, cavabları səslə də vermək olar.',
+    prep: 'Məsləhət: delever.io saytına baxın — bir neçə sual məhsul haqqında olacaq.',
     typing: 'Yazır…', input: 'Cavabınız…', duties: 'Vəzifə öhdəlikləri', reqs: 'Tələblər', offer: 'Nə təklif edirik',
     q: 'Sual', fix: 'fix', kpi: 'KPI', voiceStop: 'Yazmanı dayandır',
   },
@@ -34,6 +36,7 @@ const T: Record<string, Record<string, string>> = {
     exp: 'Restoran sohasidagi tajriba (qayerda, kim bo‘lib, qancha)', salary: 'Maosh bo‘yicha kutilma',
     consent: 'Shaxsiy ma’lumotlarimni qayta ishlashga roziman',
     start: 'Suhbatni boshlash (5–7 daqiqa)', note: 'Keyin qisqa suhbat bo‘ladi: bir nechta savol, ovozda ham javob berish mumkin.',
+    prep: 'Maslahat: delever.io saytiga qarang — bir nechta savol mahsulot haqida bo‘ladi.',
     typing: 'Yozmoqda…', input: 'Javobingiz…', duties: 'Vazifalar', reqs: 'Talablar', offer: 'Shartlar',
     q: 'Savol', fix: 'fix', kpi: 'KPI', voiceStop: 'Yozishni to‘xtatish',
   },
@@ -281,6 +284,11 @@ export function PublicJobPage() {
           style={{ ...S.btn, width: '100%', padding: '13px', fontSize: 15, opacity: (!form.consent || !form.name.trim()) ? .5 : 1 }}
         >{submitting ? '…' : t.start}</button>
         <div style={{ color: '#8a94a3', fontSize: 12, marginTop: 8 }}>{t.note}</div>
+        <div style={{ color: '#4b5768', fontSize: 12, marginTop: 4 }}>
+          {t.prep?.split('delever.io')[0]}
+          <a href="https://delever.io" target="_blank" rel="noreferrer" style={{ color: '#2b5cd9' }}>delever.io</a>
+          {t.prep?.split('delever.io')[1]}
+        </div>
       </div>
     </div>
   )

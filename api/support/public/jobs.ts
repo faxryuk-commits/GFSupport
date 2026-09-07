@@ -1,6 +1,6 @@
 import { getSQL, json, corsHeaders, getOpenAIKey } from '../_lib/db.js'
 import {
-  ensureHireSchema, hireId, nextQuestion, scoreCandidate, FAREWELL,
+  ensureHireSchema, hireId, nextQuestion, scoreCandidate, farewell,
 } from '../_lib/hire.js'
 import { getBotToken, tgSend } from '../_lib/sales-bot.js'
 
@@ -125,7 +125,7 @@ export default async function handler(req: Request): Promise<Response> {
         name: cand.name, lang: cand.lang, title: cand.title,
         questionNo: Number(cand.question_no), total: Number(cand.questions_count) || 8,
         finished: !!cand.finished_at,
-        farewell: cand.finished_at ? (FAREWELL[cand.lang] || FAREWELL.ru) : null,
+        farewell: cand.finished_at ? farewell(cand.lang, cand.phone) : null,
         messages: (messages as any[]).map(m => ({ role: m.role, text: m.text })),
       })
     }
@@ -188,7 +188,7 @@ export default async function handler(req: Request): Promise<Response> {
       const cand = await loadSession(sql, String(body.token || ''))
       if (!cand) return json({ error: 'session not found' }, 404)
       if (cand.finished_at) {
-        return json({ done: true, farewell: FAREWELL[cand.lang] || FAREWELL.ru })
+        return json({ done: true, farewell: farewell(cand.lang, cand.phone) })
       }
 
       let text = String(body.text || '').trim().slice(0, 2000)
@@ -235,7 +235,7 @@ export default async function handler(req: Request): Promise<Response> {
       // Лимит достигнут — финалим и прощаемся без вердикта
       if (askedNo >= total && text) {
         await finishInterview(sql, cand)
-        return json({ done: true, farewell: FAREWELL[cand.lang] || FAREWELL.ru })
+        return json({ done: true, farewell: farewell(cand.lang, cand.phone) })
       }
 
       const messages = await sql`

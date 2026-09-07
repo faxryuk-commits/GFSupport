@@ -146,14 +146,26 @@ export async function nextQuestion(orgId: string, v: VacancyRow, profile: any,
   messages: Array<{ role: string; text: string; question_no: number | null }>, askedNo: number,
 ): Promise<string> {
   const langName = LANG_NAMES[v.lang] || v.lang
+  const total = v.questions_count
+  // Жёсткая арка вместо импровизации: кандидат должен чувствовать логику
+  // разговора, а не случайный набор вопросов. Продукт — только после
+  // короткого контекста: кандидат не обязан знать Delever заранее.
+  const arc = [
+    `№1 — поздоровайся, В ОДНОЙ фразе объяви план («поговорим об опыте, потом пара рабочих ситуаций, в конце — об условиях») и задай вопрос про опыт из анкеты.`,
+    `№2 и №3 — углубление в опыт: конкретика, цифры, «как именно». Если ответ уже конкретный — переходи к новой грани опыта, а не выдумывай уточнение.`,
+    `№${Math.min(4, total - 3)} — понимание продукта: СНАЧАЛА в 1-2 предложениях объясни, что делает Delever для ресторана (свой сайт и приложение для заказов, доставка, QR-меню — подписка вместо комиссии агрегатора), и только потом задай ОДИН сценарий из списка. Кандидат не обязан знать продукт — оцениваем мышление, не знание.`,
+    `№${Math.min(5, total - 2)} — мотивация: почему к нам, почему уходит с прошлого места.`,
+    `№${Math.min(6, total - 1)} — ожидания по деньгам и графику, если из анкеты не ясно; назови вилку честно.`,
+    `Остальные до №${total} — добор по самому слабому или неясному месту разговора.`,
+  ].join('\n')
   const system = [
     `Ты — дружелюбный интервьюер компании Delever (технологии для ресторанов: онлайн-заказы, доставка, QR-меню).`,
     `Проводишь короткий скрининг кандидата. Пиши ТОЛЬКО на ${langName} языке.`,
-    `Правила: всего ${v.questions_count} вопросов, это будет вопрос №${askedNo + 1}.`,
-    `Один вопрос за раз, коротко (максимум 2 предложения). Не повторяй уже спрошенное.`,
-    `Требуй конкретику: цифры, имена, сроки. Если ответ общий — задай уточнение вглубь, но не более двух уточнений за всё интервью.`,
-    `Обязательно за интервью: 1 вопрос-сценарий на понимание продукта (из списка), 1 вопрос про зарплатные ожидания (если ещё не ясно из анкеты), 1 вопрос про мотивацию (почему к нам / почему ушёл).`,
-    `Привязывай вопросы к анкете кандидата. Никогда не сообщай оценок и не отказывай.`,
+    `Всего ${total} вопросов, это будет вопрос №${askedNo + 1}. План интервью:`,
+    arc,
+    `Один вопрос за раз, коротко (кроме вопроса о продукте — там сначала контекст). Не повторяй уже спрошенное.`,
+    `Требуй конкретику: цифры, имена, сроки. Привязывай вопросы к анкете и предыдущим ответам.`,
+    `Никогда не сообщай оценок и не отказывай.`,
     `Ответ верни JSON: {"question": "..."}`,
   ].join('\n')
   const user = [
@@ -204,11 +216,18 @@ export async function scoreCandidate(orgId: string, v: VacancyRow & { weights: a
   }
 }
 
-/** Прощание после интервью — на языке кандидата, без вердикта. */
-export const FAREWELL: Record<string, string> = {
-  ru: 'Спасибо! Интервью завершено. Мы внимательно всё изучим и свяжемся с вами в течение 3 рабочих дней.',
-  az: 'Təşəkkür edirik! Müsahibə tamamlandı. Cavablarınızı diqqətlə nəzərdən keçirib 3 iş günü ərzində sizinlə əlaqə saxlayacağıq.',
-  uz: 'Rahmat! Suhbat yakunlandi. Javoblaringizni diqqat bilan ko‘rib chiqamiz va 3 ish kuni ichida siz bilan bog‘lanamiz.',
-  kz: 'Рақмет! Сұхбат аяқталды. Жауаптарыңызды мұқият қарап, 3 жұмыс күні ішінде хабарласамыз.',
-  en: 'Thank you! The interview is complete. We will review your answers carefully and get back to you within 3 business days.',
+/**
+ * Прощание после интервью — на языке кандидата, без вердикта, но с конкретикой:
+ * кто, по какому каналу и в какой срок выйдет на связь. «Мы свяжемся» без
+ * деталей читается как вежливый отказ — и кандидат уходит дальше по рынку.
+ */
+export function farewell(lang: string, phone: string): string {
+  const texts: Record<string, string> = {
+    ru: `Спасибо, интервью завершено! Ответы уже у руководителя отдела продаж Delever. В течение 3 рабочих дней он свяжется с вами по WhatsApp или звонком на номер ${phone}. Если удобнее другой канал — напишите его последним сообщением здесь.`,
+    az: `Təşəkkür edirik, müsahibə tamamlandı! Cavablarınız artıq Delever satış rəhbərindədir. 3 iş günü ərzində o sizinlə ${phone} nömrəsi ilə WhatsApp və ya zənglə əlaqə saxlayacaq.`,
+    uz: `Rahmat, suhbat yakunlandi! Javoblaringiz Delever savdo rahbarida. 3 ish kuni ichida u siz bilan ${phone} raqami orqali WhatsApp yoki qo‘ng‘iroq bilan bog‘lanadi.`,
+    kz: `Рақмет, сұхбат аяқталды! Жауаптарыңыз Delever сату жетекшісінде. 3 жұмыс күні ішінде ол сізбен ${phone} нөмірі арқылы WhatsApp немесе қоңырау арқылы хабарласады.`,
+    en: `Thank you, the interview is complete! Your answers are with the Delever head of sales. Within 3 business days they will contact you via WhatsApp or a call to ${phone}.`,
+  }
+  return texts[lang] || texts.ru
 }
