@@ -68,7 +68,7 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
   if (!accountId) return null
 
   return (
-    <Card
+    <Card dense
       title="Контакты"
       sub="по телефону идёт склейка обращений из разных каналов"
       right={

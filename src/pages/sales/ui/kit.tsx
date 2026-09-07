@@ -120,6 +120,9 @@ export const Fold = ({ title, sub, right, defaultOpen = false, children }: {
   title: string; sub?: ReactNode; right?: ReactNode; defaultOpen?: boolean; children: ReactNode
 }) => {
   const [open, setOpen] = useState(defaultOpen)
+  // Содержимое появилось после первого рендера (собрали КП — возник документ):
+  // свёртка должна раскрыться сама, иначе новое видно только после перезагрузки
+  useEffect(() => { if (defaultOpen) setOpen(true) }, [defaultOpen])
   return (
     <div className="border-b border-gray-100 last:border-b-0">
       <div className={`flex items-center gap-2 px-4 h-9 text-[12.5px] ${open ? 'bg-gray-50/80' : 'hover:bg-gray-50/60'}`}>

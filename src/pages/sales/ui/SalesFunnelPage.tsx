@@ -183,6 +183,7 @@ export function SalesFunnelPage() {
   }
   const [over, setOver] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [rejectLead, setRejectLead] = useState<string | null>(null)
   const reqRef = useRef(0)
 
   const load = useCallback(() => {
@@ -303,7 +304,11 @@ export function SalesFunnelPage() {
     }
     if (zone === 'closed') {
       if (kind === 'deal') moveDeal(id, target)
-      else setError('Сначала возьмите обращение в работу')
+      // Обращение в «Проиграно» — это отказ: спрашиваем причину и архивируем.
+      // Раньше доска отвечала «сначала возьмите в работу» — ради того, чтобы
+      // отказать, приходилось заводить сделку
+      else if (target === 'lost') setRejectLead(id)
+      else setError('Обращение нельзя выиграть — сначала переведите его в сделку')
       return
     }
     if (kind === 'lead') convert(id, target)
@@ -705,6 +710,37 @@ export function SalesFunnelPage() {
           {error}
           <button onClick={() => setError(null)} className="font-semibold flex-none">Понятно</button>
         </div>
+      )}
+      {rejectLead && (
+        <Modal title="В отказ" sub="Почему не наш клиент? Причина видна в отчёте по потерям"
+          onClose={() => setRejectLead(null)}
+          footer={
+            <div className="flex items-center gap-3">
+              <button onClick={async () => {
+                  const id = rejectLead; setRejectLead(null)
+                  try { await apiPost('/sales/leads?action=archive', { leadId: id }); load() }
+                  catch (e: any) { setError(e?.message || 'Не удалось отказать') }
+                }}
+                className="text-[12px] text-gray-400 hover:text-gray-700">причина неизвестна</button>
+              <span className="flex-1" />
+              <button onClick={() => setRejectLead(null)}
+                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">Отмена</button>
+            </div>
+          }>
+          <div className="flex flex-wrap gap-1.5">
+            {(refs?.reasons || []).map((r: any) => (
+              <button key={r.id}
+                onClick={async () => {
+                  const id = rejectLead; setRejectLead(null)
+                  try { await apiPost('/sales/leads?action=archive', { leadId: id, reasonId: r.id }); load() }
+                  catch (e: any) { setError(e?.message || 'Не удалось отказать') }
+                }}
+                className="text-[12px] px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:border-red-400 hover:text-red-600">
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
       {notice && !error && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white text-[12.5px]

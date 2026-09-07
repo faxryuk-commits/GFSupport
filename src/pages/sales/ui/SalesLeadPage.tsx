@@ -6,6 +6,7 @@ import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM
 import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText, Fold, MoreMenu } from './kit'
 import { CallInsight } from './CallInsight'
+import { ContactsCard } from './ContactsCard'
 import { TasksCard } from './TasksCard'
 import { TeamThread } from './TeamThread'
 import { BookMeetingModal } from './BookMeetingModal'
@@ -512,6 +513,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
             {l.external_id && <Row label="Идентификатор">{l.external_id}</Row>}
           </div>
         </Block>
+
+        {/* Дополнительные номера и люди живут у клиента: у обращения одно
+            поле телефона, а у ресторана — управляющий, бухгалтер, второй номер */}
+        {l.account_id && <ContactsCard accountId={l.account_id} market={l.market_id} />}
 
         {/* Редкое — свёрнуто в строки с содержимым: текст заявки, ответы
             формы и сделки не нужны при каждом открытии, а места занимали */}

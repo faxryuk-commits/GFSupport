@@ -656,6 +656,10 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             </div>
           </Card>
 
+          {/* Контакты клиента: второй номер, бухгалтер, почта. Блок был
+              импортирован, но не выведен — «добавьте контакт ниже» вело в пустоту */}
+          {data.account?.id && <ContactsCard accountId={data.account.id} market={d.market_id} />}
+
           <Card dense title="Коммерческие условия"
             count={`${COMMERCIAL_FIELDS.filter(([f]) => d[f] !== null && d[f] !== undefined && d[f] !== '').length} из ${COMMERCIAL_FIELDS.length} · ${d.currency || 'UZS'}`}
             hint="То, что мы пообещали клиенту"
