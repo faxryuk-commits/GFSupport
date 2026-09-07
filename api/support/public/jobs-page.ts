@@ -23,6 +23,7 @@ const T: Record<string, Record<string, string>> = {
     start: 'Начать разговор (5–7 минут)', apply: 'Откликнуться',
     note: 'Дальше — короткий разговор: несколько вопросов, можно отвечать голосом.',
     prep: 'Совет: загляните на {site} — пара вопросов будет о продукте.',
+    vName: 'Укажите имя и фамилию', vPhone: 'Укажите телефон — минимум 9 цифр', vConsent: 'Нужна галочка согласия на обработку данных',
     typing: 'Печатает…', input: 'Ваш ответ…', duties: 'Что делать', reqs: 'Требования',
     offer: 'Условия', q: 'Вопрос', fix: 'фикс', kpi: 'KPI', err: 'Не получилось, попробуйте ещё раз',
   },
@@ -33,6 +34,7 @@ const T: Record<string, Record<string, string>> = {
     start: 'Söhbətə başla (5–7 dəqiqə)', apply: 'Müraciət et',
     note: 'Sonra qısa söhbət olacaq: bir neçə sual, cavabları səslə də vermək olar.',
     prep: 'Məsləhət: {site} saytına baxın — bir neçə sual məhsul haqqında olacaq.',
+    vName: 'Ad və soyadınızı yazın', vPhone: 'Telefon nömrəsini yazın — ən azı 9 rəqəm', vConsent: 'Şəxsi məlumatların emalına razılıq lazımdır',
     typing: 'Yazır…', input: 'Cavabınız…', duties: 'Vəzifə öhdəlikləri', reqs: 'Tələblər',
     offer: 'Nə təklif edirik', q: 'Sual', fix: 'fix', kpi: 'KPI', err: 'Alınmadı, bir daha cəhd edin',
   },
@@ -43,6 +45,7 @@ const T: Record<string, Record<string, string>> = {
     start: 'Suhbatni boshlash (5–7 daqiqa)', apply: 'Ariza berish',
     note: 'Keyin qisqa suhbat bo‘ladi: bir nechta savol, ovozda ham javob berish mumkin.',
     prep: 'Maslahat: {site} saytiga qarang — bir nechta savol mahsulot haqida bo‘ladi.',
+    vName: 'Ism va familiyangizni yozing', vPhone: 'Telefon raqamini yozing — kamida 9 raqam', vConsent: 'Shaxsiy ma’lumotlarni qayta ishlashga rozilik kerak',
     typing: 'Yozmoqda…', input: 'Javobingiz…', duties: 'Vazifalar', reqs: 'Talablar',
     offer: 'Shartlar', q: 'Savol', fix: 'fix', kpi: 'KPI', err: 'Xatolik, yana urinib ko‘ring',
   },
@@ -53,6 +56,7 @@ const T: Record<string, Record<string, string>> = {
     start: 'Әңгімені бастау (5–7 минут)', apply: 'Өтініш беру',
     note: 'Кейін қысқа әңгіме болады: бірнеше сұрақ, дауыспен де жауап беруге болады.',
     prep: 'Кеңес: {site} сайтына қараңыз — бірнеше сұрақ өнім туралы болады.',
+    vName: 'Аты-жөніңізді жазыңыз', vPhone: 'Телефон нөмірін жазыңыз — кемінде 9 сан', vConsent: 'Жеке деректерді өңдеуге келісім қажет',
     typing: 'Жазуда…', input: 'Жауабыңыз…', duties: 'Міндеттер', reqs: 'Талаптар',
     offer: 'Шарттар', q: 'Сұрақ', fix: 'фикс', kpi: 'KPI', err: 'Болмады, қайталап көріңіз',
   },
@@ -126,6 +130,7 @@ function render(v: any): string {
   button.primary:disabled { opacity:.5 }
   .hint { color:#8a94a3; font-size:12px; margin-top:8px } .hint a { color:#2b5cd9 }
   .error { color:#bc3a2e; font-size:13px; margin:8px 0 }
+  input.bad { border-color:#bc3a2e !important; background:#fdf6f5 }
   .chatwrap { display:none; flex-direction:column; height:86vh }
   .chead { padding:14px 16px; border-bottom:1px solid #e5e9f0 }
   .chead b { font-size:15px } .chead .no { color:#8a94a3; font-size:12px; margin-left:8px }
@@ -215,7 +220,7 @@ function renderLanding(){
   // Введённое переживает смену языка — человек не должен набирать заново
   ;['name','phone','city','salary','exp'].forEach(function(k){
     var el=$('f-'+k);if(saved[k])el.value=saved[k];
-    el.addEventListener('input',function(){saved[k]=el.value})
+    el.addEventListener('input',function(){saved[k]=el.value;el.classList.remove('bad');show('')})
   });
   if(saved.consent)$('f-consent').checked=true;
   $('f-consent').addEventListener('change',function(e){saved.consent=e.target.checked});
@@ -259,8 +264,15 @@ function ask(payload){
 }
 
 function startApply(){
-  var name=($('f-name').value||'').trim(),phone=($('f-phone').value||'').trim();
-  if(!name||phone.replace(/[^0-9]/g,'').length<9||!$('f-consent').checked)return;
+  var tr=t();
+  var nameEl=$('f-name'),phoneEl=$('f-phone');
+  var name=(nameEl.value||'').trim(),phone=(phoneEl.value||'').trim();
+  nameEl.classList.remove('bad');phoneEl.classList.remove('bad');
+  var errs=[];
+  if(!name){errs.push(tr.vName);nameEl.classList.add('bad')}
+  if(phone.replace(/[^0-9]/g,'').length<9){errs.push(tr.vPhone);phoneEl.classList.add('bad')}
+  if(!$('f-consent').checked)errs.push(tr.vConsent);
+  if(errs.length){show(errs.join('. '));var bad=document.querySelector('input.bad');if(bad)bad.focus();return}
   $('startBtn').disabled=true;show('');
   post({action:'apply',slug:V.slug,name:name,phone:phone,lang:lang,
     city:($('f-city').value||'').trim(),salary:($('f-salary').value||'').trim(),
