@@ -114,19 +114,22 @@ export function LeadCard({
       className={`${CARD} ${overdue ? 'border-l-red-500' : 'border-l-violet-500'} ${dragging ? 'opacity-30' : ''}`}>
       <div className="flex items-baseline justify-between gap-2">
         <button onClick={onOpen}
-          className="text-[12px] font-semibold text-gray-900 hover:text-violet-700 text-left truncate min-w-0 flex-1">
+          className="text-[12px] font-semibold text-gray-900 hover:text-violet-700 text-left truncate min-w-[50%] flex-1">
           {title}
         </button>
         <span className="flex items-center gap-1 flex-none">
           {showFlag && <MarketFlag market={l.market_id} />}
-          {/* У клиента уже есть сделка — «Беру» прикрепит обращение к ней,
-              а не заведёт вторую. Об этом надо сказать до нажатия */}
-          {l.open_deal_stage && <Chip tone="blue">сделка · {l.open_deal_stage}</Chip>}
           <Chip tone={overdue ? 'red' : age >= 1 && !l.first_touch_at ? 'amber' : 'gray'}>{age} дн</Chip>
         </span>
       </div>
       <div className={`mt-1 text-[11.5px] font-medium truncate ${TONE[state.tone]}`}>{state.text}</div>
-      <div className="mt-0.5 text-[11px] text-gray-400 truncate" title={facts}>{facts || '—'}</div>
+      {/* У клиента уже есть сделка — «К сделке» прикрепит обращение к ней,
+          а не заведёт вторую. Об этом надо сказать до нажатия — но в строке
+          фактов, а не в заголовке: метка в заголовке выдавливала имя */}
+      <div className="mt-0.5 text-[11px] text-gray-400 truncate" title={facts}>
+        {l.open_deal_stage && <span className="text-blue-700 font-medium">сделка · {l.open_deal_stage} · </span>}
+        {facts || '—'}
+      </div>
       {/* Пятая строка — как связаться и что сказал: телефон цифрами и слова
           клиента. По наведению они были, но наведение — это ещё один жест */}
       <div className="mt-0.5 text-[11px] text-gray-500 truncate">
@@ -194,7 +197,7 @@ export function DealCard({
       className={`${CARD} ${stuck ? 'border-l-red-500' : 'border-l-blue-500'} ${dragging ? 'opacity-30' : ''}`}>
       <div className="flex items-baseline justify-between gap-2">
         <button onClick={onOpen}
-          className="text-[12px] font-semibold text-gray-900 hover:text-blue-600 text-left truncate min-w-0 flex-1">
+          className="text-[12px] font-semibold text-gray-900 hover:text-blue-600 text-left truncate min-w-[50%] flex-1">
           {title}
         </button>
         <span className="flex items-center gap-1 flex-none">
