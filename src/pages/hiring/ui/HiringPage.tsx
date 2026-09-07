@@ -44,6 +44,8 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
   const [invite, setInvite] = useState<any>(null)
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [edit, setEdit] = useState<any>({})
 
   const load = useCallback(() => {
     apiGet<any>(`/hiring?action=candidate&id=${id}`, false).then(setData).catch(() => {})
@@ -64,6 +66,23 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
   }
   const loadInvite = () => apiGet<any>(`/hiring?action=invite&id=${id}`, false).then(setInvite).catch(() => {})
 
+  const saveEdit = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await apiPost('/hiring', { action: 'candidate_update', id, ...edit })
+      setEditing(false); load(); onChanged()
+    } catch (e: any) { alert(e?.message || 'Не сохранилось') } finally { setBusy(false) }
+  }
+
+  const removeCandidate = async () => {
+    if (!confirm('Удалить кандидата целиком, вместе с интервью? Это для тестов и спама — настоящим кандидатам место в «Отказе».')) return
+    try {
+      await apiPost('/hiring', { action: 'candidate_delete', id })
+      onChanged(); onClose()
+    } catch (e: any) { alert(e?.message || 'Не удалилось') }
+  }
+
   if (!data) return <Card title="Кандидат"><Skeleton rows={3} kpis={false} /></Card>
   const c = data.candidate
   const blocks: Array<[string, string]> = [
@@ -78,10 +97,18 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
         c.finished_at && c.started_at
           ? ` · интервью ${Math.round((new Date(c.finished_at).getTime() - new Date(c.started_at).getTime()) / 60000)} мин` : ''}`}
       right={
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5">
           <Chip tone={c.stage === 'rejected' ? 'red' : c.stage === 'offer' ? 'green' : 'blue'}>
             {STAGE_LABELS[c.stage] || c.stage}
           </Chip>
+          <button title="Редактировать анкету"
+            onClick={() => {
+              setEdit({ name: c.name, phone: c.phone, city: c.city || '', salary: c.salary_exp || '', experience: c.experience || '' })
+              setEditing(v => !v)
+            }}
+            className="text-[12px] px-2 py-1.5 rounded-lg text-gray-500 bg-gray-100 hover:text-blue-600">✎</button>
+          <button title="Удалить кандидата" onClick={removeCandidate}
+            className="text-[12px] px-2 py-1.5 rounded-lg text-gray-500 bg-gray-100 hover:text-red-600">🗑</button>
           <button onClick={onClose}
             className="text-[12px] font-semibold text-gray-500 bg-gray-100 rounded-lg px-3 py-1.5 hover:text-gray-800">
             ← к доске
@@ -89,6 +116,26 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
         </span>
       }
     >
+      {editing && (
+        <div className="px-4 py-3 border-b border-gray-100 bg-blue-50/40">
+          <div className="flex flex-wrap gap-2">
+            {([['name', 'Имя'], ['phone', 'Телефон'], ['city', 'Город'], ['salary', 'Ожидания по зарплате']] as const).map(([k, ph]) => (
+              <input key={k} value={edit[k] || ''} placeholder={ph}
+                onChange={e => setEdit((x: any) => ({ ...x, [k]: e.target.value }))}
+                className="text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 flex-1 min-w-[140px]" />
+            ))}
+            <input value={edit.experience || ''} placeholder="Опыт работы"
+              onChange={e => setEdit((x: any) => ({ ...x, experience: e.target.value }))}
+              className="text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 w-full" />
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button onClick={saveEdit} disabled={busy}
+              className="text-[12px] font-semibold text-white bg-blue-600 rounded-lg px-3 py-1.5 disabled:opacity-50">Сохранить</button>
+            <button onClick={() => setEditing(false)}
+              className="text-[12px] font-semibold text-gray-500 bg-gray-100 rounded-lg px-3 py-1.5">Отмена</button>
+          </div>
+        </div>
+      )}
       <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-gray-100">
         <span className={`flex items-center justify-center w-12 h-12 rounded-xl text-white text-[22px] font-bold ${
           c.grade ? gradeColor[c.grade] : 'bg-gray-300'}`}>{c.grade || '–'}</span>
@@ -316,6 +363,17 @@ function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () 
           className="text-[13px] font-semibold text-white bg-blue-600 rounded-lg px-4 py-2 disabled:opacity-50">
           {saving ? 'Сохраняем…' : 'Сохранить вакансию'}
         </button>
+        {vacancy && (
+          <button
+            onClick={async () => {
+              if (!confirm('Архивировать вакансию? Публичная страница погаснет, кандидаты и история останутся.')) return
+              try { await apiPost('/hiring', { action: 'vacancy_delete', id: f.id }); onSaved() }
+              catch (e: any) { alert(e?.message || 'Не получилось') }
+            }}
+            className="text-[13px] font-semibold text-red-600 bg-red-50 rounded-lg px-4 py-2">
+            Архивировать
+          </button>
+        )}
         {savedUrl && (
           <span className="text-[12.5px] text-emerald-600">
             Опубликована: <a className="underline" href={savedUrl} target="_blank" rel="noreferrer">{savedUrl}</a>

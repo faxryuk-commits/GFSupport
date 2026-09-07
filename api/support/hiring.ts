@@ -40,7 +40,7 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT v.*, (
           SELECT COUNT(*)::int FROM hire_candidates c WHERE c.vacancy_id = v.id
         ) AS candidates
-        FROM hire_vacancies v WHERE v.org_id = ${orgId}
+        FROM hire_vacancies v WHERE v.org_id = ${orgId} AND v.status <> 'archived'
         ORDER BY v.created_at DESC
       `
       return json({ vacancies: rows })
@@ -164,6 +164,44 @@ export default async function handler(req: Request): Promise<Response> {
           langs = EXCLUDED.langs, i18n = EXCLUDED.i18n
       `
       return json({ ok: true, id, url: `${JOBS_BASE}/jobs/${slug}` })
+    }
+
+    // Правка анкетных данных кандидата: опечатка в телефоне или имени
+    // не должна требовать нового отклика
+    if (action === 'candidate_update') {
+      const id = String(body.id || '')
+      if (!id) return json({ error: 'id required' }, 400)
+      await sql`
+        UPDATE hire_candidates SET
+          name = COALESCE(NULLIF(${String(body.name || '').trim().slice(0, 120)}, ''), name),
+          phone = COALESCE(NULLIF(${String(body.phone || '').trim().slice(0, 40)}, ''), phone),
+          city = ${String(body.city || '').trim().slice(0, 80) || null},
+          salary_exp = ${String(body.salary || '').trim().slice(0, 80) || null},
+          experience = ${String(body.experience || '').trim().slice(0, 500) || null}
+        WHERE id = ${id} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
+    }
+
+    // Полное удаление кандидата вместе с диалогом — для тестов и спама.
+    // Реальным кандидатам место в «Отказе»: там остаётся история
+    if (action === 'candidate_delete') {
+      const id = String(body.id || '')
+      if (!id) return json({ error: 'id required' }, 400)
+      await sql`DELETE FROM hire_messages WHERE candidate_id = ${id} AND org_id = ${orgId}`
+      await sql`DELETE FROM hire_candidates WHERE id = ${id} AND org_id = ${orgId}`
+      return json({ ok: true })
+    }
+
+    // Вакансию не удаляем, а архивируем: страница гаснет (404), кандидаты
+    // и история остаются
+    if (action === 'vacancy_delete') {
+      const id = String(body.id || '')
+      await sql`
+        UPDATE hire_vacancies SET status = 'archived'
+        WHERE id = ${id} AND org_id = ${orgId}
+      `
+      return json({ ok: true })
     }
 
     if (action === 'stage') {
