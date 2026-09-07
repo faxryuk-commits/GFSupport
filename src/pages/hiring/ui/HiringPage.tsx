@@ -203,6 +203,27 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
         </div>
       )}
 
+      {Array.isArray(c.qualification) && c.qualification.length > 0 && (
+        <div className="px-4 py-3 border-b border-gray-100">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+            Квалификация по требованиям · met только при подтверждении словами кандидата
+          </div>
+          <div className="space-y-1">
+            {c.qualification.map((q: any, i: number) => (
+              <div key={i} className="flex items-start gap-2 text-[12.5px]">
+                <span className={`flex-none mt-px font-bold ${
+                  q.status === 'met' ? 'text-emerald-600' : q.status === 'unmet' ? 'text-red-600' : 'text-gray-400'}`}>
+                  {q.status === 'met' ? '✓' : q.status === 'unmet' ? '✗' : '?'}
+                </span>
+                <span className="text-gray-800">{q.requirement}
+                  {q.note && <span className="text-gray-400"> — {q.note}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Приглашение в мессенджер: ссылку кидают откликнувшимся на площадках */}
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 flex-wrap">
         {!invite ? (

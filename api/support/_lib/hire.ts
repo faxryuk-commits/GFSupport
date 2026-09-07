@@ -86,6 +86,7 @@ export async function ensureHireSchema(sql: any) {
     await sql`ALTER TABLE hire_vacancies ADD COLUMN IF NOT EXISTS langs JSONB DEFAULT '[]'`.catch(() => {})
     await sql`ALTER TABLE hire_vacancies ADD COLUMN IF NOT EXISTS i18n JSONB DEFAULT '{}'`.catch(() => {})
     await sql`ALTER TABLE hire_candidates ADD COLUMN IF NOT EXISTS lang VARCHAR(8)`.catch(() => {})
+    await sql`ALTER TABLE hire_candidates ADD COLUMN IF NOT EXISTS qualification JSONB`.catch(() => {})
   })
 }
 
@@ -197,6 +198,9 @@ export async function nextQuestion(orgId: string, v: VacancyRow, profile: any,
     arc,
     `Один вопрос за раз, коротко (кроме вопроса о продукте — там сначала контекст). Не повторяй уже спрошенное.`,
     `Требуй конкретику: цифры, имена, сроки. Привязывай вопросы к анкете и предыдущим ответам.`,
+    `ПУСТОЙ ОТВЕТ НЕ ПРИНИМАЕТСЯ. Если кандидат ответил парой слов без цифр и примеров («новый опыт», «надо смотреть», «понимаю что к чему») — следующим вопросом вежливо, но прямо переспроси ИМЕННО ЭТО, попросив конкретику: цифру, пример, диапазон. Один переспрос на тему; если снова пусто — двигайся дальше.`,
+    `Если на сценарий о продукте кандидат отвечает общими словами («изучу», «посчитаю», «пообщаюсь») — попроси сыграть сцену: «Представьте, что я и есть владелец — что вы скажете мне прямо сейчас?»`,
+    `Про деньги добивайся числа или диапазона: «надо смотреть» — не ответ.`,
     `Никогда не сообщай оценок и не отказывай.`,
     `Ответ верни JSON: {"question": "..."}`,
   ].join('\n')
@@ -220,13 +224,15 @@ export async function scoreCandidate(orgId: string, v: VacancyRow & { weights: a
 ): Promise<{
   score: number; grade: string; blocks: any; summary: string; redFlags: string
   recommended: boolean; translations: Array<{ id: number; ru: string }>
+  qualification: Array<{ requirement: string; status: string; note?: string }>
 }> {
   const w = v.weights || {}
   const system = [
     `Ты — ассистент по найму Delever — международной IT-компании, B2B SaaS-платформы для ресторанного бизнеса. Вакансия — менеджер по продажам IT-продукта (не работа в ресторане!). Оцени кандидата по интервью и анкете как будущего B2B-сейлза. Отвечай на русском.`,
     `Блоки и веса: опыт ${w.experience ?? 30}% (продажи и переговоры весят больше, чем годы в общепите), понимание продукта ${w.product ?? 25}% (мыслит ли как продавец B2B SaaS: ценность, возражения, ЛПР), ожидания vs вилка ${w.expectations ?? 20}%, мотивация ${w.motivation ?? 15}%, red flags ${w.red_flags ?? 10}%.`,
     `Правила: несовпадение ожиданий с вилкой — это флаг с пояснением, а не приговор. Red flags: противоречия с анкетой, явное враньё, грубость, полностью шаблонные ответы (возможен ChatGPT — учитывай слишком гладкие обезличенные формулировки и слишком быстрые длинные ответы по answer_ms).`,
-    `Верни JSON строго такой формы: {"score": 0-100, "grade": "A|B|C|D", "blocks": {"experience": {"score": 0-100, "note": "..."}, "product": {...}, "expectations": {...}, "motivation": {...}, "red_flags": {...}}, "summary": "3-4 предложения: сильное, слабое, что проверить на собеседовании", "red_flags_text": "чисто | описание", "translations": [{"id": <id реплики>, "ru": "перевод на русский"}] }`,
+    `Верни JSON строго такой формы: {"score": 0-100, "grade": "A|B|C|D", "blocks": {"experience": {"score": 0-100, "note": "..."}, "product": {...}, "expectations": {...}, "motivation": {...}, "red_flags": {...}}, "qualification": [{"requirement": "...", "status": "met|unmet|unknown", "note": "кратко почему"}], "summary": "3-4 предложения: сильное, слабое, что проверить на собеседовании", "red_flags_text": "чисто | описание", "translations": [{"id": <id реплики>, "ru": "перевод на русский"}] }`,
+    `В qualification пройди по КАЖДОМУ требованию вакансии по отдельности + добавь пункты «Ожидания в вилке» и «Опыт продаж (не только управления)». status=met только если это ПОДТВЕРЖДЕНО словами кандидата; не выяснено в интервью — unknown, противоречит — unmet. Не выдумывай.`,
     `В translations переведи КАЖДУЮ реплику диалога (и вопросы, и ответы) на русский. Если реплика уже на русском — повтори её как есть.`,
   ].join('\n')
   const user = [
@@ -235,9 +241,10 @@ export async function scoreCandidate(orgId: string, v: VacancyRow & { weights: a
     `Диалог (в скобках id реплики и время ответа в мс):`,
     messages.map(m => `[id=${m.id}${m.answer_ms ? ` ${m.answer_ms}мс` : ''}] ${m.role === 'ai' ? 'Интервьюер' : 'Кандидат'}: ${m.text}`).join('\n'),
   ].join('\n\n')
-  const out = await llmJson(orgId, system, user, 2500)
+  const out = await llmJson(orgId, system, user, 3000)
   const score = Math.max(0, Math.min(100, Math.round(Number(out.score) || 0)))
   return {
+    qualification: Array.isArray(out.qualification) ? out.qualification : [],
     score,
     grade: ['A', 'B', 'C', 'D'].includes(out.grade) ? out.grade : (score >= 85 ? 'A' : score >= 65 ? 'B' : score >= 45 ? 'C' : 'D'),
     blocks: out.blocks || {},

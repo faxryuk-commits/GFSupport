@@ -83,7 +83,8 @@ async function finishInterview(sql: any, cand: any): Promise<void> {
       score = ${scored?.score ?? null}, grade = ${scored?.grade ?? null},
       blocks = ${scored ? JSON.stringify(scored.blocks) : null},
       summary = ${scored?.summary ?? null}, red_flags = ${scored?.redFlags ?? null},
-      recommended = ${scored?.recommended ?? null}
+      recommended = ${scored?.recommended ?? null},
+      qualification = ${scored?.qualification?.length ? JSON.stringify(scored.qualification) : null}
     WHERE id = ${cand.id}
   `
   if (scored?.translations?.length) {
