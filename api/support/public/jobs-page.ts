@@ -62,6 +62,10 @@ function render(v: any, t: Record<string, string>): string {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(v.title)} — Delever</title>
 <meta name="description" content="${esc(v.intro || v.title)}">
+<link rel="icon" type="image/svg+xml" href="https://delever.io/logo/logo-compact.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="https://delever.io/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://delever.io/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://delever.io/apple-touch-icon.png">
 <style>
   * { box-sizing:border-box; margin:0 }
   body { background:#f6f7fa; color:#101623; font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
