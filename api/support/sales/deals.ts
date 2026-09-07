@@ -74,8 +74,37 @@ export default async function handler(req: Request): Promise<Response> {
     const market = String(body?.market || '').trim() || null
     const pipeline = market ? `sales_${market}` : 'sales'
 
-    // Аккаунт: либо указанный, либо новый под тем же названием
+    // Дубль: у клиента с таким названием уже есть открытая сделка. Сегодня
+    // одному клиенту завели две вручную с разницей в 15 минут — и обе
+    // поехали по этапам. Без force отвечаем 409 с той, что уже есть
+    if (!body?.accountId && !body?.force) {
+      const [dup] = await sql`
+        SELECT d.id, d.title, s.label AS stage, ag.name AS owner_name, d.account_id
+        FROM sales_deals d
+        LEFT JOIN sales_accounts a ON a.id = d.account_id
+        LEFT JOIN sales_stages s ON s.id = d.stage_id
+        LEFT JOIN support_agents ag ON ag.id = d.owner_agent_id
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+          AND (lower(trim(a.name)) = lower(trim(${title})) OR lower(trim(d.title)) = lower(trim(${title})))
+        ORDER BY d.updated_at DESC NULLS LAST LIMIT 1
+      ` as any[]
+      if (dup) {
+        return json({
+          error: `У клиента «${dup.title}» уже есть открытая сделка — ${dup.stage || 'в работе'}${dup.owner_name ? `, ведёт ${dup.owner_name}` : ''}`,
+          duplicate: { id: dup.id, title: dup.title, stage: dup.stage, owner: dup.owner_name },
+        }, 409)
+      }
+    }
+
+    // Аккаунт: указанный, иначе существующий с тем же названием, иначе новый
     let accountId: string | null = body?.accountId || null
+    if (!accountId) {
+      const [same] = await sql`
+        SELECT id FROM sales_accounts WHERE org_id = ${orgId} AND lower(trim(name)) = lower(trim(${title}))
+        ORDER BY created_at LIMIT 1
+      ` as any[]
+      if (same?.id) accountId = same.id
+    }
     if (!accountId) {
       accountId = salesId('sa')
       await sql`

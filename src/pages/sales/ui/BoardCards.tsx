@@ -119,6 +119,9 @@ export function LeadCard({
         </button>
         <span className="flex items-center gap-1 flex-none">
           {showFlag && <MarketFlag market={l.market_id} />}
+          {/* У клиента уже есть сделка — «Беру» прикрепит обращение к ней,
+              а не заведёт вторую. Об этом надо сказать до нажатия */}
+          {l.open_deal_stage && <Chip tone="blue">сделка · {l.open_deal_stage}</Chip>}
           <Chip tone={overdue ? 'red' : age >= 1 && !l.first_touch_at ? 'amber' : 'gray'}>{age} дн</Chip>
         </span>
       </div>
@@ -140,9 +143,10 @@ export function LeadCard({
               Вернуть
             </button>
           ) : (
-            <button disabled={busy} onClick={onTake} title="В сделку на «Квалифицирован»"
+            <button disabled={busy} onClick={onTake}
+              title={l.open_deal_stage ? 'Прикрепить к открытой сделке клиента' : 'В сделку на «Квалифицирован»'}
               className="text-[10px] px-2 py-1 rounded-md bg-violet-600 text-white hover:brightness-110 disabled:opacity-50">
-              Беру
+              {l.open_deal_stage ? 'К сделке' : 'Беру'}
             </button>
           )}
         </span>

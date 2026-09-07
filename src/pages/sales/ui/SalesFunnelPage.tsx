@@ -37,6 +37,8 @@ export interface Lead {
   agent_name: string | null; nurture_step: number | null; nurture_next_at: string | null
   /** Ассистенту есть куда писать: у клиента есть чат в Telegram или Meta. */
   assistant_can_write?: boolean
+  /** У клиента уже есть открытая сделка — её этап. */
+  open_deal_stage?: string | null
   last_call: LastCall | null
 }
 
@@ -122,6 +124,8 @@ export function SalesFunnelPage() {
   const [cForm, setCForm] = useState({ name: '', phone: '', city: '', text: '' })
   const [cBusy, setCBusy] = useState(false)
   const [cErr, setCErr] = useState('')
+  const [cDup, setCDup] = useState<{ id: string; title: string; stage?: string | null; owner?: string | null } | null>(null)
+  const [cForce, setCForce] = useState(false)
   const [owner, setOwner] = useState('')
   const [q, setQ] = useState('')
   const [src, setSrc] = useState('')
@@ -252,6 +256,7 @@ export function SalesFunnelPage() {
     try {
       const res: any = await apiPost('/sales/funnel?action=convert', { leadId, toStage })
       load()
+      if (res?.attached) setNotice(`У клиента уже была открытая сделка (${res.stage || 'в работе'}) — обращение прикреплено к ней, вторая не заводилась`)
       if (res?.dealId) setOpenDeal(res.dealId)
     } catch (e: any) {
       // 422 движка — не поломка, а несоблюдённое условие этапа
@@ -766,13 +771,17 @@ export function SalesFunnelPage() {
                     } else {
                       await apiPost('/sales/deals', {
                         title: cForm.name, city: cForm.city, dealType: 'new',
-                        market: region || undefined,
+                        market: region || undefined, force: cForce || undefined,
                       })
                     }
-                    setCreating(null)
+                    setCreating(null); setCForce(false); setCDup(null)
                     load()
                   } catch (e: any) {
-                    setCErr(e?.message || 'Не удалось завести')
+                    // 409 — у клиента уже есть открытая сделка: показываем её,
+                    // а «всё равно создать» требует второго нажатия
+                    const dup = e?.data?.duplicate || e?.body?.duplicate || null
+                    if (dup) { setCDup(dup); setCErr(e?.message || 'Такая сделка уже есть') }
+                    else setCErr(e?.message || 'Не удалось завести')
                   } finally { setCBusy(false) }
                 }}
                 className="px-3.5 py-1.5 text-[12.5px] font-semibold rounded-lg bg-violet-600 text-white disabled:opacity-50">
@@ -782,8 +791,29 @@ export function SalesFunnelPage() {
           }
         >
           <div className="space-y-3">
-            {cErr && (
+            {cErr && !cDup && (
               <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] text-red-700">{cErr}</div>
+            )}
+            {cDup && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[12.5px] text-amber-900 space-y-2">
+                <div>
+                  У клиента <b>«{cDup.title}»</b> уже есть открытая сделка
+                  {cDup.stage ? ` — ${cDup.stage}` : ''}{cDup.owner ? `, ведёт ${cDup.owner}` : ''}.
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => { const id = cDup.id; setCreating(null); setCDup(null); setCErr(''); setOpenDeal(id) }}
+                    className="text-[12px] px-3 py-1 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700">
+                    Открыть её
+                  </button>
+                  <button onClick={() => { setCForce(true); setCDup(null); setCErr('') }}
+                    className="text-[12px] px-3 py-1 rounded-lg border border-amber-300 text-amber-900 hover:bg-amber-100">
+                    Всё равно завести вторую
+                  </button>
+                </div>
+              </div>
+            )}
+            {cForce && !cDup && (
+              <div className="text-[11.5px] text-amber-700">Вторая сделка на того же клиента — нажмите «Завести» ещё раз.</div>
             )}
             <input value={cForm.name} onChange={e => setCForm(f => ({ ...f, name: e.target.value }))}
               placeholder={creating === 'lead' ? 'Бренд или имя' : 'Название сделки'}

@@ -107,6 +107,36 @@ async function handlerInner(req: Request): Promise<Response> {
     // и на демо сейлз перезаполнял то, что уже выяснил на первом звонке.
     // Числовые колонки сделки строже текстовых полей лида: «2-3 точки»
     // превращаются в первое число, нечисловое — в NULL, а не в ошибку INSERT
+    // У клиента уже есть открытая сделка (тот же аккаунт по телефону) —
+    // вторую не заводим: обращение закрываем как повторное и пишем его
+    // в ленту существующей. Так KHANBARAK не получит третьей карточки
+    if (lead.account_id) {
+      const [openDeal] = await sql`
+        SELECT d.id, s.label AS stage FROM sales_deals d
+        LEFT JOIN sales_stages s ON s.id = d.stage_id
+        WHERE d.org_id = ${orgId} AND d.account_id = ${lead.account_id}
+          AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+        ORDER BY d.updated_at DESC NULLS LAST LIMIT 1
+      ` as any[]
+      if (openDeal) {
+        await sql.transaction([
+          sql`
+            UPDATE sales_leads
+            SET status = 'converted', assigned_agent_id = COALESCE(assigned_agent_id, ${ctx.agentId}),
+                assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = COALESCE(first_touch_at, NOW()),
+                updated_at = NOW()
+            WHERE id = ${lead.id} AND org_id = ${orgId}
+          `,
+          sql`
+            INSERT INTO sales_activities (id, org_id, deal_id, account_id, agent_id, type, text, happened_at)
+            VALUES (${salesId('act')}, ${orgId}, ${openDeal.id}, ${lead.account_id}, ${ctx.agentId}, 'note',
+                    ${`Повторное обращение: ${lead.name || ''}${lead.phone ? ` · ${lead.phone}` : ''} — прикреплено к этой сделке, вторая не заводилась`}, NOW())
+          `,
+        ])
+        return json({ ok: true, dealId: openDeal.id, attached: true, stage: openDeal.stage })
+      }
+    }
+
     const firstNum = (v: any): number | null => {
       const m = String(v ?? '').match(/\d+(?:[.,]\d+)?/)
       return m ? Number(m[0].replace(',', '.')) : null
@@ -204,6 +234,12 @@ async function handlerInner(req: Request): Promise<Response> {
         SELECT l.id, l.name, l.contact_name, l.phone, l.city, l.status, l.icp_score, l.market_id,
                l.sla_due_at, l.first_touch_at, l.created_at, l.text, l.lead_kind,
                l.nurture_step, l.nurture_next_at,
+               -- У клиента уже есть открытая сделка: на доске это должно быть
+               -- видно до «Беру», иначе обращение превращается во вторую карточку
+               (SELECT s2.label FROM sales_deals d2 JOIN sales_stages s2 ON s2.id = d2.stage_id
+                 WHERE d2.org_id = l.org_id AND d2.account_id = l.account_id
+                   AND d2.archived_at IS NULL AND d2.won_at IS NULL AND d2.lost_at IS NULL
+                 ORDER BY d2.updated_at DESC NULLS LAST LIMIT 1) AS open_deal_stage,
                -- Прогрев — это сообщения ассистента в чат клиента. Без чата
                -- (звонок, импорт, форма с одним телефоном) ему некуда писать,
                -- и кнопка только прятала бы обращение из «Новых»

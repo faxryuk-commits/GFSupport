@@ -89,7 +89,12 @@ export async function apiPost<T>(endpoint: string, body: unknown): Promise<T> {
     const error = await res.json().catch(() => ({ error: statusText(res.status) }))
     // У движка продаж отказ приходит с человеческим message («не заполнено: …»),
     // и показать нужно именно его, а не «API Error: 422»
-    throw new Error(error.message || error.error || statusText(res.status))
+    // Тело ответа нужно вызывающему: 409 «дубль» несёт id существующей
+    // сделки, и без него интерфейсу нечего предложить, кроме текста
+    const err: any = new Error(error.message || error.error || statusText(res.status))
+    err.status = res.status
+    err.data = error
+    throw err
   }
   
   return res.json()

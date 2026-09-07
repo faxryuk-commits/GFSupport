@@ -149,7 +149,9 @@ export default async function handler(req: Request): Promise<Response> {
              d.created_at, s.label AS stage
       FROM sales_deals d
       LEFT JOIN sales_stages s ON s.id = d.stage_id
-      WHERE d.org_id = ${orgId} AND d.source_lead_id = ${id}
+      WHERE d.org_id = ${orgId}
+        AND (d.source_lead_id = ${id}
+             OR d.account_id = (SELECT account_id FROM sales_leads WHERE id = ${id}))
       ORDER BY d.created_at DESC LIMIT 10
     `,
     // Команда для передачи: ответственного меняют прямо с карточки
