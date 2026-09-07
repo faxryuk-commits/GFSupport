@@ -31,6 +31,8 @@ const LandingPage = lazy(() => import('@/pages/landing/ui/LandingPage'))
 const PublicDocPage = lazy(() => import('@/pages/doc/ui/PublicDocPage'))
 const ClientPortalPage = lazy(() => import('@/pages/portal/ui/ClientPortalPage'))
 const PublicBookPage = lazy(() => import('@/pages/book/ui/PublicBookPage'))
+const PublicJobPage = lazy(() => import('@/pages/jobs/ui/PublicJobPage'))
+const HiringPage = lazy(() => import('@/pages/hiring/ui/HiringPage'))
 const SalesQueuePage = lazy(() => import('@/pages/sales/ui/SalesQueuePage'))
 const SalesDealPage = lazy(() => import('@/pages/sales/ui/SalesDealPage'))
 const SalesLeadPage = lazy(() => import('@/pages/sales/ui/SalesLeadPage'))
@@ -96,6 +98,8 @@ export default function App() {
         <Route path="/r/:token" element={<ClientPortalPage />} />
         {/* Публичная бронь встречи: ссылку ставит сайт, авторизация не нужна */}
         <Route path="/b/:token" element={<PublicBookPage />} />
+        {/* Публичная вакансия: лендинг + ИИ-интервью кандидата, без авторизации */}
+        <Route path="/jobs/:slug" element={<PublicJobPage />} />
 
         <Route element={<MainLayout />}>
           <Route path="/overview" element={<DashboardPage />} />
@@ -112,6 +116,7 @@ export default function App() {
           <Route path="/health-legacy" element={<Navigate to="/analytics?tab=diagnosis" replace />} />
           <Route path="/commitments" element={<CommitmentsPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/hiring" element={<HiringPage />} />
           <Route path="/sales/queue" element={<SalesQueuePage />} />
           <Route path="/sales/deals/:id" element={<SalesDealPage />} />
           <Route path="/sales/leads/:id" element={<SalesLeadPage />} />

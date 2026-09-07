@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks,
+  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
@@ -259,6 +259,8 @@ const navGroups: NavGroup[] = [
     ],
   },
   { label: '', items: [{ path: '/onboarding', label: 'Подключение', icon: Plug }] },
+  // Наём: скрининг кандидатов ИИ-интервью; данные видят только руководители
+  { label: '', items: [{ path: '/hiring', label: 'Наём', icon: UserRoundSearch }] },
   { label: '', items: [{ path: '/broadcast', label: 'Рассылка', icon: Megaphone }] },
   { label: '', items: [{ path: '/settings', label: 'Настройки', icon: Settings }] },
 ]
