@@ -278,7 +278,10 @@ async function handlerInner(req: Request): Promise<Response> {
       await sql`
         UPDATE sales_leads
         SET assigned_agent_id = ${ctx.agentId}, assigned_at = NOW(),
-            status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END
+            status = CASE WHEN status = 'new' THEN 'assigned' ELSE status END,
+            -- заполняет карточку — значит, уже коснулся: норматив выполнен,
+            -- напоминать «не связались за 15 минут» не о чем
+            first_touch_at = COALESCE(first_touch_at, NOW())
         WHERE id = ${leadId} AND org_id = ${orgId} AND assigned_agent_id IS NULL
       `
     }

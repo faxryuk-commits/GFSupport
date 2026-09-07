@@ -94,48 +94,40 @@ export default async function handler(req: Request): Promise<Response> {
       AND COALESCE(l.sla_handoffs, 0) < 2
     ORDER BY l.sla_due_at ASC LIMIT 20
   ` : []
+  // Карусель отключена: лид больше не переезжает к «самому свободному»
+  // сотруднику сам по себе. Владелец получал чужие обращения, к которым
+  // не имел отношения, и команда не понимала, кто и почему их раздаёт.
+  // Норматив остаётся: не связались за 15 минут — напоминание владельцу
+  // и сигнал руководителям, но владелец прежний
   for (const lead of overdue) {
-    // Свободнее всех = меньше всего висящих лидов; текущего владельца исключаем
-    const [next] = await sql`
-      SELECT a.id, a.telegram_id
-      FROM support_agents a
-      LEFT JOIN sales_leads l
-        ON l.assigned_agent_id = a.id AND l.first_touch_at IS NULL AND l.status = 'assigned'
-      WHERE a.telegram_id IS NOT NULL AND a.merged_into IS NULL
-        AND a.id <> ${lead.assigned_agent_id}
-        AND (a.org_id = ${ORG} OR a.org_id IS NULL)
-        AND (LOWER(COALESCE(a.role, '')) IN ('sales', 'sales_rep', 'ae', 'sdr', 'sales_lead', 'kam', 'cco')
-             -- отдел у команды записан латиницей: фильтр только по «прода»
-             -- не находил никого, и карусель ни разу не сработала
-             OR LOWER(COALESCE(a.department, '')) IN ('sales', 'sale')
-             OR LOWER(COALESCE(a.department, '')) LIKE '%прода%')
-      GROUP BY a.id
-      ORDER BY COUNT(l.id) ASC, a.id ASC
-      LIMIT 1
-    `
-    if (!next) {
-      // Некому передать — вернёмся через час. Видимый срок не трогаем:
-      // раньше он продлевался на 15 минут каждый проход, и лиды
-      // двухнедельной давности вечно показывали «через 5 мин»
-      await sql`UPDATE sales_leads SET sla_handoff_at = NOW() + INTERVAL '1 hour' WHERE id = ${lead.id}`
-      continue
-    }
-    // Новому владельцу — новые 15 минут: здесь сдвиг срока не враньё,
-    // а настоящая переустановка норматива
     await sql`
       UPDATE sales_leads
-      SET assigned_agent_id = ${next.id}, assigned_at = NOW(),
-          sla_due_at = NOW() + INTERVAL '15 minutes',
-          sla_handoff_at = NULL, sla_handoffs = COALESCE(sla_handoffs, 0) + 1
+      SET sla_handoff_at = NOW() + INTERVAL '1 hour',
+          sla_handoffs = COALESCE(sla_handoffs, 0) + 1
       WHERE id = ${lead.id}
     `
-    out.reassigned++
-    if (token && next.telegram_id) {
-      await tgSend(token, next.telegram_id,
-        `♻️ <b>Лид передан вам</b> — предыдущий сейлз не связался за 15 минут.\n\n` +
-        leadCard(lead, lead.source_label || 'источник не указан'),
-        leadKeyboard(lead.id))
+    out.reminded++
+    if (lead.assigned_agent_id) {
+      const [owner] = await sql`
+        SELECT telegram_id FROM support_agents WHERE id = ${lead.assigned_agent_id} LIMIT 1
+      ` as any[]
+      if (token && owner?.telegram_id) {
+        await tgSend(token, owner.telegram_id,
+          `⏰ <b>Обращение ждёт вас</b> — норматив первого касания 15 минут вышел.\n\n` +
+          leadCard(lead, lead.source_label || 'источник не указан'),
+          leadKeyboard(lead.id))
+      }
     }
+    try {
+      const { sendNotification } = await import('../_lib/notifications.js')
+      await sendNotification({
+        orgId: ORG, type: 'sla_breach', priority: 'high',
+        title: `Обращение без касания: ${lead.contact_name || lead.name || ''}`,
+        body: 'Ответственный не связался за 15 минут. Владелец не меняется — решите, звонить самому или передать.',
+        link: `/sales/leads/${lead.id}`,
+        targetRoles: ['cco', 'manager', 'team_lead'],
+      } as any)
+    } catch { /* уведомление руководителю не должно ронять тик */ }
   }
 
   // ─── 1б. Неотвеченные сообщения клиентов: повторный заход квалификатора ────
