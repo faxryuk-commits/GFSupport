@@ -560,9 +560,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
         {/* Разговор о клиенте между своими — при карточке, а не в Telegram.
             Свёрнут, пока не нужен: пустая ветка занимала полэкрана */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {/* Без overflow-hidden: подсказка @имя раскрывается вверх и резалась рамкой */}
+        <div className="bg-white border border-gray-200 rounded-xl">
           <Fold title="Команда" sub="внутреннее — клиент не видит · @имя зовёт коллегу">
-            <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} />
+            <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} embedded />
           </Fold>
         </div>
 

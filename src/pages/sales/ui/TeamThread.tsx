@@ -20,6 +20,8 @@ interface Comment {
 interface Props {
   dealId?: string; leadId?: string; accountId?: string | null
   team: Array<{ id: string; name: string }>
+  /** Внутри свёртки «Команда»: своя шапка не нужна — она уже есть у свёртки. */
+  embedded?: boolean
 }
 
 const fmtSize = (n: number) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} КБ` : `${(n / 1048576).toFixed(1)} МБ`
@@ -32,7 +34,7 @@ function Rich({ text }: { text: string }) {
     : <span key={i}>{p}</span>)}</>
 }
 
-export function TeamThread({ dealId, leadId, accountId, team }: Props) {
+export function TeamThread({ dealId, leadId, accountId, team, embedded = false }: Props) {
   const { agent } = useAuth()
   const [items, setItems] = useState<Comment[] | null>(null)
   const [text, setText] = useState('')
@@ -77,7 +79,9 @@ export function TeamThread({ dealId, leadId, accountId, team }: Props) {
     if (asTask && !assignee) setAssignee(t.id)
     setTimeout(() => taRef.current?.focus(), 0)
   }
-  const candidates = pick ? team.filter(t => t.id !== agent?.id && t.name.toLowerCase().includes(pick.q)).slice(0, 6) : []
+  // Все подходящие, а не первые шесть: список прокручивается, а человек,
+  // которого «нет в списке», — это не подсказка, а обман
+  const candidates = pick ? team.filter(t => t.id !== agent?.id && t.name.toLowerCase().includes(pick.q)) : []
 
   const upload = async (list: FileList | null) => {
     if (!list?.length) return
@@ -119,11 +123,11 @@ export function TeamThread({ dealId, leadId, accountId, team }: Props) {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl flex flex-col max-h-[60vh]">
-      <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2">
+    <div className={`bg-white flex flex-col max-h-[60vh] ${embedded ? '' : 'border border-gray-200 rounded-xl'}`}>
+      {!embedded && <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2">
         <h3 className="text-[12.5px] font-semibold text-gray-900">Команда</h3>
         <span className="text-[11px] text-gray-400">внутреннее — клиент не видит · @имя зовёт коллегу</span>
-      </div>
+      </div>}
 
       <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
         {items === null && <p className="px-4 py-6 text-center text-[12px] text-gray-400">загружаю…</p>}
@@ -175,7 +179,7 @@ export function TeamThread({ dealId, leadId, accountId, team }: Props) {
           </div>
         )}
         {candidates.length > 0 && (
-          <div className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-56 py-1">
+          <div className="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 w-60 py-1 max-h-56 overflow-y-auto">
             {candidates.map(t => (
               <button key={t.id} onMouseDown={e => { e.preventDefault(); choose(t) }}
                 className="w-full text-left px-3 py-1.5 text-[12.5px] text-gray-800 hover:bg-blue-50">@{t.name}</button>
