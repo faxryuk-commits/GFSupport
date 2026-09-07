@@ -26,17 +26,20 @@ const PUBLIC_VACANCY_FIELDS = (v: any) => ({
   duties: v.duties || [], requirements: v.requirements || [], offers: v.offers || [],
   payFix: Number(v.pay_fix), payKpi: Number(v.pay_kpi), currency: v.currency,
   questions: Number(v.questions_count) || 8,
+  langs: Array.isArray(v.langs) && v.langs.length ? v.langs : [v.lang],
+  i18n: v.i18n || {},
 })
 
 async function loadSession(sql: any, token: string) {
   if (!token || token.length < 20) return null
   const [cand] = await sql`
-    SELECT c.*, v.title, v.lang, v.region, v.pay_fix, v.pay_kpi, v.currency,
+    SELECT c.*, v.title, v.lang AS vacancy_lang, v.region, v.pay_fix, v.pay_kpi, v.currency,
            v.duties, v.requirements, v.questions_count, v.scenarios, v.weights, v.threshold
     FROM hire_candidates c
     JOIN hire_vacancies v ON v.id = c.vacancy_id
     WHERE c.token = ${token}
   `
+  if (cand) cand.lang = cand.lang || cand.vacancy_lang
   return cand || null
 }
 
@@ -154,9 +157,11 @@ export default async function handler(req: Request): Promise<Response> {
       }
       if (!body.consent) return json({ error: 'consent required' }, 400)
       const [v] = await sql`
-        SELECT id, org_id, lang FROM hire_vacancies WHERE slug = ${slug} AND status = 'active' LIMIT 1
+        SELECT id, org_id, lang, langs FROM hire_vacancies WHERE slug = ${slug} AND status = 'active' LIMIT 1
       `
       if (!v) return json({ error: 'vacancy not found' }, 404)
+      const allowedLangs: string[] = Array.isArray(v.langs) && v.langs.length ? v.langs : [v.lang]
+      const chosenLang = allowedLangs.includes(String(body.lang)) ? String(body.lang) : v.lang
 
       // Повторная подача с тем же телефоном — возвращаем ту же сессию:
       // человек мог закрыть вкладку и прийти по ссылке заново
@@ -172,9 +177,9 @@ export default async function handler(req: Request): Promise<Response> {
       const token = `${hireId('ht')}${Math.random().toString(36).slice(2, 10)}`
       await sql`
         INSERT INTO hire_candidates (
-          id, org_id, vacancy_id, token, name, phone, city, experience, salary_exp, extra
+          id, org_id, vacancy_id, token, name, phone, lang, city, experience, salary_exp, extra
         ) VALUES (
-          ${id}, ${v.org_id}, ${v.id}, ${token}, ${name}, ${phone},
+          ${id}, ${v.org_id}, ${v.id}, ${token}, ${name}, ${phone}, ${chosenLang},
           ${String(body.city || '').slice(0, 80) || null},
           ${String(body.experience || '').slice(0, 500) || null},
           ${String(body.salary || '').slice(0, 80) || null},

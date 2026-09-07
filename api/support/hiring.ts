@@ -1,7 +1,7 @@
 import { getRequestOrgId } from './_lib/org.js'
 import { getSQL, json, corsHeaders } from './_lib/db.js'
 import { extractAgentContext } from './_lib/auth.js'
-import { ensureHireSchema, hireId } from './_lib/hire.js'
+import { ensureHireSchema, hireId, translateVacancy, LANG_NAMES } from './_lib/hire.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -77,7 +77,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (action === 'invite') {
       const id = url.searchParams.get('id') || ''
       const [cand] = await sql`
-        SELECT c.name, c.phone, c.token, v.title, v.lang, v.slug
+        SELECT c.name, c.phone, c.token, COALESCE(c.lang, v.lang) AS lang, v.title, v.slug
         FROM hire_candidates c JOIN hire_vacancies v ON v.id = c.vacancy_id
         WHERE c.id = ${id} AND c.org_id = ${orgId}
       `
@@ -87,6 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
         az: `Salam, ${cand.name}! "${cand.title}" vakansiyasına müraciətiniz üçün təşəkkür edirik. Növbəti addım — 5-7 dəqiqəlik qısa onlayn söhbət: ${link}`,
         ru: `Здравствуйте, ${cand.name}! Спасибо за отклик на вакансию «${cand.title}». Следующий шаг — короткий онлайн-разговор на 5–7 минут: ${link}`,
         uz: `Assalomu alaykum, ${cand.name}! "${cand.title}" vakansiyasiga qiziqishingiz uchun rahmat. Keyingi qadam — 5-7 daqiqalik qisqa onlayn suhbat: ${link}`,
+        kz: `Сәлеметсіз бе, ${cand.name}! «${cand.title}» бос орнына жауап бергеніңізге рахмет. Келесі қадам — 5-7 минуттық қысқа онлайн әңгіме: ${link}`,
       }
       const text = texts[cand.lang] || texts.ru
       const digits = String(cand.phone || '').replace(/\D/g, '')
@@ -114,11 +115,28 @@ export default async function handler(req: Request): Promise<Response> {
       if (wSum && Math.abs(wSum - 100) > 0.5) {
         return json({ error: `Веса скоринга дают ${wSum}% вместо 100%` }, 400)
       }
+      const primaryLang = String(body.lang || 'ru').slice(0, 8)
+      const langs: string[] = [primaryLang, ...((Array.isArray(body.langs) ? body.langs : [])
+        .map((l: any) => String(l))
+        .filter((l: string) => l !== primaryLang && LANG_NAMES[l]))]
+
+      // Переводы контента — ИИ, один раз при сохранении. Падение перевода
+      // не блокирует сохранение: страница просто останется одноязычной
+      let i18n: Record<string, any> = {}
+      if (langs.length > 1) {
+        try {
+          i18n = await translateVacancy(orgId, {
+            title: String(body.title), intro: body.intro || '', schedule: body.schedule || '',
+            location: body.location || '',
+            duties: body.duties || [], requirements: body.requirements || [], offers: body.offers || [],
+          }, primaryLang, langs)
+        } catch { /* сохраним без переводов */ }
+      }
       await sql`
         INSERT INTO hire_vacancies (
           id, org_id, slug, title, lang, region, location, schedule, intro,
           duties, requirements, offers, pay_fix, pay_kpi, currency,
-          questions_count, scenarios, weights, threshold, shadow, status
+          questions_count, scenarios, weights, threshold, shadow, status, langs, i18n
         ) VALUES (
           ${id}, ${orgId}, ${slug}, ${String(body.title).slice(0, 200)},
           ${String(body.lang || 'ru').slice(0, 8)}, ${body.region || null},
@@ -130,7 +148,8 @@ export default async function handler(req: Request): Promise<Response> {
           ${Math.min(12, Math.max(4, Number(body.questions) || 8))},
           ${JSON.stringify(body.scenarios || [])}, ${JSON.stringify(weights)},
           ${Math.min(100, Math.max(0, Number(body.threshold) || 65))},
-          ${body.shadow !== false}, ${body.status === 'paused' ? 'paused' : 'active'}
+          ${body.shadow !== false}, ${body.status === 'paused' ? 'paused' : 'active'},
+          ${JSON.stringify(langs)}, ${JSON.stringify(i18n)}
         )
         ON CONFLICT (id) DO UPDATE SET
           slug = EXCLUDED.slug, title = EXCLUDED.title, lang = EXCLUDED.lang,
@@ -141,7 +160,8 @@ export default async function handler(req: Request): Promise<Response> {
           pay_kpi = EXCLUDED.pay_kpi, currency = EXCLUDED.currency,
           questions_count = EXCLUDED.questions_count, scenarios = EXCLUDED.scenarios,
           weights = EXCLUDED.weights, threshold = EXCLUDED.threshold,
-          shadow = EXCLUDED.shadow, status = EXCLUDED.status
+          shadow = EXCLUDED.shadow, status = EXCLUDED.status,
+          langs = EXCLUDED.langs, i18n = EXCLUDED.i18n
       `
       return json({ ok: true, id, url: `${JOBS_BASE}/jobs/${slug}` })
     }

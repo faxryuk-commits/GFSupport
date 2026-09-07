@@ -80,7 +80,38 @@ export async function ensureHireSchema(sql: any) {
       )
     `.catch(() => {})
     await sql`CREATE INDEX IF NOT EXISTS hire_msg_cand ON hire_messages(candidate_id, id)`.catch(() => {})
+    // Мультиязычность: langs — какие языки предлагает страница, i18n — переводы
+    // контента (генерируются ИИ при сохранении вакансии), lang у кандидата —
+    // его выбор: на нём идёт и лендинг, и само интервью
+    await sql`ALTER TABLE hire_vacancies ADD COLUMN IF NOT EXISTS langs JSONB DEFAULT '[]'`.catch(() => {})
+    await sql`ALTER TABLE hire_vacancies ADD COLUMN IF NOT EXISTS i18n JSONB DEFAULT '{}'`.catch(() => {})
+    await sql`ALTER TABLE hire_candidates ADD COLUMN IF NOT EXISTS lang VARCHAR(8)`.catch(() => {})
   })
+}
+
+/**
+ * Перевод контента вакансии на дополнительные языки страницы — один вызов
+ * при сохранении. РОП пишет на одном языке, кандидат выбирает удобный.
+ */
+export async function translateVacancy(
+  orgId: string,
+  source: { title: string; intro: string | null; schedule: string | null; location: string | null
+    duties: string[]; requirements: string[]; offers: string[] },
+  fromLang: string, targets: string[],
+): Promise<Record<string, any>> {
+  const want = targets.filter(l => l !== fromLang && LANG_NAMES[l])
+  if (!want.length) return {}
+  const system = [
+    `Ты переводишь текст вакансии компании Delever. Переведи контент с ${LANG_NAMES[fromLang] || fromLang} на языки: ${want.map(l => LANG_NAMES[l]).join(', ')}.`,
+    `Стиль — живой язык объявления о работе, не машинный. Узбекский — латиницей, казахский — кириллицей.`,
+    `Верни JSON: {${want.map(l => `"${l}": {"title": "...", "intro": "...", "schedule": "...", "location": "...", "duties": [...], "requirements": [...], "offers": [...]}`).join(', ')}}`,
+    `Пустые поля оставляй пустыми строками/массивами. Число элементов списков сохраняй.`,
+  ].join('\n')
+  const user = JSON.stringify(source)
+  const out = await llmJson(orgId, system, user, 3000)
+  const result: Record<string, any> = {}
+  for (const l of want) if (out[l] && typeof out[l] === 'object') result[l] = out[l]
+  return result
 }
 
 export function hireId(prefix: string): string {

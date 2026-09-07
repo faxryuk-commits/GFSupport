@@ -202,10 +202,11 @@ function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () 
     offers: (vacancy.offers || []).join('\n'), scenarios: (vacancy.scenarios || []).join('\n'),
     payFix: vacancy.pay_fix, payKpi: vacancy.pay_kpi, questions: vacancy.questions_count,
     weights: vacancy.weights || {},
+    langs: Array.isArray(vacancy.langs) && vacancy.langs.length ? vacancy.langs : [vacancy.lang],
   } : {
     slug: '', title: '', lang: 'ru', region: '', location: '', schedule: '', intro: '',
     duties: '', requirements: '', offers: '', payFix: '', payKpi: '', currency: 'UZS',
-    questions: 8, scenarios: '', threshold: 65, shadow: true,
+    questions: 8, scenarios: '', threshold: 65, shadow: true, langs: ['ru'],
     weights: { experience: 30, product: 25, expectations: 20, motivation: 15, red_flags: 10 },
   })
   const [saving, setSaving] = useState(false)
@@ -225,6 +226,7 @@ function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () 
         payKpi: Number(String(f.payKpi).replace(/\s/g, '')) || 0,
         currency: f.currency, questions: Number(f.questions) || 8,
         threshold: Number(f.threshold) || 65, shadow: !!f.shadow, weights: f.weights,
+        langs: f.langs || [],
       })
       if (r?.url) setSavedUrl(r.url)
       onSaved()
@@ -245,7 +247,7 @@ function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () 
           <div className="grid grid-cols-2 gap-2">
             <div><label className={lbl}>Адрес (slug)</label>
               <input className={inp} value={f.slug} onChange={set('slug')} placeholder="baku-sales" /></div>
-            <div><label className={lbl}>Язык интервью</label>
+            <div><label className={lbl}>Основной язык</label>
               <select className={inp} value={f.lang} onChange={set('lang')}>
                 <option value="ru">Русский</option><option value="az">Азербайджанский</option>
                 <option value="uz">Узбекский</option><option value="kz">Казахский</option>
@@ -256,6 +258,23 @@ function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () 
               <input className={inp} value={f.location || ''} onChange={set('location')} placeholder="Bakı" /></div>
             <div><label className={lbl}>График</label>
               <input className={inp} value={f.schedule || ''} onChange={set('schedule')} placeholder="Пн–Пт, 09:00–18:00" /></div>
+          </div>
+          <label className={lbl}>Языки страницы (кандидат выбирает сам · переводы сделает ИИ)</label>
+          <div className="flex gap-3 flex-wrap text-[12.5px] text-gray-700 py-1">
+            {([['ru', 'Русский'], ['az', 'Azərbaycanca'], ['uz', 'O‘zbekcha'], ['kz', 'Қазақша']] as const).map(([code, label]) => (
+              <label key={code} className="flex items-center gap-1.5">
+                <input type="checkbox"
+                  checked={code === f.lang || (f.langs || []).includes(code)}
+                  disabled={code === f.lang}
+                  onChange={e => setF((x: any) => ({
+                    ...x,
+                    langs: e.target.checked
+                      ? [...(x.langs || []), code]
+                      : (x.langs || []).filter((l: string) => l !== code),
+                  }))} />
+                {label}
+              </label>
+            ))}
           </div>
           <label className={lbl}>Вступление (пара предложений о компании)</label>
           <textarea className={inp} rows={2} value={f.intro || ''} onChange={set('intro')} />
