@@ -161,6 +161,11 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   const [data, setData] = useState<DealData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [blocked, setBlocked] = useState<string | null>(null)
+  // Перевод между воронками — подтверждение внутри карточки, а не window.confirm:
+  // системный диалог браузер может глушить (и тогда клик молча ничего не делает),
+  // а результат перевода — сделка исчезает с текущей доски — нужно объяснить словами
+  const [switchAsk, setSwitchAsk] = useState<'enterprise' | 'sales' | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
@@ -451,22 +456,51 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             {
               label: String(data?.deal?.pipeline || '').startsWith('enterprise') ? '→ Обычная воронка' : '→ Enterprise-воронка',
               title: 'Enterprise ведётся отдельной воронкой: свои этапы и нормативы',
-              onClick: async () => {
-                const ent = String(data?.deal?.pipeline || '').startsWith('enterprise')
-                if (!confirm(ent
-                  ? 'Вернуть сделку в обычную воронку? Она встанет на первый этап.'
-                  : 'Перевести в Enterprise-воронку? Сделка встанет на этап «Разведка», нормативы этапов станут недельными.')) return
-                try {
-                  await apiPost('/sales/deals?action=set-type', { id, type: ent ? 'sales' : 'enterprise' })
-                  load()
-                } catch (e: any) { setError(e?.message || 'Не удалось перевести') }
-              },
+              onClick: () => setSwitchAsk(String(data?.deal?.pipeline || '').startsWith('enterprise') ? 'sales' : 'enterprise'),
             },
             !closed && { label: 'Закрыть как проигранную…', onClick: () => setLostOpen(true), danger: true },
             { label: 'В архив', title: 'Убрать из списков, сохранив в истории аккаунта', onClick: archive },
             { label: 'Удалить насовсем', title: 'Только открытую сделку', onClick: removeForever, danger: true },
           ]} />
         </div>
+        {switchAsk && (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[12.5px] text-violet-900 flex items-center gap-3 flex-wrap">
+            <span className="flex-1 min-w-[240px]">
+              {switchAsk === 'enterprise'
+                ? 'Перевести в Enterprise-воронку? Сделка встанет на этап «Разведка», нормативы этапов станут недельными. На доске она появится под переключателем «Enterprise».'
+                : 'Вернуть в обычную воронку? Сделка встанет на «Квалифицирован». На доске она появится под переключателем «Продажи».'}
+            </span>
+            <button disabled={busy}
+              onClick={async () => {
+                setBusy(true); setError(null)
+                try {
+                  const r: any = await apiPost('/sales/deals?action=set-type', { id, type: switchAsk })
+                  setSwitchAsk(null)
+                  setNotice(switchAsk === 'enterprise'
+                    ? `Переведена в Enterprise-воронку, этап «${r?.stage || 'Разведка'}». На доске — переключатель «Enterprise».`
+                    : `Возвращена в обычную воронку, этап «${r?.stage || 'Квалифицирован'}». На доске — переключатель «Продажи».`)
+                  load()
+                } catch (e: any) { setError(e?.message || 'Не удалось перевести') }
+                finally { setBusy(false) }
+              }}
+              className="text-[12px] px-3 py-1.5 rounded-lg bg-violet-600 text-white font-semibold hover:bg-violet-700 disabled:opacity-50">
+              {busy ? '…' : 'Перевести'}
+            </button>
+            <button onClick={() => setSwitchAsk(null)} className="text-[12px] text-violet-700 hover:underline">Отмена</button>
+          </div>
+        )}
+        {notice && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12.5px] text-emerald-800 flex items-center gap-3">
+            <span className="flex-1">{notice}</span>
+            <button onClick={() => setNotice(null)} className="text-emerald-700 font-semibold">Понятно</button>
+          </div>
+        )}
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700 flex items-center gap-3">
+            <span className="flex-1">{error}</span>
+            <button onClick={() => setError(null)} className="text-red-700 font-semibold">Понятно</button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-1.5">
