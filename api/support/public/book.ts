@@ -258,9 +258,14 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   await sql`
-    INSERT INTO sales_tasks (id, org_id, deal_id, lead_id, kind, title, due_at,
+    INSERT INTO sales_tasks (id, org_id, deal_id, lead_id, account_id, kind, title, due_at,
                              assignee_agent_id, auto, google_event_id, meet_url, google_cal_agent_id)
-    VALUES (${salesId('stk')}, ${cfg.orgId}, ${dealId}, ${leadId}, 'meeting',
+    VALUES (${salesId('stk')}, ${cfg.orgId}, ${dealId}, ${leadId},
+            -- Клиент нужен встрече отдельно: обращение могут удалить как дубль,
+            -- а встреча должна по-прежнему вести к клиенту
+            (SELECT account_id FROM sales_leads WHERE id = ${leadId} UNION ALL
+             SELECT account_id FROM sales_deals WHERE id = ${dealId} LIMIT 1),
+            'meeting',
             ${`Встреча с сайта · ${name}`.slice(0, 500)}, ${start.toISOString()},
             ${assignee}, false, ${googleEventId}, ${meetUrl}, ${googleEventId ? assignee : null})
   `
