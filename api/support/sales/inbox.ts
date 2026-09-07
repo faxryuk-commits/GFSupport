@@ -104,8 +104,15 @@ export default async function handler(req: Request): Promise<Response> {
   let accountId = existingLead?.account_id || null
 
   if (!existingLead) {
+    // Рекламный переход из Telegram Ads: объявление ведёт на бота с меткой
+    // t.me/<бот>?start=ad_<код>, и Telegram присылает её текстом «/start ad_<код>».
+    // Метка = код кампании из реестра (sales/tg-ads) — по ней считается
+    // стоимость квалифицированного лида в разрезе объявлений
+    const adMatch = text.match(/^\/start\s+ad_([a-zA-Z0-9_-]{1,60})/)
+    const adCode = adMatch ? adMatch[1] : null
     const res = await acceptLead(sql, orgId, {
-      source: source === 'site_chat' ? 'site_chat' : 'telegram_bot',
+      source: adCode ? 'telegram_ads' : (source === 'site_chat' ? 'site_chat' : 'telegram_bot'),
+      campaign: adCode,
       external_id: externalId,
       name,
       phone,

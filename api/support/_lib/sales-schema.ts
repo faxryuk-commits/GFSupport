@@ -236,6 +236,7 @@ const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
   // а письмо требует ответа текстом. Смешивать их в «инстаграм» или «сайт»
   // означает считать конверсию по каше
   { key: 'meta_leadform', label: 'Meta лид-форма (реклама)', kind: 'paid' },
+  { key: 'telegram_ads', label: 'Telegram Ads', kind: 'paid' },
   { key: 'meta_ads_click', label: 'Переход из рекламы Meta', kind: 'paid' },
   { key: 'site', label: 'Форма на сайте', kind: 'inbound' },
   { key: 'site_chat', label: 'Чат на сайте', kind: 'inbound' },
