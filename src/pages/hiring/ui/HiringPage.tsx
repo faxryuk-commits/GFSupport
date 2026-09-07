@@ -263,7 +263,7 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
 
 /* ───────────── Редактор вакансии ───────────── */
 
-function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () => void }) {
+function VacancyEditor({ vacancy, onSaved, onClose }: { vacancy: any | null; onSaved: () => void; onClose: () => void }) {
   const [f, setF] = useState<any>(() => vacancy ? {
     ...vacancy,
     duties: (vacancy.duties || []).join('\n'), requirements: (vacancy.requirements || []).join('\n'),
@@ -307,7 +307,13 @@ function VacancyEditor({ vacancy, onSaved }: { vacancy: any | null; onSaved: () 
 
   return (
     <Card title={vacancy ? `Вакансия · ${vacancy.title}` : 'Новая вакансия'}
-      sub="публичная ссылка: gfsupport.uz/jobs/<адрес> · интервью и лендинг — на языке вакансии, скоринг — на русском">
+      sub="публичная ссылка: delever.io/jobs/<адрес> · кандидат выбирает язык на странице, скоринг — всегда на русском"
+      right={
+        <button onClick={onClose}
+          className="text-[12px] font-semibold text-gray-500 bg-gray-100 rounded-lg px-3 py-1.5 hover:text-gray-800">
+          ✕ Закрыть
+        </button>
+      }>
       <div className="px-4 pb-4 grid md:grid-cols-2 gap-x-6">
         <div>
           <label className={lbl}>Название</label>
@@ -451,16 +457,25 @@ export function HiringPage() {
             <option value="">Все вакансии</option>
             {vacancies.map(v => <option key={v.id} value={v.id}>{v.title} · {v.location || v.region || ''}</option>)}
           </select>
-          <button onClick={() => setEditVacancy(vacancyId ? vacancies.find(v => v.id === vacancyId) : 'new')}
+          <button
+            onClick={() => setEditVacancy(editVacancy ? null
+              : (vacancyId ? vacancies.find(v => v.id === vacancyId) : 'new'))}
             className="text-[12px] font-semibold text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5">
             {vacancyId ? 'Настроить вакансию' : '+ Вакансия'}
           </button>
         </div>
       </div>
     }>
+      {/* Редактор — оверлеем, как карточка кандидата: клик по фону закрывает */}
       {editVacancy && (
-        <VacancyEditor vacancy={editVacancy === 'new' ? null : editVacancy}
-          onSaved={() => { setEditVacancy(null); loadVacancies() }} />
+        <div className="fixed inset-0 z-50 bg-black/30 overflow-y-auto p-3 md:p-6"
+          onClick={() => setEditVacancy(null)}>
+          <div className="max-w-4xl mx-auto" onClick={e => e.stopPropagation()}>
+            <VacancyEditor vacancy={editVacancy === 'new' ? null : editVacancy}
+              onClose={() => setEditVacancy(null)}
+              onSaved={() => { setEditVacancy(null); loadVacancies() }} />
+          </div>
+        </div>
       )}
 
       {/* Карточка — оверлей поверх доски: раньше она вставала над колонками,
