@@ -247,7 +247,9 @@ async function handlerInner(req: Request): Promise<Response> {
                  SELECT 1 FROM sales_accounts a2 JOIN support_channels ch2 ON ch2.id = a2.channel_id
                  WHERE a2.id = l.account_id
                    AND (ch2.telegram_chat_id IS NOT NULL
-                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL))) AS assistant_can_write,
+                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM support_messages m2 WHERE m2.channel_id = ch2.id
+                                      AND m2.is_from_client = true AND m2.created_at > NOW() - INTERVAL '23 hours')))) AS assistant_can_write,
                s.label AS source, ag.name AS agent_name,
                ROW_NUMBER() OVER (PARTITION BY l.status ORDER BY l.created_at DESC) AS rn
         FROM sales_leads l

@@ -381,17 +381,23 @@ async function handlerInner(req: Request): Promise<Response> {
                  SELECT 1 FROM sales_accounts a2 JOIN support_channels ch2 ON ch2.id = a2.channel_id
                  WHERE a2.id = l.account_id
                    AND (ch2.telegram_chat_id IS NOT NULL
-                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL))) AS can_write
+                        OR (ch2.source IN ('instagram', 'messenger') AND ch2.external_chat_id IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM support_messages m2 WHERE m2.channel_id = ch2.id
+                                      AND m2.is_from_client = true AND m2.created_at > NOW() - INTERVAL '23 hours')))) AS can_write
         FROM sales_leads l WHERE l.id = ${body.leadId} AND l.org_id = ${orgId} LIMIT 1
       ` as any[]
       if (!l) return json({ error: 'обращение не найдено' }, 404)
       if (!l.can_write) {
         return json({
-          error: 'Ассистенту некуда писать: у обращения нет чата в Telegram, Instagram или Messenger. По телефону он не звонит — позвоните сами или переведите в отказ',
+          error: 'Ассистенту некуда писать: нужен чат в Telegram, либо Instagram/Messenger, где клиент писал за последние сутки — первым Meta его не пропустит. По телефону он не звонит — позвоните сами',
         }, 409)
       }
+      // Новый цикл с первого касания: раньше повторная передача продолжала
+      // старый счёт шагов, и обращение уходило сразу на третье-четвёртое
       await sql`
-        UPDATE sales_leads SET status = 'nurture', sla_due_at = NULL, updated_at = NOW()
+        UPDATE sales_leads
+        SET status = 'nurture', sla_due_at = NULL, nurture_step = 0, nurture_next_at = NULL,
+            nurture_paused_at = NULL, updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `
       return json({ ok: true })

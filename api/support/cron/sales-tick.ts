@@ -10,6 +10,27 @@ import { readPbxConfig, pbxHistory, pbxUsers } from '../_lib/pbx.js'
 import { queueInsight, processPendingInsights } from '../_lib/call-insights.js'
 import { acceptLead } from '../_lib/sales-intake.js'
 
+/**
+ * Вернуть обращение человеку из прогрева — с задачей, чтобы оно не потерялось.
+ * Статус — «назначен», если ответственный есть, иначе «новое» в общую очередь.
+ */
+async function handBack(sql: any, lead: any, why: string): Promise<void> {
+  await sql`
+    UPDATE sales_leads
+    SET status = CASE WHEN assigned_agent_id IS NULL THEN 'new' ELSE 'assigned' END,
+        nurture_next_at = NULL, nurture_paused_at = NOW(), updated_at = NOW()
+    WHERE id = ${lead.id}
+  `
+  if (lead.assigned_agent_id) {
+    await sql`
+      INSERT INTO sales_tasks (id, org_id, lead_id, account_id, kind, title, due_at, assignee_agent_id, auto)
+      VALUES (${`stk_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG}, ${lead.id},
+              ${lead.account_id || null}, 'call', ${why.slice(0, 500)},
+              ${new Date(Date.now() + 3600_000).toISOString()}, ${lead.assigned_agent_id}, true)
+    `
+  }
+}
+
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
@@ -639,13 +660,29 @@ export default async function handler(req: Request): Promise<Response> {
           leadId: lead.id, accountId: lead.account_id, action: 'nurture_draft',
           step, message: draft.text, status: 'draft', error: reason,
         })
+        // Писать некуда — держать обращение «на прогреве» значит врать
+        // доске: оно висело бы с меткой «ассистент», а ассистент молчал.
+        // Возвращаем человеку с задачей и точной причиной
+        await handBack(sql, lead, `Ассистенту некуда писать: ${reason}. Позвоните или напишите сами`)
+        continue
       }
 
+      const last = step + 1 >= MAX_STEPS
       await sql`
         UPDATE sales_leads
-        SET nurture_step = ${step + 1}, nurture_next_at = ${nextAt.toISOString()}, updated_at = NOW()
+        SET nurture_step = ${step + 1}, nurture_next_at = ${last ? null : nextAt.toISOString()}, updated_at = NOW()
         WHERE id = ${lead.id} AND org_id = ${ORG}
       `
+      // Четвёртое касание было последним: без ответа обращение возвращается
+      // человеку — решать, звонить или в отказ. Раньше оно оставалось «на
+      // прогреве» навсегда, и его никто больше не видел
+      if (last) {
+        await logAssistant(sql, ORG, {
+          leadId: lead.id, accountId: lead.account_id, action: 'nurture_done', step,
+          status: 'done', error: 'все 4 касания отправлены, ответа нет',
+        })
+        await handBack(sql, lead, 'Прогрев прошёл: 4 сообщения без ответа. Позвонить или в отказ')
+      }
       nurtured.push(lead.id)
     }
   } catch (e) {
