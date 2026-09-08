@@ -20,7 +20,6 @@ const TABS: Array<[string, string]> = [
   ['prices', 'Прайс'],
   ['options', 'Значения полей'],
   ['entities', 'Наши реквизиты'],
-  ['maps', 'Google Карты'],
   ['amo', 'Мост Amo'],
 ]
 
@@ -86,12 +85,6 @@ export function SalesSettingsPage() {
   ]
   const [optField, setOptField] = useState('city')
   const [newOption, setNewOption] = useState('')
-  // Ключ Google Карт: вводится здесь, а не в переменных окружения —
-  // за интеграции отвечает тот, кто сидит в системе, а не тот, кто деплоит
-  const [mapsKey, setMapsKey] = useState('')
-  const [mapsSaving, setMapsSaving] = useState(false)
-  const [mapsMsg, setMapsMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [mapsProbing, setMapsProbing] = useState(false)
   const [amo, setAmo] = useState<any>(null)
   const [amoBusy, setAmoBusy] = useState(false)
   const [recon, setRecon] = useState<Recon | null>(null)
@@ -101,37 +94,7 @@ export function SalesSettingsPage() {
     apiGet<any>(`/sales/catalog?market=${market}`, false).then(setCatalog).catch(() => {})
     apiGet<any>('/sales/legal-entity', false).then(d => setEntities(d.entities)).catch(() => {})
     apiGet<any>('/sales/amo', false).then(setAmo).catch(() => {})
-    apiGet<any>('/settings', false)
-      .then(d => setMapsKey(String(d?.settings?.google_places_key || '')))
-      .catch(() => {})
   }, [market])
-
-  /** Ключ Google Карт: сохраняем и тут же проверяем живым поиском. */
-  const saveMapsKey = async () => {
-    setMapsSaving(true); setMapsMsg(null)
-    try {
-      // Маскированный ключ («AIza...4sgg») обратно не отправляем
-      if (mapsKey && !mapsKey.includes('...')) {
-        await apiPut('/settings', { settings: { google_places_key: mapsKey.trim() } })
-      }
-      const r = await apiPost<any>('/sales/places', { action: 'probe' })
-      setMapsMsg({ ok: true, text: `Ключ работает — Google ответил, нашлось мест: ${r.found}` })
-      const d = await apiGet<any>('/settings', false)
-      setMapsKey(String(d?.settings?.google_places_key || ''))
-    } catch (e: any) {
-      setMapsMsg({ ok: false, text: e?.message || 'Google не принял ключ' })
-    } finally { setMapsSaving(false) }
-  }
-
-  const probeMaps = async () => {
-    setMapsProbing(true); setMapsMsg(null)
-    try {
-      const r = await apiPost<any>('/sales/places', { action: 'probe' })
-      setMapsMsg({ ok: true, text: `Ключ работает — нашлось мест: ${r.found}` })
-    } catch (e: any) {
-      setMapsMsg({ ok: false, text: e?.message || 'Google не принял ключ' })
-    } finally { setMapsProbing(false) }
-  }
 
   /**
    * Смена режима моста. Спрашиваем подтверждение с последствием в тексте:
@@ -618,43 +581,6 @@ export function SalesSettingsPage() {
           </div>
           <div className="px-4 py-3 text-[11.5px] text-gray-400 border-t border-gray-100">
             Правка меняет цену только в выбранной валюте — в остальных регионах она останется прежней.
-          </div>
-        </Card>
-      )}
-
-      {tab === 'maps' && (
-        <Card title="Google Карты"
-          sub="обогащение карточек: рейтинг, отзывы, число точек, сайт, телефон и часы работы">
-          <div className="p-4 space-y-3">
-            <p className="text-[12.5px] text-gray-600 leading-relaxed max-w-[70ch]">
-              Ключ берётся в Google Cloud Console: включить <b>Places API (New)</b>, затем
-              «Credentials → Create credentials → API key». В настройках ключа ограничьте его
-              этим же API и поставьте суточный потолок запросов — это страховка от лишнего счёта.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={mapsKey}
-                onChange={e => setMapsKey(e.target.value)}
-                onFocus={e => { if (e.target.value.includes('...')) setMapsKey('') }}
-                placeholder="AIza…"
-                className="border border-gray-200 rounded-lg px-3 py-2 text-[12.5px] w-[340px] font-mono" />
-              <button onClick={saveMapsKey} disabled={mapsSaving || !mapsKey.trim()}
-                className="px-3 py-2 rounded-lg bg-blue-500 text-white text-[12.5px] font-semibold disabled:opacity-40">
-                {mapsSaving ? 'сохраняю…' : 'Сохранить и проверить'}
-              </button>
-              <button onClick={probeMaps} disabled={mapsProbing}
-                className="px-3 py-2 rounded-lg border border-gray-200 text-[12.5px] font-semibold text-gray-600 disabled:opacity-40">
-                {mapsProbing ? 'проверяю…' : 'Проверить'}
-              </button>
-            </div>
-            {mapsMsg && (
-              <div className={`text-[12px] ${mapsMsg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{mapsMsg.text}</div>
-            )}
-            <p className="text-[11.5px] text-gray-400 max-w-[70ch]">
-              Ключ хранится в системе и показывается замаскированным. Где работает: карточка
-              обращения, блок «На карте» — кнопка «найти на картах». Пустое поле «Точек»
-              в квалификации заполняется само, заполненное руками не перетирается.
-            </p>
           </div>
         </Card>
       )}

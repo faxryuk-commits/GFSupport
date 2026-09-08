@@ -15,7 +15,8 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * GET  ?leadId= | ?accountId=      что уже нашли
  * POST { leadId? , accountId?, query? }  найти и сохранить
  *
- * Ключ вводится в настройках продаж (support_settings.google_places_key),
+ * Ключ вводится в «Настройки → Интеграции → Google Карты»
+ * (support_settings.google_places_key),
  * переменная окружения GOOGLE_PLACES_KEY остаётся запасным вариантом.
  * В Google он уходит заголовком, а не в адресе запроса.
  * Автоподстановка правит только пустые поля квалификации и не трогает
@@ -129,7 +130,7 @@ async function handlerInner(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
   const key = await readKey()
-  if (!key) return json({ error: 'Ключ Google Карт не введён: Продажи → Настройки → Google Карты' }, 400)
+  if (!key) return json({ error: 'Ключ Google Карт не введён: Настройки → Интеграции → Google Карты' }, 400)
 
   const body = await req.json().catch(() => ({})) as any
 

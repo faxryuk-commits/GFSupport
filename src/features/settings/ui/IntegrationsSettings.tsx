@@ -5,7 +5,7 @@ import {
   QrCode, Phone, Copy, Check as CheckIcon,
 } from 'lucide-react'
 import { Modal, confirmDialog } from '@/shared/ui'
-import { apiGet, apiPost } from '@/shared/services/api.service'
+import { apiGet, apiPost, apiPut } from '@/shared/services/api.service'
 import { OpenAISettingsModal } from './OpenAISettingsModal'
 import { MetaConnectModal } from './MetaConnectModal'
 import { GoogleCalendarModal } from './GoogleCalendarModal'
@@ -128,6 +128,112 @@ function IntegrationCard({
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>
     </div>
+  )
+}
+
+/**
+ * Google Карты: ключ Places API и проверка живым поиском.
+ *
+ * Ключ вводится здесь, а не в переменных окружения: интеграциями занимается
+ * тот, кто сидит в системе, и менять ключ не должно означать выкладку.
+ */
+function MapsConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [masked, setMasked] = useState('')
+  const [keyInput, setKeyInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [okText, setOkText] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    setError(null); setOkText(null); setKeyInput('')
+    apiGet<any>('/settings', false)
+      .then(d => setMasked(String(d?.settings?.google_places_key || '')))
+      .catch(() => setMasked(''))
+  }, [isOpen])
+
+  const save = async (disconnect = false) => {
+    setSaving(true); setError(null); setOkText(null)
+    try {
+      await apiPut('/settings', { settings: { google_places_key: disconnect ? '' : keyInput.trim() } })
+      if (disconnect) { setMasked(''); setKeyInput(''); return }
+      const r = await apiPost<any>('/sales/places', { action: 'probe' })
+      setOkText(`Ключ принят Google — пробный поиск нашёл мест: ${r.found}`)
+      const d = await apiGet<any>('/settings', false)
+      setMasked(String(d?.settings?.google_places_key || ''))
+      setKeyInput('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить ключ')
+    } finally { setSaving(false) }
+  }
+
+  const test = async () => {
+    setTesting(true); setError(null); setOkText(null)
+    try {
+      const r = await apiPost<any>('/sales/places', { action: 'probe' })
+      setOkText(`Google отвечает — пробный поиск нашёл мест: ${r.found}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Проверка не прошла')
+    } finally { setTesting(false) }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Google Карты" size="md">
+      <div className="space-y-4">
+        {masked ? (
+          <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="text-sm text-emerald-800">
+              Ключ сохранён: <span className="font-mono">{masked}</span>
+            </div>
+            <button onClick={() => save(true)} disabled={saving}
+              className="text-xs text-red-600 hover:text-red-700 font-medium">
+              Отключить
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Ключ берётся в Google Cloud Console: включить Places API (New), затем
+            «Credentials → Create credentials → API key». В настройках ключа ограничьте
+            его этим же API и поставьте суточный потолок запросов.
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={keyInput}
+            onChange={e => setKeyInput(e.target.value)}
+            placeholder={masked ? 'Новый ключ (заменит текущий)' : 'Вставьте ключ Places API'}
+            className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 font-mono"
+          />
+          <button onClick={() => save(false)} disabled={saving || !keyInput.trim()}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-50">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Сохранить'}
+          </button>
+        </div>
+
+        {masked && (
+          <button onClick={test} disabled={testing}
+            className="w-full py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 disabled:opacity-50">
+            {testing ? 'Проверяем…' : 'Проверить связь пробным поиском'}
+          </button>
+        )}
+
+        {okText && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">{okText}</div>
+        )}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+        )}
+
+        <p className="text-xs text-slate-400">
+          Где работает: карточка обращения, блок «На карте» — кнопка «найти на картах».
+          Оттуда приходят рейтинг, отзывы, тип заведения, адрес, телефон, сайт, часы работы
+          и число точек сети. Пустое поле «Точек» в квалификации заполняется само.
+        </p>
+      </div>
+    </Modal>
   )
 }
 
@@ -750,6 +856,8 @@ export function IntegrationsSettings({
   const [metaModalOpen, setMetaModalOpen] = useState(false)
   const [pfModalOpen, setPfModalOpen] = useState(false)
   const [pfConnected, setPfConnected] = useState(false)
+  const [mapsModalOpen, setMapsModalOpen] = useState(false)
+  const [mapsKeySet, setMapsKeySet] = useState(false)
   const [tgModalOpen, setTgModalOpen] = useState(false)
   const [tgAccounts, setTgAccounts] = useState<{ total: number; keys: boolean } | null>(null)
 
@@ -772,6 +880,13 @@ export function IntegrationsSettings({
       .then(r => setPfConnected(!!r.connected))
       .catch(() => setPfConnected(false))
   }, [pfModalOpen])
+
+  useEffect(() => {
+    if (mapsModalOpen) return
+    apiGet<{ configured: boolean }>('/sales/places?action=status', false)
+      .then(r => setMapsKeySet(!!r.configured))
+      .catch(() => setMapsKeySet(false))
+  }, [mapsModalOpen])
   type MetaAcc = { pageName: string | null; igUsername: string | null }
   const [metaAccounts, setMetaAccounts] = useState<MetaAcc[]>([])
 
@@ -1066,6 +1181,33 @@ export function IntegrationsSettings({
             }
           />
 
+          {/* Google Карты: обогащение карточек обращений данными о заведении */}
+          <IntegrationCard
+            icon="🗺️"
+            name="Google Карты"
+            status={mapsKeySet ? 'active' : 'inactive'}
+            details={mapsKeySet ? (
+              <>
+                <p className="text-sm text-slate-600">Рейтинг, отзывы, точки сети, сайт и телефон заведения</p>
+                <p className="text-xs text-slate-400 mt-0.5">Работает в карточке обращения, блок «На карте»</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Не подключено — заведение придётся смотреть на картах руками</p>
+            )}
+            actions={
+              <button
+                onClick={() => setMapsModalOpen(true)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  mapsKeySet
+                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                    : 'text-white bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {mapsKeySet ? 'Настройки' : 'Подключить'}
+              </button>
+            }
+          />
+
           <IntegrationCard
             icon="📅"
             name="Google Календарь"
@@ -1103,6 +1245,7 @@ export function IntegrationsSettings({
 
       <GoogleCalendarModal isOpen={gcalModalOpen} onClose={() => setGcalModalOpen(false)} />
       <PlanfactConnectModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+      <MapsConnectModal isOpen={mapsModalOpen} onClose={() => setMapsModalOpen(false)} />
       <TelegramAccountsModal isOpen={tgModalOpen} onClose={() => setTgModalOpen(false)} />
       <MetaConnectModal isOpen={metaModalOpen} onClose={() => setMetaModalOpen(false)} />
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
