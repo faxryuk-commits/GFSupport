@@ -44,3 +44,4 @@ whatsapp-bridge/dist/
 /scripts/media-cache.json
 /support-analytics-dashboard.html
 /chat-analysis-333.csv
+.gcp-speech.json

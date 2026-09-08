@@ -8,7 +8,7 @@ import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, sl
 import { CallInsight } from './CallInsight'
 import { ContactsCard } from './ContactsCard'
 import { TasksCard } from './TasksCard'
-import { TeamThread } from './TeamThread'
+import { DealFeed } from './DealFeed'
 import { BookMeetingModal } from './BookMeetingModal'
 import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
 
@@ -567,14 +567,17 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         <div className="space-y-3 min-w-0">
         <TasksCard leadId={id} accountId={l.account_id || undefined} />
 
-        {/* Разговор о клиенте между своими — при карточке, а не в Telegram.
-            Свёрнут, пока не нужен: пустая ветка занимала полэкрана */}
-        {/* Без overflow-hidden: подсказка @имя раскрывается вверх и резалась рамкой */}
-        <div className="bg-white border border-gray-200 rounded-xl">
-          <Fold title="Команда" sub="внутреннее — клиент не видит · @имя зовёт коллегу">
-            <TeamThread leadId={id} accountId={l.account_id || undefined} team={data.team || []} embedded />
-          </Fold>
-        </div>
+        {/* Единая лента, как в сделке: касания, переписка и разговор команды
+            одним потоком. Отдельной ветки «Команда» больше нет — внутренние
+            сообщения идут здесь же с жёлтой меткой */}
+        <DealFeed
+          leadId={id}
+          accountId={l.account_id || undefined}
+          messages={data.messages}
+          channelId={l.channel_id || undefined}
+          team={data.team || []}
+          onChanged={load}
+        />
 
         {data.messages.length > 0 && (
           <Block title="Переписка" sub={`${data.messages.length} сообщений в канале`}>
