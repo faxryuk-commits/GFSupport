@@ -269,6 +269,105 @@ function PlanfactConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
   )
 }
 
+/**
+ * Telegram-аккаунты сейлзов: ключи приложения и кто подключён.
+ *
+ * api_id и api_hash Telegram выдаёт только вручную на my.telegram.org —
+ * программно их не получить. Зато вводятся они один раз на компанию и живут
+ * в настройках системы: смена ключей не требует правки окружения. Сейлзу
+ * потом достаточно номера и кода в разделе «Моё».
+ */
+function TelegramAccountsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [app, setApp] = useState<any>(null)
+  const [team, setTeam] = useState<any[]>([])
+  const [apiId, setApiId] = useState('')
+  const [apiHash, setApiHash] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const load = useCallback(() => {
+    apiGet<any>('/sales/telegram?action=app', false).then(d => { setApp(d); setApiId(d.apiId || '') }).catch(() => setApp(null))
+    apiGet<any>('/sales/telegram?action=team', false).then(d => setTeam(d.team || [])).catch(() => setTeam([]))
+  }, [])
+  useEffect(() => { if (isOpen) { setErr(''); setSaved(false); load() } }, [isOpen, load])
+
+  const save = async () => {
+    setBusy(true); setErr('')
+    try {
+      await apiPost('/sales/telegram', { action: 'app', apiId, apiHash })
+      setSaved(true); setApiHash(''); load()
+    } catch (e: any) { setErr(e?.message || 'не сохранилось') } finally { setBusy(false) }
+  }
+
+  const inp = 'text-[13px] border border-slate-200 rounded-lg px-3 py-2 w-full'
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Telegram сейлзов" size="md">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Каждый сейлз подключает свой аккаунт в разделе «Моё» — клиенту пишет живой человек,
+          а лимиты Telegram не копятся на одном номере. Здесь задаются ключи приложения:
+          они нужны один раз на компанию.
+        </p>
+
+        <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-medium text-slate-700">Ключи приложения</span>
+            {app?.apiHashMasked
+              ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700">заданы</span>
+              : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700">не заданы</span>}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input className={inp} value={apiId} onChange={e => setApiId(e.target.value)}
+              placeholder="api_id (только цифры)" />
+            <input className={inp} type="password" value={apiHash} onChange={e => setApiHash(e.target.value)}
+              placeholder={app?.apiHashMasked ? `api_hash · сейчас ${app.apiHashMasked}` : 'api_hash'} />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={save} disabled={busy || !apiId || apiHash.length < 16}
+              className="text-[12.5px] px-4 py-2 rounded-lg bg-blue-500 text-white font-medium disabled:opacity-50">
+              {busy ? 'Сохраняем…' : 'Сохранить'}
+            </button>
+            <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer"
+              className="text-[12px] text-blue-600 hover:underline">взять на my.telegram.org →</a>
+            {saved && <span className="text-[12px] text-emerald-600">сохранено</span>}
+          </div>
+          {err && <div className="text-[12px] text-red-600">{err}</div>}
+          <div className="text-[11.5px] text-slate-400">
+            Мост: {app?.bridgeOk ? 'на связи' : 'недоступен'} · ключи в мосте: {app?.hasKeys ? 'видит' : 'нет'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[13px] font-medium text-slate-700 mb-1.5">Кто подключил свой Telegram</div>
+          {team.length === 0 ? (
+            <div className="text-[12.5px] text-slate-400">Список команды пуст или мост недоступен.</div>
+          ) : (
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
+              {team.map(t => (
+                <div key={t.agentId} className="flex items-center justify-between px-3 py-2 text-[12.5px]">
+                  <span className="text-slate-700">{t.name}</span>
+                  {t.connected ? (
+                    <span className="flex items-center gap-2">
+                      {t.username && <span className="text-slate-400">@{t.username}</span>}
+                      {t.pausedUntil
+                        ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700">ограничение</span>
+                        : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700">на связи</span>}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-slate-400">не подключён</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(total / 60)
@@ -651,6 +750,18 @@ export function IntegrationsSettings({
   const [metaModalOpen, setMetaModalOpen] = useState(false)
   const [pfModalOpen, setPfModalOpen] = useState(false)
   const [pfConnected, setPfConnected] = useState(false)
+  const [tgModalOpen, setTgModalOpen] = useState(false)
+  const [tgAccounts, setTgAccounts] = useState<{ total: number; keys: boolean } | null>(null)
+
+  useEffect(() => {
+    if (tgModalOpen) return
+    apiGet<any>('/sales/telegram?action=team', false)
+      .then(d => {
+        const list = d.team || []
+        setTgAccounts({ total: list.filter((t: any) => t.connected).length, keys: true })
+      })
+      .catch(() => setTgAccounts(null))
+  }, [tgModalOpen])
   const [gcalModalOpen, setGcalModalOpen] = useState(false)
   const [gcal, setGcal] = useState<{ connected: boolean; alive: boolean; calendarEmail: string | null; team?: Array<{ agentId: string }> } | null>(null)
 
@@ -901,6 +1012,33 @@ export function IntegrationsSettings({
             }
           />
 
+          {/* Telegram сейлзов: пишем клиентам от своего имени, переписка в карточке */}
+          <IntegrationCard
+            icon="✈️"
+            name="Telegram сейлзов"
+            status={tgAccounts && tgAccounts.total > 0 ? 'active' : 'inactive'}
+            details={tgAccounts && tgAccounts.total > 0 ? (
+              <>
+                <p className="text-sm text-slate-600">Подключено аккаунтов: {tgAccounts.total}</p>
+                <p className="text-xs text-slate-400 mt-0.5">Сообщения клиентам от имени сейлза, переписка в карточке</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Не подключено — сейлзы пишут клиентам с личных телефонов, мимо CRM</p>
+            )}
+            actions={
+              <button
+                onClick={() => setTgModalOpen(true)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  tgAccounts && tgAccounts.total > 0
+                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                    : 'text-white bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {tgAccounts && tgAccounts.total > 0 ? 'Настройки' : 'Настроить'}
+              </button>
+            }
+          />
+
           {/* ПланФакт: фактические поступления денег — база комиссий в KPI продаж */}
           <IntegrationCard
             icon="💼"
@@ -965,6 +1103,7 @@ export function IntegrationsSettings({
 
       <GoogleCalendarModal isOpen={gcalModalOpen} onClose={() => setGcalModalOpen(false)} />
       <PlanfactConnectModal isOpen={pfModalOpen} onClose={() => setPfModalOpen(false)} />
+      <TelegramAccountsModal isOpen={tgModalOpen} onClose={() => setTgModalOpen(false)} />
       <MetaConnectModal isOpen={metaModalOpen} onClose={() => setMetaModalOpen(false)} />
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
       <OpenAISettingsModal isOpen={aiModalOpen} onClose={() => setAiModalOpen(false)} onSaved={onRefreshHealth} />

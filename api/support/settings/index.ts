@@ -18,6 +18,10 @@ const DEFAULT_SETTINGS = {
   onlinepbx_ext: '',
   // ПланФакт: фактические поступления денег для KPI продаж
   planfact_api_key: '',
+  // Telegram-приложение: ключи с my.telegram.org, одни на компанию.
+  // Их вводят один раз в интерфейсе — мост читает их отсюда
+  telegram_api_id: '',
+  telegram_api_hash: '',
   openai_api_key: '', // Пустой = использовать env
   auto_create_cases: true,
   min_urgency_for_case: 2,
@@ -120,6 +124,9 @@ export default async function handler(req: Request): Promise<Response> {
           : '',
         planfact_api_key: dbSettings.planfact_api_key
           ? `${String(settings.planfact_api_key).slice(0, 4)}...${String(settings.planfact_api_key).slice(-4)}`
+          : '',
+        telegram_api_hash: dbSettings.telegram_api_hash
+          ? `${String(settings.telegram_api_hash).slice(0, 4)}...${String(settings.telegram_api_hash).slice(-4)}`
           : '',
       }
 

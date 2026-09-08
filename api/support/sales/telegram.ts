@@ -14,6 +14,8 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  *
  * GET  ?action=status                 моё состояние и лимит
  * GET  ?action=team                   у кого подключено (руководителю)
+ * GET  ?action=app                    ключи приложения заданы? (руководителю)
+ * POST { action:'app', apiId, apiHash }        сохранить ключи приложения
  * POST { action:'login', phone }      запросить код
  * POST { action:'code', code }        подтвердить
  * POST { action:'password', password} облачный пароль, если включён
@@ -62,6 +64,31 @@ export default async function handler(req: Request): Promise<Response> {
       } catch (e: any) {
         return json({ connected: false, bridgeError: e?.message || 'мост недоступен' })
       }
+    }
+
+    if (action === 'app') {
+      if (!ctx.isLead) return json({ error: 'forbidden' }, 403)
+      const rows = await sql`
+        SELECT key, value FROM support_settings
+        WHERE org_id = ${orgId} AND key IN ('telegram_api_id', 'telegram_api_hash')
+      `
+      const map: Record<string, string> = {}
+      for (const r of rows as any[]) {
+        try { map[r.key] = JSON.parse(r.value) } catch { map[r.key] = r.value }
+      }
+      let bridgeOk = false
+      let hasKeys = false
+      try {
+        const h = await bridge('/health')
+        bridgeOk = !!h.ok
+        hasKeys = !!h.hasKeys
+      } catch { /* мост молчит — так и скажем */ }
+      return json({
+        apiId: map.telegram_api_id || '',
+        apiHashMasked: map.telegram_api_hash
+          ? `${map.telegram_api_hash.slice(0, 4)}…${map.telegram_api_hash.slice(-4)}` : '',
+        bridgeOk, hasKeys,
+      })
     }
 
     if (action === 'team') {
@@ -115,6 +142,23 @@ export default async function handler(req: Request): Promise<Response> {
           method: 'POST', body: JSON.stringify({ agentId: ctx.agentId, password: String(body.password || '') }),
         })
         return json(r)
+      }
+
+      if (action === 'app') {
+        if (!ctx.isLead) return json({ error: 'Ключи приложения задаёт руководитель' }, 403)
+        const apiId = String(body.apiId || '').replace(/\D/g, '')
+        const apiHash = String(body.apiHash || '').trim()
+        if (!apiId || apiHash.length < 16) {
+          return json({ error: 'нужны api_id и api_hash с my.telegram.org' }, 400)
+        }
+        for (const [k, v] of [['telegram_api_id', apiId], ['telegram_api_hash', apiHash]]) {
+          await sql`
+            INSERT INTO support_settings (org_id, key, value, updated_at)
+            VALUES (${orgId}, ${k}, ${v}, NOW())
+            ON CONFLICT (org_id, key) DO UPDATE SET value = ${v}, updated_at = NOW()
+          `
+        }
+        return json({ ok: true })
       }
 
       if (action === 'logout') {
