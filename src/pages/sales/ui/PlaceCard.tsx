@@ -28,6 +28,10 @@ export type Place = {
   photos: Array<{ ref: string; url: string; w: number | null; h: number | null }> | null
   edited: Record<string, boolean> | null
   match_kind: 'strong' | 'weak' | null
+  /** На каком основании это место сочли тем самым — и почему так решили. */
+  found_via: 'manual' | 'site' | 'name' | null
+  match_why: string | null
+  found_query: string | null
   updated_at: string | null
 }
 
@@ -41,6 +45,17 @@ const EDITABLE: Array<[keyof Place, string]> = [
 type Candidate = { id: string; name: string; address: string; rating: number | null; reviews: number | null }
 
 const site = (u: string) => u.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
+
+/**
+ * Чип основания: по чему нашли. Карточка зовётся «Sushita.uz», а место —
+ * «Tekit Sushi», и без этой подписи непонятно, откуда система взяла, что это
+ * одно заведение. Оказалось — не одно.
+ */
+const BASIS: Record<string, { text: string; cls: string }> = {
+  manual: { text: 'выбрал сейлз', cls: 'text-gray-600 bg-gray-100 border-gray-200' },
+  site: { text: 'нашли по сайту', cls: 'text-blue-700 bg-blue-50 border-blue-100' },
+  name: { text: 'по названию', cls: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+}
 
 const Row = ({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) => (
   <div className="flex items-center gap-3 h-8 px-4 border-b border-gray-50 last:border-0" title={title}>
@@ -167,6 +182,17 @@ export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
             закрыто
           </span>
         )}
+        {place?.match_kind === 'weak' ? (
+          <span title={place.match_why || ''}
+            className="text-[10.5px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-1.5 py-px">
+            совпало слабо
+          </span>
+        ) : place?.found_via && BASIS[place.found_via] ? (
+          <span title={place.match_why || ''}
+            className={`text-[10.5px] font-semibold border rounded-md px-1.5 py-px ${BASIS[place.found_via].cls}`}>
+            {BASIS[place.found_via].text}
+          </span>
+        ) : null}
         <div className="ml-auto flex items-center gap-2.5">
           {place && !edit && (
             <button onClick={() => setEdit(Object.fromEntries(
@@ -198,9 +224,15 @@ export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
           )}
         </div>
       )}
+      {/* Почему система решила, что это то самое место: что искали и что
+          совпало. Без этой строки сейлз не может проверить находку, не
+          повторяя поиск руками */}
+      {place?.match_why && !edit && (
+        <div className="px-4 pb-2 -mt-1 text-[11px] text-gray-500">{place.match_why}</div>
+      )}
       {place?.match_kind === 'weak' && (
         <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-[11.5px] text-amber-800 flex items-center gap-2">
-          <span>Название нашлось не точно — проверьте, то ли это место. В квалификацию ничего не подставили.</span>
+          <span>Похоже, это не то заведение — проверьте. В квалификацию ничего не подставили.</span>
           {cands.length > 1 && (
             <button onClick={() => setPickOpen(o => !o)} className="ml-auto font-semibold hover:underline">
               {pickOpen ? 'скрыть' : 'выбрать другое'}

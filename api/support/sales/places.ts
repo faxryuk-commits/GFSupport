@@ -186,28 +186,95 @@ function cleanName(raw: string): string {
 }
 
 /**
- * Совпало ли найденное с тем, что искали. Пересечение по нормализованным
- * названиям: «Диор Саидкилов» и бутик «Dior» пересекаются на трёх буквах,
- * этого мало — такие находки помечаем как неуверенные и ничего по ним
- * не подставляем.
+ * Слова, которые говорят о кухне, формате или городе, а не о бренде.
+ * На них совпадать нельзя: «Sushita» и «Tekit Sushi» — разные заведения,
+ * общее у них только слово «суши», и по нему в карточку клиента уже
+ * попали чужие сайт и соцсети.
  */
-function matchKind(query: string, found: string): 'strong' | 'weak' {
+const GENERIC = new Set([
+  'sushi', 'sushiroll', 'rolls', 'pizza', 'pitsa', 'pizzeria', 'burger', 'burgers', 'kebab',
+  'kabob', 'shashlik', 'lavash', 'shawarma', 'shaurma', 'doner', 'donar', 'coffee', 'kofe',
+  'coffeeshop', 'kafe', 'cafe', 'caffe', 'restoran', 'restaurant', 'resto', 'choyhona',
+  'choyxona', 'chayhana', 'osh', 'oshxona', 'plov', 'palov', 'somsa', 'samsa', 'manti',
+  'tandir', 'tandoor', 'milliy', 'taomlar', 'taom', 'food', 'fastfood', 'steak', 'grill',
+  'wok', 'noodle', 'ramen', 'bakery', 'pekarnya', 'konditerskaya', 'dessert', 'market',
+  'magazin', 'shop', 'store', 'dostavka', 'delivery', 'express', 'service', 'servis',
+  'group', 'holding', 'company', 'kompaniya', 'house', 'home', 'club', 'lounge', 'hookah',
+  'kalyan', 'centre', 'center', 'centr', 'mall', 'plaza', 'hotel', 'otel', 'street',
+  'uzbekistan', 'tashkent', 'toshkent', 'samarkand', 'samarqand', 'buxoro', 'bukhara',
+  'andijan', 'namangan', 'fergana', 'xiva', 'nukus', 'almaty', 'astana', 'shymkent', 'baku',
+])
+
+/**
+ * Расстояние правки, но дальше двух букв не считаем: нам важно отличить
+ * опечатку от другого слова, а не измерить её точно.
+ */
+function editDistance(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  if (Math.abs(m - n) > 2) return 3
+  let prev = Array.from({ length: n + 1 }, (_, j) => j)
+  for (let i = 1; i <= m; i++) {
+    const cur = [i, ...Array(n).fill(0)]
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[n]
+}
+
+/** Слова названия, по которым вообще можно судить: длинные и не общие. */
+const ownWords = (t: string) => t.split(/[^a-zа-яё0-9]+/i).map(norm)
+  .filter(w => w.length >= 4 && !GENERIC.has(w))
+
+/**
+ * Совпало ли найденное с тем, что искали, и на каком основании.
+ *
+ * Ответ нужен не только машине: сейлз видит «Sushita.uz» в шапке и
+ * «Tekit Sushi» в карточке, и должен понимать, почему система решила,
+ * что это одно место. Поэтому вместе с вердиктом возвращаем причину
+ * человеческим языком — она уезжает в карточку.
+ */
+function matchKind(query: string, found: string): { kind: 'strong' | 'weak'; why: string } {
   const a = norm(query)
   const b = norm(found)
-  if (!a || !b) return 'weak'
+  if (!a || !b) return { kind: 'weak', why: 'нечего сравнивать' }
+  if (a === b) return { kind: 'strong', why: 'название совпало точно' }
+
+  // Одно название целиком внутри другого: «Same bobo» ⊂ «Ресторан Саме Бобо».
+  // Четырёх букв мало — «Dior» так находится внутри «Диор Саидкилов»
   const short = a.length <= b.length ? a : b
   const long = a.length <= b.length ? b : a
-  if (short.length >= 4 && long.includes(short)) return 'strong'
-  // Совпадение по словам: «Самарканд Giotto» и «Giotto Samarkand» — одно место
-  const words = (t: string) => t.split(/[^a-zа-яё0-9]+/i).map(norm).filter(w => w.length >= 4)
-  const wa = new Set(words(query))
-  const hits = words(found).filter(w => {
-    if (wa.has(w)) return true
-    // «samarkand» против «samarqand» — одна буква погоды не делает
-    for (const q of wa) if (q.length >= 6 && (q.includes(w.slice(0, 6)) || w.includes(q.slice(0, 6)))) return true
-    return false
-  }).length
-  return hits >= 1 && (norm(query).length <= 6 ? hits >= 2 : true) ? 'strong' : 'weak'
+  if (short.length >= 5 && long.includes(short) && !GENERIC.has(short)) {
+    return { kind: 'strong', why: `название совпало целиком: «${short}»` }
+  }
+
+  const wq = ownWords(query)
+  const wf = ownWords(found)
+  const hits: string[] = []
+  for (const w of wf) {
+    for (const q of wq) {
+      if (q === w) { hits.push(w); break }
+      // «samarkand» против «samarqand» — опечатка, одно место.
+      // «sushita» против «sushi» — отрезанный хвост, разные бренды,
+      // поэтому сверяем расстоянием правки, а не общим началом
+      const lim = Math.min(q.length, w.length) >= 7 ? 2 : 1
+      if (q.length >= 5 && w.length >= 5 && editDistance(q, w) <= lim) { hits.push(w); break }
+    }
+  }
+  if (hits.length) return { kind: 'strong', why: `совпало по слову: «${hits.join('», «')}»` }
+
+  // Ничего своего не совпало — скажем, что общего всё-таки нашлось,
+  // иначе «название не совпало» звучит непонятно рядом с похожими вывесками
+  const qGen = new Set(query.split(/[^a-zа-яё0-9]+/i).map(norm).filter(w => GENERIC.has(w)))
+  const shared = found.split(/[^a-zа-яё0-9]+/i).map(norm)
+    .filter(w => GENERIC.has(w) && (qGen.has(w) || [...qGen].some(g => g.startsWith(w) || w.startsWith(g))
+      || wq.some(q => q.startsWith(w))))
+  if (shared.length) {
+    return { kind: 'weak', why: `общее только «${shared.join('», «')}» — это кухня, а не название` }
+  }
+  return { kind: 'weak', why: 'название не совпало' }
 }
 
 async function handlerInner(req: Request): Promise<Response> {
@@ -257,6 +324,9 @@ async function handlerInner(req: Request): Promise<Response> {
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS telegram varchar(120)`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS photos jsonb`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS edited jsonb`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS found_via varchar(16)`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS match_why text`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS found_query text`
   })
 
   // Ключ: сперва настройки системы, потом окружение
@@ -431,9 +501,24 @@ async function handlerInner(req: Request): Promise<Response> {
   // когда автоматика ошиблась
   const wanted = body.placeId ? found.find(p => p.id === String(body.placeId)) : null
   const best = wanted || bySite || found[0]
-  let match: 'strong' | 'weak' = (wanted || bySite) ? 'strong' : matchKind(name, best.displayName?.text || '')
+  const asked = city ? `${name} · ${city}` : name
+
+  // На каком основании это место сочли тем самым. Сейлз видит в шапке одно
+  // название, а в карточке другое — и должен понимать, почему система решила,
+  // что это одно заведение. Основание храним в базе: оно нужно и через неделю
+  const via: 'manual' | 'site' | 'name' = wanted ? 'manual' : bySite ? 'site' : 'name'
+  const byName = matchKind(name, best.displayName?.text || '')
+  let match: 'strong' | 'weak' = via === 'name' ? byName.kind : 'strong'
+  let why = via === 'manual'
+    ? 'место выбрал сейлз из списка'
+    : via === 'site'
+      ? `домен ${siteHint} из карточки совпал с сайтом места`
+      : `искали «${asked}» — ${byName.why}`
   // Нашлось в другой стране — верить нельзя, даже если название совпало
-  if (!wanted && market && otherCountry(best.formattedAddress || '', market)) match = 'weak'
+  if (!wanted && market && otherCountry(best.formattedAddress || '', market)) {
+    match = 'weak'
+    why = `${why}; адрес в другой стране — ${best.formattedAddress || ''}`
+  }
   // Точки сети считаем по двум выдачам сразу: по городу и по бренду на весь
   // регион. Сравнивать названия «в лоб» нельзя — филиалы зовутся
   // «Chopar Pizza Юнусабад», и точное равенство схлопывало сеть до одной точки
@@ -495,6 +580,9 @@ async function handlerInner(req: Request): Promise<Response> {
     photos: JSON.stringify(photos),
     edited: JSON.stringify(keep),
     match,
+    via,
+    why,
+    asked,
   }
 
   // Драйвер neon не склеивает вложенные sql-куски — две honest-ветки вместо одной
@@ -504,12 +592,13 @@ async function handlerInner(req: Request): Promise<Response> {
     INSERT INTO sales_places (id, org_id, lead_id, account_id, place_id, name, address, rating,
                               reviews, website, phone, maps_url, category, status, branches,
                               hours, lat, lng, raw, instagram, telegram, photos, edited,
-                              match_kind, found_by, updated_at)
+                              match_kind, found_via, match_why, found_query, found_by, updated_at)
     VALUES (${id}, ${orgId}, ${leadId}, ${accountId}, ${row.place_id}, ${row.name}, ${row.address},
             ${row.rating}, ${row.reviews}, ${row.website}, ${row.phone}, ${row.maps_url},
             ${row.category}, ${row.status}, ${row.branches}, ${row.hours}::jsonb,
             ${row.lat}, ${row.lng}, ${row.raw}::jsonb, ${row.instagram}, ${row.telegram},
-            ${row.photos}::jsonb, ${row.edited}::jsonb, ${row.match}, ${ctx.agentId}, NOW())
+            ${row.photos}::jsonb, ${row.edited}::jsonb, ${row.match}, ${row.via}, ${row.why},
+            ${row.asked}, ${ctx.agentId}, NOW())
   `
 
   // Подставляем только пустое и только очевидное: город и число точек.
@@ -582,7 +671,7 @@ async function handlerInner(req: Request): Promise<Response> {
     rating: p.rating ?? null,
     reviews: p.userRatingCount ?? null,
   }))
-  return json({ place: saved || null, filled, match, candidates, query: city ? `${name} ${city}` : name })
+  return json({ place: saved || null, filled, match, why, via, candidates, query: asked })
 }
 
 export default async function handler(req: Request): Promise<Response> {
