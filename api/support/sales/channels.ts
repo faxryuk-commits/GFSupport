@@ -101,24 +101,61 @@ export default async function handler(req: Request): Promise<Response> {
     if (!known) return json({ error: 'по номеру ещё нет данных — сначала проверьте каналы' }, 400)
 
     const filled: string[] = []
-    const noName = !c.name || /^\s*$/.test(c.name) || /без имени/i.test(c.name)
-    if (noName && known.tg_name) {
-      await sql`UPDATE sales_contacts SET name = ${known.tg_name} WHERE id = ${contactId} AND org_id = ${orgId}`
-      filled.push('имя')
+
+    // Пустым считаем только пустое и явную заглушку целиком: «Без имени,
+    // звонил в мае» — это уже чья-то запись, и трогать её нельзя.
+    // Условие продублировано в самом UPDATE: между чтением и записью
+    // коллега может успеть вписать имя руками, и затирать его мы не вправе
+    const PLACEHOLDER = '^\\s*(без имени|no name|-|—|н/д)\\s*$'
+
+    if (known.tg_name) {
+      const upd = await sql`
+        UPDATE sales_contacts SET name = ${known.tg_name}
+        WHERE id = ${contactId} AND org_id = ${orgId}
+          AND (name IS NULL OR trim(name) = '' OR name ~* ${PLACEHOLDER})
+        RETURNING id
+      `
+      if ((upd as any[]).length) filled.push('имя')
     }
-    if (!c.telegram && known.tg_username) {
-      await sql`UPDATE sales_contacts SET telegram = ${'@' + known.tg_username} WHERE id = ${contactId} AND org_id = ${orgId}`
-      filled.push('Telegram')
+    if (known.tg_username) {
+      const upd = await sql`
+        UPDATE sales_contacts SET telegram = ${'@' + known.tg_username}
+        WHERE id = ${contactId} AND org_id = ${orgId}
+          AND (telegram IS NULL OR trim(telegram) = '')
+        RETURNING id
+      `
+      if ((upd as any[]).length) filled.push('Telegram')
     }
     // Логотип клиента: у заведений аватар в мессенджере — это их вывеска
     if (body.withPhoto && known.tg_photo && c.account_id) {
       await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS photo TEXT`.catch(() => {})
-      const [acc] = await sql`SELECT photo FROM sales_accounts WHERE id = ${c.account_id} AND org_id = ${orgId}`
-      if (acc && !acc.photo) {
-        await sql`UPDATE sales_accounts SET photo = ${known.tg_photo} WHERE id = ${c.account_id} AND org_id = ${orgId}`
-        filled.push('логотип')
+      const upd = await sql`
+        UPDATE sales_accounts SET photo = ${known.tg_photo}
+        WHERE id = ${c.account_id} AND org_id = ${orgId}
+          AND (photo IS NULL OR trim(photo) = '')
+        RETURNING id
+      `
+      if ((upd as any[]).length) filled.push('логотип')
+    }
+
+    // След в ленте: видно, что данные пришли из мессенджера, а не набраны
+    // человеком — и всегда понятно, откуда взялось имя в карточке
+    if (filled.length && c.account_id) {
+      const [deal] = await sql`
+        SELECT id FROM sales_deals
+        WHERE account_id = ${c.account_id} AND org_id = ${orgId} AND archived_at IS NULL
+        ORDER BY (won_at IS NULL AND lost_at IS NULL) DESC, updated_at DESC LIMIT 1
+      `
+      if (deal) {
+        await sql`
+          INSERT INTO sales_activities (id, org_id, deal_id, account_id, type, direction, text, agent_id, happened_at)
+          VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
+                  ${orgId}, ${deal.id}, ${c.account_id}, 'note', 'out',
+                  ${'Контакт дополнен из Telegram: ' + filled.join(', ')}, ${ctx.agentId}, NOW())
+        `.catch(() => {})
       }
     }
+
     return json({ ok: true, filled })
   }
 

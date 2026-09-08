@@ -223,7 +223,9 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
               {(() => {
                 const k = known[c.id]
                 if (!k?.hasTelegram) return null
-                const noName = !c.name || /^\s*$/.test(c.name) || /без имени/i.test(c.name)
+                // Заглушкой считаем только пустое имя и «Без имени» целиком:
+                // любая осмысленная запись — уже чьи-то данные
+                const noName = !c.name || /^\s*(без имени|no name|-|—|н\/д)\s*$/i.test(c.name)
                 const canName = noName && k.tgName
                 const canTg = !c.telegram && k.tgUsername
                 if (!canName && !canTg) return null
@@ -234,7 +236,7 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
                       <img src={k.tgPhoto} alt="" className="w-4 h-4 rounded object-cover border border-gray-200" />
                     )}
                     <span>
-                      {enriching === c.id ? 'Заполняем…' : 'Взять из Telegram: '}
+                      {enriching === c.id ? 'Заполняем…' : 'Дополнить из Telegram: '}
                       {enriching !== c.id && [canName ? k.tgName : null, canTg ? '@' + k.tgUsername : null]
                         .filter(Boolean).join(' · ')}
                     </span>
