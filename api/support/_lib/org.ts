@@ -1,4 +1,5 @@
 import { getSQL } from './db.js'
+import { extractAgentContext } from './auth.js'
 
 export interface OrgContext {
   orgId: string
@@ -127,21 +128,21 @@ export function invalidateOrgCache(orgId?: string) {
  */
 export async function getRequestOrgId(req: Request): Promise<string> {
   const header = req.headers.get('X-Org-Id')
-  if (header) return header
 
-  const authHeader = req.headers.get('Authorization')
-  if (authHeader) {
-    const token = authHeader.replace('Bearer ', '')
-    const parts = token.split('_')
-    if (parts.length >= 3 && parts[0] === 'agent') {
-      const agentId = `${parts[0]}_${parts[1]}_${parts[2]}`
-      try {
-        const sql = getSQL()
-        const [row] = await sql`SELECT org_id FROM support_agents WHERE id = ${agentId} LIMIT 1`
-        if (row?.org_id) return row.org_id
-      } catch {}
-    }
+  // Организация сотрудника берётся из его учётной записи, а не из заголовка.
+  // Заголовок ставит наш же фронт, но подделать его может кто угодно: пока
+  // он принимался как есть, учётная запись демо-организации читала боевые
+  // данные Delever, просто подставив чужой идентификатор.
+  // Платформенному админу межорганизационный доступ нужен по работе.
+  const ctx = await extractAgentContext(req)
+  if (ctx.agentId) {
+    if (ctx.isSuperAdmin && header) return header
+    if (ctx.orgId) return ctx.orgId
   }
+
+  // Без входа (вебхуки, публичные формы) организацию по-прежнему подсказывает
+  // заголовок или поддомен: там нет учётной записи, от которой отталкиваться
+  if (header) return header
 
   const host = req.headers.get('host') || ''
   const hostParts = host.split('.')

@@ -29,6 +29,14 @@ const LEAD_ROLES = ['admin', 'org_admin', 'cco', 'team_lead', 'lead']
  */
 const LEGACY_OK = String(process.env.LEGACY_AGENT_TOKENS || 'on').toLowerCase() !== 'off'
 
+/**
+ * Короткая память на контекст сотрудника. Обработчик спрашивает его дважды —
+ * сам и через getRequestOrgId, — а дорога до базы стоит около 190 мс.
+ * Живёт секунды: отозванная сессия перестаёт работать почти сразу.
+ */
+const ctxCache = new Map<string, { ctx: AgentContext; ts: number }>()
+const CTX_TTL = 5000
+
 export async function extractAgentContext(req: Request): Promise<AgentContext> {
   const fallback: AgentContext = {
     agentId: null, orgId: null, marketIds: [],
@@ -40,6 +48,9 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
 
   const token = authHeader.replace('Bearer ', '').trim()
   if (!token) return fallback
+
+  const hit = ctxCache.get(token)
+  if (hit && Date.now() - hit.ts < CTX_TTL) return hit.ctx
 
   try {
     const sql = getSQL()
@@ -84,7 +95,12 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
     `
     const marketIds = marketRows.map((r: any) => r.market_id)
 
-    return { agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin, isLead, legacyToken }
+    const ctx: AgentContext = {
+      agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin, isLead, legacyToken,
+    }
+    if (ctxCache.size > 500) ctxCache.clear()
+    ctxCache.set(token, { ctx, ts: Date.now() })
+    return ctx
   } catch {
     // База не ответила — это не повод пускать: раньше здесь выдавался доступ
     return fallback
