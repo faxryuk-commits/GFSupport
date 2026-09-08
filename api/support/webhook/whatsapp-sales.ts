@@ -25,5 +25,6 @@ export default async function handler(req: Request): Promise<Response> {
     senderName: body.name || null,
     messageId: body.messageId ? String(body.messageId) : null,
     channel: 'WhatsApp',
+    direction: body.direction === 'out' ? 'out' : 'in',
   }))
 }

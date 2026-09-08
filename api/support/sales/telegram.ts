@@ -186,7 +186,7 @@ export default async function handler(req: Request): Promise<Response> {
         })
 
         // След в карточке — ради этого всё и делалось
-        await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'Telegram', text)
+        await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'Telegram', text, r.messageId)
         return json({ ok: true, used: r.used, limit: r.limit })
       }
 

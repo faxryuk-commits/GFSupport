@@ -116,7 +116,7 @@ export default async function handler(req: Request): Promise<Response> {
         // След пишет общий писатель: он умеет и сделку, и лид, и клиента.
         // Свой INSERT здесь знал только сделку — из карточки лида
         // отправленное сообщение потом просто исчезало
-        await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'WhatsApp', text)
+        await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'WhatsApp', text, r.messageId)
         return json({ ok: true, used: r.used, limit: r.limit })
       }
       return json({ error: 'unknown action' }, 400)

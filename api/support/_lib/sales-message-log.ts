@@ -14,6 +14,11 @@ export type OutgoingRef = {
 
 export async function logOutgoingMessage(
   sql: any, orgId: string, agentId: string, ref: OutgoingRef, channel: 'Telegram' | 'WhatsApp', text: string,
+  /**
+   * Ключ отправленного, если мост его вернул. Мессенджер пришлёт это же
+   * сообщение обратно как «своё» — с ключом оно не задвоится в ленте.
+   */
+  messageId?: string | null,
 ): Promise<void> {
   const dealId = ref.dealId ? String(ref.dealId) : null
   let accountId = ref.accountId ? String(ref.accountId) : null
@@ -31,10 +36,11 @@ export async function logOutgoingMessage(
     // ни отфильтровать, ни сгруппировать, а поиск по тексту его ловит
     await sql`
       INSERT INTO sales_activities
-        (id, org_id, deal_id, account_id, type, direction, channel, text, agent_id, happened_at)
+        (id, org_id, deal_id, account_id, type, direction, channel, text, message_id, agent_id, happened_at)
       VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
               ${orgId}, ${dealId}, ${accountId}, 'message', 'out',
-              ${channel}, ${text}, ${agentId}, NOW())
+              ${channel}, ${text}, ${messageId || null}, ${agentId}, NOW())
+      ON CONFLICT DO NOTHING
     `
   } catch {
     // Сообщение уже ушло клиенту — отсутствие следа не повод отдавать ошибку

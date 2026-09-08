@@ -27,6 +27,12 @@ export type IncomingMessage = {
   senderName?: string | null
   messageId?: string | null
   channel: 'Telegram' | 'WhatsApp'
+  /**
+   * 'out' — сейлз написал клиенту сам, с телефона. Такие тоже нужны:
+   * иначе в карточке половина разговора — то, что ушло из системы, есть,
+   * а набранное в телефоне пропадает.
+   */
+  direction?: 'in' | 'out'
 }
 
 export type InboxResult = {
@@ -41,6 +47,7 @@ export async function fileIncoming(sql: SQL, m: IncomingMessage): Promise<InboxR
   const text = String(m.text || '').trim()
   if (!text) return { ok: true, saved: false, skipped: 'пустое' }
 
+  const direction = m.direction === 'out' ? 'out' : 'in'
   const digits = String(m.phone || '').replace(/\D/g, '').slice(-9)
   if (digits.length < 9) {
     return { ok: true, saved: false, skipped: 'номер скрыт настройками приватности' }
@@ -87,8 +94,9 @@ export async function fileIncoming(sql: SQL, m: IncomingMessage): Promise<InboxR
     INSERT INTO sales_activities
       (id, org_id, deal_id, account_id, type, direction, channel, text, sender_name, message_id, agent_id, happened_at)
     VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
-            ${match.org_id}, ${match.deal_id || null}, ${match.account_id}, 'message', 'in',
-            ${m.channel}, ${text}, ${m.senderName || null}, ${messageId}, ${m.agentId || null}, NOW())
+            ${match.org_id}, ${match.deal_id || null}, ${match.account_id}, 'message', ${direction},
+            ${m.channel}, ${text}, ${direction === 'in' ? (m.senderName || null) : null},
+            ${messageId}, ${m.agentId || null}, NOW())
     ON CONFLICT DO NOTHING
     RETURNING id
   `
