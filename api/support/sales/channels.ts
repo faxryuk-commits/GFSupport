@@ -39,6 +39,9 @@ async function ensureSchema(sql: any) {
     await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_name TEXT`.catch(() => {})
     await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_last_seen TEXT`.catch(() => {})
     await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_premium BOOLEAN`.catch(() => {})
+    // Аватар клиента (у заведений — логотип) храним как data-URI: пара десятков
+    // килобайт на номер, зато карточка узнаётся с одного взгляда
+    await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_photo TEXT`.catch(() => {})
   })
 }
 
@@ -110,7 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
 
   // 2. Кэш проверок
   const [cached] = await sql`
-    SELECT has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, checked_at,
+    SELECT has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at,
            (checked_at > NOW() - make_interval(hours => ${CACHE_HOURS})) AS fresh
     FROM sales_phone_channels WHERE org_id = ${orgId} AND phone_norm = ${digits}
   `
@@ -120,6 +123,7 @@ export default async function handler(req: Request): Promise<Response> {
   let tgName: string | null = cached?.tg_name ?? null
   let tgLastSeen: string | null = cached?.tg_last_seen ?? null
   let tgPremium: boolean | null = cached?.tg_premium ?? null
+  let tgPhoto: string | null = cached?.tg_photo ?? null
   let checkedAt: string | null = cached?.checked_at ?? null
 
   if (refresh || !cached?.fresh) {
@@ -141,17 +145,19 @@ export default async function handler(req: Request): Promise<Response> {
       tgName = tg.name ?? tgName
       tgLastSeen = tg.lastSeen ?? tgLastSeen
       tgPremium = typeof tg.premium === 'boolean' ? tg.premium : tgPremium
+      if (tg.photo) tgPhoto = tg.photo
     }
     if (wa !== null || tg !== null) {
       checkedAt = new Date().toISOString()
       await sql`
         INSERT INTO sales_phone_channels (
-          org_id, phone_norm, has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, checked_at
+          org_id, phone_norm, has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at
         )
-        VALUES (${orgId}, ${digits}, ${hasWa}, ${hasTg}, ${tgUsername}, ${tgName}, ${tgLastSeen}, ${tgPremium}, NOW())
+        VALUES (${orgId}, ${digits}, ${hasWa}, ${hasTg}, ${tgUsername}, ${tgName}, ${tgLastSeen}, ${tgPremium}, ${tgPhoto}, NOW())
         ON CONFLICT (org_id, phone_norm) DO UPDATE SET
           has_wa = ${hasWa}, has_tg = ${hasTg}, tg_username = ${tgUsername},
-          tg_name = ${tgName}, tg_last_seen = ${tgLastSeen}, tg_premium = ${tgPremium}, checked_at = NOW()
+          tg_name = ${tgName}, tg_last_seen = ${tgLastSeen}, tg_premium = ${tgPremium},
+          tg_photo = COALESCE(${tgPhoto}, sales_phone_channels.tg_photo), checked_at = NOW()
       `.catch(() => {})
     }
   }
@@ -169,6 +175,7 @@ export default async function handler(req: Request): Promise<Response> {
     tgName,
     tgLastSeen,
     tgPremium,
+    tgPhoto,
     checkedAt,
     channels: chans.map(c => ({
       id: c.id, source: c.source, name: c.name,

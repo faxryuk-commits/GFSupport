@@ -43,6 +43,7 @@ interface ChannelInfo {
   tgName: string | null
   tgLastSeen: string | null
   tgPremium: boolean | null
+  tgPhoto: string | null
   channels: Array<{ id: string; source: string; name: string; messages: number }>
 }
 
@@ -292,11 +293,18 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
             maxHeight: `calc(100vh - ${rect.top + 16}px)`,
           }}
           className="bg-white border border-gray-200 rounded-xl shadow-xl overflow-y-auto overscroll-contain">
-          <div className="px-3 py-2 bg-gray-50/80 border-b border-gray-100">
+          <div className="px-3 py-2 bg-gray-50/80 border-b border-gray-100 flex items-start gap-2.5">
+            {/* Аватар из Telegram: у заведений это обычно логотип, и карточка
+                узнаётся с одного взгляда */}
+            {info?.tgPhoto && (
+              <img src={info.tgPhoto} alt="" width={34} height={34}
+                className="w-[34px] h-[34px] rounded-lg object-cover flex-none mt-0.5 border border-gray-200" />
+            )}
+            <div className="min-w-0">
             <div className="text-[13px] font-semibold tabular-nums text-gray-900">{label}</div>
             {/* Кто это в Telegram: имя и «был недавно» говорят больше, чем галочка */}
             {info?.hasTelegram && (info.tgName || info.tgUsername) && (
-              <div className="text-[11px] text-blue-700 mt-0.5">
+              <div className="text-[11px] text-blue-700 mt-0.5 truncate">
                 {info.tgName || ''}{info.tgUsername ? ` · @${info.tgUsername}` : ''}
                 {info.tgPremium ? ' · Premium' : ''}
                 {seenLabel(info.tgLastSeen) ? ` · ${seenLabel(info.tgLastSeen)}` : ''}
@@ -307,6 +315,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
                 переписка: {info.channels.map(c => `${c.source === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${c.messages}`).join(', ')}
               </div>
             ) : <div className="text-[10.5px] text-gray-400">переписки в системе пока нет</div>}
+            </div>
           </div>
 
           {/* Поле ответа прямо в меню: писать — главное действие, и уводить
