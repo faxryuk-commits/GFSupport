@@ -379,7 +379,7 @@ export function DealFeed({
                   {recErr[i.recordUuid] && <span className="text-[11px] text-red-600">{recErr[i.recordUuid]}</span>}
                 </div>
               )}
-              {rec?.uuid === i.recordUuid && (
+              {rec && rec.uuid === i.recordUuid && (
                 <audio controls autoPlay src={rec.url} className="mt-1.5 w-full h-8" onEnded={() => setRec(null)} />
               )}
             </div>

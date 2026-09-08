@@ -28,7 +28,7 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: '2026-09-08.24',
+    version: '2026-09-08.28',
     date: '2026-09-08',
     title: 'Запись звонка: один плеер с паузой',
     items: [
