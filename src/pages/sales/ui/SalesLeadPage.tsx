@@ -7,6 +7,7 @@ import { parsePhone } from '@/shared/lib/phone'
 import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText, Fold, MoreMenu } from './kit'
 import { CallInsight } from './CallInsight'
 import { ContactsCard } from './ContactsCard'
+import { PlaceCard } from './PlaceCard'
 import { TasksCard } from './TasksCard'
 import { DealFeed } from './DealFeed'
 import { BookMeetingModal } from './BookMeetingModal'
@@ -552,25 +553,8 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
         {/* Дополнительные номера и люди живут у клиента: у обращения одно
             поле телефона, а у ресторана — управляющий, бухгалтер, второй номер */}
-        {(() => {
-          const m = parseMapsInfo(l.text)
-          if (!m) return null
-          return (
-            <Block title="На карте" count={m.rating ? `${m.rating} · ${m.reviews || 0} отз.` : undefined}
-              sub="Данные Google Карт из импорта базы">
-              <div className="grid sm:grid-cols-2">
-                {m.rating && <Row label="Рейтинг">{m.rating}<span className="text-gray-400 font-normal"> · {m.reviews} отзывов</span></Row>}
-                {m.address && <Row label="Адрес" title={m.address}>{m.address}</Row>}
-                {m.website && (
-                  <Row label="Сайт"><a href={m.website} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{m.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</a></Row>
-                )}
-                {m.mapsUrl && (
-                  <Row label="Google Maps"><a href={m.mapsUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">открыть на карте</a></Row>
-                )}
-              </div>
-            </Block>
-          )
-        })()}
+        <PlaceCard leadId={id} accountId={l.account_id || undefined}
+          fallback={parseMapsInfo(l.text)} onFilled={load} />
 
         {l.account_id && <ContactsCard accountId={l.account_id} market={l.market_id} />}
 
