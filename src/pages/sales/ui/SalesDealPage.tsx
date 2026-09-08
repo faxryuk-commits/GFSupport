@@ -626,7 +626,17 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
                 </div>
               )}
               {blocked && (
-                <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] text-red-700">{blocked}</div>
+                <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-[12.5px] text-red-700">
+                  {blocked}
+                  {/* Блокер про состав — приводим человека прямо к блоку */}
+                  {/Состав(а)? подключения/i.test(blocked) && (
+                    <button
+                      onClick={() => document.getElementById('spec-block')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                      className="block mt-1.5 text-[12px] font-semibold text-red-700 underline underline-offset-2">
+                      Перейти к составу подключения ↓
+                    </button>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -750,7 +760,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
           {/* Редкое — ниже основного: ТЗ нужно к моменту КП, поступления —
               после подписания. Оба сами по себе свёрнуты */}
-          {id && <SpecCard dealId={id} />}
+          {id && <div id="spec-block"><SpecCard dealId={id} /></div>}
           {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
         </div>
 
