@@ -23,7 +23,28 @@ interface AuditEntry {
   ip?: string
 }
 
+/**
+ * Запись в журнал аудита.
+ *
+ * Все шесть мест вызывали её без `await` — обещание оставалось висеть,
+ * функция на edge завершалась раньше, и запись не доезжала. Поэтому в
+ * журнале было ноль строк при живых входах, и на вопрос «кто-нибудь
+ * пользовался дырой в доступе» ответить было нечем.
+ *
+ * `waitUntil` держит функцию живой до конца записи, не задерживая ответ
+ * пользователю. Если его нет (тесты, локальный запуск) — просто ждём.
+ */
 export async function writeAuditLog(entry: AuditEntry): Promise<void> {
+  const task = writeAuditNow(entry)
+  try {
+    const { waitUntil } = await import('@vercel/functions')
+    waitUntil(task)
+  } catch {
+    await task
+  }
+}
+
+async function writeAuditNow(entry: AuditEntry): Promise<void> {
   try {
     const sql = getSQL()
     await sql`
