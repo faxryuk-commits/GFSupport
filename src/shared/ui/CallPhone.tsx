@@ -102,6 +102,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   const [sent, setSent] = useState('')
   const [sendErr, setSendErr] = useState('')
   const [tgReady, setTgReady] = useState<boolean | null>(null)
+  const [photoOpen, setPhotoOpen] = useState(false)
   const boxRef = useRef<HTMLSpanElement>(null)
   const popRef = useRef<HTMLDivElement>(null)
 
@@ -130,17 +131,25 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
       .catch(() => setTgReady(false))
   }, [open, tgReady])
 
+  // Превью фото закрывается Esc — привычка из любой галереи
+  useEffect(() => {
+    if (!photoOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPhotoOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [photoOpen])
+
   // Прокрутка уводит карточку из-под меню — закрываем, чтобы оно не «висело»
   useEffect(() => {
     if (!open) return
-    const close = () => { if (!compose) setOpen(false) }
+    const close = () => { if (!compose && !photoOpen) setOpen(false) }
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     return () => {
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
-  }, [open, compose])
+  }, [open, compose, photoOpen])
 
   useEffect(() => {
     if (!open) return
@@ -321,8 +330,14 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
             {/* Аватар из Telegram: у заведений это обычно логотип, и карточка
                 узнаётся с одного взгляда */}
             {info?.tgPhoto && (
-              <img src={info.tgPhoto} alt="" width={34} height={34}
-                className="w-[34px] h-[34px] rounded-lg object-cover flex-none mt-0.5 border border-gray-200" />
+              <button type="button" title="Открыть фото"
+                onClick={e => { e.stopPropagation(); setPhotoOpen(true) }}
+                className="flex-none mt-0.5 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 relative group">
+                <img src={info.tgPhoto} alt="" width={34} height={34}
+                  className="w-[34px] h-[34px] object-cover block" />
+                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors
+                                 flex items-center justify-center text-white text-[11px] opacity-0 group-hover:opacity-100">⤢</span>
+              </button>
             )}
             <div className="min-w-0">
             <div className="text-[13px] font-semibold tabular-nums text-gray-900">{label}</div>
@@ -434,6 +449,36 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
               navigator.clipboard?.writeText(parsed.pretty || phone).catch(() => {})
               setOpen(false); setCopied(true); setTimeout(() => setCopied(false), 2000)
             }} />
+        </div>, document.body)}
+
+      {/* Превью фото: в карточке аватар мелкий, а логотип заведения хочется
+          рассмотреть — открываем во весь экран, закрытие кликом или Esc */}
+      {photoOpen && info?.tgPhoto && createPortal(
+        <div
+          onClick={() => setPhotoOpen(false)}
+          className="fixed inset-0 z-[90] bg-black/70 flex items-center justify-center p-6 cursor-zoom-out">
+          <div className="max-w-[92vw] max-h-[88vh] flex flex-col items-center gap-2.5"
+            onClick={e => e.stopPropagation()}>
+            <img src={info.tgPhoto} alt={info.tgName || label}
+              className="max-w-full max-h-[78vh] rounded-xl shadow-2xl object-contain bg-white" />
+            <div className="text-center text-white/90">
+              <div className="text-[13.5px] font-semibold">{info.tgName || label}</div>
+              <div className="text-[11.5px] text-white/60">
+                {info.tgUsername ? `@${info.tgUsername} · ` : ''}{label}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <a href={info.tgPhoto} download={`${(info.tgName || label).replace(/[^\w\dа-яА-Я -]/g, '')}.jpg`}
+                onClick={e => e.stopPropagation()}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25">
+                Скачать
+              </a>
+              <button type="button" onClick={() => setPhotoOpen(false)}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25">
+                Закрыть
+              </button>
+            </div>
+          </div>
         </div>, document.body)}
 
       {status === 'error' && size === 'md' && (
