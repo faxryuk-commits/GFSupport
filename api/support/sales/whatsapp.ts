@@ -71,7 +71,10 @@ export default async function handler(req: Request): Promise<Response> {
           const acc: any = byId.get(a.id)
           return {
             agentId: a.id, name: a.name,
-            connected: !!acc?.ready, phone: acc?.phone || null, lastError: acc?.last_error || null,
+            connected: !!acc?.ready,
+            state: acc?.state || 'off',
+            phone: acc?.phone || null,
+            lastError: acc?.last_error || null,
           }
         }),
       })
