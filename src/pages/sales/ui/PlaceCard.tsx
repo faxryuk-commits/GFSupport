@@ -22,8 +22,11 @@ export type Place = {
   status: string | null
   branches: number | null
   hours: string[] | null
+  match_kind: 'strong' | 'weak' | null
   updated_at: string | null
 }
+
+type Candidate = { id: string; name: string; address: string; rating: number | null; reviews: number | null }
 
 const site = (u: string) => u.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
 
@@ -46,6 +49,10 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [note, setNote] = useState('')
+  // Кандидаты показываем, когда автоматика не уверена или сейлз сам попросил:
+  // «Диор Саидкилов» легко становится бутиком Dior, и это должен решать человек
+  const [cands, setCands] = useState<Candidate[]>([])
+  const [pickOpen, setPickOpen] = useState(false)
 
   const q = leadId ? `leadId=${leadId}` : accountId ? `accountId=${accountId}` : ''
 
@@ -57,12 +64,16 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
   }, [q])
   useEffect(() => { load() }, [load])
 
-  const find = async () => {
+  const find = async (placeId?: string) => {
     setBusy(true); setErr(''); setNote('')
     try {
-      const r = await apiPost<{ place: Place; filled: string[] }>('/sales/places', { leadId, accountId })
+      const r = await apiPost<{ place: Place; filled: string[]; match: string; candidates: Candidate[] }>(
+        '/sales/places', { leadId, accountId, placeId })
       setPlace(r.place)
+      setCands(r.candidates || [])
+      setPickOpen(r.match === 'weak' && !placeId)
       if (r.filled?.length) { setNote(`Подставили в квалификацию: ${r.filled.join(', ')}`); onFilled?.() }
+      if (r.match === 'weak' && !placeId) setNote('')
     } catch (e: any) {
       setErr(e?.message || 'не нашлось')
     } finally { setBusy(false) }
@@ -73,7 +84,7 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
       <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <header className="px-4 py-2 bg-gray-50/80 border-b border-gray-100 flex items-center gap-2">
           <h3 className="text-[13px] font-semibold text-gray-900">На карте</h3>
-          <button onClick={find} disabled={busy}
+          <button onClick={() => find()} disabled={busy}
             className="ml-auto text-[11.5px] font-semibold text-blue-600 hover:underline disabled:opacity-40">
             {busy ? 'ищу…' : 'найти на картах'}
           </button>
@@ -107,11 +118,35 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
             закрыто
           </span>
         )}
-        <button onClick={find} disabled={busy}
+        <button onClick={() => find()} disabled={busy}
           className="ml-auto text-[11.5px] font-semibold text-blue-600 hover:underline disabled:opacity-40">
           {busy ? 'ищу…' : place ? 'обновить' : 'найти на картах'}
         </button>
       </header>
+      {place?.match_kind === 'weak' && (
+        <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-[11.5px] text-amber-800 flex items-center gap-2">
+          <span>Название нашлось не точно — проверьте, то ли это место. В квалификацию ничего не подставили.</span>
+          {cands.length > 1 && (
+            <button onClick={() => setPickOpen(o => !o)} className="ml-auto font-semibold hover:underline">
+              {pickOpen ? 'скрыть' : 'выбрать другое'}
+            </button>
+          )}
+        </div>
+      )}
+      {pickOpen && cands.length > 0 && (
+        <div className="border-b border-gray-100 divide-y divide-gray-50">
+          {cands.map(c => (
+            <button key={c.id} onClick={() => { setPickOpen(false); find(c.id) }}
+              className="w-full text-left px-4 py-1.5 hover:bg-blue-50">
+              <div className="text-[12.5px] text-gray-900 font-medium">
+                {c.name}
+                {c.rating != null && <span className="text-gray-400 font-normal"> · {c.rating} ({c.reviews || 0})</span>}
+              </div>
+              <div className="text-[11px] text-gray-500 truncate">{c.address}</div>
+            </button>
+          ))}
+        </div>
+      )}
       {(note || err) && (
         <div className={`px-4 py-1.5 text-[11.5px] ${err ? 'text-red-600' : 'text-emerald-700'}`}>{err || note}</div>
       )}
