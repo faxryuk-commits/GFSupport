@@ -53,7 +53,7 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    version: '2026-09-08.23',
+    version: '2026-09-08.23c',
     date: '2026-09-08',
     title: 'Карточка обращения: блоки в одном стиле, «На карте»',
     items: [
@@ -100,7 +100,7 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    version: '2026-09-08.24',
+    version: '2026-09-08.24c',
     date: '2026-09-08',
     title: 'WhatsApp: проверка номеров и отправка из карточки',
     items: [
@@ -109,7 +109,7 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    version: '2026-09-08.23',
+    version: '2026-09-08.23d',
     date: '2026-09-08',
     title: 'Дополнение контактов — только в пустое',
     items: [
@@ -118,7 +118,7 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    version: '2026-09-08.22',
+    version: '2026-09-08.22c',
     date: '2026-09-08',
     title: 'Контакты дополняются из Telegram',
     items: [
