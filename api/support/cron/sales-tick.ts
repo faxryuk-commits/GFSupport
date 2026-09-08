@@ -683,6 +683,18 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   // ─── 5. Реактивация: срок по причине отказа наступил ────────────────────────
+  // Пауза на время наведения порядка в воронке: пока дата в настройке
+  // sales_reactivation_off_until не прошла, проигранные сделки не всплывают
+  // задачами. Срок возврата у них сохраняется — после паузы всё оживёт само
+  const [pause] = await sql`
+    SELECT value FROM support_settings
+    WHERE org_id = ${ORG} AND key = 'sales_reactivation_off_until'
+  `
+  const pausedUntil = pause?.value ? String(pause.value).replace(/"/g, '') : ''
+  if (pausedUntil && Date.parse(pausedUntil) > Date.now()) {
+    return json({ ok: true, ...out, reactivationPausedUntil: pausedUntil })
+  }
+
   const revive = await sql`
     SELECT d.id, d.title, d.owner_agent_id, a.telegram_id, r.label AS reason
     FROM sales_deals d
