@@ -52,6 +52,56 @@ type Item = {
   summary?: string | null; outcome?: string | null; nextStep?: string | null
 }
 
+/** Как режим выглядит в переключателе и в меню. */
+const MODE: Record<Kind, { icon: string; short: string; full: string; tone: string }> = {
+  message: { icon: '💬', short: 'Клиенту', full: 'В канал переписки', tone: 'text-blue-500' },
+  tg: { icon: '✈', short: 'Telegram', full: 'Telegram', tone: 'text-[#229ED9]' },
+  wa: { icon: '✆', short: 'WhatsApp', full: 'WhatsApp', tone: 'text-emerald-500' },
+  note: { icon: '📝', short: 'Заметка', full: 'Заметка', tone: 'text-gray-400' },
+  call: { icon: '📞', short: 'Звонок', full: 'Звонок', tone: 'text-gray-400' },
+  meeting: { icon: '🤝', short: 'Встреча', full: 'Встреча', tone: 'text-gray-400' },
+  task: { icon: '✓', short: 'Задача', full: 'Задача', tone: 'text-blue-500' },
+  team: { icon: '👥', short: 'Коллегам', full: 'Коллегам о клиенте', tone: 'text-amber-500' },
+}
+
+const MenuHead = ({ children }: { children: ReactNode }) => (
+  <div className="text-[9.5px] font-bold uppercase tracking-wider text-gray-400 px-3 pt-2 pb-1">{children}</div>
+)
+
+function MenuItem({ k, kind, note, onPick }: {
+  k: Kind; kind: Kind; note?: string | null; onPick: () => void
+}) {
+  const m = MODE[k]
+  return (
+    <button type="button" onClick={onPick}
+      className={`w-full text-left px-3 py-1.5 flex items-center gap-2.5 text-[12px] hover:bg-gray-50 ${
+        kind === k ? 'bg-blue-50/70' : ''}`}>
+      <span className={`w-4 text-center ${m.tone}`}>{m.icon}</span>
+      <span className="text-gray-800">{m.full}</span>
+      {note && <span className="ml-auto text-[10.5px] text-gray-400 truncate max-w-[104px]">{note}</span>}
+    </button>
+  )
+}
+
+/** Короткая приписка справа в меню: состояние канала, без похода в мост. */
+function chanNote(k: Kind, chan: ChanState, channelId?: string | null): string | null {
+  if (k === 'message') return channelId ? 'переписка клиента' : null
+  if (k === 'tg') {
+    if (chan.tgReady === false) return 'вы не подключены'
+    if (chan.hasTelegram === false) return 'аккаунта нет'
+    if (chan.tgUsername) return '@' + chan.tgUsername
+    return chan.hasTelegram ? 'аккаунт есть' : null
+  }
+  if (k === 'wa') {
+    if (chan.waReady === false) return chan.waState === 'reconnecting' ? 'переподключается' : 'вы не подключены'
+    if (chan.hasWhatsapp === false) return 'номера нет'
+    if (chan.hasWhatsapp) return 'номер есть'
+    if (chan.waPending) return 'проверяю…'
+    return null
+  }
+  return null
+}
+
 const ICONS: Record<string, string> = { call: '📞', meeting: '🤝', note: '📝' }
 
 const fmtSize = (n: number) => n < 1024 * 1024
@@ -108,6 +158,9 @@ export function DealFeed({
     hasWhatsapp: null, waPending: false, waReason: null,
   })
   const chanAsked = useRef<{ tg: boolean; wa: boolean; presence: string | null }>({ tg: false, wa: false, presence: null })
+  // Режим выбирается из меню: восемь равных кнопок не помещались в колонку
+  const [menu, setMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [comments, setComments] = useState<TeamComment[]>([])
   // «@имя» и вложения — только для внутренних сообщений команде
   const [mentions, setMentions] = useState<Set<string>>(new Set())
@@ -152,31 +205,40 @@ export function DealFeed({
 
   // Каналы: спрашиваем только когда сейлз выбрал Telegram/WhatsApp, а не при
   // каждом открытии карточки — каждый вопрос идёт в мост
+  // Каналы показываем только те, куда физически можно написать
+  const chanKinds = useMemo<Kind[]>(() => {
+    const out: Kind[] = []
+    if (channelId) out.push('message')
+    if (toPhone !== '' && (toPhone || accountId)) out.push('tg', 'wa')
+    return out
+  }, [channelId, toPhone, accountId])
+
+  const wantChan = menu || kind === 'tg' || kind === 'wa'
   useEffect(() => {
-    if (kind !== 'tg' && kind !== 'wa') return
+    if (!wantChan) return
     if (!toPhone && accountId) {
       apiGet<{ contacts: Array<{ phone: string | null }> }>(`/sales/contacts?accountId=${accountId}`, false)
         .then(r => setToPhone((r.contacts || []).map(c => c.phone).find(Boolean) || ''))
         .catch(() => setToPhone(''))
     }
-    if (kind === 'tg' && !chanAsked.current.tg) {
+    if (!chanAsked.current.tg) {
       chanAsked.current.tg = true
       apiGet<any>('/sales/telegram?action=status', false)
         .then(d => setChan(c => ({ ...c, tgReady: !!d.connected })))
         .catch(() => setChan(c => ({ ...c, tgReady: false })))
     }
-    if (kind === 'wa' && !chanAsked.current.wa) {
+    if (!chanAsked.current.wa) {
       chanAsked.current.wa = true
       apiGet<any>('/sales/whatsapp?action=status', false)
         .then(d => setChan(c => ({ ...c, waReady: !!d.connected, waState: d.state || null })))
         .catch(() => setChan(c => ({ ...c, waReady: false, waState: null })))
     }
-  }, [kind, toPhone, accountId])
+  }, [wantChan, toPhone, accountId])
 
   // Есть ли номер в мессенджере — ответ кэширован на сутки, мост
   // при необходимости допроверит в фоне, тогда переспросим
   useEffect(() => {
-    if ((kind !== 'tg' && kind !== 'wa') || !toPhone) return
+    if (!wantChan || !toPhone) return
     if (chanAsked.current.presence === toPhone) return
     chanAsked.current.presence = toPhone
     let alive = true
@@ -194,7 +256,21 @@ export function DealFeed({
       .catch(() => {})
     ask()
     return () => { alive = false; if (timer) clearTimeout(timer) }
-  }, [kind, toPhone])
+  }, [wantChan, toPhone])
+
+  useEffect(() => {
+    if (!menu) return
+    const away = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenu(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [menu])
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = []
@@ -496,25 +572,6 @@ export function DealFeed({
 
       <div className="border-t border-gray-100 p-3">
         {err && <div className="mb-2 text-[11.5px] text-red-600">{err}</div>}
-        <div className="flex gap-1.5 mb-2">
-          {([
-            ...(channelId ? [['message', 'Клиенту'] as const] : []),
-            ...(toPhone !== '' && (toPhone || accountId) ? [['tg', '✈ Telegram'] as const, ['wa', 'WhatsApp'] as const] : []),
-            ['note', 'Заметка'], ['call', 'Звонок'], ['meeting', 'Встреча'],
-            ['task', 'Задача'], ['team', '👥 Команде'],
-          ] as const).map(([k, label]) => (
-            <button key={k} onClick={() => { setKind(k); setPick(null) }}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
-                kind === k
-                  ? (k === 'team' ? 'bg-amber-500 text-white border-amber-500'
-                    : k === 'tg' ? 'bg-[#229ED9] text-white border-[#229ED9]'
-                      : k === 'wa' ? 'bg-emerald-500 text-white border-emerald-500'
-                        : 'bg-gray-900 text-white border-gray-900')
-                  : 'bg-white text-gray-500 border-gray-200'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
         {(kind === 'tg' || kind === 'wa') && (
           <ChannelHint kind={kind} phone={toPhone} chan={chan} />
         )}
@@ -552,9 +609,39 @@ export function DealFeed({
             ))}
           </div>
         )}
-        <div className="flex gap-2 relative">
+        <div className="flex gap-2 relative items-start">
+          <div className="relative" ref={menuRef}>
+            <button type="button" onClick={() => setMenu(m => !m)}
+              className={`flex items-center gap-1.5 border rounded-lg px-2.5 py-2 text-[12px] font-semibold
+                          whitespace-nowrap hover:border-gray-300 ${
+                kind === 'team' ? 'border-amber-300 text-amber-700 bg-amber-50/60' : 'border-gray-200 text-gray-700 bg-white'}`}>
+              <span className={MODE[kind].tone}>{MODE[kind].icon}</span>
+              <span>{MODE[kind].short}</span>
+              <span className="text-gray-300 text-[10px]">▾</span>
+            </button>
+            {menu && (
+              <div className="absolute bottom-full left-0 mb-1.5 w-[254px] max-h-[60vh] overflow-y-auto
+                              bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1">
+                {chanKinds.length > 0 && <MenuHead>Написать клиенту</MenuHead>}
+                {chanKinds.map(k => (
+                  <MenuItem key={k} k={k} kind={kind} note={chanNote(k, chan, channelId)}
+                    onPick={() => { setKind(k); setMenu(false); setPick(null); inputRef.current?.focus() }} />
+                ))}
+                <MenuHead>Записать в карточку</MenuHead>
+                {(['note', 'call', 'meeting'] as const).map(k => (
+                  <MenuItem key={k} k={k} kind={kind}
+                    onPick={() => { setKind(k); setMenu(false); setPick(null); inputRef.current?.focus() }} />
+                ))}
+                <div className="h-px bg-gray-100 my-1" />
+                {(['task', 'team'] as const).map(k => (
+                  <MenuItem key={k} k={k} kind={kind}
+                    onPick={() => { setKind(k); setMenu(false); setPick(null); inputRef.current?.focus() }} />
+                ))}
+              </div>
+            )}
+          </div>
           {kind === 'team' && candidates.length > 0 && (
-            <div className="absolute bottom-full left-0 mb-1 w-64 max-h-52 overflow-y-auto bg-white
+            <div className="absolute bottom-full left-24 mb-1 w-64 max-h-52 overflow-y-auto bg-white
                             border border-gray-200 rounded-lg shadow-lg z-20">
               {candidates.map(t => (
                 <button key={t.id} onClick={() => choose(t)}
@@ -571,10 +658,10 @@ export function DealFeed({
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
             placeholder={
               kind === 'message' ? 'Сообщение клиенту'
-                : kind === 'tg' ? 'Сообщение в Telegram — уйдёт от вашего имени'
-                : kind === 'wa' ? 'Сообщение в WhatsApp — уйдёт с вашего номера'
+                : kind === 'tg' ? 'Сообщение в Telegram'
+                : kind === 'wa' ? 'Сообщение в WhatsApp'
                 : kind === 'task' ? 'Что нужно сделать'
-                  : kind === 'team' ? 'Коллегам о клиенте · «@имя» позовёт'
+                  : kind === 'team' ? 'Коллегам · «@имя» позовёт'
                     : 'Что произошло — одной строкой'}
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12.5px]" />
           <button onClick={submit} disabled={busy || (!text.trim() && !(kind === 'team' && files.length))}
