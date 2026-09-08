@@ -80,6 +80,43 @@ const norm = (s: string) => String(s || '').toLowerCase()
   .replace(/[а-яёәғқңөұүһі]/g, ch => TRANSLIT[ch] ?? ch)
   .replace(/[^a-z0-9]+/g, '')
 
+/** Домен без протокола и www — по нему сверяем, тот ли сайт нашёлся. */
+function host(u: string): string {
+  const t = String(u || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '')
+  return t.split(/[/?#]/)[0] || ''
+}
+
+/**
+ * Ссылки на соцсети берём с сайта заведения: Google их не отдаёт, а на сайте
+ * они лежат в подвале почти всегда. Это те самые поля клиента, которые
+ * сейчас пустуют, а сейлзу нужны, чтобы посмотреть, как заведение живёт.
+ */
+async function socialsFromSite(site: string): Promise<{ instagram: string | null; telegram: string | null }> {
+  const out: { instagram: string | null; telegram: string | null } = { instagram: null, telegram: null }
+  if (!site) return out
+  try {
+    const res = await fetch(site, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GFSupport/1.0)' },
+      signal: AbortSignal.timeout(9000),
+    })
+    if (!res.ok) return out
+    const html = (await res.text()).slice(0, 400000)
+    const ig = html.match(/instagram\.com\/([A-Za-z0-9_.]{2,30})/i)
+    const igName = ig?.[1] || ''
+    if (igName && !['p', 'reel', 'reels', 'explore', 'stories', 'tv', 'accounts'].includes(igName.toLowerCase())) {
+      out.instagram = igName.replace(/\.$/, '')
+    }
+    const tg = html.match(/t\.me\/([A-Za-z0-9_]{3,32})/i)
+    const tgName = tg?.[1] || ''
+    if (tgName && !['share', 'iv'].includes(tgName.toLowerCase())) out.telegram = tgName
+  } catch {
+    // Сайт может лежать или отдавать защиту от роботов — это не повод
+    // ронять обогащение: остальные данные уже собраны
+  }
+  return out
+}
+
 /** Регион поиска: клиент из Казахстана не должен находиться в Ташкенте. */
 const REGION: Record<string, string> = { uz: 'UZ', kz: 'KZ', kg: 'KG', az: 'AZ', ge: 'GE', cy: 'CY', ae: 'AE' }
 
@@ -183,6 +220,8 @@ async function handlerInner(req: Request): Promise<Response> {
         lat numeric(9,6),
         lng numeric(9,6),
         raw jsonb,
+        instagram varchar(120),
+        telegram varchar(120),
         match_kind varchar(10),
         found_by varchar(64),
         updated_at timestamptz DEFAULT NOW()
@@ -191,6 +230,8 @@ async function handlerInner(req: Request): Promise<Response> {
     await sql`CREATE INDEX IF NOT EXISTS sales_places_lead ON sales_places (org_id, lead_id)`
     await sql`CREATE INDEX IF NOT EXISTS sales_places_acc ON sales_places (org_id, account_id)`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS match_kind varchar(10)`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS instagram varchar(120)`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS telegram varchar(120)`
   })
 
   // Ключ: сперва настройки системы, потом окружение
@@ -236,10 +277,13 @@ async function handlerInner(req: Request): Promise<Response> {
   let name = String(body.query || '').trim()
   let city = ''
   let market = ''
+  let siteHint = ''
+  let acc: string | null = null
   let lead: any = null
   if (leadId) {
     const [r] = await sql`
-      SELECT l.name, l.city, l.market_id, a.name AS account_name, a.city AS account_city, l.qual
+      SELECT l.name, l.city, l.market_id, a.id AS acc_id, a.name AS account_name, a.city AS account_city,
+             a.website, a.instagram, a.telegram, l.qual
       FROM sales_leads l LEFT JOIN sales_accounts a ON a.id = l.account_id
       WHERE l.id = ${leadId} AND l.org_id = ${orgId} LIMIT 1
     `
@@ -247,12 +291,20 @@ async function handlerInner(req: Request): Promise<Response> {
     if (!name) name = String(r?.account_name || r?.name || '').trim()
     city = String(r?.city || r?.account_city || '').trim()
     market = String(r?.market_id || '').trim()
+    siteHint = host(String(r?.website || ''))
+    acc = r?.acc_id || null
   }
-  if (accountId && !name) {
-    const [r] = await sql`SELECT name, city, market_id FROM sales_accounts WHERE id = ${accountId} AND org_id = ${orgId} LIMIT 1`
-    name = String(r?.name || '').trim()
-    city = String(r?.city || '').trim()
-    market = String(r?.market_id || '').trim()
+  if (accountId) {
+    const [r] = await sql`
+      SELECT id, name, city, market_id, website, instagram, telegram
+      FROM sales_accounts WHERE id = ${accountId} AND org_id = ${orgId} LIMIT 1
+    `
+    if (!name) name = String(r?.name || '').trim()
+    if (!city) city = String(r?.city || '').trim()
+    if (!market) market = String(r?.market_id || '').trim()
+    if (!siteHint) siteHint = host(String(r?.website || ''))
+    acc = acc || r?.id || null
+    if (!lead) lead = r
   }
   name = cleanName(name)
   if (!name) return json({ error: 'у карточки нет названия — искать нечего' }, 400)
@@ -261,7 +313,18 @@ async function handlerInner(req: Request): Promise<Response> {
   // с тем же названием — точками сети. Отдельный запрос ради счётчика
   // точек не нужен, он стоил бы столько же, сколько поиск
   const region = REGION[market] || 'UZ'
-  const found = await search(key, city ? `${name} ${city}` : name, 20, region)
+
+  // Сайт — самый честный вход: домен принадлежит одному заведению, а название
+  // делят с однофамильцами. Ищем по нему первым и принимаем только тогда,
+  // когда домен найденного места совпал с нашим
+  let found: Place[] = []
+  let bySite: Place | null = null
+  if (siteHint && !body.placeId) {
+    const hits = await search(key, siteHint, 5, region).catch(() => [] as Place[])
+    bySite = hits.find(p => host(p.websiteUri || '') === siteHint) || null
+    if (bySite) found = hits
+  }
+  if (!bySite) found = await search(key, city ? `${name} ${city}` : name, 20, region)
   if (!found.length) {
     return json({
       error: `На картах ничего не нашлось по запросу «${city ? `${name} ${city}` : name}». `
@@ -272,12 +335,30 @@ async function handlerInner(req: Request): Promise<Response> {
   // Можно указать конкретное место: сейлз видит список и выбирает сам,
   // когда автоматика ошиблась
   const wanted = body.placeId ? found.find(p => p.id === String(body.placeId)) : null
-  const best = wanted || found[0]
-  let match: 'strong' | 'weak' = wanted ? 'strong' : matchKind(name, best.displayName?.text || '')
+  const best = wanted || bySite || found[0]
+  let match: 'strong' | 'weak' = (wanted || bySite) ? 'strong' : matchKind(name, best.displayName?.text || '')
   // Нашлось в другой стране — верить нельзя, даже если название совпало
   if (!wanted && market && otherCountry(best.formattedAddress || '', market)) match = 'weak'
-  const brand = norm(best.displayName?.text || name)
-  const branches = found.filter(p => norm(p.displayName?.text || '') === brand).length
+  // Точки сети считаем по двум выдачам сразу: по городу и по бренду на весь
+  // регион. Сравнивать названия «в лоб» нельзя — филиалы зовутся
+  // «Chopar Pizza Юнусабад», и точное равенство схлопывало сеть до одной точки
+  const brandName = (best.displayName?.text || name).trim()
+  const a1 = norm(brandName)
+  const a2 = norm(name)
+  const root = (a2 && a2.length >= 4 && a2.length <= a1.length ? a2 : a1)
+  const net = root.length >= 4 ? await search(key, brandName, 20, region).catch(() => [] as Place[]) : []
+  const seen = new Set<string>()
+  const branches = [...found, ...net].filter(p => {
+    const n = norm(p.displayName?.text || '')
+    if (root.length < 4 || !n.includes(root)) return false
+    if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') return false
+    const k = p.id || norm(p.formattedAddress || '')
+    if (seen.has(k)) return false
+    seen.add(k); return true
+  }).length || 1
+
+  // Соцсети — с сайта места: Google их не знает, а сейлзу они нужны
+  const social = await socialsFromSite(best.websiteUri || '')
 
   const id = 'sp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   const row = {
@@ -296,6 +377,8 @@ async function handlerInner(req: Request): Promise<Response> {
     lat: best.location?.latitude ?? null,
     lng: best.location?.longitude ?? null,
     raw: JSON.stringify(found.slice(0, 10)),
+    instagram: social.instagram,
+    telegram: social.telegram,
     match,
   }
 
@@ -305,11 +388,12 @@ async function handlerInner(req: Request): Promise<Response> {
   await sql`
     INSERT INTO sales_places (id, org_id, lead_id, account_id, place_id, name, address, rating,
                               reviews, website, phone, maps_url, category, status, branches,
-                              hours, lat, lng, raw, match_kind, found_by, updated_at)
+                              hours, lat, lng, raw, instagram, telegram, match_kind, found_by, updated_at)
     VALUES (${id}, ${orgId}, ${leadId}, ${accountId}, ${row.place_id}, ${row.name}, ${row.address},
             ${row.rating}, ${row.reviews}, ${row.website}, ${row.phone}, ${row.maps_url},
             ${row.category}, ${row.status}, ${row.branches}, ${row.hours}::jsonb,
-            ${row.lat}, ${row.lng}, ${row.raw}::jsonb, ${row.match}, ${ctx.agentId}, NOW())
+            ${row.lat}, ${row.lng}, ${row.raw}::jsonb, ${row.instagram}, ${row.telegram},
+            ${row.match}, ${ctx.agentId}, NOW())
   `
 
   // Подставляем только пустое и только очевидное: город и число точек.
@@ -318,6 +402,22 @@ async function handlerInner(req: Request): Promise<Response> {
   // единого отзыва — обычно однофамилец заведения, а не оно само
   const trusted = match === 'strong' && (best.userRatingCount ?? 0) > 0
   const filled: string[] = []
+
+  // Сайт и соцсети — в карточку клиента, и только в пустые поля: то, что
+  // сейлз вписал руками, машина не переписывает
+  if (acc && trusted) {
+    const patch: Array<[string, string]> = []
+    if (!lead?.website && best.websiteUri) patch.push(['website', best.websiteUri])
+    if (!lead?.instagram && social.instagram) patch.push(['instagram', social.instagram])
+    if (!lead?.telegram && social.telegram) patch.push(['telegram', social.telegram])
+    for (const [field, value] of patch) {
+      if (field === 'website') await sql`UPDATE sales_accounts SET website = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (website IS NULL OR website = '')`
+      if (field === 'instagram') await sql`UPDATE sales_accounts SET instagram = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (instagram IS NULL OR instagram = '')`
+      if (field === 'telegram') await sql`UPDATE sales_accounts SET telegram = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (telegram IS NULL OR telegram = '')`
+      filled.push(field === 'website' ? 'сайт' : field === 'instagram' ? 'Instagram' : 'Telegram')
+    }
+  }
+
   if (leadId && lead && trusted) {
     const qual = (lead.qual || {}) as Record<string, any>
     const patch: Record<string, string> = {}

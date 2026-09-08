@@ -22,6 +22,8 @@ export type Place = {
   status: string | null
   branches: number | null
   hours: string[] | null
+  instagram: string | null
+  telegram: string | null
   match_kind: 'strong' | 'weak' | null
   updated_at: string | null
 }
@@ -155,7 +157,12 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
           <Row label="Рейтинг">{rating}<span className="text-gray-400 font-normal"> · {reviews || 0} отзывов</span></Row>
         )}
         {!!place?.branches && place.branches > 1 && (
-          <Row label="Точек рядом">{place.branches}<span className="text-gray-400 font-normal"> в выдаче по названию</span></Row>
+          <Row label="Точек в сети">
+            {place.branches >= 20 ? '20+' : place.branches}
+            <span className="text-gray-400 font-normal">
+              {place.branches >= 20 ? ' — Google отдаёт не больше 20 за раз' : ' по поиску бренда в регионе'}
+            </span>
+          </Row>
         )}
         {place?.category && <Row label="Тип">{place.category}</Row>}
         {address && <Row label="Адрес" title={address}>{address}</Row>}
@@ -163,6 +170,18 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
         {website && (
           <Row label="Сайт">
             <a href={website} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{site(website)}</a>
+          </Row>
+        )}
+        {place?.instagram && (
+          <Row label="Instagram">
+            <a href={`https://instagram.com/${place.instagram}`} target="_blank" rel="noreferrer"
+              className="text-blue-600 hover:underline">@{place.instagram}</a>
+          </Row>
+        )}
+        {place?.telegram && (
+          <Row label="Telegram">
+            <a href={`https://t.me/${place.telegram}`} target="_blank" rel="noreferrer"
+              className="text-blue-600 hover:underline">@{place.telegram}</a>
           </Row>
         )}
         {mapsUrl && (
