@@ -499,7 +499,7 @@ export function SalesFunnelPage() {
                 </div>
                 <div className="text-[10.5px] text-gray-400">{col.hint}</div>
               </header>
-              <div className="p-2 flex flex-col gap-2 overflow-y-auto">
+              <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
                 {leadsIn(col).map(l => {
                   const phone = parsePhone(l.phone, l.market_id)
                   return (
@@ -571,7 +571,7 @@ export function SalesFunnelPage() {
                   {st.sla_hours ? ` · норматив ${Math.round(Number(st.sla_hours) / 24) || 1} дн` : ''}
                 </div>
               </header>
-              <div className="p-2 flex flex-col gap-2 overflow-y-auto">
+              <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
                 {dealsIn(st.key).map(d => {
                   const stuck = Boolean(d.stalled_at) || !d.next_step_at
                   return (
