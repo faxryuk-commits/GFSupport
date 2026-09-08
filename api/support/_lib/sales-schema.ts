@@ -309,7 +309,10 @@ const REQUIRED_TRIM: Array<[string, string[]]> = [
   ['demo', []],
   ['discovery', ['points', 'pain']],
   ['kp', ['kp_file', 'monthly_amount']],
-  ['contract', ['legal_name']],
+  // Реквизиты живут в карточке клиента и подставляются в договор оттуда:
+  // требовать их для перехода — значит блокировать этап полем,
+  // которого в сделке нет
+  ['contract', []],
   ['pilot', []],
 ]
 
@@ -346,7 +349,7 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
            OR (key = 'demo'      AND jsonb_array_length(required_fields) > 0)
            OR (key = 'discovery' AND jsonb_array_length(required_fields) > 2)
            OR (key = 'kp'        AND jsonb_array_length(required_fields) > 2)
-           OR (key = 'contract'  AND jsonb_array_length(required_fields) > 1)
+           OR (key = 'contract'  AND jsonb_array_length(required_fields) > 0)
            OR (key = 'pilot'     AND jsonb_array_length(required_fields) > 0)
            OR (key = 'dm_contact' AND is_active = true)) AS stages
   ` as any[]

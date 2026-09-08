@@ -23,6 +23,10 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
   const [contacts, setContacts] = useState<Contact[]>([])
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ ...EMPTY })
+  // Правка по месту: телефон в заявке приходит с ошибкой чаще, чем кажется,
+  // и заводить второй контакт ради опечатки — плодить дубли
+  const [editId, setEditId] = useState<string | null>(null)
+  const [edit, setEdit] = useState({ ...EMPTY })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const refs = useSalesRefs()
@@ -48,6 +52,27 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
     } finally {
       setBusy(false)
     }
+  }
+
+  const startEdit = (c: Contact) => {
+    setEditId(c.id)
+    setEdit({
+      name: c.name || '', role: c.role || '', phone: c.phone || '',
+      email: c.email || '', telegram: c.telegram || '',
+    })
+    setError(null)
+  }
+
+  const saveEdit = async () => {
+    if (!editId || busy) return
+    setBusy(true); setError(null)
+    try {
+      await apiPatch('/sales/contacts', { id: editId, ...edit })
+      setEditId(null)
+      load()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось сохранить контакт')
+    } finally { setBusy(false) }
   }
 
   const makePrimary = async (c: Contact) => {
@@ -122,6 +147,32 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
           const callNum = c.phone
             || (/^[\d\s+()-]{7,20}$/.test(c.name || '') && (c.name || '').replace(/\D/g, '').length >= 7
               ? c.name : null)
+          if (editId === c.id) return (
+            <div key={c.id} className="px-4 py-3 bg-blue-50/40">
+              <div className="flex flex-wrap gap-2">
+                <input value={edit.name} onChange={e => setEdit(f => ({ ...f, name: e.target.value }))}
+                  placeholder="Имя"
+                  className="text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 flex-1 min-w-[120px]" />
+                <input value={edit.phone} onChange={e => setEdit(f => ({ ...f, phone: e.target.value }))}
+                  placeholder="Телефон"
+                  className="text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 flex-1 min-w-[130px]" />
+                <div className="flex-1 min-w-[110px] text-[12.5px]">
+                  <Combo value={edit.role} onChange={v => setEdit(f => ({ ...f, role: v }))}
+                    options={optionsFor(refs, 'contact_role')} placeholder="Роль" />
+                </div>
+                <input value={edit.telegram} onChange={e => setEdit(f => ({ ...f, telegram: e.target.value }))}
+                  placeholder="Telegram"
+                  className="text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 flex-1 min-w-[110px]" />
+                <input value={edit.email} onChange={e => setEdit(f => ({ ...f, email: e.target.value }))}
+                  placeholder="Почта"
+                  className="text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 flex-1 min-w-[130px]" />
+              </div>
+              <div className="flex gap-2 mt-2">
+                <Btn kind="primary" onClick={saveEdit} disabled={busy}>Сохранить</Btn>
+                <Btn onClick={() => setEditId(null)}>Отмена</Btn>
+              </div>
+            </div>
+          )
           return (
           <div key={c.id} className="px-4 py-2.5 flex items-start justify-between gap-3 group">
             <div className="min-w-0">
@@ -141,6 +192,10 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
               {callNum && (
                 <CallPhone phone={callNum} size="sm" className="text-[12px] text-blue-600" />
               )}
+              <button onClick={() => startEdit(c)} title="Изменить контакт"
+                className="opacity-0 group-hover:opacity-100 text-[11px] text-gray-300 hover:text-blue-600">
+                изменить
+              </button>
               {!c.is_primary && (
                 <button onClick={() => makePrimary(c)} title="Сделать основным контактом"
                   className="opacity-0 group-hover:opacity-100 text-[11px] text-gray-300 hover:text-blue-600">
