@@ -27,6 +27,10 @@ import { parsePhone } from '@/shared/lib/phone'
 type Activity = {
   id: string; type: string; direction: string | null; result: string | null
   text: string | null; agent_name: string | null; happened_at: string
+  /** Кто написал, когда это сообщение клиента: имя из мессенджера. */
+  sender_name?: string | null
+  /** Канал сообщения отдельным полем; у старых записей он в тексте. */
+  channel?: string | null
   record_uuid?: string | null
   summary?: string | null; outcome?: string | null; next_step?: string | null
 }
@@ -195,10 +199,18 @@ export function DealFeed({
   const items = useMemo<Item[]>(() => {
     const out: Item[] = []
     for (const a of acts) {
+      // Входящее написал клиент, а не сотрудник. Раньше автором всегда стоял
+      // агент — и сообщение клиента оказывалось подписано именем сейлза,
+      // чей мост его поймал
+      const fromClient = a.type === 'message' && a.direction === 'in'
+      const body = [a.result, a.text].filter(Boolean).join(' · ') || 'без описания'
       out.push({
         key: `a_${a.id}`, at: a.happened_at, icon: ICONS[a.type] || '•',
-        who: a.agent_name || 'Сотрудник',
-        text: [a.result, a.text].filter(Boolean).join(' · ') || 'без описания',
+        who: fromClient
+          ? (a.sender_name || 'Клиент')
+          : (a.agent_name || 'Сотрудник'),
+        text: a.channel ? `${a.channel}: ${body}` : body,
+        tone: fromClient ? 'client' : undefined,
         recordUuid: a.record_uuid || null,
         summary: a.summary || null, outcome: a.outcome || null, nextStep: a.next_step || null,
       })

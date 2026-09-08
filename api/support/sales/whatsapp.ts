@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
+import { logOutgoingMessage } from '../_lib/sales-message-log.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -112,14 +113,10 @@ export default async function handler(req: Request): Promise<Response> {
           method: 'POST',
           body: JSON.stringify({ agentId: ctx.agentId, phone, text, firstTouch: !seen }),
         })
-        if (body.dealId) {
-          await sql`
-            INSERT INTO sales_activities (id, org_id, deal_id, type, direction, text, agent_id, happened_at)
-            VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
-                    ${orgId}, ${String(body.dealId)}, 'message', 'out',
-                    ${'WhatsApp: ' + text}, ${ctx.agentId}, NOW())
-          `.catch(() => {})
-        }
+        // След пишет общий писатель: он умеет и сделку, и лид, и клиента.
+        // Свой INSERT здесь знал только сделку — из карточки лида
+        // отправленное сообщение потом просто исчезало
+        await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'WhatsApp', text)
         return json({ ok: true, used: r.used, limit: r.limit })
       }
       return json({ error: 'unknown action' }, 400)

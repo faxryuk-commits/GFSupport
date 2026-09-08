@@ -27,11 +27,14 @@ export async function logOutgoingMessage(
       accountId = l?.account_id || null
     }
     if (!dealId && !accountId) return
+    // Канал — отдельным полем, а не префиксом в тексте: по префиксу
+    // ни отфильтровать, ни сгруппировать, а поиск по тексту его ловит
     await sql`
-      INSERT INTO sales_activities (id, org_id, deal_id, account_id, type, direction, text, agent_id, happened_at)
+      INSERT INTO sales_activities
+        (id, org_id, deal_id, account_id, type, direction, channel, text, agent_id, happened_at)
       VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
               ${orgId}, ${dealId}, ${accountId}, 'message', 'out',
-              ${channel + ': ' + text}, ${agentId}, NOW())
+              ${channel}, ${text}, ${agentId}, NOW())
     `
   } catch {
     // Сообщение уже ушло клиенту — отсутствие следа не повод отдавать ошибку

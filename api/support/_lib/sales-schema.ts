@@ -621,8 +621,13 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
       type VARCHAR(20) NOT NULL,
       direction VARCHAR(10),
       result VARCHAR(50),
+      -- Канал отдельным полем: префикс в тексте не отфильтровать
+      channel VARCHAR(20),
       text TEXT,
-      message_id VARCHAR(50),
+      -- Имя отправителя, когда написал клиент: подписывать его именем
+      -- сейлза, чей мост поймал сообщение, — вранье в ленте
+      sender_name VARCHAR(200),
+      message_id VARCHAR(100),
       agent_id VARCHAR(50),
       happened_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -853,6 +858,12 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_deals_external ON sales_deals(org_id, external_id) WHERE external_id IS NOT NULL`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_events_deal ON sales_deal_events(deal_id, changed_at)`
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_activities_deal ON sales_activities(deal_id, happened_at)`
+  // Одно сообщение — одна запись. Мосты после переподключения отдают
+  // пропущенное заново, и без этого индекса лента задваивалась
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS sales_activities_msg_key
+      ON sales_activities(org_id, message_id) WHERE message_id IS NOT NULL
+  `
   await sql`CREATE INDEX IF NOT EXISTS idx_sales_tasks_due ON sales_tasks(org_id, assignee_agent_id, due_at) WHERE done_at IS NULL`
   // Ключ уникален внутри воронки, а не организации: у каждого региона своя
   // воронка с теми же ключами этапов — так их можно сравнивать между странами
