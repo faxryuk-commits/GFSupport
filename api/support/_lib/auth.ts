@@ -1,4 +1,5 @@
 import { getSQL } from './db.js'
+import { TOKEN_PREFIX, resolveSession } from './session.js'
 
 export interface AgentContext {
   agentId: string | null
@@ -9,10 +10,24 @@ export interface AgentContext {
   isOrgAdmin: boolean
   /** Руководящая роль: админы, CCO, тимлиды. Право на разрушающие действия. */
   isLead: boolean
+  /**
+   * Токен старого образца (идентификатор сотрудника). Обработчик обменяет
+   * его на сессию и вернёт новый заголовком, чтобы команда не оказалась
+   * разом выброшена из системы.
+   */
+  legacyToken?: string | null
 }
 
 /** Роли с правом руководителя: удаление, настройки команды, чужие задачи. */
 const LEAD_ROLES = ['admin', 'org_admin', 'cco', 'team_lead', 'lead']
+
+/**
+ * Пускать ли токены старого образца, где токеном был сам идентификатор
+ * сотрудника. Такой идентификатор система отдаёт в обычных ответах — значит
+ * это не пароль, а публичное значение. Выключается переменной
+ * LEGACY_AGENT_TOKENS=off, когда команда переехала на сессии.
+ */
+const LEGACY_OK = String(process.env.LEGACY_AGENT_TOKENS || 'on').toLowerCase() !== 'off'
 
 export async function extractAgentContext(req: Request): Promise<AgentContext> {
   const fallback: AgentContext = {
@@ -24,28 +39,37 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
   if (!authHeader) return fallback
 
   const token = authHeader.replace('Bearer ', '').trim()
-  if (!token.startsWith('agent')) return fallback
+  if (!token) return fallback
 
   try {
     const sql = getSQL()
+    let agentRow: any = null
+    let legacyToken: string | null = null
 
-    // New format: token IS the agentId (e.g. agent_1772526727220_akc3)
-    let [agentRow] = await sql`
-      SELECT id, role, permissions, org_id FROM support_agents WHERE id = ${token} LIMIT 1
-    `
-
-    // Backward compat: old format agent_<agentId>_<timestamp>
-    if (!agentRow && token.startsWith('agent_agent_')) {
-      const inner = token.slice(6) // strip outer 'agent_' → agent_xxx_yyy_ts
+    if (token.startsWith(TOKEN_PREFIX)) {
+      agentRow = await resolveSession(sql, token)
+    } else if (token.startsWith('agent') && LEGACY_OK) {
+      // Старый образец: токеном был идентификатор сотрудника
       ;[agentRow] = await sql`
-        SELECT id, role, permissions, org_id FROM support_agents
-        WHERE ${inner} LIKE id || '%' ORDER BY LENGTH(id) DESC LIMIT 1
+        SELECT id, role, permissions, org_id FROM support_agents WHERE id = ${token} LIMIT 1
       `
+      if (!agentRow && token.startsWith('agent_agent_')) {
+        const inner = token.slice(6)
+        ;[agentRow] = await sql`
+          SELECT id, role, permissions, org_id FROM support_agents
+          WHERE ${inner} LIKE id || '%' ORDER BY LENGTH(id) DESC LIMIT 1
+        `
+      }
+      if (agentRow) legacyToken = token
     }
 
-    const agentId = agentRow?.id || token
-    if (!agentRow) return { ...fallback, agentId }
+    // Токен не опознан — гость. Раньше здесь возвращался сам токен в роли
+    // идентификатора, и любая строка, начинающаяся с «agent», проходила
+    // проверку `if (!ctx.agentId)` во всех обработчиках: систему можно было
+    // читать вообще без учётной записи
+    if (!agentRow?.id) return fallback
 
+    const agentId = String(agentRow.id)
     const isSuperAdmin = Array.isArray(agentRow.permissions) && agentRow.permissions.includes('superadmin')
     const isGlobalAdmin = agentRow.role === 'admin'
       || isSuperAdmin
@@ -60,9 +84,10 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
     `
     const marketIds = marketRows.map((r: any) => r.market_id)
 
-    return { agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin, isLead }
+    return { agentId, orgId, marketIds, isGlobalAdmin, isSuperAdmin, isOrgAdmin, isLead, legacyToken }
   } catch {
-    return { ...fallback, agentId: token }
+    // База не ответила — это не повод пускать: раньше здесь выдавался доступ
+    return fallback
   }
 }
 

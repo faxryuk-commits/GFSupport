@@ -2,6 +2,7 @@ import { checkAuthRateLimit } from '../_lib/rate-limit.js'
 import { writeAuditLog, getClientIP } from '../_lib/audit.js'
 import { verifyPassword, hashPassword } from '../_lib/password.js'
 import { getSQL, json } from '../_lib/db.js'
+import { issueSession } from '../_lib/session.js'
 
 export const config = {
   runtime: 'edge', regions: ['fra1'],
@@ -92,8 +93,9 @@ export default async function handler(req: Request): Promise<Response> {
     // Update status to online
     await sql`UPDATE support_agents SET status = 'online' WHERE id = ${agent.id}`
 
-    // Token = agentId (already has 'agent_' prefix)
-    const token = agent.id
+    // Токен — случайная строка, а не идентификатор сотрудника: идентификаторы
+    // система отдаёт в обычных ответах, и раньше их хватало для входа
+    const token = await issueSession(sql, agent.id, agent.org_id || 'org_delever', req)
     
     // Get avatar URL - from DB or fetch from Telegram
     let avatarUrl = agent.avatar_url

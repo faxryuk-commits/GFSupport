@@ -79,6 +79,23 @@ export function MainLayout() {
     }
   }, [])
 
+  // Разовый переезд на сессии. Раньше токеном входа был идентификатор
+  // сотрудника, а его система показывает в обычных ответах — владелец лида,
+  // ответственный, список команды. Меняем на случайный токен молча, чтобы
+  // никого не выбрасывать из системы посреди рабочего дня
+  useEffect(() => {
+    const t = localStorage.getItem('support_agent_token')
+    if (!t || t.startsWith('gfs_')) return
+    fetch('/api/support/agents/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+      body: JSON.stringify({ action: 'upgrade' }),
+    })
+      .then(r => r.json())
+      .then(d => { if (d?.token) localStorage.setItem('support_agent_token', d.token) })
+      .catch(() => { /* не вышло — старый токен ещё принимается */ })
+  }, [])
+
   useEffect(() => {
     const agentData = localStorage.getItem('support_agent')
     if (agentData) {
@@ -162,8 +179,18 @@ export function MainLayout() {
           body: JSON.stringify({ action: 'logout', agentId })
         })
       } catch { /* ignore */ }
+
+      // Гасим сессию на сервере: очистка хранилища браузера сама по себе
+      // не делает украденный токен бесполезным
+      try {
+        await fetch('/api/support/agents/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: 'logout' }),
+        })
+      } catch { /* ignore */ }
     }
-    
+
     localStorage.removeItem('auth')
     localStorage.removeItem('support_agent')
     localStorage.removeItem('support_agent_data')

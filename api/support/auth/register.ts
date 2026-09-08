@@ -1,4 +1,5 @@
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
+import { issueSession } from '../_lib/session.js'
 import { checkAuthRateLimit } from '../_lib/rate-limit.js'
 import { writeAuditLog, getClientIP } from '../_lib/audit.js'
 
@@ -177,7 +178,7 @@ export default async function handler(req: Request): Promise<Response> {
       await sql`DELETE FROM support_otp WHERE email = ${telegramId}`
       await sql`UPDATE support_platform_users SET reg_code = NULL WHERE telegram_id = ${telegramId}`
 
-      const token = agentId
+      const token = await issueSession(sql, agentId, orgId, req)
 
       writeAuditLog({
         orgId, agentId, action: 'register.complete',
