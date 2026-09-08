@@ -29,10 +29,16 @@ async function ensureSchema(sql: any) {
         has_wa BOOLEAN,
         has_tg BOOLEAN,
         tg_username TEXT,
+        tg_name TEXT,
+        tg_last_seen TEXT,
+        tg_premium BOOLEAN,
         checked_at TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (org_id, phone_norm)
       )
     `.catch(() => {})
+    await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_name TEXT`.catch(() => {})
+    await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_last_seen TEXT`.catch(() => {})
+    await sql`ALTER TABLE sales_phone_channels ADD COLUMN IF NOT EXISTS tg_premium BOOLEAN`.catch(() => {})
   })
 }
 
@@ -40,17 +46,17 @@ async function ensureSchema(sql: any) {
 const tail9 = (raw: string) => raw.replace(/\D/g, '').slice(-9)
 
 /** Спросить мост. Любая ошибка — «не знаем», а не падение карточки. */
-async function askBridge(url: string, secret: string, phone: string): Promise<boolean | null> {
+async function askBridge(url: string, secret: string, phone: string): Promise<any | null> {
   try {
     const res = await fetch(`${url}/check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
       body: JSON.stringify({ phone }),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(6000),
     })
     if (!res.ok) return null
     const body = await res.json() as any
-    return typeof body?.exists === 'boolean' ? body.exists : null
+    return typeof body?.exists === 'boolean' ? body : null
   } catch {
     return null
   }
@@ -104,12 +110,16 @@ export default async function handler(req: Request): Promise<Response> {
 
   // 2. Кэш проверок
   const [cached] = await sql`
-    SELECT has_wa, has_tg, tg_username, checked_at,
+    SELECT has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, checked_at,
            (checked_at > NOW() - make_interval(hours => ${CACHE_HOURS})) AS fresh
     FROM sales_phone_channels WHERE org_id = ${orgId} AND phone_norm = ${digits}
   `
   let hasWa: boolean | null = cached?.has_wa ?? null
   let hasTg: boolean | null = cached?.has_tg ?? null
+  let tgUsername: string | null = cached?.tg_username ?? null
+  let tgName: string | null = cached?.tg_name ?? null
+  let tgLastSeen: string | null = cached?.tg_last_seen ?? null
+  let tgPremium: boolean | null = cached?.tg_premium ?? null
   let checkedAt: string | null = cached?.checked_at ?? null
 
   if (refresh || !cached?.fresh) {
@@ -124,15 +134,24 @@ export default async function handler(req: Request): Promise<Response> {
       tgUrl && tgSecret ? askBridge(tgUrl, tgSecret, e164) : Promise.resolve(null),
     ])
     // Не затираем прежний ответ, если мост сейчас молчит
-    if (wa !== null) hasWa = wa
-    if (tg !== null) hasTg = tg
+    if (wa !== null) hasWa = wa.exists
+    if (tg !== null) {
+      hasTg = tg.exists
+      tgUsername = tg.username ?? tgUsername
+      tgName = tg.name ?? tgName
+      tgLastSeen = tg.lastSeen ?? tgLastSeen
+      tgPremium = typeof tg.premium === 'boolean' ? tg.premium : tgPremium
+    }
     if (wa !== null || tg !== null) {
       checkedAt = new Date().toISOString()
       await sql`
-        INSERT INTO sales_phone_channels (org_id, phone_norm, has_wa, has_tg, checked_at)
-        VALUES (${orgId}, ${digits}, ${hasWa}, ${hasTg}, NOW())
+        INSERT INTO sales_phone_channels (
+          org_id, phone_norm, has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, checked_at
+        )
+        VALUES (${orgId}, ${digits}, ${hasWa}, ${hasTg}, ${tgUsername}, ${tgName}, ${tgLastSeen}, ${tgPremium}, NOW())
         ON CONFLICT (org_id, phone_norm) DO UPDATE SET
-          has_wa = ${hasWa}, has_tg = ${hasTg}, checked_at = NOW()
+          has_wa = ${hasWa}, has_tg = ${hasTg}, tg_username = ${tgUsername},
+          tg_name = ${tgName}, tg_last_seen = ${tgLastSeen}, tg_premium = ${tgPremium}, checked_at = NOW()
       `.catch(() => {})
     }
   }
@@ -146,7 +165,10 @@ export default async function handler(req: Request): Promise<Response> {
     phone: digits,
     hasWhatsapp: hasWa,
     hasTelegram: hasTg,
-    tgUsername: cached?.tg_username || null,
+    tgUsername,
+    tgName,
+    tgLastSeen,
+    tgPremium,
     checkedAt,
     channels: chans.map(c => ({
       id: c.id, source: c.source, name: c.name,
