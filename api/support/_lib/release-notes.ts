@@ -28,7 +28,7 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: '2026-09-08.20',
+    version: '2026-09-08.21',
     date: '2026-09-08',
     title: 'Фото клиента раскрывается на весь экран',
     items: [
