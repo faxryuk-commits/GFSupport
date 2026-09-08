@@ -272,6 +272,11 @@ async function handlerInner(req: Request): Promise<Response> {
                OR l.text ILIKE ${like} OR l.city ILIKE ${like} OR l.phone ILIKE ${like}
                OR (${digitsLike} <> '' AND l.phone_norm LIKE ${digitsLike}))
       ) t WHERE rn <= ${perColumn}
+      -- Порядок задаём явно: без него Postgres отдавал строки как лягут —
+      -- сгруппированно по статусу, и в колонке «Новые» сверху оказывались
+      -- взятые в работу с просрочкой в три недели, а сегодняшние обращения
+      -- уходили под них. Колонка называется «Новые» — новые и должны быть сверху
+      ORDER BY created_at DESC
     `,
     sql`
       SELECT status, COUNT(*)::int AS total FROM sales_leads
@@ -355,6 +360,9 @@ async function handlerInner(req: Request): Promise<Response> {
                  SELECT 1 FROM sales_contacts c2 WHERE c2.account_id = d.account_id
                    AND regexp_replace(COALESCE(c2.phone, ''), ${'\\D'}, '', 'g') LIKE ${digitsLike})))
       ) t WHERE rn <= ${perColumn}
+      -- Та же причина, что и у обращений: порядок внутри этапа должен быть
+      -- задан, а не случаен. Сверху — то, что двигали последним
+      ORDER BY COALESCE(updated_at, stage_since) DESC NULLS LAST
     `,
     sql`
       SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort_order,
