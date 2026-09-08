@@ -10,6 +10,7 @@ import { useMyAccess } from '@/shared/hooks/useMyAccess'
 import { pathAllowedFor } from '@/shared/lib/modules'
 import { apiGet } from '@/shared/services/api.service'
 import { markNotificationRead } from '@/shared/api'
+import { useNotification } from '@/shared/ui'
 
 // CSS for coin flip and shine animations
 const badgeAnimationStyles = `
@@ -88,6 +89,11 @@ function NotificationBellSidebar() {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<any[]>([])
   const ref = useRef<HTMLDivElement>(null)
+  const { showNotification } = useNotification()
+  const navigate = useNavigate()
+  // Что уже показывали всплывашкой: колокольчик опрашивается по кругу,
+  // и без памяти одно и то же уведомление пищало бы каждые полминуты
+  const seenRef = useRef<Set<string> | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -100,13 +106,37 @@ function NotificationBellSidebar() {
         if (res.ok) {
           const data = await res.json()
           setCount(data.unreadCount || 0)
-          setItems(data.notifications || [])
+          const list = data.notifications || []
+          setItems(list)
+
+          // Первый прогон только запоминает: иначе при входе в систему
+          // разом всплывёт десяток старых уведомлений
+          const unread = list.filter((n: any) => !n.isRead)
+          if (seenRef.current === null) {
+            seenRef.current = new Set(unread.map((n: any) => String(n.id)))
+          } else {
+            for (const n of unread.slice().reverse()) {
+              const key = String(n.id)
+              if (seenRef.current.has(key)) continue
+              seenRef.current.add(key)
+              showNotification({
+                type: n.priority === 'critical' ? 'alert'
+                  : n.type === 'message' ? 'message' : 'ticket',
+                title: n.title || 'Уведомление',
+                message: n.body || '',
+                senderName: n.senderName || undefined,
+                channelName: n.channelName || undefined,
+                onClick: n.link ? () => navigate(n.link) : undefined,
+              })
+            }
+          }
         }
       } catch {}
     }
     load()
-    const iv = setInterval(load, 30000)
+    const iv = setInterval(load, 20000)
     return () => clearInterval(iv)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

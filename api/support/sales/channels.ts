@@ -111,6 +111,30 @@ export default async function handler(req: Request): Promise<Response> {
     LIMIT 5
   `
 
+  // 1b. История переписки по номеру: сообщения из Telegram и WhatsApp,
+  // которые уже прошли через систему, лежат в ленте сделок этого клиента.
+  // Раньше меню показывало «переписки нет», хотя разговор был — просто
+  // канал к карточке не привязан, а переписка жила в ленте
+  const history = await sql`
+    SELECT a.type, a.direction, a.text, a.happened_at, a.deal_id,
+           ag.name AS agent_name
+    FROM sales_activities a
+    LEFT JOIN support_agents ag ON ag.id = a.agent_id
+    WHERE a.org_id = ${orgId} AND a.type = 'message'
+      AND a.account_id IN (
+        SELECT acc.id FROM sales_accounts acc
+        WHERE acc.org_id = ${orgId} AND acc.archived_at IS NULL
+          AND (
+            EXISTS (SELECT 1 FROM sales_contacts sc WHERE sc.account_id = acc.id AND sc.phone IS NOT NULL
+                      AND right(regexp_replace(sc.phone, '[^0-9]', '', 'g'), 9) = ${digits})
+            OR EXISTS (SELECT 1 FROM sales_leads l WHERE l.account_id = acc.id AND l.phone_norm IS NOT NULL
+                      AND right(regexp_replace(l.phone_norm, '[^0-9]', '', 'g'), 9) = ${digits})
+          )
+      )
+    ORDER BY a.happened_at DESC
+    LIMIT 6
+  `
+
   // 2. Кэш проверок
   const [cached] = await sql`
     SELECT has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at,
@@ -180,6 +204,13 @@ export default async function handler(req: Request): Promise<Response> {
     channels: chans.map(c => ({
       id: c.id, source: c.source, name: c.name,
       messages: Number(c.messages) || 0, lastAt: c.last_message_at,
+    })),
+    history: (history as any[]).map(h => ({
+      text: String(h.text || '').replace(/^Telegram:\s*/, '').slice(0, 160),
+      out: h.direction === 'out',
+      at: h.happened_at,
+      who: h.agent_name || null,
+      dealId: h.deal_id,
     })),
   })
 }
