@@ -28,6 +28,14 @@ export type IncomingMessage = {
   messageId?: string | null
   channel: 'Telegram' | 'WhatsApp'
   /**
+   * Аккаунт Telegram отправителя. Номер там виден далеко не всегда —
+   * у большинства он закрыт настройками приватности, и опознать клиента
+   * можно только по идентификатору или нику, если его уже проверяли
+   * из карточки.
+   */
+  tgUserId?: string | null
+  username?: string | null
+  /**
    * 'out' — сейлз написал клиенту сам, с телефона. Такие тоже нужны:
    * иначе в карточке половина разговора — то, что ушло из системы, есть,
    * а набранное в телефоне пропадает.
@@ -48,9 +56,25 @@ export async function fileIncoming(sql: SQL, m: IncomingMessage): Promise<InboxR
   if (!text) return { ok: true, saved: false, skipped: 'пустое' }
 
   const direction = m.direction === 'out' ? 'out' : 'in'
-  const digits = String(m.phone || '').replace(/\D/g, '').slice(-9)
+  let digits = String(m.phone || '').replace(/\D/g, '').slice(-9)
+
+  // Номера нет — пробуем узнать аккаунт по следам проверки из карточки:
+  // когда сейлз открывал меню у номера, мост уже сходил в Telegram
+  // и запомнил, какой аккаунт стоит за этим телефоном
+  if (digits.length < 9 && (m.tgUserId || m.username)) {
+    const uname = String(m.username || '').replace(/^@/, '').toLowerCase()
+    const [known] = await sql`
+      SELECT phone_norm FROM sales_phone_channels
+      WHERE (${m.tgUserId || null}::text IS NOT NULL AND tg_user_id = ${m.tgUserId || null})
+         OR (${uname || null}::text IS NOT NULL AND lower(tg_username) = ${uname || null})
+      ORDER BY checked_at DESC
+      LIMIT 1
+    `
+    if (known?.phone_norm) digits = String(known.phone_norm).replace(/\D/g, '').slice(-9)
+  }
+
   if (digits.length < 9) {
-    return { ok: true, saved: false, skipped: 'номер скрыт настройками приватности' }
+    return { ok: true, saved: false, skipped: 'номер скрыт настройками приватности, аккаунт не связан с клиентом' }
   }
 
   // Сотрудник — не клиент. Проверяем раньше всего: его номер вполне может

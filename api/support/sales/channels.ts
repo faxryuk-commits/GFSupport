@@ -30,6 +30,7 @@ async function ensureSchema(sql: any) {
         has_wa BOOLEAN,
         has_tg BOOLEAN,
         tg_username TEXT,
+        tg_user_id VARCHAR(30),
         tg_name TEXT,
         tg_last_seen TEXT,
         tg_premium BOOLEAN,
@@ -251,13 +252,16 @@ export default async function handler(req: Request): Promise<Response> {
 
   // 2. Кэш проверок
   const [cached] = await sql`
-    SELECT has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at,
+    SELECT has_wa, has_tg, tg_username, tg_user_id, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at,
            (checked_at > NOW() - make_interval(hours => ${CACHE_HOURS})) AS fresh
     FROM sales_phone_channels WHERE org_id = ${orgId} AND phone_norm = ${digits}
   `
   let hasWa: boolean | null = cached?.has_wa ?? null
   let hasTg: boolean | null = cached?.has_tg ?? null
   let tgUsername: string | null = cached?.tg_username ?? null
+  // Идентификатор аккаунта Telegram: по нему опознаётся входящее, когда
+  // номер спрятан настройками приватности — а он спрятан у большинства
+  let tgUserId: string | null = cached?.tg_user_id ?? null
   let tgName: string | null = cached?.tg_name ?? null
   let tgLastSeen: string | null = cached?.tg_last_seen ?? null
   let tgPremium: boolean | null = cached?.tg_premium ?? null
@@ -293,6 +297,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (tg !== null) {
       hasTg = tg.exists
       tgUsername = tg.username ?? tgUsername
+      tgUserId = tg.userId ?? tgUserId
       tgName = tg.name ?? tgName
       tgLastSeen = tg.lastSeen ?? tgLastSeen
       tgPremium = typeof tg.premium === 'boolean' ? tg.premium : tgPremium
@@ -302,11 +307,12 @@ export default async function handler(req: Request): Promise<Response> {
       checkedAt = new Date().toISOString()
       await sql`
         INSERT INTO sales_phone_channels (
-          org_id, phone_norm, has_wa, has_tg, tg_username, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at
+          org_id, phone_norm, has_wa, has_tg, tg_username, tg_user_id, tg_name, tg_last_seen, tg_premium, tg_photo, checked_at
         )
-        VALUES (${orgId}, ${digits}, ${hasWa}, ${hasTg}, ${tgUsername}, ${tgName}, ${tgLastSeen}, ${tgPremium}, ${tgPhoto}, NOW())
+        VALUES (${orgId}, ${digits}, ${hasWa}, ${hasTg}, ${tgUsername}, ${tgUserId}, ${tgName}, ${tgLastSeen}, ${tgPremium}, ${tgPhoto}, NOW())
         ON CONFLICT (org_id, phone_norm) DO UPDATE SET
           has_wa = ${hasWa}, has_tg = ${hasTg}, tg_username = ${tgUsername},
+          tg_user_id = COALESCE(${tgUserId}, sales_phone_channels.tg_user_id),
           tg_name = ${tgName}, tg_last_seen = ${tgLastSeen}, tg_premium = ${tgPremium},
           tg_photo = COALESCE(${tgPhoto}, sales_phone_channels.tg_photo), checked_at = NOW()
       `.catch(() => {})

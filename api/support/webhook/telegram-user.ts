@@ -25,6 +25,8 @@ export default async function handler(req: Request): Promise<Response> {
     agentId: body.agentId ? String(body.agentId) : null,
     senderName: body.name || (body.username ? '@' + body.username : null),
     messageId: body.messageId ? String(body.messageId) : null,
+    tgUserId: body.userId ? String(body.userId) : null,
+    username: body.username ? String(body.username) : null,
     channel: 'Telegram',
     direction: body.direction === 'out' ? 'out' : 'in',
   }))
