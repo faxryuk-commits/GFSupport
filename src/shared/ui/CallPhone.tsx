@@ -107,6 +107,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   const [sendErr, setSendErr] = useState('')
   const [tgReady, setTgReady] = useState<boolean | null>(null)
   const [waReady, setWaReady] = useState<boolean | null>(null)
+  const [waState, setWaState] = useState<string | null>(null)
   const [photoOpen, setPhotoOpen] = useState(false)
   const boxRef = useRef<HTMLSpanElement>(null)
   const popRef = useRef<HTMLDivElement>(null)
@@ -147,7 +148,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   useEffect(() => {
     if (!open || waReady !== null) return
     apiGet<any>('/sales/whatsapp?action=status', false)
-      .then(d => setWaReady(!!d.connected))
+      .then(d => { setWaReady(!!d.connected); setWaState(d.state || null) })
       .catch(() => setWaReady(false))
   }, [open, waReady])
 
@@ -431,7 +432,8 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
             <Item icon={<WaIcon className="w-4 h-4 opacity-50" />} tone="text-gray-400"
               title={waReady === null ? 'WhatsApp — проверяю…' : 'Написать в WhatsApp'}
               sub={waReady === null ? 'смотрю, подключён ли ваш WhatsApp'
-                : 'сначала подключите свой WhatsApp: Моё → WhatsApp'}
+                : waState === 'reconnecting' ? 'ваш WhatsApp переподключается — сервис вернётся сам'
+                  : 'сначала подключите свой WhatsApp: Моё → WhatsApp'}
               onClick={() => go('/me', false)} />
           )}
           {info?.hasWhatsapp === false && (

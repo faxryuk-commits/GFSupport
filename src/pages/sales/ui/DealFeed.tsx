@@ -67,6 +67,8 @@ type Kind = 'note' | 'call' | 'meeting' | 'message' | 'tg' | 'wa' | 'task' | 'te
 type ChanState = {
   tgReady: boolean | null
   waReady: boolean | null
+  /** online | reconnecting | qr | need_qr | off — из моста WhatsApp. */
+  waState: string | null
   hasTelegram: boolean | null
   tgUsername: string | null
   hasWhatsapp: boolean | null
@@ -98,7 +100,7 @@ export function DealFeed({
   // Номер, куда писать: свой из карточки или первый контакт клиента
   const [toPhone, setToPhone] = useState<string | null>(phone || null)
   const [chan, setChan] = useState<ChanState>({
-    tgReady: null, waReady: null, hasTelegram: null, tgUsername: null,
+    tgReady: null, waReady: null, waState: null, hasTelegram: null, tgUsername: null,
     hasWhatsapp: null, waPending: false, waReason: null,
   })
   const chanAsked = useRef<{ tg: boolean; wa: boolean; presence: string | null }>({ tg: false, wa: false, presence: null })
@@ -162,8 +164,8 @@ export function DealFeed({
     if (kind === 'wa' && !chanAsked.current.wa) {
       chanAsked.current.wa = true
       apiGet<any>('/sales/whatsapp?action=status', false)
-        .then(d => setChan(c => ({ ...c, waReady: !!d.connected })))
-        .catch(() => setChan(c => ({ ...c, waReady: false })))
+        .then(d => setChan(c => ({ ...c, waReady: !!d.connected, waState: d.state || null })))
+        .catch(() => setChan(c => ({ ...c, waReady: false, waState: null })))
     }
   }, [kind, toPhone, accountId])
 
@@ -593,7 +595,9 @@ function ChannelHint({ kind, phone, chan }: { kind: 'tg' | 'wa'; phone: string |
       : chan.hasTelegram ? `от вашего имени${chan.tgUsername ? ` · @${chan.tgUsername}` : ''} · останется в ленте`
       : 'от вашего имени · останется в ленте'
   } else {
-    body = chan.waReady === false ? <Me what="Ваш WhatsApp" />
+    body = chan.waReady === false && chan.waState === 'reconnecting'
+      ? <span className="text-amber-700">ваш WhatsApp переподключается — сервис вернётся сам, минуту</span>
+      : chan.waReady === false ? <Me what="Ваш WhatsApp" />
       : chan.waReady === null ? 'проверяю ваш WhatsApp…'
       : chan.hasWhatsapp === false ? <span className="text-red-600">номера нет в WhatsApp — проверено по вашему аккаунту</span>
       : chan.hasWhatsapp ? 'с вашего номера · номер в WhatsApp есть · останется в ленте'
