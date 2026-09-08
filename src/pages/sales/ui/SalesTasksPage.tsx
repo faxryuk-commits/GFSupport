@@ -121,7 +121,10 @@ export function SalesTasksPage() {
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className={`text-[12.5px] ${t.done_at ? 'line-through text-gray-500' : 'text-gray-900'}`}>{t.title}</span>
             <Chip tone="gray">{KINDS[t.kind] || t.kind}</Chip>
-            {t.auto && <span className="text-[10px] text-gray-400">авто</span>}
+            {t.auto && (
+              <span className="text-[9.5px] font-bold uppercase text-violet-700 bg-violet-100 rounded px-1 py-0.5"
+                title="Задачу предложил ИИ">✨ ИИ</span>
+            )}
             {t.status === 'in_progress' && !t.done_at && <Chip tone="blue">в работе</Chip>}
             {t.done_result === 'rejected' && <Chip tone="red">отклонена</Chip>}
           </div>

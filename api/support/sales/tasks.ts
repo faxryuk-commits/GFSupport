@@ -70,7 +70,7 @@ export default async function handler(req: Request): Promise<Response> {
                                channel, due_at, assignee_agent_id, created_by_agent_id, auto)
       VALUES (${id}, ${orgId}, ${body.dealId || null}, ${accountId}, ${body.leadId || null},
               ${kind}, ${title.slice(0, 500)}, ${body.channel || null},
-              ${body.dueAt || null}, ${assignee}, ${ctx.agentId}, false)
+              ${body.dueAt || null}, ${assignee}, ${ctx.agentId}, ${body.auto === true})
     `
 
     // Запланированная задача и есть следующий шаг сделки. Без этой строки доска

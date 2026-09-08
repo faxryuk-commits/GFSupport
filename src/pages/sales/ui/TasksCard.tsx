@@ -238,7 +238,12 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
                 <span>
                   {t.due_at ? formatDateTimeShort(t.due_at) : 'без срока'}
                   {' · '}{KIND_LABEL[t.kind] || t.kind}
-                  {t.auto ? ' · авто' : ''}
+                  {t.auto ? (
+                    <span className="ml-1 text-[9.5px] font-bold uppercase text-violet-700 bg-violet-100
+                                     rounded px-1 py-0.5" title="Задачу предложил ИИ по разбору разговора">
+                      ✨ ИИ
+                    </span>
+                  ) : null}
                   {t.assignee_name ? ` · ${t.assignee_name}` : ''}
                 </span>
                 {/* Ход показываем только у поручений: своя задача либо есть,

@@ -310,20 +310,31 @@ export function DealFeed({
                 </div>
               )}
               {i.summary && (
-                <div className="mt-1.5 rounded-lg bg-blue-50/60 border border-blue-100 px-2.5 py-1.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">
-                    Разбор разговора{i.outcome ? ` · ${i.outcome}` : ''}
+                <div className="mt-1.5 rounded-lg bg-violet-50/70 border border-violet-200 px-2.5 py-1.5">
+                  {/* Кто внёс данные — видно сразу: это разбор машины, а не
+                      запись сейлза. Смешивать их в ленте нельзя: доверие
+                      к строке зависит от того, кто её написал */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9.5px] font-bold uppercase tracking-wide text-white
+                                     bg-violet-600 rounded px-1.5 py-0.5"
+                      title="Запись сделана искусственным интеллектом по записи разговора. Расшифровка автоматическая — возможны ошибки">
+                      ✨ ИИ
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                      разбор разговора{i.outcome ? ` · ${i.outcome}` : ''}
+                    </span>
                   </div>
                   <div className="text-[12.5px] text-gray-800 mt-0.5">{i.summary}</div>
                   {i.nextStep && (
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
-                      <span className="text-[11.5px] text-gray-600">Следующий шаг: <b>{i.nextStep}</b></span>
+                      <span className="text-[11.5px] text-gray-600">ИИ предлагает шаг: <b>{i.nextStep}</b></span>
                       <button
                         onClick={async () => {
                           const at = new Date(); at.setDate(at.getDate() + 1); at.setHours(10, 0, 0, 0)
                           try {
                             await apiPost('/sales/tasks', {
-                              dealId, title: i.nextStep, kind: 'task', dueAt: at.toISOString(),
+                              dealId, title: i.nextStep, kind: 'task',
+                              dueAt: at.toISOString(), auto: true,
                             })
                             onChanged?.()
                           } catch { /* задача не критична */ }

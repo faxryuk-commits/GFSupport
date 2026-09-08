@@ -181,6 +181,11 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
 
       {c.summary && (
         <div className="px-4 py-3 text-[13px] text-gray-700 border-b border-gray-100">
+          <span className="text-[9.5px] font-bold uppercase tracking-wide text-white bg-violet-600
+                           rounded px-1.5 py-0.5 mr-1.5 align-middle"
+            title="Оценку и выжимку составил ИИ по расшифровке интервью. Решение принимает человек">
+            ✨ ИИ
+          </span>
           <b>Выжимка:</b> {c.summary}
         </div>
       )}
@@ -205,7 +210,9 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
 
       {Array.isArray(c.qualification) && c.qualification.length > 0 && (
         <div className="px-4 py-3 border-b border-gray-100">
-          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5
+                          flex items-center gap-1.5">
+            <span className="text-[9px] font-bold text-white bg-violet-600 rounded px-1 py-0.5">✨ ИИ</span>
             Квалификация по требованиям · met только при подтверждении словами кандидата
           </div>
           <div className="space-y-1">
