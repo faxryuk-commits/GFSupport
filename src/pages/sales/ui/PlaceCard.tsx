@@ -39,8 +39,10 @@ const Row = ({ label, children, title }: { label: string; children: React.ReactN
   </div>
 )
 
-export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
+export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
   leadId?: string
+  /** Сделка: место храним у клиента, но пустые поля закрываем в сделке. */
+  dealId?: string
   accountId?: string | null
   /** Что уже было в тексте заявки — показываем, пока не сходили на карты. */
   fallback?: { rating: string | null; reviews: string | null; address: string | null
@@ -70,7 +72,7 @@ export function PlaceCard({ leadId, accountId, fallback, onFilled }: {
     setBusy(true); setErr(''); setNote('')
     try {
       const r = await apiPost<{ place: Place; filled: string[]; match: string; candidates: Candidate[] }>(
-        '/sales/places', { leadId, accountId, placeId })
+        '/sales/places', { leadId, dealId, accountId, placeId })
       setPlace(r.place)
       setCands(r.candidates || [])
       setPickOpen(r.match === 'weak' && !placeId)

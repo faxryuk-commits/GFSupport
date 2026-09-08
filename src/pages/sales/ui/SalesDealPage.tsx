@@ -13,6 +13,7 @@ import { DealFeed } from './DealFeed'
 import { PaymentsCard } from './PaymentsCard'
 import { SpecCard } from './SpecCard'
 import { ContactsCard } from './ContactsCard'
+import { PlaceCard } from './PlaceCard'
 import { sendMessage } from '@/shared/api/messages'
 import { useAuth } from '@/shared/hooks/useAuth'
 
@@ -677,6 +678,13 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
           {/* Контакты клиента: второй номер, бухгалтер, почта. Блок был
               импортирован, но не выведен — «добавьте контакт ниже» вело в пустоту */}
+          {/* Карточка места: рейтинг, отзывы, точки сети — то же, что
+              в обращении. Ищем по клиенту, поэтому находка общая для
+              обращения и сделки */}
+          {data.account?.id && (
+            <PlaceCard dealId={id} accountId={data.account.id} onFilled={load} />
+          )}
+
           {data.account?.id && <ContactsCard accountId={data.account.id} market={d.market_id} />}
 
           <Card dense title="Коммерческие условия"

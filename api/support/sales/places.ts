@@ -269,8 +269,21 @@ async function handlerInner(req: Request): Promise<Response> {
     return json({ ok: true, found: probe.length, sample: probe[0]?.displayName?.text || null })
   }
   const leadId = body.leadId ? String(body.leadId) : null
-  const accountId = body.accountId ? String(body.accountId) : null
-  if (!leadId && !accountId) return json({ error: 'нужен leadId или accountId' }, 400)
+  const dealId = body.dealId ? String(body.dealId) : null
+  let accountId = body.accountId ? String(body.accountId) : null
+  // У сделки своё название и город: карточку правил человек, и она точнее
+  // и клиента, и текста заявки. Место при этом храним у клиента — оно его
+  // свойство, а не сделки, и должно быть видно из обеих карточек
+  let deal: any = null
+  if (dealId) {
+    const [d] = await sql`
+      SELECT id, title, city, market_id, account_id, points
+      FROM sales_deals WHERE id = ${dealId} AND org_id = ${orgId} LIMIT 1
+    `
+    deal = d
+    if (d?.account_id && !accountId) accountId = d.account_id
+  }
+  if (!leadId && !accountId && !dealId) return json({ error: 'нужен leadId, dealId или accountId' }, 400)
 
   // Что ищем: название заведения и город. Своё название карточки надёжнее
   // текста заявки — его уже правил человек
@@ -305,6 +318,11 @@ async function handlerInner(req: Request): Promise<Response> {
     if (!siteHint) siteHint = host(String(r?.website || ''))
     acc = acc || r?.id || null
     if (!lead) lead = r
+  }
+  if (deal) {
+    if (!name) name = String(deal.title || '').trim()
+    if (!city) city = String(deal.city || '').trim()
+    if (!market) market = String(deal.market_id || '').trim()
   }
   name = cleanName(name)
   if (!name) return json({ error: 'у карточки нет названия — искать нечего' }, 400)
@@ -433,6 +451,26 @@ async function handlerInner(req: Request): Promise<Response> {
     }
     if (!lead.city && cityFromMaps) {
       await sql`UPDATE sales_leads SET city = ${cityFromMaps}, updated_at = NOW() WHERE id = ${leadId} AND org_id = ${orgId}`
+    }
+  }
+
+  // То же для сделки: пустое поле «Точек» закрывается находкой, заполненное
+  // руками не трогаем — человек мог уточнить у клиента и знает лучше карт
+  if (dealId && deal && trusted) {
+    if (!deal.points && branches > 0) {
+      await sql`
+        UPDATE sales_deals SET points = ${String(branches)}, updated_at = NOW()
+        WHERE id = ${dealId} AND org_id = ${orgId} AND (points IS NULL OR points = '')
+      `
+      filled.push('точек')
+    }
+    const cityFromMaps = /Tashkent|Ташкент/i.test(row.address || '') ? 'Ташкент' : ''
+    if (!deal.city && cityFromMaps) {
+      await sql`
+        UPDATE sales_deals SET city = ${cityFromMaps}, updated_at = NOW()
+        WHERE id = ${dealId} AND org_id = ${orgId} AND (city IS NULL OR city = '')
+      `
+      filled.push('город')
     }
   }
 
