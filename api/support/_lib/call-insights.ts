@@ -1,5 +1,6 @@
 import { ensureOnce, getOpenAIKey } from './db.js'
 import { pbxRecordUrl, type PbxConfig } from './pbx.js'
+import { transcribeCall } from './speech.js'
 
 /**
  * Транскрибация и разбор звонков.
@@ -77,23 +78,11 @@ export async function processPendingInsights(
     try {
       const url = await pbxRecordUrl(cfg, r.call_uuid)
       if (!url) throw new Error('запись не найдена в АТС')
-      const audio = await fetch(url, { signal: AbortSignal.timeout(20000) })
-      if (!audio.ok) throw new Error(`запись не скачалась: ${audio.status}`)
-      const blob = await audio.blob()
 
-      // Whisper: узбекский и русский вперемешку он разбирает сам
-      const form = new FormData()
-      form.append('file', blob, 'call.mp3')
-      form.append('model', 'whisper-1')
-      form.append('response_format', 'text')
-      const tr = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}` },
-        body: form,
-        signal: AbortSignal.timeout(60000),
-      })
-      if (!tr.ok) throw new Error(`whisper: ${tr.status} ${(await tr.text()).slice(0, 120)}`)
-      const transcript = (await tr.text()).trim().slice(0, 20000)
+      // Узбекский Whisper не берёт вовсе: на боевых записях он принимал речь
+      // то за азербайджанскую, то за грузинскую и выдавал набор букв. Chirp
+      // от Google на тех же файлах даёт читаемый текст — проверено на 12 звонках
+      const transcript = (await transcribeCall(url) || '').trim().slice(0, 20000)
       if (!transcript) throw new Error('пустая расшифровка')
 
       const chat = await fetch('https://api.openai.com/v1/chat/completions', {
