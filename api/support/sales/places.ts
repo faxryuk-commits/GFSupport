@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces } from '../_lib/places-match.js'
+import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces, cityRu } from '../_lib/places-match.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -59,7 +59,7 @@ type Place = {
 function cityOf(p: Place): string {
   const comps = p.addressComponents || []
   const pick = (t: string) => comps.find(c => (c.types || []).includes(t))?.longText || ''
-  return (pick('locality') || pick('administrative_area_level_2') || pick('administrative_area_level_1')).trim()
+  return cityRu(pick('locality') || pick('administrative_area_level_2') || pick('administrative_area_level_1'))
 }
 
 /**

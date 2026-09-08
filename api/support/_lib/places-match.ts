@@ -260,3 +260,32 @@ export function decideMatch(args: {
   if (kind === 'strong' && !trusted) why += ' · но отзывов нет — поля не заполняем'
   return { kind, why, trusted }
 }
+
+/**
+ * Города, как их зовут в карточках. Google на русской локали всё равно
+ * отдаёт locality латиницей («Tashkent»), а в CRM 196 карточек с
+ * «Ташкент» — без перевода в квалификации завелись бы два разных города.
+ */
+const CITY_RU: Record<string, string> = {
+  tashkent: 'Ташкент', toshkent: 'Ташкент', chirchik: 'Чирчик', chirchiq: 'Чирчик',
+  nurafshon: 'Нурафшон', angren: 'Ангрен', olmaliq: 'Алмалык', almalyk: 'Алмалык',
+  samarkand: 'Самарканд', samarqand: 'Самарканд', bukhara: 'Бухара', buxoro: 'Бухара',
+  andijan: 'Андижан', andijon: 'Андижан', namangan: 'Наманган',
+  fergana: 'Фергана', farghona: 'Фергана', fargona: 'Фергана', qoqon: 'Коканд', kokand: 'Коканд',
+  nukus: 'Нукус', khiva: 'Хива', xiva: 'Хива', urgench: 'Ургенч', urganch: 'Ургенч',
+  navoiy: 'Навои', navoi: 'Навои', jizzakh: 'Джизак', jizzax: 'Джизак',
+  qarshi: 'Карши', karshi: 'Карши', termez: 'Термез', termiz: 'Термез',
+  guliston: 'Гулистан', gulistan: 'Гулистан', zarafshan: 'Зарафшан',
+  almaty: 'Алматы', astana: 'Астана', nursultan: 'Астана', shymkent: 'Шымкент',
+  karaganda: 'Караганда', aktobe: 'Актобе', atyrau: 'Атырау',
+  baku: 'Баку', ganja: 'Гянджа', sumqayit: 'Сумгаит', sumgait: 'Сумгаит',
+  bishkek: 'Бишкек', osh: 'Ош', tbilisi: 'Тбилиси', batumi: 'Батуми',
+  dubai: 'Дубай', nicosia: 'Никосия', limassol: 'Лимасол',
+}
+
+/** Название города в том виде, в каком его пишет команда. */
+export function cityRu(raw: string): string {
+  const t = String(raw || '').trim()
+  if (!t) return ''
+  return CITY_RU[norm(t)] || t
+}

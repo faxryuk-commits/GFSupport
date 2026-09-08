@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { norm, host, otherCountry, cleanName, matchKind, brandRoot, decideMatch, REGION,
-  brandKeys, sameBrand, rankPlaces } from './places-match.js'
+  brandKeys, sameBrand, rankPlaces, cityRu } from './places-match.js'
 
 /**
  * Все случаи ниже — с боевых карточек. Каждый из них когда-то приводил
@@ -194,5 +194,17 @@ describe('порядок кандидатов', () => {
   it('когда не совпало ничего — порядок Google сохраняется', () => {
     const list = [{ n: 'NevoMusic', r: 2 }, { n: 'Другое', r: 900 }]
     expect(rankPlaces('ahror.umurzakov', list, name, rev).map(name)).toEqual(['Другое', 'NevoMusic'])
+  })
+})
+
+describe('город из карт', () => {
+  it('латиница Google превращается в название из карточек', () => {
+    expect(cityRu('Tashkent')).toBe('Ташкент')
+    expect(cityRu('Samarqand')).toBe('Самарканд')
+    expect(cityRu('Almaty')).toBe('Алматы')
+  })
+  it('незнакомый город остаётся как есть', () => {
+    expect(cityRu('Kattakurgan')).toBe('Kattakurgan')
+    expect(cityRu('')).toBe('')
   })
 })
