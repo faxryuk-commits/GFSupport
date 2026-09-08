@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField, Skeleton , fmtDateTime } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
+import { confirmDialog, promptDialog, alertDialog } from '@/shared/ui'
 
 /**
  * Карточка аккаунта — сквозной объект: лиды, сделки, документы, проект
@@ -103,19 +104,19 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
 
   const merge = async () => {
     if (!id) return
-    const term = prompt('Название аккаунта, в который склеить (часть названия):')
+    const term = await promptDialog('Название аккаунта, в который склеить (часть названия):')
     if (!term) return
     try {
       const found = await apiGet<any>(`/sales/accounts?q=${encodeURIComponent(term)}&limit=10`, false)
       const options = (found.accounts || []).filter((x: any) => x.id !== id)
       if (!options.length) { setError('Аккаунт не найден'); return }
       const list = options.map((x: any, i: number) => `${i + 1}. ${x.name}${x.city ? ` · ${x.city}` : ''}`).join('\n')
-      const pick = prompt(`В какой склеить «${data.account.name}»?\n\n${list}\n\nНомер:`)
+      const pick = await promptDialog(`В какой склеить «${data.account.name}»?\n\n${list}\n\nНомер:`)
       const target = options[Number(pick) - 1]
       if (!target) return
-      if (!confirm(`Все сделки, лиды, контакты и документы «${data.account.name}» переедут в «${target.name}», а этот аккаунт уйдёт в архив. Продолжить?`)) return
+      if (!await confirmDialog(`Все сделки, лиды, контакты и документы «${data.account.name}» переедут в «${target.name}», а этот аккаунт уйдёт в архив. Продолжить?`)) return
       const res: any = await apiPost('/sales/accounts?action=merge', { from: id, into: target.id })
-      alert(`Склеено: сделок ${res.moved.deals}, лидов ${res.moved.leads}, контактов ${res.moved.contacts}`)
+      void alertDialog(`Склеено: сделок ${res.moved.deals}, лидов ${res.moved.leads}, контактов ${res.moved.contacts}`)
       window.location.href = `/sales/accounts/${target.id}`
     } catch (e: any) {
       setError(e?.message || 'Не удалось склеить')
@@ -124,7 +125,7 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
 
   const removeForever = async () => {
     if (!id) return
-    if (!confirm(`Удалить «${data.account.name}» насовсем? Это нельзя отменить. Аккаунты со сделками удалить нельзя — их нужно склеивать.`)) return
+    if (!await confirmDialog(`Удалить «${data.account.name}» насовсем? Это нельзя отменить. Аккаунты со сделками удалить нельзя — их нужно склеивать.`)) return
     try {
       await apiDelete(`/sales/accounts?id=${id}&hard=1`)
       window.location.href = '/sales/accounts'
@@ -135,7 +136,7 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
 
   const archive = async () => {
     if (!id) return
-    if (!confirm(`Убрать «${data.account.name}» в архив? Аккаунт исчезнет из списков, сделки и чаты останутся.`)) return
+    if (!await confirmDialog(`Убрать «${data.account.name}» в архив? Аккаунт исчезнет из списков, сделки и чаты останутся.`)) return
     try {
       await apiDelete(`/sales/accounts?id=${id}`)
       window.location.href = '/sales/accounts'

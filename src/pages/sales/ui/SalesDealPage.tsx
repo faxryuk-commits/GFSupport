@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { CallPhone } from '@/shared/ui'
+import { CallPhone, confirmDialog, promptDialog } from '@/shared/ui'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/time'
@@ -174,7 +174,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
     const warn = doc.share_token
       ? 'Удалить КП? Опубликованная ссылка у клиента перестанет открываться.'
       : 'Удалить черновик КП?'
-    if (!confirm(warn)) return
+    if (!await confirmDialog(warn)) return
     try {
       await apiDelete(`/sales/documents?id=${doc.id}`)
       load()
@@ -202,7 +202,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
   const removeForever = async () => {
     if (!id) return
-    if (!confirm('Удалить сделку насовсем? Это нельзя отменить. Закрытые сделки удалить нельзя — они в отчётах.')) return
+    if (!await confirmDialog('Удалить сделку насовсем? Это нельзя отменить. Закрытые сделки удалить нельзя — они в отчётах.')) return
     try {
       await apiDelete(`/sales/deals?id=${id}&hard=1`)
       window.location.href = '/sales/funnel'
@@ -213,7 +213,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
   const archive = async () => {
     if (!id) return
-    if (!confirm('Убрать сделку в архив? Она исчезнет из списков и отчётов по воронке, но останется в истории аккаунта.')) return
+    if (!await confirmDialog('Убрать сделку в архив? Она исчезнет из списков и отчётов по воронке, но останется в истории аккаунта.')) return
     try {
       await apiDelete(`/sales/deals?id=${id}`)
       window.location.href = '/sales/funnel'
@@ -238,7 +238,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   const repeatSale = async () => {
     if (!data) return
     const d0 = data.deal
-    if (!confirm('Создать новую сделку для повторной продажи этому клиенту? Текущая останется закрытой, история сохранится.')) return
+    if (!await confirmDialog('Создать новую сделку для повторной продажи этому клиенту? Текущая останется закрытой, история сохранится.')) return
     setBusy(true)
     try {
       const res: any = await apiPost('/sales/deals', {
@@ -391,7 +391,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               // Заголовок показывает имя клиента (account.name), а не title
               // сделки — правим именно то, что человек видит, иначе «не работает»
               const shown = data.account?.name || d.title || ''
-              const next = prompt(data.account ? 'Название клиента' : 'Название сделки', shown)
+              const next = await promptDialog(data.account ? 'Название клиента' : 'Название сделки', shown)
               if (!next || !next.trim() || next.trim() === shown) return
               try {
                 if (data.account?.id) {

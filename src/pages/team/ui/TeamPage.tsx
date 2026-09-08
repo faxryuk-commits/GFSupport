@@ -11,7 +11,7 @@ import { AgentEditModal } from './AgentEditModal'
 import { InviteModal } from './InviteModal'
 import { DuplicatesBanner } from './DuplicatesBanner'
 import { ShadowAgentsBanner } from './ShadowAgentsBanner'
-import { ConfirmDialog } from '@/shared/ui'
+import { ConfirmDialog, alertDialog } from '@/shared/ui'
 import { matchSlaAgentFrt } from '../model/matchSlaFrt'
 
 interface TeamPageProps {
@@ -98,7 +98,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       }
       loadAgents()
     } catch {
-      alert('Ошибка деактивации')
+      void alertDialog('Ошибка деактивации')
     }
   }
 

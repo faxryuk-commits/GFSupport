@@ -4,7 +4,7 @@ import {
   MessageSquare, Users2, Activity, AlertTriangle, Settings2,
   QrCode, Phone, Copy, Check as CheckIcon,
 } from 'lucide-react'
-import { Modal } from '@/shared/ui'
+import { Modal, confirmDialog } from '@/shared/ui'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { OpenAISettingsModal } from './OpenAISettingsModal'
 import { MetaConnectModal } from './MetaConnectModal'
@@ -437,7 +437,7 @@ function WhatsAppConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
   }
 
   const handleLogout = async () => {
-    if (!confirm('Отключить WhatsApp аккаунт? Потребуется повторное сканирование QR-кода.')) return
+    if (!await confirmDialog('Отключить WhatsApp аккаунт? Потребуется повторное сканирование QR-кода.')) return
     setLoggingOut(true)
     try {
       await apiPost('/integrations/whatsapp-status', { action: 'logout' })

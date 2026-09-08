@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Btn } from './kit'
 import { CallInsight } from './CallInsight'
 import { formatDateTimeShort } from '@/shared/lib/time'
+import { confirmDialog } from '@/shared/ui'
 
 /**
  * История касаний: звонки, встречи, заметки — и то, что пишется само
@@ -89,7 +90,7 @@ export function ActivityCard({ dealId, accountId }: { dealId?: string; accountId
   }
 
   const remove = async (a: Activity) => {
-    if (!confirm('Убрать запись из истории?')) return
+    if (!await confirmDialog('Убрать запись из истории?')) return
     try {
       await apiDelete(`/sales/activities?id=${a.id}`)
       load()

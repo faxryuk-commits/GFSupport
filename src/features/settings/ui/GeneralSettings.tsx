@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Eye, EyeOff, Building2, Globe, Bot, Clock, Volume2, UserCog, Calendar, Target } from 'lucide-react'
 import { Toggle } from './Toggle'
+import { alertDialog } from '@/shared/ui'
 
 export interface GeneralSettingsData {
   companyName: string
@@ -48,7 +49,7 @@ export function GeneralSettings({ general, response, onGeneralChange, onResponse
 
   const handleTestConnection = async () => {
     await new Promise(resolve => setTimeout(resolve, 1500))
-    alert('Соединение успешно!')
+    void alertDialog('Соединение успешно!')
   }
 
   return (

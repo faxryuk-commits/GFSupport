@@ -15,7 +15,7 @@ import {
   Tag
 } from 'lucide-react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { Badge, Modal, Button } from '@/shared/ui'
+import { Badge, Button, Modal, alertDialog } from '@/shared/ui'
 import { formatDateTime } from '@/shared/lib'
 
 interface ProblemType {
@@ -124,7 +124,7 @@ export default function ProblemAnalysisPage() {
   }
 
   const savePatternsToDb = async () => {
-    if (!data) { alert('Сначала запустите анализ'); return }
+    if (!data) { void alertDialog('Сначала запустите анализ'); return }
     setSaving(true)
     try {
       // строим объект паттернов в формате эндпоинта { [id]: { category, name, ... } }
@@ -136,9 +136,9 @@ export default function ProblemAnalysisPage() {
         patterns[pr.key] = { category: pr.category, name: pr.description, count: pr.count }
       }
       await apiPost('/patterns', { patterns })
-      alert(`Сохранено паттернов: ${Object.keys(patterns).length}`)
+      void alertDialog(`Сохранено паттернов: ${Object.keys(patterns).length}`)
     } catch (e: any) {
-      alert('Ошибка: ' + e.message)
+      void alertDialog('Ошибка: ' + e.message)
     } finally {
       setSaving(false)
     }

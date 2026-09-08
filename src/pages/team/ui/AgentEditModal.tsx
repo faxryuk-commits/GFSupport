@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { updateAgent } from '@/shared/api'
-import { Modal } from '@/shared/ui'
+import { Modal, alertDialog } from '@/shared/ui'
 import type { Agent, AgentRole } from '@/entities/agent'
 
 // Галочка ДОБАВЛЯЕТ модуль сверх дефолта роли (mod:* в permissions);
@@ -119,7 +119,7 @@ export function AgentEditModal({
       onSaved()
       onClose()
     } catch {
-      alert('Ошибка сохранения')
+      void alertDialog('Ошибка сохранения')
     } finally {
       setSaving(false)
     }

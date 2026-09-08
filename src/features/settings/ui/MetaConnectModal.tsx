@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
-import { Modal } from '@/shared/ui'
+import { Modal, confirmDialog } from '@/shared/ui'
 import { MetaChainHealth } from './MetaChainHealth'
 import { useAuth } from '@/shared/hooks/useAuth'
 
@@ -220,13 +220,13 @@ export function MetaConnectModal({ isOpen, onClose, onChanged }: {
     setNote(`Обновлено аккаунтов: ${r.updated}`)
   })
 
-  const dropAccount = (a: Account) => {
-    if (!confirm(`Отключить «${a.pageName || a.pageId}»? Заявки и сообщения с этой страницы перестанут приходить.`)) return
+  const dropAccount = async (a: Account) => {
+    if (!await confirmDialog(`Отключить «${a.pageName || a.pageId}»? Заявки и сообщения с этой страницы перестанут приходить.`)) return
     act('acc', () => apiPost('/integrations/meta?action=disconnect', { accountId: a.id }))
   }
 
-  const disconnect = () => {
-    if (!confirm('Отключить Instagram и Facebook? Заявки с рекламы перестанут приходить.')) return
+  const disconnect = async () => {
+    if (!await confirmDialog('Отключить Instagram и Facebook? Заявки с рекламы перестанут приходить.')) return
     act('off', () => apiPost('/integrations/meta?action=disconnect', {}))
   }
 

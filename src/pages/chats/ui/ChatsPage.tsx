@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { MarketFilter } from '@/shared/ui/MarketFilter'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, MoreHorizontal, Archive, User, Tag, AlertCircle, Sparkles, Eye, CheckCheck, MessageSquare } from 'lucide-react'
-import { Avatar, EmptyState, Modal, ConfirmDialog, LoadingState, useNotification } from '@/shared/ui'
+import { Avatar, ConfirmDialog, EmptyState, LoadingState, Modal, alertDialog, confirmDialog, useNotification } from '@/shared/ui'
 import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 import { ChannelListItem, ChannelPreviewModal, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
@@ -698,7 +698,7 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
       // Удаляем временные сообщения при ошибке
       setMessages(prev => prev.filter(m => !m.id.startsWith('temp-')))
       setMessageText(textToSend)
-      alert('Ошибка отправки. Попробуйте ещё раз.')
+      void alertDialog('Ошибка отправки. Попробуйте ещё раз.')
     } finally {
       setIsSending(false)
     }
@@ -1175,7 +1175,7 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
                         }
                       }}
                       onDelete={async () => {
-                        if (!confirm('Удалить сообщение?')) return
+                        if (!await confirmDialog('Удалить сообщение?')) return
                         try {
                           const token = localStorage.getItem('support_agent_token') || ''
                           await fetch('/api/support/messages/delete', {

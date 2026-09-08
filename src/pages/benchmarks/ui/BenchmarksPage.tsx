@@ -12,6 +12,7 @@ import type {
   BenchmarkRow,
   RecomputeSummaryItem,
 } from '@/shared/api'
+import { confirmDialog } from '@/shared/ui'
 
 type Tier = 'bronze' | 'silver' | 'gold'
 
@@ -155,7 +156,7 @@ export function BenchmarksPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить этот ручной стрейч-таргет? Перцентильный baseline останется.')) return
+    if (!await confirmDialog('Удалить этот ручной стрейч-таргет? Перцентильный baseline останется.')) return
     try {
       await deleteBenchmark(id)
       await load()

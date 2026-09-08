@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card } from './kit'
+import { confirmDialog, alertDialog } from '@/shared/ui'
 
 /**
  * Поступления по сделке — база комиссий в мотивации.
@@ -43,9 +44,9 @@ export function PaymentsCard({ dealId, canManage }: { dealId: string; canManage:
   }
 
   const remove = async (pid: number) => {
-    if (!confirm('Убрать поступление? Комиссия менеджера пересчитается.')) return
+    if (!await confirmDialog('Убрать поступление? Комиссия менеджера пересчитается.')) return
     try { await apiPost('/sales/kpi', { action: 'payment_delete', id: pid }); load() }
-    catch (e: any) { alert(e?.message || 'Не удалось удалить') }
+    catch (e: any) { void alertDialog(e?.message || 'Не удалось удалить') }
   }
 
   const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0)

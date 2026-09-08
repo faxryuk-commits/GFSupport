@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { apiGet, apiPut, apiPost, apiDelete } from '@/shared/services/api.service'
 import { Card, Chip, Tabs, money, PageShell, Skeleton } from './kit'
 import { REGION_NAMES } from './region'
+import { confirmDialog, promptDialog } from '@/shared/ui'
 
 /**
  * Справочники продаж — здесь живёт движок.
@@ -101,7 +102,7 @@ export function SalesSettingsPage() {
    */
   const setAmoMode = async (mode: string) => {
     const m = AMO_MODES.find(x => x.key === mode)
-    if (!m || !confirm(`Переключить мост в режим «${m.title}»?\n\n${m.effect}`)) return
+    if (!m || !await confirmDialog(`Переключить мост в режим «${m.title}»?\n\n${m.effect}`)) return
     setAmoBusy(true)
     try {
       await apiPost('/sales/amo', { mode })
@@ -161,12 +162,12 @@ export function SalesSettingsPage() {
   }
 
   const addPipeline = async () => {
-    const label = prompt('Название воронки (например «Партнёрские внедрения»):')
+    const label = await promptDialog('Название воронки (например «Партнёрские внедрения»):')
     if (!label) return
-    const key = prompt('Ключ латиницей (например partner_impl):', 
+    const key = await promptDialog('Ключ латиницей (например partner_impl):', 
       label.toLowerCase().replace(/[^a-z0-9]+/g, '_'))
     if (!key) return
-    const copyFrom = prompt('С какой воронки скопировать этапы? Ключ:', 'sales') || 'sales'
+    const copyFrom = await promptDialog('С какой воронки скопировать этапы? Ключ:', 'sales') || 'sales'
     try {
       await apiPost('/sales/refs', { kind: 'pipeline', key, label, copyFrom })
       load()
@@ -174,7 +175,7 @@ export function SalesSettingsPage() {
   }
 
   const renamePipeline = async (p: any) => {
-    const label = prompt('Новое название воронки:', p.label)
+    const label = await promptDialog('Новое название воронки:', p.label)
     if (!label || label === p.label) return
     try {
       await apiPut('/sales/refs', { kind: 'pipeline', id: p.id, label })
@@ -183,13 +184,13 @@ export function SalesSettingsPage() {
   }
 
   const removePipeline = async (p: any) => {
-    if (!confirm(`Удалить воронку «${p.label}» вместе с её этапами?`)) return
+    if (!await confirmDialog(`Удалить воронку «${p.label}» вместе с её этапами?`)) return
     try {
       await apiDelete(`/sales/refs?kind=pipeline&id=${p.id}`)
       load()
     } catch (e: any) {
       // Сделки нельзя оставить без воронки — спрашиваем, куда их перенести
-      const moveTo = prompt(`${e?.message || ''}\n\nКлюч воронки, куда перенести сделки:`, 'sales')
+      const moveTo = await promptDialog(`${e?.message || ''}\n\nКлюч воронки, куда перенести сделки:`, 'sales')
       if (!moveTo) return
       try {
         await apiDelete(`/sales/refs?kind=pipeline&id=${p.id}&moveTo=${moveTo}`)
@@ -215,7 +216,7 @@ export function SalesSettingsPage() {
   }
 
   const removeOption = async (id: string, label: string) => {
-    if (!confirm(`Убрать «${label}» из списка? В уже заполненных сделках значение останется.`)) return
+    if (!await confirmDialog(`Убрать «${label}» из списка? В уже заполненных сделках значение останется.`)) return
     try {
       await apiDelete(`/sales/refs?kind=option&id=${id}`)
       load()

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Globe, Users, Hash, X, Search, Check } from 'lucide-react'
 import { apiGet, apiPost, apiPut, apiDelete } from '@/shared/services/api.service'
+import { confirmDialog } from '@/shared/ui'
 
 interface Market {
   id: string
@@ -100,7 +101,7 @@ export function MarketsSettings() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить рынок? Все привязки каналов и агентов будут сброшены.')) return
+    if (!await confirmDialog('Удалить рынок? Все привязки каналов и агентов будут сброшены.')) return
     try {
       await apiDelete(`/markets?id=${id}`)
       if (selectedMarket === id) setSelectedMarket(null)

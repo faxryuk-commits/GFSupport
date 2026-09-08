@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, PageShell, Skeleton, Seg } from './kit'
+import { confirmDialog, alertDialog } from '@/shared/ui'
 
 /**
  * KPI-мотивация продаж по согласованному макету: «Мой KPI» для менеджера,
@@ -191,13 +192,13 @@ function TeamKpi({ month, onNeedSetup }: { month: string; onNeedSetup: () => voi
       })
       setAdjOpen(false); setAdjAgent(''); setAdjAmount(''); setAdjReason('')
       load()
-    } catch (e: any) { alert(e?.message || 'Не удалось сохранить') } finally { setBusy(false) }
+    } catch (e: any) { void alertDialog(e?.message || 'Не удалось сохранить') } finally { setBusy(false) }
   }
 
   const closeMonth = async () => {
-    if (!confirm(`Закрыть ${monthLabel(month)}? Цифры заморозятся и уедут в историю — пересчёта больше не будет.`)) return
+    if (!await confirmDialog(`Закрыть ${monthLabel(month)}? Цифры заморозятся и уедут в историю — пересчёта больше не будет.`)) return
     try { await apiPost('/sales/kpi', { action: 'close', month }); load() }
-    catch (e: any) { alert(e?.message || 'Не удалось закрыть месяц') }
+    catch (e: any) { void alertDialog(e?.message || 'Не удалось закрыть месяц') }
   }
 
   if (!data.templateExists && !data.closed) {
@@ -481,7 +482,7 @@ function KpiSettings({ month }: { month: string }) {
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
-    } catch (e: any) { alert(e?.message || 'Не удалось сохранить') } finally { setSaving(false) }
+    } catch (e: any) { void alertDialog(e?.message || 'Не удалось сохранить') } finally { setSaving(false) }
   }
 
   const inp = 'text-[12.5px] border border-gray-200 rounded-lg px-2 py-1.5 tabular-nums text-right w-32'
@@ -706,11 +707,11 @@ function PfInbox() {
       await apiPost('/sales/kpi', { action: 'pf_link', inboxId: opId, dealId })
       setPickFor(null); setSearch('')
       load()
-    } catch (e: any) { alert(e?.message || 'Не удалось привязать') }
+    } catch (e: any) { void alertDialog(e?.message || 'Не удалось привязать') }
   }
   const act = async (action: string, opId: number) => {
     try { await apiPost('/sales/kpi', { action, inboxId: opId }); load() }
-    catch (e: any) { alert(e?.message || 'Не получилось') }
+    catch (e: any) { void alertDialog(e?.message || 'Не получилось') }
   }
 
   if (error) return <div className="p-6 text-sm text-gray-500">{error}</div>

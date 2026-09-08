@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, MessageCircle, Trash2, Pencil, Check, X, Loader2 } from 'lucide-react'
 import type { InsightsSession } from '../model/types'
+import { confirmDialog } from '@/shared/ui'
 
 interface SessionsSidebarProps {
   sessions: InsightsSession[]
@@ -109,9 +110,9 @@ export function SessionsSidebar({
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation()
-                      if (confirm(`Удалить чат «${s.title}»?`)) onDelete(s.id)
+                      if (await confirmDialog(`Удалить чат «${s.title}»?`)) onDelete(s.id)
                     }}
                     className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100"
                     title="Удалить"

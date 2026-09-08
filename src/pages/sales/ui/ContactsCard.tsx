@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CallPhone } from '@/shared/ui'
+import { CallPhone, confirmDialog } from '@/shared/ui'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { Card, Btn, Combo } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
@@ -115,7 +115,7 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
   }
 
   const remove = async (c: Contact) => {
-    if (!confirm(`Удалить контакт «${c.name || c.phone}»?`)) return
+    if (!await confirmDialog(`Удалить контакт «${c.name || c.phone}»?`)) return
     try {
       await apiDelete(`/sales/contacts?id=${c.id}`)
       load()

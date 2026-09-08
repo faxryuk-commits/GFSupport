@@ -4,6 +4,7 @@ import { DocsSearch } from '@/features/docs'
 import { fetchDocs, createDoc, deleteDoc, type Doc } from '@/shared/api/docs'
 import { DOC_CATEGORY_CONFIG, getDocHelpfulnessRatio, type DocCategory } from '@/entities/doc'
 import { formatDateDMY } from '@/shared/lib'
+import { confirmDialog, alertDialog } from '@/shared/ui'
 
 type View = 'search' | 'browse' | 'recent'
 
@@ -34,14 +35,14 @@ export function DocsPage({ embedded = false }: { embedded?: boolean }) {
       await loadDocs()
     } catch (e) {
       console.error('Failed to create doc:', e)
-      alert('Не удалось создать документ')
+      void alertDialog('Не удалось создать документ')
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string | number) => {
-    if (!confirm('Удалить документ?')) return
+    if (!await confirmDialog('Удалить документ?')) return
     try {
       await deleteDoc(String(id))
       setDocs((prev) => prev.filter((d) => String(d.id) !== String(id)))

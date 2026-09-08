@@ -6,6 +6,7 @@ import {
   Check, X, Trash2, ChevronDown, ChevronUp, Pencil, Save,
   Shield, Zap, Crown, Calendar, Hash, Link2
 } from 'lucide-react'
+import { confirmDialog } from '@/shared/ui'
 
 interface OrgData {
   id: string
@@ -173,7 +174,7 @@ export function SAOrganizationsPage() {
   }
 
   const handleDelete = async (orgId: string) => {
-    if (!confirm('Удалить организацию? Это действие необратимо.')) return
+    if (!await confirmDialog('Удалить организацию? Это действие необратимо.')) return
     try {
       await saDelete(`/admin/organizations?id=${orgId}`)
       await fetchData()

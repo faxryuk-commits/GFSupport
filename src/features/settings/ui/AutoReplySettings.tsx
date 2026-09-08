@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Bot, MessageSquare, Clock, Zap, Edit3, Plus, Trash2, Save, RefreshCw } from 'lucide-react'
 import { Toggle } from './Toggle'
+import { confirmDialog } from '@/shared/ui'
 
 export interface AutoReplySettingsData {
   enabled: boolean
@@ -136,7 +137,7 @@ export function AutoReplySettings({ settings, onSettingsChange }: AutoReplySetti
   }
 
   const deleteTemplate = async (id: string) => {
-    if (!confirm('Удалить этот шаблон?')) return
+    if (!await confirmDialog('Удалить этот шаблон?')) return
     try {
       const token = localStorage.getItem('support_agent_token') || ''
       await fetch(`/api/support/auto-reply/templates?id=${id}`, { 

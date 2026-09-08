@@ -6,7 +6,7 @@ import {
   Hash, Building, ChevronDown, ExternalLink, MoreHorizontal,
   CheckCircle, XCircle, Clock, AlertTriangle, Filter, Settings, Edit3, Power, Globe
 } from 'lucide-react'
-import { Badge, LoadingState, EmptyState, Modal, Avatar, ConfirmDialog } from '@/shared/ui'
+import { Avatar, Badge, ConfirmDialog, EmptyState, LoadingState, Modal, alertDialog } from '@/shared/ui'
 import { fetchChannels, updateChannel, disconnectChannel, type SlaCategory, SLA_CATEGORY_CONFIG } from '@/shared/api'
 import type { Channel } from '@/entities/channel'
 import { PageHint, EducationalEmptyState } from '@/features/onboarding'
@@ -90,7 +90,7 @@ export function ChannelsListPage() {
       setRenameChannel(null)
     } catch (err) {
       console.error('Failed to rename channel:', err)
-      alert('Не удалось переименовать канал')
+      void alertDialog('Не удалось переименовать канал')
     } finally {
       setActionLoading(false)
     }
@@ -122,7 +122,7 @@ export function ChannelsListPage() {
       setSettingsChannel(null)
     } catch (err) {
       console.error('Failed to update channel:', err)
-      alert('Не удалось обновить канал')
+      void alertDialog('Не удалось обновить канал')
     } finally {
       setActionLoading(false)
     }
@@ -145,7 +145,7 @@ export function ChannelsListPage() {
       setDisconnectChannelData(null)
     } catch (err) {
       console.error('Failed to disconnect channel:', err)
-      alert('Не удалось отключить канал')
+      void alertDialog('Не удалось отключить канал')
     } finally {
       setActionLoading(false)
     }

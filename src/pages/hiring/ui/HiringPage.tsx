@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiGet, apiPost } from '@/shared/services/api.service'
 import { Card, Chip, PageShell, Skeleton } from '@/pages/sales/ui/kit'
+import { confirmDialog, alertDialog } from '@/shared/ui'
 
 /**
  * Наём: доска кандидатов, карточка со скорингом и расшифровкой, вакансии.
@@ -62,7 +63,7 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
       onChanged()
       if (stage === 'rejected' || stage === 'reserve') onClose()
       else load()
-    } catch (e: any) { alert(e?.message || 'Не получилось') } finally { setBusy(false) }
+    } catch (e: any) { void alertDialog(e?.message || 'Не получилось') } finally { setBusy(false) }
   }
   const loadInvite = () => apiGet<any>(`/hiring?action=invite&id=${id}`, false).then(setInvite).catch(() => {})
 
@@ -72,15 +73,15 @@ function CandidateCard({ id, onClose, onChanged }: { id: string; onClose: () => 
     try {
       await apiPost('/hiring', { action: 'candidate_update', id, ...edit })
       setEditing(false); load(); onChanged()
-    } catch (e: any) { alert(e?.message || 'Не сохранилось') } finally { setBusy(false) }
+    } catch (e: any) { void alertDialog(e?.message || 'Не сохранилось') } finally { setBusy(false) }
   }
 
   const removeCandidate = async () => {
-    if (!confirm('Удалить кандидата целиком, вместе с интервью? Это для тестов и спама — настоящим кандидатам место в «Отказе».')) return
+    if (!await confirmDialog('Удалить кандидата целиком, вместе с интервью? Это для тестов и спама — настоящим кандидатам место в «Отказе».')) return
     try {
       await apiPost('/hiring', { action: 'candidate_delete', id })
       onChanged(); onClose()
-    } catch (e: any) { alert(e?.message || 'Не удалилось') }
+    } catch (e: any) { void alertDialog(e?.message || 'Не удалилось') }
   }
 
   if (!data) return <Card title="Кандидат"><Skeleton rows={3} kpis={false} /></Card>
@@ -305,7 +306,7 @@ function VacancyEditor({ vacancy, onSaved, onClose }: { vacancy: any | null; onS
       })
       if (r?.url) setSavedUrl(r.url)
       onSaved()
-    } catch (e: any) { alert(e?.message || 'Не удалось сохранить') } finally { setSaving(false) }
+    } catch (e: any) { void alertDialog(e?.message || 'Не удалось сохранить') } finally { setSaving(false) }
   }
 
   const inp = 'w-full text-[13px] border border-gray-200 rounded-lg px-2.5 py-2'
@@ -400,9 +401,9 @@ function VacancyEditor({ vacancy, onSaved, onClose }: { vacancy: any | null; onS
         {vacancy && (
           <button
             onClick={async () => {
-              if (!confirm('Архивировать вакансию? Публичная страница погаснет, кандидаты и история останутся.')) return
+              if (!await confirmDialog('Архивировать вакансию? Публичная страница погаснет, кандидаты и история останутся.')) return
               try { await apiPost('/hiring', { action: 'vacancy_delete', id: f.id }); onSaved() }
-              catch (e: any) { alert(e?.message || 'Не получилось') }
+              catch (e: any) { void alertDialog(e?.message || 'Не получилось') }
             }}
             className="text-[13px] font-semibold text-red-600 bg-red-50 rounded-lg px-4 py-2">
             Архивировать

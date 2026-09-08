@@ -14,6 +14,7 @@ import {
   Bell,
   CalendarDays
 } from 'lucide-react'
+import { alertDialog } from '@/shared/ui'
 
 interface Commitment {
   id: string
@@ -146,10 +147,10 @@ export function CommitmentsPage() {
         body: JSON.stringify({ commitmentId: id })
       })
       if (res.ok) {
-        alert('Напоминание отправлено!')
+        void alertDialog('Напоминание отправлено!')
         loadCommitments(true)
       } else {
-        alert('Ошибка отправки напоминания')
+        void alertDialog('Ошибка отправки напоминания')
       }
     } catch (e) {
       console.error('Failed to send reminder:', e)
@@ -165,9 +166,9 @@ export function CommitmentsPage() {
       if (res.ok) {
         const data = await res.json()
         if (data.processed > 0) {
-          alert(`Отправлено ${data.processed} напоминаний`)
+          void alertDialog(`Отправлено ${data.processed} напоминаний`)
         } else {
-          alert('Нет просроченных напоминаний')
+          void alertDialog('Нет просроченных напоминаний')
         }
         loadCommitments(true)
       }

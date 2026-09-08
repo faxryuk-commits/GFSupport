@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { Card, Btn, Combo, workMorningIn } from './kit'
 import { toDateInput, fromDateInput, formatDateTimeShort } from '@/shared/lib/time'
+import { confirmDialog, promptDialog } from '@/shared/ui'
 
 /**
  * Задачи по сделке, лиду или клиенту — с возможностью поставить их руками.
@@ -105,7 +106,7 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
   const setStatus = async (task: Task, status: string) => {
     let note: string | null = null
     if (status === 'rejected') {
-      note = prompt(`Почему не беретесь за «${task.title}»?`)
+      note = await promptDialog(`Почему не беретесь за «${task.title}»?`)
       if (!note?.trim()) return
     }
     setTasks(ts => ts.map(x => x.id === task.id ? { ...x, status } : x))
@@ -134,7 +135,7 @@ export function TasksCard({ dealId, leadId, accountId, initial }: {
   }
 
   const remove = async (task: Task) => {
-    if (!confirm(`Удалить задачу «${task.title}»?`)) return
+    if (!await confirmDialog(`Удалить задачу «${task.title}»?`)) return
     try {
       await apiDelete(`/sales/tasks?id=${task.id}`)
       load()
