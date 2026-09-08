@@ -50,7 +50,7 @@ export default async function handler(req: Request): Promise<Response> {
   const cfg = await readPbxConfig(sql, ORG)
   if (!cfg) return json({ ok: true, skipped: 'АТС не настроена' })
 
-  const out = { processed: 0, transcribed: 0, digested: 0, noRecord: 0 }
+  const out = { processed: 0, transcribed: 0, digested: 0, noRecord: 0, filled: 0 }
 
   for (const r of rows) {
     let transcript: string | null = null
@@ -67,14 +67,33 @@ export default async function handler(req: Request): Promise<Response> {
       }
     } catch { /* один плохой звонок не должен ронять проход */ }
 
+    // Со слов клиента — в пустые поля сделки. Агрегаторы сейлз спрашивает
+    // на каждом звонке, ответ звучит вслух, а поле остаётся пустым: 93%
+    // карточек без квалификации именно поэтому. Заполняем только пустое
+    // и только то, что прозвучало — догадки промпт запрещает
+    const filled: string[] = []
+    const said = (digest?.facts || {}) as Record<string, any>
+    if (r.account_id && said.aggregators) {
+      const value = String(said.aggregators).slice(0, 200)
+      const done = await sql`
+        UPDATE sales_deals SET aggregators = ${value}, updated_at = NOW()
+        WHERE org_id = ${ORG} AND account_id = ${r.account_id}
+          AND (aggregators IS NULL OR aggregators = '')
+          AND won_at IS NULL AND lost_at IS NULL
+        RETURNING id
+      ` as any[]
+      if (done.length) { filled.push(`агрегаторы: ${value}`); out.filled += done.length }
+    }
+
     // Пишем всегда — даже пустой результат, чтобы не пытаться снова и снова
     await sql`
       INSERT INTO sales_call_digests (
-        call_uuid, org_id, account_id, transcript, summary, outcome, next_step, facts
+        call_uuid, org_id, account_id, transcript, summary, outcome, next_step, facts, filled
       ) VALUES (
         ${r.uuid}, ${ORG}, ${r.account_id || null}, ${transcript},
         ${digest?.summary || null}, ${digest?.outcome || null},
-        ${digest?.nextStep || null}, ${JSON.stringify(digest?.facts || {})}
+        ${digest?.nextStep || null}, ${JSON.stringify(digest?.facts || {})},
+        ${JSON.stringify(filled)}
       )
       ON CONFLICT (call_uuid) DO NOTHING
     `

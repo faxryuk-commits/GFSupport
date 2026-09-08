@@ -32,7 +32,7 @@ type Activity = {
   /** Канал сообщения отдельным полем; у старых записей он в тексте. */
   channel?: string | null
   record_uuid?: string | null
-  summary?: string | null; outcome?: string | null; next_step?: string | null
+  summary?: string | null; outcome?: string | null; next_step?: string | null; filled?: string[]
 }
 type Message = {
   id: string; sender_name: string | null; is_from_client: boolean
@@ -49,7 +49,7 @@ type Item = {
   recordUuid?: string | null
   attachments?: Att[]
   /** Разбор звонка: суть разговора и предложенный следующий шаг. */
-  summary?: string | null; outcome?: string | null; nextStep?: string | null
+  summary?: string | null; outcome?: string | null; nextStep?: string | null; filled?: string[]
 }
 
 /** Как режим выглядит в переключателе и в меню. */
@@ -289,6 +289,7 @@ export function DealFeed({
         tone: fromClient ? 'client' : undefined,
         recordUuid: a.record_uuid || null,
         summary: a.summary || null, outcome: a.outcome || null, nextStep: a.next_step || null,
+        filled: a.filled || [],
       })
     }
     for (const m of messages) {
@@ -521,6 +522,13 @@ export function DealFeed({
                     </span>
                   </div>
                   <div className="text-[12.5px] text-gray-800 mt-0.5">{i.summary}</div>
+                  {/* Что из разговора ушло в карточку. Заполнить поле молча
+                      нельзя: сейлз должен знать, откуда там взялось значение */}
+                  {!!i.filled?.length && (
+                    <div className="mt-1 text-[11.5px] text-violet-800">
+                      заполнено в квалификации со слов клиента — {i.filled.join('; ')}
+                    </div>
+                  )}
                   {i.nextStep && (
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
                       <span className="text-[11.5px] text-gray-600">ИИ предлагает шаг: <b>{i.nextStep}</b></span>

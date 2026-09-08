@@ -31,6 +31,7 @@ const FIELDS = [
   'places.internationalPhoneNumber', 'places.googleMapsUri', 'places.primaryTypeDisplayName',
   'places.businessStatus', 'places.location', 'places.regularOpeningHours.weekdayDescriptions',
   'places.photos', 'places.addressComponents',
+  'places.delivery', 'places.takeout', 'places.dineIn', 'places.priceLevel',
 ].join(',')
 
 type Place = {
@@ -49,7 +50,28 @@ type Place = {
   regularOpeningHours?: { weekdayDescriptions?: string[] }
   photos?: Array<{ name?: string; widthPx?: number; heightPx?: number }>
   addressComponents?: Array<{ longText?: string; shortText?: string; types?: string[] }>
+  delivery?: boolean
+  takeout?: boolean
+  dineIn?: boolean
+  priceLevel?: string
 }
+
+/**
+ * Агрегаторы, с которыми заведение уже работает. Каталоги самих агрегаторов
+ * закрыты (express24.uz отдаёт турбо-лендинг вместо списка), а вот кнопка
+ * «Заказать в Express24» в подвале сайта — публичный и честный признак.
+ * Ищем в том же HTML, который и так качаем ради соцсетей.
+ */
+const AGGREGATORS: Array<[RegExp, string]> = [
+  [/express24\.uz/i, 'Express24'],
+  [/uzum\.uz\/tezkor|tezkor\.uz/i, 'Uzum Tezkor'],
+  [/eda\.yandex|yandex\.[a-z]{2,3}\/eda|yandex\.eats/i, 'Yandex Eats'],
+  [/glovoapp\.com/i, 'Glovo'],
+  [/wolt\.com/i, 'Wolt'],
+  [/chocofood\.kz/i, 'Chocofood'],
+  [/bringo\.uz/i, 'Bringo'],
+  [/lasa\.uz/i, 'Lasa'],
+]
 
 /**
  * Город из разбора адреса, а не из поиска слова «Ташкент» в строке. Google
@@ -102,8 +124,10 @@ async function search(key: string, textQuery: string, limit: number, region = 'U
  * они лежат в подвале почти всегда. Это те самые поля клиента, которые
  * сейчас пустуют, а сейлзу нужны, чтобы посмотреть, как заведение живёт.
  */
-async function socialsFromSite(site: string): Promise<{ instagram: string | null; telegram: string | null }> {
-  const out: { instagram: string | null; telegram: string | null } = { instagram: null, telegram: null }
+async function socialsFromSite(site: string):
+  Promise<{ instagram: string | null; telegram: string | null; aggregators: string[] }> {
+  const out: { instagram: string | null; telegram: string | null; aggregators: string[] } =
+    { instagram: null, telegram: null, aggregators: [] }
   if (!site) return out
   try {
     const res = await fetch(site, {
@@ -121,6 +145,7 @@ async function socialsFromSite(site: string): Promise<{ instagram: string | null
     const tg = html.match(/t\.me\/([A-Za-z0-9_]{3,32})/i)
     const tgName = tg?.[1] || ''
     if (tgName && !['share', 'iv'].includes(tgName.toLowerCase())) out.telegram = tgName
+    out.aggregators = AGGREGATORS.filter(([re]) => re.test(html)).map(([, title]) => title)
   } catch {
     // Сайт может лежать или отдавать защиту от роботов — это не повод
     // ронять обогащение: остальные данные уже собраны
@@ -178,6 +203,11 @@ async function handlerInner(req: Request): Promise<Response> {
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS found_via varchar(16)`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS match_why text`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS found_query text`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS delivery boolean`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS takeout boolean`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS dine_in boolean`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS price_level varchar(24)`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS aggregators jsonb`
   })
 
   // Ключ: сперва настройки системы, потом окружение
@@ -275,7 +305,7 @@ async function handlerInner(req: Request): Promise<Response> {
   let deal: any = null
   if (dealId) {
     const [d] = await sql`
-      SELECT id, title, city, market_id, account_id, points
+      SELECT id, title, city, market_id, account_id, points, aggregators
       FROM sales_deals WHERE id = ${dealId} AND org_id = ${orgId} LIMIT 1
     `
     deal = d
@@ -438,6 +468,11 @@ async function handlerInner(req: Request): Promise<Response> {
     telegram: keep.telegram ? prev.telegram : social.telegram,
     photos: JSON.stringify(photos),
     edited: JSON.stringify(keep),
+    delivery: best.delivery ?? null,
+    takeout: best.takeout ?? null,
+    dine_in: best.dineIn ?? null,
+    price_level: best.priceLevel || null,
+    aggregators: JSON.stringify(social.aggregators),
     match,
     via,
     why,
@@ -451,13 +486,16 @@ async function handlerInner(req: Request): Promise<Response> {
     INSERT INTO sales_places (id, org_id, lead_id, account_id, place_id, name, address, rating,
                               reviews, website, phone, maps_url, category, status, branches,
                               hours, lat, lng, raw, instagram, telegram, photos, edited,
-                              match_kind, found_via, match_why, found_query, found_by, updated_at)
+                              match_kind, found_via, match_why, found_query,
+                              delivery, takeout, dine_in, price_level, aggregators,
+                              found_by, updated_at)
     VALUES (${id}, ${orgId}, ${leadId}, ${accountId}, ${row.place_id}, ${row.name}, ${row.address},
             ${row.rating}, ${row.reviews}, ${row.website}, ${row.phone}, ${row.maps_url},
             ${row.category}, ${row.status}, ${row.branches}, ${row.hours}::jsonb,
             ${row.lat}, ${row.lng}, ${row.raw}::jsonb, ${row.instagram}, ${row.telegram},
             ${row.photos}::jsonb, ${row.edited}::jsonb, ${row.match}, ${row.via}, ${row.why},
-            ${row.asked}, ${ctx.agentId}, NOW())
+            ${row.asked}, ${row.delivery}, ${row.takeout}, ${row.dine_in}, ${row.price_level},
+            ${row.aggregators}::jsonb, ${ctx.agentId}, NOW())
   `
 
   // Подставляем только пустое и только очевидное: город и число точек.
@@ -491,6 +529,10 @@ async function handlerInner(req: Request): Promise<Response> {
     const qual = (lead.qual || {}) as Record<string, any>
     const patch: Record<string, string> = {}
     if (!qual.points && branches > 0) { patch.points = String(branches); filled.push('точек') }
+    if (!qual.aggregators && social.aggregators.length) {
+      patch.aggregators = social.aggregators.join(', ')
+      filled.push('агрегаторы')
+    }
     const cityFromMaps = cityOf(best)
     if (!lead.city && cityFromMaps) filled.push('город')
     if (Object.keys(patch).length) {
@@ -514,6 +556,16 @@ async function handlerInner(req: Request): Promise<Response> {
         WHERE id = ${dealId} AND org_id = ${orgId} AND (points IS NULL OR points = '')
       `
       filled.push('точек')
+    }
+    // Агрегаторы — со ссылок в подвале сайта заведения. Это факт с его
+    // собственной страницы, а не догадка: кнопку «Заказать в Express24»
+    // ставит сам ресторан
+    if (!deal.aggregators && social.aggregators.length) {
+      await sql`
+        UPDATE sales_deals SET aggregators = ${social.aggregators.join(', ')}, updated_at = NOW()
+        WHERE id = ${dealId} AND org_id = ${orgId} AND (aggregators IS NULL OR aggregators = '')
+      `
+      filled.push('агрегаторы')
     }
     const cityFromMaps = cityOf(best)
     if (!deal.city && cityFromMaps) {

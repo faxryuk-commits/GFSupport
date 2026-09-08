@@ -32,6 +32,11 @@ export type Place = {
   found_via: 'manual' | 'site' | 'name' | null
   match_why: string | null
   found_query: string | null
+  /** Признаки доставки — прямо из карт, и агрегаторы со ссылок на сайте. */
+  delivery: boolean | null
+  takeout: boolean | null
+  dine_in: boolean | null
+  aggregators: string[] | null
   updated_at: string | null
 }
 
@@ -306,6 +311,19 @@ export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
           </Row>
         )}
         {place?.category && <Row label="Тип">{place.category}</Row>}
+        {place?.delivery != null && (
+          <Row label="Доставка" title="Как заведение отдаёт заказы — по данным Google Карт">
+            {place.delivery ? 'есть' : 'нет'}
+            <span className="text-gray-400 font-normal">
+              {place.takeout ? ' · навынос' : ''}{place.dine_in ? ' · в зале' : ''}
+            </span>
+          </Row>
+        )}
+        {!!place?.aggregators?.length && (
+          <Row label="Агрегаторы" title="Ссылки найдены на сайте заведения">
+            {place.aggregators.join(', ')}
+          </Row>
+        )}
         {address && <Row label="Адрес" title={address}>{address}</Row>}
         {place?.phone && <Row label="Телефон с карт">{place.phone}</Row>}
         {website && (

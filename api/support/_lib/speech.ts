@@ -142,7 +142,10 @@ export async function digestCall(orgId: string, transcript: string): Promise<Cal
           'Верни JSON: {"summary":"1-2 предложения по-русски, что было в разговоре",',
           '"outcome":"дозвонились|не дозвонились|договорились|перезвонить|отказ|непонятно",',
           '"next_step":"короткое действие или null","facts":{"city":null,"points":null,',
-          '"pos":null,"pain":null,"budget":null,"dm":null}}',
+          '"pos":null,"pain":null,"budget":null,"dm":null,"aggregators":null,"delivery_type":null}}',
+          'Поле aggregators — с какими агрегаторами клиент уже работает (Express24, Uzum Tezkor,',
+          'Yandex Eats, Wolt, Glovo). Если сказал, что не работает ни с кем — так и напиши «нет».',
+          'Если про агрегаторы не говорили — null, догадки недопустимы.',
           'Если разговор пустой (гудки, «алло-алло», ошиблись номером) — summary честно об этом.',
         ].join(' ') },
         { role: 'user', content: transcript.slice(0, 4000) },
@@ -177,6 +180,9 @@ export async function ensureCallDigestSchema(sql: any) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `.catch(() => {})
+  // Что из разговора уехало в квалификацию. Нужно в ленте: сейлз должен
+  // видеть не только сводку, но и что машина заполнила поле за него
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS filled jsonb`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS sales_call_digests_acc ON sales_call_digests(org_id, account_id)`.catch(() => {})
 }
 

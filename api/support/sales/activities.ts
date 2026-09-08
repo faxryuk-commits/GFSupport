@@ -127,7 +127,7 @@ export default async function handler(req: Request): Promise<Response> {
     // через неделю, а «договорились созвониться после праздников» — говорит
     const tps = await sql`
       SELECT t.id, t.title, t.detail, t.identity, t.happened_at,
-             d.summary, d.outcome, d.next_step
+             d.summary, d.outcome, d.next_step, d.filled
       FROM sales_touchpoints t
       LEFT JOIN sales_call_digests d ON d.call_uuid = t.identity
       WHERE t.org_id = ${orgId} AND t.account_id = ${acc} AND t.kind = 'call'
@@ -143,6 +143,7 @@ export default async function handler(req: Request): Promise<Response> {
       summary: t.summary || null,
       outcome: t.outcome || null,
       next_step: t.next_step || null,
+      filled: Array.isArray(t.filled) ? t.filled : [],
       agent_id: null,
       agent_name: 'АТС',
       happened_at: t.happened_at,
