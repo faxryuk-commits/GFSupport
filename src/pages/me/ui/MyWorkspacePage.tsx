@@ -16,6 +16,7 @@ import { fetchNotifications, markNotificationRead, type AppNotification } from '
 import { completeCommitment } from '@/shared/api/commitments'
 import { updateBrandTodo } from '@/shared/api/onboarding'
 import { formatDateTimeShort } from '@/shared/lib'
+import { TelegramConnect } from './TelegramConnect'
 
 type Workspace = {
   me: { id: string; name: string; usernames: string[] }
@@ -749,6 +750,11 @@ export function MyWorkspacePage() {
           </div>
         </div>
       )}
+
+      {/* Свой Telegram: подключается один раз, дальше клиенту пишет живой человек */}
+      <div className="max-w-[1240px] mx-auto px-6 pb-8">
+        <TelegramConnect />
+      </div>
     </div>
   )
 }
