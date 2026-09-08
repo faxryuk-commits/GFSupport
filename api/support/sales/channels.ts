@@ -90,17 +90,17 @@ export default async function handler(req: Request): Promise<Response> {
       const phone = String(body.phone || '')
       const text = String(body.text || '').trim()
       if (!phone || !text) return json({ error: 'нужны номер и текст' }, 400)
-      const url = process.env.WHATSAPP_BRIDGE_URL
-      const secret = process.env.WHATSAPP_BRIDGE_SECRET
-      if (!url || !secret) return json({ error: 'WhatsApp-мост не настроен' }, 400)
-      const res = await fetch(`${url}/send-to`, {
+      const url = process.env.WA_SALES_URL
+      const secret = process.env.WA_SALES_SECRET
+      if (!url || !secret) return json({ error: 'WhatsApp для продаж не настроен' }, 400)
+      const res = await fetch(`${url}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
-        body: JSON.stringify({ phone, text }),
-        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({ agentId: ctx.agentId, phone, text }),
+        signal: AbortSignal.timeout(25000),
       }).catch(() => null)
       const out = await res?.json().catch(() => null) as any
-      if (!res?.ok || !out?.success) {
+      if (!res?.ok || !out?.ok) {
         return json({ error: out?.error || 'WhatsApp сейчас недоступен' }, 502)
       }
       if (body.dealId) {
@@ -266,8 +266,10 @@ export default async function handler(req: Request): Promise<Response> {
   let checkedAt: string | null = cached?.checked_at ?? null
 
   if (refresh || !cached?.fresh) {
-    const waUrl = process.env.WHATSAPP_BRIDGE_URL
-    const waSecret = process.env.WHATSAPP_BRIDGE_SECRET
+    // Проверяем через сервис продаж (личные номера сейлзов). Поддержка живёт
+    // на GreenAPI и в проверке номеров не участвует — там другой контур
+    const waUrl = process.env.WA_SALES_URL
+    const waSecret = process.env.WA_SALES_SECRET
     const tgUrl = process.env.TELEGRAM_BRIDGE_URL
     const tgSecret = process.env.TELEGRAM_BRIDGE_SECRET
     const e164 = '+' + raw.replace(/\D/g, '')

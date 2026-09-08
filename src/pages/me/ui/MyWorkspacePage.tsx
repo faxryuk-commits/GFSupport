@@ -17,6 +17,7 @@ import { completeCommitment } from '@/shared/api/commitments'
 import { updateBrandTodo } from '@/shared/api/onboarding'
 import { formatDateTimeShort } from '@/shared/lib'
 import { TelegramConnect } from './TelegramConnect'
+import { WhatsappConnect } from './WhatsappConnect'
 
 type Workspace = {
   me: { id: string; name: string; usernames: string[] }
@@ -752,8 +753,9 @@ export function MyWorkspacePage() {
       )}
 
       {/* Свой Telegram: подключается один раз, дальше клиенту пишет живой человек */}
-      <div className="max-w-[1240px] mx-auto px-6 pb-8">
+      <div className="max-w-[1240px] mx-auto px-6 pb-8 grid md:grid-cols-2 gap-4">
         <TelegramConnect />
+        <WhatsappConnect />
       </div>
     </div>
   )
