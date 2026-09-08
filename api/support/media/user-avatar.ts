@@ -119,10 +119,19 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE id = ${user.id} AND org_id = ${orgId}
     `
 
-    console.log(`[User Avatar] Updated photo for user ${user.id}`)
-
-    // Redirect to fresh URL
-    return Response.redirect(freshUrl, 302)
+    // Отдаём сами байты. Раньше здесь стоял редирект на api.telegram.org,
+    // а в адресе — токен бота: он попадал в заголовок ответа, в историю
+    // браузера и в Referer, и увидеть его мог кто угодно
+    const img = await fetch(freshUrl)
+    if (!img.ok) {
+      return Response.redirect(`https://ui-avatars.com/api/?name=User&background=3b82f6&color=fff`, 302)
+    }
+    return new Response(img.body, {
+      headers: {
+        'Content-Type': img.headers.get('content-type') || 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400',
+      },
+    })
 
   } catch (e: any) {
     console.error('[User Avatar] Error:', e.message)

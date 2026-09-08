@@ -182,7 +182,7 @@ export async function getOpenAIKey(orgId?: string | null): Promise<string | null
     } catch {}
   }
   try {
-    const rows = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key' LIMIT 1`
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'openai_api_key' AND org_id = ${orgId} LIMIT 1`
     if (rows[0]?.value) return rows[0].value
   } catch {}
   return process.env.OPENAI_API_KEY || null
@@ -197,7 +197,7 @@ export async function getOrgBotToken(orgId?: string | null): Promise<string | nu
     } catch {}
   }
   try {
-    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' LIMIT 1`
+    const rows = await sql`SELECT value FROM support_settings WHERE key = 'telegram_bot_token' AND org_id = ${orgId} LIMIT 1`
     if (rows[0]?.value) return rows[0].value
   } catch {}
   return process.env.TELEGRAM_BOT_TOKEN || null
@@ -235,7 +235,9 @@ export async function getOrgWhatsAppBridge(orgId?: string | null): Promise<{ url
     } catch {}
   }
   try {
-    const rows = await sql`SELECT key, value FROM support_settings WHERE key IN ('whatsapp_bridge_url', 'whatsapp_bridge_secret')`
+    const rows = await sql`
+      SELECT key, value FROM support_settings
+      WHERE key IN ('whatsapp_bridge_url', 'whatsapp_bridge_secret') AND org_id = ${orgId}`
     const map: Record<string, string> = {}
     for (const r of rows) map[r.key] = r.value
     if (map.whatsapp_bridge_url) return { url: map.whatsapp_bridge_url, secret: map.whatsapp_bridge_secret || null }
