@@ -72,7 +72,11 @@ export default async function handler(req: Request): Promise<Response> {
   if (digits.length < 9) return json({ error: 'phone required' }, 400)
   const refresh = url.searchParams.get('refresh') === '1'
 
-  // 1. Известные диалоги: клиент уже писал — отвечаем из системы
+  // 1. Известные диалоги: клиент уже писал — отвечаем из системы.
+  // Канал висит на карточке клиента (sales_accounts.channel_id); у обращений
+  // своей колонки канала нет, поэтому идём через их аккаунт.
+  // Ошибку здесь НЕ глушим: молчаливый catch однажды уже спрятал сломанный
+  // запрос, и каналы «не находились» без единого следа в логах
   const known = await sql`
     SELECT c.id, c.source, c.name, c.last_message_at,
            (SELECT COUNT(*)::int FROM support_messages m WHERE m.channel_id = c.id) AS messages
@@ -81,19 +85,22 @@ export default async function handler(req: Request): Promise<Response> {
       AND c.id IN (
         SELECT a.channel_id FROM sales_accounts a
         WHERE a.org_id = ${orgId} AND a.channel_id IS NOT NULL AND a.archived_at IS NULL
-          AND EXISTS (
-            SELECT 1 FROM sales_contacts sc
-            WHERE sc.account_id = a.id
-              AND right(regexp_replace(sc.phone, '[^0-9]', '', 'g'), 9) = ${digits}
+          AND (
+            EXISTS (
+              SELECT 1 FROM sales_contacts sc
+              WHERE sc.account_id = a.id AND sc.phone IS NOT NULL
+                AND right(regexp_replace(sc.phone, '[^0-9]', '', 'g'), 9) = ${digits}
+            )
+            OR EXISTS (
+              SELECT 1 FROM sales_leads l
+              WHERE l.account_id = a.id AND l.phone_norm IS NOT NULL
+                AND right(regexp_replace(l.phone_norm, '[^0-9]', '', 'g'), 9) = ${digits}
+            )
           )
-        UNION
-        SELECT l.channel_id FROM sales_leads l
-        WHERE l.org_id = ${orgId} AND l.channel_id IS NOT NULL
-          AND right(regexp_replace(COALESCE(l.phone_norm, ''), '[^0-9]', '', 'g'), 9) = ${digits}
       )
     ORDER BY c.last_message_at DESC NULLS LAST
     LIMIT 5
-  `.catch(() => [])
+  `
 
   // 2. Кэш проверок
   const [cached] = await sql`
