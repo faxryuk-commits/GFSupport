@@ -46,6 +46,10 @@ interface ChannelInfo {
   tgPhoto: string | null
   history?: Array<{ text: string; out: boolean; at: string; who: string | null; dealId: string | null }>
   channels: Array<{ id: string; source: string; name: string; messages: number }>
+  /** Мост WhatsApp ещё проверяет номер — через сколько секунд спросить снова. */
+  whatsappPending?: number | null
+  /** Почему проверить не вышло: нет подключённых номеров, лимит на сегодня. */
+  whatsappReason?: string | null
 }
 
 /** «был недавно» вместо ISO-строки: сейлзу важно, живой ли аккаунт. */
@@ -117,10 +121,17 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   useEffect(() => {
     if (!withChannels || !phone) return
     let alive = true
-    apiGet<ChannelInfo>(`/sales/channels?phone=${encodeURIComponent(phone)}`, false)
-      .then(d => { if (alive) setInfo(d) })
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const ask = () => apiGet<ChannelInfo>(`/sales/channels?phone=${encodeURIComponent(phone)}`, false)
+      .then(d => {
+        if (!alive) return
+        setInfo(d)
+        // Мост проверяет в фоне — спросим ещё раз, когда он отстоит паузу
+        if (d.whatsappPending) timer = setTimeout(ask, Math.min(60, d.whatsappPending) * 1000)
+      })
       .catch(() => {})
-    return () => { alive = false }
+    ask()
+    return () => { alive = false; if (timer) clearTimeout(timer) }
   }, [withChannels, phone])
 
   // Свой Telegram подключён? От этого зависит, можем ли писать из системы
@@ -353,35 +364,15 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
                 {seenLabel(info.tgLastSeen) ? ` · ${seenLabel(info.tgLastSeen)}` : ''}
               </div>
             )}
+            {/* Только каналы и присутствие. Переписка отсюда убрана: это меню
+                «как связаться», а разговор живёт в ленте карточки */}
             {info?.channels.length ? (
               <div className="text-[10.5px] text-gray-400">
-                переписка: {info.channels.map(c => `${c.source === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${c.messages}`).join(', ')}
+                переписка в системе: {info.channels.map(c => `${c.source === 'whatsapp' ? 'WhatsApp' : 'Telegram'} · ${c.messages}`).join(', ')}
               </div>
-            ) : !info?.history?.length
-              ? <div className="text-[10.5px] text-gray-400">переписки в системе пока нет</div>
-              : null}
+            ) : null}
             </div>
           </div>
-
-          {/* Последние сообщения: контекст важнее, чем ещё один переход */}
-          {!compose && !!info?.history?.length && (
-            <div className="border-b border-gray-100 max-h-[132px] overflow-y-auto">
-              {info.history.slice(0, 4).map((h, i) => (
-                <div key={i} className={`px-3 py-1.5 text-[11.5px] flex gap-2 ${h.out ? '' : 'bg-blue-50/40'}`}>
-                  <span className={`flex-none mt-px ${h.out ? 'text-gray-400' : 'text-blue-600'}`}>
-                    {h.out ? '→' : '←'}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="text-gray-700">{h.text}</span>
-                    <span className="text-gray-400 ml-1.5 whitespace-nowrap">
-                      {new Date(h.at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Поле ответа прямо в меню: писать — главное действие, и уводить
               человека на другой экран ради двух строк незачем */}
           {compose && (
@@ -422,8 +413,10 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
           {/* Не проверено — так и говорим. Молчание читалось как «WhatsApp нет»,
               а на деле проверить некому: нужен подключённый WhatsApp продаж */}
           {info && info.hasWhatsapp !== true && info.hasWhatsapp !== false && (
-            <Item icon={<WaIcon className="w-4 h-4 opacity-50" />} tone="text-gray-400" title="WhatsApp — не проверено"
-              sub="проверяет ваш подключённый WhatsApp: Моё → WhatsApp"
+            <Item icon={<WaIcon className="w-4 h-4 opacity-50" />} tone="text-gray-400"
+              title={info.whatsappPending ? 'WhatsApp — проверяю…' : 'WhatsApp — не проверено'}
+              sub={info.whatsappPending ? 'ваш WhatsApp спрашивает, есть ли номер — секунды'
+                : info.whatsappReason || 'нужен подключённый WhatsApp продаж: Моё → WhatsApp'}
               onClick={() => go('/me', false)} />
           )}
           {info?.hasWhatsapp === false && (

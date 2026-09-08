@@ -59,7 +59,12 @@ async function askBridge(url: string, secret: string, phone: string): Promise<an
     })
     if (!res.ok) return null
     const body = await res.json() as any
-    return typeof body?.exists === 'boolean' ? body : null
+    // pending — мост проверяет в фоне: это не «не знаем», а «сейчас узнаем»
+    if (body?.pending) return { exists: null, pending: true, retryInSec: body.retryInSec || 20 }
+    if (typeof body?.exists === 'boolean') return body
+    // Мост ответил «не смог» и сказал почему — причину показываем человеку
+    if (body && body.exists === null && (body.reason || body.error)) return { exists: null, reason: String(body.reason || body.error) }
+    return null
   } catch {
     return null
   }
@@ -264,6 +269,8 @@ export default async function handler(req: Request): Promise<Response> {
   let tgPremium: boolean | null = cached?.tg_premium ?? null
   let tgPhoto: string | null = cached?.tg_photo ?? null
   let checkedAt: string | null = cached?.checked_at ?? null
+  let waPendingOut: number | null = null
+  let waReasonOut: string | null = null
 
   // Проверяем через сервис продаж (личные номера сейлзов). Поддержка живёт
   // на GreenAPI и в проверке номеров не участвует — там другой контур
@@ -284,7 +291,11 @@ export default async function handler(req: Request): Promise<Response> {
       tgUrl && tgSecret ? askBridge(tgUrl, tgSecret, e164) : Promise.resolve(null),
     ])
     // Не затираем прежний ответ, если мост сейчас молчит
-    if (wa !== null) hasWa = wa.exists
+    if (wa !== null) {
+      if (wa.pending) waPendingOut = Number(wa.retryInSec) || 20
+      else if (typeof wa.exists === 'boolean') hasWa = wa.exists
+      else waReasonOut = wa.reason || null
+    }
     if (tg !== null) {
       hasTg = tg.exists
       tgUsername = tg.username ?? tgUsername
@@ -293,7 +304,7 @@ export default async function handler(req: Request): Promise<Response> {
       tgPremium = typeof tg.premium === 'boolean' ? tg.premium : tgPremium
       if (tg.photo) tgPhoto = tg.photo
     }
-    if (wa !== null || tg !== null) {
+    if ((wa !== null && typeof wa.exists === 'boolean') || tg !== null) {
       checkedAt = new Date().toISOString()
       await sql`
         INSERT INTO sales_phone_channels (
@@ -316,6 +327,9 @@ export default async function handler(req: Request): Promise<Response> {
   return json({
     phone: digits,
     hasWhatsapp: hasWa,
+    // Мост ещё проверяет — карточка покажет «проверяю» и спросит снова
+    whatsappPending: waPendingOut,
+    whatsappReason: waReasonOut,
     hasTelegram: hasTg,
     tgUsername,
     tgName,
