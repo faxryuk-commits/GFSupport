@@ -90,7 +90,7 @@ const GENERIC = new Set([
   'kabob', 'shashlik', 'lavash', 'shawarma', 'shaurma', 'doner', 'donar', 'coffee', 'kofe',
   'coffeeshop', 'kafe', 'cafe', 'caffe', 'restoran', 'restaurant', 'resto', 'choyhona',
   'choyxona', 'chayhana', 'osh', 'oshxona', 'plov', 'palov', 'somsa', 'samsa', 'manti',
-  'tandir', 'tandoor', 'milliy', 'taomlar', 'taom', 'food', 'fastfood', 'steak', 'grill',
+  'tandir', 'tandoor', 'milliy', 'millii', 'taomlar', 'taom', 'food', 'fastfood', 'steak', 'grill',
   'wok', 'noodle', 'ramen', 'bakery', 'pekarnya', 'konditerskaya', 'dessert', 'market',
   'magazin', 'shop', 'store', 'dostavka', 'delivery', 'express', 'service', 'servis',
   'group', 'holding', 'company', 'kompaniya', 'house', 'home', 'club', 'lounge', 'hookah',
@@ -179,6 +179,46 @@ export function brandRoot(cardName: string, foundName: string): string {
   const a1 = norm(foundName || cardName)
   const a2 = norm(cardName)
   return a2 && a2.length >= 4 && a2.length <= a1.length ? a2 : a1
+}
+
+/**
+ * Свои слова бренда — то, по чему узнаются филиалы. Общие слова
+ * («сомса», «пицца», «кафе») отброшены: по ним в одну сеть слипается
+ * пол-города.
+ */
+export function brandKeys(...names: string[]): string[] {
+  return [...new Set(names.flatMap(n => ownWords(n)))]
+}
+
+/**
+ * Тот же это бренд? Сеть и франшиза пишутся на картах вразнобой:
+ * «Chitir-chitir somsa», «Читир читир сомса», «Chitir Chitir». Вхождение
+ * корня их не ловит — «chitirchitirsomsa» не содержит «chitrchitr» подряд,
+ * и сеть из четырёх точек схлопывалась в одну. Сверяем по словам с тем же
+ * допуском на опечатку, что и сами названия.
+ */
+export function sameBrand(keys: string[], title: string): boolean {
+  const w = ownWords(title)
+  if (!keys.length || !w.length) return false
+  return keys.some(b => w.some(x => x === b
+    || (b.length >= 5 && x.length >= 5
+        && editDistance(b, x) <= (Math.min(b.length, x.length) >= 7 ? 2 : 1))))
+}
+
+/**
+ * Порядок кандидатов. Google сортирует выдачу по своей близости, и наверх
+ * всплывала случайная точка сети с двумя отзывами, а её данные потом ехали
+ * в карточку. Сначала те, где название вообще совпало, внутри — по
+ * заметности: у сети головная точка та, где отзывов больше.
+ */
+export function rankPlaces<T>(query: string, list: T[],
+  nameOf: (p: T) => string, reviewsOf: (p: T) => number | null | undefined): T[] {
+  const scored = list.map((p, i) => ({ p, i, strong: matchKind(query, nameOf(p)).kind === 'strong' }))
+  const hits = scored.filter(s => s.strong)
+  const pool = hits.length ? hits : scored
+  const rest = scored.filter(s => !pool.includes(s))
+  pool.sort((a, b) => (reviewsOf(b.p) || 0) - (reviewsOf(a.p) || 0) || a.i - b.i)
+  return [...pool, ...rest].map(s => s.p)
 }
 
 /**

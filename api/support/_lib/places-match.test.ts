@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { norm, host, otherCountry, cleanName, matchKind, brandRoot, decideMatch, REGION } from './places-match.js'
+import { norm, host, otherCountry, cleanName, matchKind, brandRoot, decideMatch, REGION,
+  brandKeys, sameBrand, rankPlaces } from './places-match.js'
 
 /**
  * Все случаи ниже — с боевых карточек. Каждый из них когда-то приводил
@@ -145,5 +146,53 @@ describe('итоговое решение по находке', () => {
       address: 'пр-т Мангилик Ел 29, Астана, Казахстан', market: 'kz', reviews: 403,
     })
     expect(r.trusted).toBe(true)
+  })
+})
+
+describe('сети и франшизы', () => {
+  it('разные написания одной сети — один бренд', () => {
+    const keys = brandKeys('Chitir-chitir somsa', 'Chitr Chitr')
+    expect(sameBrand(keys, 'Chitir-chitir somsa')).toBe(true)
+    expect(sameBrand(keys, 'Читир читир сомса')).toBe(true)
+    expect(sameBrand(keys, 'Chitir Chitir')).toBe(true)
+    expect(sameBrand(keys, 'Chitr chitr somsa')).toBe(true)
+  })
+  it('чужая сомса той же сетью не становится', () => {
+    const keys = brandKeys('Chitir-chitir somsa', 'Chitr Chitr')
+    expect(sameBrand(keys, 'Rayhon somsa')).toBe(false)
+    expect(sameBrand(keys, 'Самарканд сомса')).toBe(false)
+  })
+  it('родовое название сетью не считается', () => {
+    // «Миллий таомлар» — это «национальные блюда», под него подходит пол-города
+    expect(brandKeys('Миллий таомлар')).toEqual([])
+    expect(sameBrand(brandKeys('Миллий таомлар'), 'Миллий таомлар Чиланзар')).toBe(false)
+  })
+  it('филиал сети узнаётся по бренду', () => {
+    expect(sameBrand(brandKeys('Chopar Pizza'), 'Chopar Pizza Юнусабад')).toBe(true)
+  })
+})
+
+describe('порядок кандидатов', () => {
+  type P = { n: string; r: number }
+  const name = (p: P) => p.n
+  const rev = (p: P) => p.r
+  it('из совпавших наверх идёт самая заметная точка', () => {
+    const list = [
+      { n: 'Chitir Chitir', r: 12 },
+      { n: 'Chitir-chitir somsa', r: 81 },
+      { n: 'Chitr chitr somsa', r: 4 },
+    ]
+    expect(rankPlaces('Chitr Chitr', list, name, rev)[0].n).toBe('Chitir-chitir somsa')
+  })
+  it('несовпавшее не обгоняет совпавшее, сколько бы отзывов ни было', () => {
+    const list = [
+      { n: 'Pizza UNO', r: 5000 },
+      { n: 'Sushita', r: 3 },
+    ]
+    expect(rankPlaces('Sushita', list, name, rev)[0].n).toBe('Sushita')
+  })
+  it('когда не совпало ничего — порядок Google сохраняется', () => {
+    const list = [{ n: 'NevoMusic', r: 2 }, { n: 'Другое', r: 900 }]
+    expect(rankPlaces('ahror.umurzakov', list, name, rev).map(name)).toEqual(['Другое', 'NevoMusic'])
   })
 })

@@ -678,13 +678,6 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
 
           {/* Контакты клиента: второй номер, бухгалтер, почта. Блок был
               импортирован, но не выведен — «добавьте контакт ниже» вело в пустоту */}
-          {/* Карточка места: рейтинг, отзывы, точки сети — то же, что
-              в обращении. Ищем по клиенту, поэтому находка общая для
-              обращения и сделки */}
-          {data.account?.id && (
-            <PlaceCard dealId={id} accountId={data.account.id} onFilled={load} />
-          )}
-
           {data.account?.id && <ContactsCard accountId={data.account.id} market={d.market_id} />}
 
           <Card dense title="Коммерческие условия"
@@ -769,6 +762,12 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               после подписания. Оба сами по себе свёрнуты */}
           {id && <div id="spec-block"><SpecCard dealId={id} /></div>}
           {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
+          {/* Карта — в самом низу: в сделке важнее условия и документы,
+              а место уже посмотрели на обращении. Находка общая, ищем
+              по клиенту */}
+          {data.account?.id && (
+            <PlaceCard dealId={id} accountId={data.account.id} onFilled={load} />
+          )}
         </div>
 
         <div className="space-y-3 min-w-0">

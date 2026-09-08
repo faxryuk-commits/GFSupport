@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { norm, host, REGION, cleanName, matchKind, brandRoot, decideMatch } from '../_lib/places-match.js'
+import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces } from '../_lib/places-match.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -351,7 +351,8 @@ async function handlerInner(req: Request): Promise<Response> {
   // Можно указать конкретное место: сейлз видит список и выбирает сам,
   // когда автоматика ошиблась
   const wanted = body.placeId ? found.find(p => p.id === String(body.placeId)) : null
-  const best = wanted || bySite || found[0]
+  const ranked = rankPlaces(name, found, p => p.displayName?.text || '', p => p.userRatingCount)
+  const best = wanted || bySite || ranked[0]
   const asked = city ? `${name} · ${city}` : name
 
   // На каком основании это место сочли тем самым. Сейлз видит в шапке одно
@@ -384,12 +385,11 @@ async function handlerInner(req: Request): Promise<Response> {
   // регион. Сравнивать названия «в лоб» нельзя — филиалы зовутся
   // «Chopar Pizza Юнусабад», и точное равенство схлопывало сеть до одной точки
   const brandName = (best.displayName?.text || name).trim()
-  const root = brandRoot(name, brandName)
-  const net = root.length >= 4 ? await search(key, brandName, 20, region).catch(() => [] as Place[]) : []
+  const keys = brandKeys(brandName, name)
+  const net = keys.length ? await search(key, brandName, 20, region).catch(() => [] as Place[]) : []
   const seen = new Set<string>()
   const branches = [...found, ...net].filter(p => {
-    const n = norm(p.displayName?.text || '')
-    if (root.length < 4 || !n.includes(root)) return false
+    if (!sameBrand(keys, p.displayName?.text || '')) return false
     if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') return false
     const k = p.id || norm(p.formattedAddress || '')
     if (seen.has(k)) return false
@@ -433,7 +433,7 @@ async function handlerInner(req: Request): Promise<Response> {
     hours: JSON.stringify(best.regularOpeningHours?.weekdayDescriptions || []),
     lat: best.location?.latitude ?? null,
     lng: best.location?.longitude ?? null,
-    raw: JSON.stringify(found.slice(0, 10)),
+    raw: JSON.stringify(ranked.slice(0, 10)),
     instagram: keep.instagram ? prev.instagram : social.instagram,
     telegram: keep.telegram ? prev.telegram : social.telegram,
     photos: JSON.stringify(photos),
@@ -474,11 +474,16 @@ async function handlerInner(req: Request): Promise<Response> {
     if (!lead?.website && best.websiteUri) patch.push(['website', best.websiteUri])
     if (!lead?.instagram && social.instagram) patch.push(['instagram', social.instagram])
     if (!lead?.telegram && social.telegram) patch.push(['telegram', social.telegram])
+    // Город карты знают точно — он лежит в компонентах адреса. Сейлз его
+    // всё равно спишет с карт, только руками и позже
+    if (!lead?.city && cityOf(best)) patch.push(['city', cityOf(best)])
     for (const [field, value] of patch) {
       if (field === 'website') await sql`UPDATE sales_accounts SET website = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (website IS NULL OR website = '')`
       if (field === 'instagram') await sql`UPDATE sales_accounts SET instagram = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (instagram IS NULL OR instagram = '')`
       if (field === 'telegram') await sql`UPDATE sales_accounts SET telegram = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (telegram IS NULL OR telegram = '')`
-      filled.push(field === 'website' ? 'сайт' : field === 'instagram' ? 'Instagram' : 'Telegram')
+      if (field === 'city') await sql`UPDATE sales_accounts SET city = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (city IS NULL OR city = '')`
+      filled.push(field === 'website' ? 'сайт' : field === 'instagram' ? 'Instagram'
+        : field === 'city' ? 'город' : 'Telegram')
     }
   }
 
@@ -486,7 +491,7 @@ async function handlerInner(req: Request): Promise<Response> {
     const qual = (lead.qual || {}) as Record<string, any>
     const patch: Record<string, string> = {}
     if (!qual.points && branches > 0) { patch.points = String(branches); filled.push('точек') }
-    const cityFromMaps = /Tashkent|Ташкент/i.test(row.address || '') ? 'Ташкент' : ''
+    const cityFromMaps = cityOf(best)
     if (!lead.city && cityFromMaps) filled.push('город')
     if (Object.keys(patch).length) {
       await sql`
@@ -510,7 +515,7 @@ async function handlerInner(req: Request): Promise<Response> {
       `
       filled.push('точек')
     }
-    const cityFromMaps = /Tashkent|Ташкент/i.test(row.address || '') ? 'Ташкент' : ''
+    const cityFromMaps = cityOf(best)
     if (!deal.city && cityFromMaps) {
       await sql`
         UPDATE sales_deals SET city = ${cityFromMaps}, updated_at = NOW()
@@ -523,14 +528,14 @@ async function handlerInner(req: Request): Promise<Response> {
   const [saved] = leadId
     ? await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND lead_id = ${leadId} LIMIT 1`
     : await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND account_id = ${accountId} LIMIT 1`
-  const candidates = found.slice(0, 6).map(p => ({
+  const candidates = ranked.slice(0, 6).map(p => ({
     id: p.id,
     name: p.displayName?.text || '',
     address: p.formattedAddress || '',
     rating: p.rating ?? null,
     reviews: p.userRatingCount ?? null,
   }))
-  return json({ place: saved || null, filled, match, why, via, candidates, query: asked })
+  return json({ place: saved || null, filled: [...new Set(filled)], match, why, via, candidates, query: asked })
 }
 
 export default async function handler(req: Request): Promise<Response> {
