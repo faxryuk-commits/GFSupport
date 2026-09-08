@@ -10,7 +10,6 @@ import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { BookMeetingModal } from './BookMeetingModal'
 import { DealFeed } from './DealFeed'
-import { TeamThread } from './TeamThread'
 import { PaymentsCard } from './PaymentsCard'
 import { SpecCard } from './SpecCard'
 import { ContactsCard } from './ContactsCard'
@@ -845,17 +844,13 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             tasks={tasks}
             events={events}
             channelId={data.channelId}
+            team={data.team || []}
             onChanged={load}
           />
 
-          {/* Разговор о клиенте между своими — при карточке, а не в Telegram.
-              Свёрнут, пока не нужен: пустая ветка занимала полэкрана */}
-          {/* Без overflow-hidden: подсказка @имя раскрывается вверх и резалась рамкой */}
-          <div className="bg-white border border-gray-200 rounded-xl">
-            <Fold title="Команда" sub="внутреннее — клиент не видит · @имя зовёт коллегу">
-              <TeamThread dealId={id} accountId={data.account?.id} team={data.team || []} embedded />
-            </Fold>
-          </div>
+          {/* Отдельной ветки «Команда» больше нет: внутренние сообщения живут
+              в общей ленте с жёлтой меткой — история клиента и разговор о нём
+              читаются одним потоком, а не двумя блоками с разными датами */}
 
         </div>
       </div>

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiGet, apiPost } from '@/shared/services/api.service'
+import { apiGet, apiPost, apiUpload } from '@/shared/services/api.service'
 import { fmtDateTime } from './kit'
 import { useAuth } from '@/shared/hooks/useAuth'
 
@@ -16,6 +16,10 @@ import { useAuth } from '@/shared/hooks/useAuth'
  * Запись итога и ответ клиенту здесь же: сейлз кладёт трубку и пишет
  * результат, не уходя из карточки. Это была главная претензия при сравнении
  * с amo — там из карточки пишут, у нас приходилось уходить в чат.
+ *
+ * Внутренние сообщения команды — в этой же цепочке, отдельной веткой их
+ * держать было нечестно: разговор о клиенте и события по клиенту — одна
+ * история. Клиенту они не уходят: видно по жёлтой метке «внутри команды».
  */
 
 type Activity = {
@@ -27,19 +31,39 @@ type Message = {
   id: string; sender_name: string | null; is_from_client: boolean
   text_content: string | null; content_type: string | null; created_at: string
 }
+type Att = { url: string; name: string; size: number; type: string | null }
+type TeamComment = {
+  id: string; text: string; mentions: string[]; attachments: Att[]; task_id: string | null
+  created_at: string; author_agent_id: string | null; author_name: string | null
+}
 type Item = {
   key: string; at: string; icon: string; who: string
-  text: string; tone?: 'client' | 'system' | 'task'
+  text: string; tone?: 'client' | 'system' | 'task' | 'team'
   recordUuid?: string | null
+  attachments?: Att[]
 }
 
 const ICONS: Record<string, string> = { call: '📞', meeting: '🤝', note: '📝' }
 
+const fmtSize = (n: number) => n < 1024 * 1024
+  ? `${Math.max(1, Math.round(n / 1024))} КБ` : `${(n / 1048576).toFixed(1)} МБ`
+
+/** Текст с подсветкой упоминаний: «@Имя» — жирным. */
+function Rich({ text }: { text: string }) {
+  const parts = text.split(/(@[^\s@,.!?:;]+(?: [А-ЯA-Z][^\s@,.!?:;]*)?)/g)
+  return <>{parts.map((p, i) => p.startsWith('@')
+    ? <b key={i} className="text-blue-700 font-semibold">{p}</b>
+    : <span key={i}>{p}</span>)}</>
+}
+
 export function DealFeed({
-  dealId, accountId, messages = [], tasks = [], events = [], channelId, onChanged,
+  dealId, leadId, accountId, messages = [], tasks = [], events = [], channelId, team = [], onChanged,
 }: {
   dealId?: string
+  leadId?: string
   accountId?: string | null
+  /** Коллеги для «@имя»: без них внутреннее сообщение некому адресовать. */
+  team?: Array<{ id: string; name: string }>
   messages?: Message[]
   tasks?: any[]
   events?: any[]
@@ -49,8 +73,17 @@ export function DealFeed({
 }) {
   const { agent } = useAuth()
   const [acts, setActs] = useState<Activity[]>([])
-  const [kind, setKind] = useState<'note' | 'call' | 'meeting' | 'message' | 'task'>(
+  const [kind, setKind] = useState<'note' | 'call' | 'meeting' | 'message' | 'task' | 'team'>(
     channelId ? 'message' : 'note')
+  const [comments, setComments] = useState<TeamComment[]>([])
+  // «@имя» и вложения — только для внутренних сообщений команде
+  const [mentions, setMentions] = useState<Set<string>>(new Set())
+  const [pick, setPick] = useState<{ q: string; at: number } | null>(null)
+  const [files, setFiles] = useState<Att[]>([])
+  const [asTask, setAsTask] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   // Срок задачи: без него задача не попадёт в очередь дня и не напомнит о себе
   const [due, setDue] = useState<'today' | 'tomorrow' | 'in3'>('tomorrow')
   // Отправленное показываем сразу: ответ канала доедет с обновлением карточки,
@@ -62,12 +95,17 @@ export function DealFeed({
   const [playing, setPlaying] = useState<string | null>(null)
 
   const load = useCallback(() => {
-    if (!dealId && !accountId) return
-    const q = dealId ? `dealId=${dealId}` : `accountId=${accountId}`
-    apiGet<{ activities: Activity[] }>(`/sales/activities?${q}`, false)
-      .then(r => setActs(r.activities || []))
-      .catch(() => setActs([]))
-  }, [dealId, accountId])
+    const q = dealId ? `dealId=${dealId}` : leadId ? `leadId=${leadId}` : accountId ? `accountId=${accountId}` : ''
+    if (!q) return
+    if (dealId || accountId) {
+      apiGet<{ activities: Activity[] }>(`/sales/activities?${dealId ? `dealId=${dealId}` : `accountId=${accountId}`}`, false)
+        .then(r => setActs(r.activities || []))
+        .catch(() => setActs([]))
+    }
+    apiGet<{ comments: TeamComment[] }>(`/sales/comments?${q}`, false)
+      .then(r => setComments(r.comments || []))
+      .catch(() => setComments([]))
+  }, [dealId, leadId, accountId])
 
   useEffect(() => { load() }, [load])
 
@@ -105,11 +143,20 @@ export function DealFeed({
         tone: 'system',
       })
     }
+    for (const c of comments) {
+      out.push({
+        key: `c_${c.id}`, at: c.created_at, icon: '👥',
+        who: c.author_name || 'Коллега',
+        text: c.text || (c.attachments?.length ? '' : '—'),
+        tone: 'team',
+        attachments: c.attachments || [],
+      })
+    }
     out.push(...sent)
     return out
       .filter(i => i.at)
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-  }, [acts, messages, tasks, events, sent])
+  }, [acts, comments, messages, tasks, events, sent])
 
   const play = async (uuid: string) => {
     try {
@@ -118,9 +165,43 @@ export function DealFeed({
     } catch { /* записи может не быть — молчим */ }
   }
 
+  // Подсказка «@»: показываем команду и подставляем имя целиком
+  const onText = (v: string) => {
+    setText(v)
+    if (kind !== 'team') { setPick(null); return }
+    const caret = inputRef.current?.selectionStart ?? v.length
+    const m = v.slice(0, caret).match(/@([^\s@]*)$/)
+    setPick(m ? { q: m[1].toLowerCase(), at: caret - m[0].length } : null)
+  }
+  const choose = (t: { id: string; name: string }) => {
+    if (!pick) return
+    const caret = inputRef.current?.selectionStart ?? text.length
+    setText(`${text.slice(0, pick.at)}@${t.name} ${text.slice(caret)}`)
+    setMentions(s2 => new Set(s2).add(t.id))
+    setPick(null)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+  const candidates = pick
+    ? team.filter(t => t.id !== agent?.id && t.name.toLowerCase().includes(pick.q)).slice(0, 8)
+    : []
+
+  const upload = async (list: FileList | null) => {
+    if (!list?.length) return
+    setUploading(true); setErr('')
+    try {
+      for (const f of Array.from(list).slice(0, 5)) {
+        const fd = new FormData(); fd.append('file', f)
+        const r = await apiUpload<Att & { ok: boolean }>('/sales/comments?action=upload', fd)
+        setFiles(fs => [...fs, { url: r.url, name: r.name, size: r.size, type: r.type }])
+      }
+    } catch (e: any) {
+      setErr(e?.message || 'Не удалось загрузить файл')
+    } finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
+  }
+
   const submit = async () => {
     const body = text.trim()
-    if (!body) return
+    if (!body && !(kind === 'team' && files.length)) return
     setBusy(true); setErr('')
     try {
       if (kind === 'message') {
@@ -143,6 +224,22 @@ export function DealFeed({
           dealId, title: body, kind: 'task', dueAt: at.toISOString(),
         })
         onChanged?.()
+      } else if (kind === 'team') {
+        // «@Имя» могли стереть — зовём только тех, чьё имя осталось в тексте
+        const kept = [...mentions].filter(id => {
+          const t = team.find(x => x.id === id); return t && body.includes(`@${t.name}`)
+        })
+        const at = new Date()
+        if (due === 'tomorrow') at.setDate(at.getDate() + 1)
+        if (due === 'in3') at.setDate(at.getDate() + 3)
+        at.setHours(10, 0, 0, 0)
+        await apiPost('/sales/comments', {
+          dealId, leadId, accountId: accountId || undefined,
+          text: body, mentions: kept, attachments: files,
+          task: asTask ? { dueAt: at.toISOString(), assigneeAgentId: kept[0] || agent?.id } : undefined,
+        })
+        setMentions(new Set()); setFiles([]); setAsTask(false)
+        load(); onChanged?.()
       } else {
         await apiPost('/sales/activities', { dealId, accountId, type: kind, text: body })
         load()
@@ -157,7 +254,7 @@ export function DealFeed({
     <div className="bg-white border border-gray-200 rounded-xl flex flex-col max-h-[70vh]">
       <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-2">
         <h3 className="text-[12.5px] font-semibold text-gray-900">Лента</h3>
-        <span className="text-[11px] text-gray-400">звонки, сообщения, заметки и этапы</span>
+        <span className="text-[11px] text-gray-400">звонки, сообщения, заметки, этапы и разговор команды</span>
         {channelId ? (
           <Link to={`/chats/${channelId}`} className="ml-auto text-[12px] text-blue-600 hover:underline">
             Открыть чат
@@ -175,7 +272,8 @@ export function DealFeed({
           </p>
         )}
         {items.map(i => (
-          <div key={i.key} className="px-4 py-2.5 flex gap-2.5">
+          <div key={i.key} className={`px-4 py-2.5 flex gap-2.5 ${
+            i.tone === 'team' ? 'bg-amber-50/40' : ''}`}>
             <span className="text-[13px] leading-5 flex-none w-5 text-center">{i.icon}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
@@ -184,14 +282,29 @@ export function DealFeed({
                     : i.tone === 'system' ? 'text-gray-400' : 'text-gray-700'}`}>
                   {i.who}
                 </span>
+                {i.tone === 'team' && (
+                  <span className="text-[9.5px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5">
+                    внутри команды
+                  </span>
+                )}
                 <span className="text-[10.5px] text-gray-400 ml-auto whitespace-nowrap">
                   {fmtDateTime(i.at)}
                 </span>
               </div>
               <div className={`text-[12.5px] mt-0.5 ${
                 i.tone === 'system' ? 'text-gray-500' : 'text-gray-800'}`}>
-                {i.text}
+                {i.tone === 'team' ? <Rich text={i.text} /> : i.text}
               </div>
+              {!!i.attachments?.length && (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {i.attachments.map(a => (
+                    <a key={a.url} href={a.url} target="_blank" rel="noreferrer"
+                      className="text-[11px] text-blue-600 hover:underline bg-white border border-gray-200 rounded-md px-2 py-0.5">
+                      📎 {a.name} <span className="text-gray-400">{fmtSize(a.size)}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
               {i.recordUuid && (
                 <button onClick={() => play(i.recordUuid!)}
                   className="mt-1 text-[11px] font-semibold text-blue-600 hover:underline">
@@ -209,17 +322,18 @@ export function DealFeed({
           {([
             ...(channelId ? [['message', 'Клиенту'] as const] : []),
             ['note', 'Заметка'], ['call', 'Звонок'], ['meeting', 'Встреча'],
-            ['task', 'Задача'],
+            ['task', 'Задача'], ['team', '👥 Команде'],
           ] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setKind(k)}
+            <button key={k} onClick={() => { setKind(k); setPick(null) }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
-                kind === k ? 'bg-gray-900 text-white border-gray-900'
-                           : 'bg-white text-gray-500 border-gray-200'}`}>
+                kind === k
+                  ? (k === 'team' ? 'bg-amber-500 text-white border-amber-500' : 'bg-gray-900 text-white border-gray-900')
+                  : 'bg-white text-gray-500 border-gray-200'}`}>
               {label}
             </button>
           ))}
         </div>
-        {kind === 'task' && (
+        {(kind === 'task' || (kind === 'team' && asTask)) && (
           <div className="flex gap-1.5 mb-2 items-center">
             <span className="text-[11px] text-gray-400 font-semibold">Когда:</span>
             {([['today', 'сегодня'], ['tomorrow', 'завтра'], ['in3', 'через 3 дня']] as const).map(([k, label]) => (
@@ -232,19 +346,55 @@ export function DealFeed({
             ))}
           </div>
         )}
-        <div className="flex gap-2">
+        {kind === 'team' && (
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <label className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <input type="checkbox" checked={asTask} onChange={e => setAsTask(e.target.checked)} />
+              как задачу
+            </label>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="text-[11px] text-gray-500 border border-gray-200 rounded-md px-2 py-0.5 hover:text-blue-600">
+              {uploading ? 'загружаю…' : '📎 файл'}
+            </button>
+            <input ref={fileRef} type="file" multiple hidden onChange={e => upload(e.target.files)} />
+            <span className="text-[10.5px] text-amber-700">клиент этого не увидит · «@имя» зовёт коллегу</span>
+            {files.map(f => (
+              <span key={f.url} className="text-[10.5px] bg-white border border-gray-200 rounded px-1.5 py-0.5">
+                {f.name}
+                <button onClick={() => setFiles(fs => fs.filter(x => x.url !== f.url))}
+                  className="ml-1 text-gray-300 hover:text-red-500">✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 relative">
+          {kind === 'team' && candidates.length > 0 && (
+            <div className="absolute bottom-full left-0 mb-1 w-64 max-h-52 overflow-y-auto bg-white
+                            border border-gray-200 rounded-lg shadow-lg z-20">
+              {candidates.map(t => (
+                <button key={t.id} onClick={() => choose(t)}
+                  className="w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-blue-50">
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
           <input
+            ref={inputRef}
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={e => onText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
             placeholder={
               kind === 'message' ? 'Сообщение клиенту'
                 : kind === 'task' ? 'Что нужно сделать'
-                  : 'Что произошло — одной строкой'}
+                  : kind === 'team' ? 'Коллегам о клиенте · «@имя» позовёт'
+                    : 'Что произошло — одной строкой'}
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12.5px]" />
-          <button onClick={submit} disabled={busy || !text.trim()}
-            className="px-3 py-2 text-[12.5px] font-semibold rounded-lg bg-blue-500 text-white disabled:opacity-40">
-            {busy ? '…' : kind === 'message' ? 'Отправить' : kind === 'task' ? 'Поставить' : 'Записать'}
+          <button onClick={submit} disabled={busy || (!text.trim() && !(kind === 'team' && files.length))}
+            className={`px-3 py-2 text-[12.5px] font-semibold rounded-lg text-white disabled:opacity-40 ${
+              kind === 'team' ? 'bg-amber-500' : 'bg-blue-500'}`}>
+            {busy ? '…' : kind === 'message' ? 'Отправить'
+              : kind === 'task' ? 'Поставить' : kind === 'team' ? 'Написать' : 'Записать'}
           </button>
         </div>
       </div>
