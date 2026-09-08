@@ -106,6 +106,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   const [sent, setSent] = useState('')
   const [sendErr, setSendErr] = useState('')
   const [tgReady, setTgReady] = useState<boolean | null>(null)
+  const [waReady, setWaReady] = useState<boolean | null>(null)
   const [photoOpen, setPhotoOpen] = useState(false)
   const boxRef = useRef<HTMLSpanElement>(null)
   const popRef = useRef<HTMLDivElement>(null)
@@ -134,13 +135,21 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
     return () => { alive = false; if (timer) clearTimeout(timer) }
   }, [withChannels, phone])
 
-  // Свой Telegram подключён? От этого зависит, можем ли писать из системы
+  // Свой Telegram / WhatsApp подключён? От этого зависит, можем ли писать
+  // из системы. Наличие номера у клиента — вопрос второй: если свой WhatsApp
+  // есть, писать можно сразу, мост проверит номер при отправке
   useEffect(() => {
     if (!open || tgReady !== null) return
     apiGet<any>('/sales/telegram?action=status', false)
       .then(d => setTgReady(!!d.connected))
       .catch(() => setTgReady(false))
   }, [open, tgReady])
+  useEffect(() => {
+    if (!open || waReady !== null) return
+    apiGet<any>('/sales/whatsapp?action=status', false)
+      .then(d => setWaReady(!!d.connected))
+      .catch(() => setWaReady(false))
+  }, [open, waReady])
 
   // Превью фото закрывается Esc — привычка из любой галереи
   useEffect(() => {
@@ -261,11 +270,13 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
     setSending(true); setSendErr('')
     try {
       if (compose === 'tg') {
-        await apiPost('/sales/telegram', { action: 'send', phone: e164, text, dealId })
+        await apiPost('/sales/telegram', { action: 'send', phone: e164, text, dealId, leadId })
       } else {
-        await apiPost('/sales/channels', { action: 'wa_send', phone: e164, text, dealId })
+        await apiPost('/sales/channels', { action: 'wa_send', phone: e164, text, dealId, leadId })
       }
-      setSent('Отправлено — сообщение уйдёт в ленту сделки')
+      // Лента на той же странице перечитает журнал сама
+      window.dispatchEvent(new CustomEvent('gf:feed-changed'))
+      setSent('Отправлено — сообщение уже в ленте карточки')
       setDraft(''); setCompose(null)
       setTimeout(() => { setOpen(false); setSent('') }, 1800)
     } catch (err: any) {
@@ -405,18 +416,22 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
           </div>
           <Item icon={<span className="text-[13px]">📞</span>} title="Позвонить" sub={direct ? 'из браузера · запись в ленте' : 'через АТС · запись в ленте'}
             onClick={() => { setOpen(false); call({ stopPropagation() {}, preventDefault() {} } as any) }} />
-          {info?.hasWhatsapp && !compose && (
+          {/* Писать можно, как только подключён свой WhatsApp: ждать проверки
+              номера незачем — мост проверит его при отправке и скажет, если нет */}
+          {!compose && info?.hasWhatsapp !== false && (info?.hasWhatsapp === true || waReady === true) && (
             <Item icon={<WaIcon className="w-4 h-4" />} tone="text-emerald-600" title="Написать в WhatsApp"
-              sub="с рабочего номера компании · останется в ленте"
+              sub={info?.hasWhatsapp ? 'с вашего номера · останется в ленте'
+                : info?.whatsappPending ? 'номер ещё проверяется — отправка проверит сама'
+                  : 'с вашего номера · номер проверю при отправке'}
               onClick={() => { setCompose('wa'); setSendErr('') }} />
           )}
-          {/* Не проверено — так и говорим. Молчание читалось как «WhatsApp нет»,
-              а на деле проверить некому: нужен подключённый WhatsApp продаж */}
-          {info && info.hasWhatsapp !== true && info.hasWhatsapp !== false && (
+          {/* Свой WhatsApp не подключён — говорим прямо, куда идти.
+              Молчание читалось как «WhatsApp нет» */}
+          {!compose && info?.hasWhatsapp !== true && info?.hasWhatsapp !== false && waReady !== true && (
             <Item icon={<WaIcon className="w-4 h-4 opacity-50" />} tone="text-gray-400"
-              title={info.whatsappPending ? 'WhatsApp — проверяю…' : 'WhatsApp — не проверено'}
-              sub={info.whatsappPending ? 'ваш WhatsApp спрашивает, есть ли номер — секунды'
-                : info.whatsappReason || 'нужен подключённый WhatsApp продаж: Моё → WhatsApp'}
+              title={waReady === null ? 'WhatsApp — проверяю…' : 'Написать в WhatsApp'}
+              sub={waReady === null ? 'смотрю, подключён ли ваш WhatsApp'
+                : 'сначала подключите свой WhatsApp: Моё → WhatsApp'}
               onClick={() => go('/me', false)} />
           )}
           {info?.hasWhatsapp === false && (

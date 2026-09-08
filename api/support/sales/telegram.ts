@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
+import { logOutgoingMessage } from '../_lib/sales-message-log.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -20,7 +21,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * POST { action:'code', code }        подтвердить
  * POST { action:'password', password} облачный пароль, если включён
  * POST { action:'logout' }            отключить
- * POST { action:'send', phone, text, dealId? }  написать клиенту
+ * POST { action:'send', phone, text, dealId?, accountId?, leadId? }  написать клиенту
  */
 
 const BRIDGE = process.env.TELEGRAM_BRIDGE_URL
@@ -185,14 +186,7 @@ export default async function handler(req: Request): Promise<Response> {
         })
 
         // След в карточке — ради этого всё и делалось
-        if (body.dealId) {
-          await sql`
-            INSERT INTO sales_activities (id, org_id, deal_id, type, direction, text, agent_id, happened_at)
-            VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
-                    ${orgId}, ${String(body.dealId)}, 'message', 'out',
-                    ${'Telegram: ' + text}, ${ctx.agentId}, NOW())
-          `.catch(() => {})
-        }
+        await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'Telegram', text)
         return json({ ok: true, used: r.used, limit: r.limit })
       }
 

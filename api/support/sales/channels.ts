@@ -1,6 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
+import { logOutgoingMessage } from '../_lib/sales-message-log.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -108,14 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
       if (!res?.ok || !out?.ok) {
         return json({ error: out?.error || 'WhatsApp сейчас недоступен' }, 502)
       }
-      if (body.dealId) {
-        await sql`
-          INSERT INTO sales_activities (id, org_id, deal_id, type, direction, text, agent_id, happened_at)
-          VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
-                  ${orgId}, ${String(body.dealId)}, 'message', 'out',
-                  ${'WhatsApp: ' + text}, ${ctx.agentId}, NOW())
-        `.catch(() => {})
-      }
+      await logOutgoingMessage(sql, orgId, ctx.agentId, body, 'WhatsApp', text)
       return json({ ok: true })
     }
 

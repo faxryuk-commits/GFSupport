@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiUpload } from '@/shared/services/api.service'
 import { fmtDateTime } from './kit'
 import { CallInsight } from './CallInsight'
 import { useAuth } from '@/shared/hooks/useAuth'
+import { parsePhone } from '@/shared/lib/phone'
 
 /**
  * Единая лента сделки: звонки, сообщения, заметки, задачи и движения по этапам
@@ -60,12 +61,28 @@ function Rich({ text }: { text: string }) {
     : <span key={i}>{p}</span>)}</>
 }
 
+type Kind = 'note' | 'call' | 'meeting' | 'message' | 'tg' | 'wa' | 'task' | 'team'
+
+/** Куда писать клиенту: свой Telegram/WhatsApp подключён? номер в мессенджере есть? */
+type ChanState = {
+  tgReady: boolean | null
+  waReady: boolean | null
+  hasTelegram: boolean | null
+  tgUsername: string | null
+  hasWhatsapp: boolean | null
+  waPending: boolean
+  waReason: string | null
+}
+
 export function DealFeed({
-  dealId, leadId, accountId, messages = [], tasks = [], events = [], channelId, team = [], onChanged,
+  dealId, leadId, accountId, phone, messages = [], tasks = [], events = [], channelId, team = [], onChanged,
 }: {
   dealId?: string
   leadId?: string
   accountId?: string | null
+  /** Номер клиента — чтобы писать в Telegram/WhatsApp прямо отсюда.
+   *  Если не передан, берём первый контакт клиента. */
+  phone?: string | null
   /** Коллеги для «@имя»: без них внутреннее сообщение некому адресовать. */
   team?: Array<{ id: string; name: string }>
   messages?: Message[]
@@ -77,8 +94,14 @@ export function DealFeed({
 }) {
   const { agent } = useAuth()
   const [acts, setActs] = useState<Activity[]>([])
-  const [kind, setKind] = useState<'note' | 'call' | 'meeting' | 'message' | 'task' | 'team'>(
-    channelId ? 'message' : 'note')
+  const [kind, setKind] = useState<Kind>(channelId ? 'message' : 'note')
+  // Номер, куда писать: свой из карточки или первый контакт клиента
+  const [toPhone, setToPhone] = useState<string | null>(phone || null)
+  const [chan, setChan] = useState<ChanState>({
+    tgReady: null, waReady: null, hasTelegram: null, tgUsername: null,
+    hasWhatsapp: null, waPending: false, waReason: null,
+  })
+  const chanAsked = useRef<{ tg: boolean; wa: boolean; presence: string | null }>({ tg: false, wa: false, presence: null })
   const [comments, setComments] = useState<TeamComment[]>([])
   // «@имя» и вложения — только для внутренних сообщений команде
   const [mentions, setMentions] = useState<Set<string>>(new Set())
@@ -111,6 +134,61 @@ export function DealFeed({
   }, [dealId, leadId, accountId])
 
   useEffect(() => { load() }, [load])
+
+  // Сообщение из меню номера тоже ложится в журнал — лента узнаёт по событию
+  useEffect(() => {
+    const on = () => load()
+    window.addEventListener('gf:feed-changed', on)
+    return () => window.removeEventListener('gf:feed-changed', on)
+  }, [load])
+
+  useEffect(() => { if (phone) setToPhone(phone) }, [phone])
+
+  // Каналы: спрашиваем только когда сейлз выбрал Telegram/WhatsApp, а не при
+  // каждом открытии карточки — каждый вопрос идёт в мост
+  useEffect(() => {
+    if (kind !== 'tg' && kind !== 'wa') return
+    if (!toPhone && accountId) {
+      apiGet<{ contacts: Array<{ phone: string | null }> }>(`/sales/contacts?accountId=${accountId}`, false)
+        .then(r => setToPhone((r.contacts || []).map(c => c.phone).find(Boolean) || ''))
+        .catch(() => setToPhone(''))
+    }
+    if (kind === 'tg' && !chanAsked.current.tg) {
+      chanAsked.current.tg = true
+      apiGet<any>('/sales/telegram?action=status', false)
+        .then(d => setChan(c => ({ ...c, tgReady: !!d.connected })))
+        .catch(() => setChan(c => ({ ...c, tgReady: false })))
+    }
+    if (kind === 'wa' && !chanAsked.current.wa) {
+      chanAsked.current.wa = true
+      apiGet<any>('/sales/whatsapp?action=status', false)
+        .then(d => setChan(c => ({ ...c, waReady: !!d.connected })))
+        .catch(() => setChan(c => ({ ...c, waReady: false })))
+    }
+  }, [kind, toPhone, accountId])
+
+  // Есть ли номер в мессенджере — ответ кэширован на сутки, мост
+  // при необходимости допроверит в фоне, тогда переспросим
+  useEffect(() => {
+    if ((kind !== 'tg' && kind !== 'wa') || !toPhone) return
+    if (chanAsked.current.presence === toPhone) return
+    chanAsked.current.presence = toPhone
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let tries = 0
+    const ask = () => apiGet<any>(`/sales/channels?phone=${encodeURIComponent(toPhone)}`, false)
+      .then(d => {
+        if (!alive) return
+        setChan(c => ({
+          ...c, hasTelegram: d.hasTelegram ?? null, tgUsername: d.tgUsername || null,
+          hasWhatsapp: d.hasWhatsapp ?? null, waPending: !!d.whatsappPending, waReason: d.whatsappReason || null,
+        }))
+        if (d.whatsappPending && tries++ < 4) timer = setTimeout(ask, Math.min(60, d.whatsappPending) * 1000)
+      })
+      .catch(() => {})
+    ask()
+    return () => { alive = false; if (timer) clearTimeout(timer) }
+  }, [kind, toPhone])
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = []
@@ -232,6 +310,21 @@ export function DealFeed({
           key: `s_${Date.now()}`, at: new Date().toISOString(), icon: '💬',
           who: agent?.name || 'Мы', text: body,
         }])
+      } else if (kind === 'tg' || kind === 'wa') {
+        if (!toPhone) { setErr('У клиента нет номера — писать некуда'); return }
+        const p = parsePhone(toPhone)
+        const to = p.valid ? p.e164 : '+' + toPhone.replace(/\D/g, '')
+        if (kind === 'tg') {
+          await apiPost('/sales/telegram', { action: 'send', phone: to, text: body, dealId, accountId, leadId })
+        } else {
+          await apiPost('/sales/channels', { action: 'wa_send', phone: to, text: body, dealId, accountId, leadId })
+        }
+        // След пишет сервер — перечитываем журнал, чтобы не показать сообщение дважды
+        if (dealId || accountId) load()
+        else setSent(s => [...s, {
+          key: `s_${Date.now()}`, at: new Date().toISOString(), icon: '💬',
+          who: agent?.name || 'Мы', text: `${kind === 'tg' ? 'Telegram' : 'WhatsApp'}: ${body}`,
+        }])
       } else if (kind === 'task') {
         const at = new Date()
         if (due === 'tomorrow') at.setDate(at.getDate() + 1)
@@ -263,7 +356,7 @@ export function DealFeed({
       }
       setText('')
     } catch (e: any) {
-      setErr(e?.message || (kind === 'message' ? 'Не удалось отправить' : 'Не удалось записать'))
+      setErr(e?.message || (kind === 'message' || kind === 'tg' || kind === 'wa' ? 'Не удалось отправить' : 'Не удалось записать'))
     } finally { setBusy(false) }
   }
 
@@ -392,18 +485,25 @@ export function DealFeed({
         <div className="flex gap-1.5 mb-2">
           {([
             ...(channelId ? [['message', 'Клиенту'] as const] : []),
+            ...(toPhone !== '' && (toPhone || accountId) ? [['tg', '✈ Telegram'] as const, ['wa', 'WhatsApp'] as const] : []),
             ['note', 'Заметка'], ['call', 'Звонок'], ['meeting', 'Встреча'],
             ['task', 'Задача'], ['team', '👥 Команде'],
           ] as const).map(([k, label]) => (
             <button key={k} onClick={() => { setKind(k); setPick(null) }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
                 kind === k
-                  ? (k === 'team' ? 'bg-amber-500 text-white border-amber-500' : 'bg-gray-900 text-white border-gray-900')
+                  ? (k === 'team' ? 'bg-amber-500 text-white border-amber-500'
+                    : k === 'tg' ? 'bg-[#229ED9] text-white border-[#229ED9]'
+                      : k === 'wa' ? 'bg-emerald-500 text-white border-emerald-500'
+                        : 'bg-gray-900 text-white border-gray-900')
                   : 'bg-white text-gray-500 border-gray-200'}`}>
               {label}
             </button>
           ))}
         </div>
+        {(kind === 'tg' || kind === 'wa') && (
+          <ChannelHint kind={kind} phone={toPhone} chan={chan} />
+        )}
         {(kind === 'task' || (kind === 'team' && asTask)) && (
           <div className="flex gap-1.5 mb-2 items-center">
             <span className="text-[11px] text-gray-400 font-semibold">Когда:</span>
@@ -457,18 +557,48 @@ export function DealFeed({
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
             placeholder={
               kind === 'message' ? 'Сообщение клиенту'
+                : kind === 'tg' ? 'Сообщение в Telegram — уйдёт от вашего имени'
+                : kind === 'wa' ? 'Сообщение в WhatsApp — уйдёт с вашего номера'
                 : kind === 'task' ? 'Что нужно сделать'
                   : kind === 'team' ? 'Коллегам о клиенте · «@имя» позовёт'
                     : 'Что произошло — одной строкой'}
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12.5px]" />
           <button onClick={submit} disabled={busy || (!text.trim() && !(kind === 'team' && files.length))}
             className={`px-3 py-2 text-[12.5px] font-semibold rounded-lg text-white disabled:opacity-40 ${
-              kind === 'team' ? 'bg-amber-500' : 'bg-blue-500'}`}>
-            {busy ? '…' : kind === 'message' ? 'Отправить'
+              kind === 'team' ? 'bg-amber-500' : kind === 'tg' ? 'bg-[#229ED9]' : kind === 'wa' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+            {busy ? '…' : kind === 'message' || kind === 'tg' || kind === 'wa' ? 'Отправить'
               : kind === 'task' ? 'Поставить' : kind === 'team' ? 'Написать' : 'Записать'}
           </button>
         </div>
       </div>
     </div>
   )
+}
+
+/** Строка под выбором канала: подключён ли свой аккаунт и есть ли у клиента номер там. */
+function ChannelHint({ kind, phone, chan }: { kind: 'tg' | 'wa'; phone: string | null; chan: ChanState }) {
+  const Me = ({ what }: { what: string }) => (
+    <span>
+      {what} не подключён —{' '}
+      <Link to="/me" className="text-blue-600 hover:underline">подключить в «Моё»</Link>
+    </span>
+  )
+  let body: ReactNode
+  if (phone === '') body = <span className="text-red-600">у клиента нет номера — писать некуда</span>
+  else if (!phone) body = 'ищу номер клиента…'
+  else if (kind === 'tg') {
+    body = chan.tgReady === false ? <Me what="Ваш Telegram" />
+      : chan.tgReady === null ? 'проверяю ваш Telegram…'
+      : chan.hasTelegram === false ? <span className="text-amber-700">аккаунт по номеру не найден — сообщение может не дойти</span>
+      : chan.hasTelegram ? `от вашего имени${chan.tgUsername ? ` · @${chan.tgUsername}` : ''} · останется в ленте`
+      : 'от вашего имени · останется в ленте'
+  } else {
+    body = chan.waReady === false ? <Me what="Ваш WhatsApp" />
+      : chan.waReady === null ? 'проверяю ваш WhatsApp…'
+      : chan.hasWhatsapp === false ? <span className="text-red-600">номера нет в WhatsApp — проверено по вашему аккаунту</span>
+      : chan.hasWhatsapp ? 'с вашего номера · номер в WhatsApp есть · останется в ленте'
+      : chan.waPending ? 'с вашего номера · номер ещё проверяется, отправка проверит сама'
+      : `с вашего номера · ${chan.waReason || 'номер проверю при отправке'}`
+  }
+  return <div className="mb-2 text-[10.5px] text-gray-500">{body}</div>
 }

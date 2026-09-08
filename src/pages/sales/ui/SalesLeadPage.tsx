@@ -620,6 +620,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         <DealFeed
           leadId={id}
           accountId={l.account_id || undefined}
+          phone={l.phone}
           messages={data.messages}
           channelId={l.channel_id || undefined}
           team={data.team || []}
