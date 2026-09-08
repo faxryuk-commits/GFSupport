@@ -29,6 +29,7 @@ const FIELDS = [
   'places.userRatingCount', 'places.websiteUri', 'places.nationalPhoneNumber',
   'places.internationalPhoneNumber', 'places.googleMapsUri', 'places.primaryTypeDisplayName',
   'places.businessStatus', 'places.location', 'places.regularOpeningHours.weekdayDescriptions',
+  'places.photos',
 ].join(',')
 
 type Place = {
@@ -45,6 +46,26 @@ type Place = {
   businessStatus?: string
   location?: { latitude?: number; longitude?: number }
   regularOpeningHours?: { weekdayDescriptions?: string[] }
+  photos?: Array<{ name?: string; widthPx?: number; heightPx?: number }>
+}
+
+/**
+ * Ссылка на снимок места. Google отдаёт её по ссылке-ключу, а сам ключ
+ * наружу показывать нельзя: браузер ходит в наш API с заголовком, а в теге
+ * картинки заголовка нет. Поэтому разрешаем ссылки на сервере и храним их.
+ */
+async function photoUrl(key: string, ref: string, maxPx = 800): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://places.googleapis.com/v1/${ref}/media?maxHeightPx=${maxPx}&skipHttpRedirect=true`,
+      { headers: { 'X-Goog-Api-Key': key }, signal: AbortSignal.timeout(12000) },
+    )
+    if (!res.ok) return null
+    const out = await res.json() as any
+    return out?.photoUri || null
+  } catch {
+    return null
+  }
 }
 
 async function search(key: string, textQuery: string, limit: number, region = 'UZ'): Promise<Place[]> {
@@ -222,6 +243,8 @@ async function handlerInner(req: Request): Promise<Response> {
         raw jsonb,
         instagram varchar(120),
         telegram varchar(120),
+        photos jsonb,
+        edited jsonb,
         match_kind varchar(10),
         found_by varchar(64),
         updated_at timestamptz DEFAULT NOW()
@@ -232,6 +255,8 @@ async function handlerInner(req: Request): Promise<Response> {
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS match_kind varchar(10)`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS instagram varchar(120)`
     await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS telegram varchar(120)`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS photos jsonb`
+    await sql`ALTER TABLE sales_places ADD COLUMN IF NOT EXISTS edited jsonb`
   })
 
   // Ключ: сперва настройки системы, потом окружение
@@ -253,7 +278,30 @@ async function handlerInner(req: Request): Promise<Response> {
     const [row] = leadId
       ? await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND lead_id = ${leadId} LIMIT 1`
       : await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND account_id = ${accountId} LIMIT 1`
+
+    // Ссылки Google на снимки живут не вечно. Когда карточка сообщает, что
+    // картинка не открылась, собираем ссылки заново по сохранённым ключам
+    if (row && url.searchParams.get('action') === 'photos') {
+      const key = await readKey()
+      const refs: any[] = Array.isArray(row.photos) ? row.photos : []
+      if (!key || !refs.length) return json({ photos: refs })
+      const fresh = await Promise.all(refs.map(async (p: any) => ({
+        ...p, url: (await photoUrl(key, String(p.ref || ''))) || p.url || null,
+      })))
+      await sql`UPDATE sales_places SET photos = ${JSON.stringify(fresh)}::jsonb WHERE id = ${row.id}`
+      return json({ photos: fresh })
+    }
     return json({ place: row || null })
+  }
+
+  // Удалить находку: карточка вернётся к состоянию «найти на картах»
+  if (req.method === 'DELETE') {
+    const leadId = url.searchParams.get('leadId')
+    const accountId = url.searchParams.get('accountId')
+    if (!leadId && !accountId) return json({ error: 'нужен leadId или accountId' }, 400)
+    if (leadId) await sql`DELETE FROM sales_places WHERE org_id = ${orgId} AND lead_id = ${leadId}`
+    else await sql`DELETE FROM sales_places WHERE org_id = ${orgId} AND account_id = ${accountId}`
+    return json({ ok: true })
   }
 
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
@@ -268,6 +316,35 @@ async function handlerInner(req: Request): Promise<Response> {
     const probe = await search(key, 'Chopar Pizza Ташкент', 3)
     return json({ ok: true, found: probe.length, sample: probe[0]?.displayName?.text || null })
   }
+  // Правка руками: Google ошибается в названии и телефоне чаще, чем кажется,
+  // и переписывать за ним должно быть можно прямо в карточке
+  if (String(body.action || '') === 'edit') {
+    const where = body.leadId ? String(body.leadId) : body.accountId ? String(body.accountId) : ''
+    if (!where) return json({ error: 'нужен leadId или accountId' }, 400)
+    const [cur] = body.leadId
+      ? await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND lead_id = ${where} LIMIT 1`
+      : await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND account_id = ${where} LIMIT 1`
+    if (!cur) return json({ error: 'нечего править: место ещё не найдено' }, 404)
+    const f = body.fields || {}
+    const val = (k: string, fallback: any) => (f[k] === undefined ? fallback : (String(f[k]).trim() || null))
+    const branchesNew = f.branches === undefined ? cur.branches : (Number(f.branches) || null)
+    // Помним, что человек правил руками: обновление с карт эти поля не тронет
+    const edited: Record<string, true> = { ...(cur.edited || {}) }
+    for (const k of ['name', 'address', 'phone', 'website', 'instagram', 'telegram', 'branches']) {
+      if (f[k] !== undefined) edited[k] = true
+    }
+    await sql`
+      UPDATE sales_places SET
+        name = ${val('name', cur.name)}, address = ${val('address', cur.address)},
+        phone = ${val('phone', cur.phone)}, website = ${val('website', cur.website)},
+        instagram = ${val('instagram', cur.instagram)}, telegram = ${val('telegram', cur.telegram)},
+        branches = ${branchesNew}, edited = ${JSON.stringify(edited)}::jsonb, updated_at = NOW()
+      WHERE id = ${cur.id} AND org_id = ${orgId}
+    `
+    const [saved] = await sql`SELECT * FROM sales_places WHERE id = ${cur.id} LIMIT 1`
+    return json({ place: saved || null })
+  }
+
   const leadId = body.leadId ? String(body.leadId) : null
   const dealId = body.dealId ? String(body.dealId) : null
   let accountId = body.accountId ? String(body.accountId) : null
@@ -378,25 +455,45 @@ async function handlerInner(req: Request): Promise<Response> {
   // Соцсети — с сайта места: Google их не знает, а сейлзу они нужны
   const social = await socialsFromSite(best.websiteUri || '')
 
+  // Снимки заведения: сейлз по ним понимает, что это за место, быстрее,
+  // чем по типу и рейтингу. Ссылки разрешаем сразу — в теге картинки
+  // нашего заголовка авторизации не будет
+  const photos = (await Promise.all(
+    (best.photos || []).slice(0, 6).map(async ph => {
+      const ref = String(ph.name || '')
+      if (!ref) return null
+      const link = await photoUrl(key, ref)
+      return link ? { ref, url: link, w: ph.widthPx || null, h: ph.heightPx || null } : null
+    }),
+  )).filter(Boolean)
+
+  // Что человек правил руками — сохраняем поверх свежих данных Google
+  const [prev] = leadId
+    ? await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND lead_id = ${leadId} LIMIT 1`
+    : await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND account_id = ${accountId} LIMIT 1`
+  const keep = (prev?.edited || {}) as Record<string, boolean>
+
   const id = 'sp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   const row = {
     place_id: best.id || null,
-    name: best.displayName?.text || name,
-    address: best.formattedAddress || null,
+    name: keep.name ? prev.name : (best.displayName?.text || name),
+    address: keep.address ? prev.address : (best.formattedAddress || null),
     rating: best.rating ?? null,
     reviews: best.userRatingCount ?? null,
-    website: best.websiteUri || null,
-    phone: best.internationalPhoneNumber || best.nationalPhoneNumber || null,
+    website: keep.website ? prev.website : (best.websiteUri || null),
+    phone: keep.phone ? prev.phone : (best.internationalPhoneNumber || best.nationalPhoneNumber || null),
     maps_url: best.googleMapsUri || null,
     category: best.primaryTypeDisplayName?.text || null,
     status: best.businessStatus || null,
-    branches,
+    branches: keep.branches ? prev.branches : branches,
     hours: JSON.stringify(best.regularOpeningHours?.weekdayDescriptions || []),
     lat: best.location?.latitude ?? null,
     lng: best.location?.longitude ?? null,
     raw: JSON.stringify(found.slice(0, 10)),
-    instagram: social.instagram,
-    telegram: social.telegram,
+    instagram: keep.instagram ? prev.instagram : social.instagram,
+    telegram: keep.telegram ? prev.telegram : social.telegram,
+    photos: JSON.stringify(photos),
+    edited: JSON.stringify(keep),
     match,
   }
 
@@ -406,12 +503,13 @@ async function handlerInner(req: Request): Promise<Response> {
   await sql`
     INSERT INTO sales_places (id, org_id, lead_id, account_id, place_id, name, address, rating,
                               reviews, website, phone, maps_url, category, status, branches,
-                              hours, lat, lng, raw, instagram, telegram, match_kind, found_by, updated_at)
+                              hours, lat, lng, raw, instagram, telegram, photos, edited,
+                              match_kind, found_by, updated_at)
     VALUES (${id}, ${orgId}, ${leadId}, ${accountId}, ${row.place_id}, ${row.name}, ${row.address},
             ${row.rating}, ${row.reviews}, ${row.website}, ${row.phone}, ${row.maps_url},
             ${row.category}, ${row.status}, ${row.branches}, ${row.hours}::jsonb,
             ${row.lat}, ${row.lng}, ${row.raw}::jsonb, ${row.instagram}, ${row.telegram},
-            ${row.match}, ${ctx.agentId}, NOW())
+            ${row.photos}::jsonb, ${row.edited}::jsonb, ${row.match}, ${ctx.agentId}, NOW())
   `
 
   // Подставляем только пустое и только очевидное: город и число точек.
