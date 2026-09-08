@@ -458,7 +458,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           )}
           {contacts[0]?.phone && (
             <span className="text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-emerald-400">
-              <CallPhone phone={contacts[0].phone} market={d.market_id} size="sm" />
+              <CallPhone phone={contacts[0].phone} market={d.market_id} size="sm" channels />
             </span>
           )}
           <span className="flex-1" />

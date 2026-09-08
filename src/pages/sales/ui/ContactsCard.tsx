@@ -190,7 +190,7 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
             </div>
             <div className="flex items-center gap-2 flex-none">
               {callNum && (
-                <CallPhone phone={callNum} size="sm" className="text-[12px] text-blue-600" />
+                <CallPhone phone={callNum} size="sm" channels className="text-[12px] text-blue-600" />
               )}
               <button onClick={() => startEdit(c)} title="Изменить контакт"
                 className="opacity-0 group-hover:opacity-100 text-[11px] text-gray-300 hover:text-blue-600">

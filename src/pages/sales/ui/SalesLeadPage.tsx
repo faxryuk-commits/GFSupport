@@ -396,7 +396,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           )}
           {l.phone && (
             <span className="text-[12px] px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-emerald-400">
-              <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
+              <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" channels />
             </span>
           )}
           <span className="flex-1" />
@@ -483,7 +483,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
             {l.contact_name && <Row label="Контакт">{l.contact_name}</Row>}
             <Row label="Телефон" title={phone.valid && phone.operator ? phone.operator : undefined}>
               {l.phone
-                ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" />
+                ? <CallPhone phone={l.phone} market={l.market_id} leadId={l.id} size="sm" channels />
                 : <span className="text-gray-400">не оставил</span>}
             </Row>
             {l.city && <Row label="Город">{l.city}</Row>}
