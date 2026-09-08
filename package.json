@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "dev:proto": "PROTO_API=1 vite",
-    "build": "tsc -b && tsc --noEmit -p tsconfig.api.json && vite build",
+    "build": "vitest run && tsc -b && tsc --noEmit -p tsconfig.api.json && vite build",
     "typecheck:api": "tsc --noEmit -p tsconfig.api.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -40,6 +42,7 @@
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^2.1.9"
   }
 }
