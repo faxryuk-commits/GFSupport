@@ -2,15 +2,15 @@
 
 > Файл сгенерирован из боевой базы: `node scripts/db-schema.mjs`.
 > Не редактируйте руками — правки сотрёт следующая генерация.
-> Обновлено: 2026-09-05 · таблиц: 150
+> Обновлено: 2026-09-08 · таблиц: 166
 
 Все таймстампы — `timestamp` **без часового пояса**, значения в UTC.
 Для ташкентского времени: `AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'`.
 
 
-## Поддержка (57)
+## Поддержка (60)
 
-### `support_agent_activity` · ~345 216 строк
+### `support_agent_activity` · ~358 748 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -44,7 +44,7 @@
 
 Индексы: `idx_agent_summaries_lookup`
 
-### `support_agent_decisions` · ~9 224 строк
+### `support_agent_decisions` · ~9 411 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -101,7 +101,7 @@
 
 Индексы: `idx_agent_sessions_org`, `idx_sessions_agent`
 
-### `support_agents` · ~33 строк
+### `support_agents` · ~34 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -163,7 +163,7 @@
 
 Индексы: `idx_chat_sessions_user`
 
-### `support_ai_events` · ~64 840 строк
+### `support_ai_events` · ~68 111 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -267,7 +267,7 @@
 | clicked_at | timestamp | · | = now() |
 | org_id | varchar(50) | · |  |
 
-### `support_broadcast_recipients` · ~3 223 строк
+### `support_broadcast_recipients` · ~3 317 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -290,7 +290,7 @@
 
 Индексы: `idx_broadcast_recipients_broadcast_status`, `idx_broadcast_recipients_org_error`, `idx_broadcast_recipients_queue`, `uniq_broadcast_recipient_channel`
 
-### `support_broadcast_scheduled` · ~33 строк
+### `support_broadcast_scheduled` · ~34 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -364,7 +364,7 @@
 
 Индексы: `idx_broadcasts_org`
 
-### `support_case_activities` · ~8 203 строк
+### `support_case_activities` · ~9 101 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -408,7 +408,7 @@
 
 Индексы: `idx_case_comments_case`
 
-### `support_cases` · ~1 190 строк
+### `support_cases` · ~1 227 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -452,7 +452,7 @@
 
 Индексы: `idx_cases_assigned`, `idx_cases_channel`, `idx_cases_company`, `idx_cases_created`, `idx_cases_is_shadow`, `idx_cases_market`, `idx_cases_org_channel`, `idx_cases_org_created`, `idx_cases_org_id`, `idx_cases_org_status`, `idx_cases_priority`, `idx_cases_snoozed`, `idx_cases_status`, `idx_cases_ticket_number`, `idx_support_cases_topic`
 
-### `support_channels` · ~493 строк
+### `support_channels` · ~494 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -492,7 +492,7 @@
 
 Индексы: `idx_channels_awaiting`, `idx_channels_company`, `idx_channels_last_message`, `idx_channels_market`, `idx_channels_org_active`, `idx_channels_org_id`, `idx_channels_org_last_msg`, `idx_channels_org_source`, `idx_channels_sla_category`, `idx_channels_telegram`, `idx_channels_type`, `idx_channels_unread`, `support_channels_telegram_chat_id_key`
 
-### `support_commitments` · ~4 392 строк
+### `support_commitments` · ~4 934 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -560,7 +560,7 @@
 
 Индексы: `idx_conversations_channel`, `idx_conversations_org`, `idx_conversations_status`
 
-### `support_dialogs` · ~3 строк
+### `support_dialogs` · ~4 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -616,7 +616,7 @@
 
 Индексы: `idx_faq_intent`, `idx_faq_keywords`
 
-### `support_frt_overrides` · ~5 494 строк
+### `support_frt_overrides` · ~5 698 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -634,7 +634,48 @@
 
 Индексы: `idx_frt_overrides_org_msg`, `support_frt_overrides_org_id_message_id_key`
 
-### `support_invites` · ~9 строк
+### `support_google_agent` · ~1 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| org_id | varchar(50) | **нет** | PK |
+| agent_id | varchar(60) | **нет** | PK |
+| refresh_token | text | · |  |
+| calendar_email | varchar(200) | · |  |
+| connected_at | timestamptz | · |  |
+| updated_at | timestamptz | **нет** | = now() |
+
+### `support_google_calendar` · ~1 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| org_id | varchar(50) | **нет** | PK |
+| client_id | varchar(200) | · |  |
+| client_secret | text | · |  |
+| redirect_uri | text | · |  |
+| refresh_token | text | · |  |
+| calendar_email | varchar(200) | · |  |
+| work_days | varchar(20) | **нет** | = '1,2,3,4,5,6' |
+| work_from | smallint | **нет** | = 10 |
+| work_to | smallint | **нет** | = 19 |
+| slot_minutes | smallint | **нет** | = 60 |
+| public_booking | boolean | **нет** | = false |
+| connected_by | varchar(50) | · |  |
+| connected_by_name | varchar(150) | · |  |
+| connected_at | timestamptz | · |  |
+| updated_at | timestamptz | **нет** | = now() |
+| public_token | varchar(60) | · |  |
+
+### `support_google_oauth_state` · ~6 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| state | varchar(100) | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| agent_id | varchar(50) | · |  |
+| created_at | timestamptz | **нет** | = now() |
+
+### `support_invites` · ~10 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -678,7 +719,7 @@
 
 Индексы: `idx_markets_org`, `support_markets_code_key`
 
-### `support_messages` · ~342 414 строк
+### `support_messages` · ~349 378 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -830,6 +871,9 @@
 | user_token | text | · |  |
 | user_name | varchar(150) | · |  |
 | redirect_uri | text | · |  |
+| dataset_id | varchar(50) | · |  |
+| dataset_name | varchar(200) | · |  |
+| capi_token | text | · |  |
 
 ### `support_meta_oauth_state` · ~0 строк
 
@@ -859,7 +903,7 @@
 
 Индексы: `uq_meta_posts`
 
-### `support_notifications` · ~140 строк
+### `support_notifications` · ~818 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -961,7 +1005,7 @@
 
 Индексы: `uq_positions`
 
-### `support_problem_scans` · ~312 199 строк
+### `support_problem_scans` · ~332 328 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1026,7 +1070,7 @@
 
 Индексы: `idx_reminders_deadline`, `idx_reminders_org`, `idx_reminders_status`
 
-### `support_reply_examples` · ~8 390 строк
+### `support_reply_examples` · ~9 313 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1069,7 +1113,7 @@
 
 Индексы: `idx_rca_org_period`
 
-### `support_settings` · ~23 строк
+### `support_settings` · ~29 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1139,7 +1183,7 @@
 
 Индексы: `idx_topics_channel`, `idx_topics_org`, `support_topics_channel_id_thread_id_key`
 
-### `support_users` · ~2 246 строк
+### `support_users` · ~2 276 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1171,9 +1215,9 @@
 
 Индексы: `idx_users_org_id`, `idx_users_phone`, `idx_users_role`, `idx_users_telegram`, `support_users_telegram_id_key`
 
-## Продажи (36)
+## Продажи (42)
 
-### `sales_accounts` · ~5 722 строк
+### `sales_accounts` · ~5 761 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1212,10 +1256,11 @@
 | signer_name | varchar(255) | · |  |
 | signer_title | varchar(120) | · |  |
 | signer_basis | varchar(120) | · |  |
+| photo | text | · |  |
 
 Индексы: `idx_sales_accounts_channel`, `idx_sales_accounts_merchant`, `idx_sales_accounts_org`, `idx_sales_accounts_partner`, `idx_sales_accounts_referrer`
 
-### `sales_activities` · ~48 строк
+### `sales_activities` · ~7 198 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1230,10 +1275,20 @@
 | message_id | varchar(50) | · |  |
 | agent_id | varchar(50) | · |  |
 | happened_at | timestamptz | **нет** | = now() |
+| channel | varchar(20) | · |  |
+| sender_name | varchar(200) | · |  |
 
-Индексы: `idx_sales_activities_deal`
+Индексы: `idx_sales_activities_deal`, `sales_activities_msg_key`
 
-### `sales_assistant_log` · ~1 191 строк
+### `sales_amo_notes_state` · ~4 166 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| deal_id | varchar(50) | **нет** | PK |
+| imported_at | timestamptz | **нет** | = now() |
+| notes | integer | **нет** | = 0 |
+
+### `sales_assistant_log` · ~2 222 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1253,7 +1308,23 @@
 
 Индексы: `idx_sales_assistant_log_lead`, `idx_sales_assistant_log_time`
 
-### `sales_call_insights` · ~29 строк
+### `sales_call_digests` · ~26 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| call_uuid | varchar(80) | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| account_id | varchar(50) | · |  |
+| transcript | text | · |  |
+| summary | text | · |  |
+| outcome | varchar(30) | · |  |
+| next_step | text | · |  |
+| facts | jsonb | **нет** | = '{}' |
+| created_at | timestamptz | · | = now() |
+
+Индексы: `sales_call_digests_acc`
+
+### `sales_call_insights` · ~42 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1271,7 +1342,25 @@
 
 Индексы: `idx_call_insights_pending`
 
-### `sales_contacts` · ~3 257 строк
+### `sales_comments` · ~14 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | varchar(50) | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| deal_id | varchar(50) | · |  |
+| lead_id | varchar(50) | · |  |
+| account_id | varchar(50) | · |  |
+| author_agent_id | varchar(60) | · |  |
+| text | text | **нет** |  |
+| mentions | jsonb | **нет** | = '[]' |
+| attachments | jsonb | **нет** | = '[]' |
+| task_id | varchar(50) | · |  |
+| created_at | timestamptz | **нет** | = now() |
+
+Индексы: `idx_sales_comments_deal`, `idx_sales_comments_lead`
+
+### `sales_contacts` · ~3 294 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1289,7 +1378,7 @@
 
 Индексы: `idx_sales_contacts_account`, `idx_sales_contacts_phone`
 
-### `sales_deal_events` · ~4 627 строк
+### `sales_deal_events` · ~4 734 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1303,7 +1392,7 @@
 
 Индексы: `idx_sales_events_deal`
 
-### `sales_deals` · ~4 172 строк
+### `sales_deals` · ~4 178 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1320,10 +1409,10 @@
 | external_id | varchar(120) | · |  |
 | city | varchar(100) | · |  |
 | points | integer | · |  |
-| orders_per_day | varchar(50) | · |  |
+| orders_per_day | varchar(255) | · |  |
 | pos | varchar(100) | · |  |
 | aggregators | varchar(255) | · |  |
-| delivery_type | varchar(50) | · |  |
+| delivery_type | varchar(255) | · |  |
 | pain | text | · |  |
 | dm_name | varchar(255) | · |  |
 | dm_confirmed | boolean | · |  |
@@ -1357,12 +1446,13 @@
 | created_at | timestamptz | **нет** | = now() |
 | updated_at | timestamptz | **нет** | = now() |
 | archived_at | timestamp | · |  |
-| segment | varchar(50) | · |  |
-| dm_role | varchar(50) | · |  |
+| segment | varchar(255) | · |  |
+| dm_role | varchar(255) | · |  |
 | lost_stage | varchar(30) | · |  |
 | onboarding_spec | jsonb | · |  |
 | spec_updated_at | timestamptz | · |  |
 | spec_updated_by | varchar(150) | · |  |
+| dm_contact_id | varchar(50) | · |  |
 
 Индексы: `idx_sales_deals_account`, `idx_sales_deals_forecast`, `idx_sales_deals_owner`, `idx_sales_deals_react`, `idx_sales_deals_stage`, `uq_sales_deals_external`
 
@@ -1409,7 +1499,7 @@
 
 Индексы: `idx_sales_docviews_doc`
 
-### `sales_documents` · ~8 строк
+### `sales_documents` · ~22 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1531,7 +1621,7 @@
 | closed_by | varchar(80) | · |  |
 | updated_at | timestamp | · | = now() |
 
-### `sales_leads` · ~3 177 строк
+### `sales_leads` · ~3 209 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1666,6 +1756,25 @@
 | opened_count | integer | **нет** | = 0 |
 | created_at | timestamptz | **нет** | = now() |
 
+### `sales_meta_events` · ~290 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | bigint | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| deal_id | varchar(50) | **нет** |  |
+| event_name | varchar(30) | **нет** |  |
+| event_id | varchar(80) | **нет** |  |
+| status | varchar(20) | **нет** | = 'pending' |
+| attempts | integer | **нет** | = 0 |
+| value | numeric | · |  |
+| currency | varchar(10) | · |  |
+| fb_response | jsonb | · |  |
+| created_at | timestamptz | **нет** | = now() |
+| sent_at | timestamptz | · |  |
+
+Индексы: `idx_sales_meta_events_org`, `uq_sales_meta_events_eid`
+
 ### `sales_partner_programs` · ~12 строк
 
 | Колонка | Тип | Null | Прим. |
@@ -1689,7 +1798,7 @@
 
 Индексы: `uq_sales_partner_programs_key`
 
-### `sales_payments` · ~24 строк
+### `sales_payments` · ~25 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1721,7 +1830,7 @@
 
 Индексы: `idx_pbx_events_org_at`
 
-### `sales_pbx_seats` · ~21 строк
+### `sales_pbx_seats` · ~27 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1767,6 +1876,24 @@
 | currency | varchar(8) | · | = 'UZS' |
 | amount_original | bigint | · |  |
 
+### `sales_phone_channels` · ~63 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| org_id | varchar(50) | **нет** | PK |
+| phone_norm | varchar(20) | **нет** | PK |
+| has_wa | boolean | · |  |
+| has_tg | boolean | · |  |
+| tg_username | text | · |  |
+| checked_at | timestamptz | · | = now() |
+| tg_name | text | · |  |
+| tg_last_seen | text | · |  |
+| tg_premium | boolean | · |  |
+| tg_photo | text | · |  |
+| tg_user_id | varchar(30) | · |  |
+
+Индексы: `sales_phone_channels_tg_user`
+
 ### `sales_pipelines` · ~25 строк
 
 | Колонка | Тип | Null | Прим. |
@@ -1783,6 +1910,42 @@
 | created_at | timestamp | · | = now() |
 
 Индексы: `uq_sales_pipelines_key`
+
+### `sales_places` · ~17 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | varchar(64) | **нет** | PK |
+| org_id | varchar(64) | **нет** |  |
+| lead_id | varchar(64) | · |  |
+| account_id | varchar(64) | · |  |
+| place_id | varchar(200) | · |  |
+| name | varchar(300) | · |  |
+| address | text | · |  |
+| rating | numeric | · |  |
+| reviews | integer | · |  |
+| website | text | · |  |
+| phone | varchar(50) | · |  |
+| maps_url | text | · |  |
+| category | varchar(120) | · |  |
+| status | varchar(30) | · |  |
+| branches | integer | · |  |
+| hours | jsonb | · |  |
+| lat | numeric | · |  |
+| lng | numeric | · |  |
+| raw | jsonb | · |  |
+| found_by | varchar(64) | · |  |
+| updated_at | timestamptz | · | = now() |
+| match_kind | varchar(10) | · |  |
+| instagram | varchar(120) | · |  |
+| telegram | varchar(120) | · |  |
+| photos | jsonb | · |  |
+| edited | jsonb | · |  |
+| found_via | varchar(16) | · |  |
+| match_why | text | · |  |
+| found_query | text | · |  |
+
+Индексы: `sales_places_acc`, `sales_places_lead`
 
 ### `sales_price_items` · ~36 строк
 
@@ -1807,7 +1970,7 @@
 
 Индексы: `uq_sales_price_items_key`
 
-### `sales_site_analytics` · ~22 строк
+### `sales_site_analytics` · ~25 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1833,7 +1996,7 @@
 | raw | text | · |  |
 | created_at | timestamp | · | = now() |
 
-### `sales_sources` · ~39 строк
+### `sales_sources` · ~40 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1868,7 +2031,7 @@
 
 Индексы: `uq_sales_stages_pipeline_key`
 
-### `sales_tasks` · ~31 строк
+### `sales_tasks` · ~111 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1892,10 +2055,13 @@
 | status | varchar(20) | **нет** | = 'open' |
 | status_note | text | · |  |
 | status_at | timestamptz | · |  |
+| google_event_id | varchar(200) | · |  |
+| meet_url | text | · |  |
+| google_cal_agent_id | varchar(60) | · |  |
 
 Индексы: `idx_sales_tasks_due`
 
-### `sales_touchpoints` · ~317 строк
+### `sales_touchpoints` · ~442 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1918,7 +2084,7 @@
 
 ## Подключения (12)
 
-### `onboarding_brands` · ~26 строк
+### `onboarding_brands` · ~27 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1946,7 +2112,7 @@
 
 Индексы: `idx_ob_brands_org`
 
-### `onboarding_comments` · ~16 строк
+### `onboarding_comments` · ~17 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -1983,7 +2149,7 @@
 | markets | text | · |  |
 | guide_url | text | · |  |
 
-### `onboarding_participants` · ~74 строк
+### `onboarding_participants` · ~77 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2025,7 +2191,7 @@
 | sort_order | integer | **нет** | = 0 |
 | is_active | boolean | **нет** | = true |
 
-### `onboarding_task_events` · ~458 строк
+### `onboarding_task_events` · ~483 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2057,7 +2223,7 @@
 | owner_name | varchar(255) | · |  |
 | guide_url | text | · |  |
 
-### `onboarding_tasks` · ~471 строк
+### `onboarding_tasks` · ~492 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2120,7 +2286,7 @@
 
 ## Учёт работы (1)
 
-### `work_items` · ~579 строк
+### `work_items` · ~612 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2157,7 +2323,7 @@
 
 ## Системный журнал (2)
 
-### `system_events` · ~916 строк
+### `system_events` · ~1 118 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2171,7 +2337,7 @@
 
 Индексы: `idx_system_events_actor`, `idx_system_events_at`
 
-### `system_incidents` · ~224 строк
+### `system_incidents` · ~259 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2193,7 +2359,7 @@
 
 ## Ошибки заказов (1)
 
-### `order_errors` · ~81 549 строк
+### `order_errors` · ~83 414 строк
 
 | Колонка | Тип | Null | Прим. |
 |---|---|---|---|
@@ -2210,7 +2376,7 @@
 
 Индексы: `idx_order_errors_at`, `idx_order_errors_class`, `idx_order_errors_rest`
 
-## Прочее (40)
+## Прочее (47)
 
 ### `ActivationMilestone` · ~0 строк
 
@@ -2697,6 +2863,83 @@
 
 Индексы: `idx_crm_managers_telegram`
 
+### `hire_candidates` · ~2 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | varchar(40) | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| vacancy_id | varchar(40) | **нет** |  |
+| token | varchar(60) | **нет** |  |
+| name | text | **нет** |  |
+| phone | text | **нет** |  |
+| city | text | · |  |
+| experience | text | · |  |
+| salary_exp | text | · |  |
+| extra | jsonb | **нет** | = '{}' |
+| stage | varchar(20) | **нет** | = 'applied' |
+| question_no | integer | **нет** | = 0 |
+| score | integer | · |  |
+| grade | varchar(2) | · |  |
+| blocks | jsonb | · |  |
+| summary | text | · |  |
+| red_flags | text | · |  |
+| recommended | boolean | · |  |
+| started_at | timestamptz | · |  |
+| finished_at | timestamptz | · |  |
+| created_at | timestamptz | · | = now() |
+| lang | varchar(8) | · |  |
+| qualification | jsonb | · |  |
+
+Индексы: `hire_cand_org_vac`, `hire_candidates_token_key`
+
+### `hire_messages` · ~32 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | bigint | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| candidate_id | varchar(40) | **нет** |  |
+| role | varchar(12) | **нет** |  |
+| text | text | **нет** |  |
+| translated | text | · |  |
+| question_no | integer | · |  |
+| answer_ms | integer | · |  |
+| created_at | timestamptz | · | = now() |
+
+Индексы: `hire_msg_cand`
+
+### `hire_vacancies` · ~3 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | varchar(40) | **нет** | PK |
+| org_id | varchar(50) | **нет** |  |
+| slug | varchar(80) | **нет** |  |
+| title | text | **нет** |  |
+| lang | varchar(8) | **нет** | = 'ru' |
+| region | varchar(40) | · |  |
+| location | text | · |  |
+| schedule | text | · |  |
+| intro | text | · |  |
+| duties | jsonb | **нет** | = '[]' |
+| requirements | jsonb | **нет** | = '[]' |
+| offers | jsonb | **нет** | = '[]' |
+| pay_fix | bigint | **нет** | = 0 |
+| pay_kpi | bigint | **нет** | = 0 |
+| currency | varchar(8) | **нет** | = 'UZS' |
+| questions_count | integer | **нет** | = 8 |
+| scenarios | jsonb | **нет** | = '[]' |
+| weights | jsonb | **нет** | = '{}' |
+| threshold | integer | **нет** | = 65 |
+| shadow | boolean | **нет** | = true |
+| status | varchar(20) | **нет** | = 'active' |
+| created_at | timestamptz | · | = now() |
+| langs | jsonb | · | = '[]' |
+| i18n | jsonb | · | = '{}' |
+
+Индексы: `hire_vacancies_org_id_slug_key`
+
 ### `organizations` · ~0 строк
 
 | Колонка | Тип | Null | Прим. |
@@ -2719,3 +2962,49 @@
 | created_at | timestamp | · | = now() |
 
 Индексы: `super_admins_email_key`
+
+### `tg_sent_log` · ~2 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | bigint | **нет** | PK |
+| agent_id | varchar(80) | **нет** |  |
+| phone_norm | varchar(20) | **нет** |  |
+| first_touch | boolean | **нет** | = true |
+| sent_at | timestamptz | · | = now() |
+
+Индексы: `tg_sent_agent_day`
+
+### `tg_sessions` · ~2 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| agent_id | varchar(80) | **нет** | PK |
+| org_id | varchar(50) | **нет** | = 'org_delever' |
+| phone | text | **нет** |  |
+| username | text | · |  |
+| session | text | **нет** |  |
+| connected_at | timestamptz | · | = now() |
+| last_error | text | · |  |
+| paused_until | timestamptz | · |  |
+
+### `wa_sales_sent_log` · ~3 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| id | bigint | **нет** | PK |
+| agent_id | varchar(80) | **нет** |  |
+| phone_norm | varchar(20) | **нет** |  |
+| first_touch | boolean | **нет** | = true |
+| sent_at | timestamptz | · | = now() |
+
+Индексы: `wa_sales_sent_agent`
+
+### `wa_sales_sessions` · ~1 строк
+
+| Колонка | Тип | Null | Прим. |
+|---|---|---|---|
+| agent_id | varchar(80) | **нет** | PK |
+| phone | text | · |  |
+| connected_at | timestamptz | · | = now() |
+| last_error | text | · |  |
