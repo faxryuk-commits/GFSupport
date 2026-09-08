@@ -387,10 +387,20 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             {data.account?.name || d.title}
           </h1>
           <button
-            title="Переименовать сделку"
-            onClick={() => {
-              const next = prompt('Название сделки', d.title || '')
-              if (next && next.trim() && next !== d.title) patch('title', next.trim())
+            title="Переименовать"
+            onClick={async () => {
+              // Заголовок показывает имя клиента (account.name), а не title
+              // сделки — правим именно то, что человек видит, иначе «не работает»
+              const shown = data.account?.name || d.title || ''
+              const next = prompt(data.account ? 'Название клиента' : 'Название сделки', shown)
+              if (!next || !next.trim() || next.trim() === shown) return
+              try {
+                if (data.account?.id) {
+                  await apiPatch('/sales/accounts', { id: data.account.id, fields: { name: next.trim() } })
+                }
+                await apiPatch('/sales/deal', { id, fields: { title: next.trim() } })
+                load()
+              } catch (e: any) { setError(e?.message || 'Не удалось переименовать') }
             }}
             className="text-[11px] text-gray-400 hover:text-blue-600"
           >✎</button>
