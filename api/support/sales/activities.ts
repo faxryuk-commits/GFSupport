@@ -123,10 +123,15 @@ export default async function handler(req: Request): Promise<Response> {
 
   let calls: any[] = []
   if (acc) {
+    // Сводка разговора подмешивается к звонку: «84 сек» ничего не говорит
+    // через неделю, а «договорились созвониться после праздников» — говорит
     const tps = await sql`
-      SELECT id, title, detail, identity, happened_at FROM sales_touchpoints
-      WHERE org_id = ${orgId} AND account_id = ${acc} AND kind = 'call'
-      ORDER BY happened_at DESC LIMIT 40
+      SELECT t.id, t.title, t.detail, t.identity, t.happened_at,
+             d.summary, d.outcome, d.next_step
+      FROM sales_touchpoints t
+      LEFT JOIN sales_call_digests d ON d.call_uuid = t.identity
+      WHERE t.org_id = ${orgId} AND t.account_id = ${acc} AND t.kind = 'call'
+      ORDER BY t.happened_at DESC LIMIT 40
     ` as any[]
     calls = tps.map((t: any) => ({
       id: `tp_${t.id}`,
@@ -135,6 +140,9 @@ export default async function handler(req: Request): Promise<Response> {
       direction: /входящ/i.test(t.title) ? 'in' : 'out',
       result: String(t.title).split('·')[1]?.trim() || null,
       text: t.detail,
+      summary: t.summary || null,
+      outcome: t.outcome || null,
+      next_step: t.next_step || null,
       agent_id: null,
       agent_name: 'АТС',
       happened_at: t.happened_at,

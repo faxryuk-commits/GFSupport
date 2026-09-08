@@ -26,6 +26,7 @@ type Activity = {
   id: string; type: string; direction: string | null; result: string | null
   text: string | null; agent_name: string | null; happened_at: string
   record_uuid?: string | null
+  summary?: string | null; outcome?: string | null; next_step?: string | null
 }
 type Message = {
   id: string; sender_name: string | null; is_from_client: boolean
@@ -41,6 +42,8 @@ type Item = {
   text: string; tone?: 'client' | 'system' | 'task' | 'team'
   recordUuid?: string | null
   attachments?: Att[]
+  /** Разбор звонка: суть разговора и предложенный следующий шаг. */
+  summary?: string | null; outcome?: string | null; nextStep?: string | null
 }
 
 const ICONS: Record<string, string> = { call: '📞', meeting: '🤝', note: '📝' }
@@ -117,6 +120,7 @@ export function DealFeed({
         who: a.agent_name || 'Сотрудник',
         text: [a.result, a.text].filter(Boolean).join(' · ') || 'без описания',
         recordUuid: a.record_uuid || null,
+        summary: a.summary || null, outcome: a.outcome || null, nextStep: a.next_step || null,
       })
     }
     for (const m of messages) {
@@ -303,6 +307,32 @@ export function DealFeed({
                       📎 {a.name} <span className="text-gray-400">{fmtSize(a.size)}</span>
                     </a>
                   ))}
+                </div>
+              )}
+              {i.summary && (
+                <div className="mt-1.5 rounded-lg bg-blue-50/60 border border-blue-100 px-2.5 py-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                    Разбор разговора{i.outcome ? ` · ${i.outcome}` : ''}
+                  </div>
+                  <div className="text-[12.5px] text-gray-800 mt-0.5">{i.summary}</div>
+                  {i.nextStep && (
+                    <div className="mt-1 flex items-center gap-2 flex-wrap">
+                      <span className="text-[11.5px] text-gray-600">Следующий шаг: <b>{i.nextStep}</b></span>
+                      <button
+                        onClick={async () => {
+                          const at = new Date(); at.setDate(at.getDate() + 1); at.setHours(10, 0, 0, 0)
+                          try {
+                            await apiPost('/sales/tasks', {
+                              dealId, title: i.nextStep, kind: 'task', dueAt: at.toISOString(),
+                            })
+                            onChanged?.()
+                          } catch { /* задача не критична */ }
+                        }}
+                        className="text-[11px] font-semibold text-white bg-blue-500 rounded-md px-2 py-0.5">
+                        поставить задачу
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               {i.recordUuid && (
