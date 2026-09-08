@@ -96,7 +96,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   const [info, setInfo] = useState<ChannelInfo | null>(null)
   const [open, setOpen] = useState(false)
   const [rect, setRect] = useState<{ top: number; left: number; up: boolean } | null>(null)
-  const [compose, setCompose] = useState(false)
+  const [compose, setCompose] = useState<null | 'tg' | 'wa'>(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState('')
@@ -240,18 +240,22 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
         up,
       })
     }
-    setCompose(false); setSendErr(''); setSent('')
+    setCompose(null); setSendErr(''); setSent('')
     setOpen(o => !o)
   }
 
-  const sendTelegram = async () => {
+  const sendMsg = async () => {
     const text = draft.trim()
-    if (!text || sending) return
+    if (!text || sending || !compose) return
     setSending(true); setSendErr('')
     try {
-      await apiPost('/sales/telegram', { action: 'send', phone: e164, text, dealId })
+      if (compose === 'tg') {
+        await apiPost('/sales/telegram', { action: 'send', phone: e164, text, dealId })
+      } else {
+        await apiPost('/sales/channels', { action: 'wa_send', phone: e164, text, dealId })
+      }
       setSent('Отправлено — сообщение уйдёт в ленту сделки')
-      setDraft(''); setCompose(false)
+      setDraft(''); setCompose(null)
       setTimeout(() => { setOpen(false); setSent('') }, 1800)
     } catch (err: any) {
       setSendErr(err?.message || 'не отправилось')
@@ -383,18 +387,20 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
           {compose && (
             <div className="px-3 py-2.5 border-b border-gray-100 bg-blue-50/40">
               <div className="text-[10.5px] text-gray-500 mb-1">
-                Telegram от вашего имени{info?.tgName ? ` · ${info.tgName}` : ''}
+                {compose === 'tg'
+                  ? `Telegram от вашего имени${info?.tgName ? ` · ${info.tgName}` : ''}`
+                  : 'WhatsApp с рабочего номера компании'}
               </div>
               <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendTelegram() }}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendMsg() }}
                 placeholder="Здравствуйте! Это…"
                 className="w-full text-[12.5px] border border-gray-200 rounded-lg px-2.5 py-2 min-h-[70px] resize-y" />
               <div className="flex items-center gap-2 mt-1.5">
-                <button type="button" onClick={sendTelegram} disabled={sending || !draft.trim()}
+                <button type="button" onClick={sendMsg} disabled={sending || !draft.trim()}
                   className="text-[12px] font-semibold text-white bg-blue-600 rounded-lg px-3 py-1.5 disabled:opacity-50">
                   {sending ? 'Отправляем…' : 'Отправить'}
                 </button>
-                <button type="button" onClick={() => setCompose(false)}
+                <button type="button" onClick={() => setCompose(null)}
                   className="text-[12px] text-gray-500 px-2 py-1.5">Отмена</button>
                 <span className="text-[10px] text-gray-400 ml-auto">⌘+Enter</span>
               </div>
@@ -408,6 +414,11 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
           </div>
           <Item icon={<span className="text-[13px]">📞</span>} title="Позвонить" sub={direct ? 'из браузера · запись в ленте' : 'через АТС · запись в ленте'}
             onClick={() => { setOpen(false); call({ stopPropagation() {}, preventDefault() {} } as any) }} />
+          {info?.hasWhatsapp && !compose && (
+            <Item icon={<WaIcon className="w-4 h-4" />} tone="text-emerald-600" title="Написать в WhatsApp"
+              sub="с рабочего номера компании · останется в ленте"
+              onClick={() => { setCompose('wa'); setSendErr('') }} />
+          )}
           {waChannel && (
             <Item icon={<WaIcon className="w-4 h-4" />} tone="text-emerald-600" title="Открыть переписку в WhatsApp"
               sub={`${waChannel.messages} сообщений · ответ уйдёт из системы`}
@@ -421,7 +432,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
             ) : (
               <Item icon={<TgIcon className="w-4 h-4" />} tone="text-blue-600" title="Написать в Telegram"
                 sub={info.tgUsername ? `@${info.tgUsername} · от вашего имени` : 'от вашего имени · останется в ленте'}
-                onClick={() => { setCompose(true); setSendErr('') }} />
+                onClick={() => { setCompose('tg'); setSendErr('') }} />
             )
           )}
           {tgChannel && (

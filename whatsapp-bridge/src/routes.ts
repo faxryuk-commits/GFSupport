@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
-import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp, requestPairCode, getConnectionMetrics } from './baileys.js'
+import { getStatus, getCurrentQR, sendText, sendMedia, logoutWhatsApp, requestPairCode, getConnectionMetrics, getSocket } from './baileys.js'
 import { getFilterMode, setFilterMode, getMessageStats, type FilterMode } from './index.js'
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } })
@@ -103,6 +103,55 @@ export function createRouter(bridgeSecret: string, authDir: string): Router {
       res.json({ success: true, message: 'Logged out, waiting for new QR' })
     } catch (e: any) {
       console.error('[Route /logout]', e.message)
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  /**
+   * Есть ли номер в WhatsApp. Спрашиваем сам WhatsApp (onWhatsApp), а не
+   * гадаем: карточка показывает значок только по факту проверки.
+   * Формат ответа общий с Telegram-мостом — CRM спрашивает их одинаково.
+   */
+  router.post('/check', async (req: Request, res: Response) => {
+    try {
+      const raw = String(req.body?.phone || '')
+      const digits = raw.replace(/\D/g, '')
+      if (digits.length < 9) return res.status(400).json({ error: 'phone required' })
+
+      const sock = getSocket()
+      if (!sock) return res.json({ exists: null, reason: 'WhatsApp не подключён' })
+
+      const found = await sock.onWhatsApp(digits)
+      const hit = Array.isArray(found) ? found.find((f: any) => f?.exists) : null
+      res.json({ exists: !!hit, jid: hit?.jid || null })
+    } catch (e: any) {
+      console.error('[Route /check]', e.message)
+      res.json({ exists: null, error: e.message })
+    }
+  })
+
+  /**
+   * Отправка по номеру, а не по известному чату: сейлз пишет клиенту,
+   * с которым переписки ещё не было. Номер приводим к jid сами.
+   */
+  router.post('/send-to', async (req: Request, res: Response) => {
+    try {
+      const digits = String(req.body?.phone || '').replace(/\D/g, '')
+      const text = String(req.body?.text || '')
+      if (digits.length < 9 || !text) {
+        return res.status(400).json({ error: 'phone and text required' })
+      }
+      const sock = getSocket()
+      if (!sock) return res.status(503).json({ success: false, error: 'WhatsApp не подключён' })
+
+      const found = await sock.onWhatsApp(digits)
+      const hit = Array.isArray(found) ? found.find((f: any) => f?.exists) : null
+      if (!hit?.jid) return res.status(404).json({ success: false, error: 'номера нет в WhatsApp' })
+
+      const result = await sendText(hit.jid, text)
+      res.json({ success: true, messageId: result?.key?.id, jid: hit.jid })
+    } catch (e: any) {
+      console.error('[Route /send-to]', e.message)
       res.status(500).json({ success: false, error: e.message })
     }
   })

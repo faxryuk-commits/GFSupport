@@ -84,6 +84,36 @@ export default async function handler(req: Request): Promise<Response> {
    */
   if (req.method === 'POST') {
     const body = await req.json().catch(() => ({}))
+    // Написать в WhatsApp с рабочего номера компании: диалог ляжет в CRM,
+    // потому что входящие того же моста уже приходят в «Чаты»
+    if (String(body.action || '') === 'wa_send') {
+      const phone = String(body.phone || '')
+      const text = String(body.text || '').trim()
+      if (!phone || !text) return json({ error: 'нужны номер и текст' }, 400)
+      const url = process.env.WHATSAPP_BRIDGE_URL
+      const secret = process.env.WHATSAPP_BRIDGE_SECRET
+      if (!url || !secret) return json({ error: 'WhatsApp-мост не настроен' }, 400)
+      const res = await fetch(`${url}/send-to`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ phone, text }),
+        signal: AbortSignal.timeout(20000),
+      }).catch(() => null)
+      const out = await res?.json().catch(() => null) as any
+      if (!res?.ok || !out?.success) {
+        return json({ error: out?.error || 'WhatsApp сейчас недоступен' }, 502)
+      }
+      if (body.dealId) {
+        await sql`
+          INSERT INTO sales_activities (id, org_id, deal_id, type, direction, text, agent_id, happened_at)
+          VALUES (${'sa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)},
+                  ${orgId}, ${String(body.dealId)}, 'message', 'out',
+                  ${'WhatsApp: ' + text}, ${ctx.agentId}, NOW())
+        `.catch(() => {})
+      }
+      return json({ ok: true })
+    }
+
     if (String(body.action || '') !== 'enrich') return json({ error: 'unknown action' }, 400)
     const contactId = String(body.contactId || '')
     if (!contactId) return json({ error: 'contactId required' }, 400)
