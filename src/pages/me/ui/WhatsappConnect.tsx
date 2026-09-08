@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '@/shared/services/api.service'
+import { formatDateTimeShort } from '@/shared/lib/time'
 
 /**
  * Подключение личного WhatsApp сейлза.
@@ -9,13 +10,31 @@ import { apiGet, apiPost } from '@/shared/services/api.service'
  * своим телефоном и пишет клиентам от себя, а переписка ложится в карточку.
  */
 
+/**
+ * Состояние сессии одним словом — его считает мост.
+ * `reconnecting` появился отдельно от `off` намеренно: обычный обрыв связи
+ * выглядел как «меня выкинуло», хотя сервис уже возвращается сам.
+ */
+type SessionState = 'online' | 'reconnecting' | 'qr' | 'need_qr' | 'off'
+
 type Status = {
   connected: boolean
+  state?: SessionState
   qr?: string | null
   phone?: string | null
+  connectedAt?: string | null
+  lastError?: string | null
   used?: number
   limit?: number
   bridgeError?: string
+}
+
+const CHIP: Record<SessionState, { text: string; cls: string; dot?: boolean }> = {
+  online: { text: 'на связи', cls: 'bg-emerald-50 text-emerald-700' },
+  reconnecting: { text: 'переподключается', cls: 'bg-amber-50 text-amber-700', dot: true },
+  qr: { text: 'сканирование', cls: 'bg-blue-50 text-blue-700' },
+  need_qr: { text: 'нужен QR', cls: 'bg-blue-50 text-blue-700' },
+  off: { text: 'не подключён', cls: 'bg-gray-100 text-gray-500' },
 }
 
 export function WhatsappConnect() {
@@ -42,6 +61,15 @@ export function WhatsappConnect() {
     return () => clearInterval(t)
   }, [pairing])
 
+  // Пока сервис переподключается — переспрашиваем реже, но переспрашиваем:
+  // человеку не за чем обновлять страницу, чтобы увидеть, что всё вернулось
+  const reconnecting = st?.state === 'reconnecting'
+  useEffect(() => {
+    if (!reconnecting) return
+    const t = setInterval(load, 10000)
+    return () => clearInterval(t)
+  }, [reconnecting, load])
+
   const start = async () => {
     setBusy(true); setErr('')
     try {
@@ -60,6 +88,10 @@ export function WhatsappConnect() {
 
   if (!st) return null
 
+  // Мост отдаёт состояние словом; старый ответ без него читаем по-прежнему
+  const state: SessionState = st.state || (st.connected ? 'online' : st.qr ? 'qr' : 'off')
+  const chip = CHIP[state] || CHIP.off
+
   return (
     <div className="bg-white border border-[#e8edf3] rounded-xl overflow-hidden">
       <div className="px-4 py-2.5 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
@@ -67,12 +99,24 @@ export function WhatsappConnect() {
           <span className="text-[13px] font-semibold text-slate-900">Мой WhatsApp</span>
           <span className="text-[11px] text-slate-400">писать клиентам со своего номера</span>
         </div>
-        {st.connected
-          ? <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700">подключён</span>
-          : <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">не подключён</span>}
+        <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md inline-flex items-center gap-1.5 ${chip.cls}`}>
+          {chip.dot && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+          {chip.text}
+        </span>
       </div>
 
-      {st.connected ? (
+      {state === 'reconnecting' ? (
+        <div className="px-4 py-3 space-y-2.5">
+          <div className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+            Связь с WhatsApp пропала — сервис возвращается сам. Обычно занимает меньше минуты,
+            сканировать код заново не нужно.
+          </div>
+          <div className="text-[12.5px] text-slate-600">
+            Номер <b className="tabular-nums text-slate-800">{st.phone || '—'}</b>
+            {st.connectedAt && <> · последний раз на связи {formatDateTimeShort(st.connectedAt)}</>}
+          </div>
+        </div>
+      ) : st.connected ? (
         <div className="divide-y divide-gray-50">
           <div className="px-4 py-2.5 flex items-center justify-between text-[12.5px]">
             <span className="text-slate-500">Номер</span>
@@ -98,6 +142,13 @@ export function WhatsappConnect() {
             </div>
           )}
 
+          {state === 'need_qr' && !st.qr && (
+            <div className="text-[12px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 leading-relaxed">
+              Устройство отвязали в WhatsApp на телефоне. Подключение придётся пройти заново —
+              это займёт полминуты.
+            </div>
+          )}
+
           {st.qr ? (
             <div className="flex gap-4 items-start flex-wrap">
               <img src={st.qr} alt="QR-код WhatsApp" className="w-[180px] h-[180px] rounded-lg border border-gray-200" />
@@ -115,10 +166,12 @@ export function WhatsappConnect() {
             </div>
           ) : (
             <>
-              <div className="text-[12.5px] text-slate-600">
-                Свой номер — чтобы клиенту писал живой человек, а не общий номер компании.
-                Поддержка при этом работает как раньше, отдельно.
-              </div>
+              {state !== 'need_qr' && (
+                <div className="text-[12.5px] text-slate-600">
+                  Свой номер — чтобы клиенту писал живой человек, а не общий номер компании.
+                  Поддержка при этом работает как раньше, отдельно.
+                </div>
+              )}
               <button onClick={start} disabled={busy}
                 className="text-[12.5px] px-4 py-2 rounded-lg bg-blue-500 text-white font-medium disabled:opacity-50">
                 {busy ? 'Готовим код…' : 'Показать QR-код'}
