@@ -18,6 +18,9 @@ const DEFAULT_SETTINGS = {
   onlinepbx_ext: '',
   // ПланФакт: фактические поступления денег для KPI продаж
   planfact_api_key: '',
+  // Google Карты: обогащение карточек (рейтинг, точки, сайт, телефон).
+  // Ключ Places API (New) из Google Cloud, вводится в настройках продаж
+  google_places_key: '',
   // Telegram-приложение: ключи с my.telegram.org, одни на компанию.
   // Их вводят один раз в интерфейсе — мост читает их отсюда
   telegram_api_id: '',
@@ -124,6 +127,9 @@ export default async function handler(req: Request): Promise<Response> {
           : '',
         planfact_api_key: dbSettings.planfact_api_key
           ? `${String(settings.planfact_api_key).slice(0, 4)}...${String(settings.planfact_api_key).slice(-4)}`
+          : '',
+        google_places_key: dbSettings.google_places_key
+          ? `${String(settings.google_places_key).slice(0, 6)}...${String(settings.google_places_key).slice(-4)}`
           : '',
         telegram_api_hash: dbSettings.telegram_api_hash
           ? `${String(settings.telegram_api_hash).slice(0, 4)}...${String(settings.telegram_api_hash).slice(-4)}`

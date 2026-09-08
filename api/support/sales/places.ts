@@ -15,7 +15,9 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * GET  ?leadId= | ?accountId=      что уже нашли
  * POST { leadId? , accountId?, query? }  найти и сохранить
  *
- * Ключ живёт в GOOGLE_PLACES_KEY и ходит заголовком, а не в адресе запроса.
+ * Ключ вводится в настройках продаж (support_settings.google_places_key),
+ * переменная окружения GOOGLE_PLACES_KEY остаётся запасным вариантом.
+ * В Google он уходит заголовком, а не в адресе запроса.
  * Автоподстановка правит только пустые поля квалификации и не трогает
  * first_touch_at: обогащение — не разговор с человеком.
  */
@@ -102,22 +104,40 @@ async function handlerInner(req: Request): Promise<Response> {
     await sql`CREATE INDEX IF NOT EXISTS sales_places_acc ON sales_places (org_id, account_id)`
   })
 
+  // Ключ: сперва настройки системы, потом окружение
+  const readKey = async (): Promise<string> => {
+    const [row] = await sql`
+      SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'google_places_key' LIMIT 1
+    `.catch(() => [] as any[]) as any[]
+    return String(row?.value || '').trim() || String(process.env.GOOGLE_PLACES_KEY || '').trim()
+  }
+
   if (req.method === 'GET') {
+    if (url.searchParams.get('action') === 'status') {
+      const key = await readKey()
+      return json({ configured: !!key })
+    }
     const leadId = url.searchParams.get('leadId')
     const accountId = url.searchParams.get('accountId')
     if (!leadId && !accountId) return json({ place: null })
     const [row] = leadId
       ? await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND lead_id = ${leadId} LIMIT 1`
       : await sql`SELECT * FROM sales_places WHERE org_id = ${orgId} AND account_id = ${accountId} LIMIT 1`
-    return json({ place: row || null, configured: !!process.env.GOOGLE_PLACES_KEY })
+    return json({ place: row || null })
   }
 
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
-  const key = process.env.GOOGLE_PLACES_KEY
-  if (!key) return json({ error: 'Ключ Google Карт не настроен: GOOGLE_PLACES_KEY' }, 400)
+  const key = await readKey()
+  if (!key) return json({ error: 'Ключ Google Карт не введён: Продажи → Настройки → Google Карты' }, 400)
 
   const body = await req.json().catch(() => ({})) as any
+
+  // Проверка ключа из настроек: один поиск по заведомо существующему месту
+  if (String(body.action || '') === 'probe') {
+    const probe = await search(key, 'Chopar Pizza Ташкент', 3)
+    return json({ ok: true, found: probe.length, sample: probe[0]?.displayName?.text || null })
+  }
   const leadId = body.leadId ? String(body.leadId) : null
   const accountId = body.accountId ? String(body.accountId) : null
   if (!leadId && !accountId) return json({ error: 'нужен leadId или accountId' }, 400)
