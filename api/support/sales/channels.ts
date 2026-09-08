@@ -265,13 +265,18 @@ export default async function handler(req: Request): Promise<Response> {
   let tgPhoto: string | null = cached?.tg_photo ?? null
   let checkedAt: string | null = cached?.checked_at ?? null
 
-  if (refresh || !cached?.fresh) {
-    // Проверяем через сервис продаж (личные номера сейлзов). Поддержка живёт
-    // на GreenAPI и в проверке номеров не участвует — там другой контур
-    const waUrl = process.env.WA_SALES_URL
-    const waSecret = process.env.WA_SALES_SECRET
-    const tgUrl = process.env.TELEGRAM_BRIDGE_URL
-    const tgSecret = process.env.TELEGRAM_BRIDGE_SECRET
+  // Проверяем через сервис продаж (личные номера сейлзов). Поддержка живёт
+  // на GreenAPI и в проверке номеров не участвует — там другой контур
+  const waUrl = process.env.WA_SALES_URL
+  const waSecret = process.env.WA_SALES_SECRET
+  const tgUrl = process.env.TELEGRAM_BRIDGE_URL
+  const tgSecret = process.env.TELEGRAM_BRIDGE_SECRET
+  // Кэш «не знаем» — не ответ: номер проверяли, когда WhatsApp ещё не был
+  // подключён, и сутки после подключения он оставался «не проверено».
+  // Пока для настроенного моста ответа нет — спрашиваем снова
+  const unknownWa = Boolean(waUrl && waSecret) && hasWa === null
+  const unknownTg = Boolean(tgUrl && tgSecret) && hasTg === null
+  if (refresh || !cached?.fresh || unknownWa || unknownTg) {
     const e164 = '+' + raw.replace(/\D/g, '')
 
     const [wa, tg] = await Promise.all([

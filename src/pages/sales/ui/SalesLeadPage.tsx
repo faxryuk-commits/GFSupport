@@ -684,10 +684,14 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           </Block>
         )}
 
-        {data.touchpoints.length > 0 && (
-          <Block title="История касаний" count={data.touchpoints.length}>
+        {/* Звонки уже в ленте — с записью, разбором и плеером. Второй раз
+            показывать тот же журнал под другим именем незачем: здесь остаются
+            только касания, которых в ленте нет (визиты на сайт, формы) */}
+        {data.touchpoints.filter(t => t.kind !== 'call').length > 0 && (
+          <Block title="Другие касания" count={data.touchpoints.filter(t => t.kind !== 'call').length}
+            sub="Визиты на сайт, формы и прочее, чего нет в ленте">
             <div>
-              {data.touchpoints.map((t, i) => (
+              {data.touchpoints.filter(t => t.kind !== 'call').map((t, i) => (
                 <div key={i} className="flex gap-3 px-4 py-2 border-b border-gray-100 last:border-0">
                   <span className="text-[11.5px] text-gray-400 w-28 flex-none tabular-nums">
                     {formatDateTimeShort(t.happened_at)}
