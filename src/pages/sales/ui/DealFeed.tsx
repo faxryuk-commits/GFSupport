@@ -96,7 +96,6 @@ export function DealFeed({
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [playing, setPlaying] = useState<string | null>(null)
 
   const load = useCallback(() => {
     const q = dealId ? `dealId=${dealId}` : leadId ? `leadId=${leadId}` : accountId ? `accountId=${accountId}` : ''
@@ -164,6 +163,7 @@ export function DealFeed({
   }, [acts, comments, messages, tasks, events, sent])
 
   const [loadingRec, setLoadingRec] = useState<string | null>(null)
+  const [rec, setRec] = useState<{ uuid: string; url: string } | null>(null)
   const [recErr, setRecErr] = useState<Record<string, string>>({})
   // Запись отдаёт АТС по запросу — секунду-другую. Раньше кнопка на это
   // время молчала, а отказ АТС («запись не найдена») терялся вовсе — и
@@ -172,7 +172,10 @@ export function DealFeed({
     setLoadingRec(uuid); setRecErr(e => ({ ...e, [uuid]: '' }))
     try {
       const r = await apiPost<{ url: string }>('/sales/call?action=record', { uuid })
-      if (r?.url) { setPlaying(uuid); new Audio(r.url).play().catch(() => {}) }
+      // Один плеер на ленту, а не new Audio() на каждый клик: раньше каждое
+      // нажатие запускало ещё одну дорожку поверх прежней, и остановить
+      // их было нечем. Плеер — обычный, с паузой, перемоткой и громкостью
+      if (r?.url) setRec({ uuid, url: r.url })
       else setRecErr(e => ({ ...e, [uuid]: 'Запись не найдена' }))
     } catch (e: any) {
       setRecErr(x => ({ ...x, [uuid]: e?.message || 'АТС не отдала запись' }))
@@ -358,17 +361,26 @@ export function DealFeed({
               )}
               {i.recordUuid && (
                 <div className="mt-1 flex items-center gap-3 flex-wrap">
-                  <button onClick={() => play(i.recordUuid!)} disabled={loadingRec === i.recordUuid}
-                    className="text-[11px] font-semibold text-blue-600 hover:underline disabled:opacity-60">
-                    {loadingRec === i.recordUuid ? '⏳ запрашиваю запись у АТС…'
-                      : playing === i.recordUuid ? '▶ играет' : '▶ прослушать запись'}
-                  </button>
+                  {rec?.uuid === i.recordUuid ? (
+                    <button onClick={() => setRec(null)}
+                      className="text-[11px] font-semibold text-gray-500 hover:text-red-600">
+                      ■ закрыть запись
+                    </button>
+                  ) : (
+                    <button onClick={() => play(i.recordUuid!)} disabled={loadingRec === i.recordUuid}
+                      className="text-[11px] font-semibold text-blue-600 hover:underline disabled:opacity-60">
+                      {loadingRec === i.recordUuid ? '⏳ запрашиваю запись у АТС…' : '▶ прослушать запись'}
+                    </button>
+                  )}
                   {/* Разбор по кнопке — как в карточке обращения: расшифровка,
                       выжимка и советы тренера. Автоматический разбор приходит
                       только для новых звонков, старые — по запросу */}
                   <CallInsight uuid={i.recordUuid} />
                   {recErr[i.recordUuid] && <span className="text-[11px] text-red-600">{recErr[i.recordUuid]}</span>}
                 </div>
+              )}
+              {rec?.uuid === i.recordUuid && (
+                <audio controls autoPlay src={rec.url} className="mt-1.5 w-full h-8" onEnded={() => setRec(null)} />
               )}
             </div>
           </div>
