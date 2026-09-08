@@ -419,6 +419,17 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
               sub="с рабочего номера компании · останется в ленте"
               onClick={() => { setCompose('wa'); setSendErr('') }} />
           )}
+          {/* Не проверено — так и говорим. Молчание читалось как «WhatsApp нет»,
+              а на деле проверить некому: нужен подключённый WhatsApp продаж */}
+          {info && info.hasWhatsapp !== true && info.hasWhatsapp !== false && (
+            <Item icon={<WaIcon className="w-4 h-4 opacity-50" />} tone="text-gray-400" title="WhatsApp — не проверено"
+              sub="проверяет ваш подключённый WhatsApp: Моё → WhatsApp"
+              onClick={() => go('/me', false)} />
+          )}
+          {info?.hasWhatsapp === false && (
+            <Item icon={<WaIcon className="w-4 h-4 opacity-50" />} tone="text-gray-400" title="WhatsApp — номера нет"
+              sub="проверено по вашему WhatsApp" onClick={() => {}} />
+          )}
           {waChannel && (
             <Item icon={<WaIcon className="w-4 h-4" />} tone="text-emerald-600" title="Открыть переписку в WhatsApp"
               sub={`${waChannel.messages} сообщений · ответ уйдёт из системы`}

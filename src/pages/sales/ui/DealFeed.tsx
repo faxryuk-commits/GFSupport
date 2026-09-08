@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiUpload } from '@/shared/services/api.service'
 import { fmtDateTime } from './kit'
+import { CallInsight } from './CallInsight'
 import { useAuth } from '@/shared/hooks/useAuth'
 
 /**
@@ -162,11 +163,20 @@ export function DealFeed({
       .sort((a, b) => String(b.at).localeCompare(String(a.at)))
   }, [acts, comments, messages, tasks, events, sent])
 
+  const [loadingRec, setLoadingRec] = useState<string | null>(null)
+  const [recErr, setRecErr] = useState<Record<string, string>>({})
+  // Запись отдаёт АТС по запросу — секунду-другую. Раньше кнопка на это
+  // время молчала, а отказ АТС («запись не найдена») терялся вовсе — и
+  // выглядело так, будто прослушивание пропало
   const play = async (uuid: string) => {
+    setLoadingRec(uuid); setRecErr(e => ({ ...e, [uuid]: '' }))
     try {
       const r = await apiPost<{ url: string }>('/sales/call?action=record', { uuid })
       if (r?.url) { setPlaying(uuid); new Audio(r.url).play().catch(() => {}) }
-    } catch { /* записи может не быть — молчим */ }
+      else setRecErr(e => ({ ...e, [uuid]: 'Запись не найдена' }))
+    } catch (e: any) {
+      setRecErr(x => ({ ...x, [uuid]: e?.message || 'АТС не отдала запись' }))
+    } finally { setLoadingRec(null) }
   }
 
   // Подсказка «@»: показываем команду и подставляем имя целиком
@@ -347,10 +357,18 @@ export function DealFeed({
                 </div>
               )}
               {i.recordUuid && (
-                <button onClick={() => play(i.recordUuid!)}
-                  className="mt-1 text-[11px] font-semibold text-blue-600 hover:underline">
-                  {playing === i.recordUuid ? '▶ играет' : '▶ прослушать запись'}
-                </button>
+                <div className="mt-1 flex items-center gap-3 flex-wrap">
+                  <button onClick={() => play(i.recordUuid!)} disabled={loadingRec === i.recordUuid}
+                    className="text-[11px] font-semibold text-blue-600 hover:underline disabled:opacity-60">
+                    {loadingRec === i.recordUuid ? '⏳ запрашиваю запись у АТС…'
+                      : playing === i.recordUuid ? '▶ играет' : '▶ прослушать запись'}
+                  </button>
+                  {/* Разбор по кнопке — как в карточке обращения: расшифровка,
+                      выжимка и советы тренера. Автоматический разбор приходит
+                      только для новых звонков, старые — по запросу */}
+                  <CallInsight uuid={i.recordUuid} />
+                  {recErr[i.recordUuid] && <span className="text-[11px] text-red-600">{recErr[i.recordUuid]}</span>}
+                </div>
               )}
             </div>
           </div>
