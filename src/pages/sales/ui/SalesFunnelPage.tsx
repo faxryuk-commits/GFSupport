@@ -492,12 +492,14 @@ export function SalesFunnelPage() {
               className={`flex-none w-[232px] bg-white border rounded-lg flex flex-col
                           transition-colors ${zoneCls(over === col.key, 'lead')}`}
             >
-              <header className="px-2.5 py-2 border-b border-gray-100">
+              <header className="px-2.5 py-2 border-b border-gray-100 h-[52px] flex flex-col justify-center">
                 <div className="flex justify-between items-baseline gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700">{col.label}</span>
-                  <span className="text-[11.5px] text-gray-400 tabular-nums">{col.total}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 truncate">
+                    {col.label}
+                  </span>
+                  <span className="text-[11.5px] text-gray-400 tabular-nums flex-none">{col.total}</span>
                 </div>
-                <div className="text-[10.5px] text-gray-400">{col.hint}</div>
+                <div className="mt-0.5 text-[10.5px] text-gray-400 truncate" title={col.hint}>{col.hint}</div>
               </header>
               <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
                 {leadsIn(col).map(l => {
@@ -554,21 +556,28 @@ export function SalesFunnelPage() {
               className={`flex-none w-[232px] bg-white border rounded-lg flex flex-col
                           transition-colors ${zoneCls(over === st.key, 'deal')}`}
             >
-              <header className="px-2.5 py-2 border-b border-gray-100">
+              {/* Высота шапки фиксирована: длинный список валют переносился на
+                  вторую строку, и соседние колонки стояли на разных уровнях */}
+              <header className="px-2.5 py-2 border-b border-gray-100 h-[52px] flex flex-col justify-center">
                 <div className="flex justify-between items-baseline gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600 flex items-center gap-1">
-                    {st.label}
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600
+                                   flex items-center gap-1 min-w-0">
+                    <span className="truncate">{st.label}</span>
                     {st.description && (
                       <span title={st.description}
-                        className="w-3.5 h-3.5 rounded-full border border-gray-300 text-gray-400
+                        className="flex-none w-3.5 h-3.5 rounded-full border border-gray-300 text-gray-400
                                    grid place-items-center text-[8px] font-bold cursor-help normal-case">?</span>
                     )}
                   </span>
-                  <span className="text-[11.5px] text-gray-400 tabular-nums">{st.total}</span>
+                  <span className="text-[11.5px] text-gray-400 tabular-nums flex-none">{st.total}</span>
                 </div>
-                <div className="text-[10.5px] text-gray-400 tabular-nums">
-                  {moneyList(st.amounts)}
-                  {st.sla_hours ? ` · норматив ${Math.round(Number(st.sla_hours) / 24) || 1} дн` : ''}
+                <div className="mt-0.5 flex items-baseline gap-1.5 text-[10.5px] text-gray-400 tabular-nums">
+                  <span className="truncate" title={moneyList(st.amounts)}>{moneyList(st.amounts)}</span>
+                  {st.sla_hours ? (
+                    <span className="flex-none ml-auto whitespace-nowrap">
+                      норматив {Math.round(Number(st.sla_hours) / 24) || 1} дн
+                    </span>
+                  ) : null}
                 </div>
               </header>
               <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
