@@ -585,9 +585,9 @@ export function MarketFlag({ market }: { market?: string | null }) {
   )
 }
 
-export const Btn = ({ kind = 'ghost', children, ...rest }: any) => (
+export const Btn = ({ kind = 'ghost', size = 'md', children, ...rest }: any) => (
   <button {...rest}
-    className={`text-[12.5px] px-3 py-1.5 rounded-lg disabled:opacity-50 ${
+    className={`${size === 'sm' ? 'text-[11.5px] px-2.5 py-1 rounded-md' : 'text-[12.5px] px-3 py-1.5 rounded-lg'} disabled:opacity-50 ${
       kind === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700'
       : kind === 'danger' ? 'border border-red-200 text-red-600 hover:bg-red-50'
       : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:text-blue-600'}`}>

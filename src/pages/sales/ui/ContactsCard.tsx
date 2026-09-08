@@ -127,9 +127,10 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
   return (
     <Card dense
       title="Контакты"
-      sub="по телефону идёт склейка обращений из разных каналов"
+      count={contacts.length ? contacts.length : undefined}
+      hint="ЛПР, бухгалтер, второй номер. По телефону склеиваются обращения из разных каналов"
       right={
-        <Btn kind={open ? 'ghost' : 'primary'} onClick={() => setOpen(o => !o)}>
+        <Btn size="sm" onClick={() => setOpen(o => !o)}>
           {open ? 'Отмена' : '+ Контакт'}
         </Btn>
       }
@@ -206,19 +207,22 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
             </div>
           )
           return (
-          <div key={c.id} className="px-4 py-2.5 flex items-start justify-between gap-3 group">
-            <div className="min-w-0">
-              <div className="text-[12.5px] text-gray-900 flex items-center gap-1.5">
-                {c.name || 'Без имени'}
-                {c.is_primary && (
-                  <span className="text-[9.5px] font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5">
-                    основной
-                  </span>
-                )}
-              </div>
-              <div className="text-[11px] text-gray-400">
-                {[c.role, c.email, c.telegram].filter(Boolean).join(' · ') || '—'}
-              </div>
+          <div key={c.id} className="px-4 min-h-8 py-1.5 flex items-center justify-between gap-3 group">
+            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+              {/* Одна строка на контакт, как у полей: имя · роль · метка. Вторая
+                  строка — только когда есть почта или Telegram, а не прочерк */}
+              <span className={`text-[12.5px] ${c.name ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>
+                {c.name || 'без имени'}
+              </span>
+              {c.role && <span className="text-[11.5px] text-gray-500">{c.role}</span>}
+              {c.is_primary && (
+                <span className="text-[9.5px] font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5">
+                  основной
+                </span>
+              )}
+              {(c.email || c.telegram) && (
+                <span className="text-[11px] text-gray-400 truncate">{[c.email, c.telegram].filter(Boolean).join(' · ')}</span>
+              )}
               {/* Мессенджер знает то, чего нет в карточке — предлагаем перенести */}
               {(() => {
                 const k = known[c.id]

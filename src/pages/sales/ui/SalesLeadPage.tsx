@@ -72,6 +72,33 @@ const KIND_LABEL: Record<string, string> = {
 const ASSISTANT_ACTION: Record<string, string> = {
   draft: 'подготовил сообщение', sent: 'отправил сообщение',
   reply: 'получен ответ', stop: 'прогрев остановлен', skip: 'шаг пропущен',
+  // Имена действий из журнала — словами, а не кодами: «nurture_draft»
+  // в карточке читал только разработчик
+  nurture_draft: 'Черновик прогрева — не отправлен', nurture_sent: 'Прогрев отправлен',
+  nurture_failed: 'Прогрев не ушёл', nurture_done: 'Прогрев завершён',
+  handover: 'Передано человеку', qualify_sent: 'Квалификатор написал клиенту',
+  qualify_reply: 'Клиент ответил квалификатору', draft_failed: 'Черновик не собрался',
+}
+
+/**
+ * Импорт базы кладёт данные с Google Карт одной строкой в текст обращения:
+ * «Рейтинг Google: 4.7 (43 отзывов) · Google Maps: <url> place id=<id> · адрес · сайт».
+ * Читать это как текст клиента нельзя — это справка, и ей место в своём блоке.
+ */
+function parseMapsInfo(text: string | null | undefined): {
+  rating: string | null; reviews: string | null; mapsUrl: string | null
+  placeId: string | null; address: string | null; website: string | null
+} | null {
+  const s = String(text || '')
+  if (!/Рейтинг Google/i.test(s) && !/Google Maps:/i.test(s)) return null
+  const parts = s.split(' · ').map(x => x.trim())
+  const rm = s.match(/Рейтинг Google:\s*([\d.,]+)\s*\((\d+)/i)
+  const um = s.match(/Google Maps:\s*(https?:\/\/\S+)/i)
+  const pm = s.match(/place id=(\S+)/i)
+  const site = parts.find(x => /^https?:\/\//i.test(x) && !/google\./i.test(x)) || null
+  const address = parts.find(x => !/^Рейтинг Google/i.test(x) && !/^Google Maps:/i.test(x) && !/^https?:\/\//i.test(x)) || null
+  return { rating: rm?.[1] || null, reviews: rm?.[2] || null, mapsUrl: um?.[1] || null,
+    placeId: pm?.[1] || null, address, website: site }
 }
 
 const Row = ({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) => (
@@ -525,13 +552,33 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
 
         {/* Дополнительные номера и люди живут у клиента: у обращения одно
             поле телефона, а у ресторана — управляющий, бухгалтер, второй номер */}
+        {(() => {
+          const m = parseMapsInfo(l.text)
+          if (!m) return null
+          return (
+            <Block title="На карте" count={m.rating ? `${m.rating} · ${m.reviews || 0} отз.` : undefined}
+              sub="Данные Google Карт из импорта базы">
+              <div className="grid sm:grid-cols-2">
+                {m.rating && <Row label="Рейтинг">{m.rating}<span className="text-gray-400 font-normal"> · {m.reviews} отзывов</span></Row>}
+                {m.address && <Row label="Адрес" title={m.address}>{m.address}</Row>}
+                {m.website && (
+                  <Row label="Сайт"><a href={m.website} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{m.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</a></Row>
+                )}
+                {m.mapsUrl && (
+                  <Row label="Google Maps"><a href={m.mapsUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">открыть на карте</a></Row>
+                )}
+              </div>
+            </Block>
+          )
+        })()}
+
         {l.account_id && <ContactsCard accountId={l.account_id} market={l.market_id} />}
 
         {/* Редкое — свёрнуто в строки с содержимым: текст заявки, ответы
             формы и сделки не нужны при каждом открытии, а места занимали */}
-        {(l.text || data.fields.length > 0 || data.deals.length > 0) && (
+        {((l.text && !parseMapsInfo(l.text)) || data.fields.length > 0 || data.deals.length > 0) && (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            {l.text && (
+            {l.text && !parseMapsInfo(l.text) && (
               <Fold title="Что написал" sub={`«${String(l.text).replace(/\s+/g, ' ').slice(0, 90)}${l.text.length > 90 ? '…' : ''}»`}>
                 {/* Ответы лид-формы приходят машинным видом — с подчёркиваниями
                     вместо пробелов. Правим только при показе */}
@@ -580,7 +627,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         />
 
         {data.messages.length > 0 && (
-          <Block title="Переписка" sub={`${data.messages.length} сообщений в канале`}>
+          <Block title="Переписка" count={data.messages.length} sub="Сообщения в канале клиента">
             <div className="max-h-96 overflow-y-auto p-3 space-y-1.5">
               {data.messages.map(m => {
                 const day = formatDayLabel(m.created_at)
@@ -609,23 +656,28 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         )}
 
         {data.assistant.length > 0 && (
-          <Block title="Работа ассистента" sub="что и когда он написал вместо человека">
+          <Block title="Работа ассистента" count={data.assistant.length} sub="Что и когда ассистент написал вместо человека">
             <div>
               {data.assistant.map((a, i) => (
-                <div key={i} className="px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
-                  <div className="flex justify-between gap-2 text-[11.5px]">
-                    <span className="text-gray-700">
+                <div key={i} className="px-4 py-2 border-b border-gray-100 last:border-0">
+                  <div className="flex justify-between gap-2 text-[12px]">
+                    <span className="text-gray-800 font-medium">
                       {ASSISTANT_ACTION[a.action] || a.action}
-                      {a.step ? ` · шаг ${a.step}` : ''}
-                      {a.channel ? ` · ${a.channel}` : ''}
+                      {a.step ? <span className="text-gray-400 font-normal"> · шаг {a.step} из 4</span> : null}
+                      {a.channel ? <span className="text-gray-400 font-normal"> · {a.channel}</span> : null}
                     </span>
-                    <span className="text-gray-400 tabular-nums flex-none">
+                    <span className="text-[11px] text-gray-400 tabular-nums flex-none">
                       {formatDateTimeShort(a.created_at)}
                     </span>
                   </div>
                   {a.message && <div className="text-[12px] text-gray-600 mt-0.5">«{a.message}»</div>}
                   {a.reply && <div className="text-[12px] text-emerald-700 mt-0.5">ответ: «{a.reply}»</div>}
-                  {a.error && <div className="text-[12px] text-red-600 mt-0.5">{a.error}</div>}
+                  {/* Причина — предупреждение, а не авария: черновик готов, отправит человек */}
+                  {a.error && (
+                    <div className="text-[11.5px] text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1 mt-1">
+                      {a.error}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -633,10 +685,10 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
         )}
 
         {data.touchpoints.length > 0 && (
-          <Block title="История касаний">
+          <Block title="История касаний" count={data.touchpoints.length}>
             <div>
               {data.touchpoints.map((t, i) => (
-                <div key={i} className="flex gap-3 px-4 py-2 border-b border-dashed border-gray-100 last:border-0">
+                <div key={i} className="flex gap-3 px-4 py-2 border-b border-gray-100 last:border-0">
                   <span className="text-[11.5px] text-gray-400 w-28 flex-none tabular-nums">
                     {formatDateTimeShort(t.happened_at)}
                   </span>
