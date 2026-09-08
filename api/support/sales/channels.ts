@@ -67,7 +67,6 @@ async function askBridge(url: string, secret: string, phone: string): Promise<an
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
-  if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   const sql = getSQL()
   const orgId = await getRequestOrgId(req)
@@ -75,6 +74,55 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
   await ensureSchema(sql)
+
+  /**
+   * Обогащение контакта данными из мессенджера.
+   *
+   * Заполняем ТОЛЬКО пустое: имя у безымянного контакта, ник Telegram,
+   * логотип клиента. То, что человек занёс руками, не трогаем — иначе
+   * однажды «Ибрагим, владелец» превратится в «ابراهيم» из чужого профиля.
+   */
+  if (req.method === 'POST') {
+    const body = await req.json().catch(() => ({}))
+    if (String(body.action || '') !== 'enrich') return json({ error: 'unknown action' }, 400)
+    const contactId = String(body.contactId || '')
+    if (!contactId) return json({ error: 'contactId required' }, 400)
+
+    const [c] = await sql`
+      SELECT id, account_id, name, telegram, phone FROM sales_contacts
+      WHERE id = ${contactId} AND org_id = ${orgId}
+    `
+    if (!c) return json({ error: 'контакт не найден' }, 404)
+    const key = String(c.phone || '').replace(/\D/g, '').slice(-9)
+    const [known] = await sql`
+      SELECT tg_name, tg_username, tg_photo FROM sales_phone_channels
+      WHERE org_id = ${orgId} AND phone_norm = ${key}
+    `
+    if (!known) return json({ error: 'по номеру ещё нет данных — сначала проверьте каналы' }, 400)
+
+    const filled: string[] = []
+    const noName = !c.name || /^\s*$/.test(c.name) || /без имени/i.test(c.name)
+    if (noName && known.tg_name) {
+      await sql`UPDATE sales_contacts SET name = ${known.tg_name} WHERE id = ${contactId} AND org_id = ${orgId}`
+      filled.push('имя')
+    }
+    if (!c.telegram && known.tg_username) {
+      await sql`UPDATE sales_contacts SET telegram = ${'@' + known.tg_username} WHERE id = ${contactId} AND org_id = ${orgId}`
+      filled.push('Telegram')
+    }
+    // Логотип клиента: у заведений аватар в мессенджере — это их вывеска
+    if (body.withPhoto && known.tg_photo && c.account_id) {
+      await sql`ALTER TABLE sales_accounts ADD COLUMN IF NOT EXISTS photo TEXT`.catch(() => {})
+      const [acc] = await sql`SELECT photo FROM sales_accounts WHERE id = ${c.account_id} AND org_id = ${orgId}`
+      if (acc && !acc.photo) {
+        await sql`UPDATE sales_accounts SET photo = ${known.tg_photo} WHERE id = ${c.account_id} AND org_id = ${orgId}`
+        filled.push('логотип')
+      }
+    }
+    return json({ ok: true, filled })
+  }
+
+  if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
   const url = new URL(req.url)
   const raw = url.searchParams.get('phone') || ''
   const digits = tail9(raw)

@@ -21,6 +21,10 @@ const EMPTY = { name: '', role: '', phone: '', email: '', telegram: '' }
 
 export function ContactsCard({ accountId, market }: { accountId?: string; market?: string | null }) {
   const [contacts, setContacts] = useState<Contact[]>([])
+  // Что мессенджеры знают об этих номерах: имя, ник, логотип. Показываем
+  // подсказку только там, где в карточке пусто — заполненное не трогаем
+  const [known, setKnown] = useState<Record<string, any>>({})
+  const [enriching, setEnriching] = useState('')
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ ...EMPTY })
   // Правка по месту: телефон в заявке приходит с ошибкой чаще, чем кажется,
@@ -39,6 +43,34 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
   }, [accountId])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const missing = contacts.filter(c => c.phone && !known[c.id])
+    if (!missing.length) return
+    let alive = true
+    Promise.all(missing.slice(0, 6).map(c =>
+      apiGet<any>(`/sales/channels?phone=${encodeURIComponent(c.phone!)}`, false)
+        .then(d => [c.id, d] as const).catch(() => [c.id, null] as const)))
+      .then(pairs => {
+        if (!alive) return
+        setKnown(prev => {
+          const next = { ...prev }
+          for (const [id, d] of pairs) next[id] = d
+          return next
+        })
+      })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts])
+
+  const enrich = async (c: Contact, withPhoto: boolean) => {
+    if (enriching) return
+    setEnriching(c.id)
+    try {
+      await apiPost('/sales/channels', { action: 'enrich', contactId: c.id, withPhoto })
+      load()
+    } catch (e: any) { setError(e?.message || 'не получилось') } finally { setEnriching('') }
+  }
 
   const create = async () => {
     if (!form.name.trim() && !form.phone.trim()) return
@@ -187,6 +219,28 @@ export function ContactsCard({ accountId, market }: { accountId?: string; market
               <div className="text-[11px] text-gray-400">
                 {[c.role, c.email, c.telegram].filter(Boolean).join(' · ') || '—'}
               </div>
+              {/* Мессенджер знает то, чего нет в карточке — предлагаем перенести */}
+              {(() => {
+                const k = known[c.id]
+                if (!k?.hasTelegram) return null
+                const noName = !c.name || /^\s*$/.test(c.name) || /без имени/i.test(c.name)
+                const canName = noName && k.tgName
+                const canTg = !c.telegram && k.tgUsername
+                if (!canName && !canTg) return null
+                return (
+                  <button onClick={() => enrich(c, true)} disabled={!!enriching}
+                    className="mt-1 text-[11px] text-blue-600 hover:text-blue-700 flex items-center gap-1.5 disabled:opacity-50">
+                    {k.tgPhoto && (
+                      <img src={k.tgPhoto} alt="" className="w-4 h-4 rounded object-cover border border-gray-200" />
+                    )}
+                    <span>
+                      {enriching === c.id ? 'Заполняем…' : 'Взять из Telegram: '}
+                      {enriching !== c.id && [canName ? k.tgName : null, canTg ? '@' + k.tgUsername : null]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                  </button>
+                )
+              })()}
             </div>
             <div className="flex items-center gap-2 flex-none">
               {callNum && (
