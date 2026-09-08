@@ -86,6 +86,7 @@ export async function resolveSession(sql: any, token: string): Promise<{
     )
     SELECT a.id, a.role, a.permissions, a.org_id
     FROM t JOIN support_agents a ON a.id = t.agent_id
+    WHERE COALESCE(a.is_active, true)
     LIMIT 1
   `.catch(() => [] as any[]) as any[]
   return rows[0] || null

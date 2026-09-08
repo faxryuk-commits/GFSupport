@@ -57,18 +57,22 @@ export async function extractAgentContext(req: Request): Promise<AgentContext> {
     let agentRow: any = null
     let legacyToken: string | null = null
 
+    // Отключённая учётная запись доступ теряет: увольнение должно закрывать
+    // вход, а не только убирать человека из списков
     if (token.startsWith(TOKEN_PREFIX)) {
       agentRow = await resolveSession(sql, token)
     } else if (token.startsWith('agent') && LEGACY_OK) {
       // Старый образец: токеном был идентификатор сотрудника
       ;[agentRow] = await sql`
-        SELECT id, role, permissions, org_id FROM support_agents WHERE id = ${token} LIMIT 1
+        SELECT id, role, permissions, org_id FROM support_agents
+        WHERE id = ${token} AND COALESCE(is_active, true) LIMIT 1
       `
       if (!agentRow && token.startsWith('agent_agent_')) {
         const inner = token.slice(6)
         ;[agentRow] = await sql`
           SELECT id, role, permissions, org_id FROM support_agents
-          WHERE ${inner} LIKE id || '%' ORDER BY LENGTH(id) DESC LIMIT 1
+          WHERE ${inner} LIKE id || '%' AND COALESCE(is_active, true)
+          ORDER BY LENGTH(id) DESC LIMIT 1
         `
       }
       if (agentRow) legacyToken = token

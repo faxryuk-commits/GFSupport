@@ -1,4 +1,5 @@
 import { getRequestOrgId } from '../_lib/org.js'
+import { revokeAllForAgent } from '../_lib/session.js'
 import { getSQL, json } from '../_lib/db.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -119,9 +120,14 @@ export default async function handler(req: Request, { params }: { params: { id: 
   // DELETE - деактивировать агента
   if (req.method === 'DELETE') {
     try {
+      // Отключаем по-настоящему: и признак, и открытые сессии. Раньше
+      // менялся только статус, а сотрудник продолжал работать со своим
+      // ключом как ни в чём не бывало
       await sql`
-        UPDATE support_agents SET status = 'inactive' WHERE id = ${agentId} AND org_id = ${orgId}
+        UPDATE support_agents SET status = 'inactive', is_active = false
+        WHERE id = ${agentId} AND org_id = ${orgId}
       `
+      await revokeAllForAgent(sql, agentId)
 
       return json({ success: true, message: 'Agent deactivated' })
 

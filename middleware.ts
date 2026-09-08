@@ -104,13 +104,15 @@ async function resolve(token: string): Promise<AgentRow | null> {
         SELECT a.id, a.role, a.permissions, a.org_id
         FROM support_sessions s JOIN support_agents a ON a.id = s.agent_id
         WHERE s.token_hash = ${hash} AND s.revoked_at IS NULL AND s.expires_at > NOW()
+          AND COALESCE(a.is_active, true)
         LIMIT 1
       ` as any[]
       row = rows[0] || null
     } else if (token.startsWith('agent')
       && String(process.env.LEGACY_AGENT_TOKENS || 'on').toLowerCase() !== 'off') {
       const rows = await sql`
-        SELECT id, role, permissions, org_id FROM support_agents WHERE id = ${token} LIMIT 1
+        SELECT id, role, permissions, org_id FROM support_agents
+        WHERE id = ${token} AND COALESCE(is_active, true) LIMIT 1
       ` as any[]
       row = rows[0] || null
     }
