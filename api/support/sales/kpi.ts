@@ -1,4 +1,5 @@
 import { getRequestOrgId } from '../_lib/org.js'
+import { clientKeyOf, nameScore } from '../_lib/pf-match.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { getPlanfactKey, pfIncomeOperations } from '../_lib/planfact.js'
@@ -447,26 +448,6 @@ function currentMonthTashkent(): string {
  * регистр, кавычки и организационные приставки (ООО, MCHJ, ИП…) — шум,
  * по которому имена расходятся, хотя компания одна.
  */
-const TRANSLIT: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
-  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-  с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh',
-  щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-}
-
-function normName(s: string): string {
-  const base = String(s || '')
-    .toLowerCase()
-    .replace(/["'«»“”„()]/g, ' ')
-    .replace(/\b(ооо|оoo|мчж|mchj|xk|ип|тоо|яттб|llc|ltd|inc|co)\b/g, ' ')
-    .replace(/[^a-zа-яё0-9\s]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  // В ПланФакте латиница, в CRM кириллица (и наоборот): сводим всё к латинице,
-  // иначе «SYROVARNYA» никогда не встретит «Сыроварню»
-  return base.replace(/[а-яё]/g, ch => TRANSLIT[ch] ?? ch)
-}
-
 /**
  * Кандидаты-сделки для привязки поступления.
  *
@@ -474,19 +455,11 @@ function normName(s: string): string {
  * клиента) и комментарий — с названием сделки и именем аккаунта.
  * «Физ лицо» и подобные заглушки в матчинг не идут.
  */
-const NOISE_NAMES = new Set(['физ лицо', 'физлицо', 'не выбран', 'не выбрано'])
 
 /**
  * Ключ клиента для истории платежей: статья (бренд) надёжнее контрагента —
  * юрлица у франшиз разные, а бренд один. Контрагент — запасной вариант.
  */
-function clientKeyOf(contragent?: string | null, category?: string | null): string {
-  const cat = normName(category || '')
-  if (cat.length >= 3 && !NOISE_NAMES.has(cat) && cat !== 'okazanie uslug') return cat
-  const ca = normName(contragent || '')
-  if (ca.length >= 3 && !NOISE_NAMES.has(ca)) return ca
-  return ''
-}
 
 /** Подписка = клиент впервые платил давно (раньше, чем 45 дней до операции). */
 const SUBSCRIPTION_AGE_DAYS = 45
@@ -528,21 +501,9 @@ function matchDeals(
   signals: Array<string | null | undefined>,
   deals: Array<{ id: string; title: string; account_name: string | null; owner_name: string | null; won_at: string | null }>,
 ): string[] {
-  const targets = signals
-    .map(s => normName(s || ''))
-    .filter(t => t.length >= 3 && !NOISE_NAMES.has(t))
-  if (!targets.length) return []
   const scored: Array<{ id: string; score: number }> = []
   for (const d of deals) {
-    const names = [normName(d.title), normName(d.account_name || '')]
-    let score = 0
-    for (const n of names) {
-      if (!n || n.length < 3) continue
-      for (const t of targets) {
-        if (n === t) score = Math.max(score, 100)
-        else if (t.length >= 5 && n.length >= 5 && (n.includes(t) || t.includes(n))) score = Math.max(score, 60)
-      }
-    }
+    const score = nameScore(signals, [d.title, d.account_name])
     if (score > 0) scored.push({ id: d.id, score })
   }
   return scored.sort((a, b) => b.score - a.score).slice(0, 3).map(x => x.id)

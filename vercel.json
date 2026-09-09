@@ -140,6 +140,10 @@
     {
       "path": "/api/support/cron/call-digest",
       "schedule": "*/3 * * * *"
+    },
+    {
+      "path": "/api/support/cron/pf-reconcile",
+      "schedule": "10 4 * * *"
     }
   ]
 }
