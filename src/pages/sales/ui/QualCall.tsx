@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { apiPost } from '@/shared/services/api.service'
 import { optionsFor } from './refs'
+import { CallPhone } from '@/shared/ui/CallPhone'
 
 /**
  * Квалификация как разговор, а не как форма.
@@ -90,13 +91,17 @@ export function trafficLight(q: Record<string, any>, city: string | null) {
   return { tone: 'amber' as const, label: 'жёлтый · уточнить', pro, contra }
 }
 
-export function QualCall({ leadId, market, city, qual, refs, onSaved }: {
+export function QualCall({ leadId, market, city, qual, refs, phone, onSaved, onQualified }: {
   leadId: string
   market: string | null
   city: string | null
   qual: Record<string, any>
   refs: any
+  /** Звонок начинается здесь же: иначе блок живёт отдельно от разговора. */
+  phone?: string | null
   onSaved: () => void
+  /** Семь из семи — предлагаем следующий шаг прямо в блоке. */
+  onQualified?: () => void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [free, setFree] = useState<{ field: string; value: string } | null>(null)
@@ -137,7 +142,14 @@ export function QualCall({ leadId, market, city, qual, refs, onSaved }: {
         <h3 className="text-[13px] font-semibold text-gray-900">Квал-звонок</h3>
         <span className={`text-[10.5px] font-semibold border rounded-full px-2 py-px ${tone}`}>{light.label}</span>
         <span className="ml-auto text-[11.5px] text-gray-500 tabular-nums">{done} из {QUESTIONS.length}</span>
+        {phone && (
+          <CallPhone phone={phone} market={market} leadId={leadId} size="sm" channels />
+        )}
       </header>
+      <div className="px-4 py-1.5 border-b border-gray-100 text-[11px] text-gray-500">
+        Звоните отсюда и задавайте вопросы по порядку. Ответ в один тап, сохраняется сразу —
+        заполнять после разговора не нужно.
+      </div>
 
       <div className="h-1 bg-gray-100">
         <div className="h-full bg-blue-500 transition-all"
@@ -207,9 +219,23 @@ export function QualCall({ leadId, market, city, qual, refs, onSaved }: {
         })}
       </div>
 
-      {missing.length > 0 && (
+      {missing.length > 0 ? (
         <div className="px-4 py-2 bg-amber-50 border-t border-amber-100 text-[11.5px] text-amber-800">
           До этапа «Квалифицирован» не хватает: {missing.map(m => m.label.toLowerCase()).join(', ')}
+        </div>
+      ) : (
+        <div className="px-4 py-2 bg-emerald-50 border-t border-emerald-100 flex items-center gap-2 flex-wrap">
+          <span className="text-[11.5px] text-emerald-800">
+            Всё собрано. {light.tone === 'red'
+              ? 'Но профиль красный — по регламенту такого клиента в работу не берём.'
+              : 'Можно заводить сделку и назначать демо.'}
+          </span>
+          {onQualified && light.tone !== 'red' && (
+            <button onClick={onQualified}
+              className="ml-auto px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[12px] font-semibold">
+              В сделку
+            </button>
+          )}
         </div>
       )}
     </section>

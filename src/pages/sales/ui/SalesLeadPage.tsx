@@ -492,7 +492,9 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           city={l.city}
           qual={(l.qual || {}) as Record<string, any>}
           refs={refs}
-          onSaved={load} />
+          phone={l.phone}
+          onSaved={load}
+          onQualified={() => convertTo('qualified')} />
 
         <Fold title="Все поля квалификации" sub="то же самое списком, если привычнее">
           <div className="grid sm:grid-cols-2">
