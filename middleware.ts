@@ -47,6 +47,10 @@ const PUBLIC = [
   '/api/support/auth/',
   '/api/support/media/',
   '/api/support/agents/login',
+  // Регистрация по приглашению: человек ещё не сотрудник, входить ему нечем.
+  // Обработчик сам требует живой неиспользованный токен приглашения и берёт
+  // роль из него, а не из тела запроса — завести себе администратора нельзя
+  '/api/support/agents/register',
   '/api/support/admin/sa-login',
   '/api/support/sales/doc-public',
   '/api/support/sales/click',
