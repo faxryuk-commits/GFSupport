@@ -43,6 +43,8 @@ interface Stage {
 interface DealData {
   owner?: { id: string; name: string } | null
   team?: Array<{ id: string; name: string }>
+  /** Право отмечать поступления — считает сервер, не длина списка команды. */
+  canPay?: boolean
   channelId?: string | null
   messages?: Array<{
     id: string; sender_name: string | null; is_from_client: boolean
@@ -761,7 +763,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
           {/* Редкое — ниже основного: ТЗ нужно к моменту КП, поступления —
               после подписания. Оба сами по себе свёрнуты */}
           {id && <div id="spec-block"><SpecCard dealId={id} /></div>}
-          {id && <PaymentsCard dealId={id} canManage={(data.team || []).length > 0} />}
+          {id && <PaymentsCard dealId={id} canManage={!!data.canPay} />}
           {/* Карта — в самом низу: в сделке важнее условия и документы,
               а место уже посмотрели на обращении. Находка общая, ищем
               по клиенту */}

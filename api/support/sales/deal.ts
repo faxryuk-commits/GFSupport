@@ -352,5 +352,10 @@ export default async function handler(req: Request): Promise<Response> {
     tasks, documents, events, contacts, reasons,
     owner: ownerRows[0] || null,
     team: teamRows,
+    // Право отмечать поступления — с сервера, а не по длине списка команды:
+    // в team лежит весь отдел продаж (он нужен для передачи сделки), поэтому
+    // кнопку «оплата пришла» видел каждый, а сервер отказывал уже после
+    // ввода суммы
+    canPay: !!ctx.isLead,
   })
 }

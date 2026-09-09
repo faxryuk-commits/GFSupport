@@ -36,6 +36,53 @@ export function host(u: string): string {
 export const REGION: Record<string, string> = { uz: 'UZ', kz: 'KZ', kg: 'KG', az: 'AZ', ge: 'GE', cy: 'CY', ae: 'AE' }
 
 /**
+ * Рамка страны для поиска. `regionCode` — только подсказка о языке и
+ * предпочтениях, Google при ней спокойно отдаёт заведение в Италии, если
+ * название похоже. Рамка — жёсткое ограничение: за её пределы выдача
+ * не выходит вовсе. Координаты — грубый прямоугольник по стране,
+ * с запасом на приграничье.
+ */
+export const BOUNDS: Record<string, { low: [number, number]; high: [number, number] }> = {
+  uz: { low: [37.1, 55.9], high: [45.7, 73.2] },
+  kz: { low: [40.5, 46.4], high: [55.5, 87.4] },
+  kg: { low: [39.1, 69.2], high: [43.4, 80.3] },
+  az: { low: [38.3, 44.7], high: [41.95, 50.7] },
+  ge: { low: [41.0, 39.9], high: [43.6, 46.8] },
+  ae: { low: [22.6, 51.5], high: [26.2, 56.4] },
+  cy: { low: [34.5, 32.2], high: [35.8, 34.7] },
+}
+
+/** Рамка для запроса в Google: {low:{...}, high:{...}}. */
+export function boundsFor(market: string | null | undefined) {
+  const b = BOUNDS[String(market || '').toLowerCase()] || BOUNDS.uz
+  return {
+    rectangle: {
+      low: { latitude: b.low[0], longitude: b.low[1] },
+      high: { latitude: b.high[0], longitude: b.high[1] },
+    },
+  }
+}
+
+/**
+ * Страна находки не входит в наши рынки — значит это точно не наш клиент.
+ * Рамка отсекает почти всё, но у сетей бывают адреса вида «Milan, Italy»
+ * в названии филиала, и такую находку показывать не стоит.
+ */
+export function foreignCountry(address: string): boolean {
+  const a = String(address || '').toLowerCase()
+  if (!a) return false
+  const ours = new Set(Object.values(COUNTRY_WORDS).flat())
+  const alien = [
+    'италия', 'italy', 'германия', 'germany', 'франция', 'france', 'испания', 'spain',
+    'польша', 'poland', 'турция', 'turkey', 'türkiye', 'россия', 'russia', 'украина', 'ukraine',
+    'сша', 'usa', 'united states', 'великобритания', 'united kingdom', 'китай', 'china',
+    'индия', 'india', 'болгария', 'bulgaria', 'румыния', 'romania', 'чехия', 'czech',
+    'нидерланды', 'netherlands', 'бельгия', 'belgium', 'португалия', 'portugal',
+  ]
+  return alien.some(w => a.includes(w) && !ours.has(w))
+}
+
+/**
  * Как страна называется в адресе Google. Нужно не для красоты: поиск по
  * Узбекистану спокойно возвращает бутик в Сумгаите, и такую находку надо
  * помечать неуверенной, а не подставлять в квалификацию.
