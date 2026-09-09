@@ -8,6 +8,7 @@ import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, sl
 import { CallInsight } from './CallInsight'
 import { ContactsCard } from './ContactsCard'
 import { PlaceCard } from './PlaceCard'
+import { QualCall } from './QualCall'
 import { TasksCard } from './TasksCard'
 import { DealFeed } from './DealFeed'
 import { BookMeetingModal } from './BookMeetingModal'
@@ -482,11 +483,18 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           нужно было проскроллить три экрана */}
       <div className="grid lg:grid-cols-[1.15fr_0.95fr] gap-4 items-start">
         <div className="space-y-3 min-w-0">
-        {/* Квалификация нашими руками. Эти поля менеджер заполнял в Amo, а мы
-            читали их из сырых данных заявки — без Amo они бы осиротели */}
-        <Card dense title="Квалификация"
-          count={`${QUAL_FIELDS.filter(([f]) => { const v = qual(f); return v !== null && v !== undefined && v !== '' }).length} из ${QUAL_FIELDS.length} · для сделки нужны ${[...GATING].length}`}
-          hint="Заполняется на звонке, правится по клику. Поля с точкой нужны, чтобы обращение стало сделкой">
+        {/* Квалификация как разговор: вопросы регламента по порядку, ответы
+            в один тап. Прежний список полей был подписями для отчёта, и боль
+            заполнялась у четырёх процентов обращений */}
+        <QualCall
+          leadId={id!}
+          market={l.market_id}
+          city={l.city}
+          qual={(l.qual || {}) as Record<string, any>}
+          refs={refs}
+          onSaved={load} />
+
+        <Fold title="Все поля квалификации" sub="то же самое списком, если привычнее">
           <div className="grid sm:grid-cols-2">
             {QUAL_FIELDS.map(([f, label]) => {
               const v = qual(f)
@@ -502,7 +510,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
               )
             })}
           </div>
-        </Card>
+        </Fold>
 
         {/* «Кто» и «откуда» — один блок в две колонки: это одна страница
             паспорта, а не два раздела */}
