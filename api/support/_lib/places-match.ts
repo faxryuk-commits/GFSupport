@@ -336,3 +336,73 @@ export function cityRu(raw: string): string {
   if (!t) return ''
   return CITY_RU[norm(t)] || t
 }
+
+/**
+ * Логины соцсетей со страницы заведения.
+ *
+ * Тонкость, на которой уже обожглись: у части клиентов «сайтом» в картах
+ * указан сам Instagram. Мы скачивали эту страницу, а в её коде лежит
+ * служебная ссылка `instagram.com/rsrc.php` — загрузчик статики Facebook.
+ * Регулярка принимала её за логин, и в пять карточек попало «@rsrc.php».
+ * Поэтому: служебные пути отсекаем списком, точки и `.php` в логине
+ * не допускаем, а если ссылка сама ведёт на профиль — берём логин из неё.
+ */
+const IG_RESERVED = new Set([
+  'p', 'reel', 'reels', 'explore', 'stories', 'tv', 'accounts', 'about', 'legal',
+  'developer', 'developers', 'directory', 'embed', 'graphql', 'ajax', 'web', 'static',
+  'favicon', 'oauth', 'privacy', 'terms', 'help', 'api', 'sitemap', 'challenge',
+  'emails', 'session', 'push', 'data', 'igsh', 'share',
+])
+
+const TG_RESERVED = new Set(['share', 'iv', 'telegram', 'about', 'faq', 'apps', 'blog', 'proxy'])
+
+/** Похоже ли на настоящий логин Instagram. */
+export function validIgHandle(raw: string): string | null {
+  const h = String(raw || '').trim().replace(/^@/, '').replace(/\.+$/, '')
+  if (!h || h.length < 3 || h.length > 30) return null
+  if (!/^[A-Za-z0-9_.]+$/.test(h)) return null
+  if (h.includes('.php') || h.includes('..')) return null
+  if (IG_RESERVED.has(h.toLowerCase())) return null
+  // Логин без единой буквы — почти наверняка служебный путь
+  if (!/[a-z]/i.test(h)) return null
+  return h
+}
+
+/** Логин из ссылки на профиль: instagram.com/chitir.chitir?igshid=… */
+export function igFromUrl(u: string): string | null {
+  const t = String(u || '').trim().toLowerCase()
+  if (!/(^|\/\/|\.)instagram\.com\//.test(t)) return null
+  const path = t.split('instagram.com/')[1] || ''
+  return validIgHandle(path.split(/[/?#]/)[0] || '')
+}
+
+/** Логин Telegram из ссылки t.me. */
+export function validTgHandle(raw: string): string | null {
+  const h = String(raw || '').trim().replace(/^@/, '')
+  if (!h || h.length < 3 || h.length > 32) return null
+  if (!/^[A-Za-z0-9_]+$/.test(h)) return null
+  if (TG_RESERVED.has(h.toLowerCase())) return null
+  return h
+}
+
+/** Первый пригодный логин Instagram со страницы. */
+export function igFromHtml(html: string): string | null {
+  const re = /instagram\.com\/([A-Za-z0-9_.]{2,40})/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(String(html || '')))) {
+    const h = validIgHandle(m[1])
+    if (h) return h
+  }
+  return null
+}
+
+/** Первый пригодный логин Telegram со страницы. */
+export function tgFromHtml(html: string): string | null {
+  const re = /t\.me\/([A-Za-z0-9_]{3,40})/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(String(html || '')))) {
+    const h = validTgHandle(m[1])
+    if (h) return h
+  }
+  return null
+}

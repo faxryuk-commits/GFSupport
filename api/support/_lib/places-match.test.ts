@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { norm, host, otherCountry, cleanName, matchKind, brandRoot, decideMatch, REGION,
-  brandKeys, sameBrand, rankPlaces, cityRu } from './places-match.js'
+  brandKeys, sameBrand, rankPlaces, cityRu,
+  validIgHandle, igFromUrl, igFromHtml, validTgHandle, tgFromHtml } from './places-match.js'
 
 /**
  * Все случаи ниже — с боевых карточек. Каждый из них когда-то приводил
@@ -206,5 +207,44 @@ describe('город из карт', () => {
   it('незнакомый город остаётся как есть', () => {
     expect(cityRu('Kattakurgan')).toBe('Kattakurgan')
     expect(cityRu('')).toBe('')
+  })
+})
+
+describe('логины соцсетей', () => {
+  it('«rsrc.php» логином не считается', () => {
+    // Из-за него в пять карточек попало «@rsrc.php»: это загрузчик статики
+    // Facebook со страницы самого Instagram, а не профиль клиента
+    expect(validIgHandle('rsrc.php')).toBeNull()
+    expect(igFromHtml('<a href="https://instagram.com/rsrc.php/v3/yq/r/x.js">')).toBeNull()
+  })
+
+  it('служебные пути Instagram отсекаются', () => {
+    for (const p of ['p', 'reel', 'explore', 'accounts', 'static', 'embed']) {
+      expect(validIgHandle(p)).toBeNull()
+    }
+  })
+
+  it('настоящий логин проходит', () => {
+    expect(validIgHandle('chitir.chitir')).toBe('chitir.chitir')
+    expect(validIgHandle('@sushitime_uz')).toBe('sushitime_uz')
+    expect(validIgHandle('jolie.rest.uz.')).toBe('jolie.rest.uz')
+  })
+
+  it('логин берётся из ссылки на профиль, а не из кода страницы', () => {
+    expect(igFromUrl('https://instagram.com/chitir.chitir?igshid=YmMyMTA2M2Y=')).toBe('chitir.chitir')
+    expect(igFromUrl('https://www.instagram.com/sushitime_uz/')).toBe('sushitime_uz')
+    expect(igFromUrl('https://tekit.uz/')).toBeNull()
+  })
+
+  it('со страницы берётся первый пригодный логин, а не первый попавшийся', () => {
+    const html = '<script src="https://instagram.com/rsrc.php/x.js"></script>'
+      + '<a href="https://www.instagram.com/chitir.chitir/">инстаграм</a>'
+    expect(igFromHtml(html)).toBe('chitir.chitir')
+  })
+
+  it('телеграм: служебные ссылки не логины', () => {
+    expect(validTgHandle('share')).toBeNull()
+    expect(tgFromHtml('<a href="https://t.me/share/url?url=x">поделиться</a>')).toBeNull()
+    expect(tgFromHtml('<a href="https://t.me/jolie_rest">телеграм</a>')).toBe('jolie_rest')
   })
 })

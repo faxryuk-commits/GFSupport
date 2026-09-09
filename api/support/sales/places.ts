@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces, cityRu, boundsFor, foreignCountry } from '../_lib/places-match.js'
+import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces, cityRu, boundsFor, foreignCountry, igFromHtml, tgFromHtml, igFromUrl } from '../_lib/places-match.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -144,6 +144,11 @@ async function socialsFromSite(site: string):
   Promise<{ instagram: string | null; telegram: string | null; aggregators: string[] }> {
   const out: { instagram: string | null; telegram: string | null; aggregators: string[] } =
     { instagram: null, telegram: null, aggregators: [] }
+  // У части клиентов «сайт» в картах — это сам профиль Instagram. Логин
+  // берём прямо из ссылки: качать эту страницу бесполезно, в её коде лежит
+  // служебная статика Facebook, из которой раньше и получалось «@rsrc.php»
+  const direct = igFromUrl(site)
+  if (direct) { out.instagram = direct; return out }
   if (!site) return out
   try {
     const res = await fetch(site, {
@@ -153,14 +158,8 @@ async function socialsFromSite(site: string):
     })
     if (!res.ok) return out
     const html = (await res.text()).slice(0, 400000)
-    const ig = html.match(/instagram\.com\/([A-Za-z0-9_.]{2,30})/i)
-    const igName = ig?.[1] || ''
-    if (igName && !['p', 'reel', 'reels', 'explore', 'stories', 'tv', 'accounts'].includes(igName.toLowerCase())) {
-      out.instagram = igName.replace(/\.$/, '')
-    }
-    const tg = html.match(/t\.me\/([A-Za-z0-9_]{3,32})/i)
-    const tgName = tg?.[1] || ''
-    if (tgName && !['share', 'iv'].includes(tgName.toLowerCase())) out.telegram = tgName
+    out.instagram = igFromHtml(html)
+    out.telegram = tgFromHtml(html)
     out.aggregators = AGGREGATORS.filter(([re]) => re.test(html)).map(([, title]) => title)
   } catch {
     // Сайт может лежать или отдавать защиту от роботов — это не повод
