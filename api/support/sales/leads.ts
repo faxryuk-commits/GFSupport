@@ -28,10 +28,7 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
  * уже заведённые карточки ничего не потеряли при уходе с Amo.
  */
 export const QUAL_KEYS = ['pos', 'orders_per_day', 'points', 'aggregators',
-  'delivery_type', 'segment', 'pain', 'dm_name', 'dm_role', 'budget_stated',
-  // Шестой вопрос регламента: заказы ведёт один человек или есть оператор.
-  // Отвечает на него клиент всегда, а класть ответ было некуда
-  'dispatch']
+  'delivery_type', 'segment', 'pain', 'dm_name', 'dm_role', 'budget_stated']
 
 async function handlerInner(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders() })
