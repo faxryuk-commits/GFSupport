@@ -251,7 +251,12 @@ async function handlerInner(req: Request): Promise<Response> {
                         AND EXISTS (SELECT 1 FROM support_messages m2 WHERE m2.channel_id = ch2.id
                                       AND m2.is_from_client = true AND m2.created_at > NOW() - INTERVAL '23 hours')))) AS assistant_can_write,
                s.label AS source, ag.name AS agent_name,
-               ROW_NUMBER() OVER (PARTITION BY l.status ORDER BY l.created_at DESC) AS rn
+               -- Срез считаем внутри рынка, а не по колонке целиком: иначе
+               -- страна с потоком заявок вытесняет из колонки всю маленькую.
+               -- Так уже пропадали азербайджанские обращения — в базе есть,
+               -- на доске нет, и это выглядело как потеря данных
+               ROW_NUMBER() OVER (PARTITION BY l.status, l.market_id
+                 ORDER BY l.created_at DESC) AS rn
         FROM sales_leads l
         LEFT JOIN sales_sources s ON s.id = l.source_id
         LEFT JOIN support_agents ag ON ag.id = l.assigned_agent_id
@@ -309,7 +314,11 @@ async function handlerInner(req: Request): Promise<Response> {
                (SELECT MAX(doc.opened_count) FROM sales_documents doc WHERE doc.deal_id = d.id) AS doc_opens,
                s.key AS stage_key, d.won_at, d.lost_at, lr.label AS lost_reason,
                lr.reactivate_days AS lost_return_days,
-               ROW_NUMBER() OVER (PARTITION BY s.key
+               -- Тот же срез по рынку, что и у обращений: 26 азербайджанских
+               -- сделок в «КП отправлено» показывались одной карточкой,
+               -- остальные вытесняли узбекские — просто потому, что их
+               -- двигали позже
+               ROW_NUMBER() OVER (PARTITION BY s.key, d.market_id
                  ORDER BY COALESCE(d.updated_at, d.stage_since, d.created_at) DESC) AS rn
         FROM sales_deals d
         JOIN sales_stages s ON s.id = d.stage_id
