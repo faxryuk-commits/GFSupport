@@ -218,26 +218,19 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
     status = 'new'
   }
 
-  // 4. Маршрутизация: зелёный уходит сейлзу с наименьшей загрузкой
-  // Если в системе-источнике у обращения уже есть ответственный — уважаем его,
-  // иначе распределение перекинет лид на другого и сломает работу сейлза
-  let assignedAgentId: string | null = body.owner_hint || null
-  if (!assignedAgentId && status === 'assigned') {
-    const [agent] = await sql`
-      SELECT a.id
-      FROM support_agents a
-      LEFT JOIN sales_leads l
-        ON l.assigned_agent_id = a.id AND l.first_touch_at IS NULL AND l.status = 'assigned'
-      WHERE a.telegram_id IS NOT NULL AND a.merged_into IS NULL
-        AND (a.org_id = ${orgId} OR a.org_id IS NULL)
-        AND (LOWER(COALESCE(a.role, '')) IN ('sales', 'sales_rep', 'ae', 'sdr', 'sales_lead')
-             OR LOWER(COALESCE(a.department, '')) LIKE '%прода%')
-      GROUP BY a.id
-      ORDER BY COUNT(l.id) ASC, a.id ASC
-      LIMIT 1
-    `
-    assignedAgentId = agent?.id || null
-  }
+  // 4. Маршрутизация: обращение никому не назначается автоматически.
+  //
+  // Автораздача по наименьшей загрузке отключена сознательно. Она отбирала
+  // сейлзов по роли и наличию Telegram, и под фильтр попадал ровно один
+  // человек: у остальных роли kam, cco и manager, а отдел «Azerbaijan Sales
+  // Team» не совпадал с поиском «прода» по-русски. Получалось, что весь
+  // прямой поток — сайт, Telegram-бот, Instagram, Meta-форма — уходил
+  // одному, а выглядело это как работающее распределение.
+  //
+  // Разбор теперь явный: обращение видно всей команде, и кто забрал —
+  // тот и ведёт. Ответственного, пришедшего из системы-источника (у Amo
+  // он свой), по-прежнему уважаем: перекидывать чужую работу нельзя.
+  const assignedAgentId: string | null = body.owner_hint || null
 
   const leadId = salesId('sl')
   const slaMinutes = status === 'nurture' ? null : FIRST_TOUCH_SLA_MIN
