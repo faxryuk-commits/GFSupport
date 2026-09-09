@@ -1,7 +1,7 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces, cityRu } from '../_lib/places-match.js'
+import { norm, host, REGION, cleanName, matchKind, decideMatch, brandKeys, sameBrand, rankPlaces, cityRu, boundsFor, foreignCountry } from '../_lib/places-match.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -103,7 +103,16 @@ async function photoUrl(key: string, ref: string, maxPx = 800): Promise<string |
   }
 }
 
-async function search(key: string, textQuery: string, limit: number, region = 'UZ'): Promise<Place[]> {
+/**
+ * Поиск с жёсткой рамкой по стране рынка.
+ *
+ * `regionCode` — только подсказка: с ней Google спокойно отдавал заведения
+ * в Европе, где нас нет. `locationRestriction` за рамку не выпускает вовсе,
+ * а остатки вроде «филиал в Милане» в названии отсеиваем по адресу.
+ */
+async function search(
+  key: string, textQuery: string, limit: number, region = 'UZ', market = 'uz',
+): Promise<Place[]> {
   const res = await fetch(HOST, {
     method: 'POST',
     headers: {
@@ -111,12 +120,19 @@ async function search(key: string, textQuery: string, limit: number, region = 'U
       'X-Goog-Api-Key': key,
       'X-Goog-FieldMask': FIELDS,
     },
-    body: JSON.stringify({ textQuery, languageCode: 'ru', regionCode: region, maxResultCount: limit }),
+    body: JSON.stringify({
+      textQuery,
+      languageCode: 'ru',
+      regionCode: region,
+      maxResultCount: limit,
+      locationRestriction: boundsFor(market),
+    }),
     signal: AbortSignal.timeout(20000),
   })
   const out = await res.json().catch(() => null) as any
   if (!res.ok) throw new Error(out?.error?.message || 'Google Карты не ответили')
-  return (out?.places || []) as Place[]
+  const places = (out?.places || []) as Place[]
+  return places.filter(p => !foreignCountry(p.formattedAddress || ''))
 }
 
 /**
@@ -296,6 +312,65 @@ async function handlerInner(req: Request): Promise<Response> {
     return json({ place: saved || null })
   }
 
+  /**
+   * Подстановка по кнопке. Раньше карточку правила сама находка, и неверный
+   * подбор затирал данные, уточнённые у клиента. Теперь пишем ровно те поля,
+   * которые человек отметил в карточке.
+   */
+  if (String(body.action || '') === 'apply') {
+    const fields = (body.fields || {}) as Record<string, string>
+    const scope = String(body.scope || '')
+    const id = String(body.id || '')
+    if (!id || !scope) return json({ error: 'нужны scope и id' }, 400)
+    const applied: string[] = []
+
+    if (scope === 'account') {
+      for (const [f, v] of Object.entries(fields)) {
+        const val = String(v || '').trim()
+        if (!val) continue
+        if (f === 'website') await sql`UPDATE sales_accounts SET website = ${val} WHERE id = ${id} AND org_id = ${orgId}`
+        else if (f === 'instagram') await sql`UPDATE sales_accounts SET instagram = ${val} WHERE id = ${id} AND org_id = ${orgId}`
+        else if (f === 'telegram') await sql`UPDATE sales_accounts SET telegram = ${val} WHERE id = ${id} AND org_id = ${orgId}`
+        else if (f === 'city') await sql`UPDATE sales_accounts SET city = ${val} WHERE id = ${id} AND org_id = ${orgId}`
+        else continue
+        applied.push(f)
+      }
+    } else if (scope === 'lead') {
+      const patch: Record<string, string> = {}
+      for (const [f, v] of Object.entries(fields)) {
+        const val = String(v || '').trim()
+        if (!val) continue
+        if (f === 'city') {
+          await sql`UPDATE sales_leads SET city = ${val}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`
+          applied.push(f)
+        } else if (f === 'points' || f === 'aggregators') {
+          patch[f] = val
+          applied.push(f)
+        }
+      }
+      if (Object.keys(patch).length) {
+        await sql`
+          UPDATE sales_leads
+          SET qual = COALESCE(qual, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb, updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `
+      }
+    } else if (scope === 'deal') {
+      for (const [f, v] of Object.entries(fields)) {
+        const val = String(v || '').trim()
+        if (!val) continue
+        if (f === 'points') await sql`UPDATE sales_deals SET points = ${val}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`
+        else if (f === 'aggregators') await sql`UPDATE sales_deals SET aggregators = ${val}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`
+        else if (f === 'city') await sql`UPDATE sales_deals SET city = ${val}, updated_at = NOW() WHERE id = ${id} AND org_id = ${orgId}`
+        else continue
+        applied.push(f)
+      }
+    } else {
+      return json({ error: 'неизвестный раздел' }, 400)
+    }
+    return json({ ok: true, applied })
+  }
+
   const leadId = body.leadId ? String(body.leadId) : null
   const dealId = body.dealId ? String(body.dealId) : null
   let accountId = body.accountId ? String(body.accountId) : null
@@ -366,11 +441,11 @@ async function handlerInner(req: Request): Promise<Response> {
   let found: Place[] = []
   let bySite: Place | null = null
   if (siteHint && !body.placeId) {
-    const hits = await search(key, siteHint, 5, region).catch(() => [] as Place[])
+    const hits = await search(key, siteHint, 5, region, market).catch(() => [] as Place[])
     bySite = hits.find(p => host(p.websiteUri || '') === siteHint) || null
     if (bySite) found = hits
   }
-  if (!bySite) found = await search(key, city ? `${name} ${city}` : name, 20, region)
+  if (!bySite) found = await search(key, city ? `${name} ${city}` : name, 20, region, market)
   if (!found.length) {
     return json({
       error: `На картах ничего не нашлось по запросу «${city ? `${name} ${city}` : name}». `
@@ -416,7 +491,7 @@ async function handlerInner(req: Request): Promise<Response> {
   // «Chopar Pizza Юнусабад», и точное равенство схлопывало сеть до одной точки
   const brandName = (best.displayName?.text || name).trim()
   const keys = brandKeys(brandName, name)
-  const net = keys.length ? await search(key, brandName, 20, region).catch(() => [] as Place[]) : []
+  const net = keys.length ? await search(key, brandName, 20, region, market).catch(() => [] as Place[]) : []
   const seen = new Set<string>()
   const branches = [...found, ...net].filter(p => {
     if (!sameBrand(keys, p.displayName?.text || '')) return false
@@ -498,83 +573,39 @@ async function handlerInner(req: Request): Promise<Response> {
             ${row.aggregators}::jsonb, ${ctx.agentId}, NOW())
   `
 
-  // Подставляем только пустое и только очевидное: город и число точек.
-  // first_touch_at не трогаем — это машина посмотрела карты, а не человек
-  // Подставляем только по уверенной находке с живыми отзывами: место без
-  // единого отзыва — обычно однофамилец заведения, а не оно само
+  // Ничего не подставляем сами. Раньше находка молча правила поля карточки,
+  // и достаточно было одной ошибки подбора, чтобы затереть верные данные,
+  // уточнённые у клиента голосом. Теперь система только предлагает, а решение
+  // и кнопку оставляет человеку — он видит, что было и что станет.
   const trusted = decision.trusted
-  const filled: string[] = []
+  const cityFromMaps = cityOf(best)
+  const qual = (lead?.qual || {}) as Record<string, any>
 
-  // Сайт и соцсети — в карточку клиента, и только в пустые поля: то, что
-  // сейлз вписал руками, машина не переписывает
-  if (acc && trusted) {
-    const patch: Array<[string, string]> = []
-    if (!lead?.website && best.websiteUri) patch.push(['website', best.websiteUri])
-    if (!lead?.instagram && social.instagram) patch.push(['instagram', social.instagram])
-    if (!lead?.telegram && social.telegram) patch.push(['telegram', social.telegram])
-    // Город карты знают точно — он лежит в компонентах адреса. Сейлз его
-    // всё равно спишет с карт, только руками и позже
-    if (!lead?.city && cityOf(best)) patch.push(['city', cityOf(best)])
-    for (const [field, value] of patch) {
-      if (field === 'website') await sql`UPDATE sales_accounts SET website = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (website IS NULL OR website = '')`
-      if (field === 'instagram') await sql`UPDATE sales_accounts SET instagram = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (instagram IS NULL OR instagram = '')`
-      if (field === 'telegram') await sql`UPDATE sales_accounts SET telegram = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (telegram IS NULL OR telegram = '')`
-      if (field === 'city') await sql`UPDATE sales_accounts SET city = ${value} WHERE id = ${acc} AND org_id = ${orgId} AND (city IS NULL OR city = '')`
-      filled.push(field === 'website' ? 'сайт' : field === 'instagram' ? 'Instagram'
-        : field === 'city' ? 'город' : 'Telegram')
-    }
+  type Suggest = { field: string; label: string; value: string; current: string | null; scope: string }
+  const suggest: Suggest[] = []
+  const put = (field: string, label: string, value: string | null | undefined, current: any, scope: string) => {
+    const v = String(value || '').trim()
+    if (!v) return
+    const cur = current === null || current === undefined ? '' : String(current).trim()
+    if (cur === v) return
+    suggest.push({ field, label, value: v, current: cur || null, scope })
   }
 
-  if (leadId && lead && trusted) {
-    const qual = (lead.qual || {}) as Record<string, any>
-    const patch: Record<string, string> = {}
-    if (!qual.points && branches > 0) { patch.points = String(branches); filled.push('точек') }
-    if (!qual.aggregators && social.aggregators.length) {
-      patch.aggregators = social.aggregators.join(', ')
-      filled.push('агрегаторы')
-    }
-    const cityFromMaps = cityOf(best)
-    if (!lead.city && cityFromMaps) filled.push('город')
-    if (Object.keys(patch).length) {
-      await sql`
-        UPDATE sales_leads
-        SET qual = COALESCE(qual, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb, updated_at = NOW()
-        WHERE id = ${leadId} AND org_id = ${orgId}
-      `
-    }
-    if (!lead.city && cityFromMaps) {
-      await sql`UPDATE sales_leads SET city = ${cityFromMaps}, updated_at = NOW() WHERE id = ${leadId} AND org_id = ${orgId}`
-    }
+  if (acc) {
+    put('website', 'Сайт', best.websiteUri, lead?.website, 'account')
+    put('instagram', 'Instagram', social.instagram, lead?.instagram, 'account')
+    put('telegram', 'Telegram', social.telegram, lead?.telegram, 'account')
+    put('city', 'Город', cityFromMaps, lead?.city, 'account')
   }
-
-  // То же для сделки: пустое поле «Точек» закрывается находкой, заполненное
-  // руками не трогаем — человек мог уточнить у клиента и знает лучше карт
-  if (dealId && deal && trusted) {
-    if (!deal.points && branches > 0) {
-      await sql`
-        UPDATE sales_deals SET points = ${String(branches)}, updated_at = NOW()
-        WHERE id = ${dealId} AND org_id = ${orgId} AND (points IS NULL OR points = '')
-      `
-      filled.push('точек')
-    }
-    // Агрегаторы — со ссылок в подвале сайта заведения. Это факт с его
-    // собственной страницы, а не догадка: кнопку «Заказать в Express24»
-    // ставит сам ресторан
-    if (!deal.aggregators && social.aggregators.length) {
-      await sql`
-        UPDATE sales_deals SET aggregators = ${social.aggregators.join(', ')}, updated_at = NOW()
-        WHERE id = ${dealId} AND org_id = ${orgId} AND (aggregators IS NULL OR aggregators = '')
-      `
-      filled.push('агрегаторы')
-    }
-    const cityFromMaps = cityOf(best)
-    if (!deal.city && cityFromMaps) {
-      await sql`
-        UPDATE sales_deals SET city = ${cityFromMaps}, updated_at = NOW()
-        WHERE id = ${dealId} AND org_id = ${orgId} AND (city IS NULL OR city = '')
-      `
-      filled.push('город')
-    }
+  if (leadId && lead) {
+    put('points', 'Точек в сети', branches > 1 ? String(branches) : '', qual.points, 'lead')
+    put('aggregators', 'Агрегаторы', social.aggregators.join(', '), qual.aggregators, 'lead')
+    put('city', 'Город', cityFromMaps, lead.city, 'lead')
+  }
+  if (dealId && deal) {
+    put('points', 'Точек в сети', branches > 1 ? String(branches) : '', deal.points, 'deal')
+    put('aggregators', 'Агрегаторы', social.aggregators.join(', '), deal.aggregators, 'deal')
+    put('city', 'Город', cityFromMaps, deal.city, 'deal')
   }
 
   const [saved] = leadId
@@ -587,7 +618,7 @@ async function handlerInner(req: Request): Promise<Response> {
     rating: p.rating ?? null,
     reviews: p.userRatingCount ?? null,
   }))
-  return json({ place: saved || null, filled: [...new Set(filled)], match, why, via, candidates, query: asked })
+  return json({ place: saved || null, suggest, trusted, match, why, via, candidates, query: asked })
 }
 
 export default async function handler(req: Request): Promise<Response> {

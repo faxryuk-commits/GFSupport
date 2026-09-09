@@ -49,6 +49,17 @@ const EDITABLE: Array<[keyof Place, string]> = [
 
 type Candidate = { id: string; name: string; address: string; rating: number | null; reviews: number | null }
 
+/** Поле, которое карты предлагают записать в карточку. */
+type Suggest = {
+  field: string
+  label: string
+  value: string
+  /** Что стоит сейчас: пусто или прежнее значение, которое будет заменено. */
+  current: string | null
+  /** Куда писать: карточка клиента, обращение или сделка. */
+  scope: 'account' | 'lead' | 'deal'
+}
+
 const site = (u: string) => u.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
 
 /**
@@ -83,6 +94,10 @@ export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [note, setNote] = useState('')
+  // Что карты предлагают подставить. Раньше это делалось само, и неверная
+  // находка затирала данные, уточнённые у клиента голосом. Теперь решает человек
+  const [suggest, setSuggest] = useState<Suggest[]>([])
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
   // Кандидаты показываем, когда автоматика не уверена или сейлз сам попросил:
   // «Диор Саидкилов» легко становится бутиком Dior, и это должен решать человек
   const [cands, setCands] = useState<Candidate[]>([])
@@ -105,15 +120,45 @@ export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
   const find = async (placeId?: string) => {
     setBusy(true); setErr(''); setNote('')
     try {
-      const r = await apiPost<{ place: Place; filled: string[]; match: string; candidates: Candidate[] }>(
-        '/sales/places', { leadId, dealId, accountId, placeId })
+      const r = await apiPost<{
+        place: Place; suggest: Suggest[]; match: string; candidates: Candidate[]
+      }>('/sales/places', { leadId, dealId, accountId, placeId })
       setPlace(r.place)
       setCands(r.candidates || [])
       setPickOpen(r.match === 'weak' && !placeId)
-      if (r.filled?.length) { setNote(`Подставили в квалификацию: ${r.filled.join(', ')}`); onFilled?.() }
+      // Отмечаем заранее только то, где поле пустое: заполненное руками
+      // человек отметит сам, если согласен заменить
+      const list = r.suggest || []
+      setSuggest(list)
+      setChosen(new Set(list.filter(x => !x.current).map(x => `${x.scope}:${x.field}`)))
       if (r.match === 'weak' && !placeId) setNote('')
     } catch (e: any) {
       setErr(e?.message || 'не нашлось')
+    } finally { setBusy(false) }
+  }
+
+  /** Подставить отмеченное. Пишем по разделам: клиент, обращение, сделка. */
+  const applySuggested = async () => {
+    const picked = suggest.filter(x => chosen.has(`${x.scope}:${x.field}`))
+    if (!picked.length) return
+    setBusy(true); setErr(''); setNote('')
+    try {
+      const byScope: Record<string, Record<string, string>> = {}
+      for (const x of picked) {
+        byScope[x.scope] = byScope[x.scope] || {}
+        byScope[x.scope][x.field] = x.value
+      }
+      const idOf = (scope: string) => scope === 'account' ? accountId : scope === 'lead' ? leadId : dealId
+      for (const [scope, fields] of Object.entries(byScope)) {
+        const id = idOf(scope)
+        if (!id) continue
+        await apiPost('/sales/places', { action: 'apply', scope, id, fields })
+      }
+      setNote(`Подставили: ${picked.map(x => x.label.toLowerCase()).join(', ')}`)
+      setSuggest([]); setChosen(new Set())
+      onFilled?.()
+    } catch (e: any) {
+      setErr(e?.message || 'не подставилось')
     } finally { setBusy(false) }
   }
 
@@ -261,6 +306,50 @@ export function PlaceCard({ leadId, dealId, accountId, fallback, onFilled }: {
       )}
       {(note || err) && (
         <div className={`px-4 py-1.5 text-[11.5px] ${err ? 'text-red-600' : 'text-emerald-700'}`}>{err || note}</div>
+      )}
+      {suggest.length > 0 && !edit && (
+        <div className="px-4 py-2.5 border-b border-gray-100 bg-blue-50/40">
+          <div className="text-[11.5px] font-semibold text-gray-700 mb-1.5">
+            Можно подставить в карточку
+            <span className="font-normal text-gray-500"> — отметьте, что записать</span>
+          </div>
+          <div className="space-y-1">
+            {suggest.map(x => {
+              const key = `${x.scope}:${x.field}`
+              const where = x.scope === 'account' ? 'клиент' : x.scope === 'lead' ? 'обращение' : 'сделка'
+              return (
+                <label key={key} className="flex items-start gap-2 text-[12px] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={chosen.has(key)}
+                    onChange={e => setChosen(prev => {
+                      const nx = new Set(prev)
+                      if (e.target.checked) nx.add(key); else nx.delete(key)
+                      return nx
+                    })}
+                    className="mt-0.5" />
+                  <span className="min-w-0">
+                    <span className="text-gray-500">{x.label} · {where}: </span>
+                    <span className="font-medium text-gray-900">{x.value}</span>
+                    {x.current && (
+                      <span className="text-amber-700"> — заменит «{x.current}»</span>
+                    )}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={applySuggested} disabled={busy || chosen.size === 0}
+              className="px-3 py-1.5 rounded-lg bg-blue-500 text-white text-[12px] font-semibold disabled:opacity-40">
+              {busy ? 'записываю…' : `Подставить (${chosen.size})`}
+            </button>
+            <button onClick={() => { setSuggest([]); setChosen(new Set()) }}
+              className="text-[11.5px] text-gray-500 hover:text-gray-700">
+              не сейчас
+            </button>
+          </div>
+        </div>
       )}
       {edit && (
         <div className="px-4 py-3 border-b border-gray-100 space-y-1.5">
