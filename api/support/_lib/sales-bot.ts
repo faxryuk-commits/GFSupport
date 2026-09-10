@@ -114,19 +114,44 @@ const GROUP_APP_URL = 'https://www.gfsupport.uz'
  * а если она никого не нашла — не узнавал никто, и лид молча лежал в очереди.
  * Теперь его видит вся команда.
  *
- * Идентификатор группы — в настройках (`sales_group_chat_id`), а не в коде:
- * группу меняют без выкладки. Молчание настройки не ошибка — просто не шлём.
+ * В группу идёт не всё подряд, и это важнее, чем кажется:
+ *
+ *  — только входящее обращение человека (kind inbound или paid). Импорт базы
+ *    и заведённое вручную — работа сейлза, а не событие: за месяц это 28 и 2
+ *    карточки, которые превратили бы группу в ленту, где перестают читать;
+ *  — минус источники, которые уже носит в эту группу другой бот. Заявки
+ *    с сайта туда кладёт «Delever site leads» — вторая карточка о том же
+ *    лиде хуже, чем её отсутствие.
+ *
+ * Оба списка — в настройках (`sales_group_chat_id`, `sales_group_skip_sources`),
+ * а не в коде: чужого бота могут отключить или, наоборот, повесить на него
+ * ещё один источник, и это не повод выкладываться.
  */
-export async function notifyLeadToGroup(sql: SQL, lead: any, sourceLabel: string): Promise<void> {
+const GROUP_SKIP_DEFAULT = 'site'
+
+export async function notifyLeadToGroup(
+  sql: SQL, lead: any, source: { key?: string | null; kind?: string | null; label: string },
+): Promise<void> {
   const orgId = lead.org_id || process.env.SALES_ORG || 'org_delever'
-  const [row] = await sql`
-    SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'sales_group_chat_id'
-  `
-  const chatId = String(row?.value || '').trim()
+  const rows = await sql`
+    SELECT key, value FROM support_settings
+    WHERE org_id = ${orgId} AND key IN ('sales_group_chat_id', 'sales_group_skip_sources')
+  ` as Array<{ key: string; value: string }>
+  const byKey = new Map(rows.map(r => [r.key, String(r.value || '').trim()]))
+
+  const chatId = byKey.get('sales_group_chat_id') || ''
   if (!chatId) return
+
+  // Работа сейлза — не событие для группы
+  if (!['inbound', 'paid'].includes(String(source.kind || ''))) return
+
+  const skipRaw = byKey.get('sales_group_skip_sources') ?? GROUP_SKIP_DEFAULT
+  const skip = skipRaw.split(',').map(x => x.trim().toLowerCase()).filter(Boolean)
+  if (skip.includes(String(source.key || '').toLowerCase())) return
+
   const token = await getBotToken(sql)
   if (!token) return
-  await tgSend(token, chatId, leadGroupCard(lead, sourceLabel), leadGroupKeyboard(lead.id))
+  await tgSend(token, chatId, leadGroupCard(lead, source.label), leadGroupKeyboard(lead.id))
 }
 
 export function leadKeyboard(leadId: string): Keyboard {

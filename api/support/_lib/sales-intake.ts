@@ -325,7 +325,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
     if (assignedAgentId) {
       await notifyLeadAssigned(sql, lead, source.label)
     } else if (finalStatus === 'new' || finalStatus === 'assigned') {
-      await notifyLeadToGroup(sql, lead, source.label)
+      await notifyLeadToGroup(sql, lead, { key: sourceKey, kind: source.kind, label: source.label })
     }
   } catch (e) {
     console.error('[sales/intake] notify failed:', e)
