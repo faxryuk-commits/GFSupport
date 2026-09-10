@@ -133,7 +133,7 @@ export function sourceFromLead(lead: any): { source: string; formId: string | nu
   // боевых данных: у всех лид-форм и заявок с сайта ноль, у полусотни
   // «неопознанных» — реальные пользователи Amo
   const createdBy = Number(lead?.created_by || 0)
-  if (createdBy > 0) return { source: 'manual', formId: null }
+  if (createdBy > 0) return { source: 'amo_manual', formId: null }
   return { source: 'unknown', formId: null }
 }
 

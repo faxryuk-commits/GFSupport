@@ -297,9 +297,19 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   // остаётся ничьей и уходит в общий разбор, а не виснет не на том
   if (assignedAgentId && marketId) {
     const [fits] = await sql`
-      SELECT 1 FROM support_agent_markets am
-      JOIN support_markets m ON m.id = am.market_id
-      WHERE am.agent_id = ${assignedAgentId} AND m.code = ${marketId}
+      SELECT 1 FROM support_agents a
+      WHERE a.id = ${assignedAgentId}
+        AND (
+          -- Руководитель ведёт любой рынок: ограничение здесь про сейлза,
+          -- которому чужая территория достаётся по ошибке маппинга
+          a.role IN ('admin', 'org_admin', 'cco', 'team_lead', 'lead')
+          OR EXISTS (
+            SELECT 1 FROM support_agent_markets am
+            JOIN support_markets m ON m.id = am.market_id
+            WHERE am.agent_id = a.id AND m.code = ${marketId})
+          -- Рынки не заданы вовсе — не наказываем: это пробел в настройке
+          OR NOT EXISTS (SELECT 1 FROM support_agent_markets am2 WHERE am2.agent_id = a.id)
+        )
       LIMIT 1
     ` as any[]
     if (!fits) assignedAgentId = null
