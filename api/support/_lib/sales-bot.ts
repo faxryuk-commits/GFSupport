@@ -337,7 +337,10 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
     // Взял в работу = первое касание: таймер SLA останавливается здесь
     await sql`
       UPDATE sales_leads
-      SET status = 'converted', assigned_agent_id = ${agent.id},
+      SET status = 'converted',
+          -- Ответственного не перебиваем: кнопка «взять в работу» в боте
+          -- не должна отбирать карточку у того, кто её уже ведёт
+          assigned_agent_id = COALESCE(assigned_agent_id, ${agent.id}),
           assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = NOW()
       WHERE id = ${lead.id}
     `

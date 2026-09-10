@@ -99,11 +99,24 @@ export default async function handler(req: Request): Promise<Response> {
         ${passwordHash},
         ${phone || null},
         ${position || null},
-        ${department || null},
+        -- Отдел из приглашения главнее того, что человек напечатал о себе:
+        -- он определяет, попадёт ли новичок в отчёты, раздачу и рассылки,
+        -- и решать это должен приглашающий
+        ${invite.department || department || null},
         NOW(),
         ${orgId}
       )
     `
+
+    // Рынок из приглашения: без него сотрудник не виден в региональных
+    // разрезах, а узнаётся это только когда кто-то спросит «а где Баку»
+    if (invite.market_id) {
+      await sql`
+        INSERT INTO support_agent_markets (agent_id, market_id)
+        VALUES (${agentId}, ${invite.market_id})
+        ON CONFLICT DO NOTHING
+      `.catch(() => {})
+    }
 
     // Помечаем приглашение как использованное
     await sql`

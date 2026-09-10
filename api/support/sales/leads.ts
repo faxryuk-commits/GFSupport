@@ -104,13 +104,23 @@ async function handlerInner(req: Request): Promise<Response> {
 
       if (op === 'assign') {
         const target = body.agentId || ctx.agentId
-        await sql`
+        // Чужое закреплённое пачкой не перехватывают: правило то же, что
+        // и поштучно — ответственного меняет он сам или руководитель
+        const done = await sql`
           UPDATE sales_leads
           SET assigned_agent_id = ${target}, assigned_at = NOW(), status = 'assigned',
               sla_due_at = COALESCE(sla_due_at, NOW() + INTERVAL '15 minutes'), updated_at = NOW()
           WHERE id = ANY(${ids}) AND org_id = ${orgId}
-        `
-        return json({ ok: true, changed: ids.length })
+            AND (${ctx.isLead ? 1 : 0} = 1
+                 OR assigned_agent_id IS NULL OR assigned_agent_id = ${ctx.agentId})
+          RETURNING id
+        ` as any[]
+        return json({
+          ok: true,
+          changed: done.length,
+          skipped: ids.length - done.length,
+          note: done.length < ids.length ? 'часть обращений закреплена за другими — их не трогали' : undefined,
+        })
       }
       if (op === 'nurture') {
         await sql`
@@ -203,11 +213,31 @@ async function handlerInner(req: Request): Promise<Response> {
       return json({ ok: true, created, dupes, noPhone, failed })
     }
 
+    /**
+     * Ответственного меняет он сам или руководитель — больше никто.
+     * Иначе выходило так: один сейлз принял обращение и квалифицировал,
+     * второй зашёл посмотреть, что-то нажал — и карточка молча сменила
+     * хозяина. Работа считается по ответственному, поэтому это не мелочь.
+     */
+    const mayReassign = async (leadId: string): Promise<string | null> => {
+      if (ctx.isLead) return null
+      const [cur] = await sql`
+        SELECT assigned_agent_id FROM sales_leads
+        WHERE id = ${leadId} AND org_id = ${orgId} LIMIT 1
+      ` as any[]
+      if (!cur) return 'обращение не найдено'
+      if (!cur.assigned_agent_id) return null
+      if (cur.assigned_agent_id === ctx.agentId) return null
+      return 'Передать обращение может тот, за кем оно закреплено, или руководитель'
+    }
+
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
 
     // Передача лида другому сейлзу: у уходящего в отпуск остаются десятки
     if (action === 'reassign') {
       if (!body.agentId) return json({ error: 'нужен сотрудник' }, 400)
+      const denied = await mayReassign(String(body.leadId))
+      if (denied) return json({ error: denied }, 403)
       await sql`
         UPDATE sales_leads
         SET assigned_agent_id = ${body.agentId}, assigned_at = NOW(),
@@ -351,6 +381,8 @@ async function handlerInner(req: Request): Promise<Response> {
           WHERE id = ${body.leadId} AND org_id = ${orgId}
         `
       } else {
+        const denied = await mayReassign(String(body.leadId))
+        if (denied) return json({ error: denied }, 403)
         await sql`
           UPDATE sales_leads
           SET assigned_agent_id = ${agentId}, assigned_at = NOW(), status = 'assigned',

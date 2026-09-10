@@ -106,7 +106,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     try {
       const body = await req.json()
-      const { email, role, expiresInDays } = body
+      const { email, role, department, marketId, expiresInDays } = body
 
       const inviteId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const token = generateToken()
@@ -119,8 +119,10 @@ export default async function handler(req: Request): Promise<Response> {
       const createdBy = authHeader.replace('Bearer ', '').split('_')[0] || null
 
       await sql`
-        INSERT INTO support_invites (id, token, email, role, created_by, expires_at, org_id)
-        VALUES (${inviteId}, ${token}, ${email || null}, ${role || 'agent'}, ${createdBy}, ${expiresAt.toISOString()}, ${orgId})
+        INSERT INTO support_invites (id, token, email, role, department, market_id, created_by, expires_at, org_id)
+        VALUES (${inviteId}, ${token}, ${email || null}, ${role || 'agent'},
+                ${department || null}, ${marketId || null},
+                ${createdBy}, ${expiresAt.toISOString()}, ${orgId})
       `
 
       // Формируем ссылку на новый проект

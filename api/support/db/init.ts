@@ -248,6 +248,11 @@ export default async function handler(req: Request): Promise<Response> {
         token VARCHAR(100) UNIQUE NOT NULL,
         email VARCHAR(255),
         role VARCHAR(20) DEFAULT 'agent',
+        -- Отдел и рынок задаёт приглашающий, а не новичок при регистрации:
+        -- пока их вписывал сам человек, он приходил без отдела и выпадал
+        -- из отчётов, раздачи задач и рассылок — и это замечали неделями
+        department VARCHAR(100),
+        market_id VARCHAR(50),
         org_id VARCHAR(50),
         created_by VARCHAR(50),
         used_at TIMESTAMP,

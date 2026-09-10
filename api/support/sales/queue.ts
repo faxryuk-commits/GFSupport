@@ -66,7 +66,10 @@ export default async function handler(req: Request): Promise<Response> {
       `
       // Взял в работу = первое касание: таймер SLA останавливается здесь
       await sql`
-        UPDATE sales_leads SET status = 'converted', assigned_agent_id = ${ctx.agentId},
+        UPDATE sales_leads SET status = 'converted',
+               -- Ответственного не перебиваем: один квалифицировал, другой
+               -- открыл и перевёл в сделку — карточка не должна менять хозяина
+               assigned_agent_id = COALESCE(assigned_agent_id, ${ctx.agentId}),
                assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = NOW()
         WHERE id = ${lead.id}
       `

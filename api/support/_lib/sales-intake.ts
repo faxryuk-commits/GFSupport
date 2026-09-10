@@ -288,10 +288,29 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   // Разбор теперь явный: обращение видно всей команде, и кто забрал —
   // тот и ведёт. Ответственного, пришедшего из системы-источника (у Amo
   // он свой), по-прежнему уважаем: перекидывать чужую работу нельзя.
-  const assignedAgentId: string | null = body.owner_hint || null
+  let assignedAgentId: string | null = body.owner_hint || null
+
+  // Ответственный из источника обязан работать на этом рынке. В Amo своя
+  // карта ответственных, и по ней узбекскому менеджеру доставались
+  // казахстанские сделки: человек видел у себя чужие карточки, которые
+  // не заводил, а рынок их так и не получал. Не подходит — карточка
+  // остаётся ничьей и уходит в общий разбор, а не виснет не на том
+  if (assignedAgentId && marketId) {
+    const [fits] = await sql`
+      SELECT 1 FROM support_agent_markets am
+      JOIN support_markets m ON m.id = am.market_id
+      WHERE am.agent_id = ${assignedAgentId} AND m.code = ${marketId}
+      LIMIT 1
+    ` as any[]
+    if (!fits) assignedAgentId = null
+  }
 
   const leadId = salesId('sl')
-  const slaMinutes = status === 'nurture' ? null : FIRST_TOUCH_SLA_MIN
+  // Норматив «коснуться за 15 минут» — про входящий поток, на который надо
+  // ответить. Карточка, приехавшая из другой системы с готовым
+  // ответственным, входящим потоком не является: она краснела через
+  // четверть часа у человека, который о ней не знал
+  const slaMinutes = status === 'nurture' || assignedAgentId ? null : FIRST_TOUCH_SLA_MIN
   const finalStatus = assignedAgentId ? 'assigned' : status === 'assigned' ? 'new' : status
 
   const [lead] = await sql`

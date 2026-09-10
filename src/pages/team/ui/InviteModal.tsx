@@ -4,6 +4,30 @@ import { apiPost, apiGet } from '@/shared/services/api.service'
 import { Modal } from '@/shared/ui'
 import { formatDateDMY } from '@/shared/lib'
 
+/**
+ * Отдел и роль задаёт приглашающий, а не новичок при регистрации.
+ *
+ * Пока отдел вписывал сам человек, он приходил с пустым полем — и молча
+ * выпадал из отчёта активности, раздачи задач, команд WhatsApp и Telegram
+ * и рассылки «Что нового». Замечали это через недели, вопросом «а где Баку».
+ *
+ * Роли здесь настоящие, те же, что в системе: прежний список из трёх
+ * («агент, менеджер, администратор») давал роль manager, которой в отделе
+ * продаж не существует, — и человек снова оказывался ничьим.
+ */
+const DEPARTMENTS: Array<{ value: string; label: string; roles: Array<[string, string]> }> = [
+  { value: 'sales', label: 'Продажи', roles: [
+    ['sales', 'Сейлз'], ['kam', 'КАМ'], ['sdr', 'SDR'], ['sales_lead', 'Руководитель продаж'], ['cco', 'Коммерческий директор'],
+  ] },
+  { value: 'support', label: 'Поддержка', roles: [
+    ['support_agent', 'Агент поддержки'], ['team_lead', 'Тимлид поддержки'],
+  ] },
+  { value: 'product', label: 'Продукт', roles: [['pm', 'Продакт'], ['developer', 'Разработчик']] },
+  { value: 'admin', label: 'Администрация', roles: [['admin', 'Администратор'], ['pm', 'Менеджер проектов']] },
+]
+
+interface Market { id: string; code: string; name: string; isActive?: boolean }
+
 interface Invite {
   id: string
   token: string
@@ -30,7 +54,10 @@ export function InviteButton({ onClick }: { onClick: () => void }) {
 
 export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'agent' | 'manager' | 'admin'>('agent')
+  const [department, setDepartment] = useState('sales')
+  const [role, setRole] = useState('sales')
+  const [marketId, setMarketId] = useState('')
+  const [markets, setMarkets] = useState<Market[]>([])
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -38,7 +65,13 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (isOpen) { setError(''); loadInvites() }
+    if (isOpen) {
+      setError('')
+      loadInvites()
+      apiGet<{ markets: Market[] }>('/markets', false)
+        .then(d => setMarkets((d.markets || []).filter(m => m.isActive !== false)))
+        .catch(() => {})
+    }
   }, [isOpen])
 
   async function loadInvites() {
@@ -55,7 +88,8 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       setLoading(true)
       setError('')
       const resp = await apiPost<{ invite: Invite }>('/invites', {
-        email: email || undefined, role, expiresInDays: 7,
+        email: email || undefined, role, department,
+        marketId: marketId || undefined, expiresInDays: 7,
       })
       setUrl(resp.invite.url)
       loadInvites()
@@ -104,17 +138,52 @@ export function InviteModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
               <p className="text-xs text-slate-500 mt-1">Если указать email, ссылка будет привязана к нему</p>
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Отдел</label>
+                <select
+                  value={department}
+                  onChange={e => {
+                    const d = DEPARTMENTS.find(x => x.value === e.target.value)
+                    setDepartment(e.target.value)
+                    // Роль всегда из выбранного отдела: «менеджер продаж»
+                    // в поддержке — это как раз то, из-за чего люди пропадали
+                    if (d) setRole(d.roles[0][0])
+                  }}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
+                <select
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {(DEPARTMENTS.find(d => d.value === department)?.roles || []).map(
+                    ([v, l]) => <option key={v} value={v}>{l}</option>,
+                  )}
+                </select>
+              </div>
+            </div>
+
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Роль</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Рынок</label>
               <select
-                value={role}
-                onChange={e => setRole(e.target.value as 'agent' | 'manager' | 'admin')}
+                value={marketId}
+                onChange={e => setMarketId(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="agent">Агент поддержки</option>
-                <option value="manager">Менеджер</option>
-                <option value="admin">Администратор</option>
+                <option value="">Все рынки</option>
+                {markets.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
+              <p className="text-xs text-slate-500 mt-1">
+                Отдел и рынок применятся сами при регистрации — сотрудник сразу попадёт
+                в отчёты и списки своей команды.
+              </p>
             </div>
 
             <button
