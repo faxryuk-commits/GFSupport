@@ -38,7 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
   const people = await sql`
     SELECT id, name, telegram_id FROM support_agents
     WHERE org_id = ${ORG} AND is_active = true AND merged_into IS NULL
-      AND (department IN ('sales', 'sale')
+      AND ((department ILIKE '%sale%' OR department ILIKE '%прода%')
            OR role IN ('cco', 'kam', 'sales', 'sale', 'sdr', 'admin', 'owner', 'manager', 'team_lead'))
   ` as any[]
 

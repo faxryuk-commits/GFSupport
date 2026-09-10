@@ -230,7 +230,7 @@ export default async function handler(req: Request): Promise<Response> {
           -- только отдел продаж: это отчёт продаж, и поддержка с нулями по
           -- сделкам была бы шумом. Тот, кто сделал продажное действие,
           -- попадёт в таблицу и без этого условия
-          AND (ag.department IN ('sales', 'sale')
+          AND ((ag.department ILIKE '%sale%' OR ag.department ILIKE '%прода%')
                OR ag.role IN ('cco', 'sales', 'sale', 'kam', 'sdr', 'sales_lead'))
         GROUP BY ag.name
       `,

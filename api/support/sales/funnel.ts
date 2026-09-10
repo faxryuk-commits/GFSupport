@@ -461,7 +461,7 @@ async function handlerInner(req: Request): Promise<Response> {
     sql`
       SELECT a.id, a.name FROM support_agents a
       WHERE a.org_id = ${orgId} AND a.is_active = true AND a.merged_into IS NULL
-        AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr')
+        AND ((a.department ILIKE '%sale%' OR a.department ILIKE '%прода%') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr')
              OR EXISTS (SELECT 1 FROM sales_deals d WHERE d.org_id = ${orgId}
                           AND d.owner_agent_id = a.id AND d.archived_at IS NULL)
              OR EXISTS (SELECT 1 FROM sales_leads l WHERE l.org_id = ${orgId}

@@ -251,7 +251,7 @@ export default async function handler(req: Request): Promise<Response> {
           GROUP BY 1
         ) ds ON ds.aid = a.id
         WHERE a.org_id = ${orgId} AND a.merged_into IS NULL AND a.is_active = true
-          AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr'))
+          AND ((a.department ILIKE '%sale%' OR a.department ILIKE '%прода%') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr'))
           AND a.id <> ${ctx.agentId}
         GROUP BY a.id, a.name, t.open, t.overdue, t.done_week, ds.steps_open, ds.steps_overdue, ds.no_step
         ORDER BY overdue DESC, open DESC

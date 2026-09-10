@@ -258,7 +258,7 @@ export default async function handler(req: Request): Promise<Response> {
       sql`
         SELECT a.id, a.name FROM support_agents a
         WHERE a.org_id = ${orgId} AND a.is_active = true AND a.merged_into IS NULL
-          AND (a.department IN ('sales', 'sale') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr')
+          AND ((a.department ILIKE '%sale%' OR a.department ILIKE '%прода%') OR a.role IN ('cco', 'kam', 'sales', 'sale', 'sdr')
                OR EXISTS (SELECT 1 FROM sales_tasks x WHERE x.org_id = ${orgId}
                             AND (x.assignee_agent_id = a.id OR x.created_by_agent_id = a.id)))
         ORDER BY a.name

@@ -60,7 +60,7 @@ export default async function handler(req: Request): Promise<Response> {
       const agents = await sql`
         SELECT id, name FROM support_agents
         WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
-          AND (department IN ('sales', 'sale')
+          AND ((department ILIKE '%sale%' OR department ILIKE '%прода%')
                OR role IN ('cco', 'sales', 'sale', 'kam', 'sdr', 'sales_lead', 'admin', 'org_admin'))
         ORDER BY name
       `
