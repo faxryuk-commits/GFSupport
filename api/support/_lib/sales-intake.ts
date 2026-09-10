@@ -1,7 +1,7 @@
 import type { NeonQueryFunction } from '@neondatabase/serverless'
 import { salesId, normPhone } from './sales-schema.js'
 import { scoreIcp, routeByBand, FIRST_TOUCH_SLA_MIN } from './sales-icp.js'
-import { notifyLeadAssigned } from './sales-bot.js'
+import { notifyLeadAssigned, notifyLeadToGroup } from './sales-bot.js'
 import { kindOfSource } from './sales-amo.js'
 import { marketByPhoneCity } from './region-detect.js'
 
@@ -54,6 +54,9 @@ export interface IntakeResult {
   account_id?: string
   deduped?: boolean
   merged_account?: boolean
+  /** Клиент уже в работе: обращение приклеено к его карточке, новой не заведено. */
+  attached_to?: 'lead' | 'deal'
+  deal_id?: string
   icp?: number
   band?: string
   status?: string
@@ -172,6 +175,61 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
     }
   }
 
+  // 2.5. Клиент уже в работе — второй карточки не заводим.
+  //
+  // Amo создаёт отдельную сделку на каждый входящий звонок («Входящий
+  // 978009205 …»), синхронизация приносила её как новое обращение, и рядом
+  // с открытой сделкой появлялся дубль в «Новых» с просрочкой SLA. Сейлз
+  // видел два одинаковых клиента и вёл их порознь.
+  //
+  // Приклеиваем только когда телефон совпал с контактом существующего
+  // клиента: это единственный надёжный признак, что перед нами тот же самый.
+  if (accountId && merged) {
+    const [openDeal] = await sql`
+      SELECT id FROM sales_deals
+      WHERE org_id = ${orgId} AND account_id = ${accountId}
+        AND won_at IS NULL AND lost_at IS NULL AND archived_at IS NULL
+      ORDER BY created_at DESC LIMIT 1
+    ` as any[]
+    const [liveLead] = await sql`
+      SELECT id FROM sales_leads
+      WHERE org_id = ${orgId} AND account_id = ${accountId}
+        AND status NOT IN ('junk', 'converted', 'lost')
+      ORDER BY created_at DESC LIMIT 1
+    ` as any[]
+
+    if (openDeal?.id || liveLead?.id) {
+      // Ничего не теряем: повторное обращение ложится касанием в ту же
+      // карточку. Ключ внешней системы держим в identity — иначе повторный
+      // проход синхронизации приклеит то же самое второй раз
+      const seen = externalId
+        ? await sql`
+            SELECT 1 AS x FROM sales_touchpoints
+            WHERE org_id = ${orgId} AND identity = ${externalId} LIMIT 1
+          ` as any[]
+        : []
+      if (!seen.length) {
+        await sql`
+          INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, deal_id, kind, channel,
+                                         title, detail, identity, happened_at)
+          VALUES (${salesId('stp')}, ${orgId}, ${accountId}, ${liveLead?.id || null},
+                  ${openDeal?.id || null}, 'repeat', ${sourceKey},
+                  ${'Повторное обращение: ' + name.slice(0, 200)},
+                  ${body.text ? String(body.text).slice(0, 1000) : null},
+                  ${externalId}, NOW())
+        `.catch(() => {})
+      }
+      return {
+        ok: true,
+        account_id: accountId,
+        lead_id: liveLead?.id,
+        deal_id: openDeal?.id,
+        attached_to: openDeal?.id ? 'deal' : 'lead',
+        merged_account: true,
+      }
+    }
+  }
+
   // Регион: явный из источника, иначе выводим по телефону и городу — лиды из
   // WhatsApp и Instagram приходили без market и оставались вне региональных срезов
   const city = body.city ? String(body.city).slice(0, 100) : null
@@ -258,13 +316,19 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
     RETURNING *
   `
 
-  // 5. Уведомление сейлзу — падение Telegram не должно ронять приём лида
-  if (assignedAgentId) {
-    try {
+  // 5. Уведомление — падение Telegram не должно ронять приём лида.
+  //
+  // Есть ответственный из системы-источника — пишем ему лично. Нет — кладём
+  // карточку в общую группу: раздачи больше нет, и без этого об обращении
+  // не узнал бы никто. Мусор (junk) и прогрев команду не будят.
+  try {
+    if (assignedAgentId) {
       await notifyLeadAssigned(sql, lead, source.label)
-    } catch (e) {
-      console.error('[sales/intake] notify failed:', e)
+    } else if (finalStatus === 'new' || finalStatus === 'assigned') {
+      await notifyLeadToGroup(sql, lead, source.label)
     }
+  } catch (e) {
+    console.error('[sales/intake] notify failed:', e)
   }
 
   return {
