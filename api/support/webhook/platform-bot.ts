@@ -52,6 +52,13 @@ export default async function handler(req: Request): Promise<Response> {
     const message = update.message
     if (!message) return json({ ok: true })
 
+    // Бот сидит в группе продаж, но там у него одна роль — публиковать
+    // карточки обращений и принимать нажатия (нажатия разобраны выше).
+    // Всё остальное — личное: очередь сотрудника, голосовые заметки,
+    // регистрация. Без этой проверки «/start» выложил бы код регистрации
+    // на всю группу, а «/queue» — чужую очередь дня
+    if (message.chat?.type !== 'private') return json({ ok: true })
+
     if (await handleSalesCommand(sqlEarly, message)) return json({ ok: true })
     // Голосовое после звонка → поля сделки (замена телефонии)
     if (await handleVoiceNote(sqlEarly, message)) return json({ ok: true })

@@ -38,6 +38,9 @@ const DEFAULT_SETTINGS = {
   ai_model: 'gpt-4o-mini',
   whisper_language: 'ru',
   sla_guard_live: false,
+  // Общая группа продаж в Telegram: туда падают новые обращения с кнопкой
+  // «Беру». Пусто — не шлём. Меняется без выкладки, поэтому в настройках
+  sales_group_chat_id: '',
   // Агент-квалификатор в продажах: auto — пишет сам, draft — черновики в журнал, off — молчит
   sales_qualifier_mode: 'auto', // SLA-страж: true = шлёт алерты (LIVE), false = только наблюдает (SHADOW)
 }

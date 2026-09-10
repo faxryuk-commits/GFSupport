@@ -80,9 +80,53 @@ export function leadCard(lead: any, sourceLabel: string): string {
     `📥 ${sourceLabel}${lead.campaign ? ` · ${lead.campaign}` : ''}`,
     reasons ? `\n<i>${reasons}</i>` : '',
     lead.text ? `\n«${String(lead.text).slice(0, 240)}»` : '',
-    `\n⏱ Первое касание — <b>15 минут</b>. Не успеете — лид уйдёт свободному.`,
+    `\n⏱ Первое касание — <b>15 минут</b>.`,
   ]
   return lines.filter(Boolean).join('\n')
+}
+
+/**
+ * Та же карточка, но для общей группы продаж.
+ *
+ * Отличается концовкой и набором кнопок: «+30 мин» и «не мой» — действия
+ * личные, в группе они бессмысленны. Здесь ровно один выбор: забрать.
+ */
+export function leadGroupCard(lead: any, sourceLabel: string): string {
+  return leadCard(lead, sourceLabel).replace(
+    '⏱ Первое касание — <b>15 минут</b>.',
+    '⏱ Первое касание — <b>15 минут</b>. Свободен: кто нажал «Беру», тот и ведёт.',
+  )
+}
+
+export function leadGroupKeyboard(leadId: string): Keyboard {
+  return [[
+    { text: '✅ Беру', callback_data: `sl:take:${leadId}` },
+    { text: 'Открыть карточку', url: `${GROUP_APP_URL}/sales/leads/${leadId}` },
+  ]]
+}
+
+const GROUP_APP_URL = 'https://www.gfsupport.uz'
+
+/**
+ * Обращение в общую группу сейлзов.
+ *
+ * Раньше о новом обращении узнавал только тот, кому его назначила раздача,
+ * а если она никого не нашла — не узнавал никто, и лид молча лежал в очереди.
+ * Теперь его видит вся команда.
+ *
+ * Идентификатор группы — в настройках (`sales_group_chat_id`), а не в коде:
+ * группу меняют без выкладки. Молчание настройки не ошибка — просто не шлём.
+ */
+export async function notifyLeadToGroup(sql: SQL, lead: any, sourceLabel: string): Promise<void> {
+  const orgId = lead.org_id || process.env.SALES_ORG || 'org_delever'
+  const [row] = await sql`
+    SELECT value FROM support_settings WHERE org_id = ${orgId} AND key = 'sales_group_chat_id'
+  `
+  const chatId = String(row?.value || '').trim()
+  if (!chatId) return
+  const token = await getBotToken(sql)
+  if (!token) return
+  await tgSend(token, chatId, leadGroupCard(lead, sourceLabel), leadGroupKeyboard(lead.id))
 }
 
 export function leadKeyboard(leadId: string): Keyboard {
@@ -274,9 +318,14 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
     `
     if (token) {
       await tgAnswer(token, cb.id, 'Взяли в работу')
+      // В группе важно, КТО забрал: «в работе у вас» там прочитают все,
+      // и каждый решит, что это про него
+      const inGroup = cb.message?.chat?.type !== 'private'
       await tgEdit(token, cb.message.chat.id, cb.message.message_id,
-        `✅ <b>${lead.name}</b> — в работе у вас.\n\nСоздана сделка на этапе «Дозвон». ` +
-        `Дальше: дозвон, 7 полей квалификации. Заполнить можно голосовым сообщением сюда.`)
+        inGroup
+          ? `✅ <b>${lead.name}</b> — забрал <b>${agent.name}</b>.\n\nСделка создана, обращение больше не свободно.`
+          : `✅ <b>${lead.name}</b> — в работе у вас.\n\nСоздана сделка на этапе «Дозвон». `
+            + `Дальше: дозвон, 7 полей квалификации. Заполнить можно голосовым сообщением сюда.`)
     }
     return true
   }
