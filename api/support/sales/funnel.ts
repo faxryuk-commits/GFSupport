@@ -385,10 +385,12 @@ async function handlerInner(req: Request): Promise<Response> {
              COALESCE(jsonb_object_agg(d.currency, d.amt)
                FILTER (WHERE d.currency IS NOT NULL AND d.amt IS NOT NULL),
                '{}'::jsonb) AS amounts,
-             -- CF этапа — деньги на входе при заключении: единоразовые платежи
-             -- по сделкам этапа. Подписка сюда не входит, она в MRR. Раньше
-             -- считалось «подписка за год плюс разовое» и раздувало цифру
-             -- в двенадцать раз против того, что реально приходит при подписании
+             -- CF этапа — деньги на входе при заключении: депозит плюс разовые
+             -- работы. Депозит (6 500 000 за платформу, 3 900 000 за агрегаторы)
+             -- в сделке нигде не хранится числом — конструктор КП кладёт его
+             -- только позицией в items, а сохраняет лишь подписку и разовое.
+             -- Поэтому берём позиции категории «депозит» и умножаем на цену
+             -- прайса в валюте сделки. Подписка сюда не входит, она в MRR
              COALESCE(jsonb_object_agg(d.currency, d.cash)
                FILTER (WHERE d.currency IS NOT NULL AND d.cash IS NOT NULL),
                '{}'::jsonb) AS cashflow
@@ -396,7 +398,18 @@ async function handlerInner(req: Request): Promise<Response> {
       LEFT JOIN (
         SELECT stage_id, currency, COUNT(*)::int AS cnt,
                SUM(monthly_amount) FILTER (WHERE COALESCE(monthly_amount, 0) <> 0) AS amt,
-               SUM(onetime_amount) FILTER (WHERE COALESCE(onetime_amount, 0) <> 0) AS cash
+               SUM(
+                 COALESCE(onetime_amount, 0)
+                 + COALESCE((
+                     SELECT SUM((p.prices->>sales_deals.currency)::numeric
+                                * COALESCE(NULLIF(it->>'qty', '')::numeric, 1))
+                     FROM jsonb_array_elements(
+                       CASE WHEN jsonb_typeof(sales_deals.items) = 'array' THEN sales_deals.items ELSE '[]'::jsonb END
+                     ) it
+                     JOIN sales_price_items p
+                       ON p.key = it->>'key' AND p.org_id = sales_deals.org_id AND p.category = 'deposit'
+                   ), 0)
+               ) AS cash
         FROM sales_deals
         WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
           AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)

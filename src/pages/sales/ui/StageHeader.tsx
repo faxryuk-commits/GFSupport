@@ -47,7 +47,7 @@ export function StageHeader({ label, description, total, slaHours, amounts, cash
     .map(([c, v]) => `${exact(v)} ${c}`)
   const hint = [
     `MRR ${exact(mrr)} ${cur} — ежемесячные платежи по сделкам этапа.`,
-    `CF ${exact(cf)} ${cur} — деньги на входе при заключении: единоразовые платежи по сделкам этапа.`,
+    `CF ${exact(cf)} ${cur} — деньги на входе при заключении: депозит по спецификации плюс разовые работы.`,
     others.length ? `Не в шапке, другие валюты: MRR ${others.join(', ')}.` : '',
   ].filter(Boolean).join('\n')
 
