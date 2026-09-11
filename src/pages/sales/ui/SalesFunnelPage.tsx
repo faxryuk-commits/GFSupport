@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CallPhone } from '@/shared/ui'
 import { apiGet, apiPost, apiPatch } from '@/shared/services/api.service'
 import { MeetingsPanel } from './MeetingsPanel'
@@ -113,6 +113,23 @@ function days(iso: string | null): number {
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000)
 }
 
+/** Число без валюты: валюта одна на строку и стоит в конце. */
+const num = (v: any) => (v === null || v === undefined || Number(v) === 0)
+  ? '—'
+  : Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+
+/** Подсказка: формула и всё, что не поместилось в валюту страны. */
+function stageMoneyHint(amounts: Record<string, any> | undefined, cashflow: Record<string, any>, cur: string) {
+  const others = Object.entries(amounts || {})
+    .filter(([c, v]) => c !== cur && Number(v) > 0)
+    .map(([c, v]) => `${num(v)} ${c}`)
+  return [
+    'MRR — ежемесячные платежи по сделкам этапа.',
+    'CF — сумма сделок: подписка за срок плюс разовое; срок не указан — считается год.',
+    others.length ? `Ещё в других валютах, не в шапке: MRR ${others.join(', ')}.` : '',
+  ].filter(Boolean).join(' ')
+}
+
 export function SalesFunnelPage() {
   const [data, setData] = useState<FunnelData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -150,6 +167,16 @@ export function SalesFunnelPage() {
   const [openLead, setOpenLead] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const region = useRegion('funnel')
+  // Валюта страны: у выбранного региона своя, у «всех регионов» — та, где
+  // больше всего сделок. Суммы в других валютах в шапку не попадают, но
+  // видны в подсказке по наведению, чтобы часть воронки не пряталась молча
+  const cur = useMemo(() => {
+    const list = refs?.markets || []
+    const pick = region
+      ? list.find(m => m.market_id === region)
+      : [...list].sort((a, b) => (b.deals || 0) - (a.deals || 0))[0]
+    return pick?.currency || 'UZS'
+  }, [refs, region])
 
   // Тип воронки: обычные продажи или enterprise — этапы и темп у них разные.
   // Выбор липнет в localStorage, как и регион
@@ -492,7 +519,7 @@ export function SalesFunnelPage() {
               className={`flex-none w-[232px] bg-white border rounded-lg flex flex-col
                           transition-colors ${zoneCls(over === col.key, 'lead')}`}
             >
-              <header className="px-2.5 py-2 border-b border-gray-100 h-[68px] flex flex-col justify-center">
+              <header className="px-2.5 py-2 border-b border-gray-100 h-[52px] flex flex-col justify-center">
                 <div className="flex justify-between items-baseline gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 truncate">
                     {col.label}
@@ -559,6 +586,8 @@ export function SalesFunnelPage() {
               {/* Высота шапки фиксирована: длинный список валют переносился на
                   вторую строку, и соседние колонки стояли на разных уровнях */}
               <header className="px-2.5 py-2 border-b border-gray-100 h-[52px] flex flex-col justify-center">
+                {/* Первая строка: этап, сколько сделок, норматив. Вторая: MRR и CF
+                    в валюте страны — одна цифра, а не список по валютам */}
                 <div className="flex justify-between items-baseline gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600
                                    flex items-center gap-1 min-w-0">
@@ -569,25 +598,16 @@ export function SalesFunnelPage() {
                                    grid place-items-center text-[8px] font-bold cursor-help normal-case">?</span>
                     )}
                   </span>
-                  <span className="text-[11.5px] text-gray-400 tabular-nums flex-none">{st.total}</span>
-                </div>
-                {/* Две денежные строки: МРР — подписка в месяц по сделкам этапа,
-                    кешфлоу — сумма сделок (подписка за срок плюс разовое; пустой
-                    срок считается годом) */}
-                <div className="mt-0.5 flex items-baseline gap-1.5 text-[10.5px] text-gray-400 tabular-nums">
-                  <span className="flex-none font-semibold text-gray-500">МРР</span>
-                  <span className="truncate" title={moneyList(st.amounts)}>{moneyList(st.amounts)}</span>
-                  {st.sla_hours ? (
-                    <span className="flex-none ml-auto whitespace-nowrap">
-                      норматив {Math.round(Number(st.sla_hours) / 24) || 1} дн
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex items-baseline gap-1.5 text-[10.5px] text-gray-400 tabular-nums">
-                  <span className="flex-none font-semibold text-gray-500">Кешфлоу</span>
-                  <span className="truncate" title={`Сумма сделок: подписка за срок плюс разовое. Срок не указан — считается 12 мес. ${moneyList(st.cashflow || {})}`}>
-                    {moneyList(st.cashflow || {})}
+                  <span className="text-[11.5px] text-gray-400 tabular-nums flex-none whitespace-nowrap">
+                    {st.total}
+                    {st.sla_hours ? <span className="text-[10px]"> · норматив {Math.round(Number(st.sla_hours) / 24) || 1} дн</span> : null}
                   </span>
+                </div>
+                <div className="mt-0.5 text-[10.5px] text-gray-400 tabular-nums truncate"
+                  title={stageMoneyHint(st.amounts, st.cashflow || {}, cur)}>
+                  <span className="font-semibold text-gray-500">MRR</span> {num(st.amounts?.[cur])}
+                  <span className="text-gray-300"> · </span>
+                  <span className="font-semibold text-gray-500">CF</span> {num(st.cashflow?.[cur])} {cur}
                 </div>
               </header>
               <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
