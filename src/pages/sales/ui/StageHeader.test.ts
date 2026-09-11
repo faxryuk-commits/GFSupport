@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { compactMoney } from './StageHeader'
 
+// Локаль ставит между тысячами узкий неразрывный пробел — в сравнении
+// приводим его к обычному, чтобы тест не зависел от версии ICU
+const plain = (v: unknown) => compactMoney(v).replace(/[\u202f\u00a0]/g, ' ')
+
 /**
  * Сокращение сумм в шапке колонки. Ошибка тут читается как «в воронке
  * денег в десять раз меньше», поэтому проверяем на настоящих числах.
@@ -14,7 +18,7 @@ describe('короткая запись суммы', () => {
   })
   it('тысячи и малые суммы — как есть', () => {
     expect(compactMoney(16860)).toBe('16,9 тыс')
-    expect(compactMoney(1405)).toBe('1 405')
+    expect(plain(1405)).toBe('1 405')
     expect(compactMoney(9)).toBe('9')
   })
   it('миллиарды', () => {
