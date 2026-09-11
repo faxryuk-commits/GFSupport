@@ -6,6 +6,7 @@ import { Chip, PageShell, Skeleton, Modal, MultiPick, money, moneyList, fmtDateT
          useAutoRefresh, Drawer, FilterBar , workMorningIn, MarketFlag, Seg } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
 import { RegionBadge, useRegion } from './region'
+import { StageHeader } from './StageHeader'
 import { parsePhone } from '@/shared/lib/phone'
 import { SalesDealPage } from './SalesDealPage'
 import { SalesLeadPage } from './SalesLeadPage'
@@ -111,23 +112,6 @@ function days(iso: string | null): number {
   if (!iso) return 0
   const ts = iso.includes('Z') || iso.includes('+') ? iso : `${iso}Z`
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000)
-}
-
-/** Число без валюты: валюта одна на строку и стоит в конце. */
-const num = (v: any) => (v === null || v === undefined || Number(v) === 0)
-  ? '—'
-  : Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })
-
-/** Подсказка: формула и всё, что не поместилось в валюту страны. */
-function stageMoneyHint(amounts: Record<string, any> | undefined, cashflow: Record<string, any>, cur: string) {
-  const others = Object.entries(amounts || {})
-    .filter(([c, v]) => c !== cur && Number(v) > 0)
-    .map(([c, v]) => `${num(v)} ${c}`)
-  return [
-    'MRR — ежемесячные платежи по сделкам этапа.',
-    'CF — сумма сделок: подписка за срок плюс разовое; срок не указан — считается год.',
-    others.length ? `Ещё в других валютах, не в шапке: MRR ${others.join(', ')}.` : '',
-  ].filter(Boolean).join(' ')
 }
 
 export function SalesFunnelPage() {
@@ -585,31 +569,8 @@ export function SalesFunnelPage() {
             >
               {/* Высота шапки фиксирована: длинный список валют переносился на
                   вторую строку, и соседние колонки стояли на разных уровнях */}
-              <header className="px-2.5 py-2 border-b border-gray-100 h-[52px] flex flex-col justify-center">
-                {/* Первая строка: этап, сколько сделок, норматив. Вторая: MRR и CF
-                    в валюте страны — одна цифра, а не список по валютам */}
-                <div className="flex justify-between items-baseline gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600
-                                   flex items-center gap-1 min-w-0">
-                    <span className="truncate">{st.label}</span>
-                    {st.description && (
-                      <span title={st.description}
-                        className="flex-none w-3.5 h-3.5 rounded-full border border-gray-300 text-gray-400
-                                   grid place-items-center text-[8px] font-bold cursor-help normal-case">?</span>
-                    )}
-                  </span>
-                  <span className="text-[11.5px] text-gray-400 tabular-nums flex-none whitespace-nowrap">
-                    {st.total}
-                    {st.sla_hours ? <span className="text-[10px]"> · норматив {Math.round(Number(st.sla_hours) / 24) || 1} дн</span> : null}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[10.5px] text-gray-400 tabular-nums truncate"
-                  title={stageMoneyHint(st.amounts, st.cashflow || {}, cur)}>
-                  <span className="font-semibold text-gray-500">MRR</span> {num(st.amounts?.[cur])}
-                  <span className="text-gray-300"> · </span>
-                  <span className="font-semibold text-gray-500">CF</span> {num(st.cashflow?.[cur])} {cur}
-                </div>
-              </header>
+              <StageHeader label={st.label} description={st.description} total={st.total}
+                slaHours={st.sla_hours} amounts={st.amounts} cashflow={st.cashflow} cur={cur} />
               <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
                 {dealsIn(st.key).map(d => {
                   const stuck = Boolean(d.stalled_at) || !d.next_step_at

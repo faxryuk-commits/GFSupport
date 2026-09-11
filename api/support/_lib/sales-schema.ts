@@ -1246,7 +1246,7 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { field: 'tariff', values: ['Start', 'Medium', 'Big', 'Enterprise'] },
     { field: 'country', values: [
       'Узбекистан', 'Казахстан', 'Кыргызстан', 'Азербайджан', 'Грузия', 'Кипр', 'ОАЭ'] },
-    { field: 'currency', values: ['UZS', 'KZT', 'KGS', 'GEL', 'EUR', 'USD', 'AED'] },
+    { field: 'currency', values: ['UZS', 'KZT', 'KGS', 'AZN', 'GEL', 'EUR', 'USD', 'AED'] },
     // Тип заведения задаёт и разговор, и набор модулей: сети нужен другой
     // сценарий, чем одиночной чайхане
     { field: 'segment', values: [
@@ -1303,7 +1303,7 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
     { market: 'uz', currency: 'UZS', entity: 'ООО «DELEVER»', tpl: 'contract' },
     { market: 'kz', currency: 'KZT', entity: 'Частная компания Delever Ltd.', tpl: 'contract' },
     { market: 'kg', currency: 'KGS', entity: 'Delever', tpl: 'contract' },
-    { market: 'az', currency: 'USD', entity: 'Delever', tpl: 'contract' },
+    { market: 'az', currency: 'AZN', entity: 'Delever', tpl: 'contract' },
     { market: 'ge', currency: 'GEL', entity: 'Delever (партнёр)', tpl: 'contract' },
     { market: 'cy', currency: 'EUR', entity: 'Delever', tpl: 'service_agreement' },
     { market: 'ae', currency: 'USD', entity: 'Delever', tpl: 'service_agreement' },
