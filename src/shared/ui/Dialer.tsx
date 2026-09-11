@@ -68,7 +68,11 @@ export function Dialer() {
   // Свободная линия из пула берётся только явным кликом: авто-захват при
   // открытии CRM отдавал линии сейлзов сотрудникам поддержки и путал учёт
   const [seatOffered, setSeatOffered] = useState(false)
-  const [takeSeat, setTakeSeat] = useState(false)
+  // Счётчик, а не флаг: с флагом второе нажатие ничего не делало —
+  // состояние не менялось, и запрос за линией не уходил
+  const [takeSeat, setTakeSeat] = useState(0)
+  // Почему линию не дали — человек должен это видеть, а не гадать
+  const [seatError, setSeatError] = useState('')
 
   useEffect(() => {
     if (!pcMode) {
@@ -81,7 +85,8 @@ export function Dialer() {
     let dead = false
     let renewTimer: ReturnType<typeof setInterval> | null = null
     let leasedExt = ''
-    apiGet<any>(`/sales/call?action=webrtc-creds${takeSeat ? '&take=1' : ''}`, false)
+    setSeatError('')
+    apiGet<any>(`/sales/call?action=webrtc-creds${takeSeat > 0 ? '&take=1' : ''}`, false)
       .then(c => {
         if (dead || vertoRef.current) return
         if (!c?.success) {
@@ -89,6 +94,7 @@ export function Dialer() {
           return
         }
         setSeatOffered(false)
+        setSeatError('')
         leasedExt = String(c.extension || '')
         setSeatExt(leasedExt)
         setSeatShared(c.seat === 'shared')
@@ -112,7 +118,11 @@ export function Dialer() {
           }
         }, 45000)
       })
-      .catch(() => { /* креды не выданы — работаем по старой схеме */ })
+      .catch((e: any) => {
+        // Креды не выданы — работаем по старой схеме. Но если человек сам
+        // просил линию, причина отказа («все заняты») должна быть на экране
+        if (!dead && takeSeat > 0) setSeatError(e?.message || 'Свободной линии сейчас нет')
+      })
     return () => {
       dead = true
       if (renewTimer) clearInterval(renewTimer)
@@ -520,11 +530,16 @@ export function Dialer() {
           ) : null}
           {pcMode && seatOffered && !vertoBusy && (
             <button
-              onClick={() => setTakeSeat(true)}
+              onClick={() => setTakeSeat(n => n + 1)}
               className="mt-1.5 w-full py-2 rounded-xl border border-emerald-300 text-emerald-700
                          text-[12.5px] font-medium hover:bg-emerald-50">
-              🎧 Взять свободную линию — звонить из браузера
+              🎧 {takeSeat > 0 ? 'Попробовать ещё раз' : 'Взять свободную линию — звонить из браузера'}
             </button>
+          )}
+          {pcMode && seatError && (
+            <div className="mt-1 text-[11px] text-amber-700">
+              {seatError}. Чтобы звонить из браузера без очереди, нужен свой добавочный на АТС — его вписывают в профиль.
+            </div>
           )}
           {pcMode && vState === 'error' && (
             <div className="mt-1 text-[10.5px] text-amber-600">
