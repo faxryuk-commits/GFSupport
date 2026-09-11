@@ -384,11 +384,20 @@ async function handlerInner(req: Request): Promise<Response> {
              -- доллары и сумы, и общий итог был бы просто неверным числом
              COALESCE(jsonb_object_agg(d.currency, d.amt)
                FILTER (WHERE d.currency IS NOT NULL AND d.amt IS NOT NULL),
-               '{}'::jsonb) AS amounts
+               '{}'::jsonb) AS amounts,
+             -- Кешфлоу этапа — сумма сделок: подписка за срок плюс разовое.
+             -- Срок заполнен у единиц, поэтому пустой считаем годом: регламент
+             -- меряет контракт первым годом, и комиссия старшего от него же
+             COALESCE(jsonb_object_agg(d.currency, d.cash)
+               FILTER (WHERE d.currency IS NOT NULL AND d.cash IS NOT NULL),
+               '{}'::jsonb) AS cashflow
       FROM sales_stages s
       LEFT JOIN (
         SELECT stage_id, currency, COUNT(*)::int AS cnt,
-               SUM(monthly_amount) FILTER (WHERE COALESCE(monthly_amount, 0) <> 0) AS amt
+               SUM(monthly_amount) FILTER (WHERE COALESCE(monthly_amount, 0) <> 0) AS amt,
+               SUM(COALESCE(monthly_amount, 0) * COALESCE(NULLIF(term_months, 0), 12)
+                   + COALESCE(onetime_amount, 0))
+                 FILTER (WHERE COALESCE(monthly_amount, 0) <> 0 OR COALESCE(onetime_amount, 0) <> 0) AS cash
         FROM sales_deals
         WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
           AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)

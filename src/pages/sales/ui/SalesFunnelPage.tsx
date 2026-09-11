@@ -62,7 +62,7 @@ interface FunnelData {
   /** Колонка объединяет несколько статусов: на доске их меньше, чем в данных. */
   leadColumns: Array<{ key: string; label: string; hint: string; total: number; statuses: string[] }>
   leads: Lead[]
-  stages: Array<{ key: string; label: string; description: string | null; sla_hours: string | null; total: number; amounts: Record<string, string> }>
+  stages: Array<{ key: string; label: string; description: string | null; sla_hours: string | null; total: number; amounts: Record<string, string>; cashflow?: Record<string, string> }>
   deals: Deal[]
   closed: Array<{
     key: string; label: string; kind: string; total: number; last30: number; amounts30: Record<string, string>
@@ -492,7 +492,7 @@ export function SalesFunnelPage() {
               className={`flex-none w-[232px] bg-white border rounded-lg flex flex-col
                           transition-colors ${zoneCls(over === col.key, 'lead')}`}
             >
-              <header className="px-2.5 py-2 border-b border-gray-100 h-[52px] flex flex-col justify-center">
+              <header className="px-2.5 py-2 border-b border-gray-100 h-[68px] flex flex-col justify-center">
                 <div className="flex justify-between items-baseline gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 truncate">
                     {col.label}
@@ -571,13 +571,23 @@ export function SalesFunnelPage() {
                   </span>
                   <span className="text-[11.5px] text-gray-400 tabular-nums flex-none">{st.total}</span>
                 </div>
+                {/* Две денежные строки: МРР — подписка в месяц по сделкам этапа,
+                    кешфлоу — сумма сделок (подписка за срок плюс разовое; пустой
+                    срок считается годом) */}
                 <div className="mt-0.5 flex items-baseline gap-1.5 text-[10.5px] text-gray-400 tabular-nums">
+                  <span className="flex-none font-semibold text-gray-500">МРР</span>
                   <span className="truncate" title={moneyList(st.amounts)}>{moneyList(st.amounts)}</span>
                   {st.sla_hours ? (
                     <span className="flex-none ml-auto whitespace-nowrap">
                       норматив {Math.round(Number(st.sla_hours) / 24) || 1} дн
                     </span>
                   ) : null}
+                </div>
+                <div className="flex items-baseline gap-1.5 text-[10.5px] text-gray-400 tabular-nums">
+                  <span className="flex-none font-semibold text-gray-500">Кешфлоу</span>
+                  <span className="truncate" title={`Сумма сделок: подписка за срок плюс разовое. Срок не указан — считается 12 мес. ${moneyList(st.cashflow || {})}`}>
+                    {moneyList(st.cashflow || {})}
+                  </span>
                 </div>
               </header>
               <div className="p-2 flex flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
