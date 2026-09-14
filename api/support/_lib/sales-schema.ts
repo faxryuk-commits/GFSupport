@@ -349,6 +349,7 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
       (SELECT COUNT(*)::int FROM information_schema.columns
         WHERE table_schema = 'public'
           AND ((table_name = 'sales_deals' AND column_name = 'dm_contact_id')
+            OR (table_name = 'sales_leads' AND column_name = 'lost_by_agent_id')
             OR (table_name = 'sales_tasks' AND column_name IN
                 ('google_event_id', 'meet_url', 'google_cal_agent_id')))) AS cols,
       (SELECT COUNT(*)::int FROM sales_stages
@@ -362,12 +363,12 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
            OR (key = 'dm_contact' AND is_active = true)) AS stages
   ` as any[]
 
-  if (state?.cols === 4 && state?.stages === 0) {
+  if (state?.cols === 5 && state?.stages === 0) {
     lateFixesDone = true
     return
   }
 
-  if (state?.cols !== 4) {
+  if (state?.cols !== 5) {
     // ЛПР — это контакт, а не три поля в сделке: имя, роль и телефон уже
     // хранятся у контакта, и дублировать их значит вести четыре записи
     // об одном человеке
@@ -383,6 +384,9 @@ async function trimRequiredFields(sql: SQL): Promise<void> {
         ADD COLUMN IF NOT EXISTS meet_url TEXT,
         ADD COLUMN IF NOT EXISTS google_cal_agent_id VARCHAR(60)
     `
+    // Кто закрыл обращение в отказ. Без этого 90 из 111 отказов за месяц были
+    // ничьими, и отчёт по рекламе не мог сказать, чьи лиды ушли в никуда
+    await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS lost_by_agent_id VARCHAR(60)`
   }
 
   if (state?.stages) {

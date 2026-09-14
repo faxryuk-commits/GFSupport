@@ -4,6 +4,7 @@ import { Card, Chip, Kpis, money, pct, PageShell, Skeleton, Seg } from './kit'
 import { RegionBadge, useRegion, REGION_NAMES } from './region'
 import { SalesPulse } from './SalesPulse'
 import { SalesActivity } from './SalesActivity'
+import { AdsReport } from './AdsReport'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -21,7 +22,7 @@ export function SalesReportsPage() {
   const [customTo, setCustomTo] = useState('')
   // Верх воронки: сводку по сайту присылает бот delever.io
   const [site, setSite] = useState<any>(null)
-  const [tab, setTab] = useState<'sales' | 'activity' | 'site'>('sales')
+  const [tab, setTab] = useState<'sales' | 'activity' | 'site' | 'ads'>('sales')
   const region = useRegion('reports')
 
   // Номер запроса: при автообновлении и быстрой смене фильтров ответ старого
@@ -88,7 +89,7 @@ export function SalesReportsPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
         <Seg value={tab} onChange={setTab}
-          items={[{ key: 'sales', label: 'Продажи' }, { key: 'activity', label: 'Активность' }, { key: 'site', label: 'Сайт' }]} />
+          items={[{ key: 'sales', label: 'Продажи' }, { key: 'activity', label: 'Активность' }, { key: 'site', label: 'Сайт' }, { key: 'ads', label: 'Реклама' }]} />
         <RegionBadge scope="reports" />
         <Seg value={customFrom ? '' : period} onChange={v => { setPeriod(v); setCustomFrom(''); setCustomTo('') }}
           items={[{ key: '30', label: 'Месяц' }, { key: '90', label: 'Квартал' }, { key: '365', label: 'Год' }]} />
@@ -107,6 +108,7 @@ export function SalesReportsPage() {
 
 
       {tab === 'activity' && <SalesActivity region={region} />}
+      {tab === 'ads' && <AdsReport from={fromStr} to={toStr} region={region} />}
 
       {tab === 'site' && (
         <>

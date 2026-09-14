@@ -176,8 +176,16 @@ async function handlerInner(req: Request): Promise<Response> {
         return json({ ok: true, changed })
       }
       if (op === 'archive') {
+        // Причина обязательна и пачкой: отказ без причины неотличим от
+        // брошенного лида, и деньги рекламы за него не к кому отнести
+        if (!body.reasonId) return json({ error: 'Укажите причину отказа' }, 400)
         await sql`
-          UPDATE sales_leads SET archived_at = NOW(), status = 'junk', updated_at = NOW()
+          UPDATE sales_leads
+          SET archived_at = NOW(), status = 'junk',
+              lost_stage = COALESCE(lost_stage, status),
+              lost_reason_id = ${String(body.reasonId)},
+              lost_by_agent_id = ${ctx.agentId},
+              updated_at = NOW()
           WHERE id = ANY(${ids}) AND org_id = ${orgId}
         `
         return json({ ok: true, changed: ids.length })
@@ -308,18 +316,21 @@ async function handlerInner(req: Request): Promise<Response> {
     }
 
     if (action === 'archive') {
-      // Причина отказа обязательна по смыслу, но не по форме: заставлять
-      // выбирать её в разгар разбора очереди значит получить «Другое» на всём.
-      // Спрашиваем, принимаем и без неё — но тогда честно видно, что не знаем
+      // Причина отказа обязательна. Раньше принимали и без неё — «чтобы не
+      // получить „Другое" на всём», — и получили 90 отказов из 111 за месяц
+      // без причины: не отличить брак таргета от брошенного лида, а отчёт
+      // по рекламе не может сказать, чьи деньги ушли в никуда.
       // Тег «где потеряли» ставим из текущего состояния обращения: потом
       // его не восстановить, а без него потеря на первом касании
       // неотличима от потери после долгого прогрева
+      if (!body.reasonId) return json({ error: 'Укажите причину отказа' }, 400)
       await sql`
         UPDATE sales_leads
         SET archived_at = NOW(), status = 'junk',
             lost_stage = COALESCE(lost_stage, status),
-            lost_reason_id = COALESCE(${body.reasonId || null}, lost_reason_id),
+            lost_reason_id = ${String(body.reasonId)},
             lost_comment = COALESCE(${body.comment || null}, lost_comment),
+            lost_by_agent_id = ${ctx.agentId},
             updated_at = NOW()
         WHERE id = ${body.leadId} AND org_id = ${orgId}
       `

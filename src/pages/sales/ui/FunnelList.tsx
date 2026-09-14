@@ -135,8 +135,10 @@ export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners,
           title, kind: 'task', dueAt: at.toISOString(),
         }))
       } else if (act === 'archive') {
+        if (!reason) { onError('Отказ без причины не принимается — выберите причину'); return }
         if (selLeads.length) {
-          await apiPost('/sales/leads?action=bulk', { ids: selLeads.map(r => r.id), op: 'archive' })
+          const reasonId = reasons.find(r => r.code === reason)?.id || reason
+          await apiPost('/sales/leads?action=bulk', { ids: selLeads.map(r => r.id), op: 'archive', reasonId })
         }
       } else if (act === 'market') {
         if (!pick) { onError('Выберите страну'); return }
@@ -316,10 +318,17 @@ export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners,
               </>
             )}
             {act === 'archive' && (
-              <p className="text-gray-700 leading-relaxed">
-                {selLeads.length} обращений уйдут в отказ без причины. Сделки ({selDeals.length}) не трогаю —
-                у проигрыша должна быть причина, её ставят из карточки.
-              </p>
+              <>
+                <select value={reason} onChange={e => setReason(e.target.value)} autoFocus
+                  className="w-full border border-red-200 rounded-lg px-2.5 py-2">
+                  <option value="">Почему не наш клиент…</option>
+                  {reasons.map(r => <option key={r.id} value={r.code}>{r.label}</option>)}
+                </select>
+                <p className="text-gray-700 leading-relaxed">
+                  {selLeads.length} обращений уйдут в отказ с этой причиной. Сделки ({selDeals.length}) не трогаю —
+                  у проигрыша своя причина, её ставят из карточки.
+                </p>
+              </>
             )}
             {report && (
               <pre className="whitespace-pre-wrap text-[11.5px] bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-900">

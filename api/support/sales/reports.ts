@@ -43,6 +43,13 @@ export default async function handler(req: Request): Promise<Response> {
   const prevFrom = new Date(new Date(fromTs).getTime() - days * 86400000).toISOString()
   const prevTo = fromTs
 
+  // ─── Реклама по сотрудникам: чьи лиды с Meta и что стало с деньгами ───────
+  if (url.searchParams.get('action') === 'ads') {
+    const { adsByAgent } = await import('../_lib/ads-by-agent.js')
+    const data = await adsByAgent(sql, orgId, { fromTs, toTs, market })
+    return json({ period: { from, to }, ...data })
+  }
+
   // ─── Пульс продаж: главный экран отчётов одним заходом ────────────────────
   // KPI периода, воронка с долями источников, потенциал, тренд, источники,
   // причины потерь, портфель по сейлзам. Периоды: закрытия и воронка — по

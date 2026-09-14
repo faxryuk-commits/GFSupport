@@ -464,10 +464,6 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
               ))}
             </div>
             <div className="flex gap-2 pt-0.5 items-center">
-              <button disabled={busy} onClick={() => act('archive')}
-                className="text-[11.5px] text-gray-400 hover:text-gray-700">
-                причина неизвестна
-              </button>
               <button onClick={() => setAsking(false)}
                 className="text-[11.5px] text-gray-400 hover:text-gray-700">отмена</button>
               <span className="flex-1" />

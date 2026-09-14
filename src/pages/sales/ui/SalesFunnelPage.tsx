@@ -718,12 +718,7 @@ export function SalesFunnelPage() {
           onClose={() => setRejectLead(null)}
           footer={
             <div className="flex items-center gap-3">
-              <button onClick={async () => {
-                  const id = rejectLead; setRejectLead(null)
-                  try { await apiPost('/sales/leads?action=archive', { leadId: id }); load() }
-                  catch (e: any) { setError(e?.message || 'Не удалось отказать') }
-                }}
-                className="text-[12px] text-gray-400 hover:text-gray-700">причина неизвестна</button>
+              <span className="text-[12px] text-gray-400">без причины отказ не принимается</span>
               <span className="flex-1" />
               <button onClick={() => setRejectLead(null)}
                 className="px-3 py-1.5 text-[12.5px] font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">Отмена</button>
