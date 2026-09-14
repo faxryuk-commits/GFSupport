@@ -11,12 +11,23 @@ import { ensureOnce } from './db.js'
  * Принцип «факт, а не мнение»: события выводятся из данных, которые
  * менеджер заполняет, потому что без них работа не идёт, — а не из
  * статуса, который можно проставить задним числом:
+ *   LeadReceived  — лид с рекламы Meta появился в CRM (сырой лид: Meta
+ *                   требует первую ступень воронки, иначе не считает
+ *                   долю сопоставленных и не строит воронку);
  *   QualifiedLead — на сделке заполнены точки И тип доставки;
- *   Schedule     — назначена встреча (meeting_at);
- *   Purchase     — пришли деньги (sales_payments) или проставлен paid_at.
+ *   Schedule      — назначена встреча: задача kind='meeting' или переход
+ *                   на этап встречи/демо (meeting_at на сделке никто
+ *                   не заполняет — за 90 дней ни одной, событие молчало);
+ *   Purchase      — пришли деньги (sales_payments) или проставлен paid_at.
+ *
+ * У каждого факта есть время (fact_at) — оно и уходит в event_time:
+ * Meta просит историю смен статуса, а не снимок «на сейчас». Факт старше
+ * недели в Meta не отправляется (она такие отбрасывает), а помечается
+ * baseline — так же переживает и включение петли, и появление нового
+ * вида события: прошлое не выгружается задним числом.
  *
  * Дедупликация — таблицей-логом sales_meta_events с уникальным event_id
- * вида gfs-{deal}-{kind}: повторный прогон просто не найдёт ничего нового.
+ * вида gfs-{deal|lead}-{kind}: повторный прогон просто не найдёт ничего нового.
  */
 
 export interface CapiCreds {
@@ -66,29 +77,40 @@ export async function ensureCapiSchema(sql: any): Promise<void> {
     `
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_meta_events_eid ON sales_meta_events(event_id)`
     await sql`CREATE INDEX IF NOT EXISTS idx_sales_meta_events_org ON sales_meta_events(org_id, status)`
+    // Сырой лид — событие без сделки: живёт по lead_id
+    await sql`ALTER TABLE sales_meta_events ADD COLUMN IF NOT EXISTS lead_id VARCHAR(50)`
+    await sql`ALTER TABLE sales_meta_events ALTER COLUMN deal_id DROP NOT NULL`
   })
 }
 
+/** Старше этого Meta событие отбрасывает — такие факты только в baseline. */
+export const MAX_EVENT_AGE_MS = 7 * 24 * 3600 * 1000
+
 export interface DealEventRow {
-  deal_id: string
-  event_name: 'QualifiedLead' | 'Schedule' | 'Purchase'
+  /** Сделка события; у сырого лида (LeadReceived) её ещё нет. */
+  deal_id: string | null
+  lead_id: string | null
+  event_name: 'LeadReceived' | 'QualifiedLead' | 'Schedule' | 'Purchase'
   event_id: string
   lead_external_id: string | null
   meta_lead_id?: string | null
   phone: string | null
   value: number | null
   currency: string | null
+  /** Когда факт случился — уходит в event_time. */
+  fact_at: string | Date
 }
 
 /**
  * Кандидаты: по каждой живой сделке смотрим, какие события следуют из фактов,
  * и отдаём те, которых ещё нет в логе. Окно в 90 дней — чтобы не перебирать
- * весь архив на каждом прогоне.
+ * весь архив на каждом прогоне. Сырые лиды — только с рекламы Meta (по
+ * спецификации CRM-петли события с lead_id не для лидов с сайта).
  */
 export async function collectDealEvents(sql: any, orgId: string): Promise<DealEventRow[]> {
   const rows = (await sql`
     WITH base AS (
-      SELECT d.id, d.org_id, d.points, d.delivery_type, d.meeting_at, d.paid_at,
+      SELECT d.id, d.org_id, d.points, d.delivery_type, d.paid_at, d.created_at,
              d.monthly_amount, d.amount_usd, d.currency,
              l.external_id AS lead_external_id,
              l.meta_lead_id,
@@ -101,36 +123,67 @@ export async function collectDealEvents(sql: any, orgId: string): Promise<DealEv
                ORDER BY c.is_primary DESC, c.created_at LIMIT 1
              )) AS phone,
              (SELECT p.amount FROM sales_payments p
-               WHERE p.deal_id = d.id ORDER BY p.paid_at, p.id LIMIT 1) AS first_payment
+               WHERE p.deal_id = d.id ORDER BY p.paid_at, p.id LIMIT 1) AS first_payment,
+             (SELECT p.paid_at FROM sales_payments p
+               WHERE p.deal_id = d.id ORDER BY p.paid_at, p.id LIMIT 1) AS first_paid_at,
+             -- Время квалификации — переход на этап qualified; сделка,
+             -- заведённая сразу квалифицированной (импорт), — её создание
+             (SELECT MIN(e.changed_at) FROM sales_deal_events e
+               JOIN sales_stages s ON s.id = e.new_stage_id
+               WHERE e.deal_id = d.id AND s.key = 'qualified') AS qualified_at,
+             (SELECT MIN(e.changed_at) FROM sales_deal_events e
+               JOIN sales_stages s ON s.id = e.new_stage_id
+               WHERE e.deal_id = d.id AND s.key IN ('meeting', 'demo')) AS meeting_stage_at,
+             (SELECT MIN(t.created_at) FROM sales_tasks t
+               WHERE t.deal_id = d.id AND t.kind = 'meeting'
+                 AND COALESCE(t.status, 'open') <> 'cancelled') AS meeting_task_at
       FROM sales_deals d
       LEFT JOIN sales_leads l ON l.id = d.source_lead_id
       WHERE d.org_id = ${orgId}
         AND d.stage_since > NOW() - INTERVAL '90 days'
     ),
     cand AS (
-      SELECT id, 'QualifiedLead' AS event_name, lead_external_id, meta_lead_id, phone,
-             NULL::numeric AS value, NULL::varchar AS currency
+      SELECT id AS deal_id, NULL::varchar AS lead_id, 'QualifiedLead' AS event_name,
+             lead_external_id, meta_lead_id, phone,
+             NULL::numeric AS value, NULL::varchar AS currency,
+             COALESCE(qualified_at, created_at) AS fact_at
         FROM base WHERE points IS NOT NULL AND delivery_type IS NOT NULL
       UNION ALL
-      SELECT id, 'Schedule', lead_external_id, meta_lead_id, phone, NULL, NULL
-        FROM base WHERE meeting_at IS NOT NULL
+      SELECT id, NULL, 'Schedule', lead_external_id, meta_lead_id, phone, NULL, NULL,
+             LEAST(meeting_stage_at, meeting_task_at)
+        FROM base WHERE meeting_stage_at IS NOT NULL OR meeting_task_at IS NOT NULL
       UNION ALL
-      SELECT id, 'Purchase', lead_external_id, meta_lead_id, phone,
+      SELECT id, NULL, 'Purchase', lead_external_id, meta_lead_id, phone,
              COALESCE(amount_usd, first_payment, monthly_amount),
-             CASE WHEN amount_usd IS NOT NULL THEN 'USD' ELSE COALESCE(currency, 'USD') END
+             CASE WHEN amount_usd IS NOT NULL THEN 'USD' ELSE COALESCE(currency, 'USD') END,
+             COALESCE(first_paid_at, paid_at)
         FROM base WHERE first_payment IS NOT NULL OR paid_at IS NOT NULL
+      UNION ALL
+      SELECT NULL, l.id, 'LeadReceived', l.external_id, l.meta_lead_id, l.phone,
+             NULL, NULL, l.created_at
+        FROM sales_leads l
+        WHERE l.org_id = ${orgId}
+          AND l.created_at > NOW() - INTERVAL '30 days'
+          AND (l.meta_lead_id IS NOT NULL OR l.external_id LIKE 'meta_%')
     )
-    SELECT c.id AS deal_id, c.event_name, c.lead_external_id, c.meta_lead_id, c.phone,
-           c.value, c.currency,
-           'gfs-' || c.id || '-' || lower(c.event_name) AS event_id
+    SELECT c.deal_id, c.lead_id, c.event_name, c.lead_external_id, c.meta_lead_id, c.phone,
+           c.value, c.currency, c.fact_at,
+           'gfs-' || COALESCE(c.deal_id, c.lead_id) || '-' || lower(c.event_name) AS event_id
     FROM cand c
     WHERE NOT EXISTS (
       SELECT 1 FROM sales_meta_events e
-      WHERE e.event_id = 'gfs-' || c.id || '-' || lower(c.event_name)
+      WHERE e.event_id = 'gfs-' || COALESCE(c.deal_id, c.lead_id) || '-' || lower(c.event_name)
     )
+    ORDER BY c.fact_at
     LIMIT 200
   `) as any[]
   return rows as DealEventRow[]
+}
+
+/** Факт старше недели: в Meta не идёт, только в baseline. */
+export function isStale(row: DealEventRow, now = Date.now()): boolean {
+  const t = new Date(row.fact_at).getTime()
+  return !Number.isFinite(t) || now - t > MAX_EVENT_AGE_MS
 }
 
 async function sha256(s: string): Promise<string> {
@@ -171,6 +224,13 @@ export interface SendResult {
   error: string | null
 }
 
+/** event_time — время факта; в будущее и старше недели не бывает по построению. */
+function eventTimeOf(row: DealEventRow, now: number): number {
+  const t = new Date(row.fact_at).getTime()
+  const sec = Number.isFinite(t) ? Math.floor(t / 1000) : now
+  return Math.min(sec, now)
+}
+
 /**
  * Отправка пачкой в {dataset}/events. Один запрос на прогон: Meta требует
  * свежести раз в сутки, крон ходит раз в час — запас десятикратный.
@@ -194,7 +254,7 @@ export async function sendCapiEvents(
     sendable.push(row)
     payload.push({
       event_name: row.event_name,
-      event_time: now,
+      event_time: eventTimeOf(row, now),
       event_id: row.event_id,
       action_source: 'system_generated',
       user_data: userData,
@@ -244,9 +304,9 @@ async function logEvent(
   sql: any, orgId: string, row: DealEventRow, status: string, fb: any,
 ): Promise<void> {
   await sql`
-    INSERT INTO sales_meta_events (org_id, deal_id, event_name, event_id, status,
+    INSERT INTO sales_meta_events (org_id, deal_id, lead_id, event_name, event_id, status,
                                    attempts, value, currency, fb_response, sent_at)
-    VALUES (${orgId}, ${row.deal_id}, ${row.event_name}, ${row.event_id}, ${status},
+    VALUES (${orgId}, ${row.deal_id}, ${row.lead_id}, ${row.event_name}, ${row.event_id}, ${status},
             1, ${row.value}, ${row.currency}, ${fb ? JSON.stringify(fb) : null}::jsonb,
             ${status === 'sent' ? new Date().toISOString() : null})
     ON CONFLICT (event_id) DO UPDATE

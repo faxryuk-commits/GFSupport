@@ -3,7 +3,7 @@ import { ensureSalesSchema } from '../_lib/sales-schema.js'
 import { assertCron } from '../_lib/cron-auth.js'
 import {
   readCapiCreds, ensureCapiSchema, collectDealEvents,
-  sendCapiEvents, markBaseline, requeueErrors,
+  sendCapiEvents, markBaseline, requeueErrors, isStale,
 } from '../_lib/meta-capi.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -22,10 +22,11 @@ const ORG = process.env.SALES_ORG || 'org_delever'
  * списка рекламных кабинетов). Пока пиксель не выбран, крон честно отвечает
  * not_configured и ничего не делает.
  *
- * Первый прогон с пустым логом помечает все уже случившиеся факты как
- * baseline и НЕ отправляет их: события задним числом с сегодняшней меткой
- * времени научили бы алгоритм ерунде. Петля отдаёт только то, что
- * произошло после включения.
+ * Факты старше недели помечаются baseline и НЕ отправляются: Meta такие
+ * отбрасывает, а с сегодняшней меткой времени они научили бы алгоритм
+ * ерунде. Так петля переживает и своё включение, и появление нового вида
+ * события — прошлое не выгружается задним числом, свежее уходит со
+ * временем самого факта.
  */
 export default async function handler(req: Request): Promise<Response> {
   const denied = assertCron(req)
@@ -65,19 +66,16 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  // Пустой лог = петля только что включена: фиксируем базовую линию.
-  const [{ n }] = (await sql`
-    SELECT COUNT(*)::int AS n FROM sales_meta_events WHERE org_id = ${ORG}
-  `) as any[]
-  if (Number(n) === 0 && events.length > 0) {
-    const marked = await markBaseline(sql, ORG, events)
-    return json({ ok: true, baseline: marked, sent: 0 })
-  }
+  // Старые факты — базовая линия, свежие — в Meta со временем факта.
+  const stale = events.filter(e => isStale(e))
+  const fresh = events.filter(e => !isStale(e))
+  const baseline = stale.length ? await markBaseline(sql, ORG, stale) : 0
 
-  const result = await sendCapiEvents(sql, ORG, creds, events)
+  const result = await sendCapiEvents(sql, ORG, creds, fresh)
   return json({
     ok: !result.error,
     candidates: events.length,
+    baseline,
     sent: result.sent,
     noMatch: result.noMatch,
     requeued,
