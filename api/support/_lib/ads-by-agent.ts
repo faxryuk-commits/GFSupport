@@ -69,25 +69,83 @@ function fateOf(r: LeadRow): Fate {
   return r.calls > 0 ? 'working' : 'wasted'
 }
 
-/** Траты кампаний за период — одним запросом на пачку идентификаторов. */
-async function campaignSpend(
-  token: string, ids: string[], since: string, until: string,
-): Promise<Record<string, { name: string; spend: number; metaLeads: number }>> {
-  const out: Record<string, { name: string; spend: number; metaLeads: number }> = {}
-  const range = JSON.stringify({ since, until })
-  for (let i = 0; i < ids.length; i += 50) {
-    const chunk = ids.slice(i, i + 50)
-    const url = `https://graph.facebook.com/v21.0/?ids=${chunk.join(',')}` +
-      `&fields=name,insights.time_range(${encodeURIComponent(range)}){spend,actions}` +
-      `&access_token=${encodeURIComponent(token)}`
-    const res = await fetch(url).then(r => r.json()).catch(() => null)
+export interface CampInfo {
+  id: string
+  name: string
+  /** ACTIVE / PAUSED / … как отдаёт Meta; null — кампания не найдена. */
+  status: string | null
+  /** Дневной бюджет, $: у CBO — свой, у ABO — сумма активных групп. */
+  dailyBudget: number
+  activeAdsets: number
+  spend: number
+  metaLeads: number
+}
+
+function leadsOf(ins: any): number {
+  return Number((ins?.actions || []).find((a: any) => a.action_type === 'lead')?.value || 0)
+}
+
+/**
+ * Кампании кабинета за период — с бюджетами и тратами. Кабинет не хранится
+ * в настройках: его номер спрашиваем у любой известной кампании, поэтому
+ * отчёт переживёт и смену кабинета, и второй кабинет рядом.
+ */
+async function accountCampaigns(
+  token: string, knownIds: string[], since: string, until: string,
+): Promise<Record<string, CampInfo>> {
+  const out: Record<string, CampInfo> = {}
+  const range = encodeURIComponent(JSON.stringify({ since, until }))
+  const G = 'https://graph.facebook.com/v21.0'
+  const tk = `access_token=${encodeURIComponent(token)}`
+
+  const accounts = new Set<string>()
+  for (let i = 0; i < knownIds.length; i += 50) {
+    const chunk = knownIds.slice(i, i + 50)
+    const res = await fetch(`${G}/?ids=${chunk.join(',')}&fields=account_id&${tk}`)
+      .then(r => r.json()).catch(() => null)
+    if (!res || res.error) continue
+    for (const id of chunk) if (res[id]?.account_id) accounts.add(String(res[id].account_id))
+  }
+
+  for (const acc of accounts) {
+    let url: string | null = `${G}/act_${acc}/campaigns?limit=100` +
+      `&fields=name,effective_status,daily_budget,adsets.limit(50){daily_budget,effective_status},` +
+      `insights.time_range(${range}){spend,actions}&${tk}`
+    // Постранично: кампаний в кабинете за год набирается больше сотни
+    for (let guard = 0; url && guard < 10; guard++) {
+      const res: any = await fetch(url).then(r => r.json()).catch(() => null)
+      if (!res || res.error) break
+      for (const c of res.data || []) {
+        const ins = c.insights?.data?.[0]
+        const adsets = (c.adsets?.data || []) as any[]
+        const active = adsets.filter(a => a.effective_status === 'ACTIVE')
+        const daily = c.daily_budget
+          ? Number(c.daily_budget) / 100
+          : active.reduce((s, a) => s + Number(a.daily_budget || 0) / 100, 0)
+        out[c.id] = {
+          id: c.id, name: c.name, status: c.effective_status || null,
+          dailyBudget: daily, activeAdsets: active.length,
+          spend: Number(ins?.spend || 0), metaLeads: leadsOf(ins),
+        }
+      }
+      url = res.paging?.next || null
+    }
+  }
+
+  // Кампании, до которых кабинетом не дотянулись (чужой кабинет, нет прав), —
+  // поштучно: без трат отчёт по сотрудникам теряет смысл
+  const missing = knownIds.filter(id => !out[id])
+  for (let i = 0; i < missing.length; i += 50) {
+    const chunk = missing.slice(i, i + 50)
+    const res = await fetch(`${G}/?ids=${chunk.join(',')}&fields=name,effective_status,insights.time_range(${range}){spend,actions}&${tk}`)
+      .then(r => r.json()).catch(() => null)
     if (!res || res.error) continue
     for (const id of chunk) {
       const c = res[id]
       if (!c) continue
       const ins = c.insights?.data?.[0]
-      const leads = Number((ins?.actions || []).find((a: any) => a.action_type === 'lead')?.value || 0)
-      out[id] = { name: c.name || id, spend: Number(ins?.spend || 0), metaLeads: leads }
+      out[id] = { id, name: c.name || id, status: c.effective_status || null, dailyBudget: 0,
+                  activeAdsets: 0, spend: Number(ins?.spend || 0), metaLeads: leadsOf(ins) }
     }
   }
   return out
@@ -125,9 +183,8 @@ export async function adsByAgent(
   const cfg = await readMetaConfig(orgId)
   const token = cfg.userToken || cfg.capiToken || null
   const cids = [...new Set(rows.map(r => r.cid))]
-  const camps = token && cids.length
-    ? await campaignSpend(token, cids, fromTs.slice(0, 10), toTs.slice(0, 10))
-    : {}
+  const since = fromTs.slice(0, 10), until = toTs.slice(0, 10)
+  const camps = token && cids.length ? await accountCampaigns(token, cids, since, until) : {}
 
   const crmByCamp: Record<string, number> = {}
   for (const r of rows) crmByCamp[r.cid] = (crmByCamp[r.cid] || 0) + 1
@@ -151,10 +208,30 @@ export async function adsByAgent(
     a.n[r.fate!] = (a.n[r.fate!] || 0) + 1
     a.c[r.fate!] = (a.c[r.fate!] || 0) + r.cost!
   }
-
   const agents = [...byAgent.values()].sort((x, y) => y.cost - x.cost)
-  const totals: { cost: number; leads: number; n: Partial<Record<Fate, number>>; c: Partial<Record<Fate, number>> } =
-    { cost: 0, leads: rows.length, n: {}, c: {} }
+
+  // Кампании: живые (крутятся сейчас) и те, что тратили в периоде, — с той же
+  // раскладкой судеб. Кампания без лидов в CRM — тоже строка: деньги ушли,
+  // а показывать нечего, и это самое важное, что о ней можно сказать
+  const byCamp = new Map<string, any>()
+  for (const c of Object.values(camps)) {
+    if (c.spend <= 0 && c.status !== 'ACTIVE') continue
+    byCamp.set(c.id, { ...c, crmLeads: crmByCamp[c.id] || 0, markets: [] as string[], n: {}, c: {} })
+  }
+  for (const r of rows) {
+    const c = byCamp.get(r.cid)
+    if (!c) continue
+    if (r.market_id && !c.markets.includes(r.market_id)) c.markets.push(r.market_id)
+    c.n[r.fate!] = (c.n[r.fate!] || 0) + 1
+    c.c[r.fate!] = (c.c[r.fate!] || 0) + r.cost!
+  }
+  // Фильтр по стране: у кампании страна — это страна её лидов
+  const campaigns = [...byCamp.values()]
+    .filter(c => !market || c.markets.includes(market))
+    .sort((x, y) => (y.status === 'ACTIVE' ? 1 : 0) - (x.status === 'ACTIVE' ? 1 : 0) || y.spend - x.spend)
+
+  const totals: { cost: number; spend: number; leads: number; n: Partial<Record<Fate, number>>; c: Partial<Record<Fate, number>> } =
+    { cost: 0, spend: 0, leads: rows.length, n: {}, c: {} }
   for (const a of agents) {
     totals.cost += a.cost
     for (const f of FATES) {
@@ -162,10 +239,9 @@ export async function adsByAgent(
       if (a.c[f]) totals.c[f] = (totals.c[f] || 0) + a.c[f]!
     }
   }
-
-  const campaigns = Object.entries(camps)
-    .map(([id, c]) => ({ id, name: c.name, spend: c.spend, metaLeads: c.metaLeads, crmLeads: crmByCamp[id] || 0 }))
-    .sort((x, y) => y.spend - x.spend)
+  // Потрачено всего — по кампаниям, включая те, что лидов в CRM не дали
+  totals.spend = campaigns.reduce((s, c) => s + c.spend, 0)
+  const dailyBudget = campaigns.filter(c => c.status === 'ACTIVE').reduce((s, c) => s + c.dailyBudget, 0)
 
   // Сколько отказов без причины: мера доверия к колонке «не отработано»
   const junkNoReason = rows.filter(r => r.status === 'junk' && !r.reason).length
@@ -173,7 +249,7 @@ export async function adsByAgent(
 
   return {
     configured: Boolean(token),
-    agents, totals, campaigns,
+    agents, totals, campaigns, dailyBudget,
     quality: { junk, junkNoReason },
   }
 }
