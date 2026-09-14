@@ -36,11 +36,14 @@ export function CommitmentsPanel({
   const loadCommitments = async () => {
     setLoading(true)
     try {
-      const response = await fetchCommitments({ 
-        channelId, 
-        caseId, 
-        status: 'all',
-        limit: 20 
+      // Панель — про то, что ещё не сделано: список активных (в ожидании
+      // и просроченных), счётчики — по всем. Раньше просился «all»,
+      // сервер такого статуса не знал и отдавал пустоту при живых цифрах
+      const response = await fetchCommitments({
+        channelId,
+        caseId,
+        status: 'pending',
+        limit: 20,
       })
       setCommitments(response.commitments)
       setStats({

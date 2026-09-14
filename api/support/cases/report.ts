@@ -92,8 +92,10 @@ export default async function handler(req: Request): Promise<Response> {
              ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (
                ORDER BY resolution_time_minutes) FILTER (WHERE resolution_time_minutes IS NOT NULL))::int p90_min,
              ROUND(AVG(resolution_time_minutes))::int avg_min,
+             -- FILTER принадлежит агрегату, а не ROUND: снаружи Postgres отвечает
+             -- «round is not an aggregate function», и весь отчёт падает пятисоткой
              ROUND(AVG(EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60)
-               ) FILTER (WHERE first_response_at IS NOT NULL)::int first_reply_min
+               FILTER (WHERE first_response_at IS NOT NULL))::int first_reply_min
       FROM support_cases
       WHERE org_id = ${orgId} AND created_at >= ${fromIso} AND created_at < ${toIso}
         AND (${market} = '' OR market_id = ${market})

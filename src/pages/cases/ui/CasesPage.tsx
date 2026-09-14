@@ -1201,16 +1201,22 @@ export function CasesPage() {
                   onDragOver={handleDragOver}
                   onDrop={() => handleDrop(col)}
                 >
-                  <div className={`px-3 py-2.5 rounded-t-xl ${config.bgColor}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-white/70" />
-                        <span className={`font-semibold text-sm ${config.color}`}>
+                  {/* Шапка фиксированной высоты: длинная подсказка («Решено сегодня ·
+                      завтра уйдёт в архив») переносилась на вторую строку, и ряд
+                      шапок шёл ступеньками. Подсказка обрезается, полный текст —
+                      в title. Счётчик — цветом колонки: белый на светлом фоне не читался */}
+                  <div className={`h-11 px-3 rounded-t-xl flex items-center ${config.bgColor}`}>
+                    <div className="flex items-center justify-between gap-2 w-full min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-2 h-2 rounded-full bg-white/70 flex-shrink-0" />
+                        <span className={`font-semibold text-sm ${config.color} whitespace-nowrap`}>
                           {config.label}
                         </span>
-                        <span className={`text-[11px] ${config.color} opacity-70`}>{config.hint}</span>
+                        <span className={`text-[11px] ${config.color} opacity-70 truncate`} title={config.hint}>
+                          {config.hint}
+                        </span>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-white/25 text-white">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold bg-white/60 ${config.color} flex-shrink-0`}>
                         {colCases.length}
                       </span>
                     </div>

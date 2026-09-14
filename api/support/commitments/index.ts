@@ -102,6 +102,17 @@ export default async function handler(req: Request): Promise<Response> {
       const limit = parseInt(url.searchParams.get('limit') || '50')
       const offset = (page - 1) * limit
 
+      /**
+       * Какие статусы отдавать по запрошенному. «all» раньше превращался
+       * в ANY('{all}') — статуса с таким именем нет, список приходил пустым,
+       * а счётчики рядом честно показывали 87 просроченных. Панель на
+       * «Обзоре» так и выглядела: цифры есть, строк нет.
+       */
+      const statusesFor = (st: string): string[] =>
+        st === 'all' ? ['pending', 'overdue', 'completed', 'cancelled']
+        : st === 'pending' ? ['pending', 'overdue']
+        : [st]
+
       let commitments: any[]
 
       if (dueSoon) {
@@ -127,8 +138,8 @@ export default async function handler(req: Request): Promise<Response> {
           LIMIT ${limit} OFFSET ${offset}
         `
       } else if (agentId) {
-        // pending = pending + overdue
-        const statusCondition = status === 'pending' ? ['pending', 'overdue'] : [status]
+        // pending = pending + overdue; all = без фильтра по статусу
+        const statusCondition = statusesFor(status)
         commitments = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
           FROM support_commitments c
@@ -140,8 +151,8 @@ export default async function handler(req: Request): Promise<Response> {
           LIMIT ${limit} OFFSET ${offset}
         `
       } else {
-        // pending = pending + overdue
-        const statusCondition = status === 'pending' ? ['pending', 'overdue'] : [status]
+        // pending = pending + overdue; all = без фильтра по статусу
+        const statusCondition = statusesFor(status)
         commitments = await sql`
           SELECT c.*, ch.name as channel_name, ch.telegram_chat_id
           FROM support_commitments c
