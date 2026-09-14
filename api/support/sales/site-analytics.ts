@@ -82,11 +82,14 @@ export default async function handler(req: Request): Promise<Response> {
   if (!ctx.agentId) return json({ error: 'unauthorized' }, 401)
 
   const days = Math.min(180, Math.max(1, parseInt(url.searchParams.get('days') || '30', 10)))
-  const rows = await sql`
-    SELECT * FROM sales_site_analytics
-    WHERE org_id = ${orgId} AND day > CURRENT_DATE - ${days}::int
-    ORDER BY day DESC
-  ` as any[]
+  // День — строкой YYYY-MM-DD: драйвер отдаёт date как Date в полночь UTC,
+  // и на экране висело «2026-09-07T00:00:00.000Z»
+  const rows = (await sql`
+    SELECT s.*, to_char(s.day, 'YYYY-MM-DD') AS day_str
+    FROM sales_site_analytics s
+    WHERE s.org_id = ${orgId} AND s.day > CURRENT_DATE - ${days}::int
+    ORDER BY s.day DESC
+  ` as any[]).map(r => ({ ...r, day: r.day_str }))
 
   // Итог за период считаем здесь: на экране нужен и он, и разбивка по дням
   const sum = (key: string) => rows.reduce((acc, r) => acc + Number(r[key] || 0), 0)

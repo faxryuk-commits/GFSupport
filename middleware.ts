@@ -55,6 +55,10 @@ const PUBLIC = [
   '/api/support/sales/doc-public',
   '/api/support/sales/click',
   '/api/support/sales/intake',
+  // Сводка по сайту от бота delever.io: приходит с секретом приёмника
+  // (X-Intake-Secret), проверка — в обработчике. С 08.09 заслон её не пускал,
+  // и «Сайт» в отчётах молча остановился на 07.09
+  '/api/support/sales/site-analytics',
   '/api/support/broadcast/track',
   // Возврат из согласия Meta: браузер приходит по редиректу без токена входа.
   // Своя защита в обработчике — одноразовый state с часовым сроком

@@ -86,7 +86,10 @@ function section(text: string, header: RegExp): string {
 }
 
 export function parseSiteDigest(text: string): SiteDigest {
-  const t = String(text || '')
+  // Бот шлёт разметку Telegram (<b>…</b>, <i>…</i>): с тегами ни одна строка
+  // не совпадала с образцом, и сводка целиком ложилась в базу пустой —
+  // на странице были нули и хвосты вроде «</b> UZ 45»
+  const t = String(text || '').replace(/<[^>]+>/g, '')
 
   // Дата в шапке: «Аналитика delever.io — 12.08.2026»
   const dm = t.match(/(\d{2})\.(\d{2})\.(\d{4})/)
@@ -121,7 +124,9 @@ export function parseSiteDigest(text: string): SiteDigest {
     let current = ''
     for (const raw of lines) {
       const l = raw.trim()
-      const nameMatch = l.match(/^([^:]+):\s*$/)
+      // Имя теста само содержит двоеточие («Hero: выбор отрасли:») — берём
+      // до последнего, иначе все тесты назывались «тест»
+      const nameMatch = l.match(/^(.+):\s*$/)
       if (nameMatch && !/^[AB]\s/.test(l)) current = nameMatch[1].trim()
       // \w в JS — только латиница, поэтому «визитов» обрывалось на «визит»
       // и разбор A/B молча возвращал пусто
