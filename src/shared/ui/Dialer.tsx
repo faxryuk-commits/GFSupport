@@ -14,6 +14,28 @@ import { VertoPhone, type VertoState, webrtcEnabled, setWebrtcEnabled } from '@/
  * (она набирает сотрудника, потом номер) и через пять минут ложится касанием —
  * а незнакомый входящий номер синк сам превратит в лида.
  */
+/**
+ * Причина завершения от АТС — человеческим языком. Раньше звонок просто
+ * обрывался, и «NO_USER_RESPONSE» через секунду после набора выглядел как
+ * «телефония сбрасывает». Теперь причина на экране: набрал не тот номер,
+ * занято, не ответил или сеть.
+ */
+function hangupHuman(cause: string, lastedMs: number): string | null {
+  const c = cause.toUpperCase()
+  if (!c) return null
+  if (/^(NORMAL_CLEARING|ORIGINATOR_CANCEL)$/.test(c)) return null
+  if (/UNALLOCATED|NO_ROUTE|INVALID_NUMBER|INCOMPATIBLE_DESTINATION/.test(c)) return 'АТС не смогла набрать номер — проверьте код страны и цифры'
+  if (/NO_USER_RESPONSE|NO_ANSWER|RECOVERY_ON_TIMER/.test(c)) {
+    return lastedMs < 4000
+      ? 'Транк не принял номер — обычно нет кода страны'
+      : 'Клиент не ответил'
+  }
+  if (/USER_BUSY/.test(c)) return 'Занято'
+  if (/CALL_REJECTED/.test(c)) return 'Клиент отклонил вызов'
+  if (/MEDIA_TIMEOUT|NETWORK_OUT_OF_ORDER/.test(c)) return 'Пропал звук: проблема с сетью или микрофоном'
+  return `АТС завершила вызов: ${cause}`
+}
+
 export function Dialer() {
   const [open, setOpen] = useState(false)
   const [num, setNum] = useState('')
@@ -98,8 +120,17 @@ export function Dialer() {
         leasedExt = String(c.extension || '')
         setSeatExt(leasedExt)
         setSeatShared(c.seat === 'shared')
+        let callStartedAt = 0
+        let prevState: VertoState = 'idle'
         const phone = new VertoPhone(c, {
           onState: (s, detail) => {
+            if (s === 'ringing_out') callStartedAt = Date.now()
+            // Звонок кончился не по нашей кнопке — объясняем, почему
+            if (s === 'registered' && (prevState === 'ringing_out' || prevState === 'active') && detail) {
+              const human = hangupHuman(detail, Date.now() - callStartedAt)
+              if (human) { setStatus('error'); setNote(human) }
+            }
+            prevState = s
             setVState(s)
             setVDetail(detail || '')
             if (s !== 'ringing_in') setVIncoming(null)
@@ -224,7 +255,10 @@ export function Dialer() {
     const w = window as any
     if (vertoReady && !vertoBusy) {
       w.__gfDirectCall = async (num: string) => {
-        await vertoRef.current!.call(num.replace(/\D/g, ''))
+        // Та же нормализация, что у кнопки в звонилке: трубка в карточке
+        // передаёт номер как записан, а транку нужен код страны
+        const p = parsePhone(num)
+        await vertoRef.current!.call(p.valid ? p.e164 : num.replace(/\D/g, ''))
         apiGet<any>(`/sales/call?action=search&q=${encodeURIComponent(num.replace(/\D/g, ''))}`, false)
           .then(d => {
             const hit = (d?.results || []).find((f: any) => f.kind === 'lead')
@@ -248,8 +282,14 @@ export function Dialer() {
     // Карточку клиента подтягиваем тем же поиском, что и раньше
     if (vertoReady && !vertoBusy) {
       setStatus('idle'); setNote('')
+      // В АТС уходит полный номер с кодом страны, а не то, что набрали.
+      // «933993190» без 998 транк не маршрутизирует: по истории АТС такие
+      // вызовы падали через секунду с NO_USER_RESPONSE — выглядело как
+      // «телефония сбрасывает звонок». Экран при этом показывал +998 93…,
+      // потому что разбор номера уже всё понял, а в вызов шли сырые цифры
+      const dial = parsed.valid ? parsed.e164 : digits
       try {
-        await vertoRef.current!.call(digits)
+        await vertoRef.current!.call(dial)
         apiGet<any>(`/sales/call?action=search&q=${encodeURIComponent(digits)}`, false)
           .then(d => {
             const hit = (d?.results || []).find((f: any) => f.kind === 'lead')
