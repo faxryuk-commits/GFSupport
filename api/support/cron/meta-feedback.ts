@@ -43,6 +43,17 @@ export default async function handler(req: Request): Promise<Response> {
     ON CONFLICT (key, org_id) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
   `
 
+  // Атрибуция лидов — кампания, группа, креатив по номеру лида. Тем же
+  // токеном и в том же часе, что и петля: событие с точным lead_id
+  // и лид с названной кампанией — две стороны одного знания
+  let attribution: any = null
+  try {
+    const { enrichMetaLeads } = await import('../_lib/meta-leads.js')
+    attribution = await enrichMetaLeads(sql, ORG, 50)
+  } catch (e: any) {
+    attribution = { error: String(e?.message || e).slice(0, 120) }
+  }
+
   // Ошибки прошлых прогонов возвращаем в очередь до отбора кандидатов.
   const requeued = await requeueErrors(sql, ORG)
   const events = await collectDealEvents(sql, ORG)
@@ -70,6 +81,7 @@ export default async function handler(req: Request): Promise<Response> {
     sent: result.sent,
     noMatch: result.noMatch,
     requeued,
+    attribution,
     error: result.error,
   })
 }

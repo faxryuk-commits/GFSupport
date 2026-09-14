@@ -9,6 +9,7 @@
 
 import { currencyForMarket } from './sales-schema.js'
 import { qualFromAnswers, answersSummary } from './lead-qual-map.js'
+import { metaLeadIdFrom } from './meta-leads.js'
 
 export interface AmoCreds { domain: string; token: string }
 
@@ -307,6 +308,9 @@ export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
       // «Исходящий», и в карточке она читалась как сообщение клиента
       || [cf(lead, 'Направление'), cf(lead, 'Модули')].filter(Boolean).join(' · ')
       || null,
+    // «Facebook №…» — номер лида Meta, а не кампания: кампанию по нему
+    // достанет обогащение, а здесь номер идёт в своё поле
+    meta_lead_id: metaLeadIdFrom(lead._unsorted_meta?.form_name, lead.name),
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
     owner_hint: agentByAmoUser(lead.responsible_user_id),
     qual: Object.keys(qual).length ? qual : null,

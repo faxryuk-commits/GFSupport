@@ -74,6 +74,7 @@ export interface DealEventRow {
   event_name: 'QualifiedLead' | 'Schedule' | 'Purchase'
   event_id: string
   lead_external_id: string | null
+  meta_lead_id?: string | null
   phone: string | null
   value: number | null
   currency: string | null
@@ -90,6 +91,7 @@ export async function collectDealEvents(sql: any, orgId: string): Promise<DealEv
       SELECT d.id, d.org_id, d.points, d.delivery_type, d.meeting_at, d.paid_at,
              d.monthly_amount, d.amount_usd, d.currency,
              l.external_id AS lead_external_id,
+             l.meta_lead_id,
              -- Сделка без лида (заведена вручную) — телефон берём из контактов
              -- аккаунта: главный контакт первым. Иначе такие сделки вечно
              -- висели no_match, хотя номер в системе есть
@@ -106,19 +108,19 @@ export async function collectDealEvents(sql: any, orgId: string): Promise<DealEv
         AND d.stage_since > NOW() - INTERVAL '90 days'
     ),
     cand AS (
-      SELECT id, 'QualifiedLead' AS event_name, lead_external_id, phone,
+      SELECT id, 'QualifiedLead' AS event_name, lead_external_id, meta_lead_id, phone,
              NULL::numeric AS value, NULL::varchar AS currency
         FROM base WHERE points IS NOT NULL AND delivery_type IS NOT NULL
       UNION ALL
-      SELECT id, 'Schedule', lead_external_id, phone, NULL, NULL
+      SELECT id, 'Schedule', lead_external_id, meta_lead_id, phone, NULL, NULL
         FROM base WHERE meeting_at IS NOT NULL
       UNION ALL
-      SELECT id, 'Purchase', lead_external_id, phone,
+      SELECT id, 'Purchase', lead_external_id, meta_lead_id, phone,
              COALESCE(amount_usd, first_payment, monthly_amount),
              CASE WHEN amount_usd IS NOT NULL THEN 'USD' ELSE COALESCE(currency, 'USD') END
         FROM base WHERE first_payment IS NOT NULL OR paid_at IS NOT NULL
     )
-    SELECT c.id AS deal_id, c.event_name, c.lead_external_id, c.phone,
+    SELECT c.id AS deal_id, c.event_name, c.lead_external_id, c.meta_lead_id, c.phone,
            c.value, c.currency,
            'gfs-' || c.id || '-' || lower(c.event_name) AS event_id
     FROM cand c
@@ -152,6 +154,10 @@ export function phoneForMatch(raw: string | null): string | null {
 
 /** user_data по правилам Meta: lead_id точный, телефон — SHA-256. */
 async function userDataFor(row: DealEventRow): Promise<Record<string, unknown> | null> {
+  // Точный номер лида Meta — лучший ключ: сопоставление без промахов.
+  // Лиды идут через Amo, и раньше номера у нас не было — всё уходило
+  // по хешу телефона, и каждое восьмое событие терялось как no_match
+  if (row.meta_lead_id) return { lead_id: String(row.meta_lead_id) }
   const ext = row.lead_external_id || ''
   if (ext.startsWith('meta_')) return { lead_id: ext.slice(5) }
   const phone = phoneForMatch(row.phone)

@@ -48,6 +48,8 @@ export interface IntakePayload {
   owner_hint?: string | null    // ответственный из системы-источника
   /** Квалификация из ответов формы — уже в нашем словаре (см. lead-qual-map). */
   qual?: Record<string, any> | null
+  /** Номер лида Meta (leadgen_id): атрибуция кампании и точный lead_id для петли. */
+  meta_lead_id?: string | null
   raw?: any
 }
 
@@ -171,6 +173,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
           -- Ответы формы дополняют квалификацию, но ручное — главнее:
           -- справа стоит то, что уже есть, и оно перекрывает анкету
           qual = ${JSON.stringify(body.qual || {})}::jsonb || COALESCE(qual, '{}'::jsonb),
+          meta_lead_id = COALESCE(meta_lead_id, ${body.meta_lead_id || null}),
           icp_score = ${icpFresh.score},
           icp_reasons = ${JSON.stringify(icpFresh.reasons)}::jsonb
         WHERE id = ${existing.id}
@@ -358,7 +361,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       contact_name, city, market_id, campaign, form_id, ad_id, text, raw,
       icp_score, icp_reasons, status, assigned_agent_id, assigned_at, sla_due_at,
       utm_source, utm_medium, utm_campaign, utm_content, click_id, click_source, landing_url, referrer,
-      lead_kind, qual
+      lead_kind, qual, meta_lead_id
     ) VALUES (
       ${leadId}, ${orgId}, ${source.id}, ${externalId}, ${accountId}, ${name}, ${phone}, ${phoneNorm},
       ${body.contact_name || null}, ${city}, ${marketId}, ${body.campaign || null}, ${body.form_id || null},
@@ -370,7 +373,8 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       ${body.utm_content || null}, ${body.click_id || null}, ${clickSourceOf(body)}, ${body.landing_url || null},
       ${body.referrer || null},
       ${body.lead_kind || kindBySource(sourceKey)},
-      ${body.qual && Object.keys(body.qual).length ? JSON.stringify(body.qual) : null}::jsonb
+      ${body.qual && Object.keys(body.qual).length ? JSON.stringify(body.qual) : null}::jsonb,
+      ${body.meta_lead_id || null}
     )
     RETURNING *
   `

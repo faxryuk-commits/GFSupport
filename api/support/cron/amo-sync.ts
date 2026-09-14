@@ -345,6 +345,16 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ ok: false, error: e?.message || 'sync failed', cursor: maxUpdated, ...out }, 200)
   }
 
+  // Свежий лид с рекламы должен показать свою кампанию сразу, а не через
+  // час: обогащаем номер лида Meta по горячим следам. Тихо: атрибуция —
+  // не повод ронять синк
+  if (out.created > 0) {
+    try {
+      const { enrichMetaLeads } = await import('../_lib/meta-leads.js')
+      await enrichMetaLeads(sql, ORG, 25)
+    } catch { /* доберёт часовой крон обратной петли */ }
+  }
+
   if (out.created > 0 || out.staged > 0) {
     await logEvent(sql, 'Синк Amo', 'проход',
       [out.created ? `новых лидов: ${out.created}` : '',
