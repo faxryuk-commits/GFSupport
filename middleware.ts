@@ -56,6 +56,9 @@ const PUBLIC = [
   '/api/support/sales/click',
   '/api/support/sales/intake',
   '/api/support/broadcast/track',
+  // Возврат из согласия Meta: браузер приходит по редиректу без токена входа.
+  // Своя защита в обработчике — одноразовый state с часовым сроком
+  '/api/support/integrations/meta-callback',
 ]
 
 /**
