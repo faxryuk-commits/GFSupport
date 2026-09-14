@@ -266,7 +266,9 @@ export function SalesFunnelPage() {
   const convert = async (leadId: string, toStage: string) => {
     setBusy(leadId)
     try {
-      const res: any = await apiPost('/sales/funnel?action=convert', { leadId, toStage })
+      // Тип доски уходит вместе с этапом: на Enterprise-доске обращение
+      // становится enterprise-сделкой сразу, без захода через обычную воронку
+      const res: any = await apiPost('/sales/funnel?action=convert', { leadId, toStage, type: ptype })
       load()
       if (res?.attached) setNotice(`У клиента уже была открытая сделка (${res.stage || 'в работе'}) — обращение прикреплено к ней, вторая не заводилась`)
       if (res?.dealId) setOpenDeal(res.dealId)
@@ -808,6 +810,7 @@ export function SalesFunnelPage() {
                       await apiPost('/sales/deals', {
                         title: cForm.name, city: cForm.city, dealType: 'new',
                         market: region || undefined, force: cForce || undefined,
+                        type: ptype,
                       })
                     }
                     setCreating(null); setCForce(false); setCDup(null)
