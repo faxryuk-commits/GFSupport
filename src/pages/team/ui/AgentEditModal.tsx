@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { updateAgent } from '@/shared/api'
 import { Modal, alertDialog } from '@/shared/ui'
+import { useMarket } from '@/shared/hooks/useMarket'
 import type { Agent, AgentRole } from '@/entities/agent'
 
 // Галочка ДОБАВЛЯЕТ модуль сверх дефолта роли (mod:* в permissions);
@@ -86,6 +87,10 @@ function buildForm(agent: Agent | null) {
     password: '',
     phone: agent?.phone || '',
     permissions: ((agent as any)?.permissions || []) as string[],
+    // Рынки: пусто — работает по всем. Раньше это правилось только
+    // в настройках рынков, и человек, привязанный при регистрации без
+    // организации, там не показывался — сменить страну было негде
+    marketIds: (agent?.marketIds || []) as string[],
   }
 }
 
@@ -99,6 +104,14 @@ export function AgentEditModal({
   const [form, setForm] = useState(buildForm(agent))
   const [showPassword, setShowPassword] = useState(false)
   const [saving, setSaving] = useState(false)
+  const { markets } = useMarket()
+
+  const toggleMarket = (id: string) => setForm(prev => ({
+    ...prev,
+    marketIds: prev.marketIds.includes(id)
+      ? prev.marketIds.filter(m => m !== id)
+      : [...prev.marketIds, id],
+  }))
 
   useEffect(() => {
     if (agent) setForm(buildForm(agent))
@@ -115,6 +128,7 @@ export function AgentEditModal({
         position: form.position || null,
         department: form.department || null,
         permissions: form.permissions,
+        marketIds: form.marketIds,
       })
       onSaved()
       onClose()
@@ -265,6 +279,34 @@ export function AgentEditModal({
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Рынки</label>
+          <div className="flex flex-wrap gap-1.5">
+            {markets.filter(m => m.isActive !== false).map(m => {
+              const on = form.marketIds.includes(m.id)
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => toggleMarket(m.id)}
+                  className={`px-3 py-1.5 rounded-lg text-[13px] border transition-colors ${
+                    on
+                      ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
+                      : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+                  }`}
+                >
+                  {m.name}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            {form.marketIds.length === 0
+              ? 'Ни один не выбран — сотрудник работает по всем рынкам и виден под любым регионом.'
+              : 'Сотрудник виден в отчётах и командах выбранных рынков.'}
+          </p>
         </div>
 
         <div>

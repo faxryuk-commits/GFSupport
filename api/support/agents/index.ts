@@ -52,7 +52,7 @@ export default async function handler(req: Request): Promise<Response> {
   // PUT - Update agent
   if (req.method === 'PUT') {
     try {
-      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions, pbxExt } = await req.json()
+      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions, pbxExt, marketIds } = await req.json()
 
       if (!id) {
         return json({ error: 'Agent ID is required' }, 400)
@@ -88,6 +88,21 @@ export default async function handler(req: Request): Promise<Response> {
       if (permissions !== undefined) {
         const permissionsJson = JSON.stringify(permissions)
         await sql`UPDATE support_agents SET permissions = ${permissionsJson}::jsonb WHERE id = ${id} AND org_id = ${orgId}`
+      }
+
+      // Рынки сотрудника — из карточки, а не только из настроек рынков:
+      // «в какой стране работает» спрашивают у сотрудника, а не у страны.
+      // Пустой список = работает по всем (привязок нет)
+      if (Array.isArray(marketIds)) {
+        const ids = marketIds.map((m: unknown) => String(m)).filter(Boolean)
+        await sql`DELETE FROM support_agent_markets WHERE agent_id = ${id} AND org_id = ${orgId}`
+        for (const marketId of ids) {
+          await sql`
+            INSERT INTO support_agent_markets (agent_id, market_id, role, org_id)
+            VALUES (${id}, ${marketId}, 'member', ${orgId})
+            ON CONFLICT (agent_id, market_id) DO UPDATE SET org_id = ${orgId}
+          `
+        }
       }
 
       return json({ success: true })

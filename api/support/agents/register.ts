@@ -111,10 +111,13 @@ export default async function handler(req: Request): Promise<Response> {
     // Рынок из приглашения: без него сотрудник не виден в региональных
     // разрезах, а узнаётся это только когда кто-то спросит «а где Баку»
     if (invite.market_id) {
+      // org_id обязателен: без него настройки рынков привязку не видят —
+      // список сотрудников рынка фильтруется по организации, и человек,
+      // привязанный при регистрации, там не появлялся и не снимался
       await sql`
-        INSERT INTO support_agent_markets (agent_id, market_id)
-        VALUES (${agentId}, ${invite.market_id})
-        ON CONFLICT DO NOTHING
+        INSERT INTO support_agent_markets (agent_id, market_id, role, org_id)
+        VALUES (${agentId}, ${invite.market_id}, 'member', ${orgId})
+        ON CONFLICT (agent_id, market_id) DO UPDATE SET org_id = ${orgId}
       `.catch(() => {})
     }
 

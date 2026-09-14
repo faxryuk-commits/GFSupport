@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from '../services/api.service'
+import { apiGet, apiPost, apiPut, invalidateCache } from '../services/api.service'
 import type { Agent } from '../types'
 
 interface AgentsResponse {
@@ -23,8 +23,13 @@ export async function updateAgent(id: string, data: {
   position?: string | null
   department?: string | null
   permissions?: string[]
+  /** Рынки сотрудника; пустой массив — работает по всем. */
+  marketIds?: string[]
 }): Promise<void> {
   await apiPut('/agents', { id, ...data })
+  // Список команды читается из кэша; без сброса сохранённые рынки и отдел
+  // всплывали в карточке только после перезагрузки страницы
+  invalidateCache('/agents')
 }
 
 export async function createAgent(data: {

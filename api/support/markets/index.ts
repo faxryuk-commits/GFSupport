@@ -109,7 +109,9 @@ export default async function handler(req: Request): Promise<Response> {
         await sql`
           INSERT INTO support_agent_markets (agent_id, market_id, role, org_id)
           VALUES (${agentId}, ${marketId}, ${role || 'member'}, ${orgId})
-          ON CONFLICT (agent_id, market_id) DO UPDATE SET role = ${role || 'member'}
+          -- org_id обновляем тоже: привязка, заведённая без него, была
+          -- невидима в списке рынка, и повторное «привязать» ничего не меняло
+          ON CONFLICT (agent_id, market_id) DO UPDATE SET role = ${role || 'member'}, org_id = ${orgId}
         `
       }
       return json({ success: true, assigned: agentIds.length })
