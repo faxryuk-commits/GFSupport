@@ -23,6 +23,8 @@ export interface Agent {
   phone?: string
   position?: string
   department?: string
+  /** Рынки, к которым привязан сотрудник; пусто — работает по всем. */
+  marketIds?: string[]
 }
 
 export interface AgentMetrics {

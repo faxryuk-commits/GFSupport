@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Loader2, Info, MessageSquare, Briefcase, Zap, Monitor, CalendarDays, Clock, ChevronDown } from 'lucide-react'
 import { fetchWorkload, type WorkloadPayload, type WorkloadGroupRow } from '@/shared/api'
+import { MARKET_CHANGED_EVENT } from '@/shared/hooks/useMarket'
 
 const PERIODS = [7, 30, 90] as const
 
@@ -43,6 +44,16 @@ export function WorkloadTable() {
     })
   }
 
+  // Смена региона в шапке раздела — тоже повод перезапросить: рынок
+  // подставляется в запрос сам, но таблица об этом не узнавала и показывала
+  // прежнюю страну, пока не сменишь период
+  const [marketTick, setMarketTick] = useState(0)
+  useEffect(() => {
+    const bump = () => setMarketTick(t => t + 1)
+    window.addEventListener(MARKET_CHANGED_EVENT, bump)
+    return () => window.removeEventListener(MARKET_CHANGED_EVENT, bump)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -52,7 +63,7 @@ export function WorkloadTable() {
       .catch(() => { if (!cancelled) setError('Не удалось загрузить данные о нагрузке') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [days])
+  }, [days, marketTick])
 
   const maxMessages = Math.max(1, ...(data?.agents.map(a => a.messages) ?? [1]))
 

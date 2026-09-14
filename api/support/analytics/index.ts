@@ -157,6 +157,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_cases
         WHERE org_id = ${orgId}
           AND created_at >= ${startDate.toISOString()}
+          AND (${market}::text IS NULL OR market_id = ${market})
         GROUP BY category
         ORDER BY count DESC
         LIMIT 10
@@ -168,6 +169,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_messages
         WHERE org_id = ${orgId}
           AND created_at >= ${startDate.toISOString()} AND ai_sentiment IS NOT NULL
+          AND (${market}::text IS NULL OR channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
         GROUP BY ai_sentiment
         ORDER BY count DESC
       `,
@@ -178,6 +180,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_messages
         WHERE org_id = ${orgId}
           AND created_at >= ${startDate.toISOString()} AND ai_intent IS NOT NULL
+          AND (${market}::text IS NULL OR channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
         GROUP BY ai_intent
         ORDER BY count DESC
         LIMIT 10
@@ -200,6 +203,7 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE org_id = ${orgId}
             AND created_at >= ${startDate.toISOString()}
             AND category IS NOT NULL
+            AND (${market}::text IS NULL OR market_id = ${market})
           GROUP BY category
           HAVING COUNT(*) >= 2
           
@@ -216,6 +220,7 @@ export default async function handler(req: Request): Promise<Response> {
             AND created_at >= ${startDate.toISOString()}
             AND is_problem = true
             AND ai_category IS NOT NULL
+            AND (${market}::text IS NULL OR channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
           GROUP BY ai_category
           HAVING COUNT(*) >= 3
           
@@ -266,6 +271,9 @@ export default async function handler(req: Request): Promise<Response> {
           AND m.sender_role <> 'channel'
           AND (m.sender_role IN ('support', 'team', 'agent') OR m.is_from_client = false)
           AND m.sender_id IS NOT NULL
+          -- Регион: сообщение принадлежит рынку своего канала. Без этого
+          -- фильтр по стране на «Обзоре» показывал всю команду целиком
+          AND (${market}::text IS NULL OR m.channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
           AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%bot%'
           AND LOWER(COALESCE(m.sender_name, '')) NOT LIKE '%delever support%'
           AND LOWER(COALESCE(m.sender_username, '')) NOT LIKE '%bot%'
@@ -283,6 +291,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_cases c
         WHERE c.org_id = ${orgId}
           AND c.assigned_to IS NOT NULL
+          AND (${market}::text IS NULL OR c.market_id = ${market})
         GROUP BY c.assigned_to
       `,
       sql`
@@ -293,6 +302,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_cases
         WHERE org_id = ${orgId}
           AND created_at >= ${startDate.toISOString()}
+          AND (${market}::text IS NULL OR market_id = ${market})
         GROUP BY DATE(created_at)
         ORDER BY date
       `,
@@ -455,6 +465,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_messages m
         JOIN support_channels c ON m.channel_id = c.id
         WHERE m.org_id = ${orgId}
+          AND (${market}::text IS NULL OR c.market_id = ${market})
           AND m.ai_sentiment IN ('negative', 'frustrated')
           AND m.created_at >= ${startDate.toISOString()}
         GROUP BY c.id, c.name
@@ -472,6 +483,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_cases c
         JOIN support_channels ch ON c.channel_id = ch.id
         WHERE c.org_id = ${orgId}
+          AND (${market}::text IS NULL OR ch.market_id = ${market})
           AND c.status NOT IN ('resolved', 'closed')
           AND c.created_at < NOW() - INTERVAL '48 hours'
         GROUP BY ch.id, ch.name
@@ -487,6 +499,7 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_cases c
         JOIN support_channels ch ON c.channel_id = ch.id
         WHERE c.org_id = ${orgId}
+          AND (${market}::text IS NULL OR ch.market_id = ${market})
           AND c.is_recurring = true
           AND c.created_at >= ${startDate.toISOString()}
         GROUP BY ch.id, ch.name
@@ -513,6 +526,7 @@ export default async function handler(req: Request): Promise<Response> {
         LEFT JOIN support_messages m ON m.channel_id = c.id AND m.org_id = ${orgId} AND m.created_at >= ${startDate.toISOString()}
         LEFT JOIN support_cases cs ON cs.channel_id = c.id AND cs.org_id = ${orgId}
         WHERE c.org_id = ${orgId}
+          AND (${market}::text IS NULL OR c.market_id = ${market})
         GROUP BY c.id, c.name
         HAVING COALESCE(SUM(
           CASE 
@@ -554,6 +568,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_channels ch
           WHERE ch.org_id = ${orgId}
             AND ch.is_active = true
+            AND (${market}::text IS NULL OR ch.market_id = ${market})
           GROUP BY ch.sla_category
         `,
         sql`
@@ -578,6 +593,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_cases c
           JOIN support_channels ch ON c.channel_id = ch.id
           WHERE c.org_id = ${orgId}
+            AND (${market}::text IS NULL OR ch.market_id = ${market})
           GROUP BY ch.sla_category
         `,
         sql`
@@ -595,6 +611,7 @@ export default async function handler(req: Request): Promise<Response> {
             FROM support_messages m
             JOIN support_channels ch ON m.channel_id = ch.id
             WHERE m.org_id = ${orgId}
+              AND (${market}::text IS NULL OR ch.market_id = ${market})
               AND m.created_at >= ${startDate.toISOString()}::timestamptz - INTERVAL '24 hours'
               AND m.created_at <= ${endDate.toISOString()}
           ),
@@ -741,6 +758,7 @@ export default async function handler(req: Request): Promise<Response> {
           LEFT JOIN msg_stats ms ON ms.channel_id = c.id
           LEFT JOIN case_stats cs ON cs.channel_id = c.id
           WHERE c.org_id = ${orgId} AND c.is_active = true
+            AND (${market}::text IS NULL OR c.market_id = ${market})
         )
         SELECT
           *,
@@ -770,6 +788,7 @@ export default async function handler(req: Request): Promise<Response> {
           FROM support_messages m
           WHERE m.org_id = ${orgId}
             AND m.created_at >= ${startDate.toISOString()}
+            AND (${market}::text IS NULL OR m.channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
         ),
         response_times AS (
           SELECT

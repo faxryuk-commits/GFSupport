@@ -60,6 +60,9 @@ export default async function handler(req: Request) {
 
   const url = new URL(req.url)
   const days = Math.max(1, Math.min(365, parseInt(url.searchParams.get('days') || '30', 10) || 30))
+  // Регион раздела: без него «Загрузка команды» на «Обзоре» показывала всю
+  // команду целиком при любом выбранном рынке
+  const market = url.searchParams.get('market') || null
 
   const sql = getSQL()
 
@@ -78,6 +81,12 @@ export default async function handler(req: Request) {
         SELECT id, name, role, merged_into
         FROM support_agents
         WHERE org_id = ${orgId}
+          -- Непривязанный к рынку сотрудник работает по всем странам —
+          -- то же правило, что у доступа. Привязанный к другой — не наш
+          AND (${market}::text IS NULL
+               OR NOT EXISTS (SELECT 1 FROM support_agent_markets am WHERE am.agent_id = support_agents.id)
+               OR EXISTS (SELECT 1 FROM support_agent_markets am
+                          WHERE am.agent_id = support_agents.id AND am.market_id = ${market}))
       `,
       sql`
         WITH team_msgs AS (
@@ -102,6 +111,7 @@ export default async function handler(req: Request) {
             AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
             AND m.sender_role IN ('support', 'team', 'agent')
             AND m.is_from_client = false
+            AND (${market}::text IS NULL OR m.channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
         )
         SELECT
           canonical_id,
@@ -138,6 +148,7 @@ export default async function handler(req: Request) {
         ) ag ON true
         WHERE c.org_id = ${orgId}
           AND c.created_at > NOW() - INTERVAL '1 day' * ${days}
+          AND (${market}::text IS NULL OR c.market_id = ${market})
           AND ag.canonical_id IS NOT NULL
         GROUP BY ag.canonical_id
       `,
@@ -182,6 +193,7 @@ export default async function handler(req: Request) {
             AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
             AND m.sender_role IN ('support', 'team', 'agent')
             AND m.is_from_client = false
+            AND (${market}::text IS NULL OR m.channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
         ),
         gaps AS (
           SELECT canonical_id, kind,
@@ -219,6 +231,7 @@ export default async function handler(req: Request) {
             AND m.created_at > NOW() - INTERVAL '1 day' * ${days}
             AND m.sender_role IN ('support', 'team', 'agent')
             AND m.is_from_client = false
+            AND (${market}::text IS NULL OR m.channel_id IN (SELECT id FROM support_channels WHERE market_id = ${market}))
         ),
         gaps AS (
           SELECT canonical_id, channel_id, name, kind,
@@ -243,7 +256,7 @@ export default async function handler(req: Request) {
         orgId,
         fromDateTime: new Date(Date.now() - days * 86400000).toISOString(),
         toDateTime: new Date().toISOString(),
-        market: null,
+        market,
         source: 'all',
       }).catch(() => ({ avgResponseMinutes: 0, agents: [] })),
     ])

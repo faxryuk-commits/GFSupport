@@ -64,6 +64,16 @@ export function DashboardPage() {
   // Регион этого раздела: выбор свой и не тянет за собой соседние экраны
   const { id: selectedMarket } = useScopeMarket('dashboard')
 
+  // Команда под выбранный регион. Непривязанный к рынку сотрудник работает
+  // по всем странам — таково правило доступа (agentMarketCodes отдаёт null),
+  // и в списке он остаётся; привязанный к другой стране — уходит
+  const visibleAgents = useMemo(
+    () => selectedMarket
+      ? agents.filter(a => !a.marketIds?.length || a.marketIds.includes(selectedMarket))
+      : agents,
+    [agents, selectedMarket],
+  )
+
   const loadData = useCallback(async () => {
     try {
       setError(null)
@@ -224,7 +234,7 @@ export function DashboardPage() {
 
         <OperationsSection
           needsAttention={filteredAttention}
-          agents={agents}
+          agents={visibleAgents}
         />
 
         {/* Загрузка команды: объём переписки, тикеты, часы — с раскрытием по группам.
