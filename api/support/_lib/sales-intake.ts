@@ -35,6 +35,8 @@ export interface IntakePayload {
   utm_campaign?: string | null
   utm_content?: string | null
   click_id?: string | null
+  /** gclid | yclid | fbclid — чей click_id; сайт шлёт явно, иначе выводим. */
+  click_source?: string | null
   landing_url?: string | null
   referrer?: string | null
   orders_per_day?: string | number | null
@@ -96,6 +98,24 @@ export async function findRecentTwin(
     ORDER BY l.created_at DESC LIMIT 1
   `
   return row ? { id: row.id, account_id: row.account_id } : null
+}
+
+/**
+ * Чей click id пришёл с заявкой. Сайт присылает click_source явно; старые
+ * формы и приёмник лид-форм Google — нет, тогда судим по utm_source
+ * (форма сайта без utm подставляет туда имя параметра: gclid / yclid) и,
+ * в крайнем случае, по виду значения: yclid — только цифры.
+ */
+export function clickSourceOf(body: IntakePayload): string | null {
+  if (!body.click_id) return null
+  const explicit = String(body.click_source || '').trim().toLowerCase()
+  if (explicit) return explicit.slice(0, 20)
+  const src = String(body.utm_source || '').trim().toLowerCase()
+  if (src === 'google' || src === 'gclid') return 'gclid'
+  if (src === 'yandex' || src === 'yclid') return 'yclid'
+  if (src === 'fb' || src === 'facebook' || src === 'meta' || src === 'ig' || src === 'fbclid') return 'fbclid'
+  if (/^[0-9]{12,}$/.test(String(body.click_id))) return 'yclid'
+  return null
 }
 
 export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): Promise<IntakeResult> {
@@ -328,7 +348,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       id, org_id, source_id, external_id, account_id, name, phone, phone_norm,
       contact_name, city, market_id, campaign, form_id, ad_id, text, raw,
       icp_score, icp_reasons, status, assigned_agent_id, assigned_at, sla_due_at,
-      utm_source, utm_medium, utm_campaign, utm_content, click_id, landing_url, referrer,
+      utm_source, utm_medium, utm_campaign, utm_content, click_id, click_source, landing_url, referrer,
       lead_kind
     ) VALUES (
       ${leadId}, ${orgId}, ${source.id}, ${externalId}, ${accountId}, ${name}, ${phone}, ${phoneNorm},
@@ -338,7 +358,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       ${assignedAgentId}, ${assignedAgentId ? new Date().toISOString() : null},
       ${slaMinutes ? new Date(Date.now() + slaMinutes * 60_000).toISOString() : null},
       ${body.utm_source || null}, ${body.utm_medium || null}, ${body.utm_campaign || null},
-      ${body.utm_content || null}, ${body.click_id || null}, ${body.landing_url || null},
+      ${body.utm_content || null}, ${body.click_id || null}, ${clickSourceOf(body)}, ${body.landing_url || null},
       ${body.referrer || null},
       ${body.lead_kind || kindBySource(sourceKey)}
     )

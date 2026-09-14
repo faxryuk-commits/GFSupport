@@ -8,6 +8,7 @@ import { Modal, confirmDialog } from '@/shared/ui'
 import { apiGet, apiPost, apiPut } from '@/shared/services/api.service'
 import { OpenAISettingsModal } from './OpenAISettingsModal'
 import { MetaConnectModal } from './MetaConnectModal'
+import { AdsFeedbackModal } from './AdsFeedbackModal'
 import { GoogleCalendarModal } from './GoogleCalendarModal'
 
 /** «12 минут назад» вместо голого числа: карточку читают, а не считают. */
@@ -854,6 +855,14 @@ export function IntegrationsSettings({
   const [waModalOpen, setWaModalOpen] = useState(false)
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [metaModalOpen, setMetaModalOpen] = useState(false)
+  const [adsModalOpen, setAdsModalOpen] = useState(false)
+  // Петля Google/Яндекс: «включено», если есть адрес для Google или готова Метрика
+  type AdsState = { google: { url: string | null }; yandex: { readyAt: string | null } }
+  const [ads, setAds] = useState<AdsState | null>(null)
+  useEffect(() => {
+    if (adsModalOpen) return
+    apiGet<AdsState>('/integrations/ads-feedback', false).then(setAds).catch(() => setAds(null))
+  }, [adsModalOpen])
   const [pfModalOpen, setPfModalOpen] = useState(false)
   const [pfConnected, setPfConnected] = useState(false)
   const [mapsModalOpen, setMapsModalOpen] = useState(false)
@@ -1127,6 +1136,37 @@ export function IntegrationsSettings({
             }
           />
 
+          {/* Google Ads и Яндекс Директ: обратная петля — реклама учится на фактах CRM,
+              а не на заполненных формах */}
+          <IntegrationCard
+            icon="🎯"
+            name="Google Ads и Яндекс Директ"
+            status={ads?.google.url || ads?.yandex.readyAt ? 'active' : 'inactive'}
+            details={ads?.google.url || ads?.yandex.readyAt ? (
+              <>
+                <p className="text-sm text-slate-600">
+                  {[ads?.google.url ? 'Google: адрес CSV выдан' : '', ads?.yandex.readyAt ? 'Яндекс: Метрика подготовлена' : '']
+                    .filter(Boolean).join(' · ')}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">Квалификация, встреча, оплата — обратно в рекламу по click id</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Не включено — реклама платит за форму, а не за клиента</p>
+            )}
+            actions={
+              <button
+                onClick={() => setAdsModalOpen(true)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  ads?.google.url || ads?.yandex.readyAt
+                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                    : 'text-white bg-blue-500 hover:bg-blue-600'
+                }`}
+              >
+                {ads?.google.url || ads?.yandex.readyAt ? 'Настройки' : 'Включить'}
+              </button>
+            }
+          />
+
           {/* Telegram сейлзов: пишем клиентам от своего имени, переписка в карточке */}
           <IntegrationCard
             icon="✈️"
@@ -1248,6 +1288,7 @@ export function IntegrationsSettings({
       <MapsConnectModal isOpen={mapsModalOpen} onClose={() => setMapsModalOpen(false)} />
       <TelegramAccountsModal isOpen={tgModalOpen} onClose={() => setTgModalOpen(false)} />
       <MetaConnectModal isOpen={metaModalOpen} onClose={() => setMetaModalOpen(false)} />
+      <AdsFeedbackModal isOpen={adsModalOpen} onClose={() => setAdsModalOpen(false)} />
       <WhatsAppConnectModal isOpen={waModalOpen} onClose={() => setWaModalOpen(false)} />
       <OpenAISettingsModal isOpen={aiModalOpen} onClose={() => setAiModalOpen(false)} onSaved={onRefreshHealth} />
 

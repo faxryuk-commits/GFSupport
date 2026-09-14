@@ -911,6 +911,9 @@ export async function ensureSalesSchema(sql: SQL, orgId: string): Promise<void> 
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(200)`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS utm_content VARCHAR(200)`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS click_id VARCHAR(200)`
+  // Чей это click id (gclid / yclid / fbclid): по нему обратная петля решает,
+  // какой рекламной системе сообщать о факте. Добавлена в базу руками 14.09.2026
+  await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS click_source VARCHAR(20)`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS landing_url TEXT`
   await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS referrer TEXT`
 

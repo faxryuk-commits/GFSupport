@@ -138,6 +138,10 @@
       "schedule": "20 * * * *"
     },
     {
+      "path": "/api/support/cron/ads-feedback",
+      "schedule": "25 * * * *"
+    },
+    {
       "path": "/api/support/cron/call-digest",
       "schedule": "*/3 * * * *"
     },
