@@ -44,7 +44,7 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
   const wastedPct = t.cost > 0 ? Math.round(100 * wasted / t.cost) : 0
   const q = data.quality || { junk: 0, junkNoReason: 0 }
   const campaigns: any[] = data.campaigns || []
-  const active = campaigns.filter(c => c.status === 'ACTIVE')
+  const active = campaigns.filter(c => c.live)
   // Деньги, которые не дошли ни до одного лида в CRM: их нет ни у кого из людей
   const noLeadSpend = Math.max(0, (t.spend ?? t.cost) - t.cost)
 
@@ -170,7 +170,7 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
               </thead>
               <tbody>
                 {campaigns.map((c: any) => {
-                  const on = c.status === 'ACTIVE'
+                  const on = Boolean(c.live)
                   const adv = (c.n.advanced || 0) + (c.n.paid || 0)
                   const w = c.c.wasted || 0
                   return (
@@ -187,7 +187,9 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
                           ))}
                         </div>
                         <div className="text-[11px] text-gray-400 pl-4">
-                          {on ? `${c.activeAdsets} ${c.activeAdsets === 1 ? 'группа' : c.activeAdsets < 5 ? 'группы' : 'групп'} в работе` : 'на паузе'}
+                          {on
+                            ? `${c.activeAdsets} ${c.activeAdsets === 1 ? 'группа' : c.activeAdsets < 5 ? 'группы' : 'групп'} в работе`
+                            : c.status === 'ACTIVE' ? 'все группы на паузе' : 'на паузе'}
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{on && c.dailyBudget > 0 ? usd(c.dailyBudget) : '—'}</td>

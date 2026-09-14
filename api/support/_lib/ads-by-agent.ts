@@ -226,9 +226,13 @@ export async function adsByAgent(
     c.c[r.fate!] = (c.c[r.fate!] || 0) + r.cost!
   }
   // Фильтр по стране: у кампании страна — это страна её лидов
+  // «Живая» — не статус в Meta, а факт: кампания активна И есть чему крутиться.
+  // Кампания со всеми группами на паузе в кабинете числится ACTIVE, а денег
+  // не тратит — показывать её зелёной значит врать
+  for (const c of byCamp.values()) c.live = c.status === 'ACTIVE' && (c.activeAdsets > 0 || c.dailyBudget > 0)
   const campaigns = [...byCamp.values()]
     .filter(c => !market || c.markets.includes(market))
-    .sort((x, y) => (y.status === 'ACTIVE' ? 1 : 0) - (x.status === 'ACTIVE' ? 1 : 0) || y.spend - x.spend)
+    .sort((x, y) => (y.live ? 1 : 0) - (x.live ? 1 : 0) || y.spend - x.spend)
 
   const totals: { cost: number; spend: number; leads: number; n: Partial<Record<Fate, number>>; c: Partial<Record<Fate, number>> } =
     { cost: 0, spend: 0, leads: rows.length, n: {}, c: {} }
@@ -241,7 +245,7 @@ export async function adsByAgent(
   }
   // Потрачено всего — по кампаниям, включая те, что лидов в CRM не дали
   totals.spend = campaigns.reduce((s, c) => s + c.spend, 0)
-  const dailyBudget = campaigns.filter(c => c.status === 'ACTIVE').reduce((s, c) => s + c.dailyBudget, 0)
+  const dailyBudget = campaigns.filter(c => c.live).reduce((s, c) => s + c.dailyBudget, 0)
 
   // Сколько отказов без причины: мера доверия к колонке «не отработано»
   const junkNoReason = rows.filter(r => r.status === 'junk' && !r.reason).length
