@@ -236,6 +236,10 @@ const SOURCE_SEED: Array<{ key: string; label: string; kind: string }> = [
   // а письмо требует ответа текстом. Смешивать их в «инстаграм» или «сайт»
   // означает считать конверсию по каше
   { key: 'meta_leadform', label: 'Meta лид-форма (реклама)', kind: 'paid' },
+  // Лид-формы Google Ads — приёмник на сайте (api/google-ads-lead) шлёт их
+  // сюда с gclid и id кампании. Без записи здесь acceptLead отвергает заявку
+  // как «unknown source», и первый настоящий лид из Google пропал бы
+  { key: 'google_ads', label: 'Google Реклама · лид-форма', kind: 'inbound' },
   { key: 'telegram_ads', label: 'Telegram Ads', kind: 'paid' },
   { key: 'meta_ads_click', label: 'Переход из рекламы Meta', kind: 'paid' },
   { key: 'site', label: 'Форма на сайте', kind: 'inbound' },

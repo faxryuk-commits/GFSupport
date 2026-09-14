@@ -78,14 +78,29 @@ async function handlerInner(req: Request): Promise<Response> {
     ` as any[]
     if (!lead) return json({ error: 'обращение не найдено' }, 404)
 
-    const leadPipeline = pipelineForMarket(lead.market_id)
+    // Обращение может стать сделкой и обычной, и enterprise: на доске
+    // Enterprise колонки — «Разведка», «Discovery», и раньше перетаскивание
+    // туда отвечало «этап не найден»: этап искался только в обычной воронке
+    // страны. Сейлз заводил сделку на обычной доске и через карточку
+    // переводил в Enterprise — два лишних шага на каждую сеть.
+    // Тип берём из запроса; если не сказан — по ключу этапа: «research»
+    // есть только в enterprise, «qualified» — только в обычной
+    const wantEnt = body.type === 'enterprise' || isEnt
+    if (wantEnt && !lead.market_id) {
+      return json({ error: 'У обращения не указан рынок — сначала выберите страну в карточке' }, 422)
+    }
+    const salesPipeline = pipelineForMarket(lead.market_id)
+    const entPipeline = lead.market_id ? `enterprise_${lead.market_id}` : salesPipeline
+    const preferred = wantEnt ? entPipeline : salesPipeline
     const [target] = await sql`
-      SELECT id, key, label, required_fields, sort_order FROM sales_stages
-      WHERE org_id = ${orgId} AND pipeline = ${leadPipeline}
+      SELECT id, key, label, required_fields, sort_order, pipeline FROM sales_stages
+      WHERE org_id = ${orgId} AND pipeline IN (${salesPipeline}, ${entPipeline})
         AND key = ${String(body.toStage || 'qualified')} AND is_active = true
+      ORDER BY (pipeline = ${preferred}) DESC
       LIMIT 1
     ` as any[]
     if (!target) return json({ error: 'этап не найден' }, 404)
+    const leadPipeline = String(target.pipeline)
 
     // Критерии этапа проверяем по НАСТОЯЩЕЙ квалификации лида: сейлз заполнял
     // её в карточке (lead.qual), и не видеть её здесь значило блокировать

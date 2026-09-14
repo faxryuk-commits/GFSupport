@@ -42,7 +42,8 @@ export default async function handler(req: Request): Promise<Response> {
       const type = body?.type === 'enterprise' ? 'enterprise' : 'sales'
       if (!id) return json({ error: 'id is required' }, 400)
       const [deal] = await sql`
-        SELECT id, market_id, pipeline FROM sales_deals WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+        SELECT id, market_id, pipeline, won_at, lost_at
+        FROM sales_deals WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
       ` as any[]
       if (!deal) return json({ error: 'сделка не найдена' }, 404)
       if (!deal.market_id) {
@@ -50,9 +51,15 @@ export default async function handler(req: Request): Promise<Response> {
       }
       const target = `${type}_${deal.market_id}`
       if (target === deal.pipeline) return json({ ok: true, pipeline: target })
+      // Закрытая сделка остаётся закрытой и в другой воронке: выигранная
+      // встаёт на «Подписан», проигранная — на «Проиграна». Раньше любая
+      // уезжала на первый открытый этап с сохранённой датой выигрыша —
+      // на доске появлялась карточка в «Разведке», которой счётчик колонки
+      // не видел, а в карточке клиента сделка числилась выигранной
+      const kind = deal.won_at ? 'won' : deal.lost_at ? 'lost' : 'open'
       const [stage] = await sql`
         SELECT id, label FROM sales_stages
-        WHERE org_id = ${orgId} AND pipeline = ${target} AND kind = 'open' AND is_active = true
+        WHERE org_id = ${orgId} AND pipeline = ${target} AND kind = ${kind} AND is_active = true
         ORDER BY sort_order LIMIT 1
       ` as any[]
       if (!stage) return json({ error: `Воронка ${target} не настроена` }, 422)
@@ -71,8 +78,18 @@ export default async function handler(req: Request): Promise<Response> {
     const title = String(body?.title || '').trim()
     if (!title) return json({ error: 'нужно название сделки' }, 400)
 
-    const market = String(body?.market || '').trim() || null
-    const pipeline = market ? `sales_${market}` : 'sales'
+    // Страна: из формы, а без неё — единственная страна сотрудника. Сейлз
+    // с одним рынком не выбирает регион на доске и заводил сделки в общую
+    // воронку без страны, откуда их не видно ни в одном региональном срезе
+    const market = String(body?.market || '').trim()
+      || (ctx.marketIds.length === 1 ? ctx.marketIds[0] : null)
+    // Тип воронки — с доски, где нажали «Завести»: с доски Enterprise сделка
+    // сети заводилась в обычную воронку, и её переводили руками через карточку
+    const ptype = body?.type === 'enterprise' ? 'enterprise' : 'sales'
+    if (ptype === 'enterprise' && !market) {
+      return json({ error: 'Для Enterprise-сделки выберите страну — регион вверху доски' }, 422)
+    }
+    const pipeline = market ? `${ptype}_${market}` : 'sales'
 
     // Дубль: у клиента с таким названием уже есть открытая сделка. Сегодня
     // одному клиенту завели две вручную с разницей в 15 минут — и обе
@@ -116,10 +133,12 @@ export default async function handler(req: Request): Promise<Response> {
 
     const [stage] = await sql`
       -- Сделку заводят, когда клиент уже квалифицирован: дозвон и выяснение
-      -- «наш ли это клиент» живут на стороне обращений
+      -- «наш ли это клиент» живут на стороне обращений. В enterprise такого
+      -- этапа нет — там вход в воронку «Разведка», первый открытый этап
       SELECT id FROM sales_stages
-      WHERE org_id = ${orgId} AND pipeline = ${pipeline}
-        AND key = 'qualified' AND is_active = true
+      WHERE org_id = ${orgId} AND pipeline = ${pipeline} AND is_active = true
+        AND (key = 'qualified' OR ${ptype} = 'enterprise') AND kind = 'open'
+      ORDER BY sort_order
       LIMIT 1
     `
     const dealId = salesId('sd')
