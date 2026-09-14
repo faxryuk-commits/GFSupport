@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { currencyForMarket, ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
-import { resolveRegionScoped } from '../_lib/sales-amo.js'
+import { resolveRegionScoped, agentMarketCodes } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -81,8 +81,11 @@ export default async function handler(req: Request): Promise<Response> {
     // Страна: из формы, а без неё — единственная страна сотрудника. Сейлз
     // с одним рынком не выбирает регион на доске и заводил сделки в общую
     // воронку без страны, откуда их не видно ни в одном региональном срезе
+    // marketIds в контексте — id рынков поддержки (market_1772…), а продажи
+    // работают кодом страны; переводит их agentMarketCodes, у админов — null
+    const own = await agentMarketCodes(sql, ctx)
     const market = String(body?.market || '').trim()
-      || (ctx.marketIds.length === 1 ? ctx.marketIds[0] : null)
+      || (own?.length === 1 ? own[0] : null)
     // Тип воронки — с доски, где нажали «Завести»: с доски Enterprise сделка
     // сети заводилась в обычную воронку, и её переводили руками через карточку
     const ptype = body?.type === 'enterprise' ? 'enterprise' : 'sales'
