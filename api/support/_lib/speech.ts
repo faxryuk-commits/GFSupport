@@ -79,37 +79,78 @@ async function accessToken(): Promise<string | null> {
   return j.access_token
 }
 
-/**
- * Расшифровка аудио. Быстрый режим Google принимает до минуты — этого хватает
- * на дозвон и первое касание; длинные демо режутся по первой минуте, там всё
- * равно самое важное: кто звонит и зачем.
- */
-export async function transcribeCall(audioUrl: string): Promise<string | null> {
-  const key = getKey()
-  const token = await accessToken()
-  if (!key || !token) return null
-
-  const audioRes = await fetch(audioUrl)
-  if (!audioRes.ok) return null
-  const audio = b64url(await audioRes.arrayBuffer())
-    .replace(/-/g, '+').replace(/_/g, '/')
-
+/** Один заход в синхронный :recognize (лимит — минута аудио). */
+async function recognizeChunk(
+  key: SpeechKey, token: string, contentB64: string, languageCodes: string[],
+): Promise<string | null> {
   const url = `https://${CHIRP_REGION}-speech.googleapis.com/v2/projects/${key.project_id}`
     + `/locations/${CHIRP_REGION}/recognizers/_:recognize`
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      config: { autoDecodingConfig: {}, languageCodes: ['uz-UZ'], model: 'chirp_2' },
-      content: audio,
+      config: { autoDecodingConfig: {}, languageCodes, model: 'chirp_2' },
+      content: contentB64,
     }),
+    signal: AbortSignal.timeout(25000),
   })
   const j = await res.json()
-  if (j.error) return null
+  if (j.error) {
+    // Несколько языков признаёт не каждая связка модель+регион: не гадаем,
+    // а пробуем и откатываемся на первый язык из списка
+    if (languageCodes.length > 1) return recognizeChunk(key, token, contentB64, [languageCodes[0]])
+    return null
+  }
   const text = (j.results || [])
     .map((r: any) => r.alternatives?.[0]?.transcript)
     .filter(Boolean).join(' ').trim()
   return text || null
+}
+
+export interface TranscribeOpts {
+  /** Длительность разговора; по ней запись режется под минутный лимит API. */
+  talkSec?: number | null
+  /** Языки распознавания; по умолчанию узбекский с русским фолбэком. */
+  languageCodes?: string[]
+}
+
+/**
+ * Расшифровка аудио. Синхронный :recognize принимает не больше минуты —
+ * запись длиннее режется на куски по ~55 секунд и распознаётся по частям
+ * (декодер сам находит границы кадров MP3, стык теряет максимум слово).
+ * Раньше длинные звонки не резались, а падали целиком: API отвечал ошибкой,
+ * и все разговоры дольше минуты — самые ценные — оставались без текста.
+ */
+export async function transcribeCall(audioUrl: string, opts?: TranscribeOpts): Promise<string | null> {
+  const key = getKey()
+  const token = await accessToken()
+  if (!key || !token) return null
+
+  const audioRes = await fetch(audioUrl, { signal: AbortSignal.timeout(25000) })
+  if (!audioRes.ok) return null
+  const buf = new Uint8Array(await audioRes.arrayBuffer())
+  if (!buf.length) return null
+
+  const languageCodes = opts?.languageCodes?.length ? opts.languageCodes : ['uz-UZ', 'ru-RU']
+
+  // Сколько кусков: по длительности, а без неё — по размеру с консервативной
+  // оценкой битрейта (занизить длину куска безопасно, завысить — отказ API)
+  const estSec = opts?.talkSec && opts.talkSec > 0 && opts.talkSec < 36000
+    ? opts.talkSec
+    : buf.length / 4000
+  const chunks = Math.max(1, Math.min(12, Math.ceil(estSec / 55)))
+  const step = Math.ceil(buf.length / chunks)
+
+  const parts: string[] = []
+  for (let i = 0; i < chunks; i++) {
+    const slice = buf.subarray(i * step, Math.min((i + 1) * step, buf.length))
+    if (!slice.length) break
+    const content = b64url(slice).replace(/-/g, '+').replace(/_/g, '/')
+    const text = await recognizeChunk(key, token, content, languageCodes)
+    if (text) parts.push(text)
+  }
+  const full = parts.join(' ').trim()
+  return full || null
 }
 
 export interface CallDigest {

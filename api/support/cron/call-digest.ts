@@ -58,7 +58,9 @@ export default async function handler(req: Request): Promise<Response> {
     try {
       const recUrl = await pbxRecordUrl(cfg, r.uuid)
       if (!recUrl) { out.noRecord++ } else {
-        transcript = await transcribeCall(recUrl)
+        // Длительность из title — чтобы длинная запись нарезалась под лимит API
+        const talkSec = Number((r.title.match(/([0-9]+) сек/) || [])[1]) || null
+        transcript = await transcribeCall(recUrl, { talkSec })
         if (transcript) {
           out.transcribed++
           digest = await digestCall(ORG, transcript)

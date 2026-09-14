@@ -5,7 +5,8 @@ import { transcribeCall } from './speech.js'
 /**
  * Транскрибация и разбор звонков.
  *
- * Каждый состоявшийся разговор автоматически расшифровывается (Whisper),
+ * Каждый состоявшийся разговор автоматически расшифровывается (Google
+ * Chirp 2 — НЕ Whisper: тот принимал узбекский за азербайджанский),
  * сжимается в саммари и получает разбор для сейлза: что сделал хорошо, где
  * недожал, что улучшить. Цель — не архив, а тренажёр: команда видит свои
  * ошибки в тот же день, а РОП — общую картину по скриптам.
@@ -38,6 +39,8 @@ export async function ensureInsightsSchema(sql: any): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_call_insights_pending
       ON sales_call_insights(org_id, status, created_at)
     `
+    // Запись в АТС появляется с задержкой: считаем попытки, а не падаем с первой
+    await sql`ALTER TABLE sales_call_insights ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0`.catch(() => {})
   })
 }
 
@@ -65,7 +68,7 @@ export async function processPendingInsights(
 ): Promise<number> {
   await ensureInsightsSchema(sql)
   const rows = await sql`
-    SELECT call_uuid, talk_sec FROM sales_call_insights
+    SELECT call_uuid, talk_sec, attempts FROM sales_call_insights
     WHERE org_id = ${orgId} AND status = 'pending'
     ORDER BY created_at ASC LIMIT ${limit}
   ` as any[]
@@ -77,12 +80,37 @@ export async function processPendingInsights(
   for (const r of rows) {
     try {
       const url = await pbxRecordUrl(cfg, r.call_uuid)
-      if (!url) throw new Error('запись не найдена в АТС')
+      if (!url) {
+        // АТС отдаёт запись с задержкой: до пяти попыток, каждая неудача
+        // отправляет звонок в конец очереди, а не в failed с первого раза
+        if ((r.attempts || 0) < 5) {
+          await sql`
+            UPDATE sales_call_insights
+            SET attempts = attempts + 1, created_at = NOW(),
+                error = 'запись ещё не появилась в АТС'
+            WHERE call_uuid = ${r.call_uuid}
+          `.catch(() => {})
+          continue
+        }
+        throw new Error('запись не найдена в АТС')
+      }
 
       // Узбекский Whisper не берёт вовсе: на боевых записях он принимал речь
       // то за азербайджанскую, то за грузинскую и выдавал набор букв. Chirp
       // от Google на тех же файлах даёт читаемый текст — проверено на 12 звонках
-      const transcript = (await transcribeCall(url) || '').trim().slice(0, 20000)
+      // Язык — по номеру клиента: казахские семёрки говорят по-русски и
+      // по-казахски, узбекские — по-узбекски и по-русски
+      const [tp] = await sql`
+        SELECT detail FROM sales_touchpoints
+        WHERE kind = 'call' AND identity = ${r.call_uuid} LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      const clientDigits = String(tp?.detail || '').split('·')[0].replace(/[^0-9]/g, '')
+      const languageCodes = clientDigits.startsWith('7')
+        ? ['ru-RU', 'kk-KZ'] : ['uz-UZ', 'ru-RU']
+
+      const transcript = (await transcribeCall(url, {
+        talkSec: r.talk_sec === 9999 ? null : r.talk_sec, languageCodes,
+      }) || '').trim().slice(0, 20000)
       if (!transcript) throw new Error('пустая расшифровка')
 
       const chat = await fetch('https://api.openai.com/v1/chat/completions', {
