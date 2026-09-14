@@ -56,7 +56,15 @@ export default async function handler(req: Request): Promise<Response> {
       cfg.ymReadyAt = new Date().toISOString()
       cfg.enabledAt = cfg.enabledAt || cfg.ymReadyAt
       await writeAdsFeedbackConfig(sql, orgId, cfg)
-      return json({ ok: true, goals: prep.goals })
+      // Тем же токеном сразу забираем расход Директа за месяц: отчёт по
+      // каналам заполняется в момент подключения, а не следующей ночью
+      let costs: any = null
+      try {
+        const { ensureChannelCostsSchema, syncYandexCosts } = await import('../_lib/channel-costs.js')
+        await ensureChannelCostsSchema(sql)
+        costs = await syncYandexCosts(sql, orgId, 30)
+      } catch (e: any) { costs = { error: String(e?.message || e).slice(0, 120) } }
+      return json({ ok: true, goals: prep.goals, costs })
     }
 
     if (action === 'yandex_off') {

@@ -148,6 +148,10 @@
     {
       "path": "/api/support/cron/pf-reconcile",
       "schedule": "10 4 * * *"
+    },
+    {
+      "path": "/api/support/cron/channel-costs",
+      "schedule": "40 4 * * *"
     }
   ]
 }

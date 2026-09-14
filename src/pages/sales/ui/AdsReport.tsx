@@ -23,6 +23,7 @@ const FATE: Record<Fate, { label: string; color: string }> = {
 }
 
 const usd = (v: number) => '$' + Math.round(v).toLocaleString('ru-RU')
+const uzs = (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1).replace('.', ',')} млн` : Math.round(v).toLocaleString('ru-RU')
 
 export function AdsReport({ from, to, region }: { from: string; to: string; region: string }) {
   const [data, setData] = useState<any>(null)
@@ -68,6 +69,57 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
         ['Не отработано', usd(wasted), `${wastedPct}% бюджета · ${t.n.wasted || 0} лидов без единого звонка`],
         ['Оплат', String(t.n.paid || 0), t.n.paid ? usd(t.c.paid || 0) + ' бюджета окупилось' : 'окупаемость пока не считается'],
       ]} />
+
+      <Card title="Каналы привлечения" sub="откуда приходят и во что превращаются · расход там, где он известен">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-gray-500 bg-gray-50/80">
+                <th className="text-left font-semibold px-4 py-2">Канал</th>
+                <th className="text-right font-semibold px-4 py-2">Лидов</th>
+                <th className="text-right font-semibold px-4 py-2">В работу</th>
+                <th className="text-right font-semibold px-4 py-2">Продвинуто</th>
+                <th className="text-right font-semibold px-4 py-2">Выиграно</th>
+                <th className="text-right font-semibold px-4 py-2">Получено, UZS</th>
+                <th className="text-right font-semibold px-4 py-2">Расход</th>
+                <th className="text-right font-semibold px-4 py-2">Цена лида</th>
+                <th className="text-right font-semibold px-4 py-2">Цена выигрыша</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.channels || []).map((c: any) => {
+                const dim = c.leads === 0 && !c.spend
+                const known = c.spend != null
+                return (
+                  <tr key={c.key} className={`border-t border-gray-100 ${dim ? 'text-gray-400' : ''}`}>
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      <span className={`font-semibold ${dim ? '' : 'text-gray-900'}`}>{c.label}</span>
+                      {c.paid && (
+                        <span className={`ml-1.5 text-[10px] px-1.5 py-px border rounded align-[1px] ${
+                          known ? 'border-emerald-300 text-emerald-700' : 'border-amber-300 text-amber-700'}`}>
+                          {known ? (c.spendSource === 'meta' ? 'расход из кабинета' : 'расход из Метрики') : 'расход неизвестен'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{c.leads}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{c.deals}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{c.advanced}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{c.won}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{c.paidAmount > 0 ? uzs(c.paidAmount) : '—'}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{known ? usd(c.spend) : (c.paid ? '?' : '—')}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{known && c.leads ? usd(c.spend / c.leads) : '—'}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">{known && c.won ? usd(c.spend / c.won) : '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-3 text-[12px] text-gray-500 border-t border-gray-100 space-y-1">
+          <p><b className="text-gray-800">Google и Яндекс</b> — лиды с сайта с меткой gclid / yclid или utm. Без метки заявка с сайта считается «Сайт delever.io»: платный трафик от органики тогда не отличить.</p>
+          <p><b className="text-gray-800">Расход Яндекса</b> приходит из Метрики раз в сутки (счётчик связан с Директом). Google Ads — одна кампания на паузе, расход нулевой; когда запустится, подключим кабинет.</p>
+        </div>
+      </Card>
 
       <Card title="Бюджет по сотрудникам" sub="кому достались лиды с рекламы и что с деньгами стало">
         {!data.agents?.length ? (

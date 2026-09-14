@@ -1,4 +1,5 @@
 import { readMetaConfig } from './meta-config.js'
+import { ensureChannelCostsSchema, channelSpend } from './channel-costs.js'
 
 /**
  * Отчёт «Реклама по сотрудникам»: чьи лиды с Meta и что стало с деньгами.
@@ -151,6 +152,100 @@ async function accountCampaigns(
   return out
 }
 
+/** Человеческие имена каналов там, где справочник источников молчит. */
+const CHANNEL_LABELS: Record<string, string> = {
+  meta: 'Meta лид-форма', google: 'Google Ads', yandex: 'Яндекс Директ',
+  site: 'Сайт delever.io', instagram_direct: 'Instagram Direct', telegram_bot: 'Telegram-бот',
+  call: 'Входящий звонок', messenger: 'Facebook Messenger', outbound: 'Исходящий холодный',
+  manual: 'Заведён вручную', import: 'Импорт базы', amo_manual: 'Amo · завёл менеджер',
+  unknown: 'Источник не определён',
+}
+/** Платные каналы — всегда в таблице, даже без лидов: расход был, показать нечего. */
+const PAID_CHANNELS = ['meta', 'google', 'yandex']
+
+export interface ChannelLine {
+  key: string
+  label: string
+  paid: boolean
+  leads: number
+  deals: number
+  advanced: number
+  won: number
+  paidN: number
+  paidAmount: number
+  /** Расход за период, $; null — канал платный, но расход неизвестен. */
+  spend: number | null
+  spendSource: 'meta' | 'metrika' | null
+}
+
+/**
+ * Все каналы привлечения за период: лиды → в работу → продвинуто → выиграно
+ * → деньги, и расход там, где он известен. Лид с сайта с меткой Google или
+ * Яндекса считается лидом той сети, а не сайта — иначе платный трафик
+ * неотличим от органики.
+ */
+async function channelsOverview(
+  sql: any, orgId: string, opts: { fromTs: string; toTs: string; market: string },
+  metaSpend: number,
+): Promise<ChannelLine[]> {
+  const { fromTs, toTs, market } = opts
+  const rows = (await sql`
+    SELECT
+      CASE
+        WHEN l.click_source = 'gclid' OR lower(l.utm_source) IN ('google', 'gclid') THEN 'google'
+        WHEN l.click_source = 'yclid' OR lower(l.utm_source) IN ('yandex', 'yclid')
+          OR (l.click_source IS NULL AND l.click_id ~ '^[0-9]{12,}$') THEN 'yandex'
+        WHEN l.meta_campaign_id IS NOT NULL OR s.key = 'meta_leadform' THEN 'meta'
+        ELSE COALESCE(s.key, 'unknown')
+      END AS key,
+      MAX(s.label) AS label,
+      COUNT(*)::int AS leads,
+      COUNT(d.id)::int AS deals,
+      COUNT(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM sales_deal_events e JOIN sales_stages s2 ON s2.id = e.new_stage_id
+        WHERE e.deal_id = d.id
+          AND s2.key IN ('qualified', 'meeting', 'demo', 'kp', 'contract', 'won')))::int AS advanced,
+      COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int AS won,
+      COUNT(*) FILTER (WHERE d.paid_at IS NOT NULL
+        OR EXISTS (SELECT 1 FROM sales_payments p WHERE p.deal_id = d.id))::int AS paid_n,
+      COALESCE(SUM((SELECT SUM(p.amount) FROM sales_payments p WHERE p.deal_id = d.id)), 0)::float AS paid_amount
+    FROM sales_leads l
+    LEFT JOIN sales_sources s ON s.id = l.source_id
+    LEFT JOIN sales_deals d ON d.source_lead_id = l.id
+    WHERE l.org_id = ${orgId}
+      AND l.created_at >= ${fromTs}::timestamptz AND l.created_at <= ${toTs}::timestamptz
+      AND (${market} = '' OR l.market_id = ${market})
+    GROUP BY 1
+  `) as any[]
+
+  await ensureChannelCostsSchema(sql)
+  const costs = await channelSpend(sql, orgId, fromTs.slice(0, 10), toTs.slice(0, 10))
+
+  const byKey = new Map<string, ChannelLine>()
+  for (const r of rows) {
+    byKey.set(r.key, {
+      key: r.key, label: CHANNEL_LABELS[r.key] || r.label || r.key, paid: PAID_CHANNELS.includes(r.key),
+      leads: r.leads, deals: r.deals, advanced: r.advanced, won: r.won,
+      paidN: r.paid_n, paidAmount: r.paid_amount, spend: null, spendSource: null,
+    })
+  }
+  for (const key of PAID_CHANNELS) {
+    if (!byKey.has(key)) byKey.set(key, {
+      key, label: CHANNEL_LABELS[key], paid: true, leads: 0, deals: 0, advanced: 0, won: 0,
+      paidN: 0, paidAmount: 0, spend: null, spendSource: null,
+    })
+  }
+  const meta = byKey.get('meta')!
+  meta.spend = metaSpend; meta.spendSource = 'meta'
+  for (const key of ['yandex', 'google']) {
+    const c = costs[key]
+    const line = byKey.get(key)!
+    if (c) { line.spend = c.spend; line.spendSource = 'metrika' }
+  }
+  return [...byKey.values()].sort((a, b) =>
+    (b.paid ? 1 : 0) - (a.paid ? 1 : 0) || (b.spend || 0) - (a.spend || 0) || b.leads - a.leads)
+}
+
 export async function adsByAgent(
   sql: any, orgId: string, opts: { fromTs: string; toTs: string; market: string },
 ) {
@@ -251,9 +346,11 @@ export async function adsByAgent(
   const junkNoReason = rows.filter(r => r.status === 'junk' && !r.reason).length
   const junk = rows.filter(r => r.status === 'junk').length
 
+  const channels = await channelsOverview(sql, orgId, opts, totals.spend)
+
   return {
     configured: Boolean(token),
-    agents, totals, campaigns, dailyBudget,
+    agents, totals, campaigns, dailyBudget, channels,
     quality: { junk, junkNoReason },
   }
 }
