@@ -384,8 +384,16 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   // Есть ответственный из системы-источника — пишем ему лично. Нет — кладём
   // карточку в общую группу: раздачи больше нет, и без этого об обращении
   // не узнал бы никто. Мусор (junk) и прогрев команду не будят.
+  //
+  // Старое обращение, догнанное синком задним числом (новая воронка в списке
+  // моста, откат курсора), — не событие: пятнадцать карточек двухнедельной
+  // давности разом в группе — это шум, а не сигнал. Такое заводим молча
+  const srcCreatedMs = Number(body.raw?.created_at || 0) * 1000
+  const stale = srcCreatedMs > 0 && Date.now() - srcCreatedMs > 24 * 3600 * 1000
   try {
-    if (assignedAgentId) {
+    if (stale) {
+      // тихо
+    } else if (assignedAgentId) {
       await notifyLeadAssigned(sql, lead, source.label)
     } else if (finalStatus === 'new' || finalStatus === 'assigned') {
       await notifyLeadToGroup(sql, lead, { key: sourceKey, kind: source.kind, label: source.label })
