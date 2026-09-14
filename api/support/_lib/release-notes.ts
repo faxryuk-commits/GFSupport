@@ -28,7 +28,7 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: '2026-09-14.3',
+    version: '2026-09-14.12',
     date: '2026-09-14',
     title: 'Обращения и сделки переносятся между странами',
     items: [

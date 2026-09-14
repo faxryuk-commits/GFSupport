@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom'
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/services/api.service'
 import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/time'
 import { useSalesRefs, optionsFor } from './refs'
+import { MarketMoveStrip } from './MarketMove'
+import { REGION_NAMES } from './region'
 import { InlineField, OwnerPicker, Skeleton, Fold, MoreMenu, Chip, fmtDateTime } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
@@ -167,6 +169,7 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
   // системный диалог браузер может глушить (и тогда клик молча ничего не делает),
   // а результат перевода — сделка исчезает с текущей доски — нужно объяснить словами
   const [switchAsk, setSwitchAsk] = useState<'enterprise' | 'sales' | null>(null)
+  const [marketAsk, setMarketAsk] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [lostOpen, setLostOpen] = useState(false)
@@ -470,11 +473,31 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
               title: 'Enterprise ведётся отдельной воронкой: свои этапы и нормативы',
               onClick: () => setSwitchAsk(String(data?.deal?.pipeline || '').startsWith('enterprise') ? 'sales' : 'enterprise'),
             },
+            {
+              label: `Страна: ${REGION_NAMES[d.market_id || ''] || 'не указана'} → перенести…`,
+              title: 'Сделка попала не в тот рынок: у каждой страны своя воронка, валюта и сейлзы',
+              onClick: () => setMarketAsk(true),
+            },
             !closed && { label: 'Закрыть как проигранную…', onClick: () => setLostOpen(true), danger: true },
             { label: 'В архив', title: 'Убрать из списков, сохранив в истории аккаунта', onClick: archive },
             { label: 'Удалить насовсем', title: 'Только открытую сделку', onClick: removeForever, danger: true },
           ]} />
         </div>
+        {marketAsk && (
+          <MarketMoveStrip current={d.market_id} busy={busy}
+            note="Сделка встанет на тот же этап воронки выбранной страны; клиент и обращение перейдут вместе с ней. Валюта сменится, только если суммы ещё не названы."
+            onCancel={() => setMarketAsk(false)}
+            onMove={async market => {
+              setBusy(true); setError(null)
+              try {
+                const r: any = await apiPost('/sales/deals?action=set-market', { id, market })
+                setMarketAsk(false)
+                setNotice(`Перенесена: ${REGION_NAMES[market] || market}, этап «${r?.stage || ''}»${r?.currency ? `, валюта ${r.currency}` : ''}.`)
+                load()
+              } catch (e: any) { setError(e?.message || 'Не удалось перенести') }
+              finally { setBusy(false) }
+            }} />
+        )}
         {switchAsk && (
           <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[12.5px] text-violet-900 flex items-center gap-3 flex-wrap">
             <span className="flex-1 min-w-[240px]">

@@ -6,6 +6,12 @@ import { resolveRegionScoped, agentMarketCodes } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
+/** Для записи в журнал сделки — язык команды, а не код страны. */
+const MARKET_NAMES: Record<string, string> = {
+  uz: 'Узбекистан', kz: 'Казахстан', kg: 'Кыргызстан', az: 'Азербайджан',
+  ge: 'Грузия', cy: 'Кипр', ae: 'ОАЭ',
+}
+
 /**
  * Список сделок: таблица, канбан и блок «требуют внимания».
  *
@@ -75,6 +81,67 @@ export default async function handler(req: Request): Promise<Response> {
       `
       return json({ ok: true, pipeline: target, stage: stage.label })
     }
+    // Перенос сделки в другую страну. Рынок у сделки — это воронка (у каждой
+    // страны своя), валюта и то, кто из сейлзов её видит. Сделка встаёт на
+    // тот же этап воронки новой страны, а если такого нет — на первый этап
+    // того же рода: открытый, выигранный или проигранный
+    if (url.searchParams.get('action') === 'set-market') {
+      const id = String(body?.id || '')
+      const market = String(body?.market || '').trim().toLowerCase()
+      if (!id || !market) return json({ error: 'id и market обязательны' }, 400)
+      const [ms] = await sql`
+        SELECT market_id, currency FROM sales_market_settings
+        WHERE org_id = ${orgId} AND market_id = ${market} LIMIT 1
+      ` as any[]
+      if (!ms) return json({ error: 'неизвестная страна' }, 400)
+      const [deal] = await sql`
+        SELECT d.id, d.market_id, d.pipeline, d.account_id, d.source_lead_id, d.currency,
+               d.monthly_amount, d.onetime_amount, s.key AS stage_key, s.kind AS stage_kind
+        FROM sales_deals d LEFT JOIN sales_stages s ON s.id = d.stage_id
+        WHERE d.id = ${id} AND d.org_id = ${orgId} LIMIT 1
+      ` as any[]
+      if (!deal) return json({ error: 'сделка не найдена' }, 404)
+      if (deal.market_id === market) return json({ ok: true, market })
+      const ptype = String(deal.pipeline || '').startsWith('enterprise') ? 'enterprise' : 'sales'
+      const target = `${ptype}_${market}`
+      const [stage] = await sql`
+        SELECT id, label FROM sales_stages
+        WHERE org_id = ${orgId} AND pipeline = ${target} AND is_active = true
+          AND kind = ${deal.stage_kind || 'open'}
+        ORDER BY (key = ${deal.stage_key || ''}) DESC, sort_order
+        LIMIT 1
+      ` as any[]
+      if (!stage) return json({ error: `Воронка ${target} не настроена` }, 422)
+      // Валюту меняем только у сделки без сумм: у той, где уже названа цена,
+      // цифры в чужой валюте стали бы враньём. Её сейлз пересчитает сам
+      const noMoney = !Number(deal.monthly_amount) && !Number(deal.onetime_amount)
+      const currency = noMoney && ms.currency ? String(ms.currency) : deal.currency
+      const marketName = MARKET_NAMES[market] || market.toUpperCase()
+      await sql.transaction([
+        sql`
+          UPDATE sales_deals
+          SET market_id = ${market}, pipeline = ${target}, stage_id = ${stage.id},
+              currency = ${currency}, updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `,
+        sql`
+          INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
+          VALUES (${orgId}, ${id}, ${stage.id}, ${`перенесена: ${marketName}`})
+        `,
+        // Клиент и исходное обращение едут следом: иначе карточка клиента
+        // остаётся в старой стране, и её сейлз новой страны не видит
+        sql`
+          UPDATE sales_accounts SET market_id = ${market}
+          WHERE id = ${deal.account_id || ''} AND org_id = ${orgId}
+        `,
+        sql`
+          UPDATE sales_leads SET market_id = ${market}, updated_at = NOW()
+          WHERE id = ${deal.source_lead_id || ''} AND org_id = ${orgId}
+        `,
+      ])
+      return json({ ok: true, market, pipeline: target, stage: stage.label, currency })
+    }
+
     const title = String(body?.title || '').trim()
     if (!title) return json({ error: 'нужно название сделки' }, 400)
 

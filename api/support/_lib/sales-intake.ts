@@ -252,8 +252,12 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
 
   // Регион: явный из источника, иначе выводим по телефону и городу — лиды из
   // WhatsApp и Instagram приходили без market и оставались вне региональных срезов
+  // Определять по полному номеру, не по phone_norm: там последние девять
+  // цифр, код страны отрезан, и «+994 55 804 48 98» превращался в «558044898»
+  // — девять цифр, «значит Узбекистан». Так Баку уезжал в узбекский рынок
+  // даже при городе «baku»: телефон проверяется раньше города
   const city = body.city ? String(body.city).slice(0, 100) : null
-  const marketId = body.market ? String(body.market) : marketByPhoneCity(phoneNorm, city)
+  const marketId = body.market ? String(body.market) : marketByPhoneCity(phone, city)
 
   if (!accountId) {
     accountId = salesId('acc')

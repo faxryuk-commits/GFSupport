@@ -4,8 +4,7 @@ import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
 import { resolveRegion, resolveRegionScoped } from '../_lib/sales-amo.js'
 import { acceptLead } from '../_lib/sales-intake.js'
-import { marketByPhoneCity } from '../_lib/region-detect.js'
-import { normPhone } from '../_lib/sales-schema.js'
+import { marketByPhoneCity, marketByCountryCode } from '../_lib/region-detect.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -65,6 +64,44 @@ async function handlerInner(req: Request): Promise<Response> {
 
     // Лид с улицы: позвонили, встретили на выставке, привёл знакомый. Без этого
     // сейлз заводит такие обращения «в голове», и они не попадают в отчёты
+    /** Код страны из справочника рынков продаж — чужие значения не пускаем. */
+    const knownMarket = async (v: unknown): Promise<string | null> => {
+      const code = String(v || '').trim().toLowerCase()
+      if (!code) return null
+      const [row] = await sql`
+        SELECT market_id FROM sales_market_settings WHERE org_id = ${orgId} AND market_id = ${code} LIMIT 1
+      ` as any[]
+      return row?.market_id || null
+    }
+
+    /**
+     * Обращения — в другую страну вместе с клиентом. Клиент переезжает,
+     * только если он ещё не «прописан» в третьей стране другим обращением
+     * или сделкой: у сети с точками в двух странах карточка клиента остаётся
+     * там, где по ней уже идёт работа
+     */
+    const moveLeadsToMarket = async (ids: string[], market: string): Promise<number> => {
+      const moved = await sql`
+        UPDATE sales_leads SET market_id = ${market}, updated_at = NOW()
+        WHERE id = ANY(${ids}) AND org_id = ${orgId} AND COALESCE(market_id, '') <> ${market}
+        RETURNING id, account_id
+      ` as any[]
+      const accounts = [...new Set(moved.map(m => m.account_id).filter(Boolean))] as string[]
+      if (accounts.length) {
+        await sql`
+          UPDATE sales_accounts a SET market_id = ${market}
+          WHERE a.id = ANY(${accounts}) AND a.org_id = ${orgId}
+            AND NOT EXISTS (
+              SELECT 1 FROM sales_deals d WHERE d.account_id = a.id AND d.archived_at IS NULL
+                AND d.market_id IS NOT NULL AND d.market_id <> ${market})
+            AND NOT EXISTS (
+              SELECT 1 FROM sales_leads l WHERE l.account_id = a.id AND l.archived_at IS NULL
+                AND l.market_id IS NOT NULL AND l.market_id <> ${market})
+        `
+      }
+      return moved.length
+    }
+
     if (action === 'create') {
       if (!body?.name && !body?.phone) {
         return json({ error: 'нужно указать бренд или телефон' }, 400)
@@ -75,9 +112,12 @@ async function handlerInner(req: Request): Promise<Response> {
         phone: body.phone || null,
         city: body.city || null,
         // Страна номера главнее региона интерфейса: казахстанский сейлз,
-        // заводя узбекское заведение, не должен пометить его Казахстаном
-        market: body.market
-          || marketByPhoneCity(normPhone(body.phone), body.city)
+        // заводя узбекское заведение, не должен пометить его Казахстаном.
+        // Раньше регион доски стоял первым, и заведения Баку с +994 уходили
+        // в Узбекистан — только потому, что доска была открыта на нём
+        market: marketByCountryCode(body.phone)
+          || body.market
+          || marketByPhoneCity(body.phone, body.city)
           || (await resolveRegion(sql, orgId, url)) || null,
         text: body.text || null,
         pos: body.pos || null,
@@ -128,6 +168,12 @@ async function handlerInner(req: Request): Promise<Response> {
           WHERE id = ANY(${ids}) AND org_id = ${orgId}
         `
         return json({ ok: true, changed: ids.length })
+      }
+      if (op === 'market') {
+        const market = await knownMarket(body.market)
+        if (!market) return json({ error: 'неизвестная страна' }, 400)
+        const changed = await moveLeadsToMarket(ids, market)
+        return json({ ok: true, changed })
       }
       if (op === 'archive') {
         await sql`
@@ -232,6 +278,19 @@ async function handlerInner(req: Request): Promise<Response> {
     }
 
     if (!body?.leadId) return json({ error: 'leadId is required' }, 400)
+
+    // Перенос в другую страну: обращение попало не в тот рынок — сейлз из
+    // Баку заводил его с доски, открытой на Узбекистане, или номер без кода
+    // прочитался как узбекский. Рынок — это воронка, валюта и кто видит
+    // карточку, поэтому переносится и клиент, чтобы сделка из этого
+    // обращения родилась в правильной стране
+    if (action === 'market') {
+      const market = await knownMarket(body.market)
+      if (!market) return json({ error: 'неизвестная страна' }, 400)
+      const changed = await moveLeadsToMarket([String(body.leadId)], market)
+      if (!changed) return json({ error: 'обращение не найдено' }, 404)
+      return json({ ok: true, market })
+    }
 
     // Передача лида другому сейлзу: у уходящего в отпуск остаются десятки
     if (action === 'reassign') {

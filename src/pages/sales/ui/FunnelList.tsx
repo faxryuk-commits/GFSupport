@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { REGION_NAMES } from './region'
 import { apiPost } from '@/shared/services/api.service'
 import { Chip, Modal, money, fmtDateTime } from './kit'
 
@@ -35,7 +36,7 @@ interface Props {
   onError: (msg: string) => void
 }
 
-type Act = 'owner' | 'stage' | 'task' | 'archive' | null
+type Act = 'owner' | 'stage' | 'task' | 'archive' | 'market' | null
 
 export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners, onOpenLead, onOpenDeal, onChanged, onError }: Props) {
   const [sel, setSel] = useState<Set<string>>(new Set())
@@ -137,6 +138,12 @@ export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners,
         if (selLeads.length) {
           await apiPost('/sales/leads?action=bulk', { ids: selLeads.map(r => r.id), op: 'archive' })
         }
+      } else if (act === 'market') {
+        if (!pick) { onError('Выберите страну'); return }
+        if (selLeads.length) {
+          await apiPost('/sales/leads?action=bulk', { ids: selLeads.map(r => r.id), op: 'market', market: pick })
+        }
+        failed = await each(selDeals, r => apiPost('/sales/deals?action=set-market', { id: r.id, market: pick }))
       }
       const done = selected.length - failed.length
       if (failed.length) {
@@ -154,6 +161,7 @@ export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners,
     ['stage', 'Перевести на этап', true],
     ['task', 'Поставить задачу', true],
     ['archive', 'Обращения — в отказ', selLeads.length > 0],
+    ['market', 'Перенести в другую страну', true],
   ]
 
   return (
@@ -292,6 +300,19 @@ export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners,
                   ))}
                 </div>
                 <p className="text-[11.5px] text-gray-400">Задача встанет каждому выбранному на его ответственного.</p>
+              </>
+            )}
+            {act === 'market' && (
+              <>
+                <select value={pick} onChange={e => setPick(e.target.value)} autoFocus
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-2">
+                  <option value="">В какую страну…</option>
+                  {Object.entries(REGION_NAMES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                </select>
+                <p className="text-[11.5px] text-gray-400 leading-relaxed">
+                  Обращения и их клиенты перейдут в выбранную страну. Сделки встанут на тот же
+                  этап её воронки; валюта сменится только у сделок без названных сумм.
+                </p>
               </>
             )}
             {act === 'archive' && (

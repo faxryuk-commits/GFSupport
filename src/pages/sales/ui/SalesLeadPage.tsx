@@ -12,6 +12,8 @@ import { TasksCard } from './TasksCard'
 import { DealFeed } from './DealFeed'
 import { BookMeetingModal } from './BookMeetingModal'
 import { useSalesRefs, optionsFor, getSalesRefs } from './refs'
+import { MarketMoveStrip } from './MarketMove'
+import { REGION_NAMES } from './region'
 
 /** Что выясняем о заведении на первом звонке — те же поля, что у сделки. */
 /**
@@ -206,6 +208,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
+  const [marketAsk, setMarketAsk] = useState(false)
   // Запись разговора по uuid звонка: ссылка подписанная и короткоживущая,
   // берётся на каждое прослушивание
   const [rec, setRec] = useState<{ id: string; url: string } | null>(null)
@@ -429,10 +432,24 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
           )}
           <span className="flex-1" />
           <MoreMenu items={[
+            {
+              label: `Страна: ${REGION_NAMES[l.market_id || ''] || 'не указана'} → перенести…`,
+              title: 'Обращение попало не в тот рынок: воронка, валюта и сейлзы у каждой страны свои',
+              onClick: () => setMarketAsk(true),
+            },
             open && { label: 'В отказ…', onClick: askReason, danger: true },
             { label: 'Удалить насовсем', title: 'Для тестовых и ошибочных обращений; администраторы и руководители', onClick: remove, danger: true },
           ]} />
         </div>
+        {marketAsk && (
+          <MarketMoveStrip current={l.market_id} busy={busy}
+            note="Обращение и клиент перейдут в выбранную страну; сделка из него встанет в её воронку."
+            onCancel={() => setMarketAsk(false)}
+            onMove={async market => {
+              await act('market', { market })
+              setMarketAsk(false)
+            }} />
+        )}
         {asking && (
           <div className="border border-gray-200 rounded-xl p-3 bg-white space-y-2">
             <div className="text-[12.5px] text-gray-900">Почему не наш клиент?</div>

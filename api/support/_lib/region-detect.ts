@@ -108,6 +108,24 @@ export async function autoAssignChannelMarkets(sql: any, orgId: string): Promise
  * узбекистан-центрична). Город — второй эшелон, включая литералы «UZ»,
  * которые приёмник уже пишет в city.
  */
+/**
+ * Страна только по коду номера — без догадок по городу и без «девять цифр
+ * значит Узбекистан». Нужна там, где страна номера должна перебить выбор
+ * человека: сейлз из Баку заводил с доски, где стоял регион «Узбекистан»,
+ * и двенадцать заведений с +994 ушли в узбекский рынок. Код страны в номере —
+ * факт, регион на доске — настройка интерфейса.
+ */
+export function marketByCountryCode(phone?: string | null): string | null {
+  const p = String(phone || '').replace(/\D/g, '')
+  if (/^998\d{9}$/.test(p)) return 'uz'
+  if (/^7[67]\d{9}$/.test(p) || /^87\d{9}$/.test(p)) return 'kz'
+  if (/^994\d{9}$/.test(p)) return 'az'
+  if (/^996\d{9}$/.test(p)) return 'kg'
+  if (/^971\d{8,9}$/.test(p)) return 'ae'
+  if (/^995\d{9}$/.test(p)) return 'ge'
+  return null
+}
+
 export function marketByPhoneCity(phone?: string | null, city?: string | null): string | null {
   const p = String(phone || '').replace(/\D/g, '')
   if (/^998\d{9}$/.test(p) || /^[3-9]\d{8}$/.test(p)) return 'uz'
@@ -135,11 +153,13 @@ export function marketByPhoneCity(phone?: string | null, city?: string | null): 
 export async function autoAssignSalesRegions(sql: any, orgId: string): Promise<number> {
   let assigned = 0
   const leads = await sql`
-    SELECT id, name, phone_norm, city FROM sales_leads
+    SELECT id, name, phone, phone_norm, city FROM sales_leads
     WHERE org_id = ${orgId} AND market_id IS NULL LIMIT 200
   ` as any[]
   for (const l of leads) {
-    const code = marketByPhoneCity(l.phone_norm, l.city)
+    // Полный номер, не phone_norm: у нормы код страны отрезан, и любые девять
+    // цифр читались как узбекские
+    const code = marketByPhoneCity(l.phone || l.phone_norm, l.city)
     if (!code) continue
     await sql`UPDATE sales_leads SET market_id = ${code} WHERE id = ${l.id} AND market_id IS NULL`
     await logEvent(sql, 'Регионовед', 'лид распределён',
@@ -149,7 +169,8 @@ export async function autoAssignSalesRegions(sql: any, orgId: string): Promise<n
   // DISTINCT ON: у аккаунта может быть несколько лидов — иначе дубли строк
   // и двойные записи в Хронике
   const accs = await sql`
-    SELECT DISTINCT ON (a.id) a.id, a.name, a.city, l.market_id AS lead_market, l.phone_norm
+    SELECT DISTINCT ON (a.id) a.id, a.name, a.city, l.market_id AS lead_market,
+           COALESCE(l.phone, l.phone_norm) AS phone_norm
     FROM sales_accounts a
     LEFT JOIN sales_leads l ON l.account_id = a.id AND l.market_id IS NOT NULL
     WHERE a.org_id = ${orgId} AND a.market_id IS NULL
