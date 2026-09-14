@@ -51,6 +51,20 @@ export async function syncYandexCosts(sql: any, orgId: string, days = 14): Promi
   const cfg = await readAdsFeedbackConfig(sql, orgId)
   if (!cfg.ymToken || !cfg.ymCounter) return { skipped: 'no_token' }
 
+  const headers = { Authorization: `OAuth ${cfg.ymToken}` }
+
+  // Без логинов клиентов Директа отчёт по расходам отдаёт пустые метрики —
+  // молча, без ошибки. Логины спрашиваем у самой Метрики: она знает, какие
+  // кабинеты Директа связаны со счётчиком
+  let logins: string[] = []
+  try {
+    const cl: any = await fetch(
+      `https://api-metrika.yandex.net/management/v1/clients?counters=${cfg.ymCounter}`, { headers },
+    ).then(r => r.json())
+    logins = (cl?.clients || []).map((c: any) => c.chief_login).filter(Boolean)
+  } catch { /* ниже — честный ответ */ }
+  if (!logins.length) return { skipped: 'no_direct_clients' }
+
   const to = new Date()
   const from = new Date(to.getTime() - days * 86400000)
   const d = (x: Date) => x.toISOString().slice(0, 10)
@@ -60,11 +74,11 @@ export async function syncYandexCosts(sql: any, orgId: string, days = 14): Promi
     dimensions: 'ym:ev:date,ym:ev:lastsignExpenseCampaign',
     date1: d(from), date2: d(to),
     currency: 'USD', limit: '1000', accuracy: 'full',
+    direct_client_logins: logins.join(','),
   })
   let res: any
   try {
-    res = await fetch(`${YM}?${params}`, { headers: { Authorization: `OAuth ${cfg.ymToken}` } })
-      .then(r => r.json())
+    res = await fetch(`${YM}?${params}`, { headers }).then(r => r.json())
   } catch (e: any) {
     return { error: String(e?.message || e).slice(0, 200) }
   }
