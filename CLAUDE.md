@@ -127,6 +127,14 @@
   page_token; env META_DATASET_ID/META_CAPI_TOKEN — последний фолбэк.
   Первый прогон помечает старые факты как baseline и НЕ шлёт их задним
   числом. Лог — `sales_meta_events`.
+- **Обратная петля Google/Яндекс** (`cron/ads-feedback` + `_lib/ads-feedback.ts`):
+  те же факты, что у Meta, но ключ сверки — `sales_leads.click_id` +
+  `click_source` (gclid/yclid). Google ничего не получает по API: он сам
+  забирает CSV с `public/ads-conversions?key=…` по расписанию загрузок
+  (ключ в `support_settings.ads_feedback`, названия действий-конверсий
+  в `GOOGLE_CONVERSION_NAMES` должны совпасть с кабинетом буква в букву).
+  Яндекс — офлайн-конверсии Метрики, токен OAuth `metrika:write` вводит
+  владелец в окне интеграции. Лог — `sales_ads_events`.
 - **Google Календарь: «Ошибка 403: access_denied» у коллег** — это не наш
   код (он 403 не отдаёт), а режим Testing OAuth-приложения в Google Cloud:
   согласие могут дать только адреса из Test users. Лечится там: добавить
