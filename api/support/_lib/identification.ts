@@ -95,7 +95,7 @@ export async function identifySender(
       try {
         const agentByPhone = await sql`
           SELECT id FROM support_agents
-          WHERE phone IS NOT NULL AND regexp_replace(phone, '\\D', '', 'g') LIKE ${'%' + last9}
+          WHERE phone IS NOT NULL AND regexp_replace(phone, '[^0-9]', '', 'g') LIKE ${'%' + last9}
           LIMIT 1
         `
         if (agentByPhone[0]) {
@@ -167,7 +167,10 @@ export async function identifySender(
     }
   }
 
-  // 4. Fallback: check by exact/similar sender name against employees
+  // 4. Fallback: только ТОЧНОЕ совпадение имени с сотрудником.
+  // Подстрочный матч (name ILIKE '%sender%') здесь стоял и делал клиентов
+  // командой: «Aziz» совпадал с «Shoazizov», «Sanj» — с «.sanjar n», их
+  // сообщения переставали быть клиентскими и портили FRT и «непрочитано»
   if (senderName && senderName.trim().length >= 3) {
     const name = senderName.trim()
 
@@ -176,7 +179,6 @@ export async function identifySender(
       const agentByName = await sql`
         SELECT id FROM support_agents
         WHERE LOWER(name) = LOWER(${name})
-           OR (LENGTH(${name}) >= 4 AND name ILIKE ${`%${name}%`})
         LIMIT 1
       `
       if (agentByName[0]) {
@@ -191,7 +193,6 @@ export async function identifySender(
       const managerByName = await sql`
         SELECT id, role FROM crm_managers
         WHERE LOWER(name) = LOWER(${name})
-           OR (LENGTH(${name}) >= 4 AND name ILIKE ${`%${name}%`})
         LIMIT 1
       `
       if (managerByName[0]) {
@@ -206,52 +207,6 @@ export async function identifySender(
       }
     } catch (e) {
       console.error('Error checking crm_managers by name:', e)
-    }
-  }
-
-  // 4. Check by sender name (fallback)
-  // Useful when employees don't have username/telegram_id synced yet.
-  if (senderName) {
-    const name = senderName.trim()
-    const nameLower2 = name.toLowerCase()
-    // Avoid matching obvious bot/system names (already partly handled above)
-    if (name.length >= 4 && !nameLower2.includes('bot')) {
-      // Check support_agents by name
-      try {
-        const agentByName = await sql`
-          SELECT id FROM support_agents
-          WHERE name IS NOT NULL
-            AND LOWER(name) = LOWER(${name})
-          LIMIT 1
-        `
-        if (agentByName[0]) {
-          return { role: 'support', agentId: agentByName[0].id, source: 'name_pattern' }
-        }
-      } catch (e) {
-        console.error('Error checking support_agents by name:', e)
-      }
-
-      // Check crm_managers by name
-      try {
-        const managerByName = await sql`
-          SELECT id, role FROM crm_managers
-          WHERE name IS NOT NULL
-            AND LOWER(name) = LOWER(${name})
-          LIMIT 1
-        `
-        if (managerByName[0]) {
-          const isSupport = ['support', 'cs', 'customer_success'].includes(
-            managerByName[0].role?.toLowerCase() || ''
-          )
-          return {
-            role: isSupport ? 'support' : 'team',
-            agentId: managerByName[0].id,
-            source: 'name_pattern'
-          }
-        }
-      } catch (e) {
-        console.error('Error checking crm_managers by name:', e)
-      }
     }
   }
 

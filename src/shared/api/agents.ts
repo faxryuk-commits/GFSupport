@@ -5,8 +5,14 @@ interface AgentsResponse {
   agents: Agent[]
 }
 
-export async function fetchAgents(): Promise<Agent[]> {
-  return apiGet<AgentsResponse>('/agents').then(r => r.agents)
+/**
+ * Список сотрудников. По умолчанию сервер отдаёт только действующих —
+ * уволенные и склеенные дубли в выпадашки и фильтры не попадают.
+ * `all: true` нужен Команде: там отключённых показывают отдельным
+ * блоком и оттуда же возвращают.
+ */
+export async function fetchAgents(all = false): Promise<Agent[]> {
+  return apiGet<AgentsResponse>(all ? '/agents?all=1' : '/agents').then(r => r.agents)
 }
 
 export async function fetchAgent(id: string): Promise<Agent> {
@@ -25,6 +31,8 @@ export async function updateAgent(id: string, data: {
   permissions?: string[]
   /** Рынки сотрудника; пустой массив — работает по всем. */
   marketIds?: string[]
+  /** Только возврат уволенного: true снова открывает вход. */
+  isActive?: boolean
 }): Promise<void> {
   await apiPut('/agents', { id, ...data })
   // Список команды читается из кэша; без сброса сохранённые рынки и отдел

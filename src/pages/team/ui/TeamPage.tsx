@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, AlertCircle } from 'lucide-react'
-import { fetchAgents, fetchTeamFrt, type TeamFrtPayload } from '@/shared/api'
-import { apiDelete } from '@/shared/services/api.service'
+import { Loader2, AlertCircle, UserCheck } from 'lucide-react'
+import { fetchAgents, updateAgent, fetchTeamFrt, type TeamFrtPayload } from '@/shared/api'
+import { apiDelete, invalidateCache } from '@/shared/services/api.service'
 import type { Agent } from '@/entities/agent'
 import { TeamHeader } from './TeamHeader'
 import { AgentTable } from './AgentTable'
@@ -79,7 +79,8 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
     try {
       setLoading(true)
       setError(null)
-      setAgents(await fetchAgents())
+      // Команде нужны и отключённые: их видно отдельным блоком, оттуда возвращают
+      setAgents(await fetchAgents(true))
     } catch {
       setError('Не удалось загрузить список команды')
     } finally {
@@ -87,10 +88,21 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
     }
   }
 
+  async function handleRestore(agent: Agent) {
+    try {
+      await updateAgent(agent.id, { isActive: true })
+      loadAgents()
+    } catch {
+      void alertDialog('Не удалось вернуть сотрудника')
+    }
+  }
+
   async function handleDeactivate() {
     if (!deactivateAgent) return
     try {
       await apiDelete(`/agents?id=${deactivateAgent.id}`)
+      // Иначе перезагрузка списка отдаст кэш с ещё «живым» сотрудником
+      invalidateCache('/agents')
       setDeactivateAgent(null)
       if (selectedAgent?.id === deactivateAgent.id) {
         setPanelOpen(false)
@@ -102,8 +114,13 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
     }
   }
 
+  // Действующие — в таблицу и метрики; уволенные — в блок «Отключённые».
+  // Склеенные дубли не показываем нигде: ими занимается баннер дублей
+  const roster = useMemo(() => agents.filter(a => a.isActive !== false && !a.mergedInto), [agents])
+  const dismissed = useMemo(() => agents.filter(a => a.isActive === false && !a.mergedInto), [agents])
+
   const filtered = useMemo(() => {
-    let list = agents
+    let list = roster
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(a =>
@@ -115,9 +132,9 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
     if (roleFilter) list = list.filter(a => a.role === roleFilter)
     if (statusFilter) list = list.filter(a => (a.status || 'offline') === statusFilter)
     return list
-  }, [agents, search, roleFilter, statusFilter])
+  }, [roster, search, roleFilter, statusFilter])
 
-  const onlineCount = agents.filter(a => a.status === 'online').length
+  const onlineCount = roster.filter(a => a.status === 'online').length
 
   const perf = teamFrt?.agentPerformance ?? []
   const teamAvgFrt = teamFrt?.responseTimeSummary?.avgResponseMinutes
@@ -127,18 +144,18 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       ? `${Math.round(teamAvgFrt)}м`
       : '—'
 
-  const totalCases = agents.reduce((sum, a) => sum + (a.metrics?.resolvedConversations || 0), 0)
+  const totalCases = roster.reduce((sum, a) => sum + (a.metrics?.resolvedConversations || 0), 0)
 
   const frtByAgentId = useMemo(() => {
     const m: Record<string, { avgMinutes: number; totalResponses: number }> = {}
-    for (const a of agents) {
+    for (const a of roster) {
       const row = matchSlaAgentFrt(perf, a.name)
       if (row && row.totalResponses > 0) {
         m[a.id] = { avgMinutes: row.avgMinutes, totalResponses: row.totalResponses }
       }
     }
     return m
-  }, [agents, perf])
+  }, [roster, perf])
 
   if (loading) {
     return (
@@ -167,7 +184,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
       <ShadowAgentsBanner onRestored={loadAgents} />
 
       <TeamHeader
-        total={agents.length}
+        total={roster.length}
         onlineCount={onlineCount}
         avgResponse={avgResponse}
         totalCases={totalCases}
@@ -200,6 +217,36 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         onDeactivate={setDeactivateAgent}
       />
 
+      {/* Отключённые — свёрнуты и в самом низу ростера: в работе они не
+          участвуют и в остальных списках системы не появляются, но отсюда
+          сотрудника можно вернуть — вход снова откроется */}
+      {dismissed.length > 0 && (
+        <details className="bg-white border border-slate-200 rounded-xl">
+          <summary className="px-4 py-3 text-sm text-slate-500 cursor-pointer select-none hover:text-slate-700">
+            Отключённые ({dismissed.length}) — вход закрыт, в списках не участвуют
+          </summary>
+          <div className="border-t border-slate-100 divide-y divide-slate-50">
+            {dismissed.map(a => (
+              <div key={a.id} className="px-4 py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-600 truncate">{a.name}</p>
+                  <p className="text-xs text-slate-400 truncate">
+                    {[a.position, a.department].filter(Boolean).join(' · ') || a.username || a.email || ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleRestore(a)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  Вернуть
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       {/* Загрузка — ПОСЛЕ ростера: вкладка Команда прежде всего про управление
           (роли, логины, приглашения); когда таблица загрузки стояла первой,
           владелец решил, что настройки сотрудников исчезли. */}
@@ -228,7 +275,7 @@ export function TeamPage({ embedded = false }: TeamPageProps) {
         onClose={() => setDeactivateAgent(null)}
         onConfirm={handleDeactivate}
         title="Деактивировать сотрудника?"
-        message={`${deactivateAgent?.name} будет удалён из команды. Это действие нельзя отменить.`}
+        message={`${deactivateAgent?.name} потеряет вход в систему и исчезнет из всех списков. Вернуть можно из блока «Отключённые» внизу.`}
         confirmText="Деактивировать"
         variant="danger"
       />

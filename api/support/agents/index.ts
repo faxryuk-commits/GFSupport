@@ -1,4 +1,5 @@
 import { getRequestOrgId } from '../_lib/org.js'
+import { revokeAllForAgent } from '../_lib/session.js'
 import { checkAgentQuota } from '../_lib/quota.js'
 import { hashPassword } from '../_lib/password.js'
 import { getSQL, json } from '../_lib/db.js'
@@ -52,7 +53,7 @@ export default async function handler(req: Request): Promise<Response> {
   // PUT - Update agent
   if (req.method === 'PUT') {
     try {
-      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions, pbxExt, marketIds } = await req.json()
+      const { id, name, username, email, telegramId, role, password, status, phone, position, department, permissions, pbxExt, marketIds, isActive } = await req.json()
 
       if (!id) {
         return json({ error: 'Agent ID is required' }, 400)
@@ -76,6 +77,12 @@ export default async function handler(req: Request): Promise<Response> {
       if (password) {
         const passwordHash = await hashPassword(password)
         await sql`UPDATE support_agents SET password_hash = ${passwordHash} WHERE id = ${id} AND org_id = ${orgId}`
+      }
+
+      // Возврат уволенного — только явным isActive: true. Деактивация
+      // остаётся на DELETE, где вместе с признаком гасятся и сессии
+      if (isActive === true) {
+        await sql`UPDATE support_agents SET is_active = true, status = 'offline' WHERE id = ${id} AND org_id = ${orgId}`
       }
 
       // Номер телефонии задаётся и очищается отдельно: COALESCE не даёт
@@ -119,7 +126,16 @@ export default async function handler(req: Request): Promise<Response> {
         return json({ error: 'Agent ID is required' }, 400)
       }
 
-      await sql`DELETE FROM support_agents WHERE id = ${agentId} AND org_id = ${orgId}`
+      // Не DELETE строки, а выключение. Жёсткое удаление рвало атрибуцию
+      // истории: сообщения уволенного оставались без учётки, он всплывал
+      // «теневым» агентом, и баннер предлагал его восстановить — по кругу.
+      // Выключенный: вход закрыт, сессии погашены, в списках не участвует,
+      // история на месте, вернуть можно из блока «Отключённые»
+      await sql`
+        UPDATE support_agents SET status = 'inactive', is_active = false
+        WHERE id = ${agentId} AND org_id = ${orgId}
+      `
+      await revokeAllForAgent(sql, agentId)
       return json({ success: true })
     } catch (e: any) {
       return json({ error: "Internal server error" }, 500)
@@ -167,12 +183,27 @@ export default async function handler(req: Request): Promise<Response> {
   }
   
   try {
-    const rows = await sql`
-      SELECT id, name, username, email, telegram_id, role, status, pbx_ext,
-             avatar_url, created_at, phone, position, department, permissions,
-             merged_into, is_active
-      FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC
-    `
+    // Уволенные и склеенные дубли по умолчанию в список не попадают:
+    // этот ответ кормит все выпадашки и фильтры системы, и отключённый
+    // сотрудник тянулся хвостом по каждому экрану. ?all=1 — для Команды,
+    // где отключённых видно отдельным блоком и можно вернуть
+    const showAll = url.searchParams.get('all') === '1'
+    const rows = showAll
+      ? await sql`
+          SELECT id, name, username, email, telegram_id, role, status, pbx_ext,
+                 avatar_url, created_at, phone, position, department, permissions,
+                 merged_into, is_active
+          FROM support_agents WHERE org_id = ${orgId} ORDER BY name ASC
+        `
+      : await sql`
+          SELECT id, name, username, email, telegram_id, role, status, pbx_ext,
+                 avatar_url, created_at, phone, position, department, permissions,
+                 merged_into, is_active
+          FROM support_agents
+          WHERE org_id = ${orgId}
+            AND COALESCE(is_active, true) = true AND merged_into IS NULL
+          ORDER BY name ASC
+        `
 
     const agentIds = rows.map((r: any) => r.id)
     if (agentIds.length === 0) return json({ agents: [] }, 200, 5)
@@ -206,6 +237,12 @@ export default async function handler(req: Request): Promise<Response> {
               a.telegram_id::text = m.sender_id::text
               OR a.id = m.sender_id::text
               OR (m.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(m.sender_username))
+              -- WhatsApp пишет sender_id номером телефона: без сверки
+              -- по последним 9 цифрам его сообщения не считались сотруднику
+              OR (a.phone IS NOT NULL
+                  AND length(regexp_replace(m.sender_id::text, '[^0-9]', '', 'g')) >= 9
+                  AND right(regexp_replace(a.phone, '[^0-9]', '', 'g'), 9)
+                    = right(regexp_replace(m.sender_id::text, '[^0-9]', '', 'g'), 9))
             )
             AND a.org_id = ${orgId}
           WHERE m.is_from_client = false

@@ -215,6 +215,10 @@ export default async function handler(req: Request): Promise<Response> {
           WHERE c.org_id = a.org_id AND c.assigned_to::text = a.id::text
         ) cs ON true
         WHERE a.org_id = ${orgId}
+          -- Уже склеенные и отключённые — не кандидаты: решённая пара
+          -- Аслиддин/Хасан висела в баннере вечно
+          AND a.merged_into IS NULL
+          AND COALESCE(a.is_active, true) = true
         ORDER BY a.created_at ASC
       `
       const groups = groupAgents(rows as AgentRow[])

@@ -34,6 +34,12 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     // Группируем сообщения от не-клиентов по sender_id+sender_name,
     // оставляя только тех, кого нет в support_agents.
+    // Каналы и фиды — не люди: сообщения канала ошибок делали из одного
+    // Telegram-канала «сотрудника» на 75 тысяч сообщений.
+    // Совпадение по телефону обязательно: WhatsApp пишет sender_id номером,
+    // и без него каждый сотрудник с WA числился тенью при заполненной учётке.
+    // Однострочники старше двух недель не показываем: сообщение с личного
+    // аккаунта месяц назад — шум, а не неучтённый сотрудник
     const rows = await sql`
       WITH msg_senders AS (
         SELECT
@@ -47,10 +53,12 @@ export default async function handler(req: Request): Promise<Response> {
         FROM support_messages m
         WHERE m.org_id = ${orgId}
           AND m.is_from_client = false
-          AND m.sender_role <> 'broadcast'
+          AND COALESCE(m.sender_role, '') NOT IN ('broadcast', 'channel', 'feed')
           AND m.created_at > NOW() - make_interval(days => ${days}::int)
           AND m.sender_id IS NOT NULL
+          AND m.sender_id::text NOT LIKE '-%'
         GROUP BY m.sender_id
+        HAVING COUNT(*) >= 3 OR MAX(m.created_at) > NOW() - INTERVAL '14 days'
       )
       SELECT s.*
       FROM msg_senders s
@@ -58,6 +66,10 @@ export default async function handler(req: Request): Promise<Response> {
           a.telegram_id::text = s.sender_id::text
           OR a.id = s.sender_id::text
           OR (s.sender_username IS NOT NULL AND LOWER(a.username) = LOWER(s.sender_username))
+          OR (a.phone IS NOT NULL
+              AND length(regexp_replace(s.sender_id::text, '[^0-9]', '', 'g')) >= 9
+              AND right(regexp_replace(a.phone, '[^0-9]', '', 'g'), 9)
+                = right(regexp_replace(s.sender_id::text, '[^0-9]', '', 'g'), 9))
         )
         AND a.org_id = ${orgId}
       WHERE a.id IS NULL

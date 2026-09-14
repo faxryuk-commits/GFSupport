@@ -13,6 +13,8 @@ export interface Agent {
   status?: AgentStatus
   avatarUrl?: string
   isActive?: boolean
+  /** Дубль, склеенный в другую учётку: id канонической записи. */
+  mergedInto?: string | null
   lastActiveAt?: string
   lastSeenAt?: string
   createdAt?: string
