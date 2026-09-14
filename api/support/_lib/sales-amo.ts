@@ -8,6 +8,7 @@
  */
 
 import { currencyForMarket } from './sales-schema.js'
+import { qualFromAnswers, answersSummary } from './lead-qual-map.js'
 
 export interface AmoCreds { domain: string; token: string }
 
@@ -269,6 +270,9 @@ function firstMessage(lead: any): string | null {
 export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
   const { source, formId } = sourceFromLead(lead)
   const answers = answersToQualification(contact?.fields)
+  // Ответы формы — в поля квалификации нашим словарём: сделка с доски
+  // заводится уже заполненной, а не пустой
+  const qual = qualFromAnswers(contact?.fields)
   // Названия полей сверены с боевой воронкой: «Агрегаторы» в Amo называется
   // «Работает ли в агрегаторах», тип доставки — «Есть ли свои курьеры»,
   // а филиалы встречаются в двух полях сразу
@@ -297,6 +301,7 @@ export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
     // и карточка выглядела пустой у людей, ответивших на четыре вопроса.
     // Служебное название сделки из Amo сюда не попадает: оно и так в заголовке
     text: firstMessage(lead)
+      || answersSummary(qual)
       || answersText(contact)
       // «Источник лида» сюда не идёт: это служебная пометка Amo вроде
       // «Исходящий», и в карточке она читалась как сообщение клиента
@@ -304,6 +309,7 @@ export function leadPayload(lead: any, contact?: Partial<AmoContact>) {
       || null,
     campaign: lead._unsorted_meta?.form_name || cf(lead, 'utm_campaign') || cf(lead, 'utm_source') || null,
     owner_hint: agentByAmoUser(lead.responsible_user_id),
+    qual: Object.keys(qual).length ? qual : null,
     // Поля контакта кладём рядом с сырой сделкой: карточка обращения
     // показывает их как заполненное человеком, а не как наш домысел
     raw: contact?.fields?.length ? { ...lead, _contact_fields: contact.fields } : lead,
