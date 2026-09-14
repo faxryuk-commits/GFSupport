@@ -285,19 +285,55 @@ export async function queueText(sql: SQL, orgId: string, agentId: string): Promi
  * Обработка нажатий. Возвращает true, если апдейт относился к продажам —
  * платформенный бот в этом случае не делает ничего своего.
  */
+/**
+ * Кто нажал кнопку или написал боту. Основной ключ — telegram_id, но у
+ * сейлзов, заведённых руками, он часто пуст: «Беру» отвечал «вы не привязаны»
+ * Асилбеку и ещё шестерым. Тогда опознаём по @username и тут же привязываем
+ * telegram_id — дальше работает основной путь. Уволенных и склеенных не пускаем.
+ */
+async function agentByFrom(sql: SQL, from: any): Promise<any | null> {
+  const telegramId = String(from?.id || '')
+  if (!telegramId) return null
+  const [byId] = await sql`
+    SELECT id, name, org_id FROM support_agents
+    WHERE telegram_id = ${telegramId}
+      AND COALESCE(is_active, true) = true AND merged_into IS NULL
+    LIMIT 1
+  `
+  if (byId) return byId
+  const username = String(from?.username || '').trim()
+  if (!username) return null
+  const [byName] = await sql`
+    SELECT id, name, org_id FROM support_agents
+    WHERE LOWER(username) = LOWER(${username})
+      AND (telegram_id IS NULL OR telegram_id = '')
+      AND COALESCE(is_active, true) = true AND merged_into IS NULL
+    LIMIT 1
+  `
+  if (byName) {
+    await sql`
+      UPDATE support_agents SET telegram_id = ${telegramId}
+      WHERE id = ${byName.id} AND (telegram_id IS NULL OR telegram_id = '')
+    `.catch(() => {})
+  }
+  return byName || null
+}
+
 export async function handleSalesCallback(sql: SQL, update: any): Promise<boolean> {
   const cb = update.callback_query
   if (!cb?.data || !String(cb.data).startsWith('sl:')) return false
 
   const [, action, entityId] = String(cb.data).split(':')
   const token = await getBotToken(sql)
-  const telegramId = String(cb.from?.id || '')
 
-  const [agent] = await sql`
-    SELECT id, name, org_id FROM support_agents WHERE telegram_id = ${telegramId} LIMIT 1
-  `
+  const agent = await agentByFrom(sql, cb.from)
   if (!agent) {
-    if (token) await tgAnswer(token, cb.id, 'Вы не привязаны к сотруднику — напишите /start')
+    // «Напишите /start» здесь врало: /start ведёт на регистрацию НОВОЙ
+    // учётки, а у нажавшего она уже есть — просто без Telegram
+    if (token) await tgAnswer(token, cb.id,
+      'Ваш Telegram не привязан к учётке. Попросите администратора вписать '
+      + `ваш ник @${cb.from?.username || '…'} в карточку сотрудника (Команда), `
+      + 'затем нажмите кнопку ещё раз.', true)
     return true
   }
 
@@ -511,14 +547,14 @@ export async function handleSalesCommand(sql: SQL, message: any): Promise<boolea
   const KNOWN = ['/queue', '/очередь', '/my', '/мои', '/deals', '/сделки', '/help', '/помощь']
   if (!KNOWN.includes(text)) return false
 
-  const telegramId = String(message.from?.id || '')
-  const [agent] = await sql`
-    SELECT id, name, org_id FROM support_agents WHERE telegram_id = ${telegramId} LIMIT 1
-  `
+  const agent = await agentByFrom(sql, message.from)
   const token = await getBotToken(sql)
   if (!token) return true
   if (!agent) {
-    await tgSend(token, message.chat.id, 'Вы ещё не привязаны к сотруднику. Напишите /start и завершите регистрацию.')
+    await tgSend(token, message.chat.id,
+      'Ваш Telegram не привязан к учётке сотрудника. Попросите администратора '
+      + `вписать ваш ник @${message.from?.username || '…'} в карточку (Команда → `
+      + 'карточка сотрудника), после этого команды заработают.')
     return true
   }
   if (text === '/help' || text === '/помощь') {
@@ -568,10 +604,7 @@ export async function handleVoiceNote(sql: SQL, message: any): Promise<boolean> 
   const voice = message.voice || message.audio
   if (!voice?.file_id) return false
 
-  const telegramId = String(message.from?.id || '')
-  const [agent] = await sql`
-    SELECT id, name, org_id FROM support_agents WHERE telegram_id = ${telegramId} LIMIT 1
-  `
+  const agent = await agentByFrom(sql, message.from)
   const token = await getBotToken(sql)
   if (!agent || !token) return false
 
