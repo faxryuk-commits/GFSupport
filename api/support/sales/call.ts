@@ -51,7 +51,7 @@ export default async function handler(req: Request): Promise<Response> {
     const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') || 7)))
     const [rows, extRows] = await Promise.all([
       sql`
-        SELECT t.title, t.detail, t.identity, t.happened_at, t.lead_id,
+        SELECT t.title, t.detail, t.identity, t.happened_at, t.lead_id, t.channel,
                l.name AS lead_name, d.id AS deal_id, d.title AS deal_title
         FROM sales_touchpoints t
         LEFT JOIN sales_leads l ON l.id = t.lead_id
@@ -90,7 +90,13 @@ export default async function handler(req: Request): Promise<Response> {
       const m = title.match(/(\d+) сек/)
       const talk = m ? Number(m[1]) : 0
       const ok = talk > 0
-      const parts = String(r.detail || '').split('·').map((s: string) => s.trim())
+      const rawParts = String(r.detail || '').split('·').map((s: string) => s.trim())
+      // Внутренний звонок: последний сегмент «коллега: Имя» — это с кем
+      // говорили, а не кто звонил. Снимаем его до разбора остального
+      const colleagueSeg = rawParts.find((x: string) => /^коллега:/.test(x))
+      const colleague = colleagueSeg ? colleagueSeg.replace(/^коллега:\s*/, '') : null
+      const parts = rawParts.filter((x: string) => !/^коллега:/.test(x))
+      const internal = r.channel === 'internal' || Boolean(colleague)
       const number = parts[0] || ''
       const sideRaw = parts[1] || ''
       // Имя сотрудника синк пишет третьим сегментом; старые касания без него
@@ -99,6 +105,19 @@ export default async function handler(req: Request): Promise<Response> {
       if (!who) {
         if (/^внутр\./.test(sideRaw)) who = extName.get(sideRaw.replace(/\D/g, '')) || sideRaw
         else if (/^моб\./.test(sideRaw)) who = sideRaw.replace(/^моб\.\s*/, '')
+      }
+      // Внутренние — только в ленту: в дозвон, время разговоров и таблицу
+      // команды они не идут, это не продажи
+      if (internal) {
+        if (calls.length < 80) {
+          calls.push({
+            uuid: r.identity, at: r.happened_at, direction: dirIn ? 'in' : 'out',
+            answered: ok, talkSec: talk, number, who,
+            leadId: null, leadName: null, dealId: null, dealTitle: null,
+            internal: true, colleague,
+          })
+        }
+        continue
       }
       if (dirIn) inbound++; else outbound++
       if (ok) { answered++; talkSec += talk } else if (dirIn) missedIn++; else failedOut++
@@ -140,7 +159,7 @@ export default async function handler(req: Request): Promise<Response> {
     return json({
       period: days,
       totals: {
-        total: rows.length, inbound, outbound, answered, missedIn, failedOut,
+        total: inbound + outbound, inbound, outbound, answered, missedIn, failedOut,
         talkSec, avgTalkSec: answered ? Math.round(talkSec / answered) : 0,
       },
       byDay: daysArr,
@@ -425,6 +444,7 @@ export default async function handler(req: Request): Promise<Response> {
         // detail: «номер · внутр. 101 · Имя» — синк пишет сотрудника последним
         // сегментом; для звонилки он нужен отдельно: кто из команды звонил
         const parts = String(r.detail || '').split('·').map((s: string) => s.trim())
+          .filter((x: string) => !/^коллега:/.test(x))
         const staff = parts.length >= 3 && !/^(внутр\.|очередь)/.test(parts[parts.length - 1])
           ? parts[parts.length - 1] : null
         return {

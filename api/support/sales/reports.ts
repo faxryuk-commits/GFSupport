@@ -188,6 +188,8 @@ export default async function handler(req: Request): Promise<Response> {
       sql`
         SELECT title, detail, happened_at FROM sales_touchpoints
         WHERE org_id = ${orgId} AND kind = 'call'
+          -- разговоры с коллегами — не работа с клиентами
+          AND COALESCE(channel, 'phone') <> 'internal'
           AND happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       `,
       sql`

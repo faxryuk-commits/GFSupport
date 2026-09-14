@@ -218,10 +218,14 @@ export default async function handler(req: Request): Promise<Response> {
         for (const c of calls) {
           let norm = c.clientNumber.replace(/\D/g, '').slice(-9)
           if (!norm || norm.length < 7) continue
-          // Служебные звонки — мимо CRM: если «клиентская» сторона совпадает
-          // с телефоном или добавочным сотрудника, это нога вызова на сейлза
-          // (первая нога клика, тест линии, звонок коллеги) — а не клиент.
-          // Такие строки создавали лидов из менеджеров и путали «кто с кем»
+          // Служебный звонок: «клиентская» сторона — телефон или добавочный
+          // сотрудника (первая нога клика, тест линии, звонок коллеге).
+          // Лида из него делать нельзя — так менеджеры становились
+          // «Звонок 3300…». Но и прятать нельзя: человек только что говорил
+          // полторы минуты, открыл «Звонки» — и там «0 разговоров».
+          // Такой звонок пишем как внутренний: виден в ленте, в KPI продаж
+          // не считается, лида и расшифровки не порождает
+          let internalWith: string | null = null
           if (await isStaffNumber(norm)) {
             // …кроме звонка с мобильного приложения OnlinePBX: сейлз набирает
             // клиента с телефона, АТС пишет это ВХОДЯЩИМ от мобильного
@@ -230,15 +234,26 @@ export default async function handler(req: Request): Promise<Response> {
             const other = String(c.agentExternal || '').replace(/\D/g, '')
             const swappable = c.direction === 'in' && other.length >= 9
               && !(await isStaffNumber(other.slice(-9)))
-            if (!swappable) continue
-            c.agentExternal = c.clientNumber
-            c.clientNumber = other
-            c.direction = 'out'
-            c.ext = null
-            norm = other.slice(-9)
+            if (swappable) {
+              c.agentExternal = c.clientNumber
+              c.clientNumber = other
+              c.direction = 'out'
+              c.ext = null
+              norm = other.slice(-9)
+            } else {
+              const [col] = await sql`
+                SELECT name FROM support_agents
+                WHERE (regexp_replace(COALESCE(phone, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm}
+                       OR regexp_replace(COALESCE(pbx_ext, ''), ${'\\D'}, '', 'g') LIKE ${'%' + norm})
+                  AND merged_into IS NULL
+                LIMIT 1
+              `.catch(() => [] as any[]) as any[]
+              internalWith = String(col?.name || 'сотрудник')
+            }
           }
-          // Кому звонили: лид по нормализованному телефону, свежий важнее
-          let [lead] = await sql`
+          // Кому звонили: лид по нормализованному телефону, свежий важнее.
+          // У внутреннего звонка клиента нет по определению
+          let [lead] = internalWith ? [null] : await sql`
             SELECT id, name, account_id, first_touch_at, status FROM sales_leads
             WHERE org_id = ${ORG} AND archived_at IS NULL
               AND phone_norm LIKE ${'%' + norm}
@@ -247,7 +262,7 @@ export default async function handler(req: Request): Promise<Response> {
           // Входящий с неизвестного номера — это обращение, а не шум:
           // человек сам позвонил. Заводим лида с источником «Входящий
           // звонок» — он падает в общую очередь, и сейлз перезвонит
-          if (!lead && c.direction === 'in') {
+          if (!lead && !internalWith && c.direction === 'in') {
             const res = await acceptLead(sql, ORG, {
               source: 'call',
               external_id: `pbx_${norm}`,
@@ -342,9 +357,12 @@ export default async function handler(req: Request): Promise<Response> {
           // Четырёхзначный «добавочный» — это очередь или группа АТС, а не
           // сотрудник: подпись «внутр. 5200» сбивала с толку
           const extLabel = c.ext ? (c.ext.length >= 4 ? `очередь ${c.ext}` : `внутр. ${c.ext}`) : ''
-          const side = c.ext
+          const side = (c.ext
             ? ` · ${extLabel}${me?.name ? ` · ${me.name}` : ''}`
-            : (me?.name ? ` · моб. ${me.name}` : '')
+            : (me?.name ? ` · моб. ${me.name}` : ''))
+            // Последним сегментом — с кем из коллег: лента показывает это
+            // пометкой «сотрудник», а разборщики detail этот сегмент снимают
+            + (internalWith ? ` · коллега: ${internalWith}` : '')
           if (stub) {
             await sql`
               UPDATE sales_touchpoints
@@ -357,7 +375,8 @@ export default async function handler(req: Request): Promise<Response> {
               INSERT INTO sales_touchpoints (id, org_id, account_id, lead_id, kind, channel,
                                              title, detail, identity, happened_at)
               VALUES (${`stp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`}, ${ORG},
-                      ${lead?.account_id || null}, ${lead?.id || null}, 'call', 'phone',
+                      ${lead?.account_id || null}, ${lead?.id || null}, 'call',
+                      ${internalWith ? 'internal' : 'phone'},
                       ${title}, ${c.clientNumber + side},
                       ${c.uuid}, ${new Date(c.startStamp * 1000).toISOString()})
             `
@@ -372,13 +391,14 @@ export default async function handler(req: Request): Promise<Response> {
           }
           // Состоявшийся разговор — в очередь на расшифровку и разбор:
           // саммари и советы тренера появятся в карточке через пару минут
-          if (c.talkSec > 0) {
+          // Разговор с коллегой не расшифровываем и не разбираем: это не продажа
+          if (c.talkSec > 0 && !internalWith) {
             await queueInsight(sql, ORG, c.uuid, c.talkSec, lead?.id || null)
           }
           // Пинг по горячим следам: разговор состоялся — тому, кто говорил,
           // прилетает в бот ссылка на карточку или кнопка «создать лида».
           // Только состоявшиеся: пинговать каждый недозвон — приучить к спаму
-          if (c.talkSec > 0 && me?.telegram_id) {
+          if (c.talkSec > 0 && me?.telegram_id && !internalWith) {
             await notifyCallDone(sql, {
               telegramId: String(me.telegram_id),
               direction: c.direction,
