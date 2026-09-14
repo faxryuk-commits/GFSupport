@@ -23,6 +23,7 @@ import { loadSla, businessMinutesBetween } from '../_lib/sla.js'
 import { sendNotification, escalateStaleNotifications } from '../_lib/notifications.js'
 import { notifyClientStuck } from '../_lib/onboarding-alerts.js'
 import { assertCron } from '../_lib/cron-auth.js'
+import { inheritCaseMarkets } from '../_lib/region-detect.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -89,6 +90,10 @@ export default async function handler(req: Request): Promise<Response> {
         reasoning TEXT, payload JSONB, mode VARCHAR(10), created_at TIMESTAMPTZ DEFAULT NOW()
       )` } catch {}
   })
+
+  // 0) свежие кейсы получают рынок канала — иначе на «Обзоре» они видны
+  //    только в «Все регионы», и фильтр по стране выглядит сломанным
+  try { await inheritCaseMarkets(sql, ORG) } catch {}
 
   // 1) сброс resolved: команда ответила последней → чистим состояние
   try {

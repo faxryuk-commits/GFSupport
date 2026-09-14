@@ -24,6 +24,30 @@ const NAME_HINTS: Array<[RegExp, string]> = [
   [/georgia|грузия|tbilisi|тбилиси/i, 'ge'],
 ]
 
+/**
+ * Кейс наследует рынок своего канала.
+ *
+ * Кейсы заводятся в десяти местах — вебхуки, автообработка, ИИ-агент,
+ * ручное создание — и ни одно из них не пишет market_id. К 14.09.2026
+ * без рынка было 924 кейса из 1274, в том числе все за последнюю неделю,
+ * хотя у 917 из них канал с рынком есть. На «Обзоре» это выглядело как
+ * сломанный фильтр региона: выбираешь Узбекистан — и всё обнуляется.
+ *
+ * Чинить десять точек создания — значит забыть одиннадцатую. Наследование
+ * одним UPDATE раз в пять минут закрывает их все; пять минут без рынка
+ * никто не заметит.
+ */
+export async function inheritCaseMarkets(sql: any, orgId: string): Promise<number> {
+  const rows = await sql`
+    UPDATE support_cases c SET market_id = ch.market_id
+    FROM support_channels ch
+    WHERE c.org_id = ${orgId} AND c.market_id IS NULL
+      AND ch.id = c.channel_id AND ch.market_id IS NOT NULL
+    RETURNING c.id
+  ` as any[]
+  return rows.length
+}
+
 export async function autoAssignChannelMarkets(sql: any, orgId: string): Promise<number> {
   const markets = await sql`SELECT id, code FROM support_markets` as any[]
   const byCode: Record<string, string> = {}
