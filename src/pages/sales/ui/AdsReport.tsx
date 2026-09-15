@@ -11,8 +11,8 @@ import { Card, Kpis, Skeleton } from './kit'
  * несправедливы к людям.
  */
 
-type Fate = 'paid' | 'advanced' | 'working' | 'junk_worked' | 'junk_target' | 'wasted'
-const FATES: Fate[] = ['paid', 'advanced', 'working', 'junk_worked', 'junk_target', 'wasted']
+type Fate = 'paid' | 'advanced' | 'working' | 'junk_worked' | 'junk_target' | 'wasted' | 'amo'
+const FATES: Fate[] = ['paid', 'advanced', 'working', 'junk_worked', 'junk_target', 'wasted', 'amo']
 const FATE: Record<Fate, { label: string; color: string }> = {
   paid: { label: 'оплатили', color: 'bg-emerald-800' },
   advanced: { label: 'продвинул (квалификация и дальше)', color: 'bg-emerald-500' },
@@ -20,6 +20,7 @@ const FATE: Record<Fate, { label: string; color: string }> = {
   junk_worked: { label: 'отработал, но потерял (есть причина или звонки)', color: 'bg-amber-500' },
   junk_target: { label: 'не наш клиент — брак таргета, не сейлза', color: 'bg-slate-400' },
   wasted: { label: 'не отработано — закрыт или брошен без звонка и причины', color: 'bg-red-600' },
+  amo: { label: 'работали в Amo — сюда не видно (до 02.09 и команда KZ)', color: 'bg-gray-300' },
 }
 
 const usd = (v: number) => '$' + Math.round(v).toLocaleString('ru-RU')
@@ -193,6 +194,7 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
           ))}
         </div>
         <div className="px-4 py-3 text-[12px] text-gray-500 border-t border-gray-100 space-y-1">
+          <p><b className="text-gray-800">«Не отработано»</b> — по лиду нет ни звонка, ни сообщения, ни заметки в системе, и он либо закрыт в отказ без причины, либо просто висит. Считается только с 02.09, когда команда UZ перешла сюда из Amo: более ранние лиды и лиды команды KZ показаны серым — их работали в Amo, и звонки с причинами сюда не доехали.</p>
           {noLeadSpend > 0 && (
             <p><b className="text-gray-800">{usd(noLeadSpend)}</b> потрачено кампаниями, чьи лиды до CRM не дошли, — в строках сотрудников этих денег нет, они в таблице кампаний ниже.</p>
           )}

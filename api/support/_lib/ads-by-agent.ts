@@ -18,14 +18,25 @@ import { ensureChannelCostsSchema, channelSpend } from './channel-costs.js'
  *   working      — в работе, звонки есть;
  *   junk_worked  — в отказе, но с причиной или звонками: отработали, потеряли;
  *   junk_target  — «не наш клиент» / «тест»: брак таргета, не сейлза;
- *   wasted       — закрыт или брошен без единого звонка и без причины.
+ *   wasted       — закрыт или брошен без единого звонка и без причины;
+ *   amo          — лид эпохи Amo: команда работала там, звонки и причины
+ *                  отказа сюда не доехали. Не «не отработано», а «не видно».
  *
  * Звонки видны только через АТС и мессенджеры системы; кто звонит с личного
  * телефона — выглядит как «не отработал». Это оговорено в самом отчёте.
+ *
+ * Проверка 15.09.2026 на квартале: из 201 «не отработано» 177 были лидами
+ * до 02.09 — 182 отказа без причины пришли из Amo, где причины не переносятся.
+ * Без разделения отчёт обвинял людей в том, чего не видит.
  */
 
-export type Fate = 'paid' | 'advanced' | 'working' | 'junk_worked' | 'junk_target' | 'wasted'
-export const FATES: Fate[] = ['paid', 'advanced', 'working', 'junk_worked', 'junk_target', 'wasted']
+export type Fate = 'paid' | 'advanced' | 'working' | 'junk_worked' | 'junk_target' | 'wasted' | 'amo'
+export const FATES: Fate[] = ['paid', 'advanced', 'working', 'junk_worked', 'junk_target', 'wasted', 'amo']
+
+/** День, с которого команда UZ ведёт сделки здесь (sales_amo_mode = leads_only). */
+const CRM_CUTOVER = '2026-09-02'
+/** Рынки, чьи команды всё ещё работают в Amo: их лиды здесь не отрабатываются. */
+const AMO_MARKETS = new Set(['kz'])
 
 /** Причины, которые говорят о таргете, а не о работе сейлза. */
 const TARGET_REASONS = new Set(['Не наш клиент', 'Тест'])
@@ -33,6 +44,7 @@ const TARGET_REASONS = new Set(['Не наш клиент', 'Тест'])
 interface LeadRow {
   id: string
   cid: string
+  created_at: string | Date
   market_id: string | null
   status: string
   reason: string | null
@@ -62,12 +74,17 @@ export interface AgentLine {
 function fateOf(r: LeadRow): Fate {
   if (r.paid) return 'paid'
   if (r.advanced) return 'advanced'
+  const touched = r.calls > 0
   if (r.status === 'junk') {
     if (r.reason && TARGET_REASONS.has(r.reason)) return 'junk_target'
-    if (r.reason || r.calls > 0) return 'junk_worked'
-    return 'wasted'
+    if (r.reason || touched) return 'junk_worked'
+  } else if (touched) {
+    return 'working'
   }
-  return r.calls > 0 ? 'working' : 'wasted'
+  // Ни сигнала, ни причины. Если лид жил в Amo — это не про сейлза
+  const amoEra = new Date(r.created_at).toISOString().slice(0, 10) < CRM_CUTOVER
+    || (r.market_id ? AMO_MARKETS.has(r.market_id) : false)
+  return amoEra ? 'amo' : 'wasted'
 }
 
 export interface CampInfo {
@@ -251,7 +268,7 @@ export async function adsByAgent(
 ) {
   const { fromTs, toTs, market } = opts
   const rows = (await sql`
-    SELECT l.id, l.meta_campaign_id AS cid, l.market_id, l.status, r.label AS reason,
+    SELECT l.id, l.meta_campaign_id AS cid, l.created_at, l.market_id, l.status, r.label AS reason,
            COALESCE(l.assigned_agent_id, d.owner_agent_id) AS agent_id,
            COALESCE(a1.name, a2.name) AS agent,
            d.id AS deal_id,
@@ -262,8 +279,10 @@ export async function adsByAgent(
                    JOIN sales_stages s2 ON s2.id = e.new_stage_id
                    WHERE e.deal_id = d.id
                      AND s2.key IN ('qualified', 'meeting', 'demo', 'kp', 'contract', 'won')) AS advanced,
+           -- Касание — звонок, сообщение или заметка по лиду или его сделке:
+           -- любое из них значит, что человек к лиду прикасался
            (SELECT COUNT(*) FROM sales_touchpoints tp
-             WHERE tp.kind = 'call'
+             WHERE tp.kind IN ('call', 'message', 'note')
                AND (tp.lead_id = l.id OR (d.id IS NOT NULL AND tp.deal_id = d.id)))::int AS calls
     FROM sales_leads l
     LEFT JOIN sales_deals d ON d.source_lead_id = l.id
