@@ -2920,6 +2920,53 @@ function LaunchesCard() {
   )
 }
 
+/** Строка детализации в аналитике: одна задача бренда в разрезе карточки. */
+interface WaitDrillItem {
+  key: string
+  brand: string
+  step: string
+  provider: string | null
+  /** Основная величина строки (сек): ожидание или работа+ожидание. */
+  sec: number
+  kind: string
+  /** Сколько задача стоит в текущем статусе, в днях. */
+  days: number
+  waitSec?: number
+  activeSec?: number
+}
+
+/** Бейдж текущего состояния задачи в раскрытой детализации. */
+function DrillKindTag({ kind, days }: { kind: string; days: number }) {
+  const dTxt = days >= 1 ? `${days.toFixed(days >= 10 ? 0 : 1)} дн` : ''
+  if (kind === 'waiting') {
+    return <span className="text-[10px] px-1.5 py-px rounded bg-red-50 text-red-700 shrink-0 whitespace-nowrap">висит {dTxt || '< дня'}</span>
+  }
+  if (kind === 'active') {
+    return <span className="text-[10px] px-1.5 py-px rounded bg-blue-50 text-blue-700 shrink-0 whitespace-nowrap">в работе{dTxt ? ` ${dTxt}` : ''}</span>
+  }
+  if (kind === 'done') {
+    return <span className="text-[10px] px-1.5 py-px rounded bg-emerald-50 text-emerald-700 shrink-0 whitespace-nowrap">готово</span>
+  }
+  if (kind === 'na') {
+    return <span className="text-[10px] px-1.5 py-px rounded bg-gray-100 text-gray-400 shrink-0 whitespace-nowrap">не требуется</span>
+  }
+  return <span className="text-[10px] px-1.5 py-px rounded bg-gray-100 text-gray-500 shrink-0 whitespace-nowrap">не начато{days >= 2 ? ` ${Math.round(days)} дн` : ''}</span>
+}
+
+/** Одна строка раскрытой детализации: бренд · контекст · бейдж · время. */
+function DrillRow({ item, context, showSec = true }: { item: WaitDrillItem; context?: string; showSec?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 py-[3px] text-[11px] border-b border-dashed border-gray-100 last:border-0 min-w-0">
+      <span className="font-medium text-gray-800 truncate max-w-[110px] shrink-0">{item.brand}</span>
+      <span className="text-gray-500 truncate min-w-0">{context ?? item.step}</span>
+      <span className="ml-auto flex items-center gap-1.5 shrink-0">
+        <DrillKindTag kind={item.kind} days={item.days} />
+        {showSec && item.sec > 0 && <span className="font-medium text-gray-900 w-14 text-right">{fmtSeconds(item.sec)}</span>}
+      </span>
+    </div>
+  )
+}
+
 function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<string, ObStatus> }) {
   const [stats, setStats] = useState<ObStats | null>(null)
   const [events, setEvents] = useState<ObEvent[] | null>(null)
@@ -3012,8 +3059,13 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
     ? brands.reduce((s, b) => s + hoursSince(b.startedAt), 0) / brands.length / 24
     : 0
 
+  // Раскрытие детализации: клик по строке карточки открывает разрез. Ключи —
+  // 'who:<контрагент>', 'stage:<тип задачи>', 'cat:<категория>', 'prov:<опция>'
+  const [openDrill, setOpenDrill] = useState<Record<string, boolean>>({})
+  const toggleDrill = (key: string) => setOpenDrill(prev => ({ ...prev, [key]: !prev[key] }))
+
   const blockSources = useMemo(() => {
-    const acc: Record<string, number> = {}
+    const acc: Record<string, { sec: number; items: WaitDrillItem[] }> = {}
     for (const b of brands) for (const t of b.tasks) {
       if (!t.waitingSeconds) continue
       const opt = t.optionId ? optionById[t.optionId]?.label : null
@@ -3021,13 +3073,99 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
         : t.waitingOn === 'client' ? 'Клиенты'
           : t.waitingOn === 'provider' ? (opt || 'Поставщики')
             : opt || (b.dependsOn?.trim() || 'Клиенты')
-      acc[src] = (acc[src] || 0) + t.waitingSeconds
+      const e = (acc[src] = acc[src] || { sec: 0, items: [] })
+      e.sec += t.waitingSeconds
+      const tt = typeById[t.taskTypeId]
+      const kind = (t.statusId ? statusById[t.statusId]?.kind : undefined) || 'todo'
+      e.items.push({
+        key: t.id, brand: b.name, step: tt?.label || '—', provider: opt || null,
+        sec: t.waitingSeconds, kind, days: hoursSince(t.statusSince) / 24,
+      })
     }
-    return Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 5)
-  }, [brands, optionById])
-  const blockTotal = blockSources.reduce((s, [, v]) => s + v, 0)
+    for (const e of Object.values(acc)) e.items.sort((a, b) => b.sec - a.sec)
+    return Object.entries(acc).sort((a, b) => b[1].sec - a[1].sec).slice(0, 5)
+  }, [brands, optionById, typeById, statusById])
+  const blockTotal = blockSources.reduce((s, [, v]) => s + v.sec, 0)
   const PIE_COLORS = ['#DC2626', '#F59E0B', '#8B5CF6', '#0EA5E9', '#64748B']
-  const topSourceShare = blockTotal ? Math.round((blockSources[0]?.[1] || 0) / blockTotal * 100) : 0
+  const topSourceShare = blockTotal ? Math.round((blockSources[0]?.[1].sec || 0) / blockTotal * 100) : 0
+
+  // Разрез каждого шага «Где теряем время»: кто ждал, кто работал, что лежит
+  // не начатым. Не начатые показываются от двух дней — свежие не сигнал
+  const stageDrill = useMemo(() => {
+    const acc: Record<string, WaitDrillItem[]> = {}
+    for (const b of brands) for (const t of b.tasks) {
+      const kind = (t.statusId ? statusById[t.statusId]?.kind : undefined) || 'todo'
+      if (kind === 'cancelled' || kind === 'na') continue
+      const days = hoursSince(t.statusSince) / 24
+      const hasTime = (t.waitingSeconds || 0) + (t.activeSeconds || 0) > 0
+      if (!hasTime && !(kind === 'todo' && days >= 2)) continue
+      const opt = t.optionId ? optionById[t.optionId]?.label || null : null
+      const list = (acc[t.taskTypeId] = acc[t.taskTypeId] || [])
+      list.push({
+        key: t.id, brand: b.name, step: opt || '', provider: opt || null,
+        sec: (t.waitingSeconds || 0) + (t.activeSeconds || 0), kind, days,
+        waitSec: t.waitingSeconds || 0, activeSec: t.activeSeconds || 0,
+      })
+    }
+    for (const list of Object.values(acc)) list.sort((a, b) => (b.waitSec || 0) - (a.waitSec || 0) || b.sec - a.sec || b.days - a.days)
+    return acc
+  }, [brands, optionById, statusById])
+
+  // Полная матрица поставщиков: категория → опция → задачи брендов.
+  // Опции без единой задачи не пропадают — видны строкой «не добавлены»
+  const providerMatrix = useMemo(() => {
+    type Agg = {
+      rows: WaitDrillItem[]
+      done: number; active: number; waiting: number; todo: number; na: number
+      waitSec: number; activeSec: number
+    }
+    const per: Record<string, Agg> = {}
+    for (const b of brands) for (const t of b.tasks) {
+      if (!t.optionId) continue
+      const kind = (t.statusId ? statusById[t.statusId]?.kind : undefined) || 'todo'
+      if (kind === 'cancelled') continue
+      const e = (per[t.optionId] = per[t.optionId]
+        || { rows: [], done: 0, active: 0, waiting: 0, todo: 0, na: 0, waitSec: 0, activeSec: 0 })
+      const days = hoursSince(t.statusSince) / 24
+      if (kind === 'done') e.done++
+      else if (kind === 'active') e.active++
+      else if (kind === 'waiting') e.waiting++
+      else if (kind === 'na') e.na++
+      else e.todo++
+      e.waitSec += t.waitingSeconds || 0
+      e.activeSec += t.activeSeconds || 0
+      e.rows.push({
+        key: t.id, brand: b.name, step: typeById[t.taskTypeId]?.label || '—', provider: null,
+        sec: (t.waitingSeconds || 0) + (t.activeSeconds || 0), kind, days,
+        waitSec: t.waitingSeconds || 0, activeSec: t.activeSeconds || 0,
+      })
+    }
+    const kindRank: Record<string, number> = { waiting: 0, active: 1, todo: 2, done: 3, na: 4 }
+    for (const e of Object.values(per)) {
+      e.rows.sort((a, b) => (kindRank[a.kind] ?? 9) - (kindRank[b.kind] ?? 9) || (b.waitSec || 0) - (a.waitSec || 0) || b.days - a.days)
+    }
+    return board.optionCategories
+      .filter(c => c.isActive)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(cat => {
+        const opts = board.options
+          .filter(o => o.categoryId === cat.id && o.isActive)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+        const providers = opts.filter(o => per[o.id]).map(o => ({ option: o, agg: per[o.id] }))
+          .sort((a, b) => b.agg.waitSec - a.agg.waitSec
+            || (b.agg.waiting + b.agg.active) - (a.agg.waiting + a.agg.active)
+            || (b.agg.done + b.agg.todo) - (a.agg.done + a.agg.todo))
+        const unused = opts.filter(o => !per[o.id]).map(o => o.label)
+        const totals = providers.reduce(
+          (s, p) => ({
+            waiting: s.waiting + p.agg.waiting, active: s.active + p.agg.active,
+            todo: s.todo + p.agg.todo, done: s.done + p.agg.done, waitSec: s.waitSec + p.agg.waitSec,
+          }),
+          { waiting: 0, active: 0, todo: 0, done: 0, waitSec: 0 })
+        return { cat, providers, unused, totals }
+      })
+      .filter(g => g.providers.length > 0 || g.unused.length > 0)
+  }, [brands, board.options, board.optionCategories, statusById, typeById])
 
   const groups = useMemo(() => buildGroups(taskTypes), [taskTypes])
   const funnel = useMemo(() => groups.map(g => {
@@ -3149,19 +3287,37 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
           title="Кто нас тормозит"
           right={blockTotal ? `${fmtSeconds(blockTotal)} ожиданий всего` : 'ожиданий нет'}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-start gap-4">
             <Donut
-              segments={blockSources.map(([, v], i) => ({ value: v, color: PIE_COLORS[i] }))}
+              segments={blockSources.map(([, v], i) => ({ value: v.sec, color: PIE_COLORS[i] }))}
               centerTitle={`${topSourceShare}%`}
               centerSub={blockSources[0]?.[0]?.toLowerCase().slice(0, 10) || '—'}
             />
             <div className="min-w-0 flex-1 text-xs">
               {blockSources.map(([label, v], i) => (
-                <div key={label} className="flex items-center py-1 border-b border-gray-50 last:border-0">
-                  <span className="w-2 h-2 rounded-[2px] mr-2 shrink-0" style={{ background: PIE_COLORS[i] }} />
-                  <span className="text-gray-800 truncate">{label}</span>
-                  <span className="ml-auto font-medium text-gray-900 shrink-0">{fmtSeconds(v)}</span>
-                  <span className="w-10 text-right text-gray-400 shrink-0">{Math.round(v / (blockTotal || 1) * 100)}%</span>
+                <div key={label} className="border-b border-gray-50 last:border-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleDrill(`who:${label}`)}
+                    className="w-full flex items-center py-1 text-left hover:bg-gray-50/60 rounded"
+                  >
+                    <ChevronRight className={`w-3 h-3 mr-1 shrink-0 text-gray-300 transition-transform ${openDrill[`who:${label}`] ? 'rotate-90' : ''}`} />
+                    <span className="w-2 h-2 rounded-[2px] mr-2 shrink-0" style={{ background: PIE_COLORS[i] }} />
+                    <span className="text-gray-800 truncate">{label}</span>
+                    <span className="ml-auto font-medium text-gray-900 shrink-0">{fmtSeconds(v.sec)}</span>
+                    <span className="w-10 text-right text-gray-400 shrink-0">{Math.round(v.sec / (blockTotal || 1) * 100)}%</span>
+                  </button>
+                  {openDrill[`who:${label}`] && (
+                    <div className="mb-1.5 ml-4 rounded-lg bg-gray-50 px-2.5 py-1">
+                      {v.items.map(it => (
+                        <DrillRow
+                          key={it.key}
+                          item={it}
+                          context={it.provider && it.provider !== label ? `${it.step} — ${it.provider}` : it.step}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
               {blockSources.length > 0 && blockSources[0][0] === 'Клиенты' && (
@@ -3267,7 +3423,7 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
           title="Где теряем время"
           right={<span><span className="text-blue-500">■</span> работа <span className="text-amber-500">■</span> ожидание · ср. на задачу</span>}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-0.5">
             {[...stats.stages]
               .filter(s => s.avgActiveSeconds + s.avgWaitingSeconds > 0)
               .sort((a, b) => (b.avgActiveSeconds + b.avgWaitingSeconds) - (a.avgActiveSeconds + a.avgWaitingSeconds))
@@ -3275,20 +3431,128 @@ function StatsTab({ board, statusById }: { board: ObBoard; statusById: Record<st
               .map(s => {
                 const total = s.avgActiveSeconds + s.avgWaitingSeconds
                 const max = Math.max(...stats.stages.map(x => x.avgActiveSeconds + x.avgWaitingSeconds), 1)
+                const drill = stageDrill[s.id] || []
                 return (
-                  <div key={s.id} className="flex items-center gap-2">
-                    <span className="w-40 text-[11px] text-gray-600 truncate shrink-0">{s.label}</span>
-                    <span className="flex-1 h-3.5 rounded bg-gray-100 overflow-hidden flex">
-                      <span className="block h-full bg-blue-500/80" style={{ width: `${(s.avgActiveSeconds / max) * 100}%` }} />
-                      <span className="block h-full bg-amber-400" style={{ width: `${(s.avgWaitingSeconds / max) * 100}%` }} />
-                    </span>
-                    <span className="w-14 text-right text-[11px] text-gray-600">{fmtSeconds(total)}</span>
+                  <div key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggleDrill(`stage:${s.id}`)}
+                      className="w-full flex items-center gap-2 py-[3px] text-left hover:bg-gray-50/60 rounded"
+                    >
+                      <ChevronRight className={`w-3 h-3 shrink-0 text-gray-300 transition-transform ${openDrill[`stage:${s.id}`] ? 'rotate-90' : ''}`} />
+                      <span className="w-36 text-[11px] text-gray-600 truncate shrink-0">{s.label}</span>
+                      <span className="flex-1 h-3.5 rounded bg-gray-100 overflow-hidden flex">
+                        <span className="block h-full bg-blue-500/80" style={{ width: `${(s.avgActiveSeconds / max) * 100}%` }} />
+                        <span className="block h-full bg-amber-400" style={{ width: `${(s.avgWaitingSeconds / max) * 100}%` }} />
+                      </span>
+                      <span className="w-14 text-right text-[11px] text-gray-600">{fmtSeconds(total)}</span>
+                    </button>
+                    {openDrill[`stage:${s.id}`] && (
+                      <div className="mb-1.5 ml-5 rounded-lg bg-gray-50 px-2.5 py-1">
+                        {drill.length === 0 && (
+                          <div className="py-1 text-[11px] text-gray-400">по живым брендам времени не накоплено</div>
+                        )}
+                        {drill.map(it => (
+                          <DrillRow
+                            key={it.key}
+                            item={it}
+                            context={[
+                              it.provider,
+                              it.waitSec ? `ожидание ${fmtSeconds(it.waitSec)}` : '',
+                              it.activeSec ? `работа ${fmtSeconds(it.activeSec)}` : '',
+                            ].filter(Boolean).join(' · ')}
+                            showSec={false}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
           </div>
         </SectionCard>
       )}
+
+      <SectionCard
+        icon={<Plug className="w-3 h-3" />}
+        iconCls="bg-violet-50 text-violet-600"
+        title="Поставщики — полный разрез"
+        right="платёжки, агрегаторы, курьеры, POS и остальные справочники"
+      >
+        <div className="text-xs">
+          {providerMatrix.map(g => {
+            const catKey = `cat:${g.cat.id}`
+            return (
+              <div key={g.cat.id} className="border-b border-gray-50 last:border-0">
+                <button
+                  type="button"
+                  onClick={() => toggleDrill(catKey)}
+                  className="w-full flex items-center gap-2 py-1.5 text-left hover:bg-gray-50/60 rounded"
+                >
+                  <ChevronRight className={`w-3 h-3 shrink-0 text-gray-300 transition-transform ${openDrill[catKey] ? 'rotate-90' : ''}`} />
+                  <span className="font-medium text-gray-800">{g.cat.label}</span>
+                  <span className="ml-auto flex items-center gap-2 text-[11px] shrink-0">
+                    {g.totals.waiting > 0 && <span className="text-red-600 font-medium">ждём {g.totals.waiting}</span>}
+                    {g.totals.active > 0 && <span className="text-blue-600">в работе {g.totals.active}</span>}
+                    {g.totals.todo > 0 && <span className="text-gray-500">не начато {g.totals.todo}</span>}
+                    {g.totals.done > 0 && <span className="text-emerald-600">готово {g.totals.done}</span>}
+                    {g.totals.waitSec > 0 && <span className="text-gray-400">· простой {fmtSeconds(g.totals.waitSec)}</span>}
+                    {g.providers.length === 0 && <span className="text-gray-400">задач нет</span>}
+                  </span>
+                </button>
+                {openDrill[catKey] && (
+                  <div className="mb-2 ml-4">
+                    {g.providers.map(({ option, agg }) => {
+                      const provKey = `prov:${option.id}`
+                      return (
+                        <div key={option.id}>
+                          <button
+                            type="button"
+                            onClick={() => toggleDrill(provKey)}
+                            className="w-full flex items-center gap-2 py-1 text-left hover:bg-gray-50/60 rounded"
+                          >
+                            <ChevronRight className={`w-3 h-3 shrink-0 text-gray-300 transition-transform ${openDrill[provKey] ? 'rotate-90' : ''}`} />
+                            <span className="text-gray-800">{option.label}</span>
+                            <span className="ml-auto flex items-center gap-2 text-[11px] shrink-0">
+                              {agg.waiting > 0 && <span className="text-red-600 font-medium">ждём {agg.waiting}</span>}
+                              {agg.active > 0 && <span className="text-blue-600">в работе {agg.active}</span>}
+                              {agg.todo > 0 && <span className="text-gray-500">не начато {agg.todo}</span>}
+                              {agg.done > 0 && <span className="text-emerald-600">готово {agg.done}</span>}
+                              {agg.na > 0 && <span className="text-gray-400">н/т {agg.na}</span>}
+                              {agg.waitSec > 0 && <span className="text-gray-400">· простой {fmtSeconds(agg.waitSec)}</span>}
+                            </span>
+                          </button>
+                          {openDrill[provKey] && (
+                            <div className="mb-1.5 ml-5 rounded-lg bg-gray-50 px-2.5 py-1">
+                              {agg.rows.map(it => (
+                                <DrillRow
+                                  key={it.key}
+                                  item={it}
+                                  context={[
+                                    it.step,
+                                    it.waitSec ? `ожидание ${fmtSeconds(it.waitSec)}` : '',
+                                    it.activeSec ? `работа ${fmtSeconds(it.activeSec)}` : '',
+                                  ].filter(Boolean).join(' · ')}
+                                  showSec={false}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {g.unused.length > 0 && (
+                      <div className="ml-5 py-1 text-[11px] text-gray-400">
+                        не добавлены ни одному проекту: {g.unused.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </SectionCard>
     </div>
   )
 }
