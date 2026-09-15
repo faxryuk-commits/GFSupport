@@ -485,6 +485,7 @@ async function handlerInner(req: Request): Promise<Response> {
                    AND (${isEnt} = (pipeline LIKE 'enterprise%'))
                    AND COALESCE(monthly_amount, 0) <> 0
                    AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
+                   AND (${owner} = '' OR (${owner} = 'none' AND owner_agent_id IS NULL) OR owner_agent_id = ${owner})
                  GROUP BY currency
                ) x
              ), '{}'::jsonb) AS pipeline_amounts
@@ -492,6 +493,9 @@ async function handlerInner(req: Request): Promise<Response> {
       WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
         AND pipeline <> 'partner' AND (${isEnt} = (pipeline LIKE 'enterprise%'))
         AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
+        -- Сейлз в фильтре сужает и шапку: «обращений» в ней и так считались
+        -- по фильтру, а «сделок» — по всей доске, и цифры спорили друг с другом
+        AND (${owner} = '' OR (${owner} = 'none' AND owner_agent_id IS NULL) OR owner_agent_id = ${owner})
     `,
     // Сейлзы для фильтра и для «сменить ответственного»: весь отдел продаж
     // плюс те, у кого есть открытые сделки или обращения. Раньше список
