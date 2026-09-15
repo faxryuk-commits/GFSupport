@@ -1,6 +1,5 @@
 import type { NeonQueryFunction } from '@neondatabase/serverless'
 import { salesId } from './sales-schema.js'
-import { pipelineForMarket } from './sales-amo.js'
 import { getOpenAIKey } from './db.js'
 import { sendNotification } from './notifications.js'
 
@@ -351,33 +350,19 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
       return true
     }
 
-    // Первый этап воронки для новой сделки
-    const [stage] = await sql`
-      SELECT id FROM sales_stages
-      -- Сделка рождается уже квалифицированной: дозвон живёт у обращений
-      WHERE org_id = ${agent.org_id} AND pipeline = ${pipelineForMarket(lead.market_id)}
-        AND key = 'qualified' AND is_active = true
-      LIMIT 1
-    `
-    const dealId = salesId('sd')
-    await sql`
-      INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                               title, deal_type, source_lead_id, pipeline)
-      VALUES (${dealId}, ${agent.org_id}, ${lead.account_id}, ${stage?.id || ''}, ${agent.id},
-              ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${pipelineForMarket(lead.market_id)})
-    `
-    await sql`
-      INSERT INTO sales_deal_events (org_id, deal_id, old_stage_id, new_stage_id, changed_by)
-      VALUES (${agent.org_id}, ${dealId}, NULL, ${stage?.id || ''}, ${agent.name})
-    `
-    // Взял в работу = первое касание: таймер SLA останавливается здесь
+    // «Беру» закрепляет обращение, а не рождает сделку. Раньше кнопка
+    // заводила сделку на «Дозвоне»; когда дозвон ушёл к обращениям, сделка
+    // стала рождаться на «Квалифицирован» с пустой квалификацией — за месяц
+    // 22 таких. Сделка появится из карточки обращения, когда заполнены
+    // точки, заказы, касса и боль — там это проверяется
     await sql`
       UPDATE sales_leads
-      SET status = 'converted',
+      SET status = CASE WHEN status IN ('new', 'nurture') THEN 'assigned' ELSE status END,
           -- Ответственного не перебиваем: кнопка «взять в работу» в боте
           -- не должна отбирать карточку у того, кто её уже ведёт
           assigned_agent_id = COALESCE(assigned_agent_id, ${agent.id}),
-          assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = NOW()
+          assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = COALESCE(first_touch_at, NOW()),
+          updated_at = NOW()
       WHERE id = ${lead.id}
     `
     if (token) {
@@ -387,9 +372,10 @@ export async function handleSalesCallback(sql: SQL, update: any): Promise<boolea
       const inGroup = cb.message?.chat?.type !== 'private'
       await tgEdit(token, cb.message.chat.id, cb.message.message_id,
         inGroup
-          ? `✅ <b>${lead.name}</b> — забрал <b>${agent.name}</b>.\n\nСделка создана, обращение больше не свободно.`
-          : `✅ <b>${lead.name}</b> — в работе у вас.\n\nСоздана сделка на этапе «Дозвон». `
-            + `Дальше: дозвон, 7 полей квалификации. Заполнить можно голосовым сообщением сюда.`)
+          ? `✅ <b>${lead.name}</b> — забрал <b>${agent.name}</b>.\n\nОбращение закреплено. `
+            + `Сделка появится после квалификации: ${APP_URL}/sales/leads/${lead.id}`
+          : `✅ <b>${lead.name}</b> — в работе у вас.\n\nДальше: дозвон и квалификация в карточке `
+            + `(точки, заказы в день, касса, боль) — оттуда кнопка «В сделку». ${APP_URL}/sales/leads/${lead.id}`)
     }
     return true
   }

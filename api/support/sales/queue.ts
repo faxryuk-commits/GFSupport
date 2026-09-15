@@ -1,9 +1,8 @@
 import { getRequestOrgId } from '../_lib/org.js'
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
+import { ensureSalesSchema } from '../_lib/sales-schema.js'
 import { missingFields } from '../_lib/sales-fields.js'
-import { pipelineForMarket } from '../_lib/sales-amo.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -43,37 +42,20 @@ export default async function handler(req: Request): Promise<Response> {
       if (!lead) return json({ error: 'lead not found' }, 404)
       if (lead.status === 'converted') return json({ error: 'лид уже взят' }, 409)
 
-      // Сделка попадает в воронку своего рынка: у каждого региона свои этапы
-      const pipeline = pipelineForMarket(lead.market_id)
-      const [stage] = await sql`
-        SELECT id FROM sales_stages
-        -- Сделка рождается уже квалифицированной: дозвон и выяснение
-        -- «наш ли клиент» происходят на стороне обращений
-        WHERE org_id = ${orgId} AND pipeline = ${pipeline}
-          AND key = 'qualified' AND is_active = true
-        LIMIT 1
-      `
-      const dealId = salesId('sd')
+      // «Взять» закрепляет обращение, сделку не заводит: без квалификации
+      // она рождалась на «Квалифицирован» с пустыми полями (см. sales-bot.ts).
+      // В сделку — из карточки обращения, когда заполнены обязательные поля
       await sql`
-        INSERT INTO sales_deals (id, org_id, account_id, stage_id, owner_agent_id, market_id,
-                                 title, deal_type, source_lead_id, pipeline)
-        VALUES (${dealId}, ${orgId}, ${lead.account_id}, ${stage?.id || ''}, ${ctx.agentId},
-                ${lead.market_id}, ${lead.name}, 'new', ${lead.id}, ${pipeline})
-      `
-      await sql`
-        INSERT INTO sales_deal_events (org_id, deal_id, new_stage_id, changed_by)
-        VALUES (${orgId}, ${dealId}, ${stage?.id || ''}, ${ctx.agentId})
-      `
-      // Взял в работу = первое касание: таймер SLA останавливается здесь
-      await sql`
-        UPDATE sales_leads SET status = 'converted',
-               -- Ответственного не перебиваем: один квалифицировал, другой
-               -- открыл и перевёл в сделку — карточка не должна менять хозяина
-               assigned_agent_id = COALESCE(assigned_agent_id, ${ctx.agentId}),
-               assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = NOW()
+        UPDATE sales_leads
+        SET status = CASE WHEN status IN ('new', 'nurture') THEN 'assigned' ELSE status END,
+            -- Ответственного не перебиваем: один квалифицировал, другой
+            -- открыл — карточка не должна менять хозяина
+            assigned_agent_id = COALESCE(assigned_agent_id, ${ctx.agentId}),
+            assigned_at = COALESCE(assigned_at, NOW()), first_touch_at = COALESCE(first_touch_at, NOW()),
+            updated_at = NOW()
         WHERE id = ${lead.id}
       `
-      return json({ ok: true, dealId })
+      return json({ ok: true, leadId: lead.id })
     }
 
     if (action === 'done' && body?.taskId) {
