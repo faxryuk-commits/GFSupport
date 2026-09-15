@@ -192,6 +192,9 @@ async function handlerInner(req: Request): Promise<Response> {
 
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
+  // owner=none — «ничьи»: обращения без закреплённого и сделки без владельца.
+  // Это самая дорогая колонка в отчёте по рекламе, и её должно быть видно
+  // на самой доске, а не только в отчёте
   const owner = url.searchParams.get('owner') || ''
   const q = url.searchParams.get('q') || ''
   // Фильтры доски: источник лида, город, «без следующего шага», «просрочен
@@ -278,7 +281,7 @@ async function handlerInner(req: Request): Promise<Response> {
         WHERE l.org_id = ${orgId} AND l.archived_at IS NULL
           AND l.status IN ('new', 'assigned', 'attempting', 'nurture')
           AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)
-          AND (${owner} = '' OR l.assigned_agent_id = ${owner})
+          AND (${owner} = '' OR (${owner} = 'none' AND l.assigned_agent_id IS NULL) OR l.assigned_agent_id = ${owner})
           AND (${src} = '' OR l.source_id = ${src})
           AND (${leadFilter} = '' OR l.status = ANY(string_to_array(${leadFilter}, ',')))
           AND (${cityLike} = '' OR l.city ILIKE ${cityLike})
@@ -303,7 +306,7 @@ async function handlerInner(req: Request): Promise<Response> {
       WHERE org_id = ${orgId} AND archived_at IS NULL
         AND status IN ('new', 'assigned', 'attempting', 'nurture')
         AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
-        AND (${owner} = '' OR assigned_agent_id = ${owner})
+        AND (${owner} = '' OR (${owner} = 'none' AND assigned_agent_id IS NULL) OR assigned_agent_id = ${owner})
         AND (${src} = '' OR source_id = ${src})
         AND (${leadFilter} = '' OR status = ANY(string_to_array(${leadFilter}, ',')))
         AND (${cityLike} = '' OR city ILIKE ${cityLike})
@@ -348,7 +351,7 @@ async function handlerInner(req: Request): Promise<Response> {
           AND d.pipeline <> 'partner'
           AND (${isEnt} = (d.pipeline LIKE 'enterprise%'))
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
-          AND (${owner} = '' OR d.owner_agent_id = ${owner})
+          AND (${owner} = '' OR (${owner} = 'none' AND d.owner_agent_id IS NULL) OR d.owner_agent_id = ${owner})
           AND (${src} = '' OR EXISTS (
             SELECT 1 FROM sales_leads sl WHERE sl.id = d.source_lead_id AND sl.source_id = ${src}))
           AND (${cityLike} = '' OR d.city ILIKE ${cityLike})
@@ -428,7 +431,7 @@ async function handlerInner(req: Request): Promise<Response> {
         FROM sales_deals
         WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
           AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
-          AND (${owner} = '' OR owner_agent_id = ${owner})
+          AND (${owner} = '' OR (${owner} = 'none' AND owner_agent_id IS NULL) OR owner_agent_id = ${owner})
         GROUP BY stage_id, currency
       ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
@@ -460,7 +463,7 @@ async function handlerInner(req: Request): Promise<Response> {
         LEFT JOIN sales_lost_reasons lr ON lr.id = dd.lost_reason_id
         WHERE dd.org_id = ${orgId} AND dd.archived_at IS NULL
           AND (${market} = '' OR dd.market_id = ${market} OR dd.market_id IS NULL)
-          AND (${owner} = '' OR dd.owner_agent_id = ${owner})
+          AND (${owner} = '' OR (${owner} = 'none' AND dd.owner_agent_id IS NULL) OR dd.owner_agent_id = ${owner})
         GROUP BY dd.stage_id, dd.currency, (lr.reactivate_days IS NOT NULL)
       ) d ON d.stage_id = s.id
       WHERE s.org_id = ${orgId} AND s.kind IN ('won', 'lost') AND s.is_active = true

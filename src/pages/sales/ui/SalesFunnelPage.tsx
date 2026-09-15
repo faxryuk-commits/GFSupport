@@ -374,7 +374,7 @@ export function SalesFunnelPage() {
       <div className="-mx-1">
         <FilterBar
           active={[
-            q && `поиск: ${q}`, stagesF.length && `этапы: ${stagesF.length}`, owner && 'сейлз', src && 'источник',
+            q && `поиск: ${q}`, stagesF.length && `этапы: ${stagesF.length}`, owner && (owner === 'none' ? 'ничьи' : 'сейлз'), src && 'источник',
             pos.length && `POS: ${pos.length}`, segment.length && `тип: ${segment.length}`,
             tariff.length && `тариф: ${tariff.length}`, opd.length && `заказов: ${opd.length}`,
             attention && 'требуют внимания',
@@ -428,6 +428,7 @@ export function SalesFunnelPage() {
             <select value={owner} onChange={e => setOwner(e.target.value)}
               className="border border-gray-300 rounded-lg px-2 py-1.5 text-[12.5px]">
               <option value="">Все сейлзы</option>
+              <option value="none">Ничей — без владельца</option>
               {data.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
             <select value={src} onChange={e => setSrc(e.target.value)}
