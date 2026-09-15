@@ -90,13 +90,18 @@ function kindBySource(sourceKey: string): string {
  */
 export async function findRecentTwin(
   sql: SQL, orgId: string, phone: string | null | undefined, fromSourceKeys: string[],
+  /** Номер заявки Meta: узнаёт близнеца и без телефона — в Amo его часто ещё нет. */
+  metaLeadId?: string | null,
 ): Promise<{ id: string; account_id: string | null } | null> {
   const norm = normPhone(phone)
-  if (!norm || !fromSourceKeys.length) return null
+  const meta = metaLeadId ? String(metaLeadId) : ''
+  if ((!norm && !meta) || !fromSourceKeys.length) return null
   const [row] = await sql`
     SELECT l.id, l.account_id FROM sales_leads l
     JOIN sales_sources s ON s.id = l.source_id
-    WHERE l.org_id = ${orgId} AND l.phone_norm = ${norm}
+    WHERE l.org_id = ${orgId}
+      AND (l.phone_norm = ${norm || ''}
+           OR (${meta} <> '' AND (l.meta_lead_id = ${meta} OR l.external_id = ${'meta_' + meta})))
       AND s.key = ANY(${fromSourceKeys})
       AND l.created_at > NOW() - INTERVAL '48 hours'
     ORDER BY l.created_at DESC LIMIT 1
@@ -139,12 +144,23 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   const phone = body.phone ? String(body.phone) : null
   const phoneNorm = normPhone(phone)
 
+  // Одна заявка Meta приезжает двумя дорогами: вебхуком (external_id
+  // meta_<id>) и через Amo (external_id amo_<id>, номер заявки — в
+  // meta_lead_id). Телефон к сделке в Amo менеджер привязывает позже,
+  // и склейка по номеру не срабатывала: «Хон хамир» 15.09.2026 пришёл
+  // дважды с разницей в два часа, бот объявил его команде оба раза
+  const metaId = body.meta_lead_id ? String(body.meta_lead_id)
+    : externalId && externalId.startsWith('meta_') ? externalId.slice(5) : null
+
   // 1. Идемпотентность: повторная доставка одного лида не создаёт дубль
-  if (externalId) {
+  if (externalId || metaId) {
     const [existing] = await sql`
-      SELECT id, account_id FROM sales_leads
-      WHERE org_id = ${orgId} AND external_id = ${externalId}
-      LIMIT 1
+      SELECT id, account_id, contact_name FROM sales_leads
+      WHERE org_id = ${orgId} AND (
+        external_id = ${externalId || ''}
+        OR (${metaId || ''} <> '' AND (meta_lead_id = ${metaId || ''} OR external_id = ${'meta_' + (metaId || '')}))
+      )
+      ORDER BY created_at LIMIT 1
     `
     if (existing) {
       // Лид приезжает почти пустым, а менеджер заполняет поля в Amo позже.
@@ -163,7 +179,10 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
           -- меняется, и лид не должен оставаться с прежним ярлыком
           source_id = ${source.id},
           lead_kind = COALESCE(${body.lead_kind || null}, lead_kind),
-          raw = ${JSON.stringify(body.raw ?? body)}::jsonb,
+          -- Сырьё складываем, а не заменяем: у заявки с вебхука здесь ответы
+          -- формы и номер leadgen, у копии из Amo — поля контакта; при замене
+          -- одно из двух терялось
+          raw = COALESCE(raw, '{}'::jsonb) || ${JSON.stringify(body.raw ?? body)}::jsonb,
           name = COALESCE(${betterName}, name),
           city = COALESCE(${body.city || null}, city),
           phone = COALESCE(${phone}, phone),
@@ -173,16 +192,21 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
           -- Ответы формы дополняют квалификацию, но ручное — главнее:
           -- справа стоит то, что уже есть, и оно перекрывает анкету
           qual = ${JSON.stringify(body.qual || {})}::jsonb || COALESCE(qual, '{}'::jsonb),
-          meta_lead_id = COALESCE(meta_lead_id, ${body.meta_lead_id || null}),
+          meta_lead_id = COALESCE(meta_lead_id, ${metaId}),
           icp_score = ${icpFresh.score},
           icp_reasons = ${JSON.stringify(icpFresh.reasons)}::jsonb
         WHERE id = ${existing.id}
       `
-      // Название аккаунта тоже подтягиваем: именно оно видно в списках
+      // Название аккаунта тоже подтягиваем: именно оно видно в списках.
+      // Заявка с вебхука знает только имя человека, и клиент заводится
+      // «Зафар»; название заведения приносит копия из Amo — им и заменяем,
+      // пока клиент назван именем контакта, а не заведения
       if (betterName && existing.account_id) {
         await sql`
           UPDATE sales_accounts SET name = ${betterName}, city = COALESCE(${body.city || null}, city)
-          WHERE id = ${existing.account_id} AND (name ~* '^(Заявка |Без названия)' OR name = '')
+          WHERE id = ${existing.account_id}
+            AND (name ~* '^(Заявка |Без названия)' OR name = ''
+                 OR (${existing.contact_name || ''} <> '' AND name = ${existing.contact_name || ''}))
         `
       }
       return { ok: true, lead_id: existing.id, account_id: existing.account_id, deduped: true }

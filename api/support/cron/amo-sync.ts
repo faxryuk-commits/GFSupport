@@ -299,8 +299,12 @@ export default async function handler(req: Request): Promise<Response> {
           // Список — все каналы, где заявка попадает к нам НАПРЯМУЮ раньше
           // моста: не только лид-формы Meta. Сайт шлёт и нам, и в Amo — из-за
           // узкого списка ['meta_leadform'] заявка с сайта дублировалась
+          // И по номеру заявки Meta: у заявки в «Неразобранном» телефона
+          // ещё нет, и по одному телефону близнец не находился — «Хон хамир»
+          // 15.09.2026 встал в очередь вторым обращением через два часа
           const twin = await findRecentTwin(sql, ORG, payload.phone,
-            ['meta_leadform', 'site', 'site_chat', 'telegram_bot', 'call', 'unknown'])
+            ['meta_leadform', 'site', 'site_chat', 'telegram_bot', 'call', 'unknown'],
+            payload.meta_lead_id)
           if (twin) { out.deduped++; continue }
         }
 

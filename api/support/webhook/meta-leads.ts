@@ -187,7 +187,7 @@ export default async function handler(req: Request): Promise<Response> {
         // Пока Amo ещё работает, та же заявка приедет и оттуда. Второй
         // экземпляр карточку не создаёт — иначе у сейлза два одинаковых
         // обращения на каждую заявку с рекламы
-        const twin = await findRecentTwin(sql, entryOrg, phone, ['meta_leadform', 'unknown'])
+        const twin = await findRecentTwin(sql, entryOrg, phone, ['meta_leadform', 'unknown'], leadgenId)
         if (twin) {
           await sql`
             UPDATE sales_leads
@@ -254,6 +254,9 @@ export default async function handler(req: Request): Promise<Response> {
         const accepted = await acceptLead(sql, entryOrg, {
           source: SOURCE,
           external_id: `meta_${leadgenId}`,
+          // Номер заявки и в своём поле: по нему копия из Amo узнает эту же
+          // заявку, даже когда телефона у неё ещё нет
+          meta_lead_id: leadgenId,
           lead_kind: 'form',
           name: isTest ? `Тестовая заявка${lead.form_name ? ` · ${lead.form_name}` : ''}` : (name || null),
           contact_name: isTest ? null : (name || null),
