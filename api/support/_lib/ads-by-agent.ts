@@ -43,11 +43,12 @@ const TARGET_REASONS = new Set(['Не наш клиент', 'Тест'])
 
 interface LeadRow {
   id: string
-  cid: string
+  cid: string | null
   created_at: string | Date
   market_id: string | null
   status: string
   reason: string | null
+  lost: boolean
   agent_id: string | null
   agent: string | null
   deal_id: string | null
@@ -75,7 +76,10 @@ function fateOf(r: LeadRow): Fate {
   if (r.paid) return 'paid'
   if (r.advanced) return 'advanced'
   const touched = r.calls > 0
-  if (r.status === 'junk') {
+  // Отказ — и по обращению (junk), и по сделке из него (lost_at): у сделки
+  // своя причина, и до этой правки 58 проигранных сделок с причиной
+  // числились «не отработано»
+  if (r.status === 'junk' || r.lost) {
     if (r.reason && TARGET_REASONS.has(r.reason)) return 'junk_target'
     if (r.reason || touched) return 'junk_worked'
   } else if (touched) {
@@ -268,7 +272,9 @@ export async function adsByAgent(
 ) {
   const { fromTs, toTs, market } = opts
   const rows = (await sql`
-    SELECT l.id, l.meta_campaign_id AS cid, l.created_at, l.market_id, l.status, r.label AS reason,
+    SELECT l.id, l.meta_campaign_id AS cid, l.created_at, l.market_id, l.status,
+           COALESCE(r.label, rd.label) AS reason,
+           (d.lost_at IS NOT NULL) AS lost,
            COALESCE(l.assigned_agent_id, d.owner_agent_id) AS agent_id,
            COALESCE(a1.name, a2.name) AS agent,
            d.id AS deal_id,
@@ -287,24 +293,33 @@ export async function adsByAgent(
     FROM sales_leads l
     LEFT JOIN sales_deals d ON d.source_lead_id = l.id
     LEFT JOIN sales_lost_reasons r ON r.id = l.lost_reason_id
+    LEFT JOIN sales_lost_reasons rd ON rd.id = d.lost_reason_id
     LEFT JOIN support_agents a1 ON a1.id = l.assigned_agent_id
     LEFT JOIN support_agents a2 ON a2.id = d.owner_agent_id
-    WHERE l.org_id = ${orgId} AND l.meta_campaign_id IS NOT NULL
+    LEFT JOIN sales_sources src ON src.id = l.source_id
+    WHERE l.org_id = ${orgId}
+      AND (l.meta_campaign_id IS NOT NULL OR src.key = 'meta_leadform')
       AND l.created_at >= ${fromTs}::timestamptz AND l.created_at <= ${toTs}::timestamptz
       AND (${market} = '' OR l.market_id = ${market})
   `) as LeadRow[]
 
   const cfg = await readMetaConfig(orgId)
   const token = cfg.userToken || cfg.capiToken || null
-  const cids = [...new Set(rows.map(r => r.cid))]
+  const cids = [...new Set(rows.map(r => r.cid).filter(Boolean))]
   const since = fromTs.slice(0, 10), until = toTs.slice(0, 10)
   const camps = token && cids.length ? await accountCampaigns(token, cids, since, until) : {}
 
   const crmByCamp: Record<string, number> = {}
-  for (const r of rows) crmByCamp[r.cid] = (crmByCamp[r.cid] || 0) + 1
+  for (const r of rows) if (r.cid) crmByCamp[r.cid] = (crmByCamp[r.cid] || 0) + 1
+  // Лид Meta без кампании (пришёл из Amo без номера) стоит как средний лид
+  // периода: молча считать его бесплатным значило бы прятать деньги
+  const attributed = rows.filter(r => r.cid && camps[r.cid])
+  const avgCost = attributed.length
+    ? attributed.reduce((s, r) => s + camps[r.cid].spend / crmByCamp[r.cid], 0) / attributed.length
+    : 0
   for (const r of rows) {
-    const c = camps[r.cid]
-    r.cost = c ? c.spend / crmByCamp[r.cid] : 0
+    const c = r.cid ? camps[r.cid] : null
+    r.cost = c ? c.spend / crmByCamp[r.cid] : avgCost
     r.fate = fateOf(r)
   }
 
@@ -333,7 +348,7 @@ export async function adsByAgent(
     byCamp.set(c.id, { ...c, crmLeads: crmByCamp[c.id] || 0, markets: [] as string[], n: {}, c: {} })
   }
   for (const r of rows) {
-    const c = byCamp.get(r.cid)
+    const c = r.cid ? byCamp.get(r.cid) : null
     if (!c) continue
     if (r.market_id && !c.markets.includes(r.market_id)) c.markets.push(r.market_id)
     c.n[r.fate!] = (c.n[r.fate!] || 0) + 1

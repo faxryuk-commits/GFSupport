@@ -21,7 +21,9 @@ const FIELDS = 'campaign_name,adset_name,ad_name,campaign_id,ad_id,platform'
 /** Номер лида Meta из служебных названий Amo: «Facebook №882336018148488». */
 export function metaLeadIdFrom(...candidates: Array<string | null | undefined>): string | null {
   for (const c of candidates) {
-    const m = String(c || '').match(/^Facebook №(\d{12,})$/)
+    // Сейлзы дописывают к имени примечания («Facebook №… тел откл постоянно»),
+    // номер от этого не перестаёт быть номером
+    const m = String(c || '').match(/^Facebook №(\d{12,})\b/)
     if (m) return m[1]
   }
   return null
@@ -40,6 +42,14 @@ export async function enrichMetaLeads(sql: any, orgId: string, limit = 50): Prom
   const token = cfg.userToken || cfg.pageToken || cfg.capiToken
   if (!token) return { checked: 0, enriched: 0, gone: 0, error: 'нет токена Meta' }
 
+  // Лид, пришедший вебхуком напрямую, несёт номер в external_id (meta_<id>),
+  // а meta_lead_id у него пустой — и обогащение его не видело: 34 лида за
+  // месяц выпадали из отчёта по рекламе. Переносим номер, где его нет
+  await sql`
+    UPDATE sales_leads SET meta_lead_id = substring(external_id from 6)
+    WHERE org_id = ${orgId} AND meta_lead_id IS NULL
+      AND external_id LIKE 'meta_%' AND substring(external_id from 6) ~ '^[0-9]{12,}$'
+  `
   const rows = await sql`
     SELECT id, meta_lead_id FROM sales_leads
     WHERE org_id = ${orgId} AND meta_lead_id IS NOT NULL AND meta_enriched_at IS NULL
