@@ -5,19 +5,36 @@ export const config = { runtime: 'edge', regions: ['fra1'] }
 
 const ORG = process.env.SALES_ORG || 'org_delever'
 
+/** Ключ из Basic-пароля либо из запроса. Имя пользователя не проверяем: секрет — пароль. */
+function givenKey(req: Request): string {
+  const auth = req.headers.get('authorization') || ''
+  if (/^basic /i.test(auth)) {
+    try {
+      const decoded = atob(auth.slice(6).trim())
+      const i = decoded.indexOf(':')
+      return (i >= 0 ? decoded.slice(i + 1) : decoded).trim()
+    } catch { return '' }
+  }
+  return (new URL(req.url).searchParams.get('key') || '').trim()
+}
+
 /**
  * CSV конверсий для запланированной загрузки Google Ads.
  *
- * Google сам приходит сюда по расписанию (Цели → Загрузки → Расписания →
- * «HTTPS»), поэтому адрес открыт, а вход — по ключу в запросе: без него
- * или с чужим отдаём 404, как будто адреса нет. Формат — «конверсии по
- * кликам»: Google Click ID, название действия-конверсии, время.
+ * Google сам приходит сюда по расписанию (Менеджер данных → HTTPS),
+ * поэтому адрес открыт, а вход — по ключу: Менеджер данных требует имя
+ * и пароль, поэтому основной путь — Basic-авторизация (имя любое, пароль —
+ * ключ); ключ в запросе оставлен для проверки руками. Без ключа или с чужим
+ * отдаём 404, как будто адреса нет. Формат — «конверсии по кликам»:
+ * Google Click ID, название действия-конверсии, время.
  *
+ * GET /api/support/public/ads-conversions.csv        (Authorization: Basic …;
+ *     суффикс .csv — rewrite в vercel.json: Менеджер данных требует расширение)
  * GET /api/support/public/ads-conversions?key=…
  */
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET') return new Response('not found', { status: 404 })
-  const key = (new URL(req.url).searchParams.get('key') || '').trim()
+  const key = givenKey(req)
   if (!key || key.length < 16) return new Response('not found', { status: 404 })
 
   const sql = getSQL()

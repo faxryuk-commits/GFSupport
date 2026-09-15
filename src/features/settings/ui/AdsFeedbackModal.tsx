@@ -17,7 +17,7 @@ import { formatDateTime } from '@/shared/lib'
 
 interface Stats { [status: string]: number }
 interface State {
-  google: { url: string | null; conversionNames: string[]; lastFetchedAt: string | null; stats: Stats }
+  google: { url: string | null; key: string | null; conversionNames: string[]; lastFetchedAt: string | null; stats: Stats }
   yandex: { counter: string | null; hasToken: boolean; readyAt: string | null; goals: { id: string; name: string }[]; stats: Stats }
   enabledAt: string | null
   heartbeatAt: string | null
@@ -81,9 +81,10 @@ export function AdsFeedbackModal({ isOpen, onClose }: { isOpen: boolean; onClose
     }
   }
 
-  const copy = async () => {
-    if (!st?.google.url) return
-    try { await navigator.clipboard.writeText(st.google.url); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* буфер недоступен */ }
+  const [copiedKey, setCopiedKey] = useState(false)
+  const copy = async (text: string | null, flag: (v: boolean) => void) => {
+    if (!text) return
+    try { await navigator.clipboard.writeText(text); flag(true); setTimeout(() => flag(false), 1500) } catch { /* буфер недоступен */ }
   }
 
   const hbMin = st?.heartbeatAt ? Math.floor((Date.now() - new Date(st.heartbeatAt).getTime()) / 60000) : null
@@ -117,15 +118,24 @@ export function AdsFeedbackModal({ isOpen, onClose }: { isOpen: boolean; onClose
           <div className="px-4 py-3 space-y-2.5">
             {st?.google.url ? (
               <>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 min-w-0 truncate text-[11.5px] bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5 text-slate-700">{st.google.url}</code>
-                  <button onClick={copy} className="flex-none text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400">
+                <div className="grid grid-cols-[70px_1fr_auto] items-center gap-2 text-[12px] text-slate-500">
+                  <span>Адрес</span>
+                  <code className="min-w-0 truncate text-[11.5px] bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5 text-slate-700">{st.google.url}</code>
+                  <button onClick={() => copy(st.google.url, setCopied)} className="text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400">
                     {copied ? 'Скопировано' : 'Копировать'}
+                  </button>
+                  <span>Имя</span>
+                  <code className="text-[11.5px] bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5 text-slate-700">gfsupport</code>
+                  <span />
+                  <span>Пароль</span>
+                  <code className="min-w-0 truncate text-[11.5px] bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5 text-slate-700">{st.google.key}</code>
+                  <button onClick={() => copy(st.google.key, setCopiedKey)} className="text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400">
+                    {copiedKey ? 'Скопировано' : 'Копировать'}
                   </button>
                 </div>
                 <ol className="text-[12px] text-slate-600 list-decimal pl-4 space-y-0.5">
-                  <li>Цели → Конверсии → Загрузки → Расписания → «HTTPS» → вставить адрес, без логина и пароля, раз в сутки.</li>
-                  <li>Три действия-конверсии «Импорт → CRM → по кликам» с названиями:
+                  <li>Инструменты → Менеджер данных → Подключить продукт → «HTTPS» → адрес, имя и пароль отсюда; раз в сутки.</li>
+                  <li>Три действия-конверсии «Импорт → офлайн» с названиями:
                     {' '}{st.google.conversionNames.map(n => <code key={n} className="mx-0.5 bg-slate-100 rounded px-1">{n}</code>)}</li>
                 </ol>
                 <div className="flex flex-wrap items-center justify-between gap-2">

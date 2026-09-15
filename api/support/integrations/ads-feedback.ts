@@ -41,7 +41,7 @@ export default async function handler(req: Request): Promise<Response> {
       cfg.key = newAccessKey()
       cfg.enabledAt = cfg.enabledAt || new Date().toISOString()
       await writeAdsFeedbackConfig(sql, orgId, cfg)
-      return json({ ok: true, url: csvUrl(cfg.key) })
+      return json({ ok: true, url: csvUrl(), key: cfg.key })
     }
 
     if (action === 'yandex') {
@@ -84,7 +84,8 @@ export default async function handler(req: Request): Promise<Response> {
   ])
   return json({
     google: {
-      url: cfg.key ? csvUrl(cfg.key) : null,
+      url: cfg.key ? csvUrl() : null,
+      key: cfg.key,
       conversionNames: Object.values(GOOGLE_CONVERSION_NAMES),
       lastFetchedAt: fetched,
       stats: stats.google,
@@ -101,7 +102,8 @@ export default async function handler(req: Request): Promise<Response> {
   })
 }
 
-const csvUrl = (key: string) => `${APP_URL}/api/support/public/ads-conversions?key=${key}`
+// Адрес без ключа: Менеджер данных Google ходит с Basic-авторизацией, ключ — пароль
+const csvUrl = () => `${APP_URL}/api/support/public/ads-conversions.csv`
 
 async function setting(sql: any, orgId: string, key: string): Promise<string | null> {
   const [row] = (await sql`

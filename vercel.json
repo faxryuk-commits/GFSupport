@@ -5,6 +5,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/support/public/ads-conversions.csv",
+      "destination": "/api/support/public/ads-conversions"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
