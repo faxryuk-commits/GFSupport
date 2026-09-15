@@ -2,7 +2,7 @@ import { getRequestOrgId } from '../_lib/org.js'
 import { clientKeyOf, nameScore } from '../_lib/pf-match.js'
 import { getSQL, json, corsHeaders, ensureOnce } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { getPlanfactKey, pfIncomeOperations } from '../_lib/planfact.js'
+import { getPlanfactKey, pfIncomeOperations, syncPfInbox, autoLinkNewOps } from '../_lib/planfact.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -768,50 +768,16 @@ export default async function handler(req: Request): Promise<Response> {
       if (!key) return json({ error: 'ПланФакт не подключён — вставьте ключ в Настройки → Интеграции' }, 400)
 
       const days = Math.min(365, Number(body.days) || 60)
-      const to = new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10)
-      const from = new Date(Date.now() - days * 86400000 + 5 * 3600 * 1000).toISOString().slice(0, 10)
-
-      let offset = 0, fetched = 0, added = 0
-      for (let page = 0; page < 30; page++) {
-        const r = await pfIncomeOperations(key, from, to, 100, offset)
-        if (!r.ok) return json({ error: r.error }, 502)
-        const items = r.data?.items || []
-        fetched += items.length
-        for (const op of items) {
-          if (!op.operationId || !(op.value > 0)) continue
-          // Неразобранные строки обновляем: первый синк не умел доставать
-          // контрагента из частей операции, и они легли «безымянными».
-          // Привязанные и отклонённые не трогаем — по ним решение принято
-          const rows = await sql`
-            INSERT INTO sales_pf_inbox (
-              org_id, pf_operation_id, operation_date, amount,
-              contragent, comment, account, category, currency, amount_original
-            ) VALUES (
-              ${orgId}, ${op.operationId}, ${op.operationDate}, ${op.value},
-              ${op.contragent}, ${op.comment}, ${op.account}, ${op.category},
-              ${op.currency}, ${op.valueOriginal}
-            )
-            ON CONFLICT (org_id, pf_operation_id) DO UPDATE SET
-              operation_date = EXCLUDED.operation_date, amount = EXCLUDED.amount,
-              contragent = EXCLUDED.contragent, comment = EXCLUDED.comment,
-              account = EXCLUDED.account, category = EXCLUDED.category,
-              currency = EXCLUDED.currency, amount_original = EXCLUDED.amount_original
-            WHERE sales_pf_inbox.status = 'new'
-            RETURNING (xmax = 0) AS inserted
-          `
-          if (rows.length && rows[0].inserted) added++
-        }
-        // total у ПланФакта не заполняется (приходит 0) — верим только
-        // размеру страницы: неполная страница значит, что данные кончились
-        if (items.length < 100) break
-        offset += 100
-      }
-      // Свежие строки сразу прогоняем через историю: платил раньше — подписка
+      const r = await syncPfInbox(sql, orgId, days)
+      if (r.error && !r.fetched) return json({ error: r.error }, 502)
+      // Свежие строки сразу прогоняем через историю: платил раньше — подписка;
+      // очевидные пары с выигранными сделками закрываются сами
       const reclassified = await reclassifyNew(sql, orgId)
+      const auto = await autoLinkNewOps(sql, orgId)
       const [cnt] = await sql`
         SELECT COUNT(*)::int AS n FROM sales_pf_inbox WHERE org_id = ${orgId} AND status = 'new'
       `
-      return json({ ok: true, fetched, added, reclassified, pending: cnt?.n || 0, from, to })
+      return json({ ok: true, fetched: r.fetched, added: r.added, reclassified, auto, pending: cnt?.n || 0 })
     }
 
     /**

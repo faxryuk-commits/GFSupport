@@ -24,6 +24,7 @@
 import { getSQL, json } from '../_lib/db.js'
 import { assertCron } from '../_lib/cron-auth.js'
 import { nameScore } from '../_lib/pf-match.js'
+import { syncPfInbox, reclassifyNewOps, autoLinkNewOps } from '../_lib/planfact.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -42,6 +43,13 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sql = getSQL()
   try {
+    // Шаг 0: свежие операции из ПланФакта — без этого сверять не с чем.
+    // Две недели назад: бухгалтерия проводит с задержкой
+    const synced = await syncPfInbox(sql, ORG, 14)
+    const reclassified = synced.error ? 0 : await reclassifyNewOps(sql, ORG)
+    // Шаг 1: очевидные пары «операция → выигранная сделка» закрываются сами
+    const auto = await autoLinkNewOps(sql, ORG)
+
     // Ручные записи без подтверждения. Уже сматченные не трогаем: их операция
     // помечена linked, повторная сверка только запутала бы
     const payments = await sql`
@@ -54,7 +62,7 @@ export default async function handler(req: Request): Promise<Response> {
         AND COALESCE(p.pf_status, '') <> 'matched'
     ` as any[]
 
-    if (!payments.length) return json({ ok: true, checked: 0 })
+    if (!payments.length) return json({ ok: true, synced, reclassified, auto, checked: 0 })
 
     let matched = 0, ambiguous = 0, pending = 0, missing = 0
 
@@ -112,7 +120,7 @@ export default async function handler(req: Request): Promise<Response> {
       }
     }
 
-    return json({ ok: true, checked: payments.length, matched, ambiguous, pending, missing })
+    return json({ ok: true, synced, reclassified, auto, checked: payments.length, matched, ambiguous, pending, missing })
   } catch (e: any) {
     return json({ error: e?.message || 'reconcile failed' }, 500)
   }

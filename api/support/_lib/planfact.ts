@@ -119,3 +119,154 @@ export async function pfIncomeOperations(
   })
   return { ok: true, data: { items, total: Number(r.data.total) || items.length } }
 }
+
+
+/**
+ * Забрать поступления ПланФакта во «входящие» за последние N дней.
+ *
+ * Раньше это делала только кнопка в KPI — и зеркало жило ровно до того дня,
+ * когда о ней вспоминали (15.09.2026 последняя операция была за 03.09).
+ * Теперь то же самое зовёт ночной крон. Идемпотентно: операции с решением
+ * (linked / ignored / subscription) не трогаются, «новые» обновляются.
+ */
+export async function syncPfInbox(
+  sql: any, orgId: string, days = 14,
+): Promise<{ fetched: number; added: number; error?: string }> {
+  const key = await getPlanfactKey(sql, orgId)
+  if (!key) return { fetched: 0, added: 0, error: 'ПланФакт не подключён' }
+  const to = new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10)
+  const from = new Date(Date.now() - days * 86400000 + 5 * 3600 * 1000).toISOString().slice(0, 10)
+
+  let offset = 0, fetched = 0, added = 0
+  for (let page = 0; page < 30; page++) {
+    const r = await pfIncomeOperations(key, from, to, 100, offset)
+    if (!r.ok) return { fetched, added, error: r.error }
+    const items = r.data?.items || []
+    fetched += items.length
+    for (const op of items) {
+      if (!op.operationId || !(op.value > 0)) continue
+      const rows = await sql`
+        INSERT INTO sales_pf_inbox (
+          org_id, pf_operation_id, operation_date, amount,
+          contragent, comment, account, category, currency, amount_original
+        ) VALUES (
+          ${orgId}, ${op.operationId}, ${op.operationDate}, ${op.value},
+          ${op.contragent}, ${op.comment}, ${op.account}, ${op.category},
+          ${op.currency}, ${op.valueOriginal}
+        )
+        ON CONFLICT (org_id, pf_operation_id) DO UPDATE SET
+          operation_date = EXCLUDED.operation_date, amount = EXCLUDED.amount,
+          contragent = EXCLUDED.contragent, comment = EXCLUDED.comment,
+          account = EXCLUDED.account, category = EXCLUDED.category,
+          currency = EXCLUDED.currency, amount_original = EXCLUDED.amount_original
+        WHERE sales_pf_inbox.status = 'new'
+        RETURNING (xmax = 0) AS inserted
+      `
+      if (rows.length && rows[0].inserted) added++
+    }
+    // total у ПланФакта не заполняется (приходит 0) — верим только
+    // размеру страницы: неполная страница значит, что данные кончились
+    if (items.length < 100) break
+    offset += 100
+  }
+  return { fetched, added }
+}
+
+/** Платил дольше этого — подписка, а не новые деньги. */
+const SUBSCRIPTION_AGE_DAYS = 45
+
+/** Свежие «новые» операции прогнать через историю: платил раньше — подписка. */
+export async function reclassifyNewOps(sql: any, orgId: string): Promise<number> {
+  const { clientKeyOf } = await import('./pf-match.js')
+  const rows = await sql`
+    SELECT pf_operation_id, operation_date::text AS d, contragent, category
+    FROM sales_pf_inbox WHERE org_id = ${orgId} AND status = 'new'
+  ` as any[]
+  if (!rows.length) return 0
+  const keys = [...new Set(rows.map(r => clientKeyOf(r.contragent, r.category)).filter(Boolean))]
+  if (!keys.length) return 0
+  const clients = await sql`
+    SELECT client_key, first_paid_at::text AS f FROM sales_pf_clients
+    WHERE org_id = ${orgId} AND client_key = ANY(${keys})
+  ` as any[]
+  const firstBy = new Map(clients.map(c => [c.client_key, c.f]))
+  const toSub: number[] = []
+  for (const r of rows) {
+    const k = clientKeyOf(r.contragent, r.category)
+    if (!k) continue
+    const f = firstBy.get(k)
+    if (!f) continue
+    const age = (Date.parse(r.d) - Date.parse(f)) / 86400000
+    if (age > SUBSCRIPTION_AGE_DAYS) toSub.push(Number(r.pf_operation_id))
+  }
+  if (toSub.length) {
+    await sql`
+      UPDATE sales_pf_inbox SET status = 'subscription'
+      WHERE org_id = ${orgId} AND pf_operation_id = ANY(${toSub}) AND status = 'new'
+    `
+  }
+  return toSub.length
+}
+
+/** Ниже этого сходства имён совпадением не считаем. */
+const MIN_LINK_SCORE = 60
+
+/**
+ * «Новые» операции — к выигранным сделкам, если пара единственная.
+ *
+ * До этого каждую операцию привязывал РОП руками, и по выигранным сделкам
+ * оплат в отчётах не было, пока он не дойдёт до разбора. Теперь очевидные
+ * пары (одно имя клиента → одна выигранная сделка за последние полгода)
+ * закрываются сами, сомнительные остаются человеку. Платёж создаётся тем же
+ * способом, что и ручная привязка, — с external_id pf_<операция>, чтобы
+ * ни одна операция не стала двумя платежами.
+ */
+export async function autoLinkNewOps(
+  sql: any, orgId: string,
+): Promise<{ checked: number; linked: number; ambiguous: number }> {
+  const { nameScore } = await import('./pf-match.js')
+  const ops = await sql`
+    SELECT pf_operation_id, operation_date, amount, contragent, category, comment
+    FROM sales_pf_inbox WHERE org_id = ${orgId} AND status = 'new'
+  ` as any[]
+  if (!ops.length) return { checked: 0, linked: 0, ambiguous: 0 }
+
+  // Кандидаты — выигранные за полгода и сделки на договоре: те, у кого
+  // деньги уже ожидаются. Открытая квалификация в пару не годится
+  const deals = await sql`
+    SELECT d.id, d.title, d.owner_agent_id, a.name AS account_name
+    FROM sales_deals d
+    LEFT JOIN sales_accounts a ON a.id = d.account_id
+    LEFT JOIN sales_stages s ON s.id = d.stage_id
+    WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+      AND (d.won_at > NOW() - INTERVAL '180 days' OR s.key IN ('contract', 'won'))
+  ` as any[]
+
+  let linked = 0, ambiguous = 0
+  for (const op of ops) {
+    const hits = deals
+      .map(d => ({ d, score: nameScore([op.contragent, op.category, op.comment], [d.title, d.account_name]) }))
+      .filter(x => x.score >= MIN_LINK_SCORE)
+      .sort((a, b) => b.score - a.score)
+    // Несколько сделок одного клиента — тоже неоднозначность: какая из них
+    // оплачена, знает сейлз
+    const uniq = new Set(hits.map(h => h.d.id))
+    if (uniq.size !== 1) { if (uniq.size > 1) ambiguous++; continue }
+    const d = hits[0].d
+    const opId = Number(op.pf_operation_id)
+    const [pay] = await sql`
+      INSERT INTO sales_payments (org_id, deal_id, agent_id, amount, paid_at, source, note, external_id, pf_status, pf_checked_at)
+      VALUES (${orgId}, ${d.id}, ${d.owner_agent_id}, ${op.amount}, ${op.operation_date}, 'planfact',
+              ${op.contragent || 'ПланФакт'}, ${'pf_' + opId}, 'matched', NOW())
+      ON CONFLICT DO NOTHING
+      RETURNING id
+    ` as any[]
+    if (!pay) continue
+    await sql`
+      UPDATE sales_pf_inbox SET status = 'linked', deal_id = ${d.id}, payment_id = ${Number(pay.id)}
+      WHERE org_id = ${orgId} AND pf_operation_id = ${opId} AND status = 'new'
+    `
+    linked++
+  }
+  return { checked: ops.length, linked, ambiguous }
+}
