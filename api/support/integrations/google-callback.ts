@@ -1,5 +1,6 @@
 import { getSQL } from '../_lib/db.js'
 import { ensureGoogleCalSchema, invalidateAgentToken } from '../_lib/google-cal-config.js'
+import { readGaOauth, writeGaOauth } from '../_lib/channel-costs.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -111,6 +112,18 @@ export default async function handler(req: Request): Promise<Response> {
       })
       if (meRes.ok) email = (await meRes.json() as any)?.email || null
     } catch { /* адрес необязателен */ }
+
+    // Согласие для Google Analytics (расход Google Ads в отчёте по каналам):
+    // тот же клиент, другой владелец токена — организация, а не сотрудник
+    if (state.startsWith('ga_')) {
+      const ga = await readGaOauth(sql, row.org_id)
+      await writeGaOauth(sql, row.org_id, {
+        ...ga, refreshToken: tok.refresh_token, email, connectedAt: new Date().toISOString(),
+      })
+      return page('Google Analytics подключён',
+        `Расход Google Ads будет подтягиваться из ресурса GA4 ${esc(ga.property || '')}${
+          email ? ' от имени ' + esc(email) : ''} каждую ночь. Первый забор — из окна интеграции, кнопкой «Забрать сейчас».`, true)
+    }
 
     let agentName: string | null = null
     try {

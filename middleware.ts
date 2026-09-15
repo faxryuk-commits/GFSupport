@@ -52,6 +52,10 @@ const PUBLIC = [
   // роль из него, а не из тела запроса — завести себе администратора нельзя
   '/api/support/agents/register',
   '/api/support/admin/sa-login',
+  // Возврат из OAuth Google и Meta: сюда приходит браузер без нашего токена,
+  // а личность доказывает одноразовый state, который обработчик сверяет с базой
+  '/api/support/integrations/google-callback',
+  '/api/support/integrations/meta-callback',
   '/api/support/sales/doc-public',
   '/api/support/sales/click',
   '/api/support/sales/intake',

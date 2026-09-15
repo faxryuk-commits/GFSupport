@@ -98,7 +98,7 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
                       {c.paid && (
                         <span className={`ml-1.5 text-[10px] px-1.5 py-px border rounded align-[1px] ${
                           known ? 'border-emerald-300 text-emerald-700' : 'border-amber-300 text-amber-700'}`}>
-                          {known ? (c.spendSource === 'meta' ? 'расход из кабинета' : 'расход из Метрики') : 'расход неизвестен'}
+                          {known ? (c.spendSource === 'meta' ? 'расход из кабинета' : c.spendSource === 'ga' ? 'расход из Analytics' : 'расход из Метрики') : 'расход неизвестен'}
                         </span>
                       )}
                     </td>

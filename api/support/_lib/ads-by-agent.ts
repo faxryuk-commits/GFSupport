@@ -196,7 +196,7 @@ export interface ChannelLine {
   paidAmount: number
   /** Расход за период, $; null — канал платный, но расход неизвестен. */
   spend: number | null
-  spendSource: 'meta' | 'metrika' | null
+  spendSource: 'meta' | 'metrika' | 'ga' | null
 }
 
 /**
@@ -258,10 +258,10 @@ async function channelsOverview(
   }
   const meta = byKey.get('meta')!
   meta.spend = metaSpend; meta.spendSource = 'meta'
-  for (const key of ['yandex', 'google']) {
+  for (const key of ['yandex', 'google'] as const) {
     const c = costs[key]
     const line = byKey.get(key)!
-    if (c) { line.spend = c.spend; line.spendSource = 'metrika' }
+    if (c) { line.spend = c.spend; line.spendSource = key === 'google' ? 'ga' : 'metrika' }
   }
   return [...byKey.values()].sort((a, b) =>
     (b.paid ? 1 : 0) - (a.paid ? 1 : 0) || (b.spend || 0) - (a.spend || 0) || b.leads - a.leads)

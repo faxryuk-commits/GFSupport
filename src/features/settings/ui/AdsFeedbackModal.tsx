@@ -17,7 +17,10 @@ import { formatDateTime } from '@/shared/lib'
 
 interface Stats { [status: string]: number }
 interface State {
-  google: { url: string | null; key: string | null; conversionNames: string[]; lastFetchedAt: string | null; stats: Stats }
+  google: {
+    url: string | null; key: string | null; conversionNames: string[]; lastFetchedAt: string | null; stats: Stats
+    analytics: { connected: boolean; email: string | null; property: string; connectedAt: string | null }
+  }
   yandex: { counter: string | null; hasToken: boolean; readyAt: string | null; goals: { id: string; name: string }[]; stats: Stats }
   enabledAt: string | null
   heartbeatAt: string | null
@@ -87,6 +90,17 @@ export function AdsFeedbackModal({ isOpen, onClose }: { isOpen: boolean; onClose
     try { await navigator.clipboard.writeText(text); flag(true); setTimeout(() => flag(false), 1500) } catch { /* буфер недоступен */ }
   }
 
+  const connectGa = async () => {
+    setBusy('ga'); setError(null)
+    try {
+      const r = await apiPost<{ url: string }>('/integrations/ads-feedback', { action: 'ga_auth', property: st?.google.analytics.property })
+      window.location.href = r.url
+    } catch (e: any) {
+      setError(e?.message || 'Не получилось открыть согласие Google')
+      setBusy(null)
+    }
+  }
+
   const hbMin = st?.heartbeatAt ? Math.floor((Date.now() - new Date(st.heartbeatAt).getTime()) / 60000) : null
 
   return (
@@ -141,6 +155,40 @@ export function AdsFeedbackModal({ isOpen, onClose }: { isOpen: boolean; onClose
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <StatsLine stats={st.google.stats} />
                   <span className="text-[11.5px] text-slate-400">Google забирал: {ago(st.google.lastFetchedAt)}</span>
+                </div>
+                {/* Расход Google Ads — из GA4, связанного с кабинетом: API Ads не нужен */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[12.5px] text-slate-700">
+                      <b>Расход в отчёте по каналам</b> — из Google Analytics (ресурс {st.google.analytics.property})
+                      {st.google.analytics.connected
+                        ? <span className="text-emerald-700"> · подключено{st.google.analytics.email ? `, ${st.google.analytics.email}` : ''}</span>
+                        : <span className="text-amber-700"> · не подключено</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {st.google.analytics.connected && (
+                        <button onClick={() => run('gasync', { action: 'ga_sync' }, 'Расход Google за 30 дней забран')}
+                          disabled={busy === 'gasync'}
+                          className="text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 disabled:opacity-50">
+                          {busy === 'gasync' ? 'Забираем…' : 'Забрать сейчас'}
+                        </button>
+                      )}
+                      <button onClick={connectGa} disabled={busy === 'ga'}
+                        className={`text-[12px] px-2.5 py-1.5 rounded-lg disabled:opacity-50 ${st.google.analytics.connected
+                          ? 'border border-slate-200 hover:border-blue-400' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                        {busy === 'ga' ? 'Открываем…' : st.google.analytics.connected ? 'Переподключить' : 'Подключить Analytics'}
+                      </button>
+                      {st.google.analytics.connected && (
+                        <button onClick={() => run('gaoff', { action: 'ga_off' }, 'Analytics отключён')}
+                          className="text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-red-400 text-slate-600">
+                          Отключить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[11.5px] text-slate-500">
+                    Согласие даёт владелец аккаунта, у которого есть доступ к GA4 и кабинету Ads. Расход подтягивается ночью, как у Яндекса.
+                  </p>
                 </div>
               </>
             ) : (
