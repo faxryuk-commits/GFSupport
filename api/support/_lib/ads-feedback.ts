@@ -222,12 +222,17 @@ export async function requeueYandexErrors(sql: any, orgId: string): Promise<numb
 
 // ─── Google: CSV, который Ads забирает сам ──────────────────────────────────
 
-/** Время в формате, который Google принимает без догадок: yyyy-MM-dd HH:mm:ss, зона задана в шапке. */
+/**
+ * Время в формате, который Google принимает без догадок:
+ * yyyy-MM-dd HH:mm:ss+00:00 — зона прямо в значении. Строка
+ * «Parameters:TimeZone=…» в шапке не годится: Менеджер данных Google читает
+ * первую строку как заголовок колонок и ничего не сопоставляет.
+ */
 function googleTime(iso: string): string {
   const d = new Date(iso)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
-    + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
+    + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}+00:00`
 }
 
 const csvCell = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
@@ -250,7 +255,6 @@ export async function googleCsv(sql: any, orgId: string): Promise<{ csv: string;
     ORDER BY created_at
   `) as any[]
   const lines = [
-    'Parameters:TimeZone=+0000;',
     'Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency',
   ]
   for (const r of rows) {
@@ -258,6 +262,13 @@ export async function googleCsv(sql: any, orgId: string): Promise<{ csv: string;
     const value = r.event_name === 'purchase' && r.value != null ? String(Number(r.value)) : ''
     const currency = value ? (r.currency || 'USD') : ''
     lines.push([r.click_id, name, googleTime(r.created_at), value, currency].map(csvCell).join(','))
+  }
+  // Пока конверсий нет — одна строка-образец: Менеджер данных Google не
+  // распознаёт схему файла без единой строки данных и не даёт сопоставить
+  // поля. Click id заведомо не настоящий, Google его отбросит; строка
+  // исчезает с первой настоящей конверсией
+  if (!rows.length) {
+    lines.push(['SAMPLE_NOT_A_CLICK', GOOGLE_CONVERSION_NAMES.qualified, googleTime(new Date().toISOString()), '', ''].map(csvCell).join(','))
   }
   return { csv: lines.join('\n') + '\n', rows: rows.length, ids: rows.map(r => Number(r.id)) }
 }

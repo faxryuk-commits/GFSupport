@@ -25,24 +25,40 @@ function givenKey(req: Request): string {
  * поэтому адрес открыт, а вход — по ключу: Менеджер данных требует имя
  * и пароль, поэтому основной путь — Basic-авторизация (имя любое, пароль —
  * ключ); ключ в запросе оставлен для проверки руками. Без ключа или с чужим
- * отдаём 404, как будто адреса нет. Формат — «конверсии по кликам»:
+ * отдаём 401 с вызовом Basic. Формат — «конверсии по кликам»:
  * Google Click ID, название действия-конверсии, время.
  *
  * GET /api/support/public/ads-conversions.csv        (Authorization: Basic …;
  *     суффикс .csv — rewrite в vercel.json: Менеджер данных требует расширение)
  * GET /api/support/public/ads-conversions?key=…
  */
+/**
+ * Без ключа — 401 с вызовом Basic, а не 404: HTTP-клиенты (и Менеджер данных
+ * Google) шлют имя и пароль только в ответ на такой вызов. С 404 Google
+ * докладывал «неверные учётные данные», хотя до пароля дело не доходило.
+ */
+const challenge = () => new Response('unauthorized', {
+  status: 401,
+  headers: { 'WWW-Authenticate': 'Basic realm="gfsupport", charset="UTF-8"' },
+})
+
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'GET') return new Response('not found', { status: 404 })
+  console.log('[ads-conversions]', req.method, req.headers.get('authorization') ? 'auth' : 'no-auth', req.headers.get('user-agent') || '')
+  // HEAD — проверка доступности: Менеджер данных может сперва спросить
+  // заголовки. Отвечаем тем же вызовом/успехом, но без тела
+  if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('not found', { status: 404 })
   const key = givenKey(req)
-  if (!key || key.length < 16) return new Response('not found', { status: 404 })
+  if (!key || key.length < 16) return challenge()
 
   const sql = getSQL()
   await ensureAdsFeedbackSchema(sql)
   const cfg = await readAdsFeedbackConfig(sql, ORG)
-  if (!cfg.key || cfg.key !== key) return new Response('not found', { status: 404 })
+  if (!cfg.key || cfg.key !== key) return challenge()
 
   const { csv, ids } = await googleCsv(sql, ORG)
+  if (req.method === 'HEAD') {
+    return new Response(null, { status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Cache-Control': 'no-store' } })
+  }
   if (ids.length) {
     // Забрал — значит опубликовано; в карточке настроек это «Google забрал N»
     await sql`
