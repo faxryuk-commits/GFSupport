@@ -311,15 +311,17 @@ export async function adsByAgent(
 
   const crmByCamp: Record<string, number> = {}
   for (const r of rows) if (r.cid) crmByCamp[r.cid] = (crmByCamp[r.cid] || 0) + 1
-  // Лид Meta без кампании (пришёл из Amo без номера) стоит как средний лид
-  // периода: молча считать его бесплатным значило бы прятать деньги
-  const attributed = rows.filter(r => r.cid && camps[r.cid])
-  const avgCost = attributed.length
-    ? attributed.reduce((s, r) => s + camps[r.cid].spend / crmByCamp[r.cid], 0) / attributed.length
-    : 0
+  // Лид Meta без кампании (пришёл из Amo без номера): деньги за него уже
+  // разошлись по лидам кампаний, откуда он на самом деле. Ему достаётся
+  // остаток — расход кампаний, не давших ни одного опознанного лида, —
+  // чтобы сумма по людям сходилась с кабинетом, а не превышала его
+  const orphanSpend = Object.values(camps)
+    .filter(c => !crmByCamp[c.id]).reduce((s, c) => s + c.spend, 0)
+  const orphans = rows.filter(r => !r.cid || !camps[r.cid]).length
+  const orphanCost = orphans ? orphanSpend / orphans : 0
   for (const r of rows) {
     const c = r.cid ? camps[r.cid] : null
-    r.cost = c ? c.spend / crmByCamp[r.cid] : avgCost
+    r.cost = c ? c.spend / crmByCamp[r.cid!] : orphanCost
     r.fate = fateOf(r)
   }
 
