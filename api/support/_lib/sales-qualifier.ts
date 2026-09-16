@@ -53,7 +53,39 @@ const ASK_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'aggregators', label: 'работают ли с агрегаторами (Yandex, Wolt, Uzum...)' },
   { key: 'delivery_type', label: 'есть ли своя доставка или курьеры' },
   { key: 'pos', label: 'какая касса (POS-система) — спрашивать с объяснением «чтобы понять, совместимы ли наши системы»' },
+  // Телефон — последним и только когда интерес ясен: без него диалог
+  // в директе так и остаётся диалогом, позвонить менеджеру некуда
+  { key: 'phone', label: 'номер телефона, чтобы менеджер связался — спрашивать в конце, когда человек явно заинтересован, с объяснением зачем' },
 ]
+
+/**
+ * Диалог без обращения: директ Instagram и Messenger больше не рождают
+ * карточку с первого «здравствуйте». Пока агент разговаривает, факты живут
+ * здесь; обращение появляется, когда диалог его заслужил — есть телефон,
+ * или набралось три факта о заведении, или человек просит звонок/цену.
+ * Личное, спам, соискатели и партнёры обращением не становятся никогда.
+ */
+export async function ensureDialogSchema(sql: SQL): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_dialog_state (
+      channel_id VARCHAR(60) PRIMARY KEY,
+      org_id VARCHAR(50) NOT NULL,
+      facts JSONB NOT NULL DEFAULT '{}'::jsonb,
+      who VARCHAR(20),
+      lead_id VARCHAR(50),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+}
+
+/** Сколько фактов о заведении нужно, чтобы диалог стал обращением. */
+const PROMOTE_FACTS = 3
+
+function cleanPhone(v: string): string | null {
+  const d = String(v || '').replace(/\D/g, '')
+  return d.length >= 9 && d.length <= 15 ? (d.length === 9 ? '998' + d : d) : null
+}
 
 export type QualifierMode = 'auto' | 'draft' | 'off'
 
@@ -70,7 +102,8 @@ export async function readQualifierMode(sql: SQL, orgId: string): Promise<Qualif
 }
 
 interface QualifierInput {
-  leadId: string
+  /** Обращение, если оно уже есть; у свежего диалога его нет. */
+  leadId?: string | null
   /** Канал переписки — из него берётся история и адрес для ответа. */
   channelId?: string | null
   inboundText: string
@@ -94,7 +127,8 @@ export async function runQualifier(sql: SQL, orgId: string, input: QualifierInpu
     await qualify(sql, orgId, input)
   } catch (e: any) {
     await logAssistant(sql, orgId, {
-      leadId: input.leadId, action: 'qualify_failed', status: 'error',
+      leadId: input.leadId || null, channel: input.channelId || null,
+      action: 'qualify_failed', status: 'error',
       error: String(e?.message || e).slice(0, 300),
     }).catch(() => {})
   }
@@ -112,6 +146,7 @@ function plausible(key: string, v: string): boolean {
     case 'points': return hasDigit && v.length <= 30
     case 'orders_per_day': return hasDigit && v.length <= 40
     case 'city': return !hasDigit && v.length >= 2
+    case 'phone': return Boolean(cleanPhone(v))
     default: return true
   }
 }
@@ -120,21 +155,58 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
   const mode = await readQualifierMode(sql, orgId)
   if (mode === 'off') return
 
-  const [lead] = await sql`
-    SELECT l.id, l.name, l.contact_name, l.city, l.status, l.qual, l.raw, l.text,
-           l.assigned_agent_id, l.account_id, l.market_id
-    FROM sales_leads l
-    WHERE l.id = ${input.leadId} AND l.org_id = ${orgId}
-      AND l.archived_at IS NULL AND l.status IN ('new', 'assigned', 'nurture')
-    LIMIT 1
-  ` as any[]
-  if (!lead) return
+  // Предмет разговора: обращение, если оно есть, иначе — состояние диалога.
+  // Форма одна и та же, чтобы дальше код не знал, с кем имеет дело
+  let lead: any = null
+  let dialog: any = null
+  if (input.leadId) {
+    const rows = await sql`
+      SELECT l.id, l.name, l.contact_name, l.city, l.status, l.qual, l.raw, l.text,
+             l.assigned_agent_id, l.account_id, l.market_id
+      FROM sales_leads l
+      WHERE l.id = ${input.leadId} AND l.org_id = ${orgId}
+        AND l.archived_at IS NULL AND l.status IN ('new', 'assigned', 'nurture')
+      LIMIT 1
+    ` as any[]
+    lead = rows[0] || null
+    if (!lead) return
+  } else if (input.channelId) {
+    await ensureDialogSchema(sql)
+    const [st] = await sql`
+      INSERT INTO sales_dialog_state (channel_id, org_id)
+      VALUES (${input.channelId}, ${orgId})
+      ON CONFLICT (channel_id) DO UPDATE SET updated_at = NOW()
+      RETURNING channel_id, facts, who, lead_id
+    ` as any[]
+    // Диалог уже стал обращением — дальше работает ветка обращения
+    if (st?.lead_id) return qualify(sql, orgId, { ...input, leadId: st.lead_id })
+    // Личное, спам и прочие «не клиенты» — решение принято, не возвращаемся
+    if (st?.who && ['personal', 'spam', 'existing_client', 'job_seeker', 'partner'].includes(st.who)) return
+    const [ch0] = await sql`
+      SELECT id, name, market_id FROM support_channels WHERE id = ${input.channelId} AND org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (!ch0) return
+    dialog = st
+    lead = {
+      id: null, channel_id: ch0.id, name: ch0.name, contact_name: ch0.name, city: st.facts?.city || null,
+      status: 'dialog', qual: { ...(st.facts || {}) }, raw: null, text: null,
+      assigned_agent_id: null, account_id: null, market_id: ch0.market_id || null,
+    }
+  } else {
+    return
+  }
 
-  // Сколько агент уже написал этому лиду — и не писал ли только что.
-  // Интервал короткий: его задача — не ответить дважды на почти одновременные
-  // сообщения, а не выдерживать паузу. 90 секунд здесь замораживали диалог:
-  // клиент писал «что молчишь», попадая в интервал снова и снова
-  const [sent] = await sql`
+  // Сколько агент уже написал в этот диалог — и не писал ли только что.
+  // Считаем по самой переписке, а не по журналу: у диалога без обращения
+  // журнальной строки с lead_id нет. Интервал короткий: его задача — не
+  // ответить дважды на почти одновременные сообщения, а не выдерживать паузу
+  const [sent] = input.channelId ? await sql`
+    SELECT COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours')::int AS n,
+           MAX(created_at) FILTER (WHERE created_at > NOW() - INTERVAL '25 seconds') AS just_now
+    FROM support_messages
+    WHERE channel_id = ${input.channelId} AND org_id = ${orgId}
+      AND is_from_client = false AND sender_name = ${AGENT_NAME}
+  ` as any[] : await sql`
     SELECT COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours')::int AS n,
            MAX(created_at) FILTER (WHERE created_at > NOW() - INTERVAL '25 seconds') AS just_now
     FROM sales_assistant_log
@@ -188,11 +260,13 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
       .then(tk => fetchRelevantDocs(orgId, input.inboundText, tk))
       .catch(() => [] as any[]),
     socialProof(sql, knownOf('pos')),
-    sql`
+    lead.id ? sql`
       SELECT s.label AS source, l.campaign FROM sales_leads l
       LEFT JOIN sales_sources s ON s.id = l.source_id
       WHERE l.id = ${lead.id} LIMIT 1
-    `.then((r: any[]) => r[0] || null).catch(() => null),
+    `.then((r: any[]) => r[0] || null).catch(() => null)
+      : Promise.resolve(channel?.source === 'instagram' ? { source: 'Instagram Direct', campaign: null }
+        : channel?.source === 'messenger' ? { source: 'Facebook Messenger', campaign: null } : null),
   ])
 
   const verdict = await askModel(key, lead, history, input.inboundText,
@@ -211,8 +285,21 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
     const cur = knownOf(f.key)
     if (!cur || !plausible(f.key, cur)) patch[f.key] = v
   }
-  if (Object.keys(patch).length) {
-    const { city, ...qualPatch } = patch
+  if (Object.keys(patch).length && dialog) {
+    // Диалог без обращения: факты копятся в его состоянии
+    if (patch.phone) patch.phone = cleanPhone(patch.phone) || patch.phone
+    await sql`
+      UPDATE sales_dialog_state
+      SET facts = facts || ${JSON.stringify(patch)}::jsonb, updated_at = NOW()
+      WHERE channel_id = ${dialog.channel_id}
+    `
+    Object.assign(lead.qual, patch)
+    await logAssistant(sql, orgId, {
+      channel: channel?.source || null, action: 'qualify_extracted', status: 'ok',
+      message: `Диалог ${dialog.channel_id}: выяснено ${Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ')}`,
+    })
+  } else if (Object.keys(patch).length) {
+    const { city, phone, ...qualPatch } = patch
     if (Object.keys(qualPatch).length) {
       await sql`
         UPDATE sales_leads
@@ -223,6 +310,15 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
     if (city) {
       await sql`
         UPDATE sales_leads SET city = COALESCE(city, ${city}), updated_at = NOW()
+        WHERE id = ${lead.id} AND org_id = ${orgId}
+      `
+    }
+    // Телефон, названный в переписке, — в само обращение: до этого лид из
+    // директа оставался без номера, и звонить по нему было нельзя
+    const ph = phone ? cleanPhone(phone) : null
+    if (ph) {
+      await sql`
+        UPDATE sales_leads SET phone = COALESCE(phone, ${'+' + ph}), phone_norm = COALESCE(phone_norm, ${ph.slice(-9)}), updated_at = NOW()
         WHERE id = ${lead.id} AND org_id = ${orgId}
       `
     }
@@ -244,6 +340,31 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
       status: 'ok',
       message: `Выяснено: ${Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ')} → балл ${icp.score}`,
     })
+  }
+
+  // Диалог: запоминаем, кто перед нами, — «не клиент» решается один раз
+  // и обращением не становится никогда
+  if (dialog && verdict.who !== 'unclear' && verdict.who !== 'prospect') {
+    await sql`
+      UPDATE sales_dialog_state SET who = ${verdict.who}, updated_at = NOW()
+      WHERE channel_id = ${dialog.channel_id}
+    `
+  }
+
+  // Диалог заслужил обращение: есть телефон, или три факта о заведении,
+  // или человек просит звонок/цену. Обращение рождается уже с квалификацией
+  // и уходит в группу сейлзов той же дорогой, что заявка с формы
+  if (dialog && (verdict.who === 'prospect' || verdict.who === 'unclear')) {
+    const facts = lead.qual as Record<string, string>
+    const factCount = ASK_FIELDS.filter(f => f.key !== 'phone' && facts[f.key]).length
+    const wants = ['wants_call', 'price'].includes(verdict.intent)
+    if (verdict.who === 'prospect' && (facts.phone || factCount >= PROMOTE_FACTS || wants)) {
+      const leadId = await promoteDialog(sql, orgId, dialog, channel, lead, facts, verdict.intent, input.inboundText)
+      if (leadId) {
+        lead = { ...lead, id: leadId }
+        dialog = null
+      }
+    }
   }
 
   // 2. Кто перед нами — решает всё. В директ бренда пишут не только
@@ -335,6 +456,69 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
   }
 }
 
+/**
+ * Диалог → обращение. Источник — тот же, что был бы у карточки с первого
+ * сообщения (instagram_direct / messenger), но теперь она приходит с именем,
+ * телефоном и фактами, а не с «Instagram 545555» и пустотой.
+ */
+export async function promoteDialog(
+  sql: SQL, orgId: string, dialog: any, channel: any, subject: any,
+  facts: Record<string, string>, intent: string, lastText: string,
+): Promise<string | null> {
+  if (!channel) return null
+  const { acceptLead, logChatMessage } = await import('./sales-intake.js')
+  const sourceKey = channel.source === 'instagram' ? 'instagram_direct' : 'messenger'
+  const { phone, city, ...qual } = facts
+  const summary = Object.entries(facts)
+    .filter(([k]) => k !== 'phone')
+    .map(([k, v]) => `${ASK_LABEL[k] || k}: ${v}`).join(' · ')
+  const [ch] = await sql`
+    SELECT m.code FROM support_channels c LEFT JOIN support_markets m ON m.id = c.market_id
+    WHERE c.id = ${channel.id} LIMIT 1
+  ` as any[]
+  const res = await acceptLead(sql, orgId, {
+    source: sourceKey,
+    external_id: String(channel.external_chat_id || ''),
+    name: subject.name, contact_name: subject.contact_name,
+    phone: phone ? '+' + (cleanPhone(phone) || phone) : null,
+    city: city || null,
+    text: summary ? `Из диалога: ${summary}` : `Из диалога · ${lastText.slice(0, 200)}`,
+    market: ch?.code || null,
+    channel_key: String(channel.external_chat_id || ''),
+    qual: Object.keys(qual).length ? qual : null,
+    lead_kind: 'inbound',
+  } as any)
+  if (!res.ok || !res.lead_id) {
+    await logAssistant(sql, orgId, {
+      channel: channel.source, action: 'dialog_promote_failed', status: 'error',
+      error: res.error || 'acceptLead без lead_id',
+    })
+    return null
+  }
+  await sql`
+    UPDATE sales_dialog_state SET lead_id = ${res.lead_id}, updated_at = NOW()
+    WHERE channel_id = ${dialog.channel_id}
+  `
+  if (res.account_id) {
+    await sql`
+      UPDATE sales_accounts SET channel_id = COALESCE(channel_id, ${channel.id})
+      WHERE id = ${res.account_id} AND org_id = ${orgId}
+    `
+    await logChatMessage(sql, orgId, res.account_id, 'in', lastText, 'клиент').catch(() => {})
+  }
+  await logAssistant(sql, orgId, {
+    leadId: res.lead_id, accountId: res.account_id || null, channel: channel.source,
+    action: 'dialog_promoted', status: 'ok',
+    message: `Диалог стал обращением: ${summary || intent}${phone ? ' · телефон получен' : ''}`,
+  })
+  return res.lead_id
+}
+
+const ASK_LABEL: Record<string, string> = {
+  city: 'город', points: 'точек', orders_per_day: 'заказов в день',
+  aggregators: 'агрегаторы', delivery_type: 'доставка', pos: 'касса', phone: 'телефон',
+}
+
 /** Ответ уходит тем же путём, каким пришло входящее. */
 async function deliver(sql: SQL, orgId: string, channel: any, text: string): Promise<boolean> {
   if (!channel) return false
@@ -400,9 +584,9 @@ async function notifyHandover(
     await sendNotification({
       orgId, type: 'assignment',
       priority: intent === 'wants_call' ? 'high' : 'medium',
-      title: `Лид готов: ${lead.contact_name || lead.name}`,
+      title: `${lead.id ? 'Лид готов' : 'Диалог ждёт'}: ${lead.contact_name || lead.name}`,
       body: `${reason}. Последнее сообщение: «${lastText.slice(0, 120)}»`,
-      link: `/sales/leads/${lead.id}`,
+      link: lead.id ? `/sales/leads/${lead.id}` : (lead.channel_id ? `/sales/chats/${lead.channel_id}` : '/sales/chats'),
       ...(lead.assigned_agent_id ? { targetAgentIds: [lead.assigned_agent_id] } : {}),
     })
   } catch { /* уведомление — не повод уронить квалификацию */ }
@@ -491,7 +675,8 @@ export async function askModel(
     'Верни строго JSON: {"who": "prospect|existing_client|job_seeker|partner|personal|spam|unclear",',
     '"intent": "answering|question|wants_call|price|not_interested|other",',
     '"extracted": {"pos": "...", "points": "...", "orders_per_day": "...", "aggregators": "...",',
-    '"delivery_type": "...", "city": "..."} — только то, что клиент реально сообщил, иначе пропусти ключ.',
+    '"delivery_type": "...", "city": "...", "phone": "..."} — только то, что клиент реально сообщил, иначе пропусти ключ.',
+    'phone — номер телефона, который клиент написал сам (цифры как есть); не выдумывай и не бери из профиля.',
     'Семантика полей: pos — НАЗВАНИЕ кассовой системы (iiko, RKeeper, Jowi, Poster...), никогда не число;',
     'points — число точек/филиалов; orders_per_day — заказы в день; city — город.',
     'Сомневаешься, к какому полю относится сказанное, — пропусти ключ, не угадывай.',

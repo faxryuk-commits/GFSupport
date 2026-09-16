@@ -1,5 +1,5 @@
 import { ensureSalesSchema, salesId } from './sales-schema.js'
-import { acceptLead, logChatMessage } from './sales-intake.js'
+import { logChatMessage } from './sales-intake.js'
 import { stopNurtureOnReply } from './sales-assistant.js'
 import { runQualifier } from './sales-qualifier.js'
 import { waitUntil } from '@vercel/functions'
@@ -204,34 +204,15 @@ export async function handleMetaMessaging(
         continue
       }
 
-      const result = await acceptLead(sql, orgId, {
-        source: sourceKey,
-        external_id: senderId,
-        name,
-        contact_name: name,
-        text: fullText,
-        market: acc?.marketId || null,
-        channel_key: senderId,
-        raw: ev,
-      })
-      if (result.ok && result.account_id) {
-        await logChatMessage(sql, orgId, result.account_id, 'in', fullText, 'клиент')
-        if (result.lead_id) {
-          waitUntil(runQualifier(sql, orgId, {
-            leadId: result.lead_id, channelId, inboundText: fullText,
-          }).catch(() => {}))
-        }
-        // Привязка канала к аккаунту: по ней карточка сделки показывает
-        // переписку и умеет отвечать прямо оттуда
-        await sql`
-          UPDATE sales_accounts SET channel_id = COALESCE(channel_id, ${channelId})
-          WHERE id = ${result.account_id} AND org_id = ${orgId}
-        `
-        await sql`
-          UPDATE sales_contacts SET telegram = COALESCE(telegram, ${name})
-          WHERE account_id = ${result.account_id} AND is_primary = true
-        `
-      }
+      // Первое сообщение в директ — это диалог, а не обращение. Раньше
+      // карточка рождалась с первого «здравствуйте»: без телефона, без
+      // фактов, с именем «Instagram 545555» — 35 таких за два месяца, 19
+      // ушли в брак. Теперь разговор ведёт агент-квалификатор (или сейлз
+      // в «Диалогах»), а обращение появляется, когда диалог его заслужил:
+      // телефон, три факта о заведении или просьба о звонке/цене —
+      // см. promoteDialog в sales-qualifier.ts. Сейлз может превратить
+      // диалог в обращение и сам, кнопкой в «Диалогах»
+      waitUntil(runQualifier(sql, orgId, { channelId, inboundText: fullText }).catch(() => {}))
     }
   }
   return taken
@@ -423,24 +404,6 @@ async function ingestConversation(
     `
   }
 
-  // Диалог из архива — тоже обращение: без этого он появится в чатах,
-  // но в продажах его не будет, и сейлз о нём не узнает
-  const [known] = await sql`
-    SELECT l.id FROM sales_leads l JOIN sales_sources s ON s.id = l.source_id
-    WHERE l.org_id = ${orgId} AND s.key = ${sourceKey} AND l.external_id = ${String(other.id)}
-    LIMIT 1
-  ` as any[]
-  if (known) return
-
-  const res = await acceptLead(sql, orgId, {
-    source: sourceKey, external_id: String(other.id), name, contact_name: name,
-    text: String(msgs[msgs.length - 1]?.message || '').slice(0, 500) || null,
-    market: acc.marketId, channel_key: String(other.id), raw: { _imported: true },
-  })
-  if (res.ok && res.account_id) {
-    await sql`
-      UPDATE sales_accounts SET channel_id = COALESCE(channel_id, ${channelId})
-      WHERE id = ${res.account_id} AND org_id = ${orgId}
-    `
-  }
+  // Диалог из архива остаётся диалогом: обращение из него делает сейлз
+  // в «Диалогах» или агент по фактам — как и у живых сообщений
 }
