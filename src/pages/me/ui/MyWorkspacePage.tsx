@@ -20,7 +20,7 @@ import { TelegramConnect } from './TelegramConnect'
 import { WhatsappConnect } from './WhatsappConnect'
 
 type Workspace = {
-  me: { id: string; name: string; usernames: string[] }
+  me: { id: string; name: string; usernames: string[]; botLinked?: boolean; tgUsername?: string | null }
   mentions: Array<{ id: string; text_content: string; sender_name: string; created_at: string; channel_id: string; channel_name: string; unanswered: boolean }>
   workItems: Array<{ id: string; title: string; client_name: string; status: string; started_at: string }>
   cases: Array<{ id: string; ticket_number: string; title: string; status: string; hours_open: number }>
@@ -335,6 +335,25 @@ export function MyWorkspacePage() {
       </div>
 
       <div className="max-w-[1240px] mx-auto px-6 py-4 space-y-4">
+        {/* Бот не подключён — напоминания о задачах и утренняя очередь идут
+            в Telegram, а сюда, в колокольчик, команда не смотрит. Говорим
+            один раз и прямо, что сделать, — пока не подключат */}
+        {ws.me.botLinked === false && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 flex items-start gap-3">
+            <span className="text-[18px] leading-none">🔔</span>
+            <div>
+              <div className="font-semibold">Напоминания о задачах не доходят: бот не подключён</div>
+              <div className="mt-0.5 text-amber-800">
+                Просроченные задачи, утренняя очередь и новые обращения приходят в Telegram-бот{' '}
+                <a href="https://t.me/gfsupport_robot" target="_blank" rel="noreferrer" className="font-semibold underline">@gfsupport_robot</a>.
+                Напишите ему <code className="px-1 rounded bg-white/70">/start</code> — он узнает вас
+                {ws.me.tgUsername
+                  ? <> по нику <b>@{ws.me.tgUsername}</b> из профиля.</>
+                  : <>, если в профиле указан ваш Telegram-ник. <b>Ника в профиле нет</b> — попросите руководителя вписать его в Настройки → Команда.</>}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Задачи команды — только руководителю: у кого что открыто и горит.
             Сейлз своей работой живёт ниже, РОП начинает день с этой карточки */}
         {ws.team && (

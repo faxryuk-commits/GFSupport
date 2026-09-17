@@ -62,7 +62,21 @@ export function AgentRow({ agent, frt, isSelected, onClick, onEdit, onDeactivate
             <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${status.dot}`} />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-800 truncate">{agent.name}</p>
+            <p className="text-sm font-medium text-slate-800 truncate flex items-center gap-1.5">
+              {agent.name}
+              {/* Бот не привязан — напоминания о задачах и утренняя очередь
+                  до человека не доходят. Руководителю это видно здесь, а не
+                  из жалобы «задачи теряются» через неделю */}
+              {!agent.telegramId && (
+                <span
+                  title={agent.username
+                    ? `Бот не подключён: напоминания в Telegram не приходят. Сотруднику нужно написать /start боту @gfsupport_robot — он узнает его по нику @${agent.username}`
+                    : 'Бот не подключён и ника Telegram в профиле нет: впишите ник, затем сотрудник пишет /start боту @gfsupport_robot'}
+                  className="flex-none text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-px">
+                  без бота
+                </span>
+              )}
+            </p>
             {agent.email && (
               <p className="text-xs text-slate-400 truncate">{agent.email}</p>
             )}

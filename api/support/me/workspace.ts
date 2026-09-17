@@ -31,7 +31,7 @@ export default async function handler(req: Request): Promise<Response> {
   await ensureWorkSchema(sql)
 
   const [me] = await sql`
-    SELECT id, name, role FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
+    SELECT id, name, role, telegram_id, username FROM support_agents WHERE id = ${ctx.agentId} LIMIT 1
   ` as any[]
   if (!me) return json({ error: 'agent not found' }, 404)
 
@@ -294,7 +294,13 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   return json({
-    me: { id: me.id, name: me.name, usernames },
+    me: {
+      id: me.id, name: me.name, usernames,
+      // Бот — единственный канал, который сейлзы читают: без привязки
+      // напоминания о задачах и утренняя очередь до человека не доходят
+      botLinked: Boolean(me.telegram_id),
+      tgUsername: me.username || null,
+    },
     team,
     mentions,
     unansweredMentions: (mentions as any[]).filter(m => m.unanswered).length,

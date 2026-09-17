@@ -3,6 +3,7 @@ import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { ensureSalesSchema, salesId } from '../_lib/sales-schema.js'
 import { sendNotification } from '../_lib/notifications.js'
+import { nextWorkMorning } from '../_lib/sales-time.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -64,23 +65,35 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Без исполнителя задача ничья и не всплывёт ни у кого в очереди дня
     const assignee = String(body.assigneeAgentId || ctx.agentId)
+    // Без срока задача не всплывёт нигде: очередь дня и напоминания живут
+    // по due_at, и «Жду ОС» без даты лежало в базе, пока команда Баку не
+    // спросила, куда деваются задачи. Срок по умолчанию — завтра 10:00 по
+    // часам страны исполнителя, а не Ташкента
+    let dueAt: string | null = body.dueAt || null
+    if (!dueAt) {
+      const [own] = await sql`
+        SELECT m.code FROM support_agent_markets am JOIN support_markets m ON m.id = am.market_id
+        WHERE am.agent_id = ${assignee} LIMIT 1
+      `.catch(() => [] as any[]) as any[]
+      dueAt = nextWorkMorning(own?.code || null).toISOString()
+    }
     const id = salesId('stk')
     await sql`
       INSERT INTO sales_tasks (id, org_id, deal_id, account_id, lead_id, kind, title,
                                channel, due_at, assignee_agent_id, created_by_agent_id, auto)
       VALUES (${id}, ${orgId}, ${body.dealId || null}, ${accountId}, ${body.leadId || null},
               ${kind}, ${title.slice(0, 500)}, ${body.channel || null},
-              ${body.dueAt || null}, ${assignee}, ${ctx.agentId}, ${body.auto === true})
+              ${dueAt}, ${assignee}, ${ctx.agentId}, ${body.auto === true})
     `
 
     // Запланированная задача и есть следующий шаг сделки. Без этой строки доска
     // показывала «шаг не назначен» при живой задаче, а через 48 часов помечала
     // сделку брошенной — сейлз работал, а система считала иначе
-    if (body.dealId && body.dueAt) {
+    if (body.dealId && dueAt) {
       await sql`
         UPDATE sales_deals
         SET next_step = COALESCE(next_step, ${title.slice(0, 200)}),
-            next_step_at = LEAST(COALESCE(next_step_at, ${body.dueAt}), ${body.dueAt}),
+            next_step_at = LEAST(COALESCE(next_step_at, ${dueAt}), ${dueAt}),
             stalled_at = NULL
         WHERE id = ${body.dealId} AND org_id = ${orgId}
       `

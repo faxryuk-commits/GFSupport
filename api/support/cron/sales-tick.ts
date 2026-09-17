@@ -1,6 +1,7 @@
 import { getSQL, json, ensureOnce } from '../_lib/db.js'
 import { ensureSalesSchema } from '../_lib/sales-schema.js'
-import { getBotToken, tgSend, leadCard, leadKeyboard, notifyCallDone } from '../_lib/sales-bot.js'
+import { getBotToken, tgSend, leadCard, leadKeyboard, notifyCallDone, queueText } from '../_lib/sales-bot.js'
+import { nextWorkMorning, localDate, localHour } from '../_lib/sales-time.js'
 import { draftNurtureMessage, logAssistant, NURTURE_STEPS, MAX_STEPS } from '../_lib/sales-assistant.js'
 import { assertCron } from '../_lib/cron-auth.js'
 import { sendNotification } from '../_lib/notifications.js'
@@ -492,12 +493,85 @@ export default async function handler(req: Request): Promise<Response> {
     console.error('[sales-tick] reactivation:', e)
   }
 
+  // ─── 2а. Задачи без срока получают срок ─────────────────────────────────────
+  // Очередь дня и напоминания живут по due_at: задача без даты не всплывает
+  // нигде и не напоминает о себе никогда. Команда Баку так «теряла» задачи —
+  // восемь открытых у одного человека. Через час после создания бессрочная
+  // задача встаёт на завтрашнее утро по часам страны исполнителя
+  try {
+    const undated = await sql`
+      SELECT t.id, m.code AS market FROM sales_tasks t
+      LEFT JOIN support_agent_markets am ON am.agent_id = t.assignee_agent_id
+      LEFT JOIN support_markets m ON m.id = am.market_id
+      WHERE t.org_id = ${ORG} AND t.done_at IS NULL AND t.due_at IS NULL
+        AND t.created_at < NOW() - INTERVAL '1 hour'
+      LIMIT 50
+    ` as any[]
+    for (const t of undated) {
+      await sql`
+        UPDATE sales_tasks SET due_at = ${nextWorkMorning(t.market).toISOString()}
+        WHERE id = ${t.id} AND due_at IS NULL
+      `
+    }
+    if (undated.length) out.dated = undated.length
+  } catch (e) {
+    console.error('[sales-tick] undated tasks:', e)
+  }
+
+  // ─── 2б. Утренняя очередь в бот ─────────────────────────────────────────────
+  // Напоминание о просроченной задаче уходит один раз, в систему, а колокольчик
+  // сейлзы не открывают: у команды Баку сотни непрочитанных. Единственное, что
+  // они читают, — бот. Поэтому в 09:00 по часам страны каждому с привязанным
+  // ботом уходит очередь дня: горящие лиды, задачи на сегодня и просроченные,
+  // застрявшие сделки. Пустая очередь не шлётся, воскресенье пропускается
+  try {
+    if (token) {
+      const KEY = 'sales_morning_pushed'
+      const [row] = await sql`SELECT value FROM support_platform_settings WHERE key = ${KEY}` as any[]
+      const pushed: Record<string, string> = (() => { try { return JSON.parse(row?.value || '{}') } catch { return {} } })()
+      const people = await sql`
+        SELECT a.id, a.telegram_id, MIN(m.code) AS market
+        FROM support_agents a
+        LEFT JOIN support_agent_markets am ON am.agent_id = a.id
+        LEFT JOIN support_markets m ON m.id = am.market_id
+        WHERE a.org_id = ${ORG} AND COALESCE(a.is_active, true) AND a.merged_into IS NULL
+          AND a.telegram_id IS NOT NULL AND a.telegram_id <> ''
+          AND (a.department ILIKE '%sale%' OR a.role IN ('sales', 'kam', 'sdr', 'manager', 'agent', 'team_lead'))
+        GROUP BY a.id, a.telegram_id
+      ` as any[]
+      let sent = 0
+      for (const p of people) {
+        const today = localDate(p.market)
+        const hour = localHour(p.market)
+        const weekday = new Date(`${today}T00:00:00Z`).getUTCDay()
+        if (hour < 9 || hour >= 12 || pushed[p.id] === today || weekday === 0) continue
+        const text = await queueText(sql, ORG, p.id)
+        pushed[p.id] = today
+        if (/Пусто\./.test(text)) continue
+        await tgSend(token, p.telegram_id, `☀️ ${text}`)
+        sent++
+      }
+      if (sent || people.length) {
+        // Отметки старше двух дней не нужны — иначе запись растёт бесконечно
+        const keep = Object.fromEntries(Object.entries(pushed).filter(([, d]) => Date.now() - new Date(d).getTime() < 2 * 86_400_000))
+        await sql`
+          INSERT INTO support_platform_settings (key, value, updated_at)
+          VALUES (${KEY}, ${JSON.stringify(keep)}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(keep)}, updated_at = NOW()
+        `
+      }
+      if (sent) out.morning = sent
+    }
+  } catch (e) {
+    console.error('[sales-tick] morning queue:', e)
+  }
+
   // ─── 2. Просроченные задачи и каденции ──────────────────────────────────────
   // Раньше выборка требовала привязанного телеграма, и у сотрудника без бота
   // просроченная задача не всплывала нигде — а отметка «напомнили» ему не
   // ставилась, поэтому он попадал в выборку каждую минуту без толку
   const tasks = await sql`
-    SELECT t.id, t.title, t.due_at, t.assignee_agent_id, d.title AS deal_title, a.telegram_id
+    SELECT t.id, t.title, t.due_at, t.assignee_agent_id, t.deal_id, d.title AS deal_title, a.telegram_id
     FROM sales_tasks t
     LEFT JOIN sales_deals d ON d.id = t.deal_id
     LEFT JOIN support_agents a ON a.id = t.assignee_agent_id
@@ -510,7 +584,10 @@ export default async function handler(req: Request): Promise<Response> {
     await sendNotification({
       orgId: ORG, type: 'sla_breach', priority: 'medium',
       title: 'Просрочена задача',
-      body: `${t.deal_title ? `${t.deal_title}: ` : ''}${t.title}`,
+      body: `${t.deal_title ? `${t.deal_title}: ` : ''}${t.title}`
+        // Без бота напоминание доходит только сюда, а сюда не смотрят —
+        // говорим прямо, как подключить
+        + (t.telegram_id ? '' : '\nНапоминания в Telegram не приходят: напишите /start боту @gfsupport_robot'),
       link: t.deal_id ? `/sales/deals/${t.deal_id}` : '/me',
       targetAgentIds: [t.assignee_agent_id],
     }).catch(() => {})
