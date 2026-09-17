@@ -1,4 +1,5 @@
-import { useState, type DragEvent } from 'react'
+import { useRef, useState, type DragEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { CallPhone } from '@/shared/ui'
 import { Chip, fmtDateTime, money, slaText, days, MarketFlag } from './kit'
 import { parsePhone } from '@/shared/lib/phone'
@@ -80,43 +81,67 @@ function since(iso: string): string {
 /**
  * Шестая строка карточки — последнее действие: что с этим человеком было
  * в последний раз и как давно. В строку влезает начало, по наведению
- * раскрывается превью целиком: кто, когда, полный текст. Превью висит
- * поверх соседних карточек, поэтому отрисовано абсолютно и вне потока.
+ * раскрывается превью целиком: кто, когда, полный текст.
+ *
+ * Превью рисуется порталом в body с фиксированными координатами: колонка
+ * доски режет всё, что вылезает за её край (overflow), и превью в потоке
+ * уходило под соседний этап. Живёт, пока курсор на строке или на самом
+ * превью — с короткой отсрочкой на перелёт между ними, чтобы можно было
+ * дочитать и выделить текст.
  */
 function LastActLine({ act }: { act: LastAct | null | undefined }) {
-  const [open, setOpen] = useState(false)
-  if (!act) return <div className="mt-0.5 text-[11px] text-gray-300 truncate">действий пока не было</div>
+  const [pos, setPos] = useState<{ left: number; top: number; up: boolean } | null>(null)
+  const anchor = useRef<HTMLDivElement | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const show = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    const r = anchor.current?.getBoundingClientRect()
+    if (!r) return
+    const W = 320
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - W - 8))
+    // Снизу не помещается — раскрываем вверх
+    const up = window.innerHeight - r.bottom < 220
+    setPos({ left, top: up ? r.top - 4 : r.bottom + 4, up })
+  }
+  const hide = () => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setPos(null), 180)
+  }
+
+  if (!act) return <div className="mt-0.5 text-[11px] text-gray-300 truncate" title="">действий пока не было</div>
   const who = act.dir === 'in' ? (act.who || 'клиент') : (act.who || 'мы')
   const text = String(act.text || '').replace(/\s+/g, ' ').trim()
   const arrow = act.kind === 'message' || act.kind === 'call' ? (act.dir === 'in' ? '↓ ' : '↑ ') : ''
   return (
-    <div className="relative mt-0.5" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    // title="" — чтобы сюда не падала родная подсказка карточки: две
+    // подсказки друг на друге нечитаемы
+    <div ref={anchor} className="mt-0.5" title="" onMouseEnter={show} onMouseLeave={hide}>
       <div className="text-[11px] text-gray-500 truncate">
         <span className="text-gray-400">{ACT_ICON[act.kind]} {since(act.at)} · </span>
         <span className="text-gray-700">{arrow}{text || ACT_LABEL[act.kind]}</span>
       </div>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-[300px] max-w-[70vw] rounded-lg border border-gray-200
-                        bg-white shadow-xl px-3 py-2.5 text-[11.5px] leading-snug cursor-default"
-             onMouseDown={e => e.stopPropagation()}>
+      {pos && createPortal(
+        <div
+          onMouseEnter={show} onMouseLeave={hide}
+          onMouseDown={e => e.stopPropagation()}
+          style={{ position: 'fixed', left: pos.left, top: pos.top, width: 320,
+                   transform: pos.up ? 'translateY(-100%)' : undefined }}
+          className="z-[60] rounded-lg border border-gray-200 bg-white shadow-xl px-3 py-2.5 text-[11.5px] leading-snug cursor-default select-text"
+        >
           <div className="flex items-baseline justify-between gap-2 text-[10.5px] text-gray-400">
             <span>{ACT_ICON[act.kind]} {ACT_LABEL[act.kind]}{act.channel && act.channel !== 'phone' ? ` · ${act.channel}` : ''}
               {act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''}</span>
             <span className="tabular-nums flex-none">{fmtDateTime(act.at)}</span>
           </div>
-          <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[180px] overflow-y-auto">
+          <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto">
             <span className="font-medium text-gray-900">{who}: </span>{text || '—'}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
-}
-
-interface DragProps {
-  dragging: boolean
-  onDragStart: (e: DragEvent) => void
-  onDragEnd: () => void
 }
 
 export function LeadCard({
