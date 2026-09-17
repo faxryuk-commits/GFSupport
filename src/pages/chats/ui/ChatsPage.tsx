@@ -7,6 +7,7 @@ import { PageHint, EducationalEmptyState } from '@/features/onboarding'
 import { ChannelListItem, ChannelPreviewModal, type ChannelItemData } from '@/features/channels/ui'
 import { MessageBubble, ChatInput, type MessageData, type AttachedFile, type MentionUser, type MessageReaction } from '@/features/messages/ui'
 import { QuickCaseModal } from '@/features/cases/ui'
+import { SalesDialogStrip } from './SalesDialogStrip'
 import { fetchChannels, fetchMessages, sendMessage, markChannelRead, fetchAIContext, getQuickSuggestions, fetchAgents, type AISuggestion, type AIContext } from '@/shared/api'
 import type { ChatScope } from '@/shared/api/channels'
 import { useAuth } from '@/shared/hooks/useAuth'
@@ -1042,6 +1043,13 @@ export function ChatsPage({ scope = 'all' }: { scope?: ChatScope } = {}) {
                 </div>
               </div>
             </div>
+
+            {/* Диалог продаж: что выяснил агент, обращение/сделка, ручные
+                действия. Перечитывается с каждым новым сообщением */}
+            {scope === 'sales' && (
+              <SalesDialogStrip channelId={selectedChannel.id} refreshKey={messages.length}
+                onUseDraft={text => setMessageText(text)} />
+            )}
 
             {/* Сообщения */}
             <div 

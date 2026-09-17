@@ -32,7 +32,7 @@ export default async function handler(req: Request): Promise<Response> {
   const load = async (channelId: string) => {
     const [ch] = await sql`
       SELECT c.id, c.name, c.source, c.external_chat_id, c.meta_page_id, c.market_id,
-             st.facts, st.who, st.lead_id
+             st.facts, st.who, st.lead_id, st.draft, st.draft_at
       FROM support_channels c
       LEFT JOIN sales_dialog_state st ON st.channel_id = c.id
       WHERE c.id = ${channelId} AND c.org_id = ${orgId} LIMIT 1
@@ -69,6 +69,8 @@ export default async function handler(req: Request): Promise<Response> {
       source: d.channel.source,
       facts: d.channel.facts || {},
       who: d.channel.who || null,
+      draft: d.channel.draft || null,
+      draftAt: d.channel.draft_at || null,
       lead: d.lead ? { id: d.lead.id, name: d.lead.name, status: d.lead.status, phone: d.lead.phone } : null,
       deal: d.deal,
     })
@@ -118,6 +120,22 @@ export default async function handler(req: Request): Promise<Response> {
       ON CONFLICT (channel_id) DO UPDATE SET who = EXCLUDED.who, updated_at = NOW()
     `
     return json({ ok: true, who })
+  }
+
+  // Вернуть в работу: сейлз решил, что агент ошибся с «не клиент»
+  if (action === 'reopen') {
+    await sql`
+      UPDATE sales_dialog_state SET who = NULL, updated_at = NOW() WHERE channel_id = ${channelId}
+    `
+    return json({ ok: true })
+  }
+
+  // Черновик использован (вставлен в поле) или отклонён — убираем
+  if (action === 'draft-done') {
+    await sql`
+      UPDATE sales_dialog_state SET draft = NULL, draft_at = NULL, updated_at = NOW() WHERE channel_id = ${channelId}
+    `
+    return json({ ok: true })
   }
 
   return json({ error: 'unknown action' }, 400)

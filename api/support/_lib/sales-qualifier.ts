@@ -77,6 +77,21 @@ export async function ensureDialogSchema(sql: SQL): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  // Черновик агента (режим draft) — здесь же, чтобы полоса над диалогом
+  // показала его без раскопок в журнале
+  await sql`ALTER TABLE sales_dialog_state ADD COLUMN IF NOT EXISTS draft TEXT`
+  await sql`ALTER TABLE sales_dialog_state ADD COLUMN IF NOT EXISTS draft_at TIMESTAMPTZ`
+}
+
+/** Черновик ответа — в состояние диалога; сейлз увидит его в «Диалогах». */
+async function saveDraft(sql: SQL, orgId: string, channelId: string | null | undefined, text: string): Promise<void> {
+  if (!channelId) return
+  await ensureDialogSchema(sql)
+  await sql`
+    INSERT INTO sales_dialog_state (channel_id, org_id, draft, draft_at)
+    VALUES (${channelId}, ${orgId}, ${text}, NOW())
+    ON CONFLICT (channel_id) DO UPDATE SET draft = EXCLUDED.draft, draft_at = NOW(), updated_at = NOW()
+  `
 }
 
 /** Сколько фактов о заведении нужно, чтобы диалог стал обращением. */
@@ -398,6 +413,7 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
         status: ok ? 'sent' : 'error',
       })
     } else if (reply0 && mode === 'draft') {
+      await saveDraft(sql, orgId, channel?.id, reply0)
       await logAssistant(sql, orgId, {
         leadId: lead.id, accountId: lead.account_id, action: 'qualify_draft',
         channel: channel?.source || null, message: reply0, status: 'draft',
@@ -436,6 +452,7 @@ async function qualify(sql: SQL, orgId: string, input: QualifierInput): Promise<
   }
 
   if (mode === 'draft') {
+    await saveDraft(sql, orgId, channel?.id, reply)
     await logAssistant(sql, orgId, {
       leadId: lead.id, accountId: lead.account_id, action: 'qualify_draft',
       channel: channel?.source || null, message: reply, status: 'draft',
