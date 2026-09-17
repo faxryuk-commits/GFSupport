@@ -29,6 +29,13 @@ import { LeadCard, DealCard } from './BoardCards'
 /** ok: true — разговор был, false — не дозвонились, null — исход неизвестен. */
 interface LastCall { dir: 'in' | 'out'; ok: boolean | null; at: string }
 
+/** Последнее действие по карточке: заметка, сообщение, звонок, повторное обращение. */
+export interface LastAct {
+  kind: 'note' | 'message' | 'call' | 'repeat'
+  dir: 'in' | 'out' | null; channel: string | null
+  who: string | null; text: string; title?: string | null; at: string
+}
+
 export interface Lead {
   id: string; name: string; contact_name: string | null; phone: string | null
   market_id: string | null
@@ -41,6 +48,7 @@ export interface Lead {
   /** У клиента уже есть открытая сделка — её этап. */
   open_deal_stage?: string | null
   last_call: LastCall | null
+  last_act?: LastAct | null
 }
 
 export interface Deal {
@@ -57,6 +65,7 @@ export interface Deal {
   /** Срок возврата у причины отказа: есть — к клиенту ещё вернутся. */
   lost_return_days?: number | null
   last_call: LastCall | null
+  last_act?: LastAct | null
 }
 
 interface FunnelData {
@@ -127,28 +136,59 @@ export function SalesFunnelPage() {
   const [cErr, setCErr] = useState('')
   const [cDup, setCDup] = useState<{ id: string; title: string; stage?: string | null; owner?: string | null } | null>(null)
   const [cForce, setCForce] = useState(false)
-  const [owner, setOwner] = useState('')
-  const [q, setQ] = useState('')
-  const [src, setSrc] = useState('')
-  const [city, setCity] = useState('')
-  const [noStep, setNoStep] = useState(false)
-  const [overdue, setOverdue] = useState(false)
+  // Фильтры живут в адресе страницы. Раньше они жили только в памяти
+  // компонента: «Открыть страницей» из карточки, «назад», обновление —
+  // и всё выставленное пропадало. Адрес переживает всё это, а заодно
+  // фильтр можно отправить коллеге ссылкой
+  const init = useMemo(() => new URLSearchParams(window.location.search), [])
+  const initList = (k: string) => (init.get(k) || '').split(',').filter(Boolean)
+  const [owner, setOwner] = useState(init.get('owner') || '')
+  const [q, setQ] = useState(init.get('q') || '')
+  const [src, setSrc] = useState(init.get('src') || '')
+  const [city, setCity] = useState(init.get('city') || '')
+  const [noStep, setNoStep] = useState(init.get('nostep') === '1')
+  const [overdue, setOverdue] = useState(init.get('overdue') === '1')
   // Перенесено со страницы сделок: она дублировала воронку списком, а срез
   // по POS, сегменту и тарифу был только там
-  const [pos, setPos] = useState<string[]>([])
-  const [segment, setSegment] = useState<string[]>([])
-  const [tariff, setTariff] = useState<string[]>([])
-  const [opd, setOpd] = useState<string[]>([])
-  const [attention, setAttention] = useState(false)
+  const [pos, setPos] = useState<string[]>(initList('pos'))
+  const [segment, setSegment] = useState<string[]>(initList('segment'))
+  const [tariff, setTariff] = useState<string[]>(initList('tariff'))
+  const [opd, setOpd] = useState<string[]>(initList('opd'))
+  const [attention, setAttention] = useState(init.get('attention') === '1')
   // Период и по чему его считать — по созданию карточки или по её изменению
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [dateBy, setDateBy] = useState<'created' | 'updated'>('created')
+  const [from, setFrom] = useState(init.get('from') || '')
+  const [to, setTo] = useState(init.get('to') || '')
+  const [dateBy, setDateBy] = useState<'created' | 'updated'>(init.get('dateBy') === 'updated' ? 'updated' : 'created')
   // Этапы: ключи этапов сделок и колонки обращений (lead:new). На доске
   // остаются только выбранные колонки — пустые рамки ничего не говорят
-  const [stagesF, setStagesF] = useState<string[]>([])
-  const [openDeal, setOpenDeal] = useState<string | null>(null)
-  const [openLead, setOpenLead] = useState<string | null>(null)
+  const [stagesF, setStagesF] = useState<string[]>(initList('stage'))
+  // Открытая карточка тоже в адресе: обновил страницу — она на месте
+  const [openDeal, setOpenDeal] = useState<string | null>(init.get('deal'))
+  const [openLead, setOpenLead] = useState<string | null>(init.get('lead'))
+
+  useEffect(() => {
+    const p = new URLSearchParams()
+    if (owner) p.set('owner', owner)
+    if (q) p.set('q', q)
+    if (src) p.set('src', src)
+    if (city) p.set('city', city)
+    if (noStep) p.set('nostep', '1')
+    if (overdue) p.set('overdue', '1')
+    if (pos.length) p.set('pos', pos.join(','))
+    if (segment.length) p.set('segment', segment.join(','))
+    if (tariff.length) p.set('tariff', tariff.join(','))
+    if (opd.length) p.set('opd', opd.join(','))
+    if (attention) p.set('attention', '1')
+    if (from) p.set('from', from)
+    if (to) p.set('to', to)
+    if (dateBy === 'updated') p.set('dateBy', 'updated')
+    if (stagesF.length) p.set('stage', stagesF.join(','))
+    if (openDeal) p.set('deal', openDeal)
+    if (openLead) p.set('lead', openLead)
+    const qs = p.toString()
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ''}`
+    if (next !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, '', next)
+  }, [owner, q, src, city, noStep, overdue, pos, segment, tariff, opd, attention, from, to, dateBy, stagesF, openDeal, openLead])
   const [busy, setBusy] = useState<string | null>(null)
   const region = useRegion('funnel')
   // Валюта страны: у выбранного региона своя, у «всех регионов» — та, где
@@ -340,6 +380,31 @@ export function SalesFunnelPage() {
   const closedIn = (cl: { key: string; stage?: string; group?: string }) =>
     data.deals.filter(d => d.stage_key === (cl.stage || cl.key) && (
       !cl.group || (cl.group === 'return') === (d.lost_return_days != null)))
+  // Очередь карточек в порядке доски — для листания соседей из открытой
+  // карточки: колонки обращений, потом этапы, потом закрытые, внутри — как
+  // на экране. Фильтры уже применены, значит стрелки ходят по тому, что
+  // человек видит, а не по всей базе
+  const sequence: Array<{ kind: 'lead' | 'deal'; id: string; label: string }> = [
+    ...data.leadColumns.filter(col => !stagesF.length || stagesF.includes(`lead:${col.key}`))
+      .flatMap(col => leadsIn(col).map(l => ({ kind: 'lead' as const, id: l.id, label: col.label }))),
+    ...data.stages.filter(st => !stagesF.length || stagesF.includes(st.key))
+      .flatMap(st => dealsIn(st.key).map(d => ({ kind: 'deal' as const, id: d.id, label: st.label }))),
+    ...data.closed.filter(cl => !stagesF.length || stagesF.includes(cl.stage || cl.key))
+      .flatMap(cl => closedIn(cl).map(d => ({ kind: 'deal' as const, id: d.id, label: cl.label }))),
+  ]
+  const curIdx = sequence.findIndex(x => (openDeal && x.kind === 'deal' && x.id === openDeal)
+    || (openLead && x.kind === 'lead' && x.id === openLead))
+  const goTo = (i: number) => {
+    const x = sequence[i]
+    if (!x) return
+    if (x.kind === 'deal') { setOpenLead(null); setOpenDeal(x.id) }
+    else { setOpenDeal(null); setOpenLead(x.id) }
+  }
+  const nav = curIdx < 0 ? {} : {
+    onPrev: curIdx > 0 ? () => goTo(curIdx - 1) : undefined,
+    onNext: curIdx < sequence.length - 1 ? () => goTo(curIdx + 1) : undefined,
+    position: { index: curIdx, total: sequence.length, label: sequence[curIdx]?.label },
+  }
   const zoneCls = (active: boolean, tone: 'lead' | 'deal') =>
     active
       ? tone === 'lead' ? 'border-violet-400 ring-2 ring-violet-100' : 'border-blue-500 ring-2 ring-blue-100'
@@ -753,6 +818,7 @@ export function SalesFunnelPage() {
         onClose={() => { setOpenDeal(null); load() }}
         title="Сделка"
         fullLink={openDeal ? `/sales/deals/${openDeal}` : undefined}
+        {...nav}
       >
         {openDeal && <SalesDealPage dealId={openDeal} />}
       </Drawer>
@@ -762,6 +828,7 @@ export function SalesFunnelPage() {
         onClose={() => { setOpenLead(null); load() }}
         title="Обращение"
         fullLink={openLead ? `/sales/leads/${openLead}` : undefined}
+        {...nav}
       >
         {openLead && <SalesLeadPage leadId={openLead} />}
       </Drawer>

@@ -4,7 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost } from '@/shared/services/api.service'
 import { formatDateTimeShort, formatDateTimeWithTz, formatDayLabel, formatTimeHM } from '@/shared/lib/time'
 import { parsePhone } from '@/shared/lib/phone'
-import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText, Fold, MoreMenu } from './kit'
+import { Card, Chip, InlineField, OwnerPicker, Skeleton, leadStatus, slaTone, slaText, Fold, MoreMenu, CopyLink } from './kit'
 import { CallInsight } from './CallInsight'
 import { ContactsCard } from './ContactsCard'
 import { PlaceCard } from './PlaceCard'
@@ -377,6 +377,7 @@ export function SalesLeadPage({ leadId }: { leadId?: string }) {
             <Chip tone={slaTone(l.sla_due_at)}>{slaText(l.sla_due_at)}</Chip>
           )}
           <span className="flex items-center gap-1.5 text-[11.5px] text-gray-400 ml-auto whitespace-nowrap">
+            {!leadId && <CopyLink path={`/sales/leads/${l.id}`} />}
             <OwnerPicker
               owner={l.agent_name ? { name: l.agent_name } : null}
               team={data.team || []}

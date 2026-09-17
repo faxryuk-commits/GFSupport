@@ -7,7 +7,7 @@ import { formatDateTimeShort, toDateInput, fromDateInput } from '@/shared/lib/ti
 import { useSalesRefs, optionsFor } from './refs'
 import { MarketMoveStrip } from './MarketMove'
 import { REGION_NAMES } from './region'
-import { InlineField, OwnerPicker, Skeleton, Fold, MoreMenu, Chip, fmtDateTime } from './kit'
+import { InlineField, OwnerPicker, Skeleton, Fold, MoreMenu, Chip, fmtDateTime, CopyLink } from './kit'
 import { QuoteBuilder } from './QuoteBuilder'
 import { EditQuoteModal } from './EditQuoteModal'
 import { BookMeetingModal } from './BookMeetingModal'
@@ -420,6 +420,10 @@ export function SalesDealPage({ dealId }: { dealId?: string } = {}) {
             return <Chip tone={n > 14 ? 'red' : n > 3 ? 'amber' : 'gray'}>{n} дн на этапе</Chip>
           })()}
           <span className="flex items-center gap-1.5 text-[11.5px] text-gray-400 ml-auto whitespace-nowrap">
+            {/* На отдельной странице ссылку взять неоткуда, кроме адресной
+                строки; в панели она есть в шапке — здесь дублируем только
+                когда шапки панели нет */}
+            {!dealId && <CopyLink path={`/sales/deals/${id}`} />}
             <OwnerPicker owner={data.owner || null} team={data.team || []}
               onPick={agentId => changeOwner(agentId)} busy={busy} />
             <span>·</span>

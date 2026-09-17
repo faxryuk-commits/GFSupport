@@ -560,6 +560,73 @@ async function handlerInner(req: Request): Promise<Response> {
   for (const l of leadRows as any[]) l.last_call = callByLead.get(l.id) || null
   for (const d of dealRows as any[]) d.last_call = callByAccount.get(d.account_id) || null
 
+  // Последнее действие по карточке — «что с ним было в последний раз»:
+  // заметка, сообщение, звонок, повторное обращение. На доске это шестая
+  // строка карточки, полный текст — по наведению. Три источника: журнал
+  // сделки (заметки и переписка), касания клиента (звонки АТС со сводкой
+  // разговора, системные заметки) и касания обращения. Берём самое свежее.
+  const dealIds = (dealRows as any[]).map(d => d.id)
+  const actByDeal = new Map<string, any>()
+  const actByAccount = new Map<string, any>()
+  const actByLead = new Map<string, any>()
+  if (dealIds.length || accountIds.length || leadIds.length) {
+    const [byDeal, byAccAct, byAccTp, byLeadTp] = await sql.transaction([
+      sql`
+        SELECT DISTINCT ON (ac.deal_id) ac.deal_id AS id, ac.type AS kind, ac.direction AS dir,
+               ac.channel, ac.text, ac.sender_name, ag.name AS agent_name, ac.happened_at AS at
+        FROM sales_activities ac LEFT JOIN support_agents ag ON ag.id = ac.agent_id
+        WHERE ac.org_id = ${orgId} AND ac.deal_id = ANY(${dealIds})
+        ORDER BY ac.deal_id, ac.happened_at DESC
+      `,
+      sql`
+        SELECT DISTINCT ON (ac.account_id) ac.account_id AS id, ac.type AS kind, ac.direction AS dir,
+               ac.channel, ac.text, ac.sender_name, ag.name AS agent_name, ac.happened_at AS at
+        FROM sales_activities ac LEFT JOIN support_agents ag ON ag.id = ac.agent_id
+        WHERE ac.org_id = ${orgId} AND ac.deal_id IS NULL AND ac.account_id = ANY(${accountIds})
+        ORDER BY ac.account_id, ac.happened_at DESC
+      `,
+      sql`
+        SELECT DISTINCT ON (t.account_id) t.account_id AS id, t.kind, t.channel, t.title, t.detail,
+               d.summary, d.outcome, t.happened_at AS at
+        FROM sales_touchpoints t
+        LEFT JOIN sales_call_digests d ON d.call_uuid = t.identity
+        WHERE t.org_id = ${orgId} AND t.account_id = ANY(${accountIds})
+          AND t.kind IN ('call', 'repeat', 'note') AND COALESCE(t.channel, '') <> 'system'
+        ORDER BY t.account_id, t.happened_at DESC
+      `,
+      sql`
+        SELECT DISTINCT ON (t.lead_id) t.lead_id AS id, t.kind, t.channel, t.title, t.detail,
+               d.summary, d.outcome, t.happened_at AS at
+        FROM sales_touchpoints t
+        LEFT JOIN sales_call_digests d ON d.call_uuid = t.identity
+        WHERE t.org_id = ${orgId} AND t.lead_id = ANY(${leadIds})
+          AND t.kind IN ('call', 'repeat', 'note') AND COALESCE(t.channel, '') <> 'system'
+        ORDER BY t.lead_id, t.happened_at DESC
+      `,
+    ]).catch(() => [[], [], [], []]) as any[]
+    const fromAct = (r: any) => ({
+      kind: r.kind === 'message' ? 'message' : r.kind === 'call' ? 'call' : 'note',
+      dir: r.dir || null, channel: r.channel || null,
+      who: r.dir === 'in' ? (r.sender_name || 'клиент') : (r.agent_name || null),
+      text: r.text || '', at: r.at,
+    })
+    const fromTp = (r: any) => ({
+      kind: r.kind === 'call' ? 'call' : r.kind === 'repeat' ? 'repeat' : 'note',
+      dir: /входящ/i.test(String(r.title || '')) ? 'in' : 'out', channel: r.channel || null,
+      who: r.kind === 'call' ? 'АТС' : null,
+      // У звонка есть сводка разговора — она ценнее «84 сек»
+      text: r.summary || r.detail || String(r.title || '').split('·').slice(1).join('·').trim() || String(r.title || ''),
+      title: r.title || null, at: r.at,
+    })
+    const newer = (a: any, b: any) => !a ? b : !b ? a : (new Date(a.at).getTime() >= new Date(b.at).getTime() ? a : b)
+    for (const r of byDeal) actByDeal.set(r.id, fromAct(r))
+    for (const r of byAccAct) actByAccount.set(r.id, fromAct(r))
+    for (const r of byAccTp) actByAccount.set(r.id, newer(actByAccount.get(r.id), fromTp(r)))
+    for (const r of byLeadTp) actByLead.set(r.id, fromTp(r))
+  }
+  for (const l of leadRows as any[]) l.last_act = actByLead.get(l.id) || null
+  for (const d of dealRows as any[]) d.last_act = newer2(actByDeal.get(d.id), actByAccount.get(d.account_id))
+
   return json({
     // Колонки входа описываем здесь: у обращений нет справочника этапов, их
     // «этапы» — это статусы, и правила у них другие
@@ -593,6 +660,9 @@ async function handlerInner(req: Request): Promise<Response> {
   })
 }
 
+
+const newer2 = (a: any, b: any) =>
+  !a ? (b || null) : !b ? a : (new Date(a.at).getTime() >= new Date(b.at).getTime() ? a : b)
 
 /**
  * Ловушка ошибок. Раньше любой невыловленный сбой превращался в опаковый

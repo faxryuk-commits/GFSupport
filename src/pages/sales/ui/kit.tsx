@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { ReactNode } from 'react'
+import type { ReactNode, MouseEvent as ReactMouseEvent } from 'react'
 import { formatDateTimeShort, formatDateDMY, toDateInput, fromDateInput } from '@/shared/lib/time'
 
 /** Общие мелочи страниц продаж: одни и те же чипы, карточки и форматы. */
@@ -830,26 +830,108 @@ export const BoardSkeleton = () => (
  *
  * Esc закрывает, клик по затемнению — тоже, адрес не меняется.
  */
-export const Drawer = ({ open, onClose, title, fullLink, children }: {
+/**
+ * Ссылка на карточку — поделиться. Наведение показывает полный адрес,
+ * нажатие копирует его в буфер: «скинь мне сделку» перестаёт быть
+ * «открой, скопируй адрес из строки браузера, вставь».
+ */
+export const CopyLink = ({ path, className = '' }: { path: string; className?: string }) => {
+  const [state, setState] = useState<'idle' | 'done' | 'fail'>('idle')
+  const url = `${window.location.origin}${path}`
+  const copy = async (e: ReactMouseEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(url)
+      setState('done')
+    } catch { setState('fail') }
+    setTimeout(() => setState('idle'), 1600)
+  }
+  return (
+    <span className={`relative group inline-flex ${className}`}>
+      <button type="button" onClick={copy} aria-label="Скопировать ссылку на карточку"
+        className={`inline-flex items-center gap-1 text-[12px] px-2 py-1 rounded-lg border transition-colors ${
+          state === 'done' ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
+          : state === 'fail' ? 'border-red-300 text-red-600'
+          : 'border-gray-200 text-gray-500 hover:border-blue-400 hover:text-blue-600'}`}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        </svg>
+        {state === 'done' ? 'Скопировано' : state === 'fail' ? 'Не вышло' : 'Ссылка'}
+      </button>
+      {/* Полный адрес — по наведению, чтобы было видно, что именно уйдёт */}
+      <span className="pointer-events-none absolute right-0 top-full mt-1 z-50 hidden group-hover:block
+                       whitespace-nowrap rounded-md bg-gray-900 text-white text-[11px] px-2 py-1 shadow-lg">
+        {url}
+      </span>
+    </span>
+  )
+}
+
+/** Где открытая карточка стоит в очереди доски: «3 из 26 · Квалифицирован». */
+export interface DrawerPosition { index: number; total: number; label?: string | null }
+
+export const Drawer = ({ open, onClose, title, fullLink, onPrev, onNext, position, children }: {
   open: boolean
   onClose: () => void
   title?: string
   fullLink?: string
+  /** Соседняя карточка по очереди доски; нет соседа — кнопки не появляются. */
+  onPrev?: () => void
+  onNext?: () => void
+  position?: DrawerPosition | null
   children: ReactNode
 }) => {
+  // Фантомные стрелки: живут по краям панели и проявляются, когда курсор
+  // подходит к краю. Всегда видимые стрелки отнимали бы место у карточки,
+  // а листать соседей нужно не каждый раз
+  const [edge, setEdge] = useState<'left' | 'right' | null>(null)
+  const asideRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!open) return
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', esc)
-    return () => document.removeEventListener('keydown', esc)
-  }, [open, onClose])
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      const el = e.target as HTMLElement | null
+      const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
+      if (typing) return
+      if (e.key === 'ArrowLeft' && onPrev) { e.preventDefault(); onPrev() }
+      if (e.key === 'ArrowRight' && onNext) { e.preventDefault(); onNext() }
+    }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [open, onClose, onPrev, onNext])
 
   if (!open) return null
+
+  const track = (e: ReactMouseEvent) => {
+    const r = asideRef.current?.getBoundingClientRect()
+    if (!r) return
+    const x = e.clientX - r.left
+    setEdge(x < 96 ? 'left' : r.width - x < 96 ? 'right' : null)
+  }
+
+  const arrow = (side: 'left' | 'right', fn?: () => void) => fn && (
+    <button type="button" onClick={fn} aria-label={side === 'left' ? 'Предыдущая карточка (←)' : 'Следующая карточка (→)'}
+      title={side === 'left' ? 'Предыдущая карточка · ←' : 'Следующая карточка · →'}
+      className={`absolute top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full grid place-items-center
+                  bg-white/95 border border-gray-200 shadow-lg text-gray-600 hover:text-blue-600 hover:border-blue-400
+                  transition-opacity duration-150 ${side === 'left' ? 'left-3' : 'right-3'} ${edge === side ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+        strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        {side === 'left' ? <path d="M15 18l-6-6 6-6" /> : <path d="M9 18l6-6-6-6" />}
+      </svg>
+    </button>
+  )
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-gray-900/30" onClick={onClose} />
       <aside
+        ref={asideRef}
+        onMouseMove={track}
+        onMouseLeave={() => setEdge(null)}
         // Ширина под две полноценные колонки: лента справа — половина
         // карточки, а не узкий столбец. 880 хватало только левой
         className="relative h-full w-full max-w-[1150px] bg-[#f5f7fa] shadow-2xl flex flex-col
@@ -857,8 +939,16 @@ export const Drawer = ({ open, onClose, title, fullLink, children }: {
         style={{ animationName: 'none' }}
       >
         <header className="flex-none flex items-center justify-between gap-3 px-4 py-2.5 bg-white border-b border-gray-200">
-          <span className="text-[12.5px] text-gray-500 truncate">{title || 'Карточка'}</span>
+          <span className="text-[12.5px] text-gray-500 truncate">
+            {title || 'Карточка'}
+            {position && position.total > 1 && (
+              <span className="ml-2 text-gray-400 tabular-nums">
+                {position.index + 1} из {position.total}{position.label ? ` · ${position.label}` : ''}
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-2">
+            {fullLink && <CopyLink path={fullLink} />}
             {fullLink && (
               <a href={fullLink} className="text-[12px] text-gray-500 hover:text-blue-600">
                 Открыть страницей
@@ -870,6 +960,8 @@ export const Drawer = ({ open, onClose, title, fullLink, children }: {
             </button>
           </div>
         </header>
+        {arrow('left', onPrev)}
+        {arrow('right', onNext)}
         {/* Скроллится только эта область: внутренняя страница своей прокрутки
             не заводит, иначе получаются два ползунка друг в друге */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">{children}</div>

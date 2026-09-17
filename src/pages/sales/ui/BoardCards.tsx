@@ -1,8 +1,8 @@
-import type { DragEvent } from 'react'
+import { useState, type DragEvent } from 'react'
 import { CallPhone } from '@/shared/ui'
 import { Chip, fmtDateTime, money, slaText, days, MarketFlag } from './kit'
 import { parsePhone } from '@/shared/lib/phone'
-import type { Lead, Deal } from './SalesFunnelPage'
+import type { Lead, Deal, LastAct } from './SalesFunnelPage'
 
 /**
  * Карточки на доске: одна сетка для обращения и сделки.
@@ -60,8 +60,58 @@ function CallBtn({ phone, market, leadId }: { phone: string | null; market?: str
   )
 }
 
-const CARD = 'bg-white border border-gray-200 border-l-[3px] rounded-lg px-2.5 py-2 h-[128px] flex flex-col ' +
+const CARD = 'bg-white border border-gray-200 border-l-[3px] rounded-lg px-2.5 py-2 h-[146px] flex flex-col ' +
   'cursor-grab active:cursor-grabbing hover:shadow-md transition-all'
+
+const ACT_ICON: Record<LastAct['kind'], string> = { note: '📝', message: '💬', call: '📞', repeat: '🔁' }
+const ACT_LABEL: Record<LastAct['kind'], string> = {
+  note: 'заметка', message: 'сообщение', call: 'звонок', repeat: 'повторное обращение',
+}
+
+/** «5 мин», «3 ч», «2 дн» — сколько прошло с действия. */
+function since(iso: string): string {
+  const ts = iso.includes('Z') || iso.includes('+') ? iso : `${iso}Z`
+  const m = Math.max(0, Math.floor((Date.now() - new Date(ts).getTime()) / 60000))
+  if (m < 60) return `${m} мин`
+  if (m < 60 * 24) return `${Math.floor(m / 60)} ч`
+  return `${Math.floor(m / 1440)} дн`
+}
+
+/**
+ * Шестая строка карточки — последнее действие: что с этим человеком было
+ * в последний раз и как давно. В строку влезает начало, по наведению
+ * раскрывается превью целиком: кто, когда, полный текст. Превью висит
+ * поверх соседних карточек, поэтому отрисовано абсолютно и вне потока.
+ */
+function LastActLine({ act }: { act: LastAct | null | undefined }) {
+  const [open, setOpen] = useState(false)
+  if (!act) return <div className="mt-0.5 text-[11px] text-gray-300 truncate">действий пока не было</div>
+  const who = act.dir === 'in' ? (act.who || 'клиент') : (act.who || 'мы')
+  const text = String(act.text || '').replace(/\s+/g, ' ').trim()
+  const arrow = act.kind === 'message' || act.kind === 'call' ? (act.dir === 'in' ? '↓ ' : '↑ ') : ''
+  return (
+    <div className="relative mt-0.5" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <div className="text-[11px] text-gray-500 truncate">
+        <span className="text-gray-400">{ACT_ICON[act.kind]} {since(act.at)} · </span>
+        <span className="text-gray-700">{arrow}{text || ACT_LABEL[act.kind]}</span>
+      </div>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-[300px] max-w-[70vw] rounded-lg border border-gray-200
+                        bg-white shadow-xl px-3 py-2.5 text-[11.5px] leading-snug cursor-default"
+             onMouseDown={e => e.stopPropagation()}>
+          <div className="flex items-baseline justify-between gap-2 text-[10.5px] text-gray-400">
+            <span>{ACT_ICON[act.kind]} {ACT_LABEL[act.kind]}{act.channel && act.channel !== 'phone' ? ` · ${act.channel}` : ''}
+              {act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''}</span>
+            <span className="tabular-nums flex-none">{fmtDateTime(act.at)}</span>
+          </div>
+          <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[180px] overflow-y-auto">
+            <span className="font-medium text-gray-900">{who}: </span>{text || '—'}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface DragProps {
   dragging: boolean
@@ -136,6 +186,7 @@ export function LeadCard({
         {l.phone ? <span className="tabular-nums text-gray-700">{phone.valid ? phone.pretty : l.phone}</span> : <span className="text-gray-300">без телефона</span>}
         {l.text ? <span className="text-gray-400"> · «{String(l.text).replace(/\s+/g, ' ')}»</span> : null}
       </div>
+      <LastActLine act={l.last_act} />
       <div className="mt-auto flex items-center justify-between gap-2">
         <Owner name={l.agent_name} />
         <span className="flex items-center gap-1 flex-none">
@@ -216,6 +267,7 @@ export function DealCard({
         {d.phone ? <span className="tabular-nums text-gray-700">{parsePhone(d.phone, d.market_id).valid ? parsePhone(d.phone, d.market_id).pretty : d.phone}</span> : null}
         {!contact && !d.phone ? <span className="text-gray-300">контакт не указан</span> : null}
       </div>
+      <LastActLine act={d.last_act} />
       <div className="mt-auto flex items-center justify-between gap-2">
         <Owner name={d.owner_name} />
         <span className="flex items-center gap-1 flex-none">
