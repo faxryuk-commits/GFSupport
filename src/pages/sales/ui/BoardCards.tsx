@@ -160,8 +160,8 @@ function HoverPanel({ pos, onEnter, onLeave, title, where, rows, act }: {
         {act ? (
           <>
             <div className="flex justify-between gap-2 text-[10.5px] text-gray-400">
-              <span>{ACT_ICON[act.kind]} {ACT_LABEL[act.kind]}{act.channel && act.channel !== 'phone' ? ` · ${act.channel}` : ''}
-                {act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''} · {who}</span>
+              <span className="truncate">{ACT_ICON[act.kind]} {ACT_LABEL[act.kind]}{act.channel && act.channel !== 'phone' ? ` · ${act.channel}` : ''}
+                {(act.kind === 'message' || act.kind === 'call') && act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''} · {who}</span>
               <span className="tabular-nums flex-none">{since(act.at)} назад · {fmtDateTime(act.at)}</span>
             </div>
             <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">{text || '—'}</div>
@@ -221,7 +221,8 @@ export function LeadCard({
   const rows: Row[] = [
     ['Контакт', [l.contact_name, phone.valid ? phone.pretty : l.phone].filter(Boolean).join(' · ')],
     ['Бренд', brand],
-    ['Источник', [l.source, KIND_LABEL[l.lead_kind || ''] || null].filter(Boolean).join(' · ')],
+    ['Источник', [l.source, KIND_LABEL[l.lead_kind || ''] && !String(l.source || '').toLowerCase().includes(KIND_LABEL[l.lead_kind || ''].toLowerCase())
+      ? KIND_LABEL[l.lead_kind || ''] : null].filter(Boolean).join(' · ')],
     ['Город', l.city],
     ['Заявка', l.text ? `«${String(l.text).replace(/\s+/g, ' ').trim()}»` : null],
     ['Пришло', shortDate(l.created_at)],
