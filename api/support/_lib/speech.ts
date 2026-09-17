@@ -1,4 +1,5 @@
 import { getSQL, getOpenAIKey } from './db.js'
+import { scoreIcp } from './sales-icp.js'
 
 /**
  * Расшифровка звонков и разбор разговора.
@@ -182,11 +183,18 @@ export async function digestCall(orgId: string, transcript: string): Promise<Cal
           'восстанавливай смысл по контексту, но НЕ выдумывай фактов, которых не было.',
           'Верни JSON: {"summary":"1-2 предложения по-русски, что было в разговоре",',
           '"outcome":"дозвонились|не дозвонились|договорились|перезвонить|отказ|непонятно",',
-          '"next_step":"короткое действие или null","facts":{"city":null,"points":null,',
-          '"pos":null,"pain":null,"budget":null,"dm":null,"aggregators":null,"delivery_type":null}}',
+          '"next_step":"короткое действие или null","facts":{"city":null,"segment":null,"points":null,',
+          '"orders_per_day":null,"pos":null,"aggregators":null,"delivery_type":null,"pain":null,',
+          '"budget":null,"dm":null}}',
+          'Факты — только то, что клиент сказал сам, по-русски, коротко: city — город;',
+          'segment — тип заведения (ресторан, кафе, фастфуд, доставка, кондитерская, сеть...);',
+          'points — число точек или филиалов (цифрой); orders_per_day — заказов в день (как сказал: «15-20», «больше 100»);',
+          'pos — НАЗВАНИЕ кассовой системы (iiko, RKeeper, Jowi, Poster, Klop...), никогда не число;',
+          'delivery_type — своя доставка, курьеры агрегаторов, самовывоз; pain — что болит у клиента одной фразой.',
           'Поле aggregators — с какими агрегаторами клиент уже работает (Express24, Uzum Tezkor,',
           'Yandex Eats, Wolt, Glovo). Если сказал, что не работает ни с кем — так и напиши «нет».',
-          'Если про агрегаторы не говорили — null, догадки недопустимы.',
+          'Если о чём-то не говорили — null, догадки недопустимы. Сомневаешься, к какому полю',
+          'относится сказанное, — оставь null.',
           'Если разговор пустой (гудки, «алло-алло», ошиблись номером) — summary честно об этом.',
         ].join(' ') },
         { role: 'user', content: transcript.slice(0, 4000) },
@@ -224,7 +232,163 @@ export async function ensureCallDigestSchema(sql: any) {
   // Что из разговора уехало в квалификацию. Нужно в ленте: сейлз должен
   // видеть не только сводку, но и что машина заполнила поле за него
   await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS filled jsonb`.catch(() => {})
+  // Когда факты разнесены по карточкам: старые сводки без отметки крон
+  // доприменит — до этого из разговора заполнялись только агрегаторы сделки
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ`.catch(() => {})
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS lead_id VARCHAR(60)`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS sales_call_digests_acc ON sales_call_digests(org_id, account_id)`.catch(() => {})
+}
+
+/** Поля квалификации, которые заполняются со слов клиента, с подписями для ленты. */
+export const CALL_FACT_FIELDS: Array<{ key: string; label: string }> = [
+  { key: 'city', label: 'город' },
+  { key: 'segment', label: 'тип заведения' },
+  { key: 'points', label: 'точек' },
+  { key: 'orders_per_day', label: 'заказов в день' },
+  { key: 'pos', label: 'касса' },
+  { key: 'aggregators', label: 'агрегаторы' },
+  { key: 'delivery_type', label: 'доставка' },
+  { key: 'pain', label: 'боль' },
+]
+
+/**
+ * Годится ли сказанное в поле. Модель однажды записала «3» в кассу и
+ * «null» строкой в город — форма поля проверяется до записи, как у
+ * агента-квалификатора в директе.
+ */
+export function plausibleFact(key: string, v: string): boolean {
+  const s = v.trim()
+  if (!s || s.length > 200 || /^(null|none|нет данных|не указано|неизвестно|n\/a|-)$/i.test(s)) return false
+  const hasDigit = /\d/.test(s)
+  const onlyDigits = /^[\d\s\-–—+.]+$/.test(s)
+  switch (key) {
+    case 'pos': return !onlyDigits
+    case 'points': return hasDigit && s.length <= 30
+    case 'orders_per_day': return hasDigit && s.length <= 40
+    case 'city': return !hasDigit && s.length >= 2 && s.length <= 60
+    case 'segment': return !hasDigit && s.length <= 60
+    default: return true
+  }
+}
+
+/** Первое число из «2-3 точки» — колонка сделки числовая, обращения — текст. */
+export const firstInt = (v: string): number | null => {
+  const m = String(v).match(/\d+/)
+  return m ? Number(m[0]) : null
+}
+
+/**
+ * Разнести факты разговора по карточкам: квалификация обращения и пустые
+ * поля открытых сделок клиента. Заполняется только пустое — сказанное
+ * человеком руками важнее расшифровки. Возвращает подписи для ленты:
+ * сейлз должен видеть, что именно машина вписала за него.
+ */
+export async function applyCallFacts(
+  sql: any, orgId: string,
+  target: { leadId?: string | null; accountId?: string | null },
+  facts: Record<string, unknown>,
+): Promise<string[]> {
+  const said: Record<string, string> = {}
+  for (const f of CALL_FACT_FIELDS) {
+    const v = facts?.[f.key]
+    if (v === null || v === undefined) continue
+    const str = String(v).trim()
+    if (plausibleFact(f.key, str)) said[f.key] = str.slice(0, 200)
+  }
+  if (!Object.keys(said).length) return []
+
+  const filled: string[] = []
+  const note = (key: string, v: string) => {
+    const label = CALL_FACT_FIELDS.find(f => f.key === key)?.label || key
+    if (!filled.some(x => x.startsWith(label + ':'))) filled.push(`${label}: ${v}`)
+  }
+
+  // 1. Обращение: квалификация живёт в qual, город — колонкой. Карточка
+  //    показывает qual поверх raw (ответы формы), поэтому пустым считаем
+  //    поле, пустое в обоих слоях
+  if (target.leadId) {
+    const [lead] = await sql`
+      SELECT id, city, qual, raw, text, icp_score FROM sales_leads
+      WHERE id = ${target.leadId} AND org_id = ${orgId} LIMIT 1
+    ` as any[]
+    if (lead) {
+      const qual = (lead.qual && typeof lead.qual === 'object' ? lead.qual : {}) as Record<string, any>
+      const raw = (lead.raw && typeof lead.raw === 'object' ? lead.raw : {}) as Record<string, any>
+      const known = (k: string) => String(qual[k] ?? raw[k] ?? (k === 'city' ? lead.city : '') ?? '').trim()
+      const patch: Record<string, string> = {}
+      for (const [k, v] of Object.entries(said)) {
+        if (k === 'city') continue
+        if (!known(k) || !plausibleFact(k, known(k))) patch[k] = v
+      }
+      if (Object.keys(patch).length) {
+        await sql`
+          UPDATE sales_leads
+          SET qual = COALESCE(qual, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb, updated_at = NOW()
+          WHERE id = ${lead.id} AND org_id = ${orgId}
+        `
+        for (const [k, v] of Object.entries(patch)) note(k, v)
+      }
+      if (said.city && !String(lead.city || '').trim()) {
+        await sql`
+          UPDATE sales_leads SET city = ${said.city}, updated_at = NOW()
+          WHERE id = ${lead.id} AND org_id = ${orgId} AND COALESCE(city, '') = ''
+        `
+        note('city', said.city)
+      }
+      // Каждый факт пересчитывает балл — так же, как квалификация руками
+      if (Object.keys(patch).length || said.city) {
+        const merged = (k: string) => patch[k] || known(k) || null
+        const icp = scoreIcp({
+          pos: merged('pos'), points: merged('points'), ordersPerDay: merged('orders_per_day'),
+          aggregators: merged('aggregators'), deliveryType: merged('delivery_type'),
+          city: said.city || lead.city || null, text: lead.text,
+        })
+        await sql`
+          UPDATE sales_leads SET icp_score = ${icp.score}, icp_reasons = ${JSON.stringify(icp.reasons)}::jsonb
+          WHERE id = ${lead.id} AND org_id = ${orgId}
+        `.catch(() => {})
+      }
+    }
+  }
+
+  // 2. Открытые сделки клиента: те же поля колонками, точки — числом
+  if (target.accountId) {
+    const deals = await sql`
+      SELECT id, city, segment, points, orders_per_day, pos, aggregators, delivery_type, pain
+      FROM sales_deals
+      WHERE org_id = ${orgId} AND account_id = ${target.accountId}
+        AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
+    ` as any[]
+    for (const d of deals) {
+      const empty = (k: string) => d[k] === null || d[k] === undefined || String(d[k]).trim() === ''
+      const set = {
+        city: said.city && empty('city') ? said.city.slice(0, 100) : null,
+        segment: said.segment && empty('segment') ? said.segment.slice(0, 255) : null,
+        points: said.points && empty('points') ? firstInt(said.points) : null,
+        orders_per_day: said.orders_per_day && empty('orders_per_day') ? said.orders_per_day.slice(0, 255) : null,
+        pos: said.pos && empty('pos') ? said.pos.slice(0, 100) : null,
+        aggregators: said.aggregators && empty('aggregators') ? said.aggregators.slice(0, 255) : null,
+        delivery_type: said.delivery_type && empty('delivery_type') ? said.delivery_type.slice(0, 255) : null,
+        pain: said.pain && empty('pain') ? said.pain : null,
+      }
+      if (!Object.values(set).some(v => v !== null)) continue
+      await sql`
+        UPDATE sales_deals SET
+          city = COALESCE(${set.city}, city),
+          segment = COALESCE(${set.segment}, segment),
+          points = COALESCE(${set.points}, points),
+          orders_per_day = COALESCE(${set.orders_per_day}, orders_per_day),
+          pos = COALESCE(${set.pos}, pos),
+          aggregators = COALESCE(${set.aggregators}, aggregators),
+          delivery_type = COALESCE(${set.delivery_type}, delivery_type),
+          pain = COALESCE(${set.pain}, pain),
+          updated_at = NOW()
+        WHERE id = ${d.id} AND org_id = ${orgId}
+      `
+      for (const [k, v] of Object.entries(set)) if (v !== null) note(k, String(said[k]))
+    }
+  }
+  return filled
 }
 
 export function hasSpeechKey(): boolean {
