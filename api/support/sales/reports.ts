@@ -187,34 +187,50 @@ export default async function handler(req: Request): Promise<Response> {
   // касания (АТС не знает наших id), у смен этапов — именем в changed_by, у
   // остального — честным agent_id. Поэтому сводим по имени.
   if (url.searchParams.get('action') === 'activity') {
-    const [agents, callRows, stages, notes, presence, leadsTaken, tasksDone, dealsNew, feed] = await Promise.all([
+    // Регион. Действие относится к региону по своему объекту — сделке,
+    // обращению, клиенту; у действия без объекта (звонок на незнакомый номер,
+    // присутствие в системе) регион берётся по сотруднику. Раньше срез не
+    // применялся вовсе: «Азербайджан» показывал всю компанию
+    const [agents, agentMarkets, callRows, stages, notes, presence, leadsTaken, tasksDone, dealsNew, feed] = await Promise.all([
       sql`
         SELECT id, name, role, department, pbx_ext FROM support_agents
         WHERE org_id = ${orgId} AND is_active = true AND merged_into IS NULL
       `,
       sql`
-        SELECT title, detail, happened_at FROM sales_touchpoints
-        WHERE org_id = ${orgId} AND kind = 'call'
-          -- разговоры с коллегами — не работа с клиентами
-          AND COALESCE(channel, 'phone') <> 'internal'
-          AND happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        SELECT am.agent_id, MIN(m.code) AS code
+        FROM support_agent_markets am JOIN support_markets m ON m.id = am.market_id
+        GROUP BY am.agent_id
       `,
       sql`
-        SELECT e.changed_by AS who, COUNT(*)::int AS moves,
+        SELECT t.title, t.detail, t.happened_at,
+               COALESCE(l.market_id, a.market_id) AS mkt
+        FROM sales_touchpoints t
+        LEFT JOIN sales_leads l ON l.id = t.lead_id
+        LEFT JOIN sales_accounts a ON a.id = t.account_id
+        WHERE t.org_id = ${orgId} AND t.kind = 'call'
+          -- разговоры с коллегами — не работа с клиентами
+          AND COALESCE(t.channel, 'phone') <> 'internal'
+          AND t.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+      `,
+      sql`
+        SELECT e.changed_by AS who, d.market_id AS mkt, COUNT(*)::int AS moves,
                COUNT(*) FILTER (WHERE sn.kind = 'won')::int AS won,
                COUNT(*) FILTER (WHERE sn.kind = 'lost')::int AS lost
         FROM sales_deal_events e
+        JOIN sales_deals d ON d.id = e.deal_id
         LEFT JOIN sales_stages sn ON sn.id = e.new_stage_id
         WHERE e.org_id = ${orgId}
           AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-        GROUP BY 1
+        GROUP BY 1, 2
       `,
       sql`
-        SELECT ag.name AS who, COUNT(*)::int AS n
+        SELECT ag.name AS who, COALESCE(d.market_id, ac.market_id) AS mkt, COUNT(*)::int AS n
         FROM sales_activities sa JOIN support_agents ag ON ag.id = sa.agent_id
+        LEFT JOIN sales_deals d ON d.id = sa.deal_id
+        LEFT JOIN sales_accounts ac ON ac.id = sa.account_id
         WHERE sa.org_id = ${orgId} AND sa.type <> 'message'
           AND sa.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-        GROUP BY 1
+        GROUP BY 1, 2
       `,
       // Время в системе: сердцебиение вкладки раз в 45 секунд. Складываем
       // промежутки между соседними ударами и рвём сессию, если пауза больше
@@ -244,32 +260,38 @@ export default async function handler(req: Request): Promise<Response> {
         GROUP BY ag.name
       `,
       sql`
-        SELECT ag.name AS who, COUNT(*)::int AS n
+        SELECT ag.name AS who, l.market_id AS mkt, COUNT(*)::int AS n
         FROM sales_leads l JOIN support_agents ag ON ag.id = l.assigned_agent_id
         WHERE l.org_id = ${orgId}
           AND l.assigned_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-        GROUP BY 1
+        GROUP BY 1, 2
       `,
       sql`
-        SELECT ag.name AS who, COUNT(*)::int AS n
+        SELECT ag.name AS who, COALESCE(d.market_id, l.market_id, ac.market_id) AS mkt, COUNT(*)::int AS n
         FROM sales_tasks t JOIN support_agents ag ON ag.id = t.assignee_agent_id
+        LEFT JOIN sales_deals d ON d.id = t.deal_id
+        LEFT JOIN sales_leads l ON l.id = t.lead_id
+        LEFT JOIN sales_accounts ac ON ac.id = t.account_id
         WHERE t.org_id = ${orgId}
           AND t.done_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-        GROUP BY 1
+        GROUP BY 1, 2
       `,
       sql`
-        SELECT ag.name AS who, COUNT(*)::int AS n
+        SELECT ag.name AS who, d.market_id AS mkt, COUNT(*)::int AS n
         FROM sales_deals d JOIN support_agents ag ON ag.id = d.owner_agent_id
         WHERE d.org_id = ${orgId}
           AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-        GROUP BY 1
+        GROUP BY 1, 2
       `,
-      // Лента: одно действие — одна строка, с «до → после» там, где оно есть
+      // Лента: одно действие — одна строка, с «до → после» там, где оно есть.
+      // Без LIMIT: таблица «кто что делал» считает всё, и лента обязана
+      // сходиться с ней — за 30 дней 200 строк обрезали половину
       sql`
         SELECT * FROM (
           SELECT e.changed_at AS at, e.changed_by AS who, 'deal' AS obj,
                  COALESCE(a.name, d.title) AS about, 'Смена этапа' AS event,
-                 so.label AS before_val, sn.label AS after_val, d.id AS link
+                 so.label AS before_val, sn.label AS after_val, d.id AS link,
+                 d.market_id AS mkt
           FROM sales_deal_events e
           JOIN sales_deals d ON d.id = e.deal_id
           LEFT JOIN sales_accounts a ON a.id = d.account_id
@@ -284,7 +306,8 @@ export default async function handler(req: Request): Promise<Response> {
                  CASE sa.type WHEN 'note' THEN 'Примечание'
                               WHEN 'approval' THEN 'Решение по скидке'
                               ELSE sa.type END,
-                 NULL, LEFT(sa.text, 90), sa.deal_id
+                 NULL, LEFT(sa.text, 90), sa.deal_id,
+                 COALESCE(d2.market_id, ac.market_id)
           FROM sales_activities sa
           LEFT JOIN support_agents ag ON ag.id = sa.agent_id
           LEFT JOIN sales_accounts ac ON ac.id = sa.account_id
@@ -294,14 +317,18 @@ export default async function handler(req: Request): Promise<Response> {
           UNION ALL
           SELECT t.happened_at, NULL, 'call',
                  COALESCE(l.name, split_part(t.detail, '·', 1)),
-                 t.title, NULL, t.detail, t.lead_id
+                 t.title, NULL, t.detail, t.lead_id,
+                 COALESCE(l.market_id, ta.market_id)
           FROM sales_touchpoints t
           LEFT JOIN sales_leads l ON l.id = t.lead_id
+          LEFT JOIN sales_accounts ta ON ta.id = t.account_id
           WHERE t.org_id = ${orgId} AND t.kind = 'call'
+            AND COALESCE(t.channel, 'phone') <> 'internal'
             AND t.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
           UNION ALL
           SELECT tk.done_at, ag2.name, 'task', COALESCE(d3.title, l2.name, 'без карточки'),
-                 'Задача выполнена', tk.title, COALESCE(tk.done_result, 'готово'), tk.deal_id
+                 'Задача выполнена', tk.title, COALESCE(tk.done_result, 'готово'), tk.deal_id,
+                 COALESCE(d3.market_id, l2.market_id)
           FROM sales_tasks tk
           LEFT JOIN support_agents ag2 ON ag2.id = tk.assignee_agent_id
           LEFT JOIN sales_deals d3 ON d3.id = tk.deal_id
@@ -312,14 +339,29 @@ export default async function handler(req: Request): Promise<Response> {
           -- Взятые в работу обращения: в сводке они считались, а в ленте
           -- их не было — и «Лиды: 4» нельзя было развернуть в «какие»
           SELECT l3.assigned_at, ag3.name, 'lead', COALESCE(l3.contact_name, l3.name),
-                 'Взял в работу', NULL, NULL, l3.id
+                 'Взял в работу', NULL, NULL, l3.id, l3.market_id
           FROM sales_leads l3
           JOIN support_agents ag3 ON ag3.id = l3.assigned_agent_id
           WHERE l3.org_id = ${orgId} AND l3.assigned_at IS NOT NULL
             AND l3.assigned_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-        ) x ORDER BY at DESC LIMIT 200
+        ) x ORDER BY at DESC LIMIT 2000
       `,
     ]) as any[]
+
+    // Регион сотрудника — по привязке в «Команде»; у админов и непривязанных
+    // региона нет, их действия попадают в срез только через объект
+    const agentMkt = new Map<string, string>()
+    for (const m of agentMarkets as any[]) agentMkt.set(String(m.agent_id), String(m.code || '').toLowerCase())
+    const nameMkt = new Map<string, string>()
+    for (const a of agents as any[]) {
+      const code = agentMkt.get(String(a.id))
+      if (code) nameMkt.set(String(a.name), code)
+    }
+    const inRegion = (mkt: unknown, who: unknown): boolean => {
+      if (!market) return true
+      const m = String(mkt || '').toLowerCase() || nameMkt.get(String(who || '').trim()) || ''
+      return m === market
+    }
 
     // Имя сотрудника у звонка: третий сегмент detail пишет синк; у старых
     // касаний его нет — тогда добавочный из профиля, а мобильная нога уже
@@ -363,6 +405,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     for (const c of callRows as any[]) {
       const who = callerOf(c.detail)
+      if (!inRegion(c.mkt, who)) continue
       const r = rowFor(who)
       if (!r) continue
       const title = String(c.title || '')
@@ -375,17 +418,19 @@ export default async function handler(req: Request): Promise<Response> {
     // в таблицу людей не попадают: это не работа сотрудника
     const isHuman = (n: string) => (agents as any[]).some(a => a.name === n)
     for (const s of stages as any[]) {
-      if (!isHuman(s.who)) continue
+      if (!isHuman(s.who) || !inRegion(s.mkt, s.who)) continue
       const r = rowFor(s.who); if (!r) continue
       r.moves += s.moves; r.won += s.won; r.lost += s.lost
     }
-    for (const n of notes as any[]) { const r = rowFor(n.who); if (r) r.notes += n.n }
-    for (const l of leadsTaken as any[]) { const r = rowFor(l.who); if (r) r.leads += l.n }
-    for (const t of tasksDone as any[]) { const r = rowFor(t.who); if (r) r.tasks += t.n }
-    for (const d of dealsNew as any[]) { const r = rowFor(d.who); if (r) r.deals += d.n }
+    for (const n of notes as any[]) { if (!inRegion(n.mkt, n.who)) continue; const r = rowFor(n.who); if (r) r.notes += n.n }
+    for (const l of leadsTaken as any[]) { if (!inRegion(l.mkt, l.who)) continue; const r = rowFor(l.who); if (r) r.leads += l.n }
+    for (const t of tasksDone as any[]) { if (!inRegion(t.mkt, t.who)) continue; const r = rowFor(t.who); if (r) r.tasks += t.n }
+    for (const d of dealsNew as any[]) { if (!inRegion(d.mkt, d.who)) continue; const r = rowFor(d.who); if (r) r.deals += d.n }
     // Присутствие — у всех, кто заходил: человек мог быть в системе и не
-    // сделать ни одного действия, и это тоже факт для руководителя
+    // сделать ни одного действия, и это тоже факт для руководителя.
+    // Объекта у присутствия нет — только регион самого сотрудника
     for (const p of presence as any[]) {
+      if (!inRegion(null, p.who)) continue
       const r = rowFor(p.who); if (!r) continue
       r.presenceSec = Number(p.sec) || 0
       r.firstAt = p.first_at; r.lastAt = p.last_at
@@ -406,7 +451,11 @@ export default async function handler(req: Request): Promise<Response> {
       before: e.before_val,
       after: e.obj === 'call' ? null : e.after_val,
       link: e.link,
-    })).filter(e => e.who || e.obj !== 'call')
+      mkt: e.mkt,
+    }))
+      .filter(e => e.who || e.obj !== 'call')
+      .filter(e => inRegion(e.mkt, e.who))
+      .map(({ mkt: _m, ...e }) => e)
 
     return json({
       period: { from, to, days },
