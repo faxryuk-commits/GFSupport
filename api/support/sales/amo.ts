@@ -117,6 +117,45 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   const url = new URL(req.url)
+
+  // Пробник журнала событий Amo: какие типы, сколько, как выглядят — по два
+  // сырых примера на тип. Нужен, чтобы построить перенос действий команды
+  // (этапы, задачи, сообщения, звонки) в нашу «Активность» по фактам, а не
+  // по документации. Только чтение, только администратору
+  if (url.searchParams.get('action') === 'events-probe') {
+    if (!(ctx.isOrgAdmin || ctx.isGlobalAdmin || ctx.isSuperAdmin)) return json({ error: 'только администратору' }, 403)
+    const domain = process.env.AMO_DOMAIN
+    const token = process.env.AMO_TOKEN
+    if (!domain || !token) return json({ error: 'Доступ к Amo не настроен' }, 400)
+    const from = Math.floor(new Date(url.searchParams.get('from') || '2026-09-01T00:00:00+05:00').getTime() / 1000)
+    const pages = Math.min(10, Math.max(1, parseInt(url.searchParams.get('pages') || '3', 10) || 3))
+    const byType: Record<string, { n: number; samples: any[]; users: Record<string, number> }> = {}
+    let fetched = 0
+    let lastPage = 0
+    try {
+      for (let page = 1; page <= pages; page++) {
+        const data = await amoGet({ domain, token },
+          `/events?filter[created_at][from]=${from}&limit=100&page=${page}`)
+        const events: any[] = data?._embedded?.events || []
+        if (!events.length) break
+        lastPage = page
+        for (const e of events) {
+          fetched++
+          const t = String(e.type || '?')
+          byType[t] = byType[t] || { n: 0, samples: [], users: {} }
+          byType[t].n++
+          const u = String(e.created_by ?? '0')
+          byType[t].users[u] = (byType[t].users[u] || 0) + 1
+          if (byType[t].samples.length < 2) byType[t].samples.push(e)
+        }
+        if (!data?._links?.next) break
+      }
+    } catch (e: any) {
+      return json({ error: String(e?.message || e) }, 502)
+    }
+    return json({ from, fetched, lastPage, byType })
+  }
+
   if (url.searchParams.get('action') === 'reconcile') {
     const domain = process.env.AMO_DOMAIN
     const token = process.env.AMO_TOKEN
