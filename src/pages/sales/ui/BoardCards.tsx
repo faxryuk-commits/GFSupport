@@ -144,6 +144,12 @@ function LastActLine({ act }: { act: LastAct | null | undefined }) {
   )
 }
 
+interface DragProps {
+  dragging: boolean
+  onDragStart: (e: DragEvent) => void
+  onDragEnd: () => void
+}
+
 export function LeadCard({
   l, showFlag, busy, dragging, onDragStart, onDragEnd, onOpen, onTake, onReturn,
 }: DragProps & {
