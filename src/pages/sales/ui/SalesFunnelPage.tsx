@@ -594,6 +594,7 @@ export function SalesFunnelPage() {
                       onOpen={() => setOpenLead(l.id)}
                       onTake={() => convert(l.id, 'qualified')}
                       onReturn={() => moveLead(l.id, 'attempting')}
+                      where={col.label}
                     />
                   )
                 })}
@@ -652,6 +653,7 @@ export function SalesFunnelPage() {
                       onDragEnd={() => { setDrag(null); setOver(null) }}
                       onOpen={() => setOpenDeal(d.id)}
                       onPlanStep={() => planStep(d.id)}
+                      where={st.label}
                     />
                   )
                 })}

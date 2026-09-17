@@ -78,69 +78,98 @@ function since(iso: string): string {
   return `${Math.floor(m / 1440)} дн`
 }
 
-/**
- * Шестая строка карточки — последнее действие: что с этим человеком было
- * в последний раз и как давно. В строку влезает начало, по наведению
- * раскрывается превью целиком: кто, когда, полный текст.
- *
- * Превью рисуется порталом в body с фиксированными координатами: колонка
- * доски режет всё, что вылезает за её край (overflow), и превью в потоке
- * уходило под соседний этап. Живёт, пока курсор на строке или на самом
- * превью — с короткой отсрочкой на перелёт между ними, чтобы можно было
- * дочитать и выделить текст.
- */
+/** Шестая строка карточки — последнее действие и как давно. Целиком — в общей подсказке карточки. */
 function LastActLine({ act }: { act: LastAct | null | undefined }) {
-  const [pos, setPos] = useState<{ left: number; top: number; up: boolean } | null>(null)
-  const anchor = useRef<HTMLDivElement | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const show = () => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null }
-    const r = anchor.current?.getBoundingClientRect()
-    if (!r) return
-    const W = 320
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - W - 8))
-    // Снизу не помещается — раскрываем вверх
-    const up = window.innerHeight - r.bottom < 220
-    setPos({ left, top: up ? r.top - 4 : r.bottom + 4, up })
-  }
-  const hide = () => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setPos(null), 180)
-  }
-
-  if (!act) return <div className="mt-0.5 text-[11px] text-gray-300 truncate" title="">действий пока не было</div>
-  const who = act.dir === 'in' ? (act.who || 'клиент') : (act.who || 'мы')
+  if (!act) return <div className="mt-0.5 text-[11px] text-gray-300 truncate">действий пока не было</div>
   const text = String(act.text || '').replace(/\s+/g, ' ').trim()
   const arrow = act.kind === 'message' || act.kind === 'call' ? (act.dir === 'in' ? '↓ ' : '↑ ') : ''
   return (
-    // title="" — чтобы сюда не падала родная подсказка карточки: две
-    // подсказки друг на друге нечитаемы
-    <div ref={anchor} className="mt-0.5" title="" onMouseEnter={show} onMouseLeave={hide}>
-      <div className="text-[11px] text-gray-500 truncate">
-        <span className="text-gray-400">{ACT_ICON[act.kind]} {since(act.at)} · </span>
-        <span className="text-gray-700">{arrow}{text || ACT_LABEL[act.kind]}</span>
-      </div>
-      {pos && createPortal(
-        <div
-          onMouseEnter={show} onMouseLeave={hide}
-          onMouseDown={e => e.stopPropagation()}
-          style={{ position: 'fixed', left: pos.left, top: pos.top, width: 320,
-                   transform: pos.up ? 'translateY(-100%)' : undefined }}
-          className="z-[60] rounded-lg border border-gray-200 bg-white shadow-xl px-3 py-2.5 text-[11.5px] leading-snug cursor-default select-text"
-        >
-          <div className="flex items-baseline justify-between gap-2 text-[10.5px] text-gray-400">
-            <span>{ACT_ICON[act.kind]} {ACT_LABEL[act.kind]}{act.channel && act.channel !== 'phone' ? ` · ${act.channel}` : ''}
-              {act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''}</span>
-            <span className="tabular-nums flex-none">{fmtDateTime(act.at)}</span>
-          </div>
-          <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto">
-            <span className="font-medium text-gray-900">{who}: </span>{text || '—'}
-          </div>
-        </div>,
-        document.body,
-      )}
+    <div className="mt-0.5 text-[11px] text-gray-500 truncate">
+      <span className="text-gray-400">{ACT_ICON[act.kind]} {since(act.at)} · </span>
+      <span className="text-gray-700">{arrow}{text || ACT_LABEL[act.kind]}</span>
     </div>
+  )
+}
+
+type Row = [string, string | null | undefined]
+
+/**
+ * Единая подсказка карточки — вместо двух: системной (title) и превью
+ * последнего действия, которые ложились друг на друга. Открывается по
+ * наведению на карточку с задержкой, чтобы не мигать при пролёте мыши
+ * по колонке; рисуется порталом в body — колонка режет всё за своим
+ * краем; живёт, пока курсор на карточке или на самой панели, текст
+ * выделяется. Сверху — кто и где в воронке, дальше факты, внизу —
+ * последнее действие целиком.
+ */
+function useHoverPanel() {
+  const [pos, setPos] = useState<{ left: number; top: number; up: boolean } | null>(null)
+  const anchor = useRef<HTMLElement | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null } }
+  const place = () => {
+    const r = anchor.current?.getBoundingClientRect()
+    if (!r) return
+    const W = 340
+    // Справа от карточки, если есть место; иначе слева; по вертикали — от верха карточки
+    const right = r.right + 8
+    const left = right + W <= window.innerWidth - 8 ? right : Math.max(8, r.left - W - 8)
+    const up = window.innerHeight - r.top < 260
+    setPos({ left, top: up ? r.bottom : r.top, up })
+  }
+  const enter = () => { clear(); timer.current = setTimeout(place, 350) }
+  const stay = () => { clear() }
+  const leave = () => { clear(); timer.current = setTimeout(() => setPos(null), 160) }
+  const close = () => { clear(); setPos(null) }
+  return { pos, anchor, enter, stay, leave, close }
+}
+
+function HoverPanel({ pos, onEnter, onLeave, title, where, rows, act }: {
+  pos: { left: number; top: number; up: boolean } | null
+  onEnter: () => void; onLeave: () => void
+  title: string; where: string | null; rows: Row[]; act: LastAct | null | undefined
+}) {
+  if (!pos) return null
+  const filled = rows.filter(([, v]) => v)
+  const text = act ? String(act.text || '').replace(/\s+/g, ' ').trim() : ''
+  const who = act ? (act.dir === 'in' ? (act.who || 'клиент') : (act.who || 'мы')) : ''
+  return createPortal(
+    <div
+      onMouseEnter={onEnter} onMouseLeave={onLeave}
+      onMouseDown={e => e.stopPropagation()}
+      style={{ position: 'fixed', left: pos.left, top: pos.top, width: 340,
+               transform: pos.up ? 'translateY(-100%)' : undefined }}
+      className="z-[60] rounded-[10px] border border-gray-200 bg-white shadow-2xl text-[11.5px] leading-[1.4]
+                 overflow-hidden cursor-default select-text"
+    >
+      <div className="px-3 pt-2.5 pb-2 border-b border-gray-100">
+        <span className="text-[12.5px] font-semibold text-gray-900">{title}</span>
+        {where && <span className="text-gray-400"> · {where}</span>}
+      </div>
+      {filled.length > 0 && (
+        <div className="grid grid-cols-[78px_1fr] gap-x-2.5 gap-y-0.5 px-3 py-2 border-b border-gray-100">
+          {filled.map(([k, v]) => (
+            <span key={k} className="contents">
+              <span className="text-gray-400">{k}</span>
+              <span className="text-gray-800 break-words">{v}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="px-3 pt-2 pb-2.5 bg-gray-50/80">
+        {act ? (
+          <>
+            <div className="flex justify-between gap-2 text-[10.5px] text-gray-400">
+              <span>{ACT_ICON[act.kind]} {ACT_LABEL[act.kind]}{act.channel && act.channel !== 'phone' ? ` · ${act.channel}` : ''}
+                {act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''} · {who}</span>
+              <span className="tabular-nums flex-none">{since(act.at)} назад · {fmtDateTime(act.at)}</span>
+            </div>
+            <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">{text || '—'}</div>
+          </>
+        ) : <div className="text-gray-400">действий пока не было</div>}
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -151,11 +180,14 @@ interface DragProps {
 }
 
 export function LeadCard({
-  l, showFlag, busy, dragging, onDragStart, onDragEnd, onOpen, onTake, onReturn,
+  l, showFlag, busy, dragging, onDragStart, onDragEnd, onOpen, onTake, onReturn, where,
 }: DragProps & {
   l: Lead; showFlag: boolean; busy: boolean
   onOpen: () => void; onTake: () => void; onReturn: () => void
+  /** Колонка, в которой стоит карточка, — для шапки подсказки. */
+  where?: string | null
 }) {
+  const hp = useHoverPanel()
   const overdue = Boolean(l.sla_due_at && !l.first_touch_at && new Date(l.sla_due_at).getTime() < Date.now())
   const age = days(l.created_at)
 
@@ -186,13 +218,26 @@ export function LeadCard({
   const brand = l.contact_name && l.name !== l.contact_name && !isPseudo(l.name) ? l.name : null
   const phone = parsePhone(l.phone, l.market_id)
   const facts = [brand, l.source, l.city].filter(Boolean).join(' · ')
-  const hover = [phone.valid ? phone.pretty : l.phone, l.text ? `«${l.text}»` : '',
-    KIND_LABEL[l.lead_kind || ''] ? `тип: ${KIND_LABEL[l.lead_kind || '']}` : '',
-    `пришло ${shortDate(l.created_at)}`].filter(Boolean).join('\n')
+  const rows: Row[] = [
+    ['Контакт', [l.contact_name, phone.valid ? phone.pretty : l.phone].filter(Boolean).join(' · ')],
+    ['Бренд', brand],
+    ['Источник', [l.source, KIND_LABEL[l.lead_kind || ''] || null].filter(Boolean).join(' · ')],
+    ['Город', l.city],
+    ['Заявка', l.text ? `«${String(l.text).replace(/\s+/g, ' ').trim()}»` : null],
+    ['Пришло', shortDate(l.created_at)],
+    ['Касание', l.first_touch_at ? shortDate(l.first_touch_at) : (l.sla_due_at ? slaText(l.sla_due_at) : null)],
+    ['Звонок', l.last_call ? `${l.last_call.dir === 'in' ? '↓' : '↑'} ${shortDate(l.last_call.at)}${
+      l.last_call.ok === false ? ' · не дозвонились' : l.last_call.ok ? ' · разговор состоялся' : ''}` : null],
+    ['Ведёт', l.agent_name || 'ничей'],
+  ]
 
   return (
-    <article draggable onDragStart={onDragStart} onDragEnd={onDragEnd} title={hover}
+    <article draggable onDragStart={e => { hp.close(); onDragStart(e) }} onDragEnd={onDragEnd}
+      ref={el => { hp.anchor.current = el }}
+      onMouseEnter={hp.enter} onMouseLeave={hp.leave}
       className={`${CARD} ${overdue ? 'border-l-red-500' : 'border-l-violet-500'} ${dragging ? 'opacity-30' : ''}`}>
+      <HoverPanel pos={hp.pos} onEnter={hp.stay} onLeave={hp.leave}
+        title={title} where={where || null} rows={rows} act={l.last_act} />
       <div className="flex items-baseline justify-between gap-2">
         <button onClick={onOpen}
           className="text-[12px] font-semibold text-gray-900 hover:text-violet-700 text-left truncate min-w-[50%] flex-1">
@@ -241,11 +286,14 @@ export function LeadCard({
 }
 
 export function DealCard({
-  d, showFlag, busy, dragging, onDragStart, onDragEnd, onOpen, onPlanStep,
+  d, showFlag, busy, dragging, onDragStart, onDragEnd, onOpen, onPlanStep, where,
 }: DragProps & {
   d: Deal; showFlag: boolean; busy: boolean
   onOpen: () => void; onPlanStep: () => void
+  /** Этап, на котором стоит карточка, — для шапки подсказки. */
+  where?: string | null
 }) {
+  const hp = useHoverPanel()
   const age = days(d.stage_since)
   const stuck = Boolean(d.stalled_at) || age > 14
   const now = Date.now()
@@ -269,14 +317,28 @@ export function DealCard({
     d.monthly_amount ? `${money(d.monthly_amount, d.currency)}${d.tariff ? ` · ${d.tariff}` : ''}` : null,
     d.pos, d.points ? `${d.points} точ.` : null, d.orders_per_day ? `${d.orders_per_day} в день` : null, d.city,
   ].filter(Boolean).join(' · ')
-  const hover = [d.phone || '', facts, d.doc_opens ? `КП открыто ${d.doc_opens}×` : '',
-    d.last_call ? `звонок ${shortDate(d.last_call.at)}${d.last_call.ok === false ? ' · не дозвонились' : ''}` : '',
-    `на этапе с ${shortDate(d.stage_since)} · изменена ${shortDate(d.updated_at || d.stage_since)}`]
-    .filter(Boolean).join('\n')
+  const dPhone = parsePhone(d.phone, d.market_id)
+  const rows: Row[] = [
+    ['Контакт', [contact, d.phone ? (dPhone.valid ? dPhone.pretty : d.phone) : null].filter(Boolean).join(' · ')],
+    ['Сделка', [d.monthly_amount ? `${money(d.monthly_amount, d.currency)} в месяц` : null, d.tariff, d.pos,
+      d.points ? `${d.points} точ.` : null, d.orders_per_day ? `${d.orders_per_day} в день` : null, d.city]
+      .filter(Boolean).join(' · ') || 'сумма не указана'],
+    ['Шаг', d.next_step ? `${d.next_step}${d.next_step_at ? ` · ${shortDate(d.next_step_at)}` : ''}` : 'не назначен'],
+    ['Встреча', d.meeting_at ? shortDate(d.meeting_at) : null],
+    ['Этап', `с ${shortDate(d.stage_since)} · изменена ${shortDate(d.updated_at || d.stage_since)}`],
+    ['КП', d.doc_opens ? `открыто ${d.doc_opens}×` : null],
+    ['Звонок', d.last_call ? `${d.last_call.dir === 'in' ? '↓' : '↑'} ${shortDate(d.last_call.at)}${
+      d.last_call.ok === false ? ' · не дозвонились' : d.last_call.ok ? ' · разговор состоялся' : ''}` : null],
+    ['Ведёт', d.owner_name || 'ничей'],
+  ]
 
   return (
-    <article draggable onDragStart={onDragStart} onDragEnd={onDragEnd} title={hover}
+    <article draggable onDragStart={e => { hp.close(); onDragStart(e) }} onDragEnd={onDragEnd}
+      ref={el => { hp.anchor.current = el }}
+      onMouseEnter={hp.enter} onMouseLeave={hp.leave}
       className={`${CARD} ${stuck ? 'border-l-red-500' : 'border-l-blue-500'} ${dragging ? 'opacity-30' : ''}`}>
+      <HoverPanel pos={hp.pos} onEnter={hp.stay} onLeave={hp.leave}
+        title={title} where={where || null} rows={rows} act={d.last_act} />
       <div className="flex items-baseline justify-between gap-2">
         <button onClick={onOpen}
           className="text-[12px] font-semibold text-gray-900 hover:text-blue-600 text-left truncate min-w-[50%] flex-1">
