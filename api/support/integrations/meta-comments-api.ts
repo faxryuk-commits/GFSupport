@@ -83,8 +83,13 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'GET') return json({ error: 'method not allowed' }, 405)
 
   const view = url.searchParams.get('view') || 'open'
-  const platform = url.searchParams.get('platform') || ''
-  const market = url.searchParams.get('market') || ''
+  const platform = url.searchParams.get('platform') === 'all' ? '' : (url.searchParams.get('platform') || '')
+  // Регион — через общий резолвер, а не сырым параметром. Клиент дописывает
+  // ко всем запросам market=<id рынка поддержки> из глобального фильтра, а в
+  // комментариях лежит код страны (uz/kz): сравнение id с кодом молча
+  // отдавало пустой список — «Пусто.» при 31 без ответа (17.09.2026)
+  const { resolveRegionScoped } = await import('../_lib/sales-amo.js')
+  const market = await resolveRegionScoped(sql, orgId, url, ctx)
   const limit = Math.min(300, Math.max(1, parseInt(url.searchParams.get('limit') || '100')))
 
   const [items, stats] = await sql.transaction([

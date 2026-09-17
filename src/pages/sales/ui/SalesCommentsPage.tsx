@@ -107,7 +107,9 @@ export function SalesCommentsPage() {
 
   const load = useCallback(() => {
     const key = `${view}|${platform}|${region || ''}`
-    apiGet<Data>(`/integrations/meta-comments-api?view=${view}&platform=${platform}`, false)
+    // region= обязателен: без него сервис дописывает глобальный market=<id>,
+    // и раздел показывает не тот регион, что выбран в его собственной шапке
+    apiGet<Data>(`/integrations/meta-comments-api?view=${view}&platform=${platform}&region=${region || 'all'}`, false)
       .then(d => { setData(d); setLoadedKey(key); setError(null) })
       .catch(e => setError(e?.message || 'Не удалось загрузить комментарии'))
   }, [view, platform, region])
