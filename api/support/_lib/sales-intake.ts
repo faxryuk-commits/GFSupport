@@ -62,6 +62,8 @@ export interface IntakeResult {
   merged_account?: boolean
   /** Клиент уже в работе: обращение приклеено к его карточке, новой не заведено. */
   attached_to?: 'lead' | 'deal'
+  /** Проигранная сделка клиента возвращена в работу его же обращением. */
+  reopened?: boolean
   deal_id?: string
   icp?: number
   band?: string
@@ -140,7 +142,7 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
   if (!source) return { ok: false, error: `unknown source: ${sourceKey}` }
 
   const externalId = body.external_id ? String(body.external_id) : null
-  const name = String(body.name || body.contact_name || 'Без названия').slice(0, 255)
+  let name = String(body.name || body.contact_name || 'Без названия').slice(0, 255)
   const phone = body.phone ? String(body.phone) : null
   const phoneNorm = normPhone(phone)
 
@@ -163,6 +165,19 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
       ORDER BY created_at LIMIT 1
     `
     if (existing) {
+      // Обращение в отказе, а человек снова звонит или пишет: это не
+      // повторная доставка того же, а новое живое обращение того же человека —
+      // возвращаем карточку в разбор, историю не теряем
+      const liveAgain = ['form', 'message', 'comment', 'call']
+        .includes(String(body.lead_kind || kindBySource(sourceKey)))
+      if (liveAgain) {
+        await sql`
+          UPDATE sales_leads
+          SET status = 'new', archived_at = NULL, updated_at = NOW(),
+              sla_due_at = NOW() + (${FIRST_TOUCH_SLA_MIN} || ' minutes')::interval
+          WHERE id = ${existing.id} AND status = 'junk'
+        `
+      }
       // Лид приезжает почти пустым, а менеджер заполняет поля в Amo позже.
       // Поэтому при повторной доставке обновляем то, что могло уточниться, и
       // пересчитываем оценку — иначе в карточке навсегда остаётся первый снимок
@@ -249,6 +264,64 @@ export async function acceptLead(sql: SQL, orgId: string, body: IntakePayload): 
         AND status NOT IN ('junk', 'converted', 'lost')
       ORDER BY created_at DESC LIMIT 1
     ` as any[]
+
+    // Клиент вернулся после проигрыша. Живое действие человека (звонок,
+    // сообщение, форма) по номеру клиента, чью сделку недавно проиграли, —
+    // это не «Звонок 947001010» в «Новых» рядом с историей, а та же сделка,
+    // вернувшаяся на этап, с которого её теряли. 17.09.2026: сделку
+    // проиграли 16-го, назавтра клиент позвонил и «договорились
+    // протестировать» — а в системе появился безымянный дубль
+    const humanAct = ['form', 'message', 'comment', 'call']
+      .includes(String(body.lead_kind || kindBySource(sourceKey)))
+    if (!openDeal?.id && !liveLead?.id && humanAct) {
+      const [lostDeal] = await sql`
+        SELECT id, pipeline, lost_stage, stage_id, owner_agent_id FROM sales_deals
+        WHERE org_id = ${orgId} AND account_id = ${accountId}
+          AND lost_at IS NOT NULL AND won_at IS NULL AND archived_at IS NULL
+          AND lost_at > NOW() - INTERVAL '90 days'
+        ORDER BY lost_at DESC LIMIT 1
+      ` as any[]
+      if (lostDeal) {
+        // Этап возврата — тот, с которого потеряли; его нет — первый открытый
+        const [back] = await sql`
+          SELECT id, label FROM sales_stages
+          WHERE org_id = ${orgId} AND pipeline = ${lostDeal.pipeline} AND is_active = true AND kind = 'open'
+          ORDER BY (key = ${lostDeal.lost_stage || ''}) DESC, sort_order LIMIT 1
+        ` as any[]
+        if (back) {
+          const why = `клиент вернулся: ${source.label}`
+          await sql`
+            UPDATE sales_deals SET
+              stage_id = ${back.id}, stage_since = NOW(), stalled_at = NULL, updated_at = NOW(),
+              lost_at = NULL, lost_reason_id = NULL, lost_comment = NULL, reactivate_at = NULL,
+              owner_agent_id = COALESCE(owner_agent_id, ${body.owner_hint || null})
+            WHERE id = ${lostDeal.id}
+          `
+          await sql`
+            INSERT INTO sales_deal_events (org_id, deal_id, old_stage_id, new_stage_id, changed_by)
+            VALUES (${orgId}, ${lostDeal.id}, ${lostDeal.stage_id}, ${back.id}, ${why})
+          `
+          await sql`
+            INSERT INTO sales_touchpoints (id, org_id, account_id, deal_id, kind, channel, title, detail, identity, happened_at)
+            VALUES (${salesId('stp')}, ${orgId}, ${accountId}, ${lostDeal.id}, 'repeat', ${sourceKey},
+                    ${'Клиент вернулся: ' + name.slice(0, 200)},
+                    ${`сделка возвращена на этап «${back.label}»` + (body.text ? ` · ${String(body.text).slice(0, 800)}` : '')},
+                    ${externalId}, NOW())
+          `.catch(() => {})
+          return {
+            ok: true, account_id: accountId, deal_id: lostDeal.id,
+            attached_to: 'deal', merged_account: true, reopened: true,
+          }
+        }
+      }
+    }
+
+    // Знакомый клиент без живой сделки: карточка называется его именем,
+    // а не «Звонок 947001010» — в списке должно быть видно, кто вернулся
+    if (/^(Звонок|Входящий|Исходящий)\s/i.test(name)) {
+      const [acc] = await sql`SELECT name FROM sales_accounts WHERE id = ${accountId} LIMIT 1` as any[]
+      if (acc?.name && !/^(Заявка |Без названия)/i.test(acc.name)) name = String(acc.name).slice(0, 255)
+    }
 
     if (openDeal?.id || liveLead?.id) {
       // Ничего не теряем: повторное обращение ложится касанием в ту же
