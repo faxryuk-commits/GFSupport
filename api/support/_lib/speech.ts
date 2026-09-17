@@ -1,4 +1,4 @@
-import { getSQL, getOpenAIKey } from './db.js'
+import { getSQL, getOpenAIKey, ensureOnce } from './db.js'
 import { scoreIcp } from './sales-icp.js'
 
 /**
@@ -159,6 +159,8 @@ export interface CallDigest {
   outcome: string
   nextStep: string | null
   facts: Record<string, string | null>
+  /** Разбор для сейлза: что хорошо, где недожал, один совет. Пусто, если разговор не с клиентом. */
+  coach: string
 }
 
 /**
@@ -173,19 +175,23 @@ export async function digestCall(orgId: string, transcript: string): Promise<Cal
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o-mini', temperature: 0.2, max_tokens: 500,
+      model: 'gpt-4o-mini', temperature: 0.2, max_tokens: 900,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: [
           'Ты разбираешь запись звонка менеджера Delever — это B2B SaaS для ресторанов',
-          '(онлайн-заказы, доставка, QR-меню по подписке).',
-          'Расшифровка автоматическая, узбекская речь с ошибками распознавания:',
-          'восстанавливай смысл по контексту, но НЕ выдумывай фактов, которых не было.',
+          '(онлайн-заказы, доставка, QR-меню по подписке) — и тренируешь отдел продаж.',
+          'Расшифровка автоматическая, узбекская или русская речь с ошибками распознавания:',
+          'восстанавливай смысл по контексту, но НЕ выдумывай фактов, которых не было. Выводи всегда по-русски.',
           'Верни JSON: {"summary":"1-2 предложения по-русски, что было в разговоре",',
           '"outcome":"дозвонились|не дозвонились|договорились|перезвонить|отказ|непонятно",',
           '"next_step":"короткое действие или null","facts":{"city":null,"segment":null,"points":null,',
           '"orders_per_day":null,"pos":null,"aggregators":null,"delivery_type":null,"pain":null,',
-          '"budget":null,"dm":null}}',
+          '"budget":null,"dm":null},',
+          '"coach":"разбор для сейлза пунктами через «— », каждый с новой строки: одной строкой что сделал хорошо;',
+          'затем чего не выяснил или где недожал (касса, число точек, поток заказов, следующий шаг с датой,',
+          'работа с возражением); затем один конкретный совет. Если это не разговор с клиентом',
+          '(гудки, тест линии, ошиблись номером, обрыв) — пустая строка"}',
           'Факты — только то, что клиент сказал сам, по-русски, коротко: city — город;',
           'segment — тип заведения (ресторан, кафе, фастфуд, доставка, кондитерская, сеть...);',
           'points — число точек или филиалов (цифрой); orders_per_day — заказов в день (как сказал: «15-20», «больше 100»);',
@@ -197,7 +203,7 @@ export async function digestCall(orgId: string, transcript: string): Promise<Cal
           'относится сказанное, — оставь null.',
           'Если разговор пустой (гудки, «алло-алло», ошиблись номером) — summary честно об этом.',
         ].join(' ') },
-        { role: 'user', content: transcript.slice(0, 4000) },
+        { role: 'user', content: transcript.slice(0, 12000) },
       ],
     }),
   })
@@ -211,11 +217,18 @@ export async function digestCall(orgId: string, transcript: string): Promise<Cal
       outcome: String(out.outcome || 'непонятно'),
       nextStep: out.next_step ? String(out.next_step).slice(0, 200) : null,
       facts: out.facts && typeof out.facts === 'object' ? out.facts : {},
+      coach: String(out.coach || '').slice(0, 2000),
     }
   } catch { return null }
 }
 
 export async function ensureCallDigestSchema(sql: any) {
+  // Один прогон на холодный старт: крон ходит раз в три минуты, а дорога до
+  // базы у каждого из дюжины запросов ниже — около 190 мс
+  await ensureOnce('call-digests', () => ensureCallDigestSchemaNow(sql))
+}
+
+async function ensureCallDigestSchemaNow(sql: any) {
   await sql`
     CREATE TABLE IF NOT EXISTS sales_call_digests (
       call_uuid VARCHAR(80) PRIMARY KEY,
@@ -236,7 +249,36 @@ export async function ensureCallDigestSchema(sql: any) {
   // доприменит — до этого из разговора заполнялись только агрегаторы сделки
   await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ`.catch(() => {})
   await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS lead_id VARCHAR(60)`.catch(() => {})
+  // Один проход на разговор. Раньше звонок расшифровывался дважды: здесь —
+  // для сводки в ленту, и отдельной очередью sales_call_insights — для
+  // «📝 разбор» с советами тренера: два вызова Chirp и две модели на один
+  // и тот же файл. Теперь разбор тренера — колонка здесь же, а статус
+  // нужен ручной постановке в очередь и повторам, пока АТС не отдала запись
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS coach TEXT`.catch(() => {})
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'done'`.catch(() => {})
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS error TEXT`.catch(() => {})
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE sales_call_digests ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ`.catch(() => {})
   await sql`CREATE INDEX IF NOT EXISTS sales_call_digests_acc ON sales_call_digests(org_id, account_id)`.catch(() => {})
+  // Разборы старой очереди переезжают сюда, чтобы «📝 разбор» у прошлых
+  // звонков не опустел. Идемпотентно: только туда, где разбора ещё нет.
+  // Старая таблица остаётся как есть — снос таблиц отдельным решением
+  await sql`
+    UPDATE sales_call_digests d
+    SET coach = i.coach, transcript = COALESCE(d.transcript, i.transcript)
+    FROM sales_call_insights i
+    WHERE i.call_uuid = d.call_uuid AND i.status = 'done' AND d.coach IS NULL
+  `.catch(() => {})
+  await sql`
+    INSERT INTO sales_call_digests (call_uuid, org_id, lead_id, transcript, summary, coach,
+                                    status, facts, filled, applied_at, done_at, created_at)
+    SELECT i.call_uuid, i.org_id, i.lead_id, i.transcript, i.summary, i.coach,
+           'done', '{}'::jsonb, '[]'::jsonb, NOW(), i.done_at, COALESCE(i.done_at, NOW())
+    FROM sales_call_insights i
+    WHERE i.status = 'done'
+      AND NOT EXISTS (SELECT 1 FROM sales_call_digests d WHERE d.call_uuid = i.call_uuid)
+    ON CONFLICT (call_uuid) DO NOTHING
+  `.catch(() => {})
 }
 
 /** Поля квалификации, которые заполняются со слов клиента, с подписями для ленты. */

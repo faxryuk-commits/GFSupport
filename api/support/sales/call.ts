@@ -530,24 +530,25 @@ export default async function handler(req: Request): Promise<Response> {
     const b = await req.json().catch(() => null)
     const uuid = String(b?.uuid || '').trim()
     if (!/^[0-9a-f-]{20,60}$/i.test(uuid)) return json({ error: 'uuid не распознан' }, 400)
-    const { ensureInsightsSchema, queueInsight } = await import('../_lib/call-insights.js')
-    await ensureInsightsSchema(sql)
+    // Одна очередь с лентой: сводка, факты и разбор тренера — из одного
+    // прохода по записи, а не из второй расшифровки того же файла
+    const { queueDigest } = await import('../_lib/call-digest.js')
+    const { ensureCallDigestSchema } = await import('../_lib/speech.js')
+    await ensureCallDigestSchema(sql)
     const [row] = await sql`
-      SELECT status, summary, coach, transcript, error FROM sales_call_insights
+      SELECT status, summary, coach, transcript, error FROM sales_call_digests
       WHERE call_uuid = ${uuid} AND org_id = ${orgId} LIMIT 1
     ` as any[]
-    if (row?.status === 'done') {
+    if (row?.status === 'done' && (row.summary || row.transcript)) {
       return json({ status: 'done', summary: row.summary, coach: row.coach, transcript: row.transcript })
     }
-    if (row?.status === 'failed') {
-      // Повторная попытка по клику: ссылка на запись могла просто протухнуть
-      await sql`
-        UPDATE sales_call_insights SET status = 'pending', error = NULL
-        WHERE call_uuid = ${uuid} AND org_id = ${orgId}
-      `.catch(() => {})
-      return json({ status: 'pending', note: `прошлая попытка не удалась (${row.error || 'без причины'}) — поставил заново` })
+    if (row?.status === 'failed' || (row?.status === 'done' && !row.summary)) {
+      // Повторная попытка по клику: ссылка на запись могла просто протухнуть,
+      // а сводка без текста — это звонок, у которого записи тогда не было
+      await queueDigest(sql, orgId, uuid)
+      return json({ status: 'pending', note: `прошлая попытка не удалась (${row.error || 'записи не было'}) — поставил заново` })
     }
-    if (!row) await queueInsight(sql, orgId, uuid, 9999)
+    if (!row) await queueDigest(sql, orgId, uuid)
     return json({ status: 'pending' })
   }
 
