@@ -105,7 +105,8 @@ export function ResponseTimeDetailsModal({
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || 'demo'
+      // Ключ входа — тот же, что у всего приложения; auth_token — старый ключ
+      const token = localStorage.getItem('support_agent_token') || ''
       const params = new URLSearchParams({
         bucket,
         period,

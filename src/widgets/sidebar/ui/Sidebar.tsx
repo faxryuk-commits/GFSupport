@@ -9,7 +9,7 @@ import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
 import { pathAllowedFor } from '@/shared/lib/modules'
 import { apiGet } from '@/shared/services/api.service'
-import { markNotificationRead } from '@/shared/api'
+import { markNotificationRead, markAllNotificationsRead } from '@/shared/api'
 import { useNotification } from '@/shared/ui'
 
 // CSS for coin flip and shine animations
@@ -98,14 +98,13 @@ function NotificationBellSidebar() {
   useEffect(() => {
     async function load() {
       try {
-        const token = localStorage.getItem('auth_token')
-        if (!token) return
-        const res = await fetch('/api/support/notifications?limit=10', {
-          headers: { 'Authorization': `Bearer ${token}`, 'X-Org-Id': localStorage.getItem('org_id') || '' },
-        })
-        if (res.ok) {
-          const data = await res.json()
-          setCount(data.unreadCount || 0)
+        // Тот же ключ входа, что у всего приложения. Колокольчик читал
+        // auth_token — старый ключ, который после переезда на сессии никто
+        // не обновляет: в браузере лежал отозванный токен, ответ 401 глотался,
+        // и «Нет уведомлений» показывалось при полусотне непрочитанных
+        const data = await apiGet<any>('/notifications?limit=10', false)
+        {
+          setCount(data?.unreadCount || 0)
           const list = data.notifications || []
           setItems(list)
 
@@ -165,16 +164,42 @@ function NotificationBellSidebar() {
       </button>
       {open && (
         <div className="absolute left-full bottom-0 ml-2 w-[340px] bg-white rounded-xl shadow-2xl border border-[#e8edf3] z-50 max-h-[400px] overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
             <span className="text-sm font-semibold text-slate-900">Уведомления</span>
-            {count > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{count} новых</span>}
+            {count > 0 && (
+              <span className="flex items-center gap-2">
+                <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{count} новых</span>
+                {/* Прочитанным уведомление становилось только само по себе —
+                    никогда: у команды сотни непрочитанных, счётчик перестал
+                    что-либо значить. Клик по строке и «прочитать все» */}
+                <button
+                  onClick={async () => {
+                    try { await markAllNotificationsRead('') } catch { /* сеть */ }
+                    setItems(list => list.map((n: any) => ({ ...n, isRead: true })))
+                    setCount(0)
+                  }}
+                  className="text-[10.5px] text-slate-400 hover:text-slate-700 whitespace-nowrap">
+                  прочитать все
+                </button>
+              </span>
+            )}
           </div>
           <div className="overflow-y-auto max-h-[340px]">
             {items.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-400">Нет уведомлений</div>
             ) : (
               items.slice(0, 8).map((n: any) => (
-                <div key={n.id} className={`px-4 py-2.5 border-b border-slate-50 ${!n.isRead ? 'bg-blue-50/50' : ''}`}>
+                <div key={n.id}
+                  onClick={async () => {
+                    if (!n.isRead) {
+                      try { await markNotificationRead(n.id) } catch { /* сеть */ }
+                      setItems(list => list.map((x: any) => x.id === n.id ? { ...x, isRead: true } : x))
+                      setCount(c => Math.max(0, c - 1))
+                    }
+                    if (n.link) { setOpen(false); navigate(n.link) }
+                  }}
+                  title={n.link ? 'Открыть' : 'Отметить прочитанным'}
+                  className={`px-4 py-2.5 border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${!n.isRead ? 'bg-blue-50/50' : ''}`}>
                   <div className="flex items-start gap-2">
                     <span className="text-sm">{icons[n.type] || '📢'}</span>
                     <div className="flex-1 min-w-0">
