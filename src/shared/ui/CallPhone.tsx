@@ -97,6 +97,8 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
   // Есть ли прямой звонок из браузера — держим в состоянии и слушаем звонилку:
   // софтфон подключается позже первой отрисовки, и подсказка должна обновиться
   const [direct, setDirect] = useState<boolean>(() => Boolean((window as any).__gfDirectCall))
+  // Линии нет, но звонилка может её взять: трубка берёт сама по клику
+  const [lineOffer, setLineOffer] = useState<boolean>(() => Boolean((window as any).__gfTakeLine))
   const [info, setInfo] = useState<ChannelInfo | null>(null)
   const [open, setOpen] = useState(false)
   const [rect, setRect] = useState<{ top: number; left: number; up: boolean } | null>(null)
@@ -114,8 +116,13 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
 
   useEffect(() => {
     const on = (e: Event) => setDirect(Boolean((e as CustomEvent).detail))
+    const onOffer = (e: Event) => setLineOffer(Boolean((e as CustomEvent).detail))
     window.addEventListener('gf:direct-call', on)
-    return () => window.removeEventListener('gf:direct-call', on)
+    window.addEventListener('gf:line-offer', onOffer)
+    return () => {
+      window.removeEventListener('gf:direct-call', on)
+      window.removeEventListener('gf:line-offer', onOffer)
+    }
   }, [])
 
   // Каналы спрашиваем только там, где их попросили показать: ответ кэширован
@@ -205,8 +212,21 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
     if (status === 'calling') return
     setStatus('calling'); setError('')
     // ПК-режим: софтфон подключён — звоним прямо из браузера, одной ногой.
-    // Иначе старый путь: АТС набирает вас, потом клиента
-    const directCall = (window as any).__gfDirectCall as ((num: string) => Promise<void>) | null | undefined
+    // Линии ещё нет, но она есть в пуле — берём её этим же кликом: раньше
+    // трубка на карточке молча уходила через АТС, и телефон звонил сейлзу,
+    // хотя из звонилки тот же человек звонил из браузера
+    let directCall = (window as any).__gfDirectCall as ((num: string) => Promise<void>) | null | undefined
+    const takeLine = (window as any).__gfTakeLine as (() => Promise<(num: string) => Promise<void>>) | null | undefined
+    if (!directCall && takeLine) {
+      setViaExt('line')
+      try {
+        directCall = await takeLine()
+      } catch (err: any) {
+        // Линию не дали — честно говорим и идём через АТС, как раньше
+        setError(`Линии для браузера нет (${err?.message || 'занято'}) — звоню через АТС`)
+        directCall = null
+      }
+    }
     if (directCall) {
       try {
         await directCall(parsed.valid ? parsed.e164 : phone)
@@ -313,14 +333,16 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
           : status === 'error' ? error
           : direct
             ? `${label} · Позвонить из браузера (ПК-режим): гудки и разговор в наушниках. Разговор запишется`
-            : `${label} · Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется`}
+            : lineOffer
+              ? `${label} · Позвонить из браузера: возьму свободную линию АТС и наберу клиента. Разговор запишется`
+              : `${label} · Позвонить через АТС: она наберёт вас, затем клиента. Разговор запишется`}
         className={`${base} tabular-nums cursor-pointer bg-transparent p-0 border-0 font-inherit text-left ${
           status === 'calling' ? 'opacity-60' : ''}`}
       >
         {size === 'icon'
           ? (copied ? '✓' : status === 'calling' ? '…' : status === 'ringing' ? '📞…' : '📞')
           : copied ? '✓ номер скопирован'
-          : status === 'calling' ? 'Соединяю…'
+          : status === 'calling' ? (viaExt === 'line' ? 'Беру линию…' : 'Соединяю…')
           : status === 'ringing' ? (viaExt === 'browser' ? '📞 звоним из браузера…' : `📞 АТС звонит ${viaExt ? `на ${viaExt}` : 'вам'}…`)
           : label}
       </button>
@@ -415,7 +437,7 @@ export function CallPhone({ phone, market, leadId, size = 'md', channels: withCh
           <div className="text-[9.5px] font-bold uppercase tracking-wider text-gray-400 px-3 pt-2 pb-0.5">
             В системе <span className="font-normal normal-case tracking-normal">— останется в карточке</span>
           </div>
-          <Item icon={<span className="text-[13px]">📞</span>} title="Позвонить" sub={direct ? 'из браузера · запись в ленте' : 'через АТС · запись в ленте'}
+          <Item icon={<span className="text-[13px]">📞</span>} title="Позвонить" sub={direct || lineOffer ? 'из браузера · запись в ленте' : 'через АТС · запись в ленте'}
             onClick={() => { setOpen(false); call({ stopPropagation() {}, preventDefault() {} } as any) }} />
           {/* Писать можно, как только подключён свой WhatsApp: ждать проверки
               номера незачем — мост проверит его при отправке и скажет, если нет */}

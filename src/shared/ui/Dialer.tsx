@@ -95,6 +95,9 @@ export function Dialer() {
   const [takeSeat, setTakeSeat] = useState(0)
   // Почему линию не дали — человек должен это видеть, а не гадать
   const [seatError, setSeatError] = useState('')
+  // Кто ждёт линию: трубка на карточке попросила её кликом и ждёт, пока
+  // софтфон зарегистрируется, чтобы позвонить прямо из браузера
+  const pendingTake = useRef<{ resolve: (fn: (num: string) => Promise<void>) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   useEffect(() => {
     if (!pcMode) {
@@ -276,8 +279,62 @@ export function Dialer() {
     return () => { w.__gfDirectCall = null; window.dispatchEvent(new CustomEvent('gf:direct-call', { detail: false })) }
   }, [vertoReady, vertoBusy])
 
+  // Линия по клику с карточки. Звонилка брала свободную линию только своей
+  // кнопкой, а трубка на карточке без линии молча уходила через АТС — из
+  // звонилки звонили из браузера, из карточки телефон звонил сейлзу. Клик
+  // по трубке — такое же явное намерение позвонить, как кнопка в звонилке:
+  // берём линию и отдаём трубке прямой звонок; не дали — трубка вернётся
+  // к старой схеме и скажет почему
+  useEffect(() => {
+    const w = window as any
+    w.__gfTakeLine = pcMode && seatOffered && !vertoBusy
+      ? () => new Promise<(num: string) => Promise<void>>((resolve, reject) => {
+          if (pendingTake.current) clearTimeout(pendingTake.current.timer)
+          const timer = setTimeout(() => {
+            pendingTake.current = null
+            reject(new Error('софтфон не подключился за 15 секунд'))
+          }, 15000)
+          pendingTake.current = { resolve, reject, timer }
+          setSeatError('')
+          setTakeSeat(n => n + 1)
+        })
+      : null
+    window.dispatchEvent(new CustomEvent('gf:line-offer', { detail: Boolean(w.__gfTakeLine) }))
+    return () => { w.__gfTakeLine = null }
+  }, [pcMode, seatOffered, vertoBusy])
+
+  useEffect(() => {
+    const p = pendingTake.current
+    if (!p) return
+    const w = window as any
+    if (vertoReady && !vertoBusy && w.__gfDirectCall) {
+      clearTimeout(p.timer); pendingTake.current = null
+      p.resolve(w.__gfDirectCall)
+    } else if (seatError || vState === 'error') {
+      clearTimeout(p.timer); pendingTake.current = null
+      p.reject(new Error(seatError || vDetail || 'софтфон не подключился'))
+    }
+  }, [vertoReady, vertoBusy, seatError, vState, vDetail])
+
   const call = async () => {
     if (digits.length < 7 || status === 'calling' || foreign) return
+    // ПК-режим без линии, но линия есть: берём её этим же кликом, а не
+    // отдельной кнопкой — «Позвонить» при включённой галке значит «из браузера»
+    const w = window as any
+    if (pcMode && !vertoReady && seatOffered && w.__gfTakeLine) {
+      setStatus('calling'); setNote('Беру свободную линию…')
+      try {
+        const direct = await w.__gfTakeLine()
+        setStatus('idle'); setNote('')
+        await direct(parsed.valid ? parsed.e164 : digits)
+      } catch (e: any) {
+        setStatus('error')
+        setNote(e?.message === 'Permission denied'
+          ? 'Браузер не дал доступ к микрофону — разрешите его для сайта'
+          : `${e?.message || 'линию не дали'} — нажмите ещё раз, чтобы позвонить через АТС`)
+      }
+      return
+    }
     // ПК-режим: звонок уходит из браузера — гудки и разговор в наушниках.
     // Карточку клиента подтягиваем тем же поиском, что и раньше
     if (vertoReady && !vertoBusy) {
