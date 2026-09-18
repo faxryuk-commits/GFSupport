@@ -147,7 +147,12 @@ export function tgHandle(url: string): string | null {
  * сайт молчит. Молчащий источник просто пропускается.
  */
 export async function marketContext(sources: SourceRow[], maxSources = 3): Promise<string> {
-  const picked = sources.filter(s => s.active).slice(0, maxSources)
+  // Случайная тройка, а не первые по списку: контекст от выпуска к выпуску разный
+  const picked = sources.filter(s => s.active)
+    .map(s => ({ s, r: Math.random() }))
+    .sort((a, b) => a.r - b.r)
+    .slice(0, maxSources)
+    .map(x => x.s)
   const parts = await Promise.all(picked.map(async s => {
     if (s.kind === 'telegram') {
       const h = tgHandle(s.url)
@@ -212,6 +217,48 @@ export async function refreshCorpus(sql: SQL, pages = 3): Promise<number> {
 }
 
 export interface GeneratedDraft { title: string; body_ru: string; body_en: string }
+
+/**
+ * Полный цикл одного поста: факты → стиль → контекст рынка → модель → база.
+ * Общий для кнопки в UI и еженедельного крона. Бросает Error с человеческим
+ * текстом — вызывающий решает, как его показать.
+ */
+export async function generateOne(
+  sql: SQL,
+  key: string,
+  line: 'delever' | 'gfsupport',
+  batchKey: string,
+): Promise<any> {
+  let facts: string
+  let sourceUrl: string | null = null
+  if (line === 'delever') {
+    const rel = await fetchDeleverRelease()
+    if (!rel) throw new Error('не удалось прочитать релиз Delever из GitBook')
+    facts = rel.text
+    sourceUrl = rel.url
+  } else {
+    facts = gfsupportFacts()
+  }
+
+  const [samples, existing, sources] = await Promise.all([
+    styleSamples(sql),
+    sql`SELECT title FROM creator_drafts WHERE batch_key = ${batchKey}`,
+    sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
+  ])
+  const avoid = (existing as any[]).map(r => String(r.title)).filter(Boolean)
+  const market = await marketContext(sources as any)
+
+  const draft = await generateDraft(key, line, facts, samples, avoid, market)
+  if (!draft) throw new Error('модель не вернула пост')
+
+  const id = draftId()
+  await sql`
+    INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
+    VALUES (${id}, ${batchKey}, ${line}, ${draft.title}, ${draft.body_ru}, ${draft.body_en},
+            ${JSON.stringify({ url: sourceUrl })}::jsonb)`
+  const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
+  return row
+}
 
 const SYSTEM_PROMPT = `Ты — редактор личного бренда Фахриддина Юсупова, фаундера Delever (платформа управления доставкой для ресторанов, рынки Центральной Азии и Кавказа) и внутренней системы GFSupport (CRM и поддержка, которую он пишет сам).
 

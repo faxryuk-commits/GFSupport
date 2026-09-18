@@ -156,6 +156,10 @@
     {
       "path": "/api/support/cron/channel-costs",
       "schedule": "40 4 * * *"
+    },
+    {
+      "path": "/api/support/cron/creator-weekly",
+      "schedule": "*/5 5-6 * * 5"
     }
   ]
 }

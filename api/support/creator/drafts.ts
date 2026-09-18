@@ -1,9 +1,6 @@
 import { getSQL, json, corsHeaders, getOpenAIKey } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import {
-  CREATOR_OWNER_ID, ensureCreatorSchema, draftId,
-  fetchDeleverRelease, gfsupportFacts, styleSamples, generateDraft, marketContext,
-} from '../_lib/creator.js'
+import { CREATOR_OWNER_ID, ensureCreatorSchema, generateOne } from '../_lib/creator.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -37,37 +34,13 @@ export default async function handler(req: Request): Promise<Response> {
     const line = body.line === 'gfsupport' ? 'gfsupport' as const : 'delever' as const
     const key = await getOpenAIKey()
     if (!key) return json({ error: 'нет ключа OpenAI в настройках' }, 500)
-
-    let facts: string
-    let sourceUrl: string | null = null
-    if (line === 'delever') {
-      const rel = await fetchDeleverRelease()
-      if (!rel) return json({ error: 'не удалось прочитать релиз Delever из GitBook' }, 502)
-      facts = rel.text
-      sourceUrl = rel.url
-    } else {
-      facts = gfsupportFacts()
-    }
-
     const batchKey = String(body.batchKey || new Date().toISOString().slice(0, 10))
-    const [samples, existing, sources] = await Promise.all([
-      styleSamples(sql),
-      sql`SELECT title FROM creator_drafts WHERE batch_key = ${batchKey}`,
-      sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
-    ])
-    const avoid = (existing as any[]).map(r => String(r.title)).filter(Boolean)
-    const market = await marketContext(sources as any)
-
-    const draft = await generateDraft(key, line, facts, samples, avoid, market)
-    if (!draft) return json({ error: 'модель не вернула пост' }, 502)
-
-    const id = draftId()
-    await sql`
-      INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
-      VALUES (${id}, ${batchKey}, ${line}, ${draft.title}, ${draft.body_ru}, ${draft.body_en},
-              ${JSON.stringify({ url: sourceUrl })}::jsonb)`
-    const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
-    return json({ draft: row })
+    try {
+      const row = await generateOne(sql, key, line, batchKey)
+      return json({ draft: row })
+    } catch (e: any) {
+      return json({ error: e?.message || 'ошибка генерации' }, 502)
+    }
   }
 
   if (body.action === 'status') {
