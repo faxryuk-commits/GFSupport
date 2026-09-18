@@ -61,12 +61,13 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ period: { from, to }, ...data })
   }
 
-  // ─── Пульс продаж: главный экран отчётов одним заходом ────────────────────
-  // KPI периода, воронка с долями источников, потенциал, тренд, источники,
-  // причины потерь, портфель по сейлзам. Периоды: закрытия и воронка — по
+  // ─── Пульс продаж: итоги периода и деньги ─────────────────────────────────
+  // KPI периода, потенциал, подписка и оплаты по месяцам. Закрытия — по
   // выбранному диапазону, потенциал и портфель — состояние на сейчас
   if (url.searchParams.get('action') === 'pulse') {
-    const [kpi, openNow, reach, wonSrc, potential, monthly, srcRows, losses, portfolio, cash, cashMonthly] = await Promise.all([
+    // Только то, что читает SalesPulse: воронка, источники, потери и портфель
+    // по сейлзам переехали в поток и «Команду», их запросы отсюда сняты
+    const [kpi, openNow, potential, monthly, cash, cashMonthly] = await Promise.all([
       sql`
         SELECT
           COUNT(*) FILTER (WHERE won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
@@ -87,33 +88,6 @@ export default async function handler(req: Request): Promise<Response> {
         WHERE org_id = ${orgId} AND archived_at IS NULL AND won_at IS NULL AND lost_at IS NULL
           AND pipeline <> 'partner'
           AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
-      `,
-      // Воронка достижения этапов за период + доля источников (стек)
-      sql`
-        SELECT sn.key AS stage, COALESCE(ss.label, 'История Amo') AS src,
-               COUNT(DISTINCT e.deal_id)::int AS n
-        FROM sales_deal_events e
-        JOIN sales_stages sn ON sn.id = e.new_stage_id
-        JOIN sales_deals d ON d.id = e.deal_id
-        LEFT JOIN sales_leads l ON l.id = d.source_lead_id
-        LEFT JOIN sales_sources ss ON ss.id = l.source_id
-        WHERE e.org_id = ${orgId} AND sn.pipeline LIKE 'sales%' AND sn.kind = 'open'
-          AND e.changed_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-          AND d.archived_at IS NULL
-          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
-        GROUP BY 1, 2
-      `,
-      // Выигрыш — по факту won_at, не по событиям: событие могло откатиться,
-      // сделка — уехать в архив, и воронка расходилась с KPI
-      sql`
-        SELECT 'won' AS stage, COALESCE(ss.label, 'История Amo') AS src, COUNT(*)::int AS n
-        FROM sales_deals d
-        LEFT JOIN sales_leads l ON l.id = d.source_lead_id
-        LEFT JOIN sales_sources ss ON ss.id = l.source_id
-        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
-          AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
-        GROUP BY 1, 2
       `,
       // Этапы enterprise-воронки сводятся к ступеням обычной: иначе 11 сделок,
       // переведённых в Enterprise, есть в «открытом портфеле», но нет в
@@ -144,36 +118,6 @@ export default async function handler(req: Request): Promise<Response> {
           AND won_at > NOW() - INTERVAL '12 months'
           AND (${market} = '' OR market_id = ${market} OR market_id IS NULL)
         GROUP BY 1 ORDER BY 1
-      `,
-      sql`
-        SELECT COALESCE(s.label, 'прочее') AS src, COUNT(*)::int AS leads,
-               COUNT(*) FILTER (WHERE l.status = 'converted')::int AS converted
-        FROM sales_leads l
-        LEFT JOIN sales_sources s ON s.id = l.source_id
-        WHERE l.org_id = ${orgId}
-          AND l.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-          AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)
-        GROUP BY 1 ORDER BY leads DESC LIMIT 8
-      `,
-      sql`
-        SELECT COALESCE(lr.label, 'без причины') AS reason, COUNT(*)::int AS n
-        FROM sales_deals d
-        LEFT JOIN sales_lost_reasons lr ON lr.id = d.lost_reason_id
-        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
-          AND d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
-        GROUP BY 1 ORDER BY n DESC LIMIT 8
-      `,
-      sql`
-        SELECT ag.name, COUNT(*)::int AS cnt,
-               COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.currency = 'UZS'), 0)::bigint AS amt,
-               COUNT(*) FILTER (WHERE d.next_step_at IS NULL)::int AS no_step
-        FROM sales_deals d
-        JOIN support_agents ag ON ag.id = d.owner_agent_id
-        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
-          AND d.won_at IS NULL AND d.lost_at IS NULL AND d.pipeline <> 'partner'
-          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
-        GROUP BY ag.name ORDER BY cnt DESC LIMIT 10
       `,
       // Получено денег — факт из sales_payments (ручные и ПланФакт), в отличие
       // от подписки выигранных, которая пока обещание. Делится надвое: по
@@ -216,13 +160,9 @@ export default async function handler(req: Request): Promise<Response> {
         cash_n_new: (cash as any[])[0]?.n_new || 0,
         cash_amt_new: (cash as any[])[0]?.amt_new || 0,
       },
-      reach: [...(reach as any[]), ...(wonSrc as any[])],
       potential: pot,
       monthly,
       cashMonthly,
-      sources: srcRows,
-      losses,
-      portfolio,
     })
   }
 
@@ -574,23 +514,28 @@ export default async function handler(req: Request): Promise<Response> {
              COUNT(*) FILTER (WHERE kind = 'won')::int AS won,
              COUNT(*) FILTER (WHERE kind = 'lost')::int AS lost,
              COALESCE(SUM(amount) FILTER (WHERE kind = 'won'), 0) AS won_amount
+      -- sales_deals.* — timestamptz: конверсия ОДИНАРНАЯ. Двойная сдвигала
+      -- день на −10 часов, и 25 выигрышей стояли на чужом дне. Фильтры те же,
+      -- что у KPI: без архива и партнёрской воронки
       FROM (
-        SELECT (d.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent') AS day,
+        SELECT (d.created_at AT TIME ZONE 'Asia/Tashkent') AS day,
                'created' AS kind, 0::numeric AS amount
         FROM sales_deals d
-        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
           AND (${market} = '' OR d.market_id = ${market})
           AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
         UNION ALL
-        SELECT (d.won_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'), 'won',
+        SELECT (d.won_at AT TIME ZONE 'Asia/Tashkent'), 'won',
                COALESCE(d.monthly_amount, 0)
         FROM sales_deals d
-        WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+          AND (${market} = '' OR d.market_id = ${market})
           AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
         UNION ALL
-        SELECT (d.lost_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent'), 'lost', 0
+        SELECT (d.lost_at AT TIME ZONE 'Asia/Tashkent'), 'lost', 0
         FROM sales_deals d
-        WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+          AND (${market} = '' OR d.market_id = ${market})
           AND d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       ) t
       GROUP BY 1 ORDER BY 1

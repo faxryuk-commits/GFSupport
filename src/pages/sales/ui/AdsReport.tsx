@@ -71,7 +71,7 @@ export function AdsReport({ from, to, region }: { from: string; to: string; regi
         ['Оплат', String(t.n.paid || 0), t.n.paid ? usd(t.c.paid || 0) + ' бюджета окупилось' : 'окупаемость пока не считается'],
       ]} />
 
-      <Card title="Каналы привлечения" sub="откуда приходят и во что превращаются · расход там, где он известен">
+      <Card title="Каналы привлечения" sub="откуда приходят и во что превращаются · расход там, где он известен · сделки без обращения — отдельной строкой, чтобы итог сходился с KPI">
         <div className="overflow-x-auto">
           <table className="w-full text-[12.5px]">
             <thead>

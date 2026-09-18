@@ -179,7 +179,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   site: 'Сайт delever.io', instagram_direct: 'Instagram Direct', telegram_bot: 'Telegram-бот',
   call: 'Входящий звонок', messenger: 'Facebook Messenger', outbound: 'Исходящий холодный',
   manual: 'Заведён вручную', import: 'Импорт базы', amo_manual: 'Amo · завёл менеджер',
-  unknown: 'Источник не определён',
+  unknown: 'Источник не определён', no_lead: 'Без обращения (Amo или сразу сделкой)',
 }
 /** Платные каналы — всегда в таблице, даже без лидов: расход был, показать нечего. */
 const PAID_CHANNELS = ['meta', 'google', 'yandex']
@@ -210,32 +210,57 @@ async function channelsOverview(
   metaSpend: number,
 ): Promise<ChannelLine[]> {
   const { fromTs, toTs, market } = opts
+  // Когорта та же, что в потоке: обращение → его сделка (или живая сделка
+  // клиента, если обращение приклеено к ней), плюс сделки без обращения
+  // отдельной строкой. Без второй половины «выиграно» по каналам не сходилось
+  // с KPI: за год 143 победы из Amo приехали сделками без обращения
   const rows = (await sql`
-    SELECT
-      CASE
-        WHEN l.click_source = 'gclid' OR lower(l.utm_source) IN ('google', 'gclid') THEN 'google'
-        WHEN l.click_source = 'yclid' OR lower(l.utm_source) IN ('yandex', 'yclid')
-          OR (l.click_source IS NULL AND l.click_id ~ '^[0-9]{12,}$') THEN 'yandex'
-        WHEN l.meta_campaign_id IS NOT NULL OR s.key = 'meta_leadform' THEN 'meta'
-        ELSE COALESCE(s.key, 'unknown')
-      END AS key,
-      MAX(s.label) AS label,
+    WITH cohort AS (
+      SELECT
+        CASE
+          WHEN l.click_source = 'gclid' OR lower(l.utm_source) IN ('google', 'gclid') THEN 'google'
+          WHEN l.click_source = 'yclid' OR lower(l.utm_source) IN ('yandex', 'yclid')
+            OR (l.click_source IS NULL AND l.click_id ~ '^[0-9]{12,}$') THEN 'yandex'
+          WHEN l.meta_campaign_id IS NOT NULL OR s.key = 'meta_leadform' THEN 'meta'
+          ELSE COALESCE(s.key, 'unknown')
+        END AS key,
+        s.label, COALESCE(d1.id, d2.id) AS deal_id, COALESCE(d1.won_at, d2.won_at) AS won_at,
+        COALESCE(d1.paid_at, d2.paid_at) AS paid_at
+      FROM sales_leads l
+      LEFT JOIN sales_sources s ON s.id = l.source_id
+      LEFT JOIN LATERAL (
+        SELECT d.id, d.won_at, d.paid_at FROM sales_deals d
+        WHERE d.source_lead_id = l.id AND d.archived_at IS NULL
+        ORDER BY d.created_at DESC LIMIT 1
+      ) d1 ON true
+      LEFT JOIN LATERAL (
+        SELECT d.id, d.won_at, d.paid_at FROM sales_deals d
+        WHERE d1.id IS NULL AND l.status = 'converted' AND d.account_id = l.account_id AND d.archived_at IS NULL
+        ORDER BY d.created_at DESC LIMIT 1
+      ) d2 ON true
+      WHERE l.org_id = ${orgId}
+        AND l.created_at >= ${fromTs}::timestamptz AND l.created_at <= ${toTs}::timestamptz
+        AND (${market} = '' OR l.market_id = ${market})
+      UNION ALL
+      SELECT 'no_lead', 'Без обращения (Amo или сразу сделкой)', d.id, d.won_at, d.paid_at
+      FROM sales_deals d
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+        AND d.source_lead_id IS NULL
+        AND d.created_at >= ${fromTs}::timestamptz AND d.created_at <= ${toTs}::timestamptz
+        AND (${market} = '' OR d.market_id = ${market})
+    )
+    SELECT c.key, MAX(c.label) AS label,
       COUNT(*)::int AS leads,
-      COUNT(d.id)::int AS deals,
+      COUNT(c.deal_id)::int AS deals,
       COUNT(*) FILTER (WHERE EXISTS (
         SELECT 1 FROM sales_deal_events e JOIN sales_stages s2 ON s2.id = e.new_stage_id
-        WHERE e.deal_id = d.id
+        WHERE e.deal_id = c.deal_id
           AND s2.key IN ('qualified', 'meeting', 'demo', 'kp', 'contract', 'won')))::int AS advanced,
-      COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int AS won,
-      COUNT(*) FILTER (WHERE d.paid_at IS NOT NULL
-        OR EXISTS (SELECT 1 FROM sales_payments p WHERE p.deal_id = d.id))::int AS paid_n,
-      COALESCE(SUM((SELECT SUM(p.amount) FROM sales_payments p WHERE p.deal_id = d.id)), 0)::float AS paid_amount
-    FROM sales_leads l
-    LEFT JOIN sales_sources s ON s.id = l.source_id
-    LEFT JOIN sales_deals d ON d.source_lead_id = l.id
-    WHERE l.org_id = ${orgId}
-      AND l.created_at >= ${fromTs}::timestamptz AND l.created_at <= ${toTs}::timestamptz
-      AND (${market} = '' OR l.market_id = ${market})
+      COUNT(*) FILTER (WHERE c.won_at IS NOT NULL)::int AS won,
+      COUNT(*) FILTER (WHERE c.paid_at IS NOT NULL
+        OR EXISTS (SELECT 1 FROM sales_payments p WHERE p.deal_id = c.deal_id))::int AS paid_n,
+      COALESCE(SUM((SELECT SUM(p.amount) FROM sales_payments p WHERE p.deal_id = c.deal_id)), 0)::float AS paid_amount
+    FROM cohort c
     GROUP BY 1
   `) as any[]
 
