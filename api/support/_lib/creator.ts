@@ -280,25 +280,42 @@ export async function generateOne(
     SELECT DISTINCT source->>'url' AS u FROM creator_drafts WHERE source->>'url' IS NOT NULL`
   const used = new Set((usedRows as any[]).map(r => String(r.u)))
 
-  let facts: string
-  let sourceUrl: string | null = null
-  if (line === 'delever') {
-    const rel = await fetchDeleverRelease()
-    if (!rel) throw new Error('не удалось прочитать релиз Delever из GitBook')
-    facts = rel.text
-    sourceUrl = rel.url
-  } else if (line === 'delever_archive') {
-    // Вечнозелёный материал: случайная непользованная страница GitBook —
-    // прошлые релизы и описания функционала (пул ~400 страниц)
-    const pool = (await fetchGitbookPool()).filter(p => !used.has(p.url))
-    if (!pool.length) throw new Error('пул страниц GitBook пуст')
+  const isReleasePage = (u: string) => u.includes('otchyoty-o-relizakh')
+  const pickFromPool = async (candidates: Array<{ title: string; url: string }>) => {
     let page: { title: string; text: string; url: string } | null = null
     for (let i = 0; i < 4 && !page; i++) {
-      const pick = pool[Math.floor(Math.random() * pool.length)]
+      const pick = candidates[Math.floor(Math.random() * candidates.length)]
       const p = await fetchGitbookPage(pick.url)
       // Страницы-оглавления и заглушки постом не станут
       if (p && p.text.length > 500) page = p
     }
+    return page
+  }
+
+  let facts: string
+  let sourceUrl: string | null = null
+  if (line === 'delever') {
+    // Рубрика «релизы»: свежий отчёт, а если о нём уже писали — случайный
+    // архивный отчёт из всех лет (иначе без нового релиза посты мусолят одно)
+    const rel = await fetchDeleverRelease()
+    if (rel && !used.has(rel.url)) {
+      facts = rel.text
+      sourceUrl = rel.url
+    } else {
+      const pool = (await fetchGitbookPool())
+        .filter(p => isReleasePage(p.url) && !used.has(p.url) && /Отчёт о релизе/i.test(p.title))
+      if (!pool.length) throw new Error('все отчёты о релизах уже использованы')
+      const page = await pickFromPool(pool)
+      if (!page) throw new Error('не нашлось содержательного отчёта')
+      facts = page.text
+      sourceUrl = page.url
+    }
+  } else if (line === 'delever_archive') {
+    // Рубрика «как устроен продукт»: страницы базы знаний БЕЗ отчётов о
+    // релизах — функционал, руководства (~сотни страниц, без повторов)
+    const pool = (await fetchGitbookPool()).filter(p => !isReleasePage(p.url) && !used.has(p.url))
+    if (!pool.length) throw new Error('пул страниц GitBook пуст')
+    const page = await pickFromPool(pool)
     if (!page) throw new Error('не нашлось содержательной страницы GitBook')
     facts = page.text
     sourceUrl = page.url
@@ -310,15 +327,18 @@ export async function generateOne(
     sourceUrl = `gfs:${f.version}`
   }
 
-  const [samples, existing, sources, profileRow] = await Promise.all([
+  const [samples, recent, sources, profileRow] = await Promise.all([
     styleSamples(sql),
-    sql`SELECT title FROM creator_drafts WHERE batch_key = ${batchKey}`,
+    // Память последних постов ЛЮБЫХ выпусков: без неё «один из наших клиентов
+    // столкнулся с проблемой» открывал каждый второй пост
+    sql`SELECT title, left(body_ru, 100) AS opening FROM creator_drafts
+        ORDER BY created_at DESC LIMIT 12`,
     sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
     // Карточка фаундера — дистилляция подкастов и интервью: история, убеждения,
     // голос. «Мысль фаундера» опирается на неё, а не выводится из воздуха.
     sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
   ])
-  const avoid = (existing as any[]).map(r => String(r.title)).filter(Boolean)
+  const avoid = (recent as any[]).map(r => `«${r.title}»: ${String(r.opening).replace(/\s+/g, ' ')}…`)
   const market = await marketContext(sources as any)
   const profile = String((profileRow as any[])[0]?.value || '')
 
@@ -351,7 +371,8 @@ const SYSTEM_PROMPT = `Ты — редактор личного бренда Ф�
 - Имена клиентов и брендов-клиентов не называть никогда. Только «сеть из N точек», «один из наших рынков».
 - Никакой продажи: не «купите/подключите Delever», не перечисление преимуществ. Вывод поста — всегда мысль, не продукт.
 - Отказы главной функции продукта не выносить: если речь о сбоях — виноваты стыки разных систем и сложность отрасли, а мы — те, кто видит цепочку и ловит сбой раньше клиента. Признание ошибки допустимо только в форме «нашли класс проблем и закрыли его системно».
-- Не выдумывать цифр и фактов: использовать только данные из материала. Обобщённая сцена с рынка («курьер стоит во дворе и звонит клиенту») допустима, но НЕ подавай выдуманное как личное воспоминание автора («на днях наблюдал, как клиент…», «вчера ко мне пришли…» — так писать нельзя, если этого нет в материале). Не приписывать фичам эффект, которого нет в данных («эффективность значительно возросла» — брак, если цифры нет).
+- Не выдумывать цифр и фактов: использовать только данные из материала. Обобщённая сцена с рынка допустима, но НЕ подавай выдуманное как личное воспоминание автора («на днях наблюдал, как клиент…», «вчера ко мне пришли…» — так писать нельзя, если этого нет в материале). Не приписывать фичам эффект, которого нет в данных («эффективность значительно возросла» — брак, если цифры нет).
+- Начала постов чередуй, каждый раз другой тип зачина: сцена с рынка / прямой вопрос читателю / конкретная цифра / эпизод из биографии автора / неожиданное утверждение. Слова «один из наших клиентов столкнулся с проблемой» — запрещённый штамп.
 - Концовка — не мораль-клише («внимание к деталям решает», «важно не бояться меняться»), а конкретная мысль, выросшая из истории и биографии автора: наблюдение о рынке, правило, которое он для себя вывел, или неудобный вопрос читателю.
 - Заголовок-title — рабочее название, коротко и без канцелярита («Последние 500 метров», не «Как мы улучшили видимость акций»).
 
@@ -378,7 +399,7 @@ export async function generateDraft(
     profile ? '\nКарточка автора — его настоящая история, убеждения и голос (мысль в конце поста должна вырастать отсюда; факты биографии используй точно, не перевирай):\n' + profile.slice(0, 8000) : '',
     market ? '\nКонтекст рынка из подключённых источников — только фон для сцены и мысли, не пересказывай и не выдумывай сверх него:\n' + market.slice(0, 3500) : '',
     samples.length ? '\nОбразцы тона автора (для стиля, не для копирования):\n---\n' + samples.join('\n---\n') : '',
-    avoid.length ? '\nВ этом выпуске уже есть посты на темы (возьми ДРУГУЮ): ' + avoid.join('; ') : '',
+    avoid.length ? '\nНедавние посты автора — их темы, сцены, первые фразы и конструкции начала ПОВТОРЯТЬ НЕЛЬЗЯ (ни «курьер стоит во дворе», ни «один из наших клиентов столкнулся», если они тут уже есть):\n' + avoid.join('\n') : '',
   ].join('\n')
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
