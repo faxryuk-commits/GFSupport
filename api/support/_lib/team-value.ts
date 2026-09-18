@@ -48,6 +48,13 @@ export interface Person {
     score: number | null
   }
   rhythm: { activeDays: number; workDays: number; weekendDays: number; longestGap: number; lastActive: string | null; days: Record<string, number> }
+  /**
+   * Конверсия по этапам: сделки, заведённые в периоде, и сколько дошло до
+   * каждой ступени — Квалифицирован, Демо, КП, Договор, Выиграно (индексы
+   * 1..5; [0] — всего). Ступень — самая дальняя по журналу этапов или текущая;
+   * выигранная прошла все, как в потоке.
+   */
+  stages: { reached: number[]; weakest: { step: number; rate: number; team: number } | null }
   signals: Signal[]
 }
 
@@ -83,7 +90,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
   const toTs = `${o.to}T23:59:59+05:00`
   const market = o.market || ''
 
-  const [agents, calls, acts, moves, tasks, deals, orphan] = await Promise.all([
+  const [agents, calls, acts, moves, tasks, deals, orphan, reached] = await Promise.all([
     // Продавцы: отдел продаж плюс все, у кого есть сделки в периоде или в работе
     sql`
       SELECT ag.id, ag.name, ag.role, ag.pbx_ext, ag.created_at,
@@ -207,6 +214,34 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
         AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
         AND (${market} = '' OR d.market_id = ${market})
     `,
+    // Ступени по сделкам периода: те же корзины, что в потоке
+    sql`
+      WITH mine AS (
+        SELECT d.id, d.owner_agent_id, d.won_at,
+               CASE s.key WHEN 'qualified' THEN 1 WHEN 'research' THEN 1
+                 WHEN 'meeting' THEN 2 WHEN 'demo' THEN 2 WHEN 'discovery' THEN 2
+                 WHEN 'kp' THEN 3 WHEN 'proposal' THEN 3
+                 WHEN 'contract' THEN 4 WHEN 'pilot' THEN 4 ELSE 0 END AS cur
+        FROM sales_deals d LEFT JOIN sales_stages s ON s.id = d.stage_id
+        WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+          AND d.owner_agent_id IS NOT NULL
+          AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          AND (${market} = '' OR d.market_id = ${market})
+      ),
+      mx AS (
+        SELECT e.deal_id, MAX(CASE st.key WHEN 'qualified' THEN 1 WHEN 'research' THEN 1
+                 WHEN 'meeting' THEN 2 WHEN 'demo' THEN 2 WHEN 'discovery' THEN 2
+                 WHEN 'kp' THEN 3 WHEN 'proposal' THEN 3
+                 WHEN 'contract' THEN 4 WHEN 'pilot' THEN 4 ELSE 0 END) AS m
+        FROM sales_deal_events e JOIN sales_stages st ON st.id = e.new_stage_id
+        WHERE e.deal_id IN (SELECT id FROM mine) GROUP BY 1
+      )
+      SELECT m.owner_agent_id AS agent_id,
+             CASE WHEN m.won_at IS NOT NULL THEN 5 ELSE GREATEST(COALESCE(mx.m, 0), m.cur, 1) END AS k,
+             COUNT(*)::int AS n
+      FROM mine m LEFT JOIN mx ON mx.deal_id = m.id
+      GROUP BY 1, 2
+    `,
   ])
 
   const byId = new Map<string, any>((agents as any[]).map(a => [a.id, a]))
@@ -251,6 +286,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
       crm: { moves: 0, tasks: 0, notes: 0, total: 0 },
       clean: { open: 0, withStep: 0, qualified: 0, late: 0, lateAmt: 0, lost: 0, lostReasoned: 0, stale14: 0, checks: [], score: null },
       rhythm: { activeDays: 0, workDays: workDays.length, weekendDays: 0, longestGap: 0, lastActive: null, days: {} },
+      stages: { reached: [0, 0, 0, 0, 0, 0], weakest: null },
       signals: [],
     }
     people.set(a.id, p)
@@ -306,6 +342,29 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
       ...p.clean, open: Number(r.open), withStep: Number(r.with_step), qualified: Number(r.qualified),
       late: Number(r.late), lateAmt: Number(r.late_amt), lost, lostReasoned: Number(r.lost_reasoned), stale14: Number(r.stale14),
     }
+  }
+
+  for (const r of reached as any[]) {
+    const a = byId.get(r.agent_id); if (!a) continue
+    const p = personFor(a)
+    const k = Math.min(5, Math.max(1, Number(r.k)))
+    // Дошёл до ступени k — значит прошёл и все предыдущие
+    p.stages.reached[0] += r.n
+    for (let i = 1; i <= k; i++) p.stages.reached[i] += r.n
+  }
+  // Слабое место — переход, где человек отстаёт от команды сильнее всего
+  // (на базе от пяти сделок, иначе это шум)
+  const teamReached = [0, 0, 0, 0, 0, 0]
+  for (const p of people.values()) for (let i = 0; i <= 5; i++) teamReached[i] += p.stages.reached[i]
+  const stepRate = (r: number[], i: number) => (r[i] >= 5 ? r[i + 1] / r[i] : null)
+  for (const p of people.values()) {
+    let worst: Person['stages']['weakest'] = null
+    for (let i = 1; i <= 4; i++) {
+      const mine = stepRate(p.stages.reached, i), team = stepRate(teamReached, i)
+      if (mine === null || team === null) continue
+      if (mine < team - 0.1 && (!worst || mine - team < worst.rate - worst.team)) worst = { step: i, rate: mine, team }
+    }
+    p.stages.weakest = worst
   }
 
   for (const p of people.values()) {
@@ -380,6 +439,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
   return {
     period: { from: o.from, to: toDay, workDays: workDays.length, crmSince: CRM_CUTOVER },
     workDays,
+    teamReached,
     totals: {
       people: peopleOut.length, byMarket,
       won: peopleOut.reduce((s, p) => s + p.result.won, 0), wonAmounts,

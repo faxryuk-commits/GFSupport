@@ -26,11 +26,13 @@ interface Person {
   clean: { open: number; withStep: number; qualified: number; late: number; lateAmt: number; lost: number; lostReasoned: number; stale14: number
            checks: Array<{ key: string; label: string; pass: number; of: number; ratio: number | null }>; score: number | null }
   rhythm: { activeDays: number; workDays: number; weekendDays: number; longestGap: number; lastActive: string | null; days: Record<string, number> }
+  stages: { reached: number[]; weakest: { step: number; rate: number; team: number } | null }
   signals: Signal[]
 }
 interface Data {
   period: { from: string; to: string; workDays: number; crmSince: string }
   workDays: string[]
+  teamReached: number[]
   totals: { people: number; byMarket: Record<string, number>; won: number; wonNoOwner: number; wonAmounts: Record<string, number>
             touches: number; cleanAvg: number | null; rhythmAvg: number }
   people: Person[]
@@ -55,6 +57,9 @@ const lastDays = (to: string, n: number): string[] => {
 }
 const heatClass = (n: number) =>
   n <= 0 ? 'bg-gray-100' : n < 20 ? 'bg-blue-200' : n < 40 ? 'bg-blue-400' : n < 70 ? 'bg-blue-600' : 'bg-blue-800'
+
+const STEP_LABEL = ['', 'Квалифицирован', 'Демо', 'КП', 'Договор', 'Выиграно']
+const STEP_ARROW = ['', 'квалификация → демо', 'демо → КП', 'КП → договор', 'договор → выигрыш']
 
 const SIG_TONE: Record<Signal['tone'], string> = {
   good: 'bg-emerald-50 text-emerald-800', warn: 'bg-amber-50 text-amber-800',
@@ -219,6 +224,62 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
               )}
             </tbody>
           </table>
+        </div>
+      </Card>
+
+      <Card title="Конверсия по этапам"
+        sub="сделки, заведённые в периоде: сколько дошло до каждой ступени · доля от заведённых · выигранная прошла все ступени"
+        right={<span className="text-[10px] text-gray-400 border border-gray-200 rounded-md px-2 py-0.5">{fmtDay(d.period.from)} — {fmtDay(d.period.to)}</span>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <th className="text-left font-semibold px-4 py-2">Сотрудник</th>
+                <th className="text-right font-semibold px-3 py-2">Сделок</th>
+                {[2, 3, 4, 5].map(k => <th key={k} className="text-right font-semibold px-3 py-2">{STEP_LABEL[k]}</th>)}
+                <th className="text-left font-semibold px-3 py-2">Слабое место</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...people].filter(p => p.stages.reached[0] > 0).sort((a, b) => b.stages.reached[0] - a.stages.reached[0]).map(p => {
+                const r = p.stages.reached, base = r[0]
+                const w = p.stages.weakest
+                return (
+                  <tr key={p.agentId} className="border-b border-gray-100">
+                    <td className="px-4 py-2">
+                      <span className="font-medium text-gray-900">{p.name}</span>
+                      <span className="text-[11px] text-gray-400 ml-1.5">{p.market ? (MARKET_SHORT[p.market] || REGION_NAMES[p.market]) : ''}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{base}</td>
+                    {[2, 3, 4, 5].map(k => {
+                      const share = base ? r[k] / base : 0
+                      return (
+                        <td key={k} className="px-3 py-2 text-right tabular-nums">
+                          <div className={k === 5 ? 'font-semibold text-emerald-700' : ''}>{r[k]}<span className="text-[11px] text-gray-500 font-normal ml-1">{Math.round(share * 100)}%</span></div>
+                          <div className="h-1 bg-gray-100 rounded mt-1 ml-auto w-16 overflow-hidden"><div className={`h-full rounded ${k === 5 ? 'bg-emerald-500' : 'bg-blue-400'}`} style={{ width: `${share * 100}%` }} /></div>
+                        </td>
+                      )
+                    })}
+                    <td className="px-3 py-2 text-[11.5px]">
+                      {w ? <span className="text-red-700">{STEP_ARROW[w.step]} <b>{Math.round(w.rate * 100)}%</b> <span className="text-gray-400">при {Math.round(w.team * 100)}% у команды</span></span>
+                         : base >= 5 ? <span className="text-gray-400">не хуже команды</span> : <span className="text-gray-400">мало сделок</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+              <tr className="bg-gray-50/70 font-semibold">
+                <td className="px-4 py-2 text-gray-900">Итого</td>
+                <td className="px-3 py-2 text-right tabular-nums">{d.teamReached[0]}</td>
+                {[2, 3, 4, 5].map(k => (
+                  <td key={k} className="px-3 py-2 text-right tabular-nums">{d.teamReached[k]}<span className="text-[11px] text-gray-500 font-normal ml-1">{d.teamReached[0] ? Math.round((d.teamReached[k] / d.teamReached[0]) * 100) : 0}%</span></td>
+                ))}
+                <td className="px-3 py-2 text-[11px] text-gray-400 font-normal">переходы команды: {[1, 2, 3, 4].map(i => d.teamReached[i] ? `${Math.round((d.teamReached[i + 1] / d.teamReached[i]) * 100)}%` : '—').join(' → ')}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+          SDR передаёт сделку дальше — у него «договор → выигрыш» считается по чужим победам и всегда низкий. Ступень — самая дальняя по журналу этапов, откат назад не отнимает.
         </div>
       </Card>
 
