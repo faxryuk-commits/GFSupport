@@ -63,31 +63,75 @@ export function draftId(): string {
 }
 
 const GITBOOK_INDEX = 'https://delever.gitbook.io/delever/description-updated/otchyoty-o-relizakh/2026.md'
+const GITBOOK_LLMS = 'https://delever.gitbook.io/delever/llms.txt'
 
-/** Свежий отчёт о релизе Delever: GitBook отдаёт markdown по URL с `.md`. */
-export async function fetchDeleverRelease(): Promise<{ title: string; text: string; url: string } | null> {
-  try {
-    const idx = await fetch(GITBOOK_INDEX).then(r => r.text())
-    const m = idx.match(/\[Отчёт о релизе: [^\]]+\]\((https:[^)]+\.md)\)/)
-    if (!m) return null
-    const url = m[1]
-    let text = await fetch(url).then(r => r.text())
+function cleanGitbookMd(raw: string): string {
+  return raw
     // Служебная шапка GitBook и картинки смысла не несут
-    text = text.replace(/^>.*$/gm, '').replace(/<figure>[\s\S]*?<\/figure>/g, '')
+    .replace(/^>.*$/gm, '')
+    .replace(/<figure>[\s\S]*?<\/figure>/g, '')
     // «Как настроить» — инструкции для админов, посту они не нужны
-    text = text.replace(/\*\*Как настроить:\*\*[\s\S]*?(?=\*\*Польза|####|###|$)/g, '')
-    const title = text.match(/^# (.+)$/m)?.[1] || 'Отчёт о релизе'
-    return { title, text: text.trim().slice(0, 6000), url }
+    .replace(/\*\*Как настроить:\*\*[\s\S]*?(?=\*\*Польза|####|###|$)/g, '')
+    .trim()
+}
+
+/** Страница GitBook как материал: markdown по URL с `.md`. */
+export async function fetchGitbookPage(url: string): Promise<{ title: string; text: string; url: string } | null> {
+  try {
+    const text = cleanGitbookMd(await fetch(url).then(r => r.text()))
+    const title = text.match(/^# (.+)$/m)?.[1] || url.split('/').pop() || 'Страница'
+    return { title, text: text.slice(0, 6000), url }
   } catch {
     return null
   }
 }
 
-/** Последние выпуски GFSupport — линия «как мы это строим». */
-export function gfsupportFacts(): string {
-  return RELEASES.slice(0, 3)
-    .map(r => `${r.date} — ${r.title}:\n` + r.items.map(i => `• ${i.text}`).join('\n'))
-    .join('\n\n')
+/** Свежий отчёт о релизе Delever. */
+export async function fetchDeleverRelease(): Promise<{ title: string; text: string; url: string } | null> {
+  try {
+    const idx = await fetch(GITBOOK_INDEX).then(r => r.text())
+    const m = idx.match(/\[Отчёт о релизе: [^\]]+\]\((https:[^)]+\.md)\)/)
+    if (!m) return null
+    return await fetchGitbookPage(m[1])
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Пул страниц всего GitBook (llms.txt): архив релизов за все годы плюс
+ * описания функционала. Материал для «вечнозелёных» постов — фича, которая
+ * давно живёт, тоже достойна истории.
+ */
+export async function fetchGitbookPool(): Promise<Array<{ title: string; url: string }>> {
+  try {
+    const txt = await fetch(GITBOOK_LLMS).then(r => r.text())
+    const out: Array<{ title: string; url: string }> = []
+    for (const m of txt.matchAll(/\[([^\]]+)\]\((https:\/\/delever\.gitbook\.io[^)]+\.md)\)/g)) {
+      out.push({ title: m[1], url: m[2] })
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Выпуск GFSupport для линии «как мы это строим»: случайный из ещё не
+ * использованных (использованные помечены в creator_drafts.source как
+ * gfs:<version>), свежие — с двойным весом.
+ */
+export function gfsupportFact(usedVersions: Set<string>): { text: string; version: string } {
+  const fresh = RELEASES.filter(r => !usedVersions.has(r.version))
+  const pool = fresh.length ? fresh : RELEASES
+  const idx = Math.floor(Math.random() * Math.min(pool.length, 3)) === 0
+    ? 0
+    : Math.floor(Math.random() * pool.length)
+  const r = pool[idx]
+  return {
+    version: r.version,
+    text: `${r.date} — ${r.title}:\n` + r.items.map(i => `• ${i.text}`).join('\n'),
+  }
 }
 
 /** Образцы тона: русские посты-размышления канала, без праздничных. */
@@ -223,12 +267,19 @@ export interface GeneratedDraft { title: string; body_ru: string; body_en: strin
  * Общий для кнопки в UI и еженедельного крона. Бросает Error с человеческим
  * текстом — вызывающий решает, как его показать.
  */
+export type CreatorLine = 'delever' | 'delever_archive' | 'gfsupport'
+
 export async function generateOne(
   sql: SQL,
   key: string,
-  line: 'delever' | 'gfsupport',
+  line: CreatorLine,
   batchKey: string,
 ): Promise<any> {
+  // Что уже брали — чтобы архив и выпуски GFSupport не повторялись
+  const usedRows = await sql`
+    SELECT DISTINCT source->>'url' AS u FROM creator_drafts WHERE source->>'url' IS NOT NULL`
+  const used = new Set((usedRows as any[]).map(r => String(r.u)))
+
   let facts: string
   let sourceUrl: string | null = null
   if (line === 'delever') {
@@ -236,8 +287,27 @@ export async function generateOne(
     if (!rel) throw new Error('не удалось прочитать релиз Delever из GitBook')
     facts = rel.text
     sourceUrl = rel.url
+  } else if (line === 'delever_archive') {
+    // Вечнозелёный материал: случайная непользованная страница GitBook —
+    // прошлые релизы и описания функционала (пул ~400 страниц)
+    const pool = (await fetchGitbookPool()).filter(p => !used.has(p.url))
+    if (!pool.length) throw new Error('пул страниц GitBook пуст')
+    let page: { title: string; text: string; url: string } | null = null
+    for (let i = 0; i < 4 && !page; i++) {
+      const pick = pool[Math.floor(Math.random() * pool.length)]
+      const p = await fetchGitbookPage(pick.url)
+      // Страницы-оглавления и заглушки постом не станут
+      if (p && p.text.length > 500) page = p
+    }
+    if (!page) throw new Error('не нашлось содержательной страницы GitBook')
+    facts = page.text
+    sourceUrl = page.url
   } else {
-    facts = gfsupportFacts()
+    const usedVersions = new Set(
+      [...used].filter(u => u.startsWith('gfs:')).map(u => u.slice(4)))
+    const f = gfsupportFact(usedVersions)
+    facts = f.text
+    sourceUrl = `gfs:${f.version}`
   }
 
   const [samples, existing, sources, profileRow] = await Promise.all([
@@ -291,7 +361,7 @@ const SYSTEM_PROMPT = `Ты — редактор личного бренда Ф�
 
 export async function generateDraft(
   key: string,
-  line: 'delever' | 'gfsupport',
+  line: CreatorLine,
   facts: string,
   samples: string[],
   avoid: string[],
@@ -301,7 +371,9 @@ export async function generateDraft(
   const user = [
     line === 'delever'
       ? 'Материал — свежий отчёт о релизе Delever (написан для админов; инструкции игнорируй, выбери ОДИН самый живой факт и построй бутерброд вокруг него):'
-      : 'Материал — свежие выпуски GFSupport, внутренней системы, которую фаундер пишет сам (линия «как мы это строим»; выбери ОДИН факт):',
+      : line === 'delever_archive'
+        ? 'Материал — страница базы знаний Delever: прошлый релиз или описание функционала. Это ВЕЧНОЗЕЛЁНЫЙ пост: не подавай как новость («на этой неделе мы выкатили» — нельзя), а расскажи, как устроен продукт или рынок через ОДИН живой аспект этой страницы:'
+        : 'Материал — выпуск GFSupport, внутренней системы, которую фаундер пишет сам (линия «как мы это строим»; выбери ОДИН факт):',
     facts,
     profile ? '\nКарточка автора — его настоящая история, убеждения и голос (мысль в конце поста должна вырастать отсюда; факты биографии используй точно, не перевирай):\n' + profile.slice(0, 8000) : '',
     market ? '\nКонтекст рынка из подключённых источников — только фон для сцены и мысли, не пересказывай и не выдумывай сверх него:\n' + market.slice(0, 3500) : '',

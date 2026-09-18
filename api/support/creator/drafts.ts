@@ -31,7 +31,8 @@ export default async function handler(req: Request): Promise<Response> {
   try { body = await req.json() } catch { /* пустое тело */ }
 
   if (body.action === 'generate') {
-    const line = body.line === 'gfsupport' ? 'gfsupport' as const : 'delever' as const
+    const line = (['delever', 'delever_archive', 'gfsupport'] as const)
+      .find(l => l === body.line) || 'delever'
     const key = await getOpenAIKey()
     if (!key) return json({ error: 'нет ключа OpenAI в настройках' }, 500)
     const batchKey = String(body.batchKey || new Date().toISOString().slice(0, 10))

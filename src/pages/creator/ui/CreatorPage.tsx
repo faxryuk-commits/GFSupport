@@ -19,7 +19,7 @@ interface Draft {
   id: string
   created_at: string
   batch_key: string
-  line: 'delever' | 'gfsupport'
+  line: 'delever' | 'delever_archive' | 'gfsupport'
   title: string
   body_ru: string
   body_en: string
@@ -44,6 +44,7 @@ interface Builtin {
 
 const LINE_LABEL: Record<Draft['line'], { label: string; cls: string }> = {
   delever: { label: 'Delever', cls: 'bg-blue-50 text-blue-700' },
+  delever_archive: { label: 'Delever · вечнозелёный', cls: 'bg-sky-50 text-sky-700' },
   gfsupport: { label: 'как мы строим', cls: 'bg-violet-50 text-violet-700' },
 }
 
@@ -338,7 +339,7 @@ export function CreatorPage() {
   // По одному запросу на пост: edge-функция не успевает три за 25 секунд.
   const generateBatch = async () => {
     const batchKey = new Date().toISOString().slice(0, 10)
-    const plan: Array<'delever' | 'gfsupport'> = ['delever', 'delever', 'gfsupport']
+    const plan: Array<Draft['line']> = ['delever', 'delever_archive', 'gfsupport']
     setError('')
     for (let i = 0; i < plan.length; i++) {
       setBusy(`Пишу пост ${i + 1} из ${plan.length}…`)

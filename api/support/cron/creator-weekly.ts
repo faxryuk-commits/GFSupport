@@ -1,19 +1,20 @@
 import { getSQL, json, getOpenAIKey, getOrgBotToken } from '../_lib/db.js'
 import { assertCron } from '../_lib/cron-auth.js'
-import { CREATOR_OWNER_ID, ensureCreatorSchema, generateOne } from '../_lib/creator.js'
+import { CREATOR_OWNER_ID, ensureCreatorSchema, generateOne, type CreatorLine } from '../_lib/creator.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
- * Еженедельная сборка выпуска «Креатора».
+ * Ежедневная сборка выпуска «Креатора».
  *
  * Edge-функция не успевает три поста за один вызов (лимит 25 секунд),
- * поэтому крон тикает пятничным утром каждые 5 минут и дописывает по
- * одному посту, пока выпуск не соберётся: тик 1 → Delever, тик 2 →
- * Delever, тик 3 → GFSupport + личное сообщение владельцу в Telegram.
+ * поэтому крон тикает каждым утром каждые 5 минут и дописывает по одному
+ * посту, пока выпуск не соберётся: свежий релиз Delever → вечнозелёная
+ * страница базы знаний (архив релизов и функционал, без повторов) →
+ * выпуск GFSupport; после третьего — личное сообщение владельцу.
  * Идемпотентно: собранный выпуск последующие тики пропускают.
  */
-const PLAN: Array<'delever' | 'gfsupport'> = ['delever', 'delever', 'gfsupport']
+const PLAN: CreatorLine[] = ['delever', 'delever_archive', 'gfsupport']
 
 export default async function handler(req: Request): Promise<Response> {
   const denied = assertCron(req)

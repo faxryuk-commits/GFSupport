@@ -159,7 +159,7 @@
     },
     {
       "path": "/api/support/cron/creator-weekly",
-      "schedule": "*/5 5-6 * * 5"
+      "schedule": "*/5 5-6 * * *"
     }
   ]
 }
