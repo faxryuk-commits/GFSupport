@@ -38,6 +38,8 @@ export interface LastAct {
 
 export interface Lead {
   id: string; name: string; contact_name: string | null; phone: string | null
+  /** Заведение из карточки клиента, если обращение к нему привязано. */
+  account_name?: string | null
   market_id: string | null
   city: string | null; status: string; icp_score: number | null
   sla_due_at: string | null; first_touch_at: string | null; created_at: string

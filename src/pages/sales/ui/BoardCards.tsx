@@ -51,6 +51,29 @@ function Owner({ name }: { name: string | null | undefined }) {
 const PSEUDO = /^(заявка с сайта|звонок|входящий|исходящий|сделка #|facebook №|instagram|обращение)/i
 const isPseudo = (s: string | null | undefined) => !s || PSEUDO.test(s.trim())
 
+/**
+ * Как назвать обращение на доске: заведение, а не человек.
+ *
+ * Мы продаём заведению; сделка справа уже называется брендом, и карточка
+ * должна узнаваться на всём пути от «Новых» до «Договора». Заведение —
+ * из карточки клиента, иначе из названия обращения, если оно не совпадает
+ * с именем контакта и не служебное («Звонок +998…»). Без заведения
+ * заголовком остаётся контакт, а его отсутствие подписывается: это первый
+ * вопрос квалификации.
+ */
+export function leadTitle(l: { name: string; contact_name?: string | null; account_name?: string | null; phone?: string | null }) {
+  const venue = l.account_name
+    || (l.contact_name && l.name !== l.contact_name && !isPseudo(l.name) ? l.name : null)
+  const contact = l.contact_name || null
+  // Название без отдельного контакта («Dönərlinski» из Баку) — заведение это
+  // или человек, система не знает; заголовком идёт как есть, без упрёка
+  const bare = !venue && !contact && !isPseudo(l.name) ? l.name : null
+  const title = venue || contact || bare || l.phone || l.name
+  // Заведение точно не указано, когда заголовок — человек или служебное имя
+  const venueMissing = !venue && !bare
+  return { venue, contact, title, venueMissing }
+}
+
 /** Кнопка звонка в подвале: одна трубка, номер — по наведению. */
 function CallBtn({ phone, market, leadId }: { phone: string | null; market?: string | null; leadId?: string }) {
   if (!phone) return null
@@ -228,15 +251,15 @@ export function LeadCard({
     state = { text: 'касаний не было', tone: 'mute' }
   }
 
-  // Заголовок — человек; бренд, если он есть и отличается, — первым в фактах.
-  // Порядок фактов по ценности: с кем говорим → откуда → где
-  const title = l.contact_name || l.name
-  const brand = l.contact_name && l.name !== l.contact_name && !isPseudo(l.name) ? l.name : null
+  // Заголовок — заведение; человек и телефон — строкой под ним.
+  // Порядок фактов по ценности: откуда → где
+  const { venue, contact, title, venueMissing } = leadTitle(l)
   const phone = parsePhone(l.phone, l.market_id)
-  const facts = [brand, l.source, l.city].filter(Boolean).join(' · ')
+  const prettyPhone = l.phone ? (phone.valid ? phone.pretty : l.phone) : null
+  const facts = [l.source, l.city].filter(Boolean).join(' · ')
   const rows: Row[] = [
-    ['Контакт', [l.contact_name, phone.valid ? phone.pretty : l.phone].filter(Boolean).join(' · ')],
-    ['Бренд', brand],
+    ['Заведение', venue],
+    ['Контакт', [contact, prettyPhone].filter(Boolean).join(' · ')],
     ['Источник', [l.source, KIND_LABEL[l.lead_kind || ''] && !String(l.source || '').toLowerCase().includes(KIND_LABEL[l.lead_kind || ''].toLowerCase())
       ? KIND_LABEL[l.lead_kind || ''] : null].filter(Boolean).join(' · ')],
     ['Город', l.city],
@@ -269,15 +292,17 @@ export function LeadCard({
       {/* У клиента уже есть сделка — «К сделке» прикрепит обращение к ней,
           а не заведёт вторую. Об этом надо сказать до нажатия — но в строке
           фактов, а не в заголовке: метка в заголовке выдавливала имя */}
+      {/* Кто и как: контакт и телефон цифрами. Если заголовок — контакт
+          (заведение неизвестно), имя не повторяется, а пустота подписана */}
+      <div className="mt-0.5 text-[11px] text-gray-500 truncate">
+        {venue && contact ? <span className="text-gray-700">{contact} · </span> : null}
+        {l.phone ? <span className="tabular-nums text-gray-700">{prettyPhone}</span> : <span className="text-gray-300">без телефона</span>}
+        {venueMissing && <span className="text-gray-300"> · заведение не указано</span>}
+      </div>
       <div className="mt-0.5 text-[11px] text-gray-400 truncate" title={facts}>
         {l.open_deal_stage && <span className="text-blue-700 font-medium">сделка · {l.open_deal_stage} · </span>}
         {facts || '—'}
-      </div>
-      {/* Пятая строка — как связаться и что сказал: телефон цифрами и слова
-          клиента. По наведению они были, но наведение — это ещё один жест */}
-      <div className="mt-0.5 text-[11px] text-gray-500 truncate">
-        {l.phone ? <span className="tabular-nums text-gray-700">{phone.valid ? phone.pretty : l.phone}</span> : <span className="text-gray-300">без телефона</span>}
-        {l.text ? <span className="text-gray-400"> · «{String(l.text).replace(/\s+/g, ' ')}»</span> : null}
+        {l.text ? <span> · «{String(l.text).replace(/\s+/g, ' ')}»</span> : null}
       </div>
       <LastActLine act={l.last_act} />
       <div className="mt-auto flex items-center justify-between gap-2">

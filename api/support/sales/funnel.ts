@@ -252,6 +252,9 @@ async function handlerInner(req: Request): Promise<Response> {
         SELECT l.id, l.name, l.contact_name, l.phone, l.city, l.status, l.icp_score, l.market_id,
                l.sla_due_at, l.first_touch_at, l.created_at, l.text, l.lead_kind,
                l.nurture_step, l.nurture_next_at,
+               -- Заведение — заголовок карточки: у известного клиента оно в
+               -- карточке клиента, у новой заявки — в названии обращения
+               acc.name AS account_name,
                -- У клиента уже есть открытая сделка: на доске это должно быть
                -- видно до «Беру», иначе обращение превращается во вторую карточку
                (SELECT s2.label FROM sales_deals d2 JOIN sales_stages s2 ON s2.id = d2.stage_id
@@ -278,6 +281,7 @@ async function handlerInner(req: Request): Promise<Response> {
         FROM sales_leads l
         LEFT JOIN sales_sources s ON s.id = l.source_id
         LEFT JOIN support_agents ag ON ag.id = l.assigned_agent_id
+        LEFT JOIN sales_accounts acc ON acc.id = l.account_id
         WHERE l.org_id = ${orgId} AND l.archived_at IS NULL
           AND l.status IN ('new', 'assigned', 'attempting', 'nurture')
           AND (${market} = '' OR l.market_id = ${market} OR l.market_id IS NULL)

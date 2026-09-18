@@ -1,3 +1,4 @@
+import { leadTitle } from './BoardCards'
 import { useMemo, useState } from 'react'
 import { REGION_NAMES } from './region'
 import { apiPost } from '@/shared/services/api.service'
@@ -56,7 +57,7 @@ export function FunnelList({ leads, deals, leadColumns, stages, reasons, owners,
     for (const l of leads) {
       const col = colOf(l.status)
       out.push({
-        kind: 'lead', id: l.id, title: l.contact_name || l.name, sub: l.contact_name && l.name !== l.contact_name ? l.name : null,
+        kind: 'lead', id: l.id, title: leadTitle(l).title, sub: leadTitle(l).venue ? leadTitle(l).contact : null,
         stageKey: `lead:${col?.key || l.status}`, stageLabel: col?.label || l.status,
         owner: l.agent_name, at: l.created_at, amount: null, currency: 'UZS',
         next: null, nextAt: null, phone: l.phone,
