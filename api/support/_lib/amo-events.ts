@@ -53,18 +53,26 @@ export async function ensureAmoEventsSchema(sql: SQL): Promise<void> {
 }
 
 /** Сотрудники по id пользователя Amo: имя нужно записям, id — привязкам. */
-async function agentDirectory(sql: SQL, orgId: string): Promise<Map<number, { id: string; name: string }>> {
-  const map = new Map<number, { id: string; name: string }>()
+async function agentDirectory(sql: SQL, orgId: string): Promise<Map<number, { id: string; name: string; onPbx: boolean }>> {
+  const map = new Map<number, { id: string; name: string; onPbx: boolean }>()
   const pairs = (process.env.AMO_USER_MAP || '').split(',').map(p => p.split(':')).filter(p => p[0] && p[1])
   if (!pairs.length) return map
   const ids = pairs.map(p => p[1].trim())
   const rows = await sql`
     SELECT id, name FROM support_agents WHERE org_id = ${orgId} AND id = ANY(${ids})
   ` as any[]
-  const byId = new Map(rows.map((r: any) => [String(r.id), String(r.name)]))
+  // Кто звонит через нашу АТС: её вебхук уже пишет каждый такой звонок, а Amo
+  // зеркалит ту же АТС и отдаёт его вторым событием — 183 дубля за неделю.
+  // Признак — не добавочный в профиле (его чистят), а сами звонки за месяц
+  const pbxNames = new Set((await sql`
+    SELECT DISTINCT split_part(detail, ' · ', 3) AS who FROM sales_touchpoints
+    WHERE org_id = ${orgId} AND kind = 'call' AND identity NOT LIKE 'amo_%'
+      AND happened_at > NOW() - INTERVAL '30 days'
+  ` as any[]).map((r: any) => String(r.who || '').trim()).filter(Boolean))
+  const byId = new Map(rows.map((r: any) => [String(r.id), r]))
   for (const [amo, agent] of pairs) {
-    const name = byId.get(agent.trim())
-    if (name) map.set(Number(amo.trim()), { id: agent.trim(), name })
+    const r = byId.get(agent.trim())
+    if (r) map.set(Number(amo.trim()), { id: agent.trim(), name: String(r.name), onPbx: pbxNames.has(String(r.name)) })
   }
   return map
 }
@@ -161,6 +169,9 @@ export async function importAmoEvents(
 
         if (type === 'outgoing_call' || type === 'incoming_call') {
           if (!who) { out.unmapped[String(by)] = (out.unmapped[String(by)] || 0) + 1; out.skipped++; continue }
+          // Звонки через нашу АТС уже учтены её вебхуком: Amo видит ту же АТС
+          // и отдаёт тот же звонок вторым событием — 183 дубля за неделю
+          if (who.onPbx) { out.skipped++; continue }
           const noteId = e.value_after?.[0]?.note?.id
           const identity = noteId ? `amo_call_${noteId}` : `amo_ev_${e.id}`
           const [dup] = await sql`
@@ -176,6 +187,17 @@ export async function importAmoEvents(
             dur = Number(note?.params?.duration || 0)
           }
           const norm = phone.replace(/\D/g, '').slice(-9)
+          // Тот же номер в те же минуты уже есть от нашей АТС — это он и есть
+          if (norm) {
+            const [same] = await sql`
+              SELECT id FROM sales_touchpoints
+              WHERE org_id = ${orgId} AND kind = 'call' AND identity NOT LIKE 'amo_%'
+                AND right(regexp_replace(split_part(detail, ' · ', 1), '[^0-9]', '', 'g'), 9) = ${norm}
+                AND happened_at BETWEEN ${at}::timestamptz - INTERVAL '3 minutes' AND ${at}::timestamptz + INTERVAL '3 minutes'
+              LIMIT 1
+            ` as any[]
+            if (same) { out.skipped++; continue }
+          }
           const [link] = norm ? await sql`
             SELECT c.account_id,
                    (SELECT l.id FROM sales_leads l WHERE l.account_id = c.account_id ORDER BY l.created_at DESC LIMIT 1) AS lead_id
