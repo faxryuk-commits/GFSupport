@@ -28,7 +28,7 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: '2026-09-18.2',
+    version: '2026-09-18.6',
     date: '2026-09-18',
     title: 'Вкладка «Команда»: ценность сотрудников — результат и как он получен',
     items: [
@@ -39,7 +39,7 @@ export const RELEASES: Release[] = [
     ],
   },
   {
-    version: '2026-09-18.1',
+    version: '2026-09-18.5',
     date: '2026-09-18',
     title: 'Директ из Amo — в «Диалоги», а не в очередь обращений',
     items: [
