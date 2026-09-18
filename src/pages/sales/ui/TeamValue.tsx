@@ -112,6 +112,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
     touch: Math.max(1, ...people.map(p => p.touch.total)),
     crm: Math.max(1, ...people.map(p => p.crm.total)),
   }
+  const teamReached = d.teamReached || [0, 0, 0, 0, 0, 0]
   const strip = lastDays(d.period.to, 12)
   const heat = lastDays(d.period.to, 14)
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tashkent' })
@@ -241,7 +242,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
               </tr>
             </thead>
             <tbody>
-              {[...people].filter(p => p.stages.reached[0] > 0).sort((a, b) => b.stages.reached[0] - a.stages.reached[0]).map(p => {
+              {[...people].filter(p => (p.stages?.reached?.[0] || 0) > 0).sort((a, b) => b.stages.reached[0] - a.stages.reached[0]).map(p => {
                 const r = p.stages.reached, base = r[0]
                 const w = p.stages.weakest
                 return (
@@ -269,11 +270,11 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
               })}
               <tr className="bg-gray-50/70 font-semibold">
                 <td className="px-4 py-2 text-gray-900">Итого</td>
-                <td className="px-3 py-2 text-right tabular-nums">{d.teamReached[0]}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{teamReached[0]}</td>
                 {[2, 3, 4, 5].map(k => (
-                  <td key={k} className="px-3 py-2 text-right tabular-nums">{d.teamReached[k]}<span className="text-[11px] text-gray-500 font-normal ml-1">{d.teamReached[0] ? Math.round((d.teamReached[k] / d.teamReached[0]) * 100) : 0}%</span></td>
+                  <td key={k} className="px-3 py-2 text-right tabular-nums">{teamReached[k]}<span className="text-[11px] text-gray-500 font-normal ml-1">{teamReached[0] ? Math.round((teamReached[k] / teamReached[0]) * 100) : 0}%</span></td>
                 ))}
-                <td className="px-3 py-2 text-[11px] text-gray-400 font-normal">переходы команды: {[1, 2, 3, 4].map(i => d.teamReached[i] ? `${Math.round((d.teamReached[i + 1] / d.teamReached[i]) * 100)}%` : '—').join(' → ')}</td>
+                <td className="px-3 py-2 text-[11px] text-gray-400 font-normal">переходы команды: {[1, 2, 3, 4].map(i => teamReached[i] ? `${Math.round((teamReached[i + 1] / teamReached[i]) * 100)}%` : '—').join(' → ')}</td>
               </tr>
             </tbody>
           </table>
