@@ -85,7 +85,7 @@ export function SalesPulse({ from, to, region, children }: {
         ['Выиграно', String(k.won), `закрыто в периоде · win rate ${winRate}% из ${closed}`],
         ['Получено денег', fmtMln(k.cash_amt_new ?? k.cash_amt),
           k.cash_amt_new !== undefined
-            ? `${k.cash_n_new} оплат по сделкам периода · ещё ${fmtMln(Number(k.cash_amt) - Number(k.cash_amt_new))} от прежних клиентов`
+            ? `${k.cash_n_new} оплат по сделкам периода · ещё ${fmtMln(Number(k.cash_amt) - Number(k.cash_amt_new))} по сделкам прошлых периодов`
             : `${k.cash_n} оплат за период · UZS`],
         ['Новый MRR', fmtMln(k.won_amt), 'подписка выигранных · UZS/мес'],
         ['Цикл сделки', k.cycle_med ? `${k.cycle_med} дн` : '—', 'медиана по выигрышам периода'],
@@ -95,7 +95,7 @@ export function SalesPulse({ from, to, region, children }: {
       {children}
 
       <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-start">
-        <Card title="Деньги по месяцам" sub="получено — факт из оплат: по сделкам месяца и от прежних клиентов; новый MRR — подписка выигранных за месяц"
+        <Card title="Деньги по месяцам" sub="получено — оплаты, привязанные к сделкам: выигранным в этом месяце и раньше; подписки без сделки — в ПланФакте; новый MRR — подписка выигранных за месяц"
           right={<PeriodChip label="12 месяцев" />}>
           <div className="px-4 pt-3 pb-2">
             {months.length === 0 && <div className="text-[12.5px] text-gray-400 py-2">Выигрышей и оплат за год нет</div>}
@@ -124,7 +124,7 @@ export function SalesPulse({ from, to, region, children }: {
             </div>
             <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
               <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />по сделкам месяца</span>
-              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-200 mr-1.5" />от прежних клиентов, млн UZS</span>
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-200 mr-1.5" />по сделкам прошлых месяцев, млн UZS</span>
               <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-300 mr-1.5" />новый MRR, млн UZS</span>
             </div>
           </div>
