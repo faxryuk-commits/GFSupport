@@ -43,6 +43,15 @@ export default async function handler(req: Request): Promise<Response> {
   const prevFrom = new Date(new Date(fromTs).getTime() - days * 86400000).toISOString()
   const prevTo = fromTs
 
+  // ─── Поток: от канала до выигрыша ───────────────────────────────────────
+  if (url.searchParams.get('action') === 'flow') {
+    const { salesFlow } = await import('../_lib/sales-flow.js')
+    const exclude = (url.searchParams.get('exclude') || '').split(',').map(s => s.trim()).filter(Boolean)
+    const owner = url.searchParams.get('owner') || ''
+    const data = await salesFlow(sql, orgId, { fromTs, toTs, market, owner, exclude })
+    return json({ period: { from, to }, market, ...data })
+  }
+
   // ─── Реклама по сотрудникам: чьи лиды с Meta и что стало с деньгами ───────
   if (url.searchParams.get('action') === 'ads') {
     const { adsByAgent } = await import('../_lib/ads-by-agent.js')

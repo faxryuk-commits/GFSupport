@@ -5,6 +5,7 @@ import { RegionBadge, useRegion, REGION_NAMES } from './region'
 import { SalesPulse } from './SalesPulse'
 import { SalesActivity } from './SalesActivity'
 import { AdsReport } from './AdsReport'
+import { SalesFlow } from './SalesFlow'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -243,6 +244,8 @@ export function SalesReportsPage() {
       )}
 
       {tab === 'sales' && <>
+      {/* Поток первым: путь от канала до выигрыша — то, ради чего открывают отчёт */}
+      <SalesFlow from={fromStr} to={toStr} region={region} />
       <SalesPulse from={fromStr} to={toStr} region={region} />
 
       <div className="grid lg:grid-cols-2 gap-4 items-start">

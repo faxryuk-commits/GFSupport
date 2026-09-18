@@ -3,8 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles, PenLine,
-} from 'lucide-react'
+  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles, PenLine, TrendingUp } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
 import { pathAllowedFor } from '@/shared/lib/modules'
@@ -270,7 +269,8 @@ interface NavGroup {
  * Раскрываются только «Продажи» и «Операции» — там правда несколько рабочих
  * экранов. Остальные пять открываются сразу, без промежуточного клика.
  *
- * Куда уехало: отчёты продаж и журнал ИИ-ассистента — в «Обзор», справочники
+ * Куда уехало: журнал ИИ-ассистента — в «Обзор» (отчёты продаж вернулись
+ * в «Продажи»: за ними ходили в три клика и не открывали), справочники
  * продаж, бенчмарки, AI-агент и маршрутизация — в «Настройки». ИИ-чат,
  * обязательства и база знаний убраны из меню; страницы и код на месте
  * и открываются прямой ссылкой.
@@ -284,6 +284,9 @@ const navGroups: NavGroup[] = [
       // Иконки у продаж свои: раньше «Лиды» и «Чаты» делили один значок, а
       // «Аккаунты» и «Каналы» — решётку, и в свёрнутом меню они были неразличимы
       { path: '/sales/funnel', label: 'Воронка', icon: Waypoints },
+      // Отчёты продаж — здесь, а не только в «Обзоре»: за аналитикой отдела
+      // ходили через общий обзор в три клика, и её просто не открывали
+      { path: '/sales/reports', label: 'Отчёты', icon: TrendingUp },
       // Задачи отдела одним экраном: срезы по сроку, фильтры, колонки по этапам
       { path: '/sales/tasks', label: 'Задачи', icon: ListChecks, badgeKey: 'salesQueue',
         badgeHint: 'горит по нормативу и задачам' },

@@ -129,56 +129,9 @@ export function SalesPulse({ from, to, region }: { from: string; to: string; reg
         ['Взвешенный прогноз', `≈${fmtMln(k.weighted)}`, `UZS/мес · по ${k.withAmount} сделкам с суммой`],
       ]} />
 
-      <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-start">
-        <Card title="Воронка: где теряем"
-          sub="сделки, достигшие этапа · цвет — источник лида"
-          right={<PeriodChip label={periodLabel} />}>
-          <div className="px-4 py-3">
-            <div className="flex gap-3 flex-wrap mb-2.5 text-[10.5px] text-gray-500">
-              {legendSrcs.map(s2 => (
-                <span key={s2} className="inline-flex items-center gap-1.5">
-                  <i className="w-2 h-2 rounded-sm inline-block" style={{ background: srcColor(s2) }} />
-                  {s2}
-                </span>
-              ))}
-              <span className="inline-flex items-center gap-1.5">
-                <i className="w-2 h-2 rounded-sm inline-block border border-gray-200" style={{ background: SRC_MUTED }} />
-                прочее / история Amo
-              </span>
-            </div>
-            {stages.length === 0 && <div className="text-[12.5px] text-gray-400 py-2">Движения за период нет</div>}
-            {stages.map((s2, i) => {
-              // Конверсия — от «бегущего максимума» предыдущих этапов: этап,
-              // который часто пропускают («Демо назначено»), не должен давать
-              // соседям 800%. Больше 100% не показываем — это шум откатов
-              const runMax = Math.max(1, ...stages.slice(0, i).map(x => x.total))
-              const conv = i > 0 ? Math.round((s2.total / runMax) * 100) : 0
-              return (
-                <div key={s2.key} className="grid grid-cols-[118px_34px_1fr_52px] gap-2.5 items-center py-[5px]">
-                  <span className="text-[12px] text-gray-500 text-right">{s2.label}</span>
-                  <span className="text-[12.5px] font-bold text-right tabular-nums">{s2.total}</span>
-                  <div className="h-[22px] flex items-stretch gap-[2px]"
-                    style={{ width: `${Math.max(4, (s2.total / topReach) * 100)}%` }}>
-                    {s2.parts.map((p, j) => (
-                      <div key={p.src}
-                        title={`${p.src}: ${p.n}`}
-                        className={j === 0 ? 'rounded-l' : ''}
-                        style={{
-                          width: `${(p.n / s2.total) * 100}%`, minWidth: 3,
-                          background: srcColor(p.src),
-                          borderRadius: j === s2.parts.length - 1 ? '0 4px 4px 0' : undefined,
-                        }} />
-                    ))}
-                  </div>
-                  <span className="text-[11.5px] text-gray-500 tabular-nums">
-                    {i > 0 && conv <= 100 ? `${conv}%` : ''}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-
+      {/* «Воронка: где теряем» переехала в «Поток» выше — там тот же путь
+          по этапам, но с каналами до конца и потерями на каждой ступени */}
+      <div className="grid lg:grid-cols-2 gap-4 items-start">
         <Card title="Потенциал по этапам"
           sub="открытые сделки · тёмное — взвешенно на вероятность"
           right={<PeriodChip label="сейчас" />}>
