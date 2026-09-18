@@ -104,7 +104,7 @@ function leadText(raw: string | null | undefined): string | null {
   if (!/\w\?:\s/.test(t)) return `«${t}»`
   const parts = t.split(/\s(?=[a-z0-9_'’‘`]+\?:\s)/i)
   return parts.map(p => {
-    const m = p.match(/^([a-z0-9_]+)\?:\s*(.*)$/i)
+    const m = p.match(/^([a-z0-9_'’‘`]+)\?:\s*(.*)$/i)
     return m ? `${m[1].replace(/_/g, ' ')}: ${m[2].replace(/_/g, ' ')}` : p
   }).join('\n')
 }
