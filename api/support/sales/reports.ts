@@ -580,7 +580,9 @@ export default async function handler(req: Request): Promise<Response> {
         AND (${market} = '' OR d.market_id = ${market})
       GROUP BY 2
       UNION ALL
-      SELECT 'delivery', COALESCE(NULLIF(d.delivery_type, ''), 'не указано'),
+      -- Несколько способов через запятую — одна корзина, а не строка на сочетание
+      SELECT 'delivery', CASE WHEN d.delivery_type LIKE '%,%' THEN 'несколько способов'
+                              ELSE COALESCE(NULLIF(d.delivery_type, ''), 'не указано') END,
              COUNT(*)::int, COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int
       FROM sales_deals d
       WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
@@ -599,7 +601,15 @@ export default async function handler(req: Request): Promise<Response> {
              COUNT(d.id) FILTER (WHERE d.next_step_at IS NULL
                AND d.won_at IS NULL AND d.lost_at IS NULL)::int AS no_next_step,
              COUNT(d.id) FILTER (WHERE d.pos IS NOT NULL AND d.pain IS NOT NULL)::int AS qualified,
-             COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.won_at IS NOT NULL), 0) AS won_amount,
+             -- Подписано — по валютам: сумы, тенге и доллары одной цифрой не складываются
+             COALESCE((SELECT jsonb_object_agg(cur, amt) FROM (
+               SELECT COALESCE(w.currency, 'UZS') AS cur, SUM(w.monthly_amount) AS amt
+               FROM sales_deals w
+               WHERE w.owner_agent_id = ag.id AND w.org_id = ${orgId} AND w.archived_at IS NULL
+                 AND w.won_at IS NOT NULL AND w.monthly_amount > 0
+                 AND (${market} = '' OR w.market_id = ${market})
+                 AND w.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+               GROUP BY 1) x), '{}'::jsonb) AS won_amounts,
              -- Портфель на сейчас — вне периода: у человека висит всё, что открыто,
              -- а не только заведённое в эти даты. Раньше это была отдельная
              -- карточка «Портфель по сейлзам» с той же колонкой людей
@@ -679,10 +689,22 @@ export default async function handler(req: Request): Promise<Response> {
              COUNT(*) FILTER (WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL)::int AS open,
              COUNT(*) FILTER (WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
              COUNT(*) FILTER (WHERE d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS lost,
-             COALESCE(SUM(d.monthly_amount) FILTER (
-               WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz), 0) AS won_amount,
-             COALESCE(SUM(d.monthly_amount) FILTER (
-               WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL), 0) AS pipeline
+             -- Суммы — по валютам: у Казахстана тенге, у Баку манаты,
+             -- складывать их с сумами под одной подписью нельзя
+             COALESCE((SELECT jsonb_object_agg(cur, amt) FROM (
+               SELECT COALESCE(w.currency, 'UZS') AS cur, SUM(w.monthly_amount) AS amt
+               FROM sales_deals w
+               WHERE w.org_id = d.org_id AND COALESCE(w.market_id, '—') = COALESCE(d.market_id, '—')
+                 AND w.pipeline <> 'partner' AND w.archived_at IS NULL
+                 AND w.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+               GROUP BY 1) x), '{}'::jsonb) AS won_amounts,
+             COALESCE((SELECT jsonb_object_agg(cur, amt) FROM (
+               SELECT COALESCE(o.currency, 'UZS') AS cur, SUM(o.monthly_amount) AS amt
+               FROM sales_deals o
+               WHERE o.org_id = d.org_id AND COALESCE(o.market_id, '—') = COALESCE(d.market_id, '—')
+                 AND o.pipeline <> 'partner' AND o.archived_at IS NULL
+                 AND o.won_at IS NULL AND o.lost_at IS NULL
+               GROUP BY 1) x), '{}'::jsonb) AS pipeline_amounts
       FROM sales_deals d
       WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner' AND d.archived_at IS NULL
       GROUP BY 1 ORDER BY won DESC

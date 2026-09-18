@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Kpis, money, pct, PageShell, Skeleton, Seg } from './kit'
+import { Card, Kpis, moneyList, pct, PageShell, Skeleton, Seg } from './kit'
 import { RegionBadge, useRegion, REGION_NAMES } from './region'
 import { SalesPulse } from './SalesPulse'
 import { SalesActivity } from './SalesActivity'
@@ -285,10 +285,10 @@ export function SalesReportsPage() {
                   <tr key={r.market} className="border-b border-gray-100">
                     <td className="px-4 py-2 text-gray-900">{REGION_NAMES[r.market] || r.market}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{r.open}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">{money(r.pipeline, 'UZS')}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">{moneyList(r.pipeline_amounts, '—')}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-emerald-700">{r.won}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-red-600">{r.lost}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{money(r.won_amount, 'UZS')}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{moneyList(r.won_amounts, '—')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -373,7 +373,7 @@ export function SalesReportsPage() {
                   <td className="px-4 py-2 text-right tabular-nums">{t.deals}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{t.won}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{pct(t.won, t.won + t.lost)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{money(t.won_amount, '')}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{moneyList(t.won_amounts, '—')}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{pct(t.qualified, t.deals)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{t.open_now ?? 0}</td>
                   <td className="px-4 py-2 text-right tabular-nums">
