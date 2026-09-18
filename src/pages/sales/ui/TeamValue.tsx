@@ -31,7 +31,7 @@ interface Person {
 interface Data {
   period: { from: string; to: string; workDays: number; crmSince: string }
   workDays: string[]
-  totals: { people: number; byMarket: Record<string, number>; won: number; wonAmounts: Record<string, number>
+  totals: { people: number; byMarket: Record<string, number>; won: number; wonNoOwner: number; wonAmounts: Record<string, number>
             touches: number; cleanAvg: number | null; rhythmAvg: number }
   people: Person[]
 }
@@ -116,7 +116,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
     <div className="space-y-4">
       <Kpis items={[
         ['Сейлзов в работе', String(d.totals.people), markets || '—'],
-        ['Выиграно', String(d.totals.won), `закрыто за период · ${moneyList(d.totals.wonAmounts, 'без сумм')}`],
+        ['Выиграно', String(d.totals.won), `закрыто за период${d.totals.wonNoOwner ? ` · ещё ${d.totals.wonNoOwner} без владельца` : ''} · ${moneyList(d.totals.wonAmounts, 'без сумм')}`],
         ['Касаний клиентов', String(d.totals.touches), 'разговоры, сообщения, встречи · факты, не заметки'],
         ['Чистота карточек', d.totals.cleanAvg === null ? '—' : `${d.totals.cleanAvg}%`, 'открытых сделок с шагом, квалификацией и суммой'],
         ['Ритм', `${d.totals.rhythmAvg}%`, `рабочих дней с действиями · ${d.period.workDays} дн в периоде`],

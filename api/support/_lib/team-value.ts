@@ -83,7 +83,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
   const toTs = `${o.to}T23:59:59+05:00`
   const market = o.market || ''
 
-  const [agents, calls, acts, moves, tasks, deals] = await Promise.all([
+  const [agents, calls, acts, moves, tasks, deals, orphan] = await Promise.all([
     // Продавцы: отдел продаж плюс все, у кого есть сделки в периоде или в работе
     sql`
       SELECT ag.id, ag.name, ag.role, ag.pbx_ext, ag.created_at,
@@ -197,6 +197,15 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
           AND EXISTS (SELECT 1 FROM sales_lost_reasons r WHERE r.id = mine.lost_reason_id AND r.label <> 'Другое'))::int AS lost_reasoned
       FROM mine
       GROUP BY 1
+    `,
+    // Выигранные без владельца: в KPI «Продаж» они есть, у людей — нет,
+    // и разница должна быть подписана, а не выглядеть ошибкой
+    sql`
+      SELECT COUNT(*)::int AS n FROM sales_deals d
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+        AND d.owner_agent_id IS NULL
+        AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        AND (${market} = '' OR d.market_id = ${market})
     `,
   ])
 
@@ -374,6 +383,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
     totals: {
       people: peopleOut.length, byMarket,
       won: peopleOut.reduce((s, p) => s + p.result.won, 0), wonAmounts,
+      wonNoOwner: Number((orphan as any[])[0]?.n || 0),
       touches: peopleOut.reduce((s, p) => s + p.touch.total, 0),
       cleanAvg: withScore.length ? Math.round(withScore.reduce((s, p) => s + (p.clean.score as number), 0) / withScore.length) : null,
       rhythmAvg: peopleOut.length ? Math.round((peopleOut.reduce((s, p) => s + (p.rhythm.workDays ? p.rhythm.activeDays / p.rhythm.workDays : 0), 0) / peopleOut.length) * 100) : 0,
