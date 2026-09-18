@@ -240,15 +240,19 @@ export async function generateOne(
     facts = gfsupportFacts()
   }
 
-  const [samples, existing, sources] = await Promise.all([
+  const [samples, existing, sources, profileRow] = await Promise.all([
     styleSamples(sql),
     sql`SELECT title FROM creator_drafts WHERE batch_key = ${batchKey}`,
     sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
+    // Карточка фаундера — дистилляция подкастов и интервью: история, убеждения,
+    // голос. «Мысль фаундера» опирается на неё, а не выводится из воздуха.
+    sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
   ])
   const avoid = (existing as any[]).map(r => String(r.title)).filter(Boolean)
   const market = await marketContext(sources as any)
+  const profile = String((profileRow as any[])[0]?.value || '')
 
-  const draft = await generateDraft(key, line, facts, samples, avoid, market)
+  const draft = await generateDraft(key, line, facts, samples, avoid, market, profile)
   if (!draft) throw new Error('модель не вернула пост')
 
   const id = draftId()
@@ -290,12 +294,14 @@ export async function generateDraft(
   samples: string[],
   avoid: string[],
   market = '',
+  profile = '',
 ): Promise<GeneratedDraft | null> {
   const user = [
     line === 'delever'
       ? 'Материал — свежий отчёт о релизе Delever (написан для админов; инструкции игнорируй, выбери ОДИН самый живой факт и построй бутерброд вокруг него):'
       : 'Материал — свежие выпуски GFSupport, внутренней системы, которую фаундер пишет сам (линия «как мы это строим»; выбери ОДИН факт):',
     facts,
+    profile ? '\nКарточка автора — его настоящая история, убеждения и голос (мысль в конце поста должна вырастать отсюда; факты биографии используй точно, не перевирай):\n' + profile.slice(0, 8000) : '',
     market ? '\nКонтекст рынка из подключённых источников — только фон для сцены и мысли, не пересказывай и не выдумывай сверх него:\n' + market.slice(0, 3500) : '',
     samples.length ? '\nОбразцы тона автора (для стиля, не для копирования):\n---\n' + samples.join('\n---\n') : '',
     avoid.length ? '\nВ этом выпуске уже есть посты на темы (возьми ДРУГУЮ): ' + avoid.join('; ') : '',
