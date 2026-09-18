@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles,
+  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles, PenLine,
 } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
@@ -256,6 +256,8 @@ interface NavItemDef {
   /** Что означает число в значке — видно при наведении. */
   badgeHint?: string
   statusDot?: boolean
+  /** Личный модуль владельца: виден только этому agent_id (сервер проверяет тоже). */
+  ownerOnly?: string
 }
 interface NavGroup {
   label: string
@@ -321,6 +323,9 @@ const navGroups: NavGroup[] = [
   // Что нового: команда должна видеть, что её проблемы решаются. Точка
   // горит, пока не открыли свежий выпуск
   { label: '', items: [{ path: '/whats-new', label: 'Что нового', icon: Sparkles, badgeKey: 'whatsNew', badgeHint: 'новый выпуск' }] },
+  // Креатор — личный модуль владельца (черновики постов): в меню только у него,
+  // API отдаёт 403 всем остальным независимо от роли
+  { label: '', items: [{ path: '/creator', label: 'Креатор', icon: PenLine, ownerOnly: 'agent_1772526727220_akc3' }] },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'
@@ -485,7 +490,8 @@ export function Sidebar({ unreadChats = 0, openCases = 0, pendingCommitments = 0
     .map(g => ({
       ...g,
       items: g.items.filter(item =>
-        isPathAllowed(item.path, orgPlan) && pathAllowedFor(item.path, access.mods)),
+        isPathAllowed(item.path, orgPlan) && pathAllowedFor(item.path, access.mods)
+        && (!item.ownerOnly || localStorage.getItem('support_agent_id') === item.ownerOnly)),
     }))
     .filter(g => g.items.length > 0)
 

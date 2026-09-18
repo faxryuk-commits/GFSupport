@@ -35,6 +35,32 @@ interface Verdict {
   klass: CommentClass
   reason: string
   reply: string | null
+  /** Язык, на котором модель решила отвечать: виден в карточке и в логах. */
+  lang: string
+}
+
+/**
+ * Письменность текста: латиница, кириллица или ни то ни другое (эмодзи,
+ * упоминания). Узбекский пишут и так и так, и ответ обязан совпасть
+ * с письмом комментария — «Rahmat» на «Раҳмат» выглядит чужим.
+ */
+function scriptOf(text: string): 'latin' | 'cyrillic' | 'none' {
+  const t = String(text || '').replace(/@[\w.]+/g, '')
+  const cyr = (t.match(/[\u0400-\u04FF]/g) || []).length
+  const lat = (t.match(/[A-Za-z]/g) || []).length
+  if (!cyr && !lat) return 'none'
+  return cyr >= lat ? 'cyrillic' : 'latin'
+}
+
+/**
+ * Ответ на другом письме, чем комментарий, — признак, что модель сорвалась
+ * на русский. Такой ответ сам не уходит: под постом его увидят все.
+ * Для комментариев без букв (эмодзи, @упоминание) письмо берём у подписи.
+ */
+export function scriptMismatch(comment: string, caption: string | null | undefined, reply: string): boolean {
+  const want = scriptOf(comment) === 'none' ? scriptOf(caption || '') : scriptOf(comment)
+  const got = scriptOf(reply)
+  return want !== 'none' && got !== 'none' && want !== got
 }
 
 /**
@@ -43,7 +69,7 @@ interface Verdict {
  * Двумя вызовами было бы чище, но комментарий короткий, и второй заход
  * удваивал бы задержку ради разделения, которое всё равно делает одна модель.
  */
-async function think(
+export async function think(
   key: string, orgName: string, comment: string, author: string,
   post: { kind?: string | null; caption?: string | null } | null,
 ): Promise<Verdict | null> {
@@ -53,7 +79,27 @@ async function think(
     'Тон: тёплый и короткий. Одна-две фразы, живая речь, без канцелярита.',
     'Эмодзи — не больше одного и только если он уместен.',
     'Никогда не называй цены, сроки, скидки и условия — этого ты не знаешь.',
-    'Отвечай на языке комментария.',
+    '',
+    'ЯЗЫК ОТВЕТА — главное правило, важнее всего остального.',
+    'Аудитория в основном узбекоязычная; публикации выходят на узбекском.',
+    'Сначала определи язык комментария: uz (узбекский — латиницей или кириллицей),',
+    'ru, kk (казахский), az, en. Отвечай СТРОГО на этом языке и той же письменностью:',
+    'на «Burger embassy nomer 1 eng zoriku» — латиницей по-узбекски («Tavsiya uchun rahmat! 🍔»),',
+    'на «Абдужалил ошчи сопака» — кириллицей по-узбекски («Тавсия учун раҳмат! 😊»),',
+    'на «Hahahahaaha man umrimda restoranga kirmaganman» — «Ha-ha, unda birinchi marta biz bilan sinab ko\'ring 😊».',
+    'Если в комментарии только эмодзи, @упоминание или название заведения без слов —',
+    'язык и письмо бери у подписи к публикации. Русский — только если сам комментарий',
+    'написан по-русски. Не переводи узбекский ответ на русский ни при каких условиях.',
+    'Примеры выше показывают язык и письмо, а не текст: не повторяй их дословно.',
+    'Каждый ответ — своими словами и по сути комментария: назови заведение или блюдо,',
+    'которое человек упомянул, подхвати его настроение. Шесть одинаковых «Tavsiya uchun',
+    'rahmat!» под одним постом выглядят как бот.',
+    'Узбекский сленг похвалы: «zo\'r», «dodasi», «damini beradi», «eng zori», «nomer 1»,',
+    '«🔥» — это одобрение, не жалоба. На похвалу и эмодзи отвечай всегда, коротко и живо.',
+    'Одно письмо на весь ответ: не смешивай латиницу и кириллицу в одной фразе.',
+    `${orgName} — платформа для ресторанов, а не ресторан: «наши бургеры», «наш плов»`,
+    'говорить нельзя. Публикации — подборки заведений города; про заведение из подборки',
+    'отвечай как автор подборки, про Delever — как про сервис для рестораторов.',
     '',
     'Сначала определи вид комментария:',
     'praise — похвала, эмодзи, одобрение, поздравление; ответа по существу не требует',
@@ -62,8 +108,8 @@ async function think(
     'spam — реклама, накрутка, бессмыслица, ссылки',
     'other — всё прочее',
     '',
-    'Верни строго JSON: {"class":"...","reason":"почему так решил, до 90 знаков",',
-    '"reply":"текст ответа или null"}',
+    'Верни строго JSON: {"class":"...","lang":"uz|ru|kk|az|en","reason":"почему так решил, до 90 знаков",',
+    '"reply":"текст ответа на языке lang или null"}',
     'Для complaint и spam reply всегда null — с ними разбирается человек.',
   ].join('\n')
 
@@ -77,7 +123,9 @@ async function think(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        // Не mini: ответ публичный, а mini на узбекский комментарий отвечал
+        // по-русски вопреки правилу — 14 из 14 автоответов за неделю
+        model: 'gpt-4o',
         temperature: 0.7,
         max_tokens: 220,
         response_format: { type: 'json_object' },
@@ -100,6 +148,7 @@ async function think(
       klass,
       reason: String(parsed.reason || '').slice(0, 200),
       reply: reply && reply.toLowerCase() !== 'null' ? reply : null,
+      lang: String(parsed.lang || '').slice(0, 5),
     }
   } catch {
     return null
@@ -134,9 +183,14 @@ export async function handleCommentByAgent(
   if (!verdict) return null
 
   const want = POLICY[verdict.klass]
+  // Ответ не на том письме, что комментарий, — сам не уходит: человек
+  // увидит черновик с пометкой и решит
+  const mismatch = Boolean(verdict.reply)
+    && scriptMismatch(String(c.text || ''), c.post_caption, verdict.reply as string)
+  if (mismatch) verdict.reason = `язык ответа не совпал с комментарием · ${verdict.reason}`.slice(0, 200)
   // Автоответ только там, где ошибиться невозможно, и только если разрешён
-  const auto = want === 'auto' && opts.autoReply !== false && Boolean(verdict.reply)
-  let action: string = want
+  const auto = want === 'auto' && opts.autoReply !== false && Boolean(verdict.reply) && !mismatch
+  let action: string = mismatch && want === 'auto' ? 'draft' : want
 
   if (auto) {
     const token = await tokenForPage(orgId, c.page_id)
