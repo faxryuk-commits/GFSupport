@@ -182,9 +182,9 @@ export function SalesFlow({ from, to, region }: { from: string; to: string; regi
           <span key={a} className="text-[11.5px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{a}</span>
         ))}
         <div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
-          <span className="text-[11px] text-gray-400 whitespace-nowrap">по обращениям периода:</span>
-          <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums">обращений <b className="text-gray-900 font-semibold">{fmt(T.l)}</b></span>
-          <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums">сделок <b className="text-gray-900 font-semibold">{fmt(T.d)}</b></span>
+          <span className="text-[11px] text-gray-400 whitespace-nowrap">заведено в периоде:</span>
+          <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums">карточек <b className="text-gray-900 font-semibold">{fmt(T.l)}</b></span>
+          <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums">дошло до сделки <b className="text-gray-900 font-semibold">{fmt(T.d)}</b></span>
           <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 tabular-nums">выиграно <b className="font-semibold">{fmt(T.w)}</b></span>
         </div>
         {open && (
@@ -395,7 +395,7 @@ export function SalesFlow({ from, to, region }: { from: string; to: string; regi
               </table>
             </div>
             <div className="px-4 py-2.5 border-t border-gray-100 text-[11px] text-gray-400">
-              Выигранная сделка считается прошедшей все ступени. Повторное обращение клиента к его сделке считается по судьбе этой сделки, новой карточки у него нет.
+              Выигранная сделка считается прошедшей все ступени. Повторное обращение клиента к его сделке считается по судьбе этой сделки, новой карточки у него нет. Сделки, заведённые без обращения (из Amo или сразу сделкой), входят в поток своим каналом — иначе год истории Amo выпадал.
             </div>
           </Card>
         </div>

@@ -8,6 +8,9 @@ import { ensureOnce } from './db.js'
  *   со сделкой → выиграна (won), проиграна на ступени k (lost[k]) или стоит
  *   на ступени k (open[k]), k = 1..4: Квалифицирован, Демо, КП, Договор.
  *
+ * Сделка без обращения (из Amo или заведённая сразу сделкой) — тоже член
+ * когорты, со своим каналом: иначе год Amo-истории выпадает из потока.
+ *
  * Сделка обращения — та, что из него родилась (source_lead_id). Повторное
  * обращение клиента к сделке не рождает новой (см. sales-intake), а лид
  * помечается converted — тогда его судьба = судьба живой сделки того же
@@ -81,13 +84,17 @@ export async function salesFlow(sql: any, orgId: string, o: FlowOpts) {
       LEFT JOIN sales_sources s ON s.id = l.source_id
       -- Сделка из обращения; если её нет, а обращение «стало сделкой» —
       -- живая сделка того же клиента (повторное обращение приклеено к ней)
+      -- Только нужные колонки: с d.* строки тянули jsonb спецификаций,
+      -- и запрос на 5 мс в базе шёл секунду по проводу
       LEFT JOIN LATERAL (
-        SELECT d.* FROM sales_deals d
+        SELECT d.id, d.won_at, d.lost_at, d.owner_agent_id, d.stage_id, d.lost_reason_id, d.monthly_amount, d.currency
+        FROM sales_deals d
         WHERE d.source_lead_id = l.id AND d.archived_at IS NULL
         ORDER BY d.created_at DESC LIMIT 1
       ) d1 ON true
       LEFT JOIN LATERAL (
-        SELECT d.* FROM sales_deals d
+        SELECT d.id, d.won_at, d.lost_at, d.owner_agent_id, d.stage_id, d.lost_reason_id, d.monthly_amount, d.currency
+        FROM sales_deals d
         WHERE d1.id IS NULL AND l.status = 'converted' AND d.account_id = l.account_id AND d.archived_at IS NULL
         ORDER BY d.created_at DESC LIMIT 1
       ) d2 ON true
@@ -95,6 +102,22 @@ export async function salesFlow(sql: any, orgId: string, o: FlowOpts) {
         AND l.created_at >= ${o.fromTs}::timestamptz AND l.created_at <= ${o.toTs}::timestamptz
         AND (${o.market} = '' OR l.market_id = ${o.market})
         AND COALESCE(s.key, 'unknown') <> ALL(${excl})
+      UNION ALL
+      -- Сделки без обращения: из Amo сделки приезжают уже сделками, и за год
+      -- таких 671 против 593 обращений. Без них поток показывал 16 выигрышей
+      -- там, где KPI считал 158, — и обе цифры были «правдой»
+      SELECT d.id, 'converted', d.created_at, d.owner_agent_id, d.account_id,
+             CASE WHEN d.external_id LIKE 'amo_%' THEN 'amo_deal' ELSE 'manual' END,
+             CASE WHEN d.external_id LIKE 'amo_%' THEN 'Amo · сделка без обращения' ELSE 'Заведён вручную' END,
+             CASE WHEN d.external_id LIKE 'amo_%' THEN NULL ELSE sm.id END,
+             d.id, d.won_at, d.lost_at, d.owner_agent_id, d.stage_id, d.lost_reason_id, d.monthly_amount, d.currency
+      FROM sales_deals d
+      LEFT JOIN sales_sources sm ON sm.org_id = d.org_id AND sm.key = 'manual'
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+        AND d.source_lead_id IS NULL
+        AND d.created_at >= ${o.fromTs}::timestamptz AND d.created_at <= ${o.toTs}::timestamptz
+        AND (${o.market} = '' OR d.market_id = ${o.market})
+        AND (CASE WHEN d.external_id LIKE 'amo_%' THEN 'amo_deal' ELSE 'manual' END) <> ALL(${excl})
     ),
     mx AS (
       SELECT e.deal_id,
