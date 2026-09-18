@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Kpis, Seg, Skeleton, moneyList } from './kit'
+import { Card, Seg, Skeleton, moneyList } from './kit'
 
 /**
  * Поток: от канала до выигрыша.
@@ -182,6 +182,7 @@ export function SalesFlow({ from, to, region }: { from: string; to: string; regi
           <span key={a} className="text-[11.5px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{a}</span>
         ))}
         <div className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
+          <span className="text-[11px] text-gray-400 whitespace-nowrap">по обращениям периода:</span>
           <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums">обращений <b className="text-gray-900 font-semibold">{fmt(T.l)}</b></span>
           <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 tabular-nums">сделок <b className="text-gray-900 font-semibold">{fmt(T.d)}</b></span>
           <span className="text-[11.5px] px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 tabular-nums">выиграно <b className="font-semibold">{fmt(T.w)}</b></span>
@@ -230,14 +231,6 @@ export function SalesFlow({ from, to, region }: { from: string; to: string; regi
           </div>
         )}
       </div>
-
-      <Kpis items={[
-        ['Обращений', fmt(T.l), `${fmt(T.junk)} в отказ до сделки · ${pct(T.junk, T.l)}`],
-        ['В работу', fmt(T.d), `${pct(T.d, T.l)} обращений стали сделкой`],
-        ['Демо', fmt(T.s2), `${pct(T.s2, T.d)} сделок дошли до демо`],
-        ['Договор', fmt(T.s4), `${pct(T.s4, T.d)} сделок`],
-        ['Выиграно', fmt(T.w), `${pct(T.w, T.l)} обращений · ${pct(T.w, T.d)} сделок`],
-      ]} />
 
       <Card title="Поток: от канала до выигрыша"
         sub="ширина — обращения, цвет — канал · клик по ленте или строке подсвечивает путь канала"
@@ -438,35 +431,6 @@ export function SalesFlow({ from, to, region }: { from: string; to: string; regi
         </div>
       </div>
 
-      <Card title="Кто ведёт поток" sub="сделки из обращений периода по владельцам">
-        <div className="overflow-x-auto">
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="text-gray-500 bg-gray-50/80">
-                <th className="text-left font-semibold px-4 py-2">Сейлз</th>
-                <th className="text-right font-semibold px-4 py-2">Сделок</th>
-                <th className="text-right font-semibold px-4 py-2">Выиграно</th>
-                <th className="text-left font-semibold px-4 py-2 w-[40%]">Доля побед</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.reps.map(r => (
-                <tr key={r.agentId || 'none'} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-semibold text-gray-900">{r.name}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{r.deals}</td>
-                  <td className="px-4 py-2 text-right tabular-nums"><b>{r.won}</b></td>
-                  <td className="px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-gray-100 rounded overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${r.deals ? Math.round((100 * r.won) / r.deals) : 0}%` }} /></div>
-                      <span className="text-[11px] text-gray-500 tabular-nums w-8">{pct(r.won, r.deals)}</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
     </div>
   )
 }

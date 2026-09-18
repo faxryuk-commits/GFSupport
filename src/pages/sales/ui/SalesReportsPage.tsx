@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Chip, Kpis, money, pct, PageShell, Skeleton, Seg } from './kit'
+import { Card, Kpis, money, pct, PageShell, Skeleton, Seg } from './kit'
 import { RegionBadge, useRegion, REGION_NAMES } from './region'
 import { SalesPulse } from './SalesPulse'
 import { SalesActivity } from './SalesActivity'
@@ -51,32 +51,15 @@ export function SalesReportsPage() {
   if (error && !data) return <div className="p-6 text-sm text-gray-900">{error}</div>
   if (!data) return <Skeleton rows={6} />
 
-  const funnel = (data.funnel || []).filter((f: any) => f.reached > 0)
-  const top = funnel[0]?.reached || 0
-  const totalWeighted = (data.money || []).reduce((s: number, m: any) => s + Number(m.weighted || 0), 0)
-  const totalPipeline = (data.money || []).reduce((s: number, m: any) => s + Number(m.amount || 0), 0)
-  const launch = data.launch || {}
-
   /**
    * Подпись под заголовком блока: за какой период он посчитан и по какому
-   * региону. Раньше каждый блок молчал о своих границах, и цифры выглядели
-   * несовместимыми — на деле часть была снимком «сейчас», часть за период.
+   * региону — иначе снимок «сейчас» и цифры за период выглядят несовместимыми.
    */
   const scope = (kind: 'period' | 'now') => {
     const region = data.market ? `регион ${REGION_NAMES[data.market] || data.market}` : 'все регионы'
     return kind === 'now'
       ? `на сейчас · ${region}`
       : `${data.period?.from} — ${data.period?.to} · ${region}`
-  }
-
-  /** «+12 к прошлому периоду» — иначе число висит без опоры. */
-  function delta(now: number, before: any): string {
-    const prev = Number(before || 0)
-    if (!prev && !now) return 'за период'
-    const diff = now - prev
-    if (!prev) return `было 0, стало ${now}`
-    const pct = Math.round((diff / prev) * 100)
-    return `${diff >= 0 ? '+' : ''}${diff} к прошлому периоду (${pct >= 0 ? '+' : ''}${pct}%)`
   }
 
   return (
@@ -244,9 +227,13 @@ export function SalesReportsPage() {
       )}
 
       {tab === 'sales' && <>
-      {/* Поток первым: путь от канала до выигрыша — то, ради чего открывают отчёт */}
-      <SalesFlow from={fromStr} to={toStr} region={region} />
-      <SalesPulse from={fromStr} to={toStr} region={region} />
+      {/* Порядок — рассказ: итоги периода → поток от канала до выигрыша →
+          деньги → динамика и регионы → портрет → команда. Каждый вопрос
+          отвечен один раз: дубли (три таблицы источников, два «почему
+          проигрываем», три таблицы по сейлзам) сняты 18.09.2026 */}
+      <SalesPulse from={fromStr} to={toStr} region={region}>
+        <SalesFlow from={fromStr} to={toStr} region={region} />
+      </SalesPulse>
 
       <div className="grid lg:grid-cols-2 gap-4 items-start">
         <Card title="Движение по дням" sub={`сколько заводили, выигрывали и теряли · ${scope('period')}`}>
@@ -308,123 +295,75 @@ export function SalesReportsPage() {
             </table>
           </div>
         </Card>
-
-<Card title="Деньги в воронке" sub={`обещания, а не выручка · ${scope('now')}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Этап</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сделок</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">В месяц</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Вероятн.</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Взвешенно</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.money || []).map((m: any) => (
-                  <tr key={m.key} className="border-b border-gray-100">
-                    <td className="px-4 py-2 text-gray-900">{m.label}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{m.deals}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{money(m.amount, '')}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">{m.probability}%</td>
-                    <td className="px-4 py-2 text-right tabular-nums font-medium">{money(m.weighted, '')}</td>
-                  </tr>
-                ))}
-                <tr className="bg-gray-50">
-                  <td className="px-4 py-2 font-semibold text-gray-900">Итого</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                    {(data.money || []).reduce((s: number, m: any) => s + m.deals, 0)}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(totalPipeline, '')}</td>
-                  <td />
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(totalWeighted, '')}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card title="Источники" sub={`атрибуция приходит с лидом · ${scope('period')}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Источник</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Лидов</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">В работу</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Выиграно</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Конверсия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.sources || []).map((s: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-100">
-                    <td className="px-4 py-2 text-gray-900">{s.label}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.leads}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.converted}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.won}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">{pct(s.won, s.leads)}</td>
-                  </tr>
-                ))}
-                {(data.sources || []).length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-4 text-gray-400">Лидов за период нет</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card title="Портрет покупателя" sub={`по POS-системе, все закрытые сделки · ${data.market ? `регион ${REGION_NAMES[data.market] || data.market}` : 'все регионы'}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">POS клиента</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Закрытых</th>
-                  <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Покупают</th>
-                  <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.icp || []).map((r: any, i: number) => {
-                  const rate = r.total ? Math.round((r.won / r.total) * 100) : 0
-                  return (
-                    <tr key={i} className="border-b border-gray-100">
-                      <td className="px-4 py-2 text-gray-900">{r.value}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{r.total}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{rate}%</td>
-                      <td className="px-4 py-2">
-                        <Chip tone={rate >= 20 ? 'green' : rate >= 10 ? 'amber' : 'red'}>
-                          {rate >= 20 ? 'брать' : rate >= 10 ? 'проверять' : 'nurture'}
-                        </Chip>
-                      </td>
-                    </tr>
-                  )
-                })}
-                {(data.icp || []).length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-4 text-gray-400">
-                    Закрытых сделок пока мало для выводов
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
       </div>
 
-      <Card title="Как команда ведёт сделки" sub="качество ведения важнее количества звонков">
+      <Card title="Портрет покупателя"
+        sub={`кто покупает, а кто нет — по закрытым сделкам периода · ${data.market ? `регион ${REGION_NAMES[data.market] || data.market}` : 'все регионы'}`}>
+        <div className="grid md:grid-cols-2 gap-0 md:divide-x divide-gray-100">
+          {(['orders', 'delivery'] as const).map(dim => {
+            const rows = (data.icp || []).filter((r: any) => r.dim === dim)
+            const known = rows.filter((r: any) => !/^не указано$/i.test(r.value))
+            const unknown = rows.find((r: any) => /^не указано$/i.test(r.value))
+            return (
+              <div key={dim} className="overflow-x-auto">
+                <table className="w-full text-[12.5px]">
+                  <thead>
+                    <tr className="text-gray-500 bg-gray-50/80">
+                      <th className="text-left font-semibold px-4 py-2">{dim === 'orders' ? 'Заказов в день' : 'Доставка'}</th>
+                      <th className="text-right font-semibold px-4 py-2">Закрыто</th>
+                      <th className="text-right font-semibold px-4 py-2">Куплено</th>
+                      <th className="text-left font-semibold px-4 py-2 w-[38%]">Доля побед</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {known.map((r: any) => {
+                      const rate = r.total ? Math.round((r.won / r.total) * 100) : 0
+                      return (
+                        <tr key={r.value} className="border-t border-gray-100">
+                          <td className="px-4 py-2 text-gray-900">{r.value}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{r.total}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{r.won}</td>
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-gray-100 rounded overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${rate}%` }} /></div>
+                              <span className="text-[11px] text-gray-500 tabular-nums w-8">{rate}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {unknown && (
+                      <tr className="border-t border-gray-100 text-gray-400">
+                        <td className="px-4 py-2">не указано</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{unknown.total}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{unknown.won}</td>
+                        <td className="px-4 py-2 text-[11px]">{unknown.total ? Math.round((unknown.won / unknown.total) * 100) : 0}% · заполняйте квалификацию</td>
+                      </tr>
+                    )}
+                    {rows.length === 0 && (
+                      <tr><td colSpan={4} className="px-4 py-4 text-gray-400">Закрытых сделок за период нет</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
+      <Card title="Команда" sub="сделки, заведённые в периоде, и портфель на сейчас · одна таблица вместо трёх">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-[12.5px]">
             <thead>
               <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
                 <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сотрудник</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сделок</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сделок за период</th>
                 <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Выиграно</th>
                 <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Доля побед</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Квалифицировано</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Без след. шага</th>
                 <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Подписано</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Квалифицировано</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Открыто сейчас</th>
+                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Без шага</th>
               </tr>
             </thead>
             <tbody>
@@ -434,17 +373,18 @@ export function SalesReportsPage() {
                   <td className="px-4 py-2 text-right tabular-nums">{t.deals}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{t.won}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{pct(t.won, t.won + t.lost)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{pct(t.qualified, t.deals)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {t.no_next_step > 0
-                      ? <span className="text-red-600 font-semibold">{t.no_next_step}</span>
-                      : t.no_next_step}
-                  </td>
                   <td className="px-4 py-2 text-right tabular-nums">{money(t.won_amount, '')}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{pct(t.qualified, t.deals)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{t.open_now ?? 0}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {t.open_no_step > 0
+                      ? <span className="text-red-600 font-semibold">{t.open_no_step}</span>
+                      : (t.open_no_step ?? 0)}
+                  </td>
                 </tr>
               ))}
               {(data.team || []).length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-4 text-gray-400">Сделок за период нет</td></tr>
+                <tr><td colSpan={8} className="px-4 py-4 text-gray-400">Сделок за период нет</td></tr>
               )}
             </tbody>
           </table>

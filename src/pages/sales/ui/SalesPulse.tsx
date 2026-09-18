@@ -1,15 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { apiGet } from '@/shared/services/api.service'
-import { Card, Kpis, money } from './kit'
+import { Card, Kpis } from './kit'
 
 /**
- * Пульс продаж — главный экран отчётов, собранный по согласованному макету:
- * KPI периода, воронка с долями источников, потенциал по этапам, тренд
- * выигрышей, источники, причины потерь и портфель по сейлзам.
+ * Пульс продаж: итоги периода и деньги.
  *
- * Целостность: закрытия, воронка, источники и причины считаются по выбранному
- * диапазону дат; потенциал и портфель — состояние на сейчас. У каждой карточки
- * — чип с её периодом, чтобы цифры не выглядели противоречащими друг другу.
+ * Когда-то здесь жили ещё воронка, источники, причины потерь и портфель
+ * по сейлзам — потом появился «Поток» и ответил на те же вопросы точнее,
+ * а страница отвечала на каждый по два-три раза разными цифрами. Теперь у
+ * каждого вопроса одно место: итоги и деньги — здесь, путь от канала до
+ * выигрыша — в потоке (он вставляется между ними через children), команда —
+ * одной таблицей внизу страницы.
+ *
+ * Два разных «выиграно» на странице — обе правда, но по разным правилам:
+ * здесь — сделки, закрытые в периоде, откуда бы ни пришли; в потоке —
+ * обращения, созданные в периоде, и что с ними стало. Подписи это говорят.
  */
 
 interface Pulse {
@@ -17,31 +22,12 @@ interface Pulse {
   kpi: {
     won: number; lost: number; won_amt: string; cycle_med: number
     open: number; withAmount: number; weighted: number
+    cash_n: number; cash_amt: string
   }
-  reach: Array<{ stage: string; src: string; n: number }>
   potential: Array<{ key: string; label: string; prob: number; cnt: number; amt: string; weighted: number }>
   monthly: Array<{ mon: string; n: number; amt: string }>
-  sources: Array<{ src: string; leads: number; converted: number }>
-  losses: Array<{ reason: string; n: number }>
-  portfolio: Array<{ name: string; cnt: number; amt: string; no_step: number }>
+  cashMonthly: Array<{ mon: string; n: number; amt: string }>
 }
-
-/** Порядок этапов воронки достижения — как на доске. */
-const STAGE_ORDER: Array<[string, string]> = [
-  ['qualified', 'Квалифицирован'], ['meeting', 'Демо назначено'], ['demo', 'Демо проведено'],
-  ['kp', 'КП отправлено'], ['contract', 'Договор'], ['won', 'Выиграно'],
-]
-
-/** Цвета источников: фиксированные слоты, «История Amo» и «прочее» — серые. */
-const SRC_COLORS: Record<string, string> = {
-  'Meta лид-форма': '#2a78d6',
-  'Заведён вручную': '#eb6834',
-  'Исходящий холодный': '#1baf7a',
-  'Сайт delever.io': '#eda100',
-  'Instagram Direct': '#e87ba4',
-  'Импорт базы': '#8b7ae0',
-}
-const SRC_MUTED = '#e5e9f0'
 
 const fmtMln = (v: any) => {
   const n = Number(v || 0)
@@ -58,21 +44,11 @@ function PeriodChip({ label }: { label: string }) {
   )
 }
 
-function HBar({ label, width, color, value }: {
-  label: string; width: number; color: string; value: React.ReactNode
+export function SalesPulse({ from, to, region, children }: {
+  from: string; to: string; region: string | null
+  /** Блок между итогами и деньгами — поток. */
+  children?: ReactNode
 }) {
-  return (
-    <div className="grid grid-cols-[128px_1fr] gap-2.5 items-center py-1">
-      <span className="text-[11.5px] text-gray-500 text-right truncate">{label}</span>
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="h-[15px] rounded-r flex-none" style={{ width: `${Math.max(2, width)}%`, background: color, minWidth: 2 }} />
-        <span className="text-[11px] text-gray-500 tabular-nums whitespace-nowrap flex-none">{value}</span>
-      </div>
-    </div>
-  )
-}
-
-export function SalesPulse({ from, to, region }: { from: string; to: string; region: string | null }) {
   const [d, setD] = useState<Pulse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const reqRef = useRef(0)
@@ -90,53 +66,66 @@ export function SalesPulse({ from, to, region }: { from: string; to: string; reg
   const k = d.kpi
   const closed = k.won + k.lost
   const winRate = closed ? Math.round((k.won / closed) * 100) : 0
-  const periodLabel = `${d.period.from} — ${d.period.to}`
 
-  // Воронка достижения: суммы по этапам + стек источников
-  const byStage = new Map<string, Array<{ src: string; n: number }>>()
-  for (const r of d.reach) {
-    if (!byStage.has(r.stage)) byStage.set(r.stage, [])
-    byStage.get(r.stage)!.push({ src: r.src, n: r.n })
-  }
-  const stages = STAGE_ORDER
-    .map(([key, label]) => {
-      const parts = (byStage.get(key) || []).sort((a, b) => b.n - a.n)
-      return { key, label, total: parts.reduce((s, p) => s + p.n, 0), parts }
-    })
-    .filter(s => s.total > 0)
-  const topReach = Math.max(1, ...stages.map(s => s.total))
-
-  const maxPotAmt = Math.max(1, ...d.potential.map(p => Number(p.amt)))
-  const maxMonthly = Math.max(1, ...d.monthly.map(m => m.n))
-  const maxSrc = Math.max(1, ...d.sources.map(s => s.leads))
-  const maxLoss = Math.max(1, ...d.losses.map(l => l.n))
-  const maxPort = Math.max(1, ...d.portfolio.map(p => p.cnt))
+  const maxPotAmt = Math.max(1, ...(d.potential || []).map(p => Number(p.amt)))
   const amountBlind = k.open > 0 && k.withAmount / k.open < 0.5
 
-  const srcColor = (name: string) => SRC_COLORS[name] || SRC_MUTED
-
-  const legendSrcs = [...new Set(d.reach.map(r => r.src))]
-    .filter(s2 => SRC_COLORS[s2])
-    .slice(0, 6)
+  // Деньги по месяцам: кеш — что реально пришло, MRR — что обещано подпиской
+  // выигранных. Разрыв между ними — главное, ради чего они рядом
+  const monthly = d.monthly || [], cashMonthly = d.cashMonthly || []
+  const months = [...new Set([...monthly.map(m => m.mon), ...cashMonthly.map(m => m.mon)])].sort().slice(-12)
+  const mrrBy = new Map(monthly.map(m => [m.mon, m]))
+  const cashBy = new Map(cashMonthly.map(m => [m.mon, m]))
+  const maxMoney = Math.max(1, ...months.map(m => Math.max(Number(mrrBy.get(m)?.amt || 0), Number(cashBy.get(m)?.amt || 0))))
 
   return (
     <div className="space-y-4">
       <Kpis items={[
-        ['Выиграно', String(k.won), `+${fmtMln(k.won_amt)} UZS подписки · ${periodLabel}`],
-        ['Win rate', `${winRate}%`, `${k.won} из ${closed} закрытых за период`],
+        ['Выиграно', String(k.won), `закрыто в периоде · win rate ${winRate}% из ${closed}`],
+        ['Получено денег', fmtMln(k.cash_amt), `${k.cash_n} оплат за период · UZS`],
+        ['Новый MRR', fmtMln(k.won_amt), 'подписка выигранных · UZS/мес'],
         ['Цикл сделки', k.cycle_med ? `${k.cycle_med} дн` : '—', 'медиана по выигрышам периода'],
-        ['Открытый портфель', String(k.open), 'сделок в работе сейчас'],
-        ['Взвешенный прогноз', `≈${fmtMln(k.weighted)}`, `UZS/мес · по ${k.withAmount} сделкам с суммой`],
+        ['Открытый портфель', String(k.open), `сделок в работе · прогноз ≈${fmtMln(k.weighted)}/мес`],
       ]} />
 
-      {/* «Воронка: где теряем» переехала в «Поток» выше — там тот же путь
-          по этапам, но с каналами до конца и потерями на каждой ступени */}
-      <div className="grid lg:grid-cols-2 gap-4 items-start">
+      {children}
+
+      <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-start">
+        <Card title="Деньги по месяцам" sub="получено — факт из оплат; новый MRR — подписка выигранных за месяц"
+          right={<PeriodChip label="12 месяцев" />}>
+          <div className="px-4 pt-3 pb-2">
+            {months.length === 0 && <div className="text-[12.5px] text-gray-400 py-2">Выигрышей и оплат за год нет</div>}
+            <div className="flex items-end gap-3 h-40">
+              {months.map(m => {
+                const cash = Number(cashBy.get(m)?.amt || 0), mrr = Number(mrrBy.get(m)?.amt || 0)
+                const [y, mo] = m.split('-')
+                return (
+                  <div key={m} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0"
+                    title={`${MONTHS[Number(mo) - 1]} ${y}: получено ${fmtMln(cash)} (${cashBy.get(m)?.n || 0} оплат) · новый MRR ${fmtMln(mrr)} (${mrrBy.get(m)?.n || 0} выигр.)`}>
+                    <div className="text-[10px] text-gray-500 tabular-nums whitespace-nowrap">
+                      {cash ? fmtMln(cash).replace(' млн', '') : ''}{cash && mrr ? ' / ' : ''}{mrr ? fmtMln(mrr).replace(' млн', '') : ''}
+                    </div>
+                    <div className="w-full flex items-end justify-center gap-1 h-28">
+                      <div className="w-[38%] bg-blue-500 rounded-t" style={{ height: `${(cash / maxMoney) * 100}%` }} />
+                      <div className="w-[38%] bg-emerald-300 rounded-t" style={{ height: `${(mrr / maxMoney) * 100}%` }} />
+                    </div>
+                    <div className="text-[10.5px] text-gray-400">{MONTHS[Number(mo) - 1]}</div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />получено, млн UZS</span>
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-300 mr-1.5" />новый MRR, млн UZS</span>
+            </div>
+          </div>
+        </Card>
+
         <Card title="Потенциал по этапам"
           sub="открытые сделки · тёмное — взвешенно на вероятность"
           right={<PeriodChip label="сейчас" />}>
           <div className="px-4 py-3">
-            {d.potential.map(p => (
+            {(d.potential || []).map(p => (
               <div key={p.key} className="grid grid-cols-[118px_1fr_120px] gap-2.5 items-center py-1.5">
                 <span className="text-[12px] text-gray-500 text-right">{p.label}</span>
                 <div className="h-[16px] bg-gray-100 rounded relative overflow-hidden">
@@ -161,78 +150,12 @@ export function SalesPulse({ from, to, region }: { from: string; to: string; reg
       {amountBlind && (
         <div className="flex gap-2.5 items-start bg-amber-50 border border-amber-300 rounded-xl px-4 py-3">
           <span className="flex-none w-5 h-5 rounded-full bg-amber-500 text-white text-[12px] font-bold flex items-center justify-center">!</span>
-          <div className="text-[12.5px] text-gray-700">
-            <b>Сумма указана только у {k.withAmount} из {k.open} открытых сделок</b> — взвешенный
-            прогноз построен по этой части портфеля. Заполняйте «Подписку в месяц» после демо.
+          <div className="text-[12.5px] text-amber-900">
+            <b>Сумма указана только у {k.withAmount} из {k.open} открытых сделок</b> — взвешенный прогноз
+            построен по этой части портфеля. Заполняйте «Подписку в месяц» после демо.
           </div>
         </div>
       )}
-
-      <Card title="Выигрыши по месяцам" sub="количество и новая подписка UZS"
-        right={<PeriodChip label="12 месяцев" />}>
-        <div className="px-4 pt-4 pb-3 flex items-end gap-3 h-[150px]">
-          {d.monthly.map(m => {
-            const mi = Number(m.mon.slice(5)) - 1
-            return (
-              <div key={m.mon} className="flex-1 h-full flex flex-col justify-end items-center gap-1 min-w-0">
-                <span className="text-[10.5px] text-gray-600 tabular-nums whitespace-nowrap">
-                  <b>{m.n}</b>{Number(m.amt) > 0 ? ` · ${fmtMln(m.amt)}` : ''}
-                </span>
-                <div className="w-[70%] rounded-t bg-blue-500"
-                  style={{ height: m.n ? `${Math.max(6, (m.n / maxMonthly) * 100)}%` : 2, opacity: m.n ? 1 : 0.2 }} />
-                <span className="text-[10.5px] text-gray-400">{MONTHS[mi] || m.mon}</span>
-              </div>
-            )
-          })}
-          {!d.monthly.length && <div className="text-[12.5px] text-gray-400 m-auto">Выигрышей за год нет</div>}
-        </div>
-      </Card>
-
-      <div className="grid lg:grid-cols-3 gap-4 items-start">
-        <Card title="Источники: доли и отдача" sub="лиды → конверсия в сделку"
-          right={<PeriodChip label={periodLabel} />}>
-          <div className="px-4 py-3">
-            {d.sources.map(s2 => {
-              const conv = s2.leads ? Math.round((s2.converted / s2.leads) * 100) : 0
-              return (
-                <HBar key={s2.src} label={s2.src} width={(s2.leads / maxSrc) * 55}
-                  color={srcColor(s2.src) === SRC_MUTED ? '#94a3b8' : srcColor(s2.src)}
-                  value={<><b className="text-gray-900">{s2.leads}</b>
-                    <span className={conv >= 25 ? 'text-emerald-600 font-semibold' : conv < 10 ? 'text-amber-600 font-semibold' : 'text-gray-400'}> → {conv}%</span></>} />
-              )
-            })}
-          </div>
-        </Card>
-
-        <Card title="Почему проигрываем" sub="причины отказов"
-          right={<PeriodChip label={periodLabel} />}>
-          <div className="px-4 py-3">
-            {d.losses.map(l => {
-              const vague = /друго|без причины/i.test(l.reason)
-              return (
-                <HBar key={l.reason} label={l.reason} width={(l.n / maxLoss) * 55}
-                  color={vague ? '#eda100' : '#3f83d4'}
-                  value={<b className="text-gray-900">{l.n}</b>} />
-              )
-            })}
-            {!d.losses.length && <div className="text-[12.5px] text-gray-400 py-2">Потерь за период нет</div>}
-          </div>
-        </Card>
-
-        <Card title="Портфель по сейлзам" sub="открытые сделки · у кого что висит"
-          right={<PeriodChip label="сейчас" />}>
-          <div className="px-4 py-3">
-            {d.portfolio.map(p => (
-              <HBar key={p.name} label={p.name} width={(p.cnt / maxPort) * 55} color="#3f83d4"
-                value={<>
-                  <b className="text-gray-900">{p.cnt}</b>
-                  {Number(p.amt) > 0 && <span className="text-gray-400"> · {fmtMln(p.amt)}</span>}
-                  {p.no_step > 0 && <span className="text-amber-600"> · {p.no_step} без шага</span>}
-                </>} />
-            ))}
-          </div>
-        </Card>
-      </div>
     </div>
   )
 }

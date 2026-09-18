@@ -64,7 +64,7 @@ export default async function handler(req: Request): Promise<Response> {
   // причины потерь, портфель по сейлзам. Периоды: закрытия и воронка — по
   // выбранному диапазону, потенциал и портфель — состояние на сейчас
   if (url.searchParams.get('action') === 'pulse') {
-    const [kpi, openNow, reach, wonSrc, potential, monthly, srcRows, losses, portfolio] = await Promise.all([
+    const [kpi, openNow, reach, wonSrc, potential, monthly, srcRows, losses, portfolio, cash, cashMonthly] = await Promise.all([
       sql`
         SELECT
           COUNT(*) FILTER (WHERE won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
@@ -164,6 +164,24 @@ export default async function handler(req: Request): Promise<Response> {
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
         GROUP BY ag.name ORDER BY cnt DESC LIMIT 10
       `,
+      // Получено денег — факт из sales_payments (ручные и ПланФакт), в отличие
+      // от подписки выигранных, которая пока обещание
+      sql`
+        SELECT COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt
+        FROM sales_payments p
+        LEFT JOIN sales_deals d ON d.id = p.deal_id
+        WHERE p.org_id = ${orgId}
+          AND p.paid_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+      `,
+      sql`
+        SELECT to_char(p.paid_at, 'YYYY-MM') AS mon, COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt
+        FROM sales_payments p
+        LEFT JOIN sales_deals d ON d.id = p.deal_id
+        WHERE p.org_id = ${orgId} AND p.paid_at > NOW() - INTERVAL '12 months'
+          AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
+        GROUP BY 1 ORDER BY 1
+      `,
     ]) as any[]
 
     const pot = (potential as any[]).map(p => ({
@@ -176,10 +194,13 @@ export default async function handler(req: Request): Promise<Response> {
         open: (openNow as any[])[0]?.open || 0,
         withAmount: (openNow as any[])[0]?.with_amt || 0,
         weighted: pot.reduce((s2, p) => s2 + p.weighted, 0),
+        cash_n: (cash as any[])[0]?.n || 0,
+        cash_amt: (cash as any[])[0]?.amt || 0,
       },
       reach: [...(reach as any[]), ...(wonSrc as any[])],
       potential: pot,
       monthly,
+      cashMonthly,
       sources: srcRows,
       losses,
       portfolio,
@@ -538,17 +559,36 @@ export default async function handler(req: Request): Promise<Response> {
       GROUP BY s.label, s.kind HAVING COUNT(l.id) > 0
       ORDER BY leads DESC
     `,
-    // Портрет покупателя: по POS — самый сильный признак покупки
+    // Портрет покупателя: заказов в день и доставка — то, что предсказывает
+    // покупку. По POS было 2 934 «не указан» из 3 400 — портрет не читался.
+    // Значения «заказов в день» приводятся к корзинам на лету: в поле 70
+    // разных написаний («10-15», «15+», «100», «йук»)
     sql`
-      SELECT COALESCE(NULLIF(d.pos, ''), 'не указан') AS value,
+      SELECT 'orders' AS dim,
+             CASE WHEN d.orders_per_day IS NULL OR d.orders_per_day !~ '[0-9]' THEN 'не указано'
+                  WHEN (regexp_match(d.orders_per_day, '([0-9]+)'))[1]::int = 0 THEN 'доставки нет'
+                  WHEN (regexp_match(d.orders_per_day, '([0-9]+)'))[1]::int < 10 THEN 'до 10'
+                  WHEN (regexp_match(d.orders_per_day, '([0-9]+)'))[1]::int < 30 THEN '10–30'
+                  WHEN (regexp_match(d.orders_per_day, '([0-9]+)'))[1]::int < 100 THEN '30–100'
+                  ELSE '100+' END AS value,
              COUNT(*)::int AS total,
              COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int AS won
       FROM sales_deals d
-      WHERE d.org_id = ${orgId} AND (d.won_at IS NOT NULL OR d.lost_at IS NOT NULL)
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+        AND (d.won_at IS NOT NULL OR d.lost_at IS NOT NULL)
+        AND COALESCE(d.won_at, d.lost_at) BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
         AND (${market} = '' OR d.market_id = ${market})
-      GROUP BY 1 HAVING COUNT(*) >= 3
-      ORDER BY COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::float / COUNT(*) DESC
-      LIMIT 12
+      GROUP BY 2
+      UNION ALL
+      SELECT 'delivery', COALESCE(NULLIF(d.delivery_type, ''), 'не указано'),
+             COUNT(*)::int, COUNT(*) FILTER (WHERE d.won_at IS NOT NULL)::int
+      FROM sales_deals d
+      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
+        AND (d.won_at IS NOT NULL OR d.lost_at IS NOT NULL)
+        AND COALESCE(d.won_at, d.lost_at) BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        AND (${market} = '' OR d.market_id = ${market})
+      GROUP BY 2
+      ORDER BY 1, 3 DESC
     `,
     // Качество ведения: не количество звонков, а как ведут сделки
     sql`
@@ -559,13 +599,25 @@ export default async function handler(req: Request): Promise<Response> {
              COUNT(d.id) FILTER (WHERE d.next_step_at IS NULL
                AND d.won_at IS NULL AND d.lost_at IS NULL)::int AS no_next_step,
              COUNT(d.id) FILTER (WHERE d.pos IS NOT NULL AND d.pain IS NOT NULL)::int AS qualified,
-             COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.won_at IS NOT NULL), 0) AS won_amount
+             COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.won_at IS NOT NULL), 0) AS won_amount,
+             -- Портфель на сейчас — вне периода: у человека висит всё, что открыто,
+             -- а не только заведённое в эти даты. Раньше это была отдельная
+             -- карточка «Портфель по сейлзам» с той же колонкой людей
+             (SELECT COUNT(*)::int FROM sales_deals o
+               WHERE o.owner_agent_id = ag.id AND o.org_id = ${orgId} AND o.archived_at IS NULL
+                 AND o.won_at IS NULL AND o.lost_at IS NULL AND o.pipeline <> 'partner'
+                 AND (${market} = '' OR o.market_id = ${market})) AS open_now,
+             (SELECT COUNT(*)::int FROM sales_deals o
+               WHERE o.owner_agent_id = ag.id AND o.org_id = ${orgId} AND o.archived_at IS NULL
+                 AND o.won_at IS NULL AND o.lost_at IS NULL AND o.pipeline <> 'partner'
+                 AND o.next_step_at IS NULL
+                 AND (${market} = '' OR o.market_id = ${market})) AS open_no_step
       FROM sales_deals d
       JOIN support_agents ag ON ag.id = d.owner_agent_id
       WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
         AND (${market} = '' OR d.market_id = ${market})
         AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-      GROUP BY ag.name ORDER BY won DESC
+      GROUP BY ag.id, ag.name ORDER BY won DESC
     `,
     // Сколько выигранных дошло до первого заказа — метрика качества продаж,
     // а не финансов: подпись без запуска победой не считается
