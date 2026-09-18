@@ -42,6 +42,19 @@ export async function ensureCreatorSchema(sql: SQL): Promise<void> {
         source jsonb,
         status text NOT NULL DEFAULT 'draft'
       )`
+    // Каналы сбора и обогащения: телеграм-каналы, RSS и страницы, чей
+    // свежий контент радар подмешивает в генерацию как контекст рынка
+    await sql`
+      CREATE TABLE IF NOT EXISTS creator_sources (
+        id text PRIMARY KEY,
+        added_at timestamptz NOT NULL DEFAULT now(),
+        kind text NOT NULL,
+        title text NOT NULL,
+        url text NOT NULL,
+        active boolean NOT NULL DEFAULT true,
+        last_fetched_at timestamptz,
+        last_note text
+      )`
   })
 }
 
@@ -87,6 +100,115 @@ export async function styleSamples(sql: SQL, limit = 6): Promise<string[]> {
     ORDER BY posted_at DESC
     LIMIT ${limit}`
   return rows.map((r: any) => String(r.text))
+}
+
+export interface SourceRow {
+  id: string
+  kind: 'telegram' | 'rss' | 'url'
+  title: string
+  url: string
+  active: boolean
+}
+
+async function fetchWithTimeout(url: string, ms: number): Promise<string | null> {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), ms)
+  try {
+    const r = await fetch(url, { signal: ctl.signal, headers: { 'User-Agent': 'Mozilla/5.0' } })
+    return await r.text()
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function stripHtml(t: string): string {
+  return t
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+}
+
+/** Хэндл телеграм-канала из любой формы ссылки (@name, t.me/name, t.me/s/name). */
+export function tgHandle(url: string): string | null {
+  const m = url.match(/(?:t\.me\/(?:s\/)?|^@)([A-Za-z0-9_]{4,32})/)
+  return m ? m[1] : null
+}
+
+/**
+ * Контекст рынка: свежий контент активных источников. Каждый источник — с
+ * жёстким таймаутом: edge-функция обязана уложиться в лимит даже если чей-то
+ * сайт молчит. Молчащий источник просто пропускается.
+ */
+export async function marketContext(sources: SourceRow[], maxSources = 3): Promise<string> {
+  const picked = sources.filter(s => s.active).slice(0, maxSources)
+  const parts = await Promise.all(picked.map(async s => {
+    if (s.kind === 'telegram') {
+      const h = tgHandle(s.url)
+      if (!h) return null
+      const html = await fetchWithTimeout(`https://t.me/s/${h}`, 4000)
+      if (!html) return null
+      const posts = [...html.matchAll(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g)]
+        .map(m => stripHtml(m[1])).filter(t => t.length > 60).slice(-4)
+      if (!posts.length) return null
+      return `Источник «${s.title}» (Telegram):\n` + posts.map(p => `— ${p.slice(0, 350)}`).join('\n')
+    }
+    const html = await fetchWithTimeout(s.url, 4000)
+    if (!html) return null
+    const text = stripHtml(html).slice(0, 1600)
+    if (text.length < 100) return null
+    return `Источник «${s.title}»:\n${text}`
+  }))
+  return parts.filter(Boolean).join('\n\n')
+}
+
+/**
+ * Дозабор корпуса стиля: свежие посты @deleverme через веб-превью.
+ * Историю Bot API не отдаёт, поэтому источник тот же, что у сида, —
+ * но здесь только первые страницы: старое уже в базе.
+ */
+export async function refreshCorpus(sql: SQL, pages = 3): Promise<number> {
+  let before: number | null = null
+  let added = 0
+  for (let i = 0; i < pages; i++) {
+    const html = await fetchWithTimeout(`https://t.me/s/deleverme${before ? `?before=${before}` : ''}`, 5000)
+    if (!html) break
+    const blocks = [...html.matchAll(/data-post="deleverme\/(\d+)"([\s\S]*?)(?=data-post="deleverme\/|tgme_widget_message_history_end|$)/g)]
+    if (!blocks.length) break
+    const ids: number[] = []
+    const rows: Array<{ id: number; date: string | null; views: string | null; text: string }> = []
+    for (const [, pid, body] of blocks) {
+      const id = Number(pid)
+      ids.push(id)
+      const m = body.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/)
+      const text = m ? stripHtml(m[1]) : ''
+      if (text.length <= 100) continue
+      rows.push({
+        id,
+        date: body.match(/datetime="([^"]+)"/)?.[1] || null,
+        views: body.match(/tgme_widget_message_views">([^<]+)</)?.[1] || null,
+        text,
+      })
+    }
+    for (const p of rows) {
+      const lang = (p.text.toLowerCase().match(/[ўқғҳ]/g) || []).length > 2 ? 'uz' : 'ru'
+      const r = await sql`
+        INSERT INTO creator_corpus (id, posted_at, views, lang, text)
+        VALUES (${p.id}, ${p.date}, ${p.views}, ${lang}, ${p.text})
+        ON CONFLICT (id) DO NOTHING RETURNING id`
+      added += r.length
+    }
+    const min = Math.min(...ids)
+    if (before !== null && min >= before) break
+    before = min
+  }
+  return added
 }
 
 export interface GeneratedDraft { title: string; body_ru: string; body_en: string }

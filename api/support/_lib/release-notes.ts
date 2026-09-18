@@ -28,7 +28,7 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
-    version: '2026-09-18.1',
+    version: '2026-09-18.2',
     date: '2026-09-18',
     title: 'Агент под постами отвечает на языке комментария',
     items: [
