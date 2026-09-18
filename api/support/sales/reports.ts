@@ -683,31 +683,37 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
         AND (${market} = '' OR d.market_id = ${market})
     `,
-    // Разрез по регионам: одна таблица вместо семи переключений фильтра
+    // Разрез по регионам: одна таблица вместо семи переключений фильтра.
+    // Суммы — по валютам: у Казахстана тенге, у Баку манаты, складывать их
+    // с сумами под одной подписью нельзя. Сначала группировка, потом суммы
+    // по валютам к готовой строке — ссылка на d.market_id из подзапроса
+    // сгруппированного SELECT падает «ungrouped column»
     sql`
-      SELECT COALESCE(d.market_id, '—') AS market,
-             COUNT(*) FILTER (WHERE d.won_at IS NULL AND d.lost_at IS NULL AND d.archived_at IS NULL)::int AS open,
-             COUNT(*) FILTER (WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
-             COUNT(*) FILTER (WHERE d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS lost,
-             -- Суммы — по валютам: у Казахстана тенге, у Баку манаты,
-             -- складывать их с сумами под одной подписью нельзя
+      WITH m AS (
+        SELECT COALESCE(d.market_id, '—') AS market,
+               COUNT(*) FILTER (WHERE d.won_at IS NULL AND d.lost_at IS NULL)::int AS open,
+               COUNT(*) FILTER (WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS won,
+               COUNT(*) FILTER (WHERE d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS lost
+        FROM sales_deals d
+        WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner' AND d.archived_at IS NULL
+        GROUP BY 1
+      )
+      SELECT m.market, m.open, m.won, m.lost,
              COALESCE((SELECT jsonb_object_agg(cur, amt) FROM (
                SELECT COALESCE(w.currency, 'UZS') AS cur, SUM(w.monthly_amount) AS amt
                FROM sales_deals w
-               WHERE w.org_id = d.org_id AND COALESCE(w.market_id, '—') = COALESCE(d.market_id, '—')
-                 AND w.pipeline <> 'partner' AND w.archived_at IS NULL
+               WHERE w.org_id = ${orgId} AND COALESCE(w.market_id, '—') = m.market
+                 AND w.pipeline <> 'partner' AND w.archived_at IS NULL AND w.monthly_amount > 0
                  AND w.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
                GROUP BY 1) x), '{}'::jsonb) AS won_amounts,
              COALESCE((SELECT jsonb_object_agg(cur, amt) FROM (
                SELECT COALESCE(o.currency, 'UZS') AS cur, SUM(o.monthly_amount) AS amt
                FROM sales_deals o
-               WHERE o.org_id = d.org_id AND COALESCE(o.market_id, '—') = COALESCE(d.market_id, '—')
-                 AND o.pipeline <> 'partner' AND o.archived_at IS NULL
+               WHERE o.org_id = ${orgId} AND COALESCE(o.market_id, '—') = m.market
+                 AND o.pipeline <> 'partner' AND o.archived_at IS NULL AND o.monthly_amount > 0
                  AND o.won_at IS NULL AND o.lost_at IS NULL
                GROUP BY 1) x), '{}'::jsonb) AS pipeline_amounts
-      FROM sales_deals d
-      WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner' AND d.archived_at IS NULL
-      GROUP BY 1 ORDER BY won DESC
+      FROM m ORDER BY m.won DESC
     `,
   ])
 
