@@ -94,6 +94,22 @@ function LastActLine({ act }: { act: LastAct | null | undefined }) {
 type Row = [string, string | null | undefined]
 
 /**
+ * Текст заявки из Meta-формы приходит одной строкой из пар «вопрос?: ответ»
+ * с подчёркиваниями вместо пробелов. В подсказке раскладываем по строкам,
+ * обычный текст возвращаем как есть.
+ */
+function leadText(raw: string | null | undefined): string | null {
+  const t = String(raw || '').replace(/\s+/g, ' ').trim().replace(/^«|»$/g, '')
+  if (!t) return null
+  if (!/\w\?:\s/.test(t)) return `«${t}»`
+  const parts = t.split(/\s(?=[a-z0-9_]+\?:\s)/i)
+  return parts.map(p => {
+    const m = p.match(/^([a-z0-9_]+)\?:\s*(.*)$/i)
+    return m ? `${m[1].replace(/_/g, ' ')}: ${m[2].replace(/_/g, ' ')}` : p
+  }).join('\n')
+}
+
+/**
  * Единая подсказка карточки — вместо двух: системной (title) и превью
  * последнего действия, которые ложились друг на друга. Открывается по
  * наведению на карточку с задержкой, чтобы не мигать при пролёте мыши
@@ -151,7 +167,7 @@ function HoverPanel({ pos, onEnter, onLeave, title, where, rows, act }: {
           {filled.map(([k, v]) => (
             <span key={k} className="contents">
               <span className="text-gray-400">{k}</span>
-              <span className="text-gray-800 min-w-0 [overflow-wrap:anywhere] max-h-[120px] overflow-y-auto">{v}</span>
+              <span className="text-gray-800 min-w-0 whitespace-pre-line [overflow-wrap:anywhere] max-h-[140px] overflow-y-auto">{v}</span>
             </span>
           ))}
         </div>
@@ -224,7 +240,7 @@ export function LeadCard({
     ['Источник', [l.source, KIND_LABEL[l.lead_kind || ''] && !String(l.source || '').toLowerCase().includes(KIND_LABEL[l.lead_kind || ''].toLowerCase())
       ? KIND_LABEL[l.lead_kind || ''] : null].filter(Boolean).join(' · ')],
     ['Город', l.city],
-    ['Заявка', l.text ? `«${String(l.text).replace(/\s+/g, ' ').trim()}»` : null],
+    ['Заявка', leadText(l.text)],
     ['Пришло', shortDate(l.created_at)],
     ['Касание', l.first_touch_at ? shortDate(l.first_touch_at) : (l.sla_due_at ? slaText(l.sla_due_at) : null)],
     ['Звонок', l.last_call ? `${l.last_call.dir === 'in' ? '↓' : '↑'} ${shortDate(l.last_call.at)}${
