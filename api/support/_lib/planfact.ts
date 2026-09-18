@@ -254,6 +254,28 @@ export async function autoLinkNewOps(
     if (uniq.size !== 1) { if (uniq.size > 1) ambiguous++; continue }
     const d = hits[0].d
     const opId = Number(op.pf_operation_id)
+    // Сейлз мог уже внести эту оплату руками — тогда операция подтверждает
+    // его запись, а не рождает вторую. Иначе 6 500 000 за Cheesesteak
+    // лежало в отчёте дважды: рукой Begzod'а и ночной автопривязкой
+    const [manual] = await sql`
+      SELECT id FROM sales_payments
+      WHERE org_id = ${orgId} AND deal_id = ${d.id} AND source = 'manual' AND external_id IS NULL
+        AND amount = ${op.amount}
+        AND paid_at BETWEEN ${op.operation_date}::date - 7 AND ${op.operation_date}::date + 7
+      ORDER BY ABS(paid_at - ${op.operation_date}::date) LIMIT 1
+    ` as any[]
+    if (manual) {
+      await sql`
+        UPDATE sales_payments SET external_id = ${'pf_' + opId}, pf_status = 'matched', pf_checked_at = NOW()
+        WHERE id = ${manual.id} AND org_id = ${orgId}
+      `
+      await sql`
+        UPDATE sales_pf_inbox SET status = 'linked', deal_id = ${d.id}, payment_id = ${Number(manual.id)}
+        WHERE org_id = ${orgId} AND pf_operation_id = ${opId} AND status = 'new'
+      `
+      linked++
+      continue
+    }
     const [pay] = await sql`
       INSERT INTO sales_payments (org_id, deal_id, agent_id, amount, paid_at, source, note, external_id, pf_status, pf_checked_at)
       VALUES (${orgId}, ${d.id}, ${d.owner_agent_id}, ${op.amount}, ${op.operation_date}, 'planfact',
