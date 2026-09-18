@@ -6,6 +6,7 @@ import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
 import { assertCron, cronSecured } from '../_lib/cron-auth.js'
 import { logEvent } from '../_lib/system-journal.js'
 import { importAmoEvents } from '../_lib/amo-events.js'
+import { amoChatSource, dialogFromAmoChat, linkAmoLeadToDialog } from '../_lib/amo-dialog.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -112,7 +113,7 @@ export default async function handler(req: Request): Promise<Response> {
     ? parseInt(cursorRow.value, 10)
     : Math.floor(Date.now() / 1000) - FIRST_RUN_WINDOW_H * 3600
 
-  const out = { fetched: 0, created: 0, deduped: 0, skipped: 0, closed: 0, notes: 0, staged: 0, errors: 0, deferred: 0 }
+  const out = { fetched: 0, created: 0, dialogs: 0, deduped: 0, skipped: 0, closed: 0, notes: 0, staged: 0, errors: 0, deferred: 0 }
   let maxUpdated = since
 
   try {
@@ -164,6 +165,21 @@ export default async function handler(req: Request): Promise<Response> {
       // догружали её карточку каждую минуту, чтобы тут же выбросить.
       // Двадцать таких заявок съедали всю выборку (проверено 15.08.2026)
       if (!isAllowedPipeline(lead.pipeline_id)) { out.skipped++; continue }
+      // Чат из директа или Messenger — это диалог, а не обращение: текста и
+      // телефона Amo не отдаёт, и карточка «без телефона · данных нет» в очереди
+      // никому не нужна. Заводим собеседника в «Диалогах» со ссылкой на
+      // переписку; обращением он станет, когда сейлз решит или заявку разберут
+      // в Amo (тогда она приедет сделкой по курсору и свяжется с диалогом)
+      if (amoChatSource(lead)) {
+        try {
+          if (await dialogFromAmoChat(sql, ORG, domain, lead)) out.dialogs++
+          else out.deduped++
+        } catch (e: any) {
+          out.errors++
+          console.error('[amo-sync] диалог из чата не завёлся', lead.id, e?.message || e)
+        }
+        continue
+      }
       lead.name = lead.name || u.metadata?.form_name || u.source_name || null
       lead.created_at = lead.created_at || u.created_at
       lead._embedded = { ...(lead._embedded || {}), contacts: u._embedded?.contacts || [] }
@@ -313,6 +329,10 @@ export default async function handler(req: Request): Promise<Response> {
         if (!res.ok) { out.skipped++; continue }
         if (res.deduped) out.deduped++
         else out.created++
+        // Заявка из директа, разобранная в Amo: диалог у нас уже есть — связываем
+        if (res.lead_id && amoChatSource(lead)) {
+          await linkAmoLeadToDialog(sql, ORG, lead.id, res.lead_id, res.account_id || null).catch(() => {})
+        }
 
         // Сделка, закрытая в Amo, не должна вставать к сейлзу как живое
         // обращение: он потратит касание на то, что уже решено. Закрытую
