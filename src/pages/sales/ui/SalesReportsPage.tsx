@@ -6,6 +6,7 @@ import { SalesPulse } from './SalesPulse'
 import { SalesActivity } from './SalesActivity'
 import { AdsReport } from './AdsReport'
 import { SalesFlow } from './SalesFlow'
+import { TeamValue } from './TeamValue'
 
 /**
  * Отчёты продаж: воронка, деньги в воронке, источники, портрет покупателя,
@@ -23,7 +24,7 @@ export function SalesReportsPage() {
   const [customTo, setCustomTo] = useState('')
   // Верх воронки: сводку по сайту присылает бот delever.io
   const [site, setSite] = useState<any>(null)
-  const [tab, setTab] = useState<'sales' | 'activity' | 'site' | 'ads'>('sales')
+  const [tab, setTab] = useState<'sales' | 'activity' | 'team' | 'site' | 'ads'>('sales')
   const region = useRegion('reports')
 
   // Номер запроса: при автообновлении и быстрой смене фильтров ответ старого
@@ -73,7 +74,7 @@ export function SalesReportsPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
         <Seg value={tab} onChange={setTab}
-          items={[{ key: 'sales', label: 'Продажи' }, { key: 'activity', label: 'Активность' }, { key: 'site', label: 'Сайт' }, { key: 'ads', label: 'Реклама' }]} />
+          items={[{ key: 'sales', label: 'Продажи' }, { key: 'activity', label: 'Активность' }, { key: 'team', label: 'Команда' }, { key: 'site', label: 'Сайт' }, { key: 'ads', label: 'Реклама' }]} />
         <RegionBadge scope="reports" />
         <Seg value={customFrom ? '' : period} onChange={v => { setPeriod(v); setCustomFrom(''); setCustomTo('') }}
           items={[{ key: '30', label: 'Месяц' }, { key: '90', label: 'Квартал' }, { key: '365', label: 'Год' }]} />
@@ -92,6 +93,7 @@ export function SalesReportsPage() {
 
 
       {tab === 'activity' && <SalesActivity region={region} />}
+      {tab === 'team' && <TeamValue from={fromStr} to={toStr} region={region} />}
       {tab === 'ads' && <AdsReport from={fromStr} to={toStr} region={region} />}
 
       {tab === 'site' && (
@@ -348,46 +350,6 @@ export function SalesReportsPage() {
               </div>
             )
           })}
-        </div>
-      </Card>
-
-      <Card title="Команда" sub="сделки, заведённые в периоде, и портфель на сейчас · одна таблица вместо трёх">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-[12.5px]">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                <th className="text-left font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сотрудник</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Сделок за период</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Выиграно</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Доля побед</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Подписано</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Квалифицировано</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Открыто сейчас</th>
-                <th className="text-right font-semibold px-4 py-2 sticky top-0 bg-white z-10">Без шага</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.team || []).map((t: any, i: number) => (
-                <tr key={i} className="border-b border-gray-100">
-                  <td className="px-4 py-2 font-medium text-gray-900">{t.name}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{t.deals}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{t.won}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{pct(t.won, t.won + t.lost)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{moneyList(t.won_amounts, '—')}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{pct(t.qualified, t.deals)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{t.open_now ?? 0}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {t.open_no_step > 0
-                      ? <span className="text-red-600 font-semibold">{t.open_no_step}</span>
-                      : (t.open_no_step ?? 0)}
-                  </td>
-                </tr>
-              ))}
-              {(data.team || []).length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-4 text-gray-400">Сделок за период нет</td></tr>
-              )}
-            </tbody>
-          </table>
         </div>
       </Card>
 

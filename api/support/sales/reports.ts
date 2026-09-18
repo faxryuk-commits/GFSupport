@@ -36,12 +36,8 @@ export default async function handler(req: Request): Promise<Response> {
   const fromTs = `${from}T00:00:00+05:00`
   const toTs = `${to}T23:59:59+05:00`
 
-  // Прошлый период той же длины — чтобы цифра отвечала на «лучше или хуже»,
-  // а не висела в воздухе
   const days = Math.max(1, Math.round(
     (new Date(toTs).getTime() - new Date(fromTs).getTime()) / 86400000))
-  const prevFrom = new Date(new Date(fromTs).getTime() - days * 86400000).toISOString()
-  const prevTo = fromTs
 
   // ─── Поток: от канала до выигрыша ───────────────────────────────────────
   if (url.searchParams.get('action') === 'flow') {
@@ -50,6 +46,12 @@ export default async function handler(req: Request): Promise<Response> {
     const owner = url.searchParams.get('owner') || ''
     const data = await salesFlow(sql, orgId, { fromTs, toTs, market, owner, exclude })
     return json({ period: { from, to }, market, ...data })
+  }
+
+  // ─── Команда: ценность сотрудников — результат и как он получен ──────────
+  if (url.searchParams.get('action') === 'team_value') {
+    const { teamValue } = await import('../_lib/team-value.js')
+    return json({ market, ...(await teamValue(sql, orgId, { from, to, market })) })
   }
 
   // ─── Реклама по сотрудникам: чьи лиды с Meta и что стало с деньгами ───────
@@ -113,17 +115,26 @@ export default async function handler(req: Request): Promise<Response> {
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
         GROUP BY 1, 2
       `,
+      // Этапы enterprise-воронки сводятся к ступеням обычной: иначе 11 сделок,
+      // переведённых в Enterprise, есть в «открытом портфеле», но нет в
+      // потенциале, и сумма по этапам не сходится с портфелем
       sql`
-        SELECT s.key, MIN(s.label) AS label, MIN(s.sort_order) AS sort, MIN(s.probability) AS prob,
+        SELECT b.bucket AS key,
+               COALESCE(MIN(s.label) FILTER (WHERE s.pipeline LIKE 'sales%'), MIN(s.label)) AS label,
+               COALESCE(MIN(s.sort_order) FILTER (WHERE s.pipeline LIKE 'sales%'), MIN(s.sort_order)) AS sort,
+               COALESCE(MAX(s.probability) FILTER (WHERE s.pipeline LIKE 'sales%'), MAX(s.probability)) AS prob,
                COUNT(d.id)::int AS cnt,
                COALESCE(SUM(d.monthly_amount) FILTER (WHERE d.currency = 'UZS'), 0)::bigint AS amt
         FROM sales_stages s
+        CROSS JOIN LATERAL (SELECT CASE s.key
+          WHEN 'research' THEN 'qualified' WHEN 'discovery' THEN 'demo'
+          WHEN 'proposal' THEN 'kp' WHEN 'pilot' THEN 'contract' ELSE s.key END AS bucket) b
         LEFT JOIN sales_deals d ON d.stage_id = s.id
-          AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL
+          AND d.archived_at IS NULL AND d.won_at IS NULL AND d.lost_at IS NULL AND d.pipeline <> 'partner'
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
         WHERE s.org_id = ${orgId} AND s.kind = 'open' AND s.is_active = true
-          AND s.pipeline LIKE 'sales%'
-        GROUP BY s.key ORDER BY MIN(s.sort_order)
+          AND s.pipeline <> 'partner'
+        GROUP BY b.bucket ORDER BY 3
       `,
       sql`
         SELECT to_char(won_at, 'YYYY-MM') AS mon, COUNT(*)::int AS n,
@@ -514,51 +525,7 @@ export default async function handler(req: Request): Promise<Response> {
     })
   }
 
-  const [funnel, money, sources, icp, team, cohort, daily, prev, byRegion] = await Promise.all([
-    // Воронка по когорте: сделки, СОЗДАННЫЕ в периоде, доведённые до конца.
-    // Считать «прошёл этап» надо по журналу, иначе сделка, проскочившая этап,
-    // выпадет из статистики
-    sql`
-      WITH scope AS (
-        SELECT d.id FROM sales_deals d
-        WHERE d.org_id = ${orgId} AND d.pipeline <> 'partner'
-          AND (${market} = '' OR d.market_id = ${market})
-          AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-      )
-      SELECT s.key, s.label, s.sort_order,
-             COUNT(DISTINCT e.deal_id)::int AS reached
-      FROM sales_stages s
-      LEFT JOIN sales_deal_events e ON e.new_stage_id = s.id AND e.deal_id IN (SELECT id FROM scope)
-      WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline} AND s.is_active = true
-      GROUP BY s.key, s.label, s.sort_order ORDER BY s.sort_order
-    `,
-    // Деньги в воронке: суммы предложений по этапам и взвешенный прогноз
-    sql`
-      SELECT s.key, s.label, s.probability, COUNT(d.id)::int AS deals,
-             COALESCE(SUM(d.monthly_amount), 0) AS amount,
-             COALESCE(SUM(d.monthly_amount * s.probability / 100.0), 0) AS weighted
-      FROM sales_stages s
-      LEFT JOIN sales_deals d ON d.stage_id = s.id AND d.won_at IS NULL AND d.lost_at IS NULL
-        AND d.archived_at IS NULL
-        AND (${market} = '' OR d.market_id = ${market})
-      WHERE s.org_id = ${orgId} AND s.pipeline = ${pipeline} AND s.kind = 'open' AND s.is_active = true
-      GROUP BY s.key, s.label, s.probability, s.sort_order ORDER BY s.sort_order
-    `,
-    // Источники: сколько лидов, сколько дошло до сделки и до победы
-    sql`
-      SELECT s.label, s.kind,
-             COUNT(l.id)::int AS leads,
-             COUNT(l.id) FILTER (WHERE l.status = 'converted')::int AS converted,
-             COUNT(d.id) FILTER (WHERE d.won_at IS NOT NULL)::int AS won
-      FROM sales_sources s
-      LEFT JOIN sales_leads l ON l.source_id = s.id
-        AND (${market} = '' OR l.market_id = ${market})
-        AND l.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-      LEFT JOIN sales_deals d ON d.source_lead_id = l.id
-      WHERE s.org_id = ${orgId}
-      GROUP BY s.label, s.kind HAVING COUNT(l.id) > 0
-      ORDER BY leads DESC
-    `,
+  const [icp, daily, byRegion] = await Promise.all([
     // Портрет покупателя: заказов в день и доставка — то, что предсказывает
     // покупку. По POS было 2 934 «не указан» из 3 400 — портрет не читался.
     // Значения «заказов в день» приводятся к корзинам на лету: в поле 70
@@ -592,55 +559,6 @@ export default async function handler(req: Request): Promise<Response> {
       GROUP BY 2
       ORDER BY 1, 3 DESC
     `,
-    // Качество ведения: не количество звонков, а как ведут сделки
-    sql`
-      SELECT ag.name,
-             COUNT(d.id)::int AS deals,
-             COUNT(d.id) FILTER (WHERE d.won_at IS NOT NULL)::int AS won,
-             COUNT(d.id) FILTER (WHERE d.lost_at IS NOT NULL)::int AS lost,
-             COUNT(d.id) FILTER (WHERE d.next_step_at IS NULL
-               AND d.won_at IS NULL AND d.lost_at IS NULL)::int AS no_next_step,
-             COUNT(d.id) FILTER (WHERE d.pos IS NOT NULL AND d.pain IS NOT NULL)::int AS qualified,
-             -- Подписано — по валютам: сумы, тенге и доллары одной цифрой не складываются
-             COALESCE((SELECT jsonb_object_agg(cur, amt) FROM (
-               SELECT COALESCE(w.currency, 'UZS') AS cur, SUM(w.monthly_amount) AS amt
-               FROM sales_deals w
-               WHERE w.owner_agent_id = ag.id AND w.org_id = ${orgId} AND w.archived_at IS NULL
-                 AND w.won_at IS NOT NULL AND w.monthly_amount > 0
-                 AND (${market} = '' OR w.market_id = ${market})
-                 AND w.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-               GROUP BY 1) x), '{}'::jsonb) AS won_amounts,
-             -- Портфель на сейчас — вне периода: у человека висит всё, что открыто,
-             -- а не только заведённое в эти даты. Раньше это была отдельная
-             -- карточка «Портфель по сейлзам» с той же колонкой людей
-             (SELECT COUNT(*)::int FROM sales_deals o
-               WHERE o.owner_agent_id = ag.id AND o.org_id = ${orgId} AND o.archived_at IS NULL
-                 AND o.won_at IS NULL AND o.lost_at IS NULL AND o.pipeline <> 'partner'
-                 AND (${market} = '' OR o.market_id = ${market})) AS open_now,
-             (SELECT COUNT(*)::int FROM sales_deals o
-               WHERE o.owner_agent_id = ag.id AND o.org_id = ${orgId} AND o.archived_at IS NULL
-                 AND o.won_at IS NULL AND o.lost_at IS NULL AND o.pipeline <> 'partner'
-                 AND o.next_step_at IS NULL
-                 AND (${market} = '' OR o.market_id = ${market})) AS open_no_step
-      FROM sales_deals d
-      JOIN support_agents ag ON ag.id = d.owner_agent_id
-      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
-        AND (${market} = '' OR d.market_id = ${market})
-        AND d.created_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-      GROUP BY ag.id, ag.name ORDER BY won DESC
-    `,
-    // Сколько выигранных дошло до первого заказа — метрика качества продаж,
-    // а не финансов: подпись без запуска победой не считается
-    sql`
-      SELECT COUNT(*)::int AS won,
-             COUNT(*) FILTER (WHERE a.first_order_at IS NOT NULL)::int AS launched,
-             AVG(EXTRACT(EPOCH FROM (a.first_order_at - d.won_at)) / 86400)
-               FILTER (WHERE a.first_order_at IS NOT NULL) AS avg_days
-      FROM sales_deals d
-      JOIN sales_accounts a ON a.id = d.account_id
-      WHERE d.org_id = ${orgId} AND (${market} = '' OR d.market_id = ${market})
-        AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
-    `,
     // Движение по дням: сколько заводили, выигрывали и теряли
     sql`
       SELECT day::date AS day,
@@ -668,20 +586,6 @@ export default async function handler(req: Request): Promise<Response> {
           AND d.lost_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
       ) t
       GROUP BY 1 ORDER BY 1
-    `,
-    // Тот же набор цифр за прошлый период
-    sql`
-      SELECT COUNT(*) FILTER (WHERE d.created_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz)::int AS created,
-             COUNT(*) FILTER (WHERE d.won_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz)::int AS won,
-             COUNT(*) FILTER (WHERE d.lost_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz)::int AS lost,
-             COALESCE(SUM(d.monthly_amount) FILTER (
-               WHERE d.won_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz), 0) AS won_amount,
-             (SELECT COUNT(*)::int FROM sales_leads l WHERE l.org_id = ${orgId}
-                AND (${market} = '' OR l.market_id = ${market})
-                AND l.created_at BETWEEN ${prevFrom}::timestamptz AND ${prevTo}::timestamptz) AS leads
-      FROM sales_deals d
-      WHERE d.org_id = ${orgId} AND d.archived_at IS NULL
-        AND (${market} = '' OR d.market_id = ${market})
     `,
     // Разрез по регионам: одна таблица вместо семи переключений фильтра.
     // Суммы — по валютам: у Казахстана тенге, у Баку манаты, складывать их
@@ -717,11 +621,5 @@ export default async function handler(req: Request): Promise<Response> {
     `,
   ])
 
-  return json({
-    period: { from, to, days }, market,
-    daily, byRegion,
-    prev: (prev as any[])[0] || {},
-    funnel, money, sources, icp, team,
-    launch: cohort[0] || {},
-  })
+  return json({ period: { from, to, days }, market, daily, byRegion, icp })
 }
