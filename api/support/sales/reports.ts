@@ -224,11 +224,15 @@ export default async function handler(req: Request): Promise<Response> {
         GROUP BY 1, 2
       `,
       sql`
-        SELECT ag.name AS who, COALESCE(d.market_id, ac.market_id) AS mkt, COUNT(*)::int AS n
+        SELECT ag.name AS who, COALESCE(d.market_id, ac.market_id) AS mkt,
+               COUNT(*) FILTER (WHERE sa.type <> 'message')::int AS n,
+               -- Исходящие сообщения клиентам — отдельной колонкой: у команды
+               -- в Amo это половина дня, а в «заметки» им не место
+               COUNT(*) FILTER (WHERE sa.type = 'message' AND COALESCE(sa.direction, 'out') = 'out')::int AS msgs
         FROM sales_activities sa JOIN support_agents ag ON ag.id = sa.agent_id
         LEFT JOIN sales_deals d ON d.id = sa.deal_id
         LEFT JOIN sales_accounts ac ON ac.id = sa.account_id
-        WHERE sa.org_id = ${orgId} AND sa.type <> 'message'
+        WHERE sa.org_id = ${orgId}
           AND sa.happened_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
         GROUP BY 1, 2
       `,
@@ -305,6 +309,8 @@ export default async function handler(req: Request): Promise<Response> {
                  COALESCE(ac.name, d2.title, 'без карточки'),
                  CASE sa.type WHEN 'note' THEN 'Примечание'
                               WHEN 'approval' THEN 'Решение по скидке'
+                              WHEN 'message' THEN 'Сообщение клиенту'
+                              WHEN 'call' THEN 'Звонок'
                               ELSE sa.type END,
                  NULL, LEFT(sa.text, 90), sa.deal_id,
                  COALESCE(d2.market_id, ac.market_id)
@@ -384,7 +390,7 @@ export default async function handler(req: Request): Promise<Response> {
       name: string; role: string | null
       callsIn: number; callsOut: number; answered: number; talkSec: number
       moves: number; won: number; lost: number
-      notes: number; leads: number; tasks: number; deals: number
+      notes: number; messages: number; leads: number; tasks: number; deals: number
       presenceSec: number; firstAt: string | null; lastAt: string | null
     }
     const byName = new Map<string, Row>()
@@ -396,7 +402,7 @@ export default async function handler(req: Request): Promise<Response> {
         byName.set(key, {
           name: key, role: a?.role || null,
           callsIn: 0, callsOut: 0, answered: 0, talkSec: 0,
-          moves: 0, won: 0, lost: 0, notes: 0, leads: 0, tasks: 0, deals: 0,
+          moves: 0, won: 0, lost: 0, notes: 0, messages: 0, leads: 0, tasks: 0, deals: 0,
           presenceSec: 0, firstAt: null, lastAt: null,
         })
       }
@@ -422,7 +428,11 @@ export default async function handler(req: Request): Promise<Response> {
       const r = rowFor(s.who); if (!r) continue
       r.moves += s.moves; r.won += s.won; r.lost += s.lost
     }
-    for (const n of notes as any[]) { if (!inRegion(n.mkt, n.who)) continue; const r = rowFor(n.who); if (r) r.notes += n.n }
+    for (const n of notes as any[]) {
+      if (!inRegion(n.mkt, n.who)) continue
+      const r = rowFor(n.who); if (!r) continue
+      r.notes += n.n; r.messages += Number(n.msgs) || 0
+    }
     for (const l of leadsTaken as any[]) { if (!inRegion(l.mkt, l.who)) continue; const r = rowFor(l.who); if (r) r.leads += l.n }
     for (const t of tasksDone as any[]) { if (!inRegion(t.mkt, t.who)) continue; const r = rowFor(t.who); if (r) r.tasks += t.n }
     for (const d of dealsNew as any[]) { if (!inRegion(d.mkt, d.who)) continue; const r = rowFor(d.who); if (r) r.deals += d.n }
@@ -437,7 +447,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const people = [...byName.values()]
-      .map(r => ({ ...r, total: r.callsIn + r.callsOut + r.moves + r.notes + r.leads + r.tasks + r.deals }))
+      .map(r => ({ ...r, total: r.callsIn + r.callsOut + r.moves + r.notes + r.messages + r.leads + r.tasks + r.deals }))
       .filter(r => r.total > 0 || r.presenceSec > 0)
       .sort((a, b) => b.total - a.total)
 

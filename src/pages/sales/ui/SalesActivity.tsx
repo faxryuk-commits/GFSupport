@@ -15,7 +15,7 @@ interface Person {
   name: string; role: string | null
   callsIn: number; callsOut: number; answered: number; talkSec: number
   moves: number; won: number; lost: number
-  notes: number; leads: number; tasks: number; deals: number; total: number
+  notes: number; messages?: number; leads: number; tasks: number; deals: number; total: number
 }
 interface Ev {
   at: string; who: string | null; obj: string; about: string | null
@@ -129,7 +129,7 @@ export function SalesActivity({ region }: { region: string | null }) {
         <>
           <Kpis items={[
             ['Работали', String(d.totals.people), 'сотрудников с активностью'],
-            ['Действий', String(d.totals.actions), 'звонки, этапы, задачи, заметки'],
+            ['Действий', String(d.totals.actions), 'звонки, этапы, задачи, заметки, сообщения'],
             ['Звонков', String(d.totals.calls), `${d.totals.answered} разговоров состоялось`],
             ['На линии', fmtDur(d.totals.talkSec), 'суммарно за период'],
             ['Движений по воронке', String(d.totals.moves), `${d.totals.won} выигрышей`],
@@ -155,6 +155,7 @@ export function SalesActivity({ region }: { region: string | null }) {
                       <th className="text-right font-semibold px-3 py-2">Лиды</th>
                       <th className="text-right font-semibold px-3 py-2">Задачи</th>
                       <th className="text-right font-semibold px-3 py-2">Заметки</th>
+                      <th className="text-right font-semibold px-3 py-2" title="Исходящие сообщения клиентам: мессенджеры из CRM и из Amo">Сообщ.</th>
                       <th className="text-right font-semibold px-4 py-2">Всего</th>
                     </tr>
                   </thead>
@@ -174,6 +175,7 @@ export function SalesActivity({ region }: { region: string | null }) {
                         <td className="px-3 py-2 text-right tabular-nums text-gray-600">{p.leads || '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-600">{p.tasks || '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-600">{p.notes || '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{p.messages || '—'}</td>
                         <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">{p.total}</td>
                       </tr>
                     ))}

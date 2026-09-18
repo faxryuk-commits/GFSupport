@@ -5,6 +5,7 @@ import { amoGet, fetchContacts, leadPayload, isAllowedPipeline,
          fetchNotes, parseNotes, statusMap, applyAmoStage, readAmoMode } from '../_lib/sales-amo.js'
 import { assertCron, cronSecured } from '../_lib/cron-auth.js'
 import { logEvent } from '../_lib/system-journal.js'
+import { importAmoEvents } from '../_lib/amo-events.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -364,6 +365,28 @@ export default async function handler(req: Request): Promise<Response> {
       [out.created ? `новых лидов: ${out.created}` : '',
        out.staged ? `этапов перенесено: ${out.staged}` : '',
        out.closed ? `закрыто: ${out.closed}` : ''].filter(Boolean).join(' · '))
+  }
+
+  // ─── Журнал событий Amo → «Активность» ─────────────────────────────────────
+  // Звонки, сообщения, закрытые задачи и этапы под именем сотрудника и с
+  // амовским временем. Курсор — время последнего увиденного события; первый
+  // запуск начинает с «десять минут назад», историю добирает бэкфилл из
+  // настроек моста Amo
+  try {
+    const EV_KEY = 'sales_amo_events_cursor'
+    const [cur] = await sql`SELECT value FROM support_platform_settings WHERE key = ${EV_KEY}` as any[]
+    const since = Number(cur?.value || 0) || Math.floor(Date.now() / 1000) - 600
+    const ev = await importAmoEvents(sql, ORG, creds, { fromUnix: since + 1, maxPages: 3 })
+    if (ev.newest && ev.newest > since) {
+      await sql`
+        INSERT INTO support_platform_settings (key, value, updated_at)
+        VALUES (${EV_KEY}, ${String(ev.newest)}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${String(ev.newest)}, updated_at = NOW()
+      `
+    }
+    ;(out as any).events = { fetched: ev.fetched, stages: ev.stages, calls: ev.calls, messages: ev.messages, tasks: ev.tasks }
+  } catch (e) {
+    console.error('[amo-sync] events:', e)
   }
 
   // Отметка живости: курсор стоит на месте, когда в Amo просто ничего не

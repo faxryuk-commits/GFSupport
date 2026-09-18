@@ -95,6 +95,26 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ error: 'Переключить режим моста может только администратор' }, 403)
     }
     const body = await req.json().catch(() => null)
+
+    // Бэкфилл журнала событий Amo за окно [from, to]: один вызов — до восьми
+    // страниц от новых к старым; ответ содержит oldest, следующий вызов
+    // берёт to = oldest − 1, пока fetched не станет нулём
+    if (body?.action === 'events-backfill') {
+      const domain = process.env.AMO_DOMAIN
+      const token = process.env.AMO_TOKEN
+      if (!domain || !token) return json({ error: 'Доступ к Amo не настроен' }, 400)
+      const fromUnix = Math.floor(new Date(body.from || '2026-09-01T00:00:00+05:00').getTime() / 1000)
+      const toUnix = body.to ? Number(body.to) : Math.floor(Date.now() / 1000)
+      if (!fromUnix || !toUnix || toUnix < fromUnix) return json({ error: 'окно задано неверно' }, 400)
+      try {
+        const { importAmoEvents } = await import('../_lib/amo-events.js')
+        const r = await importAmoEvents(sql, orgId, { domain, token }, { fromUnix, toUnix, maxPages: 8 })
+        return json({ ok: true, from: fromUnix, to: toUnix, ...r })
+      } catch (e: any) {
+        return json({ error: String(e?.message || e) }, 502)
+      }
+    }
+
     const mode = String(body?.mode || '') as AmoMode
     if (!MODES.includes(mode)) return json({ error: 'unknown mode' }, 400)
 
