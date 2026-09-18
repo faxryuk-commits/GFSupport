@@ -48,6 +48,7 @@ export default async function handler(req: Request): Promise<Response> {
           SELECT l.id, l.name, l.status, l.phone, l.assigned_agent_id FROM sales_leads l
           JOIN sales_sources s ON s.id = l.source_id
           WHERE l.org_id = ${orgId} AND s.key = ${sourceKey} AND l.external_id = ${String(ch.external_chat_id || '')}
+            AND l.archived_at IS NULL
           ORDER BY l.created_at DESC LIMIT 1
         ` as any[]
     const [deal] = lead ? await sql`

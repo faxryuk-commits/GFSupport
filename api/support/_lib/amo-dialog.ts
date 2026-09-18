@@ -71,7 +71,7 @@ export async function dialogFromAmoChat(
   }
   const receivedAt = meta.received_at ? new Date(Number(meta.received_at) * 1000) : new Date()
   const url = amoLeadUrl(domain, lead.id)
-  const note = `Написал(а) в ${source === 'instagram' ? 'директ Instagram' : 'Messenger'} — переписка идёт через AmoCRM, текст там: ${url}`
+  const note = `[${source === 'instagram' ? 'директ Instagram' : 'Messenger'} через AmoCRM — текст переписки там: ${url}]`
 
   await ensureDialogSchema(sql)
   const channelId = salesId('ch')
@@ -87,8 +87,8 @@ export async function dialogFromAmoChat(
     sql`
       INSERT INTO support_messages (id, channel_id, org_id, sender_id, sender_name, sender_role,
                                     is_from_client, content_type, text_content, is_read, created_at)
-      VALUES (${salesId('msg')}, ${channelId}, ${orgId}, ${key}, ${name}, 'system',
-              false, 'text', ${note}, false, ${receivedAt.toISOString()})
+      VALUES (${salesId('msg')}, ${channelId}, ${orgId}, ${key}, ${name}, 'client',
+              true, 'text', ${note}, false, ${receivedAt.toISOString()})
     `,
     sql`
       INSERT INTO sales_dialog_state (channel_id, org_id, facts)

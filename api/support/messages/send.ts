@@ -349,6 +349,12 @@ export default async function handler(req: Request): Promise<Response> {
         )
       `
     } else if (channel.source === 'instagram' || channel.source === 'messenger') {
+      // Диалог, который пока ведёт AmoCRM (директ до одобрения Meta): у нас есть
+      // только ссылка на переписку, отправить туда нечем — говорим об этом прямо,
+      // а не роняем запрос в Graph API с адресатом «amo_…»
+      if (String(channel.external_chat_id || '').startsWith('amo_')) {
+        return json({ error: 'Эта переписка идёт в AmoCRM — ответьте там по ссылке в диалоге' }, 400)
+      }
       // Директ и Messenger уходят одним и тем же методом Graph API: различаются
       // они только объектом, от которого пришло уведомление. Отдельной ветки
       // для Messenger раньше не было, и ответ молча уходил в Telegram с пустым
