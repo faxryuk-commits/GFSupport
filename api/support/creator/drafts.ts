@@ -2,7 +2,7 @@ import { getSQL, json, corsHeaders, getOpenAIKey } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import {
   CREATOR_OWNER_ID, ensureCreatorSchema, draftId,
-  fetchDeleverRelease, gfsupportFacts, styleSamples, generateDraft,
+  fetchDeleverRelease, gfsupportFacts, styleSamples, generateDraft, marketContext,
 } from '../_lib/creator.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -50,13 +50,15 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const batchKey = String(body.batchKey || new Date().toISOString().slice(0, 10))
-    const [samples, existing] = await Promise.all([
+    const [samples, existing, sources] = await Promise.all([
       styleSamples(sql),
       sql`SELECT title FROM creator_drafts WHERE batch_key = ${batchKey}`,
+      sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
     ])
     const avoid = (existing as any[]).map(r => String(r.title)).filter(Boolean)
+    const market = await marketContext(sources as any)
 
-    const draft = await generateDraft(key, line, facts, samples, avoid)
+    const draft = await generateDraft(key, line, facts, samples, avoid, market)
     if (!draft) return json({ error: 'модель не вернула пост' }, 502)
 
     const id = draftId()
