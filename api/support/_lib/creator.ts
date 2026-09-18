@@ -345,12 +345,12 @@ export async function generateOne(
   for (let attempt = 0; attempt < 3; attempt++) {
     const src = await pickSource()
     const draft = await generateDraft(key, line, src.facts, samples, avoid, market, profile)
-    if (draft && 'skip' in draft) {
+    if (!draft) throw new Error('модель не вернула пост')
+    if ('skip' in draft) {
       lastSkip = draft.skip
       if (src.sourceUrl) used.add(src.sourceUrl)
       continue
     }
-    if (!draft) throw new Error('модель не вернула пост')
 
     const id = draftId()
     await sql`
