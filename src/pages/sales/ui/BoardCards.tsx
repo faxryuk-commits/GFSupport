@@ -147,11 +147,11 @@ function HoverPanel({ pos, onEnter, onLeave, title, where, rows, act }: {
         {where && <span className="text-gray-400"> · {where}</span>}
       </div>
       {filled.length > 0 && (
-        <div className="grid grid-cols-[78px_1fr] gap-x-2.5 gap-y-0.5 px-3 py-2 border-b border-gray-100">
+        <div className="grid grid-cols-[78px_minmax(0,1fr)] gap-x-2.5 gap-y-0.5 px-3 py-2 border-b border-gray-100">
           {filled.map(([k, v]) => (
             <span key={k} className="contents">
               <span className="text-gray-400">{k}</span>
-              <span className="text-gray-800 break-words">{v}</span>
+              <span className="text-gray-800 min-w-0 [overflow-wrap:anywhere] max-h-[120px] overflow-y-auto">{v}</span>
             </span>
           ))}
         </div>
@@ -164,7 +164,7 @@ function HoverPanel({ pos, onEnter, onLeave, title, where, rows, act }: {
                 {(act.kind === 'message' || act.kind === 'call') && act.dir ? (act.dir === 'in' ? ' · входящее' : ' · исходящее') : ''} · {who}</span>
               <span className="tabular-nums flex-none">{since(act.at)} назад · {fmtDateTime(act.at)}</span>
             </div>
-            <div className="mt-1 text-gray-800 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">{text || '—'}</div>
+            <div className="mt-1 text-gray-800 whitespace-pre-wrap [overflow-wrap:anywhere] max-h-[200px] overflow-y-auto">{text || '—'}</div>
           </>
         ) : <div className="text-gray-400">действий пока не было</div>}
       </div>
