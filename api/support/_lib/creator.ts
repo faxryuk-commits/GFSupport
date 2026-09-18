@@ -292,39 +292,35 @@ export async function generateOne(
     return page
   }
 
-  let facts: string
-  let sourceUrl: string | null = null
-  if (line === 'delever') {
-    // Рубрика «релизы»: свежий отчёт, а если о нём уже писали — случайный
-    // архивный отчёт из всех лет (иначе без нового релиза посты мусолят одно)
-    const rel = await fetchDeleverRelease()
-    if (rel && !used.has(rel.url)) {
-      facts = rel.text
-      sourceUrl = rel.url
-    } else {
+  // Выбор материала для рубрики; used пополняется между попытками,
+  // чтобы отбракованный моделью источник не попался снова
+  const pickSource = async (): Promise<{ facts: string; sourceUrl: string | null }> => {
+    if (line === 'delever') {
+      // Рубрика «релизы»: свежий отчёт, а если о нём уже писали — случайный
+      // архивный отчёт из всех лет (иначе без нового релиза посты мусолят одно)
+      const rel = await fetchDeleverRelease()
+      if (rel && !used.has(rel.url)) return { facts: rel.text, sourceUrl: rel.url }
       const pool = (await fetchGitbookPool())
         .filter(p => isReleasePage(p.url) && !used.has(p.url) && /Отчёт о релизе/i.test(p.title))
       if (!pool.length) throw new Error('все отчёты о релизах уже использованы')
       const page = await pickFromPool(pool)
       if (!page) throw new Error('не нашлось содержательного отчёта')
-      facts = page.text
-      sourceUrl = page.url
+      return { facts: page.text, sourceUrl: page.url }
     }
-  } else if (line === 'delever_archive') {
-    // Рубрика «как устроен продукт»: страницы базы знаний БЕЗ отчётов о
-    // релизах — функционал, руководства (~сотни страниц, без повторов)
-    const pool = (await fetchGitbookPool()).filter(p => !isReleasePage(p.url) && !used.has(p.url))
-    if (!pool.length) throw new Error('пул страниц GitBook пуст')
-    const page = await pickFromPool(pool)
-    if (!page) throw new Error('не нашлось содержательной страницы GitBook')
-    facts = page.text
-    sourceUrl = page.url
-  } else {
+    if (line === 'delever_archive') {
+      // Рубрика «как устроен продукт»: страницы базы знаний БЕЗ отчётов о
+      // релизах — функционал, руководства (~сотни страниц, без повторов)
+      const pool = (await fetchGitbookPool()).filter(p => !isReleasePage(p.url) && !used.has(p.url))
+      if (!pool.length) throw new Error('пул страниц GitBook пуст')
+      const page = await pickFromPool(pool)
+      if (!page) throw new Error('не нашлось содержательной страницы GitBook')
+      return { facts: page.text, sourceUrl: page.url }
+    }
     const usedVersions = new Set(
       [...used].filter(u => u.startsWith('gfs:')).map(u => u.slice(4)))
     const f = gfsupportFact(usedVersions)
-    facts = f.text
-    sourceUrl = `gfs:${f.version}`
+    if (usedVersions.has(f.version)) throw new Error('все выпуски GFSupport уже использованы')
+    return { facts: f.text, sourceUrl: `gfs:${f.version}` }
   }
 
   const [samples, recent, sources, profileRow] = await Promise.all([
@@ -342,16 +338,29 @@ export async function generateOne(
   const market = await marketContext(sources as any)
   const profile = String((profileRow as any[])[0]?.value || '')
 
-  const draft = await generateDraft(key, line, facts, samples, avoid, market, profile)
-  if (!draft) throw new Error('модель не вернула пост')
+  // Право на отказ: слабый материал (мелкая UI-правка) модель бракует сама,
+  // и мы берём следующий источник — вместо того, чтобы выжимать пост любой
+  // ценой и досочинять «мы заметили, что…»
+  let lastSkip = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const src = await pickSource()
+    const draft = await generateDraft(key, line, src.facts, samples, avoid, market, profile)
+    if (draft && 'skip' in draft) {
+      lastSkip = draft.skip
+      if (src.sourceUrl) used.add(src.sourceUrl)
+      continue
+    }
+    if (!draft) throw new Error('модель не вернула пост')
 
-  const id = draftId()
-  await sql`
-    INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
-    VALUES (${id}, ${batchKey}, ${line}, ${draft.title}, ${draft.body_ru}, ${draft.body_en},
-            ${JSON.stringify({ url: sourceUrl })}::jsonb)`
-  const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
-  return row
+    const id = draftId()
+    await sql`
+      INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
+      VALUES (${id}, ${batchKey}, ${line}, ${draft.title}, ${draft.body_ru}, ${draft.body_en},
+              ${JSON.stringify({ url: src.sourceUrl })}::jsonb)`
+    const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
+    return row
+  }
+  throw new Error(`материал не тянет на пост: ${lastSkip || 'слабые факты'}`)
 }
 
 const SYSTEM_PROMPT = `Ты — редактор личного бренда Фахриддина Юсупова, фаундера Delever (платформа управления доставкой для ресторанов, рынки Центральной Азии и Кавказа) и внутренней системы GFSupport (CRM и поддержка, которую он пишет сам).
@@ -371,14 +380,15 @@ const SYSTEM_PROMPT = `Ты — редактор личного бренда Ф�
 - Имена клиентов и брендов-клиентов не называть никогда. Только «сеть из N точек», «один из наших рынков».
 - Никакой продажи: не «купите/подключите Delever», не перечисление преимуществ. Вывод поста — всегда мысль, не продукт.
 - Отказы главной функции продукта не выносить: если речь о сбоях — виноваты стыки разных систем и сложность отрасли, а мы — те, кто видит цепочку и ловит сбой раньше клиента. Признание ошибки допустимо только в форме «нашли класс проблем и закрыли его системно».
-- Не выдумывать цифр и фактов: использовать только данные из материала. Обобщённая сцена с рынка допустима, но НЕ подавай выдуманное как личное воспоминание автора («на днях наблюдал, как клиент…», «вчера ко мне пришли…» — так писать нельзя, если этого нет в материале). Не приписывать фичам эффект, которого нет в данных («эффективность значительно возросла» — брак, если цифры нет).
+- Не выдумывать цифр и фактов: использовать только данные из материала. Обобщённая сцена с рынка допустима, но НЕ подавай выдуманное как личное воспоминание или наблюдение автора («на днях наблюдал…», «мы заметили, что операторы путаются…», «на одном из наших рынков…» — так писать можно ТОЛЬКО если это есть в материале). Не приписывать фичам эффект, которого нет в данных («эффективность значительно возросла», «ускоряет обработку» — брак, если цифры или факта нет).
+- ПРАВО НА ОТКАЗ. Если в материале нет факта, из которого выходит честный пост — только мелкие правки интерфейса («картинку можно открыть в полном размере», «поправили отображение кнопки»), технические заметки без истории, — НЕ выжимай пост и не досочиняй проблему под формат. Верни {"skip": true, "reason": "чем слаб материал"}. Отказ — правильный ответ; раздутая мелочь — брак.
 - Начала постов чередуй, каждый раз другой тип зачина: сцена с рынка / прямой вопрос читателю / конкретная цифра / эпизод из биографии автора / неожиданное утверждение. Слова «один из наших клиентов столкнулся с проблемой» — запрещённый штамп.
 - Концовка — не мораль-клише («внимание к деталям решает», «важно не бояться меняться»), а конкретная мысль, выросшая из истории и биографии автора: наблюдение о рынке, правило, которое он для себя вывел, или неудобный вопрос читателю.
 - Заголовок-title — рабочее название, коротко и без канцелярита («Последние 500 метров», не «Как мы улучшили видимость акций»).
 
 Стиль автора (по образцам ниже): первое лицо, короткие абзацы в 1–2 предложения, разговорно и честно, без канцелярита, без эмодзи, вывод в последнем абзаце. Английская версия — тот же пост для LinkedIn: живой founder-английский, не перевод слово в слово.
 
-Ответ — строго JSON: {"title": "...", "body_ru": "...", "body_en": "..."}. title — короткий рабочий заголовок по-русски (в сам пост не входит).`
+Ответ — строго JSON: {"title": "...", "body_ru": "...", "body_en": "..."} — либо отказ {"skip": true, "reason": "..."}. title — короткий рабочий заголовок по-русски (в сам пост не входит).`
 
 export async function generateDraft(
   key: string,
@@ -388,7 +398,7 @@ export async function generateDraft(
   avoid: string[],
   market = '',
   profile = '',
-): Promise<GeneratedDraft | null> {
+): Promise<GeneratedDraft | { skip: string } | null> {
   const user = [
     line === 'delever'
       ? 'Материал — свежий отчёт о релизе Delever (написан для админов; инструкции игнорируй, выбери ОДИН самый живой факт и построй бутерброд вокруг него):'
@@ -421,6 +431,7 @@ export async function generateDraft(
   if (!raw) return null
   try {
     const p = JSON.parse(raw)
+    if (p.skip) return { skip: String(p.reason || 'материал слабый') }
     if (!p.body_ru || !p.body_en) return null
     return { title: String(p.title || '').slice(0, 200), body_ru: String(p.body_ru), body_en: String(p.body_en) }
   } catch {
