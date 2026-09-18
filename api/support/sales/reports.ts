@@ -176,9 +176,14 @@ export default async function handler(req: Request): Promise<Response> {
         GROUP BY ag.name ORDER BY cnt DESC LIMIT 10
       `,
       // Получено денег — факт из sales_payments (ручные и ПланФакт), в отличие
-      // от подписки выигранных, которая пока обещание
+      // от подписки выигранных, которая пока обещание. Делится надвое: по
+      // сделкам, выигранным в периоде, и по прежним — продления Zahratun
+      // за 23 млн (сделка октября 2025) не заслуга продаж этого месяца,
+      // и вместе они давали «120 млн» там, где новых оплат было 72
       sql`
-        SELECT COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt
+        SELECT COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt,
+               COUNT(*) FILTER (WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz)::int AS n_new,
+               COALESCE(SUM(p.amount) FILTER (WHERE d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz), 0)::bigint AS amt_new
         FROM sales_payments p
         LEFT JOIN sales_deals d ON d.id = p.deal_id
         WHERE p.org_id = ${orgId}
@@ -186,7 +191,8 @@ export default async function handler(req: Request): Promise<Response> {
           AND (${market} = '' OR d.market_id = ${market} OR d.market_id IS NULL)
       `,
       sql`
-        SELECT to_char(p.paid_at, 'YYYY-MM') AS mon, COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt
+        SELECT to_char(p.paid_at, 'YYYY-MM') AS mon, COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt,
+               COALESCE(SUM(p.amount) FILTER (WHERE to_char(d.won_at AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM') = to_char(p.paid_at, 'YYYY-MM')), 0)::bigint AS amt_new
         FROM sales_payments p
         LEFT JOIN sales_deals d ON d.id = p.deal_id
         WHERE p.org_id = ${orgId} AND p.paid_at > NOW() - INTERVAL '12 months'
@@ -207,6 +213,8 @@ export default async function handler(req: Request): Promise<Response> {
         weighted: pot.reduce((s2, p) => s2 + p.weighted, 0),
         cash_n: (cash as any[])[0]?.n || 0,
         cash_amt: (cash as any[])[0]?.amt || 0,
+        cash_n_new: (cash as any[])[0]?.n_new || 0,
+        cash_amt_new: (cash as any[])[0]?.amt_new || 0,
       },
       reach: [...(reach as any[]), ...(wonSrc as any[])],
       potential: pot,

@@ -23,10 +23,11 @@ interface Pulse {
     won: number; lost: number; won_amt: string; cycle_med: number
     open: number; withAmount: number; weighted: number
     cash_n: number; cash_amt: string
+    cash_n_new?: number; cash_amt_new?: string
   }
   potential: Array<{ key: string; label: string; prob: number; cnt: number; amt: string; weighted: number }>
   monthly: Array<{ mon: string; n: number; amt: string }>
-  cashMonthly: Array<{ mon: string; n: number; amt: string }>
+  cashMonthly: Array<{ mon: string; n: number; amt: string; amt_new?: string }>
 }
 
 const fmtMln = (v: any) => {
@@ -82,7 +83,10 @@ export function SalesPulse({ from, to, region, children }: {
     <div className="space-y-4">
       <Kpis items={[
         ['Выиграно', String(k.won), `закрыто в периоде · win rate ${winRate}% из ${closed}`],
-        ['Получено денег', fmtMln(k.cash_amt), `${k.cash_n} оплат за период · UZS`],
+        ['Получено денег', fmtMln(k.cash_amt_new ?? k.cash_amt),
+          k.cash_amt_new !== undefined
+            ? `${k.cash_n_new} оплат по сделкам периода · ещё ${fmtMln(Number(k.cash_amt) - Number(k.cash_amt_new))} от прежних клиентов`
+            : `${k.cash_n} оплат за период · UZS`],
         ['Новый MRR', fmtMln(k.won_amt), 'подписка выигранных · UZS/мес'],
         ['Цикл сделки', k.cycle_med ? `${k.cycle_med} дн` : '—', 'медиана по выигрышам периода'],
         ['Открытый портфель', String(k.open), `сделок в работе · прогноз ≈${fmtMln(k.weighted)}/мес`],
@@ -91,22 +95,26 @@ export function SalesPulse({ from, to, region, children }: {
       {children}
 
       <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-start">
-        <Card title="Деньги по месяцам" sub="получено — факт из оплат; новый MRR — подписка выигранных за месяц"
+        <Card title="Деньги по месяцам" sub="получено — факт из оплат: по сделкам месяца и от прежних клиентов; новый MRR — подписка выигранных за месяц"
           right={<PeriodChip label="12 месяцев" />}>
           <div className="px-4 pt-3 pb-2">
             {months.length === 0 && <div className="text-[12.5px] text-gray-400 py-2">Выигрышей и оплат за год нет</div>}
             <div className="flex items-end gap-3 h-40">
               {months.map(m => {
                 const cash = Number(cashBy.get(m)?.amt || 0), mrr = Number(mrrBy.get(m)?.amt || 0)
+                const cashNew = cashBy.get(m)?.amt_new !== undefined ? Number(cashBy.get(m)?.amt_new) : cash
                 const [y, mo] = m.split('-')
                 return (
                   <div key={m} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0"
-                    title={`${MONTHS[Number(mo) - 1]} ${y}: получено ${fmtMln(cash)} (${cashBy.get(m)?.n || 0} оплат) · новый MRR ${fmtMln(mrr)} (${mrrBy.get(m)?.n || 0} выигр.)`}>
+                    title={`${MONTHS[Number(mo) - 1]} ${y}: получено ${fmtMln(cash)} (${cashBy.get(m)?.n || 0} оплат), из них по сделкам месяца ${fmtMln(cashNew)} · новый MRR ${fmtMln(mrr)} (${mrrBy.get(m)?.n || 0} выигр.)`}>
                     <div className="text-[10px] text-gray-500 tabular-nums whitespace-nowrap">
                       {cash ? fmtMln(cash).replace(' млн', '') : ''}{cash && mrr ? ' / ' : ''}{mrr ? fmtMln(mrr).replace(' млн', '') : ''}
                     </div>
                     <div className="w-full flex items-end justify-center gap-1 h-28">
-                      <div className="w-[38%] bg-blue-500 rounded-t" style={{ height: `${(cash / maxMoney) * 100}%` }} />
+                      <div className="w-[38%] flex flex-col justify-end rounded-t overflow-hidden" style={{ height: `${(cash / maxMoney) * 100}%` }}>
+                        <div className="w-full bg-blue-200" style={{ height: `${cash ? ((cash - cashNew) / cash) * 100 : 0}%` }} />
+                        <div className="w-full bg-blue-500 flex-1" />
+                      </div>
                       <div className="w-[38%] bg-emerald-300 rounded-t" style={{ height: `${(mrr / maxMoney) * 100}%` }} />
                     </div>
                     <div className="text-[10.5px] text-gray-400">{MONTHS[Number(mo) - 1]}</div>
@@ -115,7 +123,8 @@ export function SalesPulse({ from, to, region, children }: {
               })}
             </div>
             <div className="flex gap-4 mt-2 text-[11px] text-gray-500">
-              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />получено, млн UZS</span>
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500 mr-1.5" />по сделкам месяца</span>
+              <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-200 mr-1.5" />от прежних клиентов, млн UZS</span>
               <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-300 mr-1.5" />новый MRR, млн UZS</span>
             </div>
           </div>
