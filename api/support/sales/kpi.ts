@@ -681,6 +681,18 @@ export default async function handler(req: Request): Promise<Response> {
         SELECT id, owner_agent_id FROM sales_deals WHERE id = ${dealId} AND org_id = ${orgId}
       `
       if (!deal) return json({ error: 'сделка не найдена' }, 404)
+      // Та же сумма на той же сделке в пределах недели уже есть — это та же
+      // оплата: из ПланФакта или внесённая коллегой. Вторая строка удваивала
+      // «Получено денег» и комиссию (Cheesesteak и Hayat family, сентябрь)
+      const [same] = await sql`
+        SELECT id, source, paid_at::text AS paid_at FROM sales_payments
+        WHERE org_id = ${orgId} AND deal_id = ${dealId} AND amount = ${amount}
+          AND paid_at BETWEEN ${paidAt}::date - 7 AND ${paidAt}::date + 7
+        LIMIT 1
+      ` as any[]
+      if (same) {
+        return json({ error: `Такая оплата уже есть: ${amount.toLocaleString('ru-RU')} от ${same.paid_at}${same.source === 'planfact' ? ' (из ПланФакта)' : ''}. Если это второй платёж на ту же сумму — поставьте другую дату или укажите в заметке, за что.` }, 409)
+      }
       const [row] = await sql`
         INSERT INTO sales_payments (org_id, deal_id, agent_id, amount, paid_at, note, created_by)
         VALUES (${orgId}, ${dealId}, ${deal.owner_agent_id}, ${amount}, ${paidAt}, ${body.note || null}, ${ctx.agentId})

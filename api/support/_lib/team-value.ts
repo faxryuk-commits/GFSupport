@@ -38,6 +38,8 @@ export interface Person {
     won: number; lost: number; closed: number; conv: number | null
     created: number; advanced: number; open: number
     wonAmounts: Record<string, number>; wonUzs: number
+    /** Получено денег по сделкам, выигранным в периоде (как в KPI «Продаж»). */
+    cash: number; cashN: number
   }
   touch: { calls: number; answered: number; talkSec: number; msgs: number; meetings: number; total: number; visible: boolean }
   crm: { moves: number; tasks: number; notes: number; total: number }
@@ -90,7 +92,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
   const toTs = `${o.to}T23:59:59+05:00`
   const market = o.market || ''
 
-  const [agents, calls, acts, moves, tasks, deals, orphan, reached] = await Promise.all([
+  const [agents, calls, acts, moves, tasks, deals, orphan, reached, cash] = await Promise.all([
     // Продавцы: отдел продаж плюс все, у кого есть сделки в периоде или в работе
     sql`
       SELECT ag.id, ag.name, ag.role, ag.pbx_ext, ag.created_at,
@@ -242,6 +244,18 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
       FROM mine m LEFT JOIN mx ON mx.deal_id = m.id
       GROUP BY 1, 2
     `,
+    // Деньги — по владельцу сделки, только по сделкам, выигранным в периоде:
+    // продление Zahratun за сделку 2025 года не результат этого месяца
+    sql`
+      SELECT d.owner_agent_id AS agent_id, COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0)::bigint AS amt
+      FROM sales_payments p JOIN sales_deals d ON d.id = p.deal_id
+      WHERE p.org_id = ${orgId} AND d.archived_at IS NULL AND d.pipeline <> 'partner'
+        AND d.owner_agent_id IS NOT NULL
+        AND p.paid_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        AND d.won_at BETWEEN ${fromTs}::timestamptz AND ${toTs}::timestamptz
+        AND (${market} = '' OR d.market_id = ${market})
+      GROUP BY 1
+    `,
   ])
 
   const byId = new Map<string, any>((agents as any[]).map(a => [a.id, a]))
@@ -280,7 +294,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
     p = {
       agentId: a.id, name: a.name, role: a.role || null, market: a.market || null,
       since: created && created > o.from ? created : null,
-      result: { won: 0, lost: 0, closed: 0, conv: null, created: 0, advanced: 0, open: 0, wonAmounts: {}, wonUzs: 0 },
+      result: { won: 0, lost: 0, closed: 0, conv: null, created: 0, advanced: 0, open: 0, wonAmounts: {}, wonUzs: 0, cash: 0, cashN: 0 },
       touch: { calls: 0, answered: 0, talkSec: 0, msgs: 0, meetings: 0, total: 0,
                visible: (a.market || 'uz') === 'uz' || String(a.markets || '').split(',').includes('uz') },
       crm: { moves: 0, tasks: 0, notes: 0, total: 0 },
@@ -333,6 +347,7 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
     const amounts: Record<string, number> = {}
     for (const [cur, v] of Object.entries(r.won_amounts || {})) amounts[cur] = Number(v)
     p.result = {
+      ...p.result,
       won, lost, closed: won + lost, conv: won + lost ? Math.round((won / (won + lost)) * 100) : null,
       created: Number(r.created), advanced: Number(r.advanced), open: Number(r.open),
       wonAmounts: amounts,
@@ -344,6 +359,11 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
     }
   }
 
+  for (const r of cash as any[]) {
+    const a = byId.get(r.agent_id); if (!a) continue
+    const p = personFor(a)
+    p.result.cash = Number(r.amt); p.result.cashN = Number(r.n)
+  }
   for (const r of reached as any[]) {
     const a = byId.get(r.agent_id); if (!a) continue
     const p = personFor(a)
@@ -443,6 +463,8 @@ export async function teamValue(sql: any, orgId: string, o: { from: string; to: 
     totals: {
       people: peopleOut.length, byMarket,
       won: peopleOut.reduce((s, p) => s + p.result.won, 0), wonAmounts,
+      cash: peopleOut.reduce((s, p) => s + p.result.cash, 0),
+      cashN: peopleOut.reduce((s, p) => s + p.result.cashN, 0),
       wonNoOwner: Number((orphan as any[])[0]?.n || 0),
       touches: peopleOut.reduce((s, p) => s + p.touch.total, 0),
       cleanAvg: withScore.length ? Math.round(withScore.reduce((s, p) => s + (p.clean.score as number), 0) / withScore.length) : null,

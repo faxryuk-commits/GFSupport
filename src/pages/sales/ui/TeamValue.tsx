@@ -20,7 +20,7 @@ interface Signal { tone: 'good' | 'warn' | 'bad' | 'info'; text: string }
 interface Person {
   agentId: string; name: string; role: string | null; market: string | null; since: string | null
   result: { won: number; lost: number; closed: number; conv: number | null; created: number; advanced: number; open: number
-            wonAmounts: Record<string, number>; wonUzs: number }
+            wonAmounts: Record<string, number>; wonUzs: number; cash?: number; cashN?: number }
   touch: { calls: number; answered: number; talkSec: number; msgs: number; meetings: number; total: number; visible: boolean }
   crm: { moves: number; tasks: number; notes: number; total: number }
   clean: { open: number; withStep: number; qualified: number; late: number; lateAmt: number; lost: number; lostReasoned: number; stale14: number
@@ -34,7 +34,7 @@ interface Data {
   workDays: string[]
   teamReached: number[]
   totals: { people: number; byMarket: Record<string, number>; won: number; wonNoOwner: number; wonAmounts: Record<string, number>
-            touches: number; cleanAvg: number | null; rhythmAvg: number }
+            cash?: number; cashN?: number; touches: number; cleanAvg: number | null; rhythmAvg: number }
   people: Person[]
 }
 
@@ -109,6 +109,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
   const max = {
     won: Math.max(1, ...people.map(p => p.result.won)),
     uzs: Math.max(1, ...people.map(p => p.result.wonUzs)),
+    cash: Math.max(1, ...people.map(p => p.result.cash || 0)),
     touch: Math.max(1, ...people.map(p => p.touch.total)),
     crm: Math.max(1, ...people.map(p => p.crm.total)),
   }
@@ -121,11 +122,11 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
   return (
     <div className="space-y-4">
       <Kpis items={[
-        ['Сейлзов в работе', String(d.totals.people), markets || '—'],
         ['Выиграно', String(d.totals.won), `закрыто за период${d.totals.wonNoOwner ? ` · ещё ${d.totals.wonNoOwner} без владельца` : ''} · ${moneyList(d.totals.wonAmounts, 'без сумм')}`],
+        ['Получено денег', fmtMln(d.totals.cash || 0), `${d.totals.cashN || 0} оплат по сделкам периода · UZS`],
         ['Касаний клиентов', String(d.totals.touches), 'разговоры, сообщения, встречи · факты, не заметки'],
         ['Чистота карточек', d.totals.cleanAvg === null ? '—' : `${d.totals.cleanAvg}%`, 'открытых сделок с шагом, квалификацией и суммой'],
-        ['Ритм', `${d.totals.rhythmAvg}%`, `рабочих дней с действиями · ${d.period.workDays} дн в периоде`],
+        ['Ритм', `${d.totals.rhythmAvg}%`, `рабочих дней с действиями · ${d.totals.people} чел: ${markets || '—'}`],
       ]} />
 
       <Card title="Ценность сотрудников"
@@ -138,7 +139,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
             <thead>
               <tr className="text-[10.5px] text-gray-600 font-semibold">
                 <th />
-                <th colSpan={2} className="text-left px-3 pt-2.5">Результат<i className="block h-0.5 rounded bg-emerald-500 mt-1" /></th>
+                <th colSpan={3} className="text-left px-3 pt-2.5">Результат<i className="block h-0.5 rounded bg-emerald-500 mt-1" /></th>
                 <th colSpan={2} className="text-left px-3 pt-2.5">Действия<i className="block h-0.5 rounded bg-blue-500 mt-1" /></th>
                 <th className="text-left px-3 pt-2.5">Чистота<i className="block h-0.5 rounded bg-violet-500 mt-1" /></th>
                 <th className="text-left px-3 pt-2.5">Ритм<i className="block h-0.5 rounded bg-amber-500 mt-1" /></th>
@@ -148,6 +149,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
                 <th className="text-left font-semibold px-4 py-2">Сотрудник</th>
                 <th className="text-left font-semibold px-3 py-2">Выиграно</th>
                 <th className="text-left font-semibold px-3 py-2">Подписано</th>
+                <th className="text-left font-semibold px-3 py-2">Получено</th>
                 <th className="text-left font-semibold px-3 py-2">С клиентом</th>
                 <th className="text-left font-semibold px-3 py-2">В CRM</th>
                 <th className="text-left font-semibold px-3 py-2">Карточки</th>
@@ -175,6 +177,11 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
                       <div className="font-semibold tabular-nums">{moneyList(p.result.wonAmounts, '—')}</div>
                       <div className="text-[11px] text-gray-500">{Object.keys(p.result.wonAmounts).some(k => k !== 'UZS') && p.result.wonUzs ? `≈ ${fmtMln(p.result.wonUzs)} UZS по курсу` : p.result.wonUzs ? 'в месяц' : 'сумм в выигранных нет'}</div>
                       <Bar v={p.result.wonUzs} max={max.uzs} color="bg-emerald-500" />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-semibold tabular-nums">{fmtMln(p.result.cash || 0)}</div>
+                      <div className="text-[11px] text-gray-500 whitespace-nowrap">{p.result.cashN ? `${p.result.cashN} оплат по сделкам периода` : 'оплат по сделкам периода нет'}</div>
+                      <Bar v={p.result.cash || 0} max={max.cash} color="bg-emerald-500" />
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="font-semibold tabular-nums">{p.touch.total}</div>
@@ -221,7 +228,7 @@ export function TeamValue({ from, to, region }: { from: string; to: string; regi
                 )
               })}
               {people.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-[12.5px] text-gray-400">За период у команды нет ни сделок, ни действий</td></tr>
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-[12.5px] text-gray-400">За период у команды нет ни сделок, ни действий</td></tr>
               )}
             </tbody>
           </table>
