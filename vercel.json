@@ -160,6 +160,10 @@
     {
       "path": "/api/support/cron/creator-weekly",
       "schedule": "*/5 5-6 * * *"
+    },
+    {
+      "path": "/api/support/cron/brand-signals",
+      "schedule": "0 4 * * *"
     }
   ]
 }

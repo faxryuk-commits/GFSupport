@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { apiGet } from '@/shared/services/api.service'
-import { Activity, TriangleAlert } from 'lucide-react'
+import { apiGet, apiPost } from '@/shared/services/api.service'
+import { Activity, TriangleAlert, Link2, Check, X } from 'lucide-react'
 
 /**
  * «Пульс бренда» — живые заказы клиента из аналитики Delever в карточке
@@ -43,17 +43,63 @@ const LEVEL: Record<string, { label: string; cls: string }> = {
   red: { label: 'активация не случилась', cls: 'bg-red-50 text-red-700 border-red-200' },
 }
 
+/** Поиск и ручная привязка бренда Delever — когда автомэппинг не нашёл. */
+function LinkBrand({ accountId, onLinked }: { accountId: string; onLinked: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [brands, setBrands] = useState<Array<{ id: string; name: string; is_archived: number }>>([])
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setBrands([]); return }
+    const t = setTimeout(() => {
+      apiGet<any>(`/sales/brand-map?q=${encodeURIComponent(q)}`, false)
+        .then(r => setBrands(r.brands || []))
+        .catch(() => setBrands([]))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [q])
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 text-[12px] text-gray-400 hover:text-blue-600">
+        <Link2 size={13} /> Связать с брендом Delever
+      </button>
+    )
+  }
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-2">
+      <div className="text-[12.5px] font-medium text-gray-700">Связать с брендом Delever</div>
+      <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Название бренда в платформе…"
+        className="w-full text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+      {brands.map(b => (
+        <button key={b.id}
+          onClick={async () => {
+            await apiPost('/sales/brand-map', { action: 'link', accountId, shipperId: b.id, shipperName: b.name })
+            onLinked()
+          }}
+          className="w-full text-left text-[12.5px] px-2.5 py-1.5 rounded-lg hover:bg-gray-50 flex items-center gap-2">
+          <span className="font-medium text-gray-900">{b.name}</span>
+          {Number(b.is_archived) === 1 && <span className="text-[10.5px] text-gray-400">архивный</span>}
+        </button>
+      ))}
+      <button onClick={() => setOpen(false)} className="text-[11.5px] text-gray-400 hover:text-gray-600">Отмена</button>
+    </div>
+  )
+}
+
 export function BrandPulse({ accountId }: { accountId: string }) {
   const [p, setP] = useState<Pulse | null>(null)
 
-  useEffect(() => {
-    if (!accountId) return
+  const load = () => {
     apiGet<Pulse>(`/sales/brand-pulse?accountId=${accountId}`, false)
       .then(setP)
       .catch(() => setP(null))
-  }, [accountId])
+  }
+  useEffect(() => { if (accountId) load() }, [accountId])
 
-  if (!p || !p.mapped) return null
+  if (!p) return null
+  if (!p.mapped) return <LinkBrand accountId={accountId} onLinked={load} />
   if (p.error) return null
 
   const m = p.month30
@@ -64,8 +110,14 @@ export function BrandPulse({ accountId }: { accountId: string }) {
         <span className="text-[13px] font-semibold text-gray-900">Пульс бренда · {p.shipperName}</span>
         <span className="text-[10.5px] px-1.5 py-px rounded bg-blue-50 text-blue-700 font-semibold">данные Delever</span>
         {!p.confirmed && (
-          <span className="text-[10.5px] px-1.5 py-px rounded bg-gray-100 text-gray-500"
-            title="Связка найдена по совпадению названия — проверь, что это тот самый бренд">автосвязка по имени</span>
+          <span className="inline-flex items-center gap-1.5 text-[10.5px] px-1.5 py-px rounded bg-gray-100 text-gray-500"
+            title="Связка найдена по совпадению названия — проверь, что это тот самый бренд">
+            автосвязка по имени
+            <button title="Да, это тот бренд" onClick={async () => { await apiPost('/sales/brand-map', { action: 'confirm', accountId }); load() }}
+              className="text-emerald-600 hover:text-emerald-700"><Check size={11} /></button>
+            <button title="Не тот бренд — отвязать" onClick={async () => { await apiPost('/sales/brand-map', { action: 'unlink', accountId }); load() }}
+              className="text-red-500 hover:text-red-600"><X size={11} /></button>
+          </span>
         )}
         {typeof p.ageDays === 'number' && (
           <span className="text-[11px] text-gray-400">в платформе {Math.floor(p.ageDays / 30)} мес</span>

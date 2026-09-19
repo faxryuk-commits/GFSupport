@@ -57,7 +57,25 @@ export default async function handler(req: Request): Promise<Response> {
     // Всё остальное — личное: очередь сотрудника, голосовые заметки,
     // регистрация. Без этой проверки «/start» выложил бы код регистрации
     // на всю группу, а «/queue» — чужую очередь дня
-    if (message.chat?.type !== 'private') return json({ ok: true })
+    if (message.chat?.type !== 'private') {
+      // Единственная групповая команда: подключить ЭТУ группу под утренние
+      // сигналы по клиентам. Принимается только от сотрудника из системы.
+      const gtext = String(message.text || '').trim()
+      if (gtext === '/signals_here' || gtext.startsWith('/signals_here@')) {
+        const [emp] = await sqlEarly`
+          SELECT id, name FROM support_agents
+          WHERE telegram_id = ${String(message.from?.id || '')} AND COALESCE(is_active, true) LIMIT 1`
+        if (emp) {
+          await sqlEarly`
+            INSERT INTO support_settings (org_id, key, value)
+            VALUES ('org_delever', 'signals_group_chat_id', ${String(message.chat.id)})
+            ON CONFLICT (org_id, key) DO UPDATE SET value = EXCLUDED.value`
+          const gtoken = await getPlatformBotToken()
+          if (gtoken) await sendTgMessage(gtoken, message.chat.id, 'Группа подключена: утренние сигналы по клиентам будут приходить сюда.')
+        }
+      }
+      return json({ ok: true })
+    }
 
     if (await handleSalesCommand(sqlEarly, message)) return json({ ok: true })
     // Голосовое после звонка → поля сделки (замена телефонии)
