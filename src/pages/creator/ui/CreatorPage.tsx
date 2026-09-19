@@ -80,7 +80,7 @@ const SOURCE_KIND: Record<Source['kind'], string> = {
   telegram: 'Telegram', rss: 'RSS', url: 'Страница',
 }
 
-type Tab = 'drafts' | 'approved' | 'archive' | 'cycles' | 'sources'
+type Tab = 'drafts' | 'approved' | 'archive' | 'articles' | 'cycles' | 'sources'
 
 function CopyBtn({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false)
@@ -620,14 +620,18 @@ export function CreatorPage() {
     load()
   }
 
+  // Аналитические статьи — отдельная полка: длинные, живут по своему ритму
   const counts = useMemo(() => ({
-    drafts: (drafts || []).filter(d => d.status === 'draft').length,
-    approved: (drafts || []).filter(d => d.status === 'approved').length,
-    archive: (drafts || []).filter(d => d.status === 'rejected' || d.status === 'published').length,
+    drafts: (drafts || []).filter(d => d.status === 'draft' && d.line !== 'analysis').length,
+    approved: (drafts || []).filter(d => d.status === 'approved' && d.line !== 'analysis').length,
+    archive: (drafts || []).filter(d => (d.status === 'rejected' || d.status === 'published') && d.line !== 'analysis').length,
+    articles: (drafts || []).filter(d => d.line === 'analysis').length,
   }), [drafts])
 
   const visible = useMemo(() => {
     let list = drafts || []
+    if (tab === 'articles') return list.filter(d => d.line === 'analysis')
+    list = list.filter(d => d.line !== 'analysis')
     if (tab === 'drafts') list = list.filter(d => d.status === 'draft')
     if (tab === 'approved') list = list.filter(d => d.status === 'approved')
     if (tab === 'archive') list = list.filter(d => d.status === 'rejected' || d.status === 'published')
@@ -649,6 +653,7 @@ export function CreatorPage() {
     { key: 'drafts', label: 'Черновики', count: counts.drafts },
     { key: 'approved', label: 'Одобренные', count: counts.approved },
     { key: 'archive', label: 'Архив', count: counts.archive },
+    { key: 'articles', label: 'Аналитика', count: counts.articles },
     { key: 'cycles', label: 'Циклы' },
     { key: 'sources', label: 'Источники' },
   ]
@@ -699,28 +704,34 @@ export function CreatorPage() {
         <CyclesTab onDraftsChanged={load} />
       ) : (
         <>
-          <div className="flex items-center gap-1.5">
-            {([['all', 'Все'], ['delever', 'Delever'], ['gfsupport', 'как мы строим']] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setLineFilter(k)}
-                className={`text-[11.5px] font-semibold px-2.5 py-1 rounded-full ${
-                  lineFilter === k ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                {l}
-              </button>
-            ))}
-          </div>
+          {tab !== 'articles' && (
+            <div className="flex items-center gap-1.5">
+              {([['all', 'Все'], ['delever', 'Delever'], ['gfsupport', 'как мы строим']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setLineFilter(k)}
+                  className={`text-[11.5px] font-semibold px-2.5 py-1 rounded-full ${
+                    lineFilter === k ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
 
           {!drafts && !error && <div className="text-[12.5px] text-gray-400">Загружаю…</div>}
           {drafts && visible.length === 0 && (
             <div className="bg-white border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center text-[13px] text-gray-500">
               {tab === 'drafts'
                 ? 'Черновиков нет. Нажми «Собрать выпуск» — креатор прочитает свежий релиз Delever, выпуски GFSupport и источники радара и напишет три поста в твоём тоне.'
-                : 'Здесь пока пусто.'}
+                : tab === 'articles'
+                  ? 'Аналитических статей пока нет. «Аналитика недели» приходит по воскресеньям из событий брендов за 7 дней; после подключения ClickHouse здесь появится и «Индекс доставки ЦА».'
+                  : 'Здесь пока пусто.'}
             </div>
           )}
 
           {groups.map(([batch, items]) => (
             <div key={batch} className="space-y-3">
-              <div className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wide">Выпуск {batch}</div>
+              <div className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wide">
+                {tab === 'articles' ? `Неделя ${batch}` : `Выпуск ${batch}`}
+              </div>
               {items.map(d => <DraftCard key={d.id} d={d} onChanged={load} />)}
             </div>
           ))}
