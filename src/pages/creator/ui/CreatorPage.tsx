@@ -415,6 +415,7 @@ function ClickhouseBlock() {
           <label className="sm:w-56 text-[11px] text-gray-400">
             пароль
             <input value={password} onChange={e => setPassword(e.target.value)} type="password"
+              autoComplete="new-password" name="ch-secret" data-lpignore="true"
               placeholder={cfg?.hasPassword ? 'сохранён — ввести, чтобы заменить' : 'пароль'}
               className="mt-0.5 w-full text-[12.5px] text-gray-800 border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
           </label>
