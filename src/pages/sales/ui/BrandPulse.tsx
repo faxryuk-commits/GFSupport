@@ -47,7 +47,7 @@ const LEVEL: Record<string, { label: string; cls: string }> = {
 function LinkBrand({ accountId, onLinked }: { accountId: string; onLinked: () => void }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const [brands, setBrands] = useState<Array<{ id: string; name: string; is_archived: number }>>([])
+  const [brands, setBrands] = useState<Array<{ id: string; name: string; is_archived: number; done30?: number; lastOrderDays?: number | null }>>([])
 
   useEffect(() => {
     if (q.trim().length < 2) { setBrands([]); return }
@@ -80,7 +80,18 @@ function LinkBrand({ accountId, onLinked }: { accountId: string; onLinked: () =>
           }}
           className="w-full text-left text-[12.5px] px-2.5 py-1.5 rounded-lg hover:bg-gray-50 flex items-center gap-2">
           <span className="font-medium text-gray-900">{b.name}</span>
-          {Number(b.is_archived) === 1 && <span className="text-[10.5px] text-gray-400">архивный</span>}
+          {(b.done30 ?? 0) > 0 ? (
+            <span className="text-[10.5px] px-1.5 py-px rounded bg-emerald-50 text-emerald-700 font-semibold">
+              активен · {Number(b.done30).toLocaleString('ru-RU')} заказов/30д
+            </span>
+          ) : (
+            <span className="text-[10.5px] text-gray-400">
+              {b.lastOrderDays !== null && b.lastOrderDays !== undefined
+                ? `посл. заказ ${b.lastOrderDays} дн назад`
+                : 'заказов не было'}
+            </span>
+          )}
+          {Number(b.is_archived) === 1 && <span className="text-[10.5px] px-1.5 py-px rounded bg-gray-100 text-gray-400">архивный</span>}
         </button>
       ))}
       <button onClick={() => setOpen(false)} className="text-[11.5px] text-gray-400 hover:text-gray-600">Отмена</button>
@@ -122,6 +133,16 @@ export function BrandPulse({ accountId }: { accountId: string }) {
         {typeof p.ageDays === 'number' && (
           <span className="text-[11px] text-gray-400">в платформе {Math.floor(p.ageDays / 30)} мес</span>
         )}
+        <span className="flex-1" />
+        {/* Ошибочную связку можно снять всегда, даже подтверждённую */}
+        <button
+          title="Отвязать бренд и выбрать другой"
+          onClick={async () => {
+            if (!confirm(`Отвязать «${p.shipperName}» от этого аккаунта?`)) return
+            await apiPost('/sales/brand-map', { action: 'unlink', accountId })
+            load()
+          }}
+          className="text-[11px] text-gray-300 hover:text-red-600">сменить связку</button>
       </div>
 
       {p.decline && (

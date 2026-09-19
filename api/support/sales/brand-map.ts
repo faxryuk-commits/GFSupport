@@ -1,6 +1,6 @@
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { loadChConfig, chQuery } from '../_lib/clickhouse.js'
+import { loadChConfig, chQuery, CH_DONE_STATUS } from '../_lib/clickhouse.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -26,7 +26,29 @@ export default async function handler(req: Request): Promise<Response> {
       WHERE name ILIKE '%${safe}%'
       ORDER BY is_archived, name LIMIT 10`)
     if (!res.ok) return json({ error: res.error }, 200)
-    return json({ brands: res.data || [] })
+    const found = res.data || []
+    // Индикаторы живости: одинаковых имён в платформе несколько, и без
+    // «заказов за 30 дней» не понять, который из них настоящий
+    if (found.length) {
+      const ids = found.map((b: any) => `'${String(b.id).replace(/[^0-9a-f-]/gi, '')}'`).join(',')
+      const act = await chQuery(cfg, `
+        SELECT shipper_id,
+               countIf(created_at >= now() - INTERVAL 30 DAY AND status_id = ${CH_DONE_STATUS}) done30,
+               max(created_at) last_order
+        FROM order_v WHERE shipper_id IN (${ids}) GROUP BY shipper_id`)
+      if (act.ok) {
+        const byId: Record<string, any> = {}
+        for (const a of act.data || []) byId[a.shipper_id] = a
+        for (const b of found as any[]) {
+          const a = byId[b.id]
+          b.done30 = a ? Number(a.done30) : 0
+          b.lastOrderDays = a?.last_order
+            ? Math.floor((Date.now() - new Date(a.last_order).getTime()) / 86400e3)
+            : null
+        }
+      }
+    }
+    return json({ brands: found })
   }
 
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
