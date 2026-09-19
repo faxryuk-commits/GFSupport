@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, MessageSquare, Hash, Briefcase, Settings, Megaphone, LogOut,
   ChevronLeft, ChevronRight, ChevronDown, Bell, Waypoints, CircleUser, MessagesSquare,
-  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles, PenLine, TrendingUp } from 'lucide-react'
+  Plug, Handshake, Inbox, Building2, Phone, Activity, ListChecks, UserRoundSearch, Sparkles, PenLine, TrendingUp, Gauge } from 'lucide-react'
 import { getPlanConfig, isPathAllowed } from '@/shared/lib/plan-features'
 import { useMyAccess } from '@/shared/hooks/useMyAccess'
 import { pathAllowedFor } from '@/shared/lib/modules'
@@ -331,6 +331,9 @@ const navGroups: NavGroup[] = [
   // Креатор — личный модуль владельца (черновики постов): в меню только у него,
   // API отдаёт 403 всем остальным независимо от роли
   { label: '', items: [{ path: '/creator', label: 'Креатор', icon: PenLine, ownerOnly: 'agent_1772526727220_akc3' }] },
+  // Картина бизнеса — аналитика всей платформы Delever из ClickHouse: тоже
+  // личный модуль владельца, API отдаёт 403 всем остальным
+  { label: '', items: [{ path: '/business', label: 'Картина бизнеса', icon: Gauge, ownerOnly: 'agent_1772526727220_akc3' }] },
 ]
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed'

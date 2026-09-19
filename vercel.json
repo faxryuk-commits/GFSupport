@@ -164,6 +164,10 @@
     {
       "path": "/api/support/cron/brand-signals",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/support/cron/business-dash",
+      "schedule": "20 4 * * *"
     }
   ]
 }
