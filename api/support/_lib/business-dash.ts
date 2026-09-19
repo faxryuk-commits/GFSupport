@@ -118,13 +118,14 @@ export function buildDashPayload(rows: Record<keyof typeof DASH_QUERIES, any[]>)
   const weekAxis = axis(weeklyByIso['ALL'] || [], 'w')
   const monthAxis = axis(monthsByIso['ALL'] || [], 'm')
 
-  const series = (arr: any[] | undefined, key: string, ax: string[], fields: string[]) => {
+  const series = (arr: any[] | undefined, key: string, ax: string[], fields: string[] | Record<string, string>) => {
+    const pairs = Array.isArray(fields) ? fields.map(f => [f, f]) : Object.entries(fields)
     const at: Record<string, any> = {}
     for (const r of arr || []) at[String(r[key])] = r
     return ax.map(v => {
       const r = at[v] || {}
       const out: any = { [key]: v }
-      for (const f of fields) out[f] = Number(r[f] || 0)
+      for (const [to, from] of pairs) out[to] = Number(r[from] || 0)
       return out
     })
   }
@@ -165,10 +166,14 @@ export function buildDashPayload(rows: Record<keyof typeof DASH_QUERIES, any[]>)
         ontimePct: k.ontimePct !== null && k.ontimePct !== undefined ? Number(k.ontimePct) : null,
       },
       weekly: series(weeklyByIso[iso], 'w', weekAxis, ['n']),
-      channels: series(monthsByIso.channels[iso], 'm', monthAxis, ['agg', 'own', 'pickup', 'hall']),
-      sources: series(monthsByIso.sources[iso], 'm', monthAxis, ['agg', 'admin', 'bot', 'kiosk', 'mobile', 'website', 'hall']),
-      payments: series(monthsByIso.payments[iso], 'm', monthAxis, ['cash', 'card', 'online', 'other']),
-      quality: series(monthsByIso.quality[iso], 'm', monthAxis, ['medMin', 'ontimePct']),
+      channels: series(monthsByIso[iso], 'm', monthAxis,
+        { agg: 'd_agg', own: 'd_own', pickup: 'd_pickup', hall: 'd_hall' }),
+      sources: series(monthsByIso[iso], 'm', monthAxis,
+        { agg: 's_agg', admin: 's_admin', bot: 's_bot', kiosk: 's_kiosk', mobile: 's_mobile', website: 's_website', hall: 's_hall' }),
+      payments: series(monthsByIso[iso], 'm', monthAxis,
+        { cash: 'p_cash', card: 'p_card', online: 'p_online', other: 'p_other' }),
+      quality: series(monthsByIso[iso], 'm', monthAxis,
+        { medMin: 'q_medMin', ontimePct: 'q_ontime' }),
       hours: series(hoursByIso[iso], 'h', Array.from({ length: 24 }, (_, i) => String(i)), ['n']),
       growers: mv.slice(0, 10).filter((r: any) => r.chg > 0),
       fallers: mv.slice(-10).reverse().filter((r: any) => r.chg < 0),
@@ -184,20 +189,14 @@ export async function computeBusinessDash(sql: SQL) {
   const cfg = await loadChConfig(sql)
   if (!cfg) return { ok: false as const, error: 'ClickHouse не настроен' }
 
-  // Не больше четырёх запросов разом + один повтор: девять параллельных
-  // коннектов ловят таймауты, а последовательные не влезают в лимит edge
+  // Все шесть запросов разом + один повтор при сбое коннекта: функция может
+  // исполняться далеко от базы (edge у пользователя, база в Хельсинки),
+  // поэтому дорога оплачивается один раз, а не шестью волнами
   const keys = Object.keys(DASH_QUERIES) as Array<keyof typeof DASH_QUERIES>
-  const results: Array<{ ok: boolean; data?: any[]; error?: string }> = new Array(keys.length)
-  let next = 0
-  const worker = async () => {
-    while (next < keys.length) {
-      const i = next++
-      let r = await chQuery(cfg, DASH_QUERIES[keys[i]], 15000)
-      if (r.ok === false) r = await chQuery(cfg, DASH_QUERIES[keys[i]], 15000)
-      results[i] = r
-    }
-  }
-  await Promise.all([worker(), worker(), worker(), worker()])
+  const results = await Promise.all(keys.map(async k => {
+    const r = await chQuery(cfg, DASH_QUERIES[k], 15000)
+    return r.ok === false ? chQuery(cfg, DASH_QUERIES[k], 15000) : r
+  }))
   const rows: any = {}
   for (let i = 0; i < keys.length; i++) {
     const r = results[i]
