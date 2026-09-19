@@ -1,20 +1,22 @@
-import { getSQL, json, getOpenAIKey, getOrgBotToken } from '../_lib/db.js'
+import { getSQL, json, getOpenAIKey } from '../_lib/db.js'
 import { assertCron } from '../_lib/cron-auth.js'
-import { CREATOR_OWNER_ID, ensureCreatorSchema, generateOne, type CreatorLine } from '../_lib/creator.js'
+import {
+  ensureCreatorSchema, generateOne, planCycle, generateSeriesDraft,
+  sendOwnerTG, weekKeyOf, GOAL_LABEL, type CreatorLine, type CycleGoal,
+} from '../_lib/creator.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
 /**
- * Ежедневная сборка выпуска «Креатора».
+ * Ежедневный тик «Креатора» (утро, каждые 5 минут — edge не успевает больше
+ * одного поста за вызов).
  *
- * Edge-функция не успевает три поста за один вызов (лимит 25 секунд),
- * поэтому крон тикает каждым утром каждые 5 минут и дописывает по одному
- * посту, пока выпуск не соберётся: свежий релиз Delever → вечнозелёная
- * страница базы знаний (архив релизов и функционал, без повторов) →
- * выпуск GFSupport; после третьего — личное сообщение владельцу.
- * Идемпотентно: собранный выпуск последующие тики пропускают.
+ * Режим циклов: в понедельник без плана — предложить план недели (владелец
+ * одобряет в UI); при одобренном цикле выпуск дня — ОДИН серийный пост,
+ * который помнит предыдущие серии. Пока план не одобрен, серия не пишется.
+ * Без цикла вовсе — старый рубрикатор на три поста.
  */
-const PLAN: CreatorLine[] = ['delever', 'delever_archive', 'gfsupport']
+const FALLBACK_PLAN: CreatorLine[] = ['delever', 'delever_archive', 'gfsupport']
 
 export default async function handler(req: Request): Promise<Response> {
   const denied = assertCron(req)
@@ -22,53 +24,74 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   await ensureCreatorSchema(sql)
 
-  // Ключ выпуска — пятничная дата по Ташкенту
   const batchKey = new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10)
-  const existing = await sql`SELECT id FROM creator_drafts WHERE batch_key = ${batchKey}`
-  if (existing.length >= PLAN.length) return json({ ok: true, done: true, batchKey })
-
+  const weekKey = weekKeyOf()
   const key = await getOpenAIKey()
   if (!key) return json({ error: 'нет ключа OpenAI' }, 500)
 
-  const line = PLAN[existing.length]
+  const [cycle] = await sql`
+    SELECT * FROM creator_cycles WHERE week_key = ${weekKey}
+    ORDER BY created_at DESC LIMIT 1`
+
+  // Понедельник (или любой день недели без плана): предложить цикл
+  if (!cycle) {
+    try {
+      const c: any = await planCycle(sql, key, weekKey)
+      const days = (Array.isArray(c.plan) ? c.plan : JSON.parse(c.plan))
+        .map((d: any, i: number) => `${i + 1}. ${d.role}`).join('\n')
+      await sendOwnerTG(sql,
+        `🗓 Креатор предлагает цикл недели (цель: ${GOAL_LABEL[c.goal as CycleGoal]})\n\n«${c.theme}»\n${c.rationale}\n\n${days}\n\nОдобри план во вкладке «Циклы» — серия начнёт писаться со следующего утра. Не одобришь — буду писать обычные выпуски.`)
+      return json({ ok: true, planned: c.id })
+    } catch (e: any) {
+      return json({ ok: false, error: e?.message || 'план не собрался' }, 200)
+    }
+  }
+
+  // План предложен, но не одобрен: серию не пишем, работает старый режим
+  if ((cycle as any).status === 'proposed') {
+    return await fallbackBatch(sql, key, batchKey)
+  }
+
+  if ((cycle as any).status === 'approved') {
+    const already = await sql`
+      SELECT id FROM creator_drafts WHERE cycle_id = ${(cycle as any).id} AND batch_key = ${batchKey}`
+    if (already.length) return json({ ok: true, done: true, batchKey })
+    try {
+      const row: any = await generateSeriesDraft(sql, key, cycle, batchKey)
+      if (!row) {
+        await sql`UPDATE creator_cycles SET status = 'done', updated_at = now() WHERE id = ${(cycle as any).id}`
+        await sendOwnerTG(sql, `🏁 Арка «${(cycle as any).theme}» дописана — все посты серии в Креаторе.`)
+        return json({ ok: true, cycleDone: true })
+      }
+      await sendOwnerTG(sql,
+        `✍️ Пост дня из арки «${(cycle as any).theme}»: ${row.cycle_role}\n\n«${row.title}» ждёт одобрения.`)
+      return json({ ok: true, series: row.id })
+    } catch (e: any) {
+      return json({ ok: false, error: e?.message || 'ошибка серии' }, 200)
+    }
+  }
+
+  // Цикл завершён — до следующего понедельника обычные выпуски
+  return await fallbackBatch(sql, key, batchKey)
+}
+
+/** Старый рубрикатор: три поста в день, по одному за тик. */
+async function fallbackBatch(sql: ReturnType<typeof getSQL>, key: string, batchKey: string): Promise<Response> {
+  const existing = await sql`
+    SELECT id FROM creator_drafts WHERE batch_key = ${batchKey} AND cycle_id IS NULL`
+  if (existing.length >= FALLBACK_PLAN.length) return json({ ok: true, done: true, batchKey })
+  const line = FALLBACK_PLAN[existing.length]
   try {
     await generateOne(sql, key, line, batchKey)
   } catch (e: any) {
-    // Следующий тик попробует снова — GitBook или модель могли моргнуть
     return json({ ok: false, error: e?.message || 'ошибка генерации', batchKey }, 200)
   }
-
-  const isLast = existing.length + 1 >= PLAN.length
-  if (isLast) await notifyOwner(sql, batchKey)
-  return json({ ok: true, generated: line, count: existing.length + 1, notified: isLast })
-}
-
-/** Личное сообщение владельцу: выпуск готов, черновики ждут в «Креаторе». */
-async function notifyOwner(sql: ReturnType<typeof getSQL>, batchKey: string): Promise<void> {
-  try {
-    const [owner] = await sql`
-      SELECT telegram_id, org_id FROM support_agents WHERE id = ${CREATOR_OWNER_ID} LIMIT 1`
-    const tgId = (owner as any)?.telegram_id
-    if (!tgId) return
-    const token = await getOrgBotToken((owner as any)?.org_id)
-    if (!token) return
+  const isLast = existing.length + 1 >= FALLBACK_PLAN.length
+  if (isLast) {
     const titles = await sql`
-      SELECT title, line FROM creator_drafts WHERE batch_key = ${batchKey} ORDER BY created_at`
-    const list = (titles as any[])
-      .map(t => `• ${t.title}${t.line === 'gfsupport' ? ' (как мы строим)' : ''}`)
-      .join('\n')
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: tgId,
-        text: `✍️ Креатор собрал выпуск ${batchKey} — три черновика ждут одобрения:\n\n${list}\n\nОткрой «Креатор», проверь русский текст и скопируй английский для LinkedIn.`,
-        reply_markup: {
-          inline_keyboard: [[{ text: 'Открыть Креатор', url: 'https://www.gfsupport.uz/creator' }]],
-        },
-      }),
-    })
-  } catch {
-    // Уведомление — вежливость, не контракт: выпуск в любом случае в системе
+      SELECT title, line FROM creator_drafts WHERE batch_key = ${batchKey} AND cycle_id IS NULL ORDER BY created_at`
+    const list = (titles as any[]).map(t => `• ${t.title}`).join('\n')
+    await sendOwnerTG(sql, `✍️ Креатор собрал выпуск ${batchKey} — три черновика ждут одобрения:\n\n${list}`)
   }
+  return json({ ok: true, generated: line, notified: isLast })
 }

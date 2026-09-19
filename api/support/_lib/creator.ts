@@ -1,5 +1,5 @@
 import type { NeonQueryFunction } from '@neondatabase/serverless'
-import { ensureOnce } from './db.js'
+import { ensureOnce, getOrgBotToken } from './db.js'
 import { RELEASES } from './release-notes.js'
 
 type SQL = NeonQueryFunction<false, false>
@@ -55,6 +55,24 @@ export async function ensureCreatorSchema(sql: SQL): Promise<void> {
         last_fetched_at timestamptz,
         last_note text
       )`
+  })
+  await ensureOnce('creator_schema_v2', async () => {
+    // Недельные циклы: серия постов — одна арка с целью
+    // (прогрев / бренд / желание), как сериал с ролью у каждого дня
+    await sql`
+      CREATE TABLE IF NOT EXISTS creator_cycles (
+        id text PRIMARY KEY,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        week_key text NOT NULL,
+        goal text NOT NULL,
+        theme text NOT NULL,
+        rationale text NOT NULL DEFAULT '',
+        plan jsonb NOT NULL,
+        status text NOT NULL DEFAULT 'proposed'
+      )`
+    await sql`ALTER TABLE creator_drafts ADD COLUMN IF NOT EXISTS cycle_id text`
+    await sql`ALTER TABLE creator_drafts ADD COLUMN IF NOT EXISTS cycle_role text`
   })
 }
 
@@ -442,4 +460,218 @@ export async function generateDraft(
   } catch {
     return null
   }
+}
+
+// ───────────────────────── Недельные циклы ─────────────────────────
+
+/**
+ * Цели циклов и их ротация. «Желание» — не прямая продажа: серия должна
+ * оставить у читателя-ресторатора мысль «хочу, чтобы у меня внутри так
+ * работало» — без единого CTA (владелец: призыв обнуляет «сам захотел»).
+ */
+export const CYCLE_GOALS = ['warmup', 'brand', 'desire'] as const
+export type CycleGoal = typeof CYCLE_GOALS[number]
+
+export const GOAL_BRIEF: Record<CycleGoal, string> = {
+  warmup: 'ПРОГРЕВ: неделя разбирает одну боль рынка доставки — сцены, кейсы, цифры. Читатель уходит с пониманием «вот как это устроено на самом деле». Продукт — участник историй, не герой.',
+  brand: 'БРЕНД: неделя укрепляет фигуру фаундера и компании — история, решения, «как мы строим», позиция по рынку. Читатель уходит с доверием к автору как к человеку, который строит руками.',
+  desire: 'ЖЕЛАНИЕ: неделя создаёт у читателя-владельца бизнеса желание расти и иметь такие же инструменты и порядок у себя. НИКАКОЙ прямой продажи и НИКАКОГО CTA — ни «напишите мне», ни ссылок. Желание рождается из историй улучшений, кейсов и рыночных ситуаций; финал арки — открытая мысль, после которой хочется действовать.',
+}
+
+export const GOAL_LABEL: Record<CycleGoal, string> = {
+  warmup: 'прогрев', brand: 'бренд', desire: 'желание',
+}
+
+export interface CycleDay { role: string; brief: string }
+
+/** Понедельник недели даты (Ташкент) — ключ цикла. */
+export function weekKeyOf(d = new Date()): string {
+  const t = new Date(d.getTime() + 5 * 3600e3)
+  const dow = (t.getUTCDay() + 6) % 7 // 0 = понедельник
+  t.setUTCDate(t.getUTCDate() - dow)
+  return t.toISOString().slice(0, 10)
+}
+
+/** Личное сообщение владельцу в Telegram; молчание сети не роняет вызов. */
+export async function sendOwnerTG(sql: SQL, text: string, buttonLabel = 'Открыть Креатор'): Promise<void> {
+  try {
+    const [owner] = await sql`
+      SELECT telegram_id, org_id FROM support_agents WHERE id = ${CREATOR_OWNER_ID} LIMIT 1`
+    const tgId = (owner as any)?.telegram_id
+    if (!tgId) return
+    const token = await getOrgBotToken((owner as any)?.org_id)
+    if (!token) return
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: tgId,
+        text,
+        reply_markup: { inline_keyboard: [[{ text: buttonLabel, url: 'https://www.gfsupport.uz/creator' }]] },
+      }),
+    })
+  } catch { /* уведомление — вежливость, не контракт */ }
+}
+
+/** Следующая цель по ротации: прогрев → бренд → желание → снова прогрев. */
+export async function nextCycleGoal(sql: SQL): Promise<CycleGoal> {
+  const [last] = await sql`SELECT goal FROM creator_cycles ORDER BY created_at DESC LIMIT 1`
+  const prev = (last as any)?.goal as CycleGoal | undefined
+  if (!prev) return 'warmup'
+  const i = CYCLE_GOALS.indexOf(prev)
+  return CYCLE_GOALS[(i + 1) % CYCLE_GOALS.length]
+}
+
+/**
+ * План цикла: модель предлагает тему недели и роли шести дней. План — только
+ * предложение: пока владелец не одобрит его в UI, серия не пишется.
+ */
+export async function planCycle(sql: SQL, key: string, weekKey: string): Promise<any> {
+  const goal = await nextCycleGoal(sql)
+  const [rel, pool, sources, profileRow, recentCycles] = await Promise.all([
+    fetchDeleverRelease(),
+    fetchGitbookPool(),
+    sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
+    sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
+    sql`SELECT theme FROM creator_cycles ORDER BY created_at DESC LIMIT 6`,
+  ])
+  const market = await marketContext(sources as any)
+  const profile = String((profileRow as any[])[0]?.value || '')
+  const pageTitles = pool
+    .map(p => p.title)
+    .filter((t, i, a) => a.indexOf(t) === i)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 40)
+
+  const system = `Ты — контент-стратег личного бренда фаундера Delever (платформа доставки для ресторанов, Центральная Азия и Кавказ). Планируешь НЕДЕЛЬНЫЙ ЦИКЛ — серию из 6 постов (пн–сб), которая как сериал день за днём раскрывает ОДНУ тему и работает на одну цель.
+
+Цель этой недели — ${GOAL_BRIEF[goal]}
+
+Правила серии: без прямой продажи и без CTA всегда; каждый день — самостоятельный пост, но серия связана: посты могут ссылаться на вчерашний и оставлять крючок на завтра; тема должна опираться на реальные материалы (релиз, база знаний, рынок), не на выдумку.
+
+Ответ — строго JSON:
+{"theme": "тема недели, одна фраза", "rationale": "почему эта тема сейчас, 1-2 предложения", "days": [{"role": "короткое имя роли дня", "brief": "что делает этот пост в арке, 1-2 предложения"} × 6]}`
+
+  const user = [
+    rel ? `Свежий релиз Delever:\n${rel.text.slice(0, 2500)}` : '',
+    `\nСтраницы базы знаний (выборка, тема может опираться на них): ${pageTitles.join('; ')}`,
+    market ? `\nЧто обсуждает рынок:\n${market.slice(0, 2500)}` : '',
+    profile ? `\nКарточка фаундера (темы бренда и желания растут отсюда):\n${profile.slice(0, 4000)}` : '',
+    recentCycles.length ? `\nТемы прошлых циклов (не повторять): ${(recentCycles as any[]).map(r => r.theme).join('; ')}` : '',
+  ].join('\n')
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      temperature: 0.8,
+      max_tokens: 1200,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  })
+  const data = await res.json()
+  const p = JSON.parse(data?.choices?.[0]?.message?.content || '{}')
+  if (!p.theme || !Array.isArray(p.days) || p.days.length < 4) throw new Error('модель не вернула план цикла')
+
+  const id = `crc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+  await sql`
+    INSERT INTO creator_cycles (id, week_key, goal, theme, rationale, plan)
+    VALUES (${id}, ${weekKey}, ${goal}, ${String(p.theme).slice(0, 300)},
+            ${String(p.rationale || '').slice(0, 600)}, ${JSON.stringify(p.days.slice(0, 6))}::jsonb)`
+  const [row] = await sql`SELECT * FROM creator_cycles WHERE id = ${id}`
+  return row
+}
+
+/**
+ * Серийный пост дня: знает цель цикла, роль дня и все предыдущие посты серии —
+ * связки «вчера я показал…» и крючки на завтра настоящие. Право на отказ в
+ * серии не действует: тема первична, материал — опора.
+ */
+export async function generateSeriesDraft(sql: SQL, key: string, cycle: any, batchKey: string): Promise<any> {
+  const days: CycleDay[] = Array.isArray(cycle.plan) ? cycle.plan : JSON.parse(cycle.plan)
+  const prev = await sql`
+    SELECT title, body_ru, cycle_role FROM creator_drafts
+    WHERE cycle_id = ${cycle.id} ORDER BY created_at`
+  const dayIndex = (prev as any[]).length
+  if (dayIndex >= days.length) return null
+  const day = days[dayIndex]
+
+  const usedRows = await sql`
+    SELECT DISTINCT source->>'url' AS u FROM creator_drafts WHERE source->>'url' IS NOT NULL`
+  const used = new Set((usedRows as any[]).map(r => String(r.u)))
+
+  // Материалы-опоры: свежий релиз, случайная страница функционала, рынок
+  const [rel, pool, sources, profileRow, samples] = await Promise.all([
+    fetchDeleverRelease(),
+    fetchGitbookPool(),
+    sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
+    sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
+    styleSamples(sql),
+  ])
+  const market = await marketContext(sources as any)
+  const profile = String((profileRow as any[])[0]?.value || '')
+  const funcPool = pool.filter(p => !p.url.includes('otchyoty-o-relizakh') && !used.has(p.url))
+  let page: { title: string; text: string; url: string } | null = null
+  for (let i = 0; i < 3 && !page && funcPool.length; i++) {
+    const pick = funcPool[Math.floor(Math.random() * funcPool.length)]
+    const p = await fetchGitbookPage(pick.url)
+    if (p && p.text.length > 500) page = p
+  }
+
+  const seriesBlock = [
+    `НЕДЕЛЬНЫЙ ЦИКЛ. Цель: ${GOAL_BRIEF[cycle.goal as CycleGoal]}`,
+    `Тема недели: ${cycle.theme}`,
+    `Сегодня день ${dayIndex + 1} из ${days.length}. Роль поста: ${day.role} — ${day.brief}`,
+    dayIndex + 1 < days.length
+      ? 'В конце можно оставить лёгкий крючок на завтрашний пост (без слова «завтра» в лоб — интригой).'
+      : 'Это ФИНАЛ арки: собери мысль недели воедино; никакого CTA — закрой открытой мыслью, после которой читателю хочется действовать самому.',
+    (prev as any[]).length
+      ? '\nПредыдущие посты серии (продолжай их линию, не повторяй):\n' + (prev as any[])
+          .map((p2: any, i: number) => `День ${i + 1} (${p2.cycle_role}): «${p2.title}»\n${String(p2.body_ru).slice(0, 700)}`)
+          .join('\n---\n')
+      : '',
+  ].join('\n')
+
+  const user = [
+    seriesBlock,
+    '\nМатериалы-опоры (бери то, что ложится в роль дня; факты не выдумывать):',
+    rel ? `\n[Свежий релиз Delever]\n${rel.text.slice(0, 3000)}` : '',
+    page ? `\n[Страница базы знаний: ${page.title}]\n${page.text.slice(0, 2500)}` : '',
+    market ? `\n[Что обсуждает рынок]\n${market.slice(0, 2000)}` : '',
+    profile ? `\nКарточка автора (мысль растёт отсюда; факты биографии точно):\n${profile.slice(0, 6000)}` : '',
+    samples.length ? '\nОбразцы тона автора:\n---\n' + samples.slice(0, 4).join('\n---\n') : '',
+  ].join('\n')
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 1400,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: user },
+      ],
+    }),
+  })
+  const data = await res.json()
+  const p = JSON.parse(data?.choices?.[0]?.message?.content || '{}')
+  if (!p.body_ru || !p.body_en) throw new Error('модель не вернула серийный пост')
+
+  const id = draftId()
+  await sql`
+    INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source, cycle_id, cycle_role)
+    VALUES (${id}, ${batchKey}, 'cycle', ${String(p.title || '').slice(0, 200)},
+            ${String(p.body_ru)}, ${String(p.body_en)},
+            ${JSON.stringify({ url: page?.url || null, cycle: cycle.id })}::jsonb,
+            ${cycle.id}, ${String(day.role).slice(0, 80)})`
+  const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
+  return row
 }

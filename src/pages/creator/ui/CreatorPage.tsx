@@ -19,7 +19,8 @@ interface Draft {
   id: string
   created_at: string
   batch_key: string
-  line: 'delever' | 'delever_archive' | 'gfsupport'
+  line: 'delever' | 'delever_archive' | 'gfsupport' | 'cycle'
+  cycle_role?: string | null
   title: string
   body_ru: string
   body_en: string
@@ -46,6 +47,23 @@ const LINE_LABEL: Record<Draft['line'], { label: string; cls: string }> = {
   delever: { label: 'Delever', cls: 'bg-blue-50 text-blue-700' },
   delever_archive: { label: 'Delever · вечнозелёный', cls: 'bg-sky-50 text-sky-700' },
   gfsupport: { label: 'как мы строим', cls: 'bg-violet-50 text-violet-700' },
+  cycle: { label: 'серия', cls: 'bg-amber-50 text-amber-700' },
+}
+
+const GOAL_LABEL: Record<string, { label: string; cls: string }> = {
+  warmup: { label: 'прогрев', cls: 'bg-emerald-50 text-emerald-700' },
+  brand: { label: 'бренд', cls: 'bg-violet-50 text-violet-700' },
+  desire: { label: 'желание', cls: 'bg-rose-50 text-rose-700' },
+}
+
+interface Cycle {
+  id: string
+  week_key: string
+  goal: string
+  theme: string
+  rationale: string
+  plan: Array<{ role: string; brief: string }>
+  status: 'proposed' | 'approved' | 'done'
 }
 
 const STATUS_LABEL: Record<Draft['status'], { label: string; cls: string }> = {
@@ -59,7 +77,7 @@ const SOURCE_KIND: Record<Source['kind'], string> = {
   telegram: 'Telegram', rss: 'RSS', url: 'Страница',
 }
 
-type Tab = 'drafts' | 'approved' | 'archive' | 'sources'
+type Tab = 'drafts' | 'approved' | 'archive' | 'cycles' | 'sources'
 
 function CopyBtn({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false)
@@ -131,9 +149,12 @@ function DraftCard({ d, onChanged }: { d: Draft; onChanged: () => void }) {
   return (
     <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <header className="px-4 py-2.5 bg-gray-50/80 border-b border-gray-100 flex items-center gap-2 flex-wrap">
-        <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md ${LINE_LABEL[d.line].cls}`}>
-          {LINE_LABEL[d.line].label}
+        <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md ${(LINE_LABEL[d.line] || LINE_LABEL.delever).cls}`}>
+          {(LINE_LABEL[d.line] || LINE_LABEL.delever).label}
         </span>
+        {d.cycle_role && (
+          <span className="text-[10.5px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500">{d.cycle_role}</span>
+        )}
         <h2 className="text-[13.5px] font-semibold text-gray-900 flex-1 min-w-0 truncate">{d.title || 'Без названия'}</h2>
         <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md ${STATUS_LABEL[d.status].cls}`}>
           {STATUS_LABEL[d.status].label}
@@ -179,6 +200,131 @@ function DraftCard({ d, onChanged }: { d: Draft; onChanged: () => void }) {
         </button>
       </footer>
     </section>
+  )
+}
+
+/**
+ * Недельные циклы: серия постов — одна арка с целью. План предлагает модель
+ * (понедельничный крон или кнопка), пишется серия только после одобрения.
+ */
+function CyclesTab() {
+  const [cycles, setCycles] = useState<Cycle[] | null>(null)
+  const [written, setWritten] = useState<Record<string, number>>({})
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState('')
+
+  const load = () => {
+    apiGet<{ cycles: Cycle[]; written: Record<string, number> }>('/creator/cycles', false)
+      .then(r => { setCycles(r.cycles || []); setWritten(r.written || {}) })
+      .catch(e => setError(e?.message || 'Не удалось загрузить'))
+  }
+  useEffect(load, [])
+
+  const act = async (action: string, extra: Record<string, unknown> = {}) => {
+    setError('')
+    setBusy(action)
+    try {
+      await apiPost('/creator/cycles', { action, ...extra })
+      load()
+    } catch (e: any) { setError(e?.message || 'Ошибка') }
+    setBusy('')
+  }
+
+  const current = (cycles || []).find(c => c.status !== 'done')
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <p className="text-[12.5px] text-gray-500 flex-1">
+          Серия постов на неделю — одна арка с целью, как сериал: у каждого дня своя роль,
+          посты помнят предыдущие. Цели чередуются: прогрев → бренд → желание. Пока план
+          не одобрен, пишутся обычные выпуски.
+        </p>
+        {!current && (
+          <button
+            onClick={() => act('plan')}
+            disabled={!!busy}
+            className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-60"
+          >
+            <RefreshCw size={12} className={busy === 'plan' ? 'animate-spin' : ''} />
+            {busy === 'plan' ? 'Планирую…' : 'Спланировать цикл'}
+          </button>
+        )}
+      </div>
+      {error && <div className="text-[12.5px] text-red-600">{error}</div>}
+      {!cycles && !error && <div className="text-[12.5px] text-gray-400">Загружаю…</div>}
+      {cycles && cycles.length === 0 && (
+        <div className="bg-white border border-dashed border-gray-300 rounded-xl px-6 py-8 text-center text-[13px] text-gray-500">
+          Циклов пока нет. Нажми «Спланировать цикл» — креатор предложит тему и арку недели,
+          или дождись понедельника: он предложит сам.
+        </div>
+      )}
+
+      {cycles?.map(c => {
+        const n = written[c.id] || 0
+        return (
+          <section key={c.id} className={`bg-white border rounded-xl overflow-hidden ${c.status === 'done' ? 'border-gray-100 opacity-60' : 'border-gray-200'}`}>
+            <header className="px-4 py-2.5 bg-gray-50/80 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+              <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md ${(GOAL_LABEL[c.goal] || GOAL_LABEL.warmup).cls}`}>
+                {(GOAL_LABEL[c.goal] || GOAL_LABEL.warmup).label}
+              </span>
+              <h2 className="text-[13.5px] font-semibold text-gray-900 flex-1 min-w-0">{c.theme}</h2>
+              <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500">
+                {c.status === 'proposed' ? 'ждёт одобрения' : c.status === 'approved' ? `идёт · ${n}/${c.plan.length}` : 'завершён'}
+              </span>
+              <span className="text-[11px] text-gray-400 tabular-nums">неделя {c.week_key}</span>
+            </header>
+            {c.rationale && <p className="px-4 pt-2.5 text-[12px] text-gray-500">{c.rationale}</p>}
+            <ol className="px-4 py-3 space-y-1.5">
+              {c.plan.map((d, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-[12.5px]">
+                  <span className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10.5px] font-bold shrink-0 ${
+                    i < n ? 'bg-emerald-100 text-emerald-700' : i === n && c.status === 'approved' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                    {i < n ? '✓' : i + 1}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="font-semibold text-gray-800">{d.role}.</span>{' '}
+                    <span className="text-gray-500">{d.brief}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {c.status !== 'done' && (
+              <footer className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+                {c.status === 'proposed' && (
+                  <>
+                    <button onClick={() => act('approve', { id: c.id })}
+                      className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700">
+                      <Check size={12} /> Одобрить план
+                    </button>
+                    <button onClick={() => act('plan')}
+                      disabled={!!busy}
+                      className="inline-flex items-center gap-1 text-[11.5px] px-2.5 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50">
+                      <RefreshCw size={12} className={busy === 'plan' ? 'animate-spin' : ''} /> Предложить другую тему
+                    </button>
+                  </>
+                )}
+                {c.status === 'approved' && (
+                  <>
+                    <button onClick={() => act('write_today', { id: c.id })}
+                      disabled={!!busy}
+                      className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-60">
+                      <RefreshCw size={12} className={busy === 'write_today' ? 'animate-spin' : ''} />
+                      {busy === 'write_today' ? 'Пишу…' : 'Написать пост дня сейчас'}
+                    </button>
+                    <div className="flex-1" />
+                    <button onClick={() => { if (confirm('Завершить арку досрочно?')) act('finish', { id: c.id }) }}
+                      className="text-[11.5px] px-2.5 py-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50">
+                      Завершить досрочно
+                    </button>
+                  </>
+                )}
+              </footer>
+            )}
+          </section>
+        )
+      })}
+    </div>
   )
 }
 
@@ -384,6 +530,7 @@ export function CreatorPage() {
     { key: 'drafts', label: 'Черновики', count: counts.drafts },
     { key: 'approved', label: 'Одобренные', count: counts.approved },
     { key: 'archive', label: 'Архив', count: counts.archive },
+    { key: 'cycles', label: 'Циклы' },
     { key: 'sources', label: 'Источники' },
   ]
 
@@ -429,6 +576,8 @@ export function CreatorPage() {
 
       {tab === 'sources' ? (
         <SourcesTab />
+      ) : tab === 'cycles' ? (
+        <CyclesTab />
       ) : (
         <>
           <div className="flex items-center gap-1.5">
