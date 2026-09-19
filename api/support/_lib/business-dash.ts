@@ -16,13 +16,16 @@ const D = CH_DONE_STATUS
 const JOIN = `INNER JOIN shippers s ON s.id = o.shipper_id LEFT JOIN countries c ON c.id = s.country_id`
 const ISO = `ifNull(nullIf(c.iso_code, ''), '—')`
 
-/** Запрос двумя ветками: итог по платформе (iso='ALL') + по каждой стране. */
-function unionByCountry(cols: (p: string) => string, where: (p: string) => string, group?: string) {
-  return `
-    SELECT 'ALL' AS iso, ${cols('')} FROM order_v WHERE ${where('')}${group ? ` GROUP BY ${group}` : ''}
-    UNION ALL
-    SELECT ${ISO} AS iso, ${cols('o.')} FROM order_v o ${JOIN}
-    WHERE ${where('o.')} GROUP BY iso${group ? `, ${group}` : ''}`
+/**
+ * Срез по странам + итог по платформе ОДНИМ сканом: GROUPING SETS считает
+ * агрегаты (включая медианы — честно, не суммой) и по (период, страна),
+ * и по (период). В итоговых строках ключ iso приходит пустым — JS мапит
+ * '' → 'ALL'. Вариант с UNION ALL сканировал таблицу дважды и не влезал
+ * в 25 секунд edge-функции (FUNCTION_INVOCATION_TIMEOUT).
+ */
+function slicedQuery(cols: string, where: string, group?: string) {
+  const sets = group ? `GROUPING SETS ((${group}, iso), (${group}))` : `GROUPING SETS ((iso), ())`
+  return `SELECT ${ISO} AS iso, ${cols} FROM order_v o ${JOIN} WHERE ${where} GROUP BY ${sets}`
 }
 
 const kpiCols = (p: string) => `
@@ -39,40 +42,38 @@ const kpiCols = (p: string) => `
     / nullIf(countIf(${p}created_at >= now() - INTERVAL 30 DAY AND ${p}status_id = ${D} AND ${p}delivery_type = 'delivery'), 0) * 100) ontimePct`
 
 export const DASH_QUERIES = {
-  kpi: `
-    SELECT 'ALL' AS iso, '' cname, '' cur, ${kpiCols('')} FROM order_v WHERE created_at >= now() - INTERVAL 60 DAY
-    UNION ALL
-    SELECT ${ISO} AS iso, any(ifNull(c.name, '')) cname, any(ifNull(c.currency, '')) cur, ${kpiCols('o.')}
-    FROM order_v o ${JOIN} WHERE o.created_at >= now() - INTERVAL 60 DAY GROUP BY iso`,
-  weekly: unionByCountry(
-    p => `toStartOfWeek(${p}created_at) w, count() n`,
-    p => `${p}status_id = ${D} AND ${p}created_at >= now() - INTERVAL 371 DAY`, 'w'),
-  channels: unionByCountry(
-    p => `toStartOfMonth(${p}created_at) m,
-      countIf(${p}delivery_type = 'aggregator') agg, countIf(${p}delivery_type = 'delivery') own,
-      countIf(${p}delivery_type = 'self-pickup') pickup, countIf(${p}delivery_type = 'hall') hall`,
-    p => `${p}status_id = ${D} AND ${p}created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  sources: unionByCountry(
-    p => `toStartOfMonth(${p}created_at) m,
-      countIf(${p}source = 'aggregator') agg, countIf(${p}source = 'admin_panel') admin,
-      countIf(${p}source = 'bot') bot, countIf(${p}source = 'kiosk') kiosk,
-      countIf(${p}source IN ('ios', 'android')) mobile, countIf(${p}source = 'website') website,
-      countIf(${p}source = 'hall') hall`,
-    p => `${p}status_id = ${D} AND ${p}created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  payments: unionByCountry(
-    p => `toStartOfMonth(${p}created_at) m,
-      countIf(${p}payment_type = 'cash') cash, countIf(${p}payment_type = 'card') card,
-      countIf(${p}payment_type = 'online') online,
-      countIf(${p}payment_type NOT IN ('cash', 'card', 'online')) other`,
-    p => `${p}status_id = ${D} AND ${p}created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  quality: unionByCountry(
-    p => `toStartOfMonth(${p}created_at) m,
-      round(quantileIf(0.5)(${p}delivered_time, ${p}delivered_time BETWEEN 1 AND 300)) medMin,
-      round(countIf(${p}delivered_in_time = 1) / nullIf(count(), 0) * 100) ontimePct`,
-    p => `${p}status_id = ${D} AND ${p}delivery_type = 'delivery' AND ${p}created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  hours: unionByCountry(
-    p => `toHour(${p}created_at) h, count() n`,
-    p => `${p}status_id = ${D} AND ${p}created_at >= now() - INTERVAL 30 DAY`, 'h'),
+  kpi: slicedQuery(
+    `any(ifNull(c.name, '')) cname, any(ifNull(c.currency, '')) cur, ${kpiCols('o.')}`,
+    `o.created_at >= now() - INTERVAL 60 DAY`),
+  weekly: slicedQuery(
+    `toStartOfWeek(o.created_at) w, count() n`,
+    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 371 DAY`, 'w'),
+  channels: slicedQuery(
+    `toStartOfMonth(o.created_at) m,
+      countIf(o.delivery_type = 'aggregator') agg, countIf(o.delivery_type = 'delivery') own,
+      countIf(o.delivery_type = 'self-pickup') pickup, countIf(o.delivery_type = 'hall') hall`,
+    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
+  sources: slicedQuery(
+    `toStartOfMonth(o.created_at) m,
+      countIf(o.source = 'aggregator') agg, countIf(o.source = 'admin_panel') admin,
+      countIf(o.source = 'bot') bot, countIf(o.source = 'kiosk') kiosk,
+      countIf(o.source IN ('ios', 'android')) mobile, countIf(o.source = 'website') website,
+      countIf(o.source = 'hall') hall`,
+    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
+  payments: slicedQuery(
+    `toStartOfMonth(o.created_at) m,
+      countIf(o.payment_type = 'cash') cash, countIf(o.payment_type = 'card') card,
+      countIf(o.payment_type = 'online') online,
+      countIf(o.payment_type NOT IN ('cash', 'card', 'online')) other`,
+    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
+  quality: slicedQuery(
+    `toStartOfMonth(o.created_at) m,
+      round(quantileIf(0.5)(o.delivered_time, o.delivered_time BETWEEN 1 AND 300)) medMin,
+      round(countIf(o.delivered_in_time = 1) / nullIf(count(), 0) * 100) ontimePct`,
+    `o.status_id = ${D} AND o.delivery_type = 'delivery' AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
+  hours: slicedQuery(
+    `toHour(o.created_at) h, count() n`,
+    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 30 DAY`, 'h'),
   movers: `
     SELECT s.name AS name, ${ISO} AS iso, cur.done30 AS done30, cur.prev30 AS prev30,
            round((cur.done30 - cur.prev30) / cur.prev30 * 100) chg
@@ -86,20 +87,24 @@ export const DASH_QUERIES = {
     INNER JOIN shippers s ON s.id = cur.shipper_id
     LEFT JOIN countries c ON c.id = s.country_id
     ORDER BY chg DESC`,
+  // «Новый» = первый заказ в горизонте 400 дней пришёлся на последние 30:
+  // скан всей истории (23М строк) не влезал в лимит edge; бренд, вернувшийся
+  // после года тишины, честно считается новым запуском
   newcomers: `
-    SELECT 'ALL' AS iso, count() n FROM (
-      SELECT shipper_id FROM order_v WHERE status_id = ${D}
-      GROUP BY shipper_id HAVING min(created_at) >= now() - INTERVAL 30 DAY)
-    UNION ALL
     SELECT iso, count() n FROM (
-      SELECT o.shipper_id, any(${ISO}) AS iso FROM order_v o ${JOIN}
-      WHERE o.status_id = ${D} GROUP BY o.shipper_id
-      HAVING min(o.created_at) >= now() - INTERVAL 30 DAY)
-    GROUP BY iso`,
+      SELECT any(${ISO}) AS iso, o.shipper_id sh FROM order_v o ${JOIN}
+      WHERE o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY
+      GROUP BY sh HAVING min(o.created_at) >= now() - INTERVAL 30 DAY)
+    GROUP BY GROUPING SETS ((iso), ())`,
 }
 
 /** Чистая сборка снапшота из строк ответов — переиспользуется прогрев-скриптом. */
 export function buildDashPayload(rows: Record<keyof typeof DASH_QUERIES, any[]>) {
+  // Итоговые строки GROUPING SETS приходят с пустым iso
+  for (const key of Object.keys(rows) as Array<keyof typeof DASH_QUERIES>) {
+    if (key === 'movers') continue
+    for (const r of rows[key]) if (!r.iso) r.iso = 'ALL'
+  }
   const byIso = (arr: any[]) => {
     const map: Record<string, any[]> = {}
     for (const r of arr) (map[r.iso] ||= []).push(r)
@@ -134,7 +139,7 @@ export function buildDashPayload(rows: Record<keyof typeof DASH_QUERIES, any[]>)
   }
 
   const markets = (rows.kpi || [])
-    .filter(r => r.iso !== 'ALL' && Number(r.done30) > 0)
+    .filter(r => r.iso !== 'ALL' && r.iso !== '—' && Number(r.done30) > 0)
     .sort((a, b) => Number(b.done30) - Number(a.done30))
     .map(r => ({
       iso: r.iso, name: String(r.cname || r.iso), currency: String(r.cur || ''),
@@ -188,7 +193,7 @@ export async function computeBusinessDash(sql: SQL) {
   const cfg = await loadChConfig(sql)
   if (!cfg) return { ok: false as const, error: 'ClickHouse не настроен' }
 
-  // Не больше трёх запросов разом + один повтор: девять параллельных
+  // Не больше четырёх запросов разом + один повтор: девять параллельных
   // коннектов ловят таймауты, а последовательные не влезают в лимит edge
   const keys = Object.keys(DASH_QUERIES) as Array<keyof typeof DASH_QUERIES>
   const results: Array<{ ok: boolean; data?: any[]; error?: string }> = new Array(keys.length)
@@ -201,7 +206,7 @@ export async function computeBusinessDash(sql: SQL) {
       results[i] = r
     }
   }
-  await Promise.all([worker(), worker(), worker()])
+  await Promise.all([worker(), worker(), worker(), worker()])
   const rows: any = {}
   for (let i = 0; i < keys.length; i++) {
     const r = results[i]
