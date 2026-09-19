@@ -597,9 +597,10 @@ export async function planCycle(sql: SQL, key: string, weekKey: string): Promise
  */
 export async function generateSeriesDraft(sql: SQL, key: string, cycle: any, batchKey: string): Promise<any> {
   const days: CycleDay[] = Array.isArray(cycle.plan) ? cycle.plan : JSON.parse(cycle.plan)
+  // Отклонённые не считаются: перегенерация дня не сдвигает арку вперёд
   const prev = await sql`
     SELECT title, body_ru, cycle_role FROM creator_drafts
-    WHERE cycle_id = ${cycle.id} ORDER BY created_at`
+    WHERE cycle_id = ${cycle.id} AND status != 'rejected' ORDER BY created_at`
   const dayIndex = (prev as any[]).length
   if (dayIndex >= days.length) return null
   const day = days[dayIndex]
@@ -675,6 +676,68 @@ export async function generateSeriesDraft(sql: SQL, key: string, cycle: any, bat
             ${String(p.body_ru)}, ${String(p.body_en)},
             ${JSON.stringify({ url: page?.url || null, cycle: cycle.id })}::jsonb,
             ${cycle.id}, ${String(day.role).slice(0, 80)})`
+  const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
+  return row
+}
+
+/**
+ * Перегенерация поста: старый вариант уходит в отклонённые (его зачин
+ * автоматически попадает в анти-повтор), новый пишется по ТОМУ ЖЕ материалу
+ * и — для серийных — той же роли дня. Свежий заход, не сдвиг арки.
+ */
+export async function regenerateDraft(sql: SQL, key: string, oldId: string): Promise<any> {
+  const [old] = await sql`SELECT * FROM creator_drafts WHERE id = ${oldId} LIMIT 1`
+  if (!old) throw new Error('черновик не найден')
+  const o = old as any
+
+  await sql`UPDATE creator_drafts SET status = 'rejected', updated_at = now() WHERE id = ${oldId}`
+
+  if (o.cycle_id) {
+    const [cycle] = await sql`SELECT * FROM creator_cycles WHERE id = ${o.cycle_id} LIMIT 1`
+    if (!cycle) throw new Error('цикл этого поста не найден')
+    const row = await generateSeriesDraft(sql, key, cycle, o.batch_key)
+    if (!row) throw new Error('серия уже дописана')
+    return row
+  }
+
+  // Обычный пост: тот же материал, другой заход
+  let facts: string
+  const srcUrl: string | null = o.source?.url || null
+  if (srcUrl && srcUrl.startsWith('gfs:')) {
+    const version = srcUrl.slice(4)
+    const rel = RELEASES.find(r => r.version === version)
+    if (!rel) throw new Error('выпуск GFSupport не найден')
+    facts = `${rel.date} — ${rel.title}:\n` + rel.items.map(i => `• ${i.text}`).join('\n')
+  } else if (srcUrl) {
+    const page = await fetchGitbookPage(srcUrl)
+    if (!page) throw new Error('страница-источник недоступна')
+    facts = page.text
+  } else {
+    throw new Error('у черновика нет источника — собери выпуск заново')
+  }
+
+  const [samples, recent, sources, profileRow] = await Promise.all([
+    styleSamples(sql),
+    sql`SELECT title, left(body_ru, 100) AS opening FROM creator_drafts
+        ORDER BY created_at DESC LIMIT 12`,
+    sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active ORDER BY added_at`,
+    sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
+  ])
+  const avoid = (recent as any[]).map(r => `«${r.title}»: ${String(r.opening).replace(/\s+/g, ' ')}…`)
+  const market = await marketContext(sources as any)
+  const profile = String((profileRow as any[])[0]?.value || '')
+
+  const line = (['delever', 'delever_archive', 'gfsupport'] as const)
+    .find(l => l === o.line) || 'delever'
+  const draft = await generateDraft(key, line, facts, samples, avoid, market, profile)
+  if (!draft) throw new Error('модель не вернула пост')
+  if ('skip' in draft) throw new Error(`модель считает материал слабым: ${draft.skip}`)
+
+  const id = draftId()
+  await sql`
+    INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
+    VALUES (${id}, ${o.batch_key}, ${o.line}, ${draft.title}, ${draft.body_ru}, ${draft.body_en},
+            ${JSON.stringify({ url: srcUrl })}::jsonb)`
   const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
   return row
 }

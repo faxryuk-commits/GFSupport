@@ -142,9 +142,17 @@ function LangCol({ lang, body, onSave }: { lang: 'ru' | 'en'; body: string; onSa
 }
 
 function DraftCard({ d, onChanged }: { d: Draft; onChanged: () => void }) {
+  const [regen, setRegen] = useState(false)
   const act = async (action: string, extra: Record<string, unknown> = {}) => {
     await apiPost('/creator/drafts', { action, id: d.id, ...extra })
     onChanged()
+  }
+  // Не понравилось — пишем заново: старый вариант уходит в архив отклонённым,
+  // его зачин попадает в анти-повтор, новый пишется по тому же материалу
+  const regenerate = async () => {
+    setRegen(true)
+    try { await act('regenerate') } catch { /* ошибку покажет консоль */ }
+    setRegen(false)
   }
   return (
     <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -169,6 +177,14 @@ function DraftCard({ d, onChanged }: { d: Draft; onChanged: () => void }) {
 
       <footer className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-gray-400 tabular-nums">выпуск {d.batch_key}</span>
+        {d.status !== 'published' && (
+          <button onClick={regenerate} disabled={regen}
+            title="Не понравилось — написать заново по тому же материалу; этот вариант уйдёт в архив"
+            className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2 py-1 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-60">
+            <RefreshCw size={12} className={regen ? 'animate-spin' : ''} />
+            {regen ? 'Пишу заново…' : 'Заново'}
+          </button>
+        )}
         <div className="flex-1" />
         {d.status !== 'approved' && d.status !== 'published' && (
           <button onClick={() => act('status', { status: 'approved' })}

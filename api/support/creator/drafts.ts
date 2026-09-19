@@ -1,6 +1,6 @@
 import { getSQL, json, corsHeaders, getOpenAIKey } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
-import { CREATOR_OWNER_ID, ensureCreatorSchema, generateOne } from '../_lib/creator.js'
+import { CREATOR_OWNER_ID, ensureCreatorSchema, generateOne, regenerateDraft } from '../_lib/creator.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -41,6 +41,17 @@ export default async function handler(req: Request): Promise<Response> {
       return json({ draft: row })
     } catch (e: any) {
       return json({ error: e?.message || 'ошибка генерации' }, 502)
+    }
+  }
+
+  if (body.action === 'regenerate') {
+    const key = await getOpenAIKey()
+    if (!key) return json({ error: 'нет ключа OpenAI в настройках' }, 500)
+    try {
+      const row = await regenerateDraft(sql, key, String(body.id))
+      return json({ draft: row })
+    } catch (e: any) {
+      return json({ error: e?.message || 'ошибка перегенерации' }, 502)
     }
   }
 
