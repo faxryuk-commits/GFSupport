@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { isStaleChunkError, reloadForNewVersion } from '@/shared/lib/stale-chunk'
 
 interface Props {
   children: ReactNode
@@ -19,10 +20,24 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo)
+    // Старая вкладка после выкладки — не поломка, а повод перезагрузиться
+    if (isStaleChunkError(error)) reloadForNewVersion()
   }
 
   render() {
     if (this.state.hasError && this.state.error) {
+      if (isStaleChunkError(this.state.error)) {
+        return (
+          <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center">
+            <div className="text-[15px] font-semibold text-slate-800 mb-1">Вышла новая версия</div>
+            <p className="text-sm text-slate-500 mb-4 max-w-md">Обновляем страницу…</p>
+            <button type="button" onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm">
+              Обновить сейчас
+            </button>
+          </div>
+        )
+      }
       if (this.props.fallback) return this.props.fallback
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center">

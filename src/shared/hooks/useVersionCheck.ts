@@ -92,9 +92,18 @@ export function useVersionCheck(options: UseVersionCheckOptions = {}) {
       // увидит его в свой черёд
       const latest = list[0]
       if (latest?.version) {
-        try {
-          if (!localStorage.getItem(SEEN_KEY)) localStorage.setItem(SEEN_KEY, latest.version)
-        } catch { /* приватный режим */ }
+        let seen: string | null = null
+        try { seen = localStorage.getItem(SEEN_KEY) } catch { /* приватный режим */ }
+        if (!seen) {
+          try { localStorage.setItem(SEEN_KEY, latest.version) } catch { /* приватный режим */ }
+        } else if (seen !== latest.version && latest.notes?.length) {
+          // Выпуск с заметками, которого человек ещё не видел, а вкладка уже
+          // на нём (перезагрузилась на переходе): показать, что нового, —
+          // без «Обновить», обновляться нечему. newVersion пуст — по нему
+          // баннер отличает «прочитайте» от «обновите»
+          setInfo(latest)
+          setHasUpdate(true)
+        }
       }
       return
     }

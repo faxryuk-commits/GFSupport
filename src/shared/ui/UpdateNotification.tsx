@@ -95,27 +95,29 @@ export function UpdateNotification() {
  * пользовался. Список берётся из version.json и пишется человеческим языком.
  */
 export function UpdateBanner() {
-  const { hasUpdate, info, refresh, dismiss } = useVersionCheck({
+  const { hasUpdate, info, newVersion, refresh, dismiss } = useVersionCheck({
     checkInterval: 60000,
     enabled: true,
   })
   const [open, setOpen] = useState(false)
 
-  // Техническая сборка — без новых заметок — не заслуживает баннера:
-  // выкладки идут пачками, и «Доступно обновление» без содержания
-  // приучает закрывать его не глядя. Такую сборку подхватываем молча
-  // на ближайшем переходе между страницами (перезагрузка в этот момент
-  // неотличима от обычной навигации). Баннер остаётся только выпускам,
-  // о которых есть что рассказать
-  const techBuild = hasUpdate && !(info?.notes?.length)
+  // Любую новую сборку подхватываем на ближайшем переходе между страницами:
+  // перезагрузка в этот момент неотличима от обычной навигации, а старая
+  // вкладка после выкладки ломается на первом же переходе — чанков с её
+  // именами на сервере уже нет. Раньше так делала только техническая сборка,
+  // а выпуск с заметками ждал нажатия на баннер, и пока человек ходил по
+  // вкладкам с баннером в углу, он ловил «Что-то пошло не так».
+  // Заметки не теряются: после перезагрузки баннер показывает их для
+  // версии, которая уже работает, — с кнопкой «Понятно» вместо «Обновить»
   const { pathname } = useLocation()
   const prevPath = useRef(pathname)
   useEffect(() => {
     if (prevPath.current === pathname) return
     prevPath.current = pathname
-    if (techBuild) window.location.reload()
-  }, [pathname, techBuild])
+    if (hasUpdate && newVersion) window.location.reload()
+  }, [pathname, hasUpdate, newVersion])
 
+  const techBuild = hasUpdate && !(info?.notes?.length)
   if (!hasUpdate || techBuild) return null
   const notes = info?.notes || []
 
@@ -127,10 +129,10 @@ export function UpdateBanner() {
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm">{info?.title || 'Доступно обновление'}</p>
+            <p className="font-medium text-sm">{info?.title || (newVersion ? 'Доступно обновление' : 'Что нового')}</p>
             <p className="text-xs text-white/80 truncate">
               {notes.length
-                ? `${notes.length} ${notes.length === 1 ? 'изменение' : notes.length < 5 ? 'изменения' : 'изменений'} — посмотреть`
+                ? `${notes.length} ${notes.length === 1 ? 'изменение' : notes.length < 5 ? 'изменения' : 'изменений'} — посмотреть${newVersion ? '' : ' · уже работает'}`
                 : 'Вышла новая сборка — обновите страницу'}
             </p>
           </div>
@@ -152,12 +154,11 @@ export function UpdateBanner() {
               <X className="w-4 h-4" />
             </button>
             <button
-              onClick={refresh}
+              onClick={newVersion ? refresh : dismiss}
               className="px-3 py-2 bg-white text-blue-600 rounded-lg font-medium text-sm
                          hover:bg-blue-50 transition-colors flex items-center gap-1.5 flex-none"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Обновить
+              {newVersion ? <><RefreshCw className="w-3.5 h-3.5" />Обновить</> : 'Понятно'}
             </button>
           </div>
         </div>
