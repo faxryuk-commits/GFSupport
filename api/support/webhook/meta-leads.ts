@@ -7,6 +7,7 @@ import { readMetaConfig, ensureMetaSchema, marketFromFormName, tokenForPage } fr
 import { handleMetaMessaging } from '../_lib/meta-messages.js'
 import { handleMetaComments } from '../_lib/meta-comments.js'
 import { handleCommentByAgent } from '../_lib/meta-comment-agent.js'
+import { NAME_KEYS, PHONE_KEYS, EMAIL_KEYS, CITY_KEYS, VENUE_KEYS, normKey, pick, fieldsOf, venueOf } from '../_lib/meta-form-fields.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -43,22 +44,6 @@ const SOURCE = 'meta_leadform'
 function answersFor(fields: Map<string, string>, formName?: string | null): string {
   const body = [...fields.entries()].map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('; ')
   return [formName ? `форма «${formName}»` : null, body].filter(Boolean).join(' · ').slice(0, 500)
-}
-
-/** Заглушки инструмента проверки Meta: «<test lead: dummy data for …>». */
-const DUMMY = /^<test lead:/i
-
-const NAME_KEYS = ['full_name', 'first_name', 'имя', 'ism']
-const PHONE_KEYS = ['phone_number', 'phone', 'телефон']
-const EMAIL_KEYS = ['email', 'почта']
-const CITY_KEYS = ['city', 'город', 'shahar']
-
-const pick = (map: Map<string, string>, keys: string[]): string | null => {
-  for (const k of keys) {
-    const v = map.get(k)
-    if (v) return v
-  }
-  return null
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -171,18 +156,11 @@ export default async function handler(req: Request): Promise<Response> {
         // настоящие данные: карточка с именем «<test lead…>», телефоном
         // «<test lead…>» и нормативом в 15 минут, по которому сейлз обязан
         // позвонить несуществующему человеку
-        let isTest = false
-        const fields = new Map<string, string>()
-        for (const f of lead.field_data || []) {
-          const key = String(f?.name || '').toLowerCase()
-          const rawVal = Array.isArray(f?.values) ? String(f.values[0] ?? '') : ''
-          if (DUMMY.test(rawVal)) { isTest = true; continue }
-          if (key && rawVal) fields.set(key, rawVal)
-        }
-
+        const { fields, isTest } = fieldsOf(lead.field_data)
         const phone = pick(fields, PHONE_KEYS)
         const name = pick(fields, NAME_KEYS)
         const city = pick(fields, CITY_KEYS)
+        const venue = venueOf(fields)
 
         // Пока Amo ещё работает, та же заявка приедет и оттуда. Второй
         // экземпляр карточку не создаёт — иначе у сейлза два одинаковых
@@ -216,7 +194,7 @@ export default async function handler(req: Request): Promise<Response> {
         // Ответы на вопросы формы — самое содержательное, что о человеке
         // известно до первого разговора: кладём их в текст обращения целиком.
         // То, что уже разложено по своим полям, во второй раз не повторяем
-        const known = [...NAME_KEYS, ...PHONE_KEYS, ...EMAIL_KEYS, ...CITY_KEYS]
+        const known = [...NAME_KEYS, ...PHONE_KEYS, ...EMAIL_KEYS, ...CITY_KEYS, ...VENUE_KEYS].map(normKey)
         const answers = [...fields.entries()]
           .filter(([k]) => !known.includes(k))
           .map(([k, val]) => `${k}: ${val}`)
@@ -258,7 +236,8 @@ export default async function handler(req: Request): Promise<Response> {
           // заявку, даже когда телефона у неё ещё нет
           meta_lead_id: leadgenId,
           lead_kind: 'form',
-          name: isTest ? `Тестовая заявка${lead.form_name ? ` · ${lead.form_name}` : ''}` : (name || null),
+          // Название — заведение, если форма его спросила; человек — в contact_name
+          name: isTest ? `Тестовая заявка${lead.form_name ? ` · ${lead.form_name}` : ''}` : (venue || name || null),
           contact_name: isTest ? null : (name || null),
           phone,
           city,

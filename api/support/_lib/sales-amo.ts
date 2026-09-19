@@ -10,6 +10,7 @@
 import { currencyForMarket } from './sales-schema.js'
 import { qualFromAnswers, answersSummary } from './lead-qual-map.js'
 import { metaLeadIdFrom } from './meta-leads.js'
+import { fieldsOf, venueOf } from './meta-form-fields.js'
 
 export interface AmoCreds { domain: string; token: string }
 
@@ -224,11 +225,15 @@ function channelLabel(lead: any): string {
   return 'Заявка без названия'
 }
 
-function readableName(lead: any, contact?: { phone?: string; name?: string }): string {
+function readableName(lead: any, contact?: { phone?: string; name?: string; fields?: Array<{ name: string; value: string }> }): string {
   // Бренд — то, как клиент называет себя сам. Всё остальное подставляет система
   const brand = String(cf(lead, 'Бренд') || cf(lead, 'Название компании')
     || cf(lead, 'Компания') || '').trim()
   if (brand && !SERVICE_NAME.test(brand)) return brand
+  // Заведение из ответов формы Meta («restoraningiz_no'mi?: Super Gold»):
+  // через Amo они лежат в полях контакта, и карточка называлась человеком
+  const venue = venueOf(fieldsOf((contact?.fields || []).map(f => ({ name: f.name, values: [f.value] }))).fields)
+  if (venue && !SERVICE_NAME.test(venue)) return venue
   const raw = String(lead?.name || '').trim()
   if (raw && !SERVICE_NAME.test(raw)) return raw
   // Имя профиля из мессенджера: «Nexus Club» вместо
