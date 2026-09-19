@@ -92,9 +92,10 @@ export async function computeBusinessDash(sql: SQL) {
       medMin: k.medMin !== null && k.medMin !== undefined ? Number(k.medMin) : null,
       medDistKm: k.medDist ? Math.round(Number(k.medDist) / 100) / 10 : null,
     },
-    // Текущая незакрытая неделя обрезается — иначе график всегда «падает»
-    weekly: (weekly.data || []).slice(0, -1).map((r: any) => ({ w: r.w, n: Number(r.n) })),
-    channels: (channels.data || []).map((r: any) => ({
+    // Крайние неполные периоды обрезаются — иначе график всегда «взлетает»
+    // на входе окна и «падает» на текущей неделе/месяце
+    weekly: (weekly.data || []).slice(1, -1).map((r: any) => ({ w: r.w, n: Number(r.n) })),
+    channels: (channels.data || []).slice(1, -1).map((r: any) => ({
       m: r.m, agg: Number(r.agg), own: Number(r.own), pickup: Number(r.pickup), hall: Number(r.hall),
     })),
     cash: (cash.data || []).map((r: any) => ({ m: r.m, pct: Number(r.cashPct) })),

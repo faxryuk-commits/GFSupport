@@ -241,11 +241,11 @@ export default function BusinessDashPage() {
             )}
           </div>
 
-          <Section title="Заказы по неделям" hint="полгода, текущая незакрытая неделя не показана">
+          <Section title="Заказы по неделям" hint="полгода, только полные недели">
             <AreaLine points={d.weekly.map(p => p.n)} labels={d.weekly.map(p => fmtWeek(p.w))} />
           </Section>
 
-          <Section title="Каналы по месяцам" hint="откуда приходят заказы платформы">
+          <Section title="Каналы по месяцам" hint="откуда приходят заказы платформы · только полные месяцы">
             <StackedBars rows={d.channels} />
           </Section>
 
