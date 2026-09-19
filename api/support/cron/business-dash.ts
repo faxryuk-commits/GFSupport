@@ -14,5 +14,5 @@ export default async function handler(req: Request): Promise<Response> {
   const sql = getSQL()
   const res = await computeBusinessDash(sql)
   if (res.ok === false) return json({ ok: false, error: res.error }, 200)
-  return json({ ok: true, weeks: res.weekly.length, growers: res.growers.length, fallers: res.fallers.length })
+  return json({ ok: true, markets: res.markets.length, slices: Object.keys(res.slices).length })
 }
