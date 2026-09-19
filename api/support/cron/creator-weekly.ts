@@ -29,11 +29,16 @@ export default async function handler(req: Request): Promise<Response> {
   const key = await getOpenAIKey()
   if (!key) return json({ error: 'нет ключа OpenAI' }, 500)
 
-  const [cycle] = await sql`
-    SELECT * FROM creator_cycles WHERE week_key = ${weekKey}
-    ORDER BY created_at DESC LIMIT 1`
+  // Начатая арка дописывается до конца независимо от смены недели
+  const [active] = await sql`
+    SELECT * FROM creator_cycles WHERE status = 'approved' ORDER BY created_at DESC LIMIT 1`
+  const [cycle] = active
+    ? [active]
+    : await sql`
+        SELECT * FROM creator_cycles WHERE week_key = ${weekKey}
+        ORDER BY created_at DESC LIMIT 1`
 
-  // Понедельник (или любой день недели без плана): предложить цикл
+  // Нет ни активной арки, ни плана на эту неделю: предложить цикл
   if (!cycle) {
     try {
       const c: any = await planCycle(sql, key, weekKey)
