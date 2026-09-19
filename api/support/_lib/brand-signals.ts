@@ -29,11 +29,17 @@ export async function computeBrandSignals(sql: SQL): Promise<
   const cfg = await loadChConfig(sql)
   if (!cfg) return { ok: false, error: 'ClickHouse не настроен' }
 
+  // Один бренд = один аккаунт: автомэппинг по имени цепляет дубли лидов
+  // («Eve» ×24) — без дедупа крон создал бы 24 задачи по одному бренду.
+  // Приоритет: клиент > подтверждённая связка > свежая запись.
   const maps = await sql`
-    SELECT m.account_id, m.shipper_id, m.shipper_name, a.lifecycle, a.owner_agent_id
+    SELECT DISTINCT ON (m.shipper_id)
+           m.account_id, m.shipper_id, m.shipper_name, a.lifecycle, a.owner_agent_id
     FROM ch_brand_map m
     JOIN sales_accounts a ON a.id = m.account_id
-    WHERE a.archived_at IS NULL`
+    WHERE a.archived_at IS NULL
+    ORDER BY m.shipper_id,
+             (a.lifecycle = 'customer') DESC, m.confirmed DESC, a.created_at DESC`
   if (!maps.length) return { ok: true, mapped: 0, declines: [], launches: [] }
 
   const ids = (maps as any[]).map(m => `'${String(m.shipper_id).replace(/[^0-9a-f-]/gi, '')}'`).join(',')
