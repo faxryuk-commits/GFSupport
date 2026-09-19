@@ -48,29 +48,23 @@ export const DASH_QUERIES = {
   weekly: slicedQuery(
     `toStartOfWeek(o.created_at) w, count() n`,
     `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 371 DAY`, 'w'),
-  channels: slicedQuery(
+  // Каналы, источники, оплаты и качество — одним сканом 400 дней:
+  // по отдельности четыре запроса не влезали в лимит edge
+  months: slicedQuery(
     `toStartOfMonth(o.created_at) m,
-      countIf(o.delivery_type = 'aggregator') agg, countIf(o.delivery_type = 'delivery') own,
-      countIf(o.delivery_type = 'self-pickup') pickup, countIf(o.delivery_type = 'hall') hall`,
+      countIf(o.delivery_type = 'aggregator') d_agg, countIf(o.delivery_type = 'delivery') d_own,
+      countIf(o.delivery_type = 'self-pickup') d_pickup, countIf(o.delivery_type = 'hall') d_hall,
+      countIf(o.source = 'aggregator') s_agg, countIf(o.source = 'admin_panel') s_admin,
+      countIf(o.source = 'bot') s_bot, countIf(o.source = 'kiosk') s_kiosk,
+      countIf(o.source IN ('ios', 'android')) s_mobile, countIf(o.source = 'website') s_website,
+      countIf(o.source = 'hall') s_hall,
+      countIf(o.payment_type = 'cash') p_cash, countIf(o.payment_type = 'card') p_card,
+      countIf(o.payment_type = 'online') p_online,
+      countIf(o.payment_type NOT IN ('cash', 'card', 'online')) p_other,
+      round(quantileIf(0.5)(o.delivered_time, o.delivery_type = 'delivery' AND o.delivered_time BETWEEN 1 AND 300)) q_medMin,
+      round(countIf(o.delivery_type = 'delivery' AND o.delivered_in_time = 1)
+        / nullIf(countIf(o.delivery_type = 'delivery'), 0) * 100) q_ontime`,
     `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  sources: slicedQuery(
-    `toStartOfMonth(o.created_at) m,
-      countIf(o.source = 'aggregator') agg, countIf(o.source = 'admin_panel') admin,
-      countIf(o.source = 'bot') bot, countIf(o.source = 'kiosk') kiosk,
-      countIf(o.source IN ('ios', 'android')) mobile, countIf(o.source = 'website') website,
-      countIf(o.source = 'hall') hall`,
-    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  payments: slicedQuery(
-    `toStartOfMonth(o.created_at) m,
-      countIf(o.payment_type = 'cash') cash, countIf(o.payment_type = 'card') card,
-      countIf(o.payment_type = 'online') online,
-      countIf(o.payment_type NOT IN ('cash', 'card', 'online')) other`,
-    `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
-  quality: slicedQuery(
-    `toStartOfMonth(o.created_at) m,
-      round(quantileIf(0.5)(o.delivered_time, o.delivered_time BETWEEN 1 AND 300)) medMin,
-      round(countIf(o.delivered_in_time = 1) / nullIf(count(), 0) * 100) ontimePct`,
-    `o.status_id = ${D} AND o.delivery_type = 'delivery' AND o.created_at >= now() - INTERVAL 400 DAY`, 'm'),
   hours: slicedQuery(
     `toHour(o.created_at) h, count() n`,
     `o.status_id = ${D} AND o.created_at >= now() - INTERVAL 30 DAY`, 'h'),
@@ -112,10 +106,7 @@ export function buildDashPayload(rows: Record<keyof typeof DASH_QUERIES, any[]>)
   }
   const kpiByIso = byIso(rows.kpi)
   const weeklyByIso = byIso(rows.weekly)
-  const monthsByIso = {
-    channels: byIso(rows.channels), sources: byIso(rows.sources),
-    payments: byIso(rows.payments), quality: byIso(rows.quality),
-  }
+  const monthsByIso = byIso(rows.months)
   const hoursByIso = byIso(rows.hours)
   const newByIso = byIso(rows.newcomers)
   const moversByIso = byIso(rows.movers)
@@ -125,7 +116,7 @@ export function buildDashPayload(rows: Record<keyof typeof DASH_QUERIES, any[]>)
   const axis = (arr: any[], key: string) =>
     [...new Set(arr.map(r => String(r[key])))].sort().slice(1, -1)
   const weekAxis = axis(weeklyByIso['ALL'] || [], 'w')
-  const monthAxis = axis(monthsByIso.channels['ALL'] || [], 'm')
+  const monthAxis = axis(monthsByIso['ALL'] || [], 'm')
 
   const series = (arr: any[] | undefined, key: string, ax: string[], fields: string[]) => {
     const at: Record<string, any> = {}
