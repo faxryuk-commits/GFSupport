@@ -207,7 +207,7 @@ function DraftCard({ d, onChanged }: { d: Draft; onChanged: () => void }) {
  * Недельные циклы: серия постов — одна арка с целью. План предлагает модель
  * (понедельничный крон или кнопка), пишется серия только после одобрения.
  */
-function CyclesTab() {
+function CyclesTab({ onDraftsChanged }: { onDraftsChanged: () => void }) {
   const [cycles, setCycles] = useState<Cycle[] | null>(null)
   const [written, setWritten] = useState<Record<string, number>>({})
   const [error, setError] = useState('')
@@ -226,6 +226,9 @@ function CyclesTab() {
     try {
       await apiPost('/creator/cycles', { action, ...extra })
       load()
+      // Серийный пост падает в «Черновики» — список должен узнать об этом
+      // без перезагрузки страницы
+      if (action === 'write_today') onDraftsChanged()
     } catch (e: any) { setError(e?.message || 'Ошибка') }
     setBusy('')
   }
@@ -238,7 +241,8 @@ function CyclesTab() {
         <p className="text-[12.5px] text-gray-500 flex-1">
           Серия постов на неделю — одна арка с целью, как сериал: у каждого дня своя роль,
           посты помнят предыдущие. Цели чередуются: прогрев → бренд → желание. Пока план
-          не одобрен, пишутся обычные выпуски.
+          не одобрен, пишутся обычные выпуски. Готовый пост дня падает в «Черновики»
+          с меткой «серия» и ролью.
         </p>
         {!current && (
           <button
@@ -577,7 +581,7 @@ export function CreatorPage() {
       {tab === 'sources' ? (
         <SourcesTab />
       ) : tab === 'cycles' ? (
-        <CyclesTab />
+        <CyclesTab onDraftsChanged={load} />
       ) : (
         <>
           <div className="flex items-center gap-1.5">
