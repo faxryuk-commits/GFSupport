@@ -12,15 +12,19 @@ type SQL = NeonQueryFunction<false, false>
  *    (≥100 заказов/30д, отмены ≤40%). Пороги — из когортного анализа:
  *    старт ≥100 → выживаемость 64–75%, старт <30 → 32%.
  */
-export interface DeclineSignal {
+export interface SignalBase {
   accountId: string; name: string; lifecycle: string; ageDays: number
   ownerAgentId: string | null
+  done30: number; cancelPct: number; channels: number
+  ownPct: number; medMin: number | null
+  /** Завершённые заказы по неделям, до 12 закрытых недель. */
+  weeks: number[]
+}
+export interface DeclineSignal extends SignalBase {
   weeklyNorm: number; weeklyNow: number; dropPct: number
 }
-export interface LaunchSignal {
-  accountId: string; name: string; lifecycle: string; ageDays: number
-  ownerAgentId: string | null
-  done30: number; cancelPct: number; channels: number; level: 'red' | 'yellow'
+export interface LaunchSignal extends SignalBase {
+  level: 'red' | 'yellow'
 }
 
 export async function computeBrandSignals(sql: SQL): Promise<
@@ -56,7 +60,9 @@ export async function computeBrandSignals(sql: SQL): Promise<
              min(created_at) f0,
              countIf(created_at >= now() - INTERVAL 30 DAY) total30,
              countIf(created_at >= now() - INTERVAL 30 DAY AND status_id = ${CH_DONE_STATUS}) done30,
-             uniqExactIf(source, created_at >= now() - INTERVAL 30 DAY AND status_id = ${CH_DONE_STATUS}) channels
+             countIf(created_at >= now() - INTERVAL 30 DAY AND status_id = ${CH_DONE_STATUS} AND delivery_type != 'aggregator') own30,
+             uniqExactIf(source, created_at >= now() - INTERVAL 30 DAY AND status_id = ${CH_DONE_STATUS}) channels,
+             round(quantileIf(0.5)(delivered_time, created_at >= now() - INTERVAL 30 DAY AND delivery_type = 'delivery' AND delivered_time BETWEEN 1 AND 300)) med_min
       FROM order_v
       WHERE shipper_id IN (${ids})
       GROUP BY shipper_id`, 15000),
@@ -76,12 +82,16 @@ export async function computeBrandSignals(sql: SQL): Promise<
     const ageDays = Math.floor((Date.now() - new Date(r.f0).getTime()) / 86400e3)
     const done30 = Number(r.done30), total30 = Number(r.total30)
     const cancelPct = total30 ? Math.round((1 - done30 / total30) * 100) : 0
+    const ws = weeks[r.shipper_id] || []
     const base = {
       accountId: m.account_id, name: m.shipper_name, lifecycle: m.lifecycle,
       ownerAgentId: m.owner_agent_id || null, ageDays,
+      done30, cancelPct, channels: Number(r.channels || 0),
+      ownPct: done30 ? Math.round(Number(r.own30 || 0) / done30 * 100) : 0,
+      medMin: r.med_min !== null && r.med_min !== undefined ? Number(r.med_min) : null,
+      weeks: ws.slice(-12),
     }
     if (ageDays > 90) {
-      const ws = weeks[r.shipper_id] || []
       if (ws.length >= 6) {
         const closed = ws.slice(0, -1)
         const recent = (closed[closed.length - 1] + closed[closed.length - 2]) / 2
@@ -93,7 +103,7 @@ export async function computeBrandSignals(sql: SQL): Promise<
       }
     } else if (done30 < 100 || cancelPct > 40) {
       launches.push({
-        ...base, done30, cancelPct, channels: Number(r.channels || 0),
+        ...base,
         level: done30 < 30 || cancelPct > 60 ? 'red' : 'yellow',
       })
     }
@@ -101,4 +111,40 @@ export async function computeBrandSignals(sql: SQL): Promise<
   declines.sort((a, b) => b.dropPct - a.dropPct)
   launches.sort((a, b) => (a.level === b.level ? a.done30 - b.done30 : a.level === 'red' ? -1 : 1))
   return { ok: true, mapped: maps.length, declines, launches }
+}
+
+
+/**
+ * Снапшот сигналов: страница читает его мгновенно, пересчёт по кнопке и
+ * утренним кроном — живой ClickHouse-расчёт занимает секунды и не должен
+ * стоять между сотрудником и списком.
+ */
+export async function computeAndStoreBrandSignals(sql: SQL) {
+  const res = await computeBrandSignals(sql)
+  if (res.ok === false) return res
+  const payload = { mapped: res.mapped, declines: res.declines, launches: res.launches }
+  await sql`
+    CREATE TABLE IF NOT EXISTS brand_signal_snapshot (
+      id int PRIMARY KEY DEFAULT 1,
+      computed_at timestamptz NOT NULL DEFAULT now(),
+      payload jsonb NOT NULL
+    )`
+  await sql`
+    INSERT INTO brand_signal_snapshot (id, computed_at, payload)
+    VALUES (1, now(), ${JSON.stringify(payload)}::jsonb)
+    ON CONFLICT (id) DO UPDATE SET computed_at = now(), payload = EXCLUDED.payload`
+  return { ...res, computedAt: new Date().toISOString() }
+}
+
+export async function readBrandSignalSnapshot(sql: SQL): Promise<
+  { computedAt: string; mapped: number; declines: DeclineSignal[]; launches: LaunchSignal[] } | null
+> {
+  try {
+    const [row] = await sql`SELECT computed_at, payload FROM brand_signal_snapshot WHERE id = 1`
+    if (!row) return null
+    const p = (row as any).payload
+    return { computedAt: (row as any).computed_at, mapped: p.mapped, declines: p.declines, launches: p.launches }
+  } catch {
+    return null
+  }
 }

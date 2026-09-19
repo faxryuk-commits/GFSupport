@@ -1,6 +1,6 @@
 import { getSQL, json, ensureOnce, getOrgBotToken } from '../_lib/db.js'
 import { assertCron } from '../_lib/cron-auth.js'
-import { computeBrandSignals, type DeclineSignal, type LaunchSignal } from '../_lib/brand-signals.js'
+import { computeAndStoreBrandSignals } from '../_lib/brand-signals.js'
 import { salesId } from '../_lib/sales-schema.js'
 import { sendNotification } from '../_lib/notifications.js'
 
@@ -33,7 +33,8 @@ export default async function handler(req: Request): Promise<Response> {
       )`
   })
 
-  const res = await computeBrandSignals(sql)
+  // Расчёт со снапшотом: страница «Сигналы» утром сразу отдаёт свежее
+  const res = await computeAndStoreBrandSignals(sql)
   if (res.ok === false) return json({ ok: false, error: res.error }, 200)
 
   const log = await sql`SELECT account_id, kind, sent_at FROM brand_signal_log`
