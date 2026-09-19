@@ -22,7 +22,13 @@ export default async function handler(req: Request): Promise<Response> {
     const snap = await readBusinessDashSnapshot(sql)
     if (snap) return json(snap)
   }
-  const res = await computeBusinessDash(sql)
-  if (res.ok === false) return json({ error: res.error }, 200)
-  return json(res)
+  try {
+    const res = await computeBusinessDash(sql)
+    if (res.ok === false) return json({ error: res.error }, 200)
+    return json(res)
+  } catch (e: any) {
+    // Необработанное исключение на edge превращается в голую пятисотку
+    // без текста — отдаём причину сами
+    return json({ error: `пересчёт упал: ${e?.message || String(e)}` }, 200)
+  }
 }
