@@ -753,11 +753,11 @@ export async function regenerateDraft(sql: SQL, key: string, oldId: string): Pro
  * для телеграма; RSS — верх ленты). Единственный допустимый материал для
  * рубрики «реакция»: знание о брендах из нашей платформы — под запретом.
  */
-export async function brandDigest(sql: SQL): Promise<string> {
+export async function brandDigest(sql: SQL, hours = 48): Promise<string> {
   const rows = await sql`
     SELECT kind, title, url FROM creator_sources
     WHERE active AND is_brand ORDER BY added_at LIMIT 8`
-  const cutoff = Date.now() - 48 * 3600e3
+  const cutoff = Date.now() - hours * 3600e3
   const parts: string[] = []
   for (const s of rows as any[]) {
     if (s.kind === 'telegram') {
@@ -839,6 +839,65 @@ export async function generateReaction(sql: SQL, key: string, batchKey: string):
     VALUES (${id}, ${batchKey}, 'reaction', ${String(p.title || '').slice(0, 200)},
             ${String(p.body_ru)}, ${String(p.body_en)},
             ${JSON.stringify({ url: `reaction:${batchKey}` })}::jsonb)`
+  const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
+  return row
+}
+
+/**
+ * «Аналитика недели»: раз в неделю длинная статья по событиям мировых и
+ * локальных брендов за 7 дней — 2–4 события с разбором «что это значит
+ * для рынка и для Центральной Азии». Те же железные рамки, что у реакций.
+ */
+export async function generateWeeklyAnalysis(sql: SQL, key: string, batchKey: string): Promise<any | null> {
+  const digest = await brandDigest(sql, 168)
+  if (!digest || digest.length < 400) return null
+
+  const [samples, recent, sources, profileRow] = await Promise.all([
+    styleSamples(sql, 4),
+    sql`SELECT title, left(body_ru, 100) AS opening FROM creator_drafts
+        ORDER BY created_at DESC LIMIT 12`,
+    sql`SELECT id, kind, title, url, active FROM creator_sources WHERE active AND NOT is_brand ORDER BY added_at`,
+    sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
+  ])
+  const avoid = (recent as any[]).map(r => `«${r.title}»: ${String(r.opening).replace(/\s+/g, ' ')}…`)
+  const market = await marketContext(sources as any)
+  const profile = String((profileRow as any[])[0]?.value || '')
+
+  const user = [
+    'РУБРИКА «АНАЛИТИКА НЕДЕЛИ». Ниже — публичные события брендов и рынка за 7 дней. Напиши АНАЛИТИЧЕСКУЮ СТАТЬЮ (длиннее обычного поста, 2500–3500 знаков по-русски): выбери 2–4 самых значимых события недели, по каждому — короткий факт и разбор «что это значит для рестораторов и рынка», отдельно — что из этого важно для Центральной Азии и Кавказа. Финал — сквозная мысль недели от фаундера.',
+    'Если за неделю не набралось событий даже на короткий обзор — верни {"skip": true, "reason": "..."}.',
+    'ЖЕЛЕЗНЫЕ ПРАВИЛА: только факты из дайджеста; знание о брендах сверх дайджеста запрещено; аналитика, не оценки брендов; без выдуманных цифр; бренды называть можно — события публичные.',
+    '\nДайджест недели:\n' + digest.slice(0, 6000),
+    market ? '\nЛокальный контекст рынка:\n' + market.slice(0, 2000) : '',
+    avoid.length ? '\nНедавние посты автора (темы и зачины не повторять):\n' + avoid.join('\n') : '',
+    profile ? '\nКарточка автора (для сквозной мысли):\n' + profile.slice(0, 5000) : '',
+    samples.length ? '\nОбразцы тона:\n---\n' + samples.join('\n---\n') : '',
+  ].join('\n')
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 2600,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: user },
+      ],
+    }),
+  })
+  const data = await res.json()
+  const p = JSON.parse(data?.choices?.[0]?.message?.content || '{}')
+  if (p.skip || !p.body_ru || !p.body_en) return null
+
+  const id = draftId()
+  await sql`
+    INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
+    VALUES (${id}, ${batchKey}, 'analysis', ${String(p.title || '').slice(0, 200)},
+            ${String(p.body_ru)}, ${String(p.body_en)},
+            ${JSON.stringify({ url: `analysis:${batchKey}` })}::jsonb)`
   const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
   return row
 }

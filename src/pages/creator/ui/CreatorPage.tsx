@@ -19,7 +19,7 @@ interface Draft {
   id: string
   created_at: string
   batch_key: string
-  line: 'delever' | 'delever_archive' | 'gfsupport' | 'cycle' | 'reaction'
+  line: 'delever' | 'delever_archive' | 'gfsupport' | 'cycle' | 'reaction' | 'analysis'
   cycle_role?: string | null
   title: string
   body_ru: string
@@ -50,6 +50,7 @@ const LINE_LABEL: Record<Draft['line'], { label: string; cls: string }> = {
   gfsupport: { label: 'как мы строим', cls: 'bg-violet-50 text-violet-700' },
   cycle: { label: 'серия', cls: 'bg-amber-50 text-amber-700' },
   reaction: { label: 'реакция', cls: 'bg-rose-50 text-rose-700' },
+  analysis: { label: 'аналитика недели', cls: 'bg-indigo-50 text-indigo-700' },
 }
 
 const GOAL_LABEL: Record<string, { label: string; cls: string }> = {

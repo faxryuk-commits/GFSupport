@@ -2,7 +2,7 @@ import { getSQL, json, getOpenAIKey } from '../_lib/db.js'
 import { assertCron } from '../_lib/cron-auth.js'
 import {
   ensureCreatorSchema, generateOne, planCycle, generateSeriesDraft, generateReaction,
-  sendOwnerTG, weekKeyOf, GOAL_LABEL, type CreatorLine, type CycleGoal,
+  generateWeeklyAnalysis, sendOwnerTG, weekKeyOf, GOAL_LABEL, type CreatorLine, type CycleGoal,
 } from '../_lib/creator.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
@@ -109,7 +109,11 @@ async function tryReaction(sql: ReturnType<typeof getSQL>, key: string, batchKey
   const [mark] = await sql`
     SELECT value FROM support_settings
     WHERE org_id = 'org_delever' AND key = 'creator_reaction_attempt' LIMIT 1`
-  if ((mark as any)?.value === batchKey) return json({ ok: true, done: true, batchKey })
+  if ((mark as any)?.value === batchKey) {
+    const w = await tryWeekly(sql, key, batchKey)
+    if (w) return w
+    return json({ ok: true, done: true, batchKey })
+  }
   await sql`
     INSERT INTO support_settings (org_id, key, value)
     VALUES ('org_delever', 'creator_reaction_attempt', ${batchKey})
@@ -121,5 +125,31 @@ async function tryReaction(sql: ReturnType<typeof getSQL>, key: string, batchKey
     return json({ ok: true, reaction: row.id })
   } catch (e: any) {
     return json({ ok: true, done: true, reaction: 'error', error: e?.message }, 200)
+  }
+}
+
+/**
+ * «Аналитика недели»: по воскресеньям, одна попытка (маркер по неделе) —
+ * длинная статья из событий брендов и рынка за 7 дней.
+ */
+async function tryWeekly(sql: ReturnType<typeof getSQL>, key: string, batchKey: string): Promise<Response | null> {
+  const isSunday = new Date(`${batchKey}T00:00:00Z`).getUTCDay() === 0
+  if (!isSunday) return null
+  const wk = weekKeyOf()
+  const [mark] = await sql`
+    SELECT value FROM support_settings
+    WHERE org_id = 'org_delever' AND key = 'creator_weekly_analysis' LIMIT 1`
+  if ((mark as any)?.value === wk) return null
+  await sql`
+    INSERT INTO support_settings (org_id, key, value)
+    VALUES ('org_delever', 'creator_weekly_analysis', ${wk})
+    ON CONFLICT (org_id, key) DO UPDATE SET value = EXCLUDED.value`
+  try {
+    const row: any = await generateWeeklyAnalysis(sql, key, batchKey)
+    if (!row) return json({ ok: true, weekly: 'skip' })
+    await sendOwnerTG(sql, `📊 Аналитика недели готова: «${row.title}» — статья ждёт в Креаторе.`)
+    return json({ ok: true, weekly: row.id })
+  } catch (e: any) {
+    return json({ ok: true, weekly: 'error', error: e?.message }, 200)
   }
 }
