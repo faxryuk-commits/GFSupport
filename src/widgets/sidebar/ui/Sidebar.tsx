@@ -306,6 +306,8 @@ const navGroups: NavGroup[] = [
       // Лента активности отдела: кто что сделал, по людям и типам событий.
       // Жила вкладкой в отчётах, и её не находили
       { path: '/sales/activity', label: 'Активность', icon: Activity },
+      // Сигналы: спады и проваленные запуски по живым данным Delever
+      { path: '/sales/signals', label: 'Сигналы', icon: TrendingUp },
     ],
   },
   {

@@ -46,6 +46,7 @@ const SalesFunnelPage = lazy(lazyLoad(() => import('@/pages/sales/ui/SalesFunnel
 const SalesCommentsPage = lazy(lazyLoad(() => import('@/pages/sales/ui/SalesCommentsPage')))
 const SalesCallsPage = lazy(lazyLoad(() => import('@/pages/sales/ui/SalesCallsPage')))
 const SalesActivityPage = lazy(lazyLoad(() => import('@/pages/sales/ui/SalesActivityPage')))
+const SalesSignalsPage = lazy(lazyLoad(() => import('@/pages/sales/ui/SalesSignalsPage')))
 const WhatsNewPage = lazy(lazyLoad(() => import('@/pages/whatsnew/ui/WhatsNewPage')))
 const CreatorPage = lazy(lazyLoad(() => import('@/pages/creator/ui/CreatorPage')))
 const SalesTasksPage = lazy(lazyLoad(() => import('@/pages/sales/ui/SalesTasksPage')))
@@ -131,6 +132,7 @@ export default function App() {
           <Route path="/sales/comments" element={<SalesCommentsPage />} />
           <Route path="/sales/calls" element={<SalesCallsPage />} />
           <Route path="/sales/activity" element={<SalesActivityPage />} />
+          <Route path="/sales/signals" element={<SalesSignalsPage />} />
           <Route path="/whats-new" element={<WhatsNewPage />} />
           {/* Креатор — личный модуль владельца; API закрыт по agent_id */}
           <Route path="/creator" element={<CreatorPage />} />
