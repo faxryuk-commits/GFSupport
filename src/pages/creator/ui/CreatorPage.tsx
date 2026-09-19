@@ -351,6 +351,91 @@ function CyclesTab({ onDraftsChanged }: { onDraftsChanged: () => void }) {
   )
 }
 
+/**
+ * Подключение ClickHouse Delever — источник агрегатов для «Индекса рынка».
+ * Пароль вводит владелец и обратно он не показывается; запросы к базе —
+ * только фиксированные, произвольного SQL из UI нет.
+ */
+function ClickhouseBlock() {
+  const [cfg, setCfg] = useState<{ host: string; port: string; username: string; database: string; hasPassword: boolean } | null>(null)
+  const [password, setPassword] = useState('')
+  const [database, setDatabase] = useState('')
+  const [busy, setBusy] = useState('')
+  const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [tables, setTables] = useState<Array<{ database?: string; name: string }>>([])
+
+  useEffect(() => {
+    apiGet<{ config: any }>('/creator/clickhouse', false)
+      .then(r => { if (r.config) { setCfg(r.config); setDatabase(r.config.database || '') } })
+      .catch(() => {})
+  }, [])
+
+  const save = async () => {
+    setBusy('save'); setNote(null)
+    try {
+      await apiPost('/creator/clickhouse', { action: 'save', password, database })
+      setPassword('')
+      setCfg(c => c ? { ...c, hasPassword: c.hasPassword || Boolean(password), database } : c)
+      setNote({ kind: 'ok', text: 'Сохранено' })
+    } catch (e: any) { setNote({ kind: 'err', text: e?.message || 'Ошибка' }) }
+    setBusy('')
+  }
+
+  const test = async () => {
+    setBusy('test'); setNote(null); setTables([])
+    try {
+      const r = await apiPost<any>('/creator/clickhouse', { action: 'test' })
+      if (r.ok) {
+        setNote({ kind: 'ok', text: `Подключено · ClickHouse ${r.version || ''} · баз: ${(r.databases || []).length}` })
+        setTables(r.tables || [])
+      } else {
+        setNote({ kind: 'err', text: r.error || 'Не подключилось' })
+      }
+    } catch (e: any) { setNote({ kind: 'err', text: e?.message || 'Ошибка' }) }
+    setBusy('')
+  }
+
+  return (
+    <div>
+      <div className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-wide mb-2 mt-6">Индекс рынка — ClickHouse Delever</div>
+      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 space-y-2.5">
+        <p className="text-[11.5px] text-gray-500">
+          Read-only подключение для агрегатов «Индекса доставки ЦА». Пароль хранится в настройках
+          системы и обратно не показывается; система выполняет только зашитые агрегатные запросы.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex-1 text-[12.5px] text-gray-700 border border-gray-100 bg-gray-50/60 rounded-lg px-2.5 py-1.5">
+            {cfg ? `${cfg.host}:${cfg.port} · ${cfg.username}` : 'не настроено'}
+          </div>
+          <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="база (можно пусто)"
+            className="sm:w-44 text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          <input value={password} onChange={e => setPassword(e.target.value)} type="password"
+            placeholder={cfg?.hasPassword ? 'пароль сохранён — заменить…' : 'пароль'}
+            className="sm:w-56 text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          <button onClick={save} disabled={!!busy}
+            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white disabled:opacity-60">
+            {busy === 'save' ? 'Сохраняю…' : 'Сохранить'}
+          </button>
+          <button onClick={test} disabled={!!busy || !cfg?.hasPassword && !password}
+            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 disabled:opacity-50">
+            {busy === 'test' ? 'Проверяю…' : 'Проверить'}
+          </button>
+        </div>
+        {note && (
+          <div className={`text-[12px] ${note.kind === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>{note.text}</div>
+        )}
+        {tables.length > 0 && (
+          <div className="text-[11.5px] text-gray-500 max-h-40 overflow-y-auto border border-gray-100 rounded-lg p-2">
+            {tables.map((t, i) => (
+              <div key={i}>{t.database ? `${t.database}.` : ''}{t.name}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** Системный источник: вшит, не отключается — только витрина состояния. */
 function BuiltinCard({ icon: Icon, title, note, accent }: { icon: typeof Rss; title: string; note: string; accent: string }) {
   return (
@@ -495,6 +580,7 @@ function SourcesTab() {
           ))}
         </div>
       </div>
+      <ClickhouseBlock />
       {error && <div className="text-[12.5px] text-red-600">{error}</div>}
     </div>
   )
