@@ -407,11 +407,17 @@ function ClickhouseBlock() {
           <div className="flex-1 text-[12.5px] text-gray-700 border border-gray-100 bg-gray-50/60 rounded-lg px-2.5 py-1.5">
             {cfg ? `${cfg.host}:${cfg.port} · ${cfg.username}` : 'не настроено'}
           </div>
-          <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="база (можно пусто)"
-            className="sm:w-44 text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
-          <input value={password} onChange={e => setPassword(e.target.value)} type="password"
-            placeholder={cfg?.hasPassword ? 'пароль сохранён — заменить…' : 'пароль'}
-            className="sm:w-56 text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          <label className="sm:w-44 text-[11px] text-gray-400">
+            база данных
+            <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="delever"
+              className="mt-0.5 w-full text-[12.5px] text-gray-800 border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          </label>
+          <label className="sm:w-56 text-[11px] text-gray-400">
+            пароль
+            <input value={password} onChange={e => setPassword(e.target.value)} type="password"
+              placeholder={cfg?.hasPassword ? 'сохранён — ввести, чтобы заменить' : 'пароль'}
+              className="mt-0.5 w-full text-[12.5px] text-gray-800 border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+          </label>
           <button onClick={save} disabled={!!busy}
             className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white disabled:opacity-60">
             {busy === 'save' ? 'Сохраняю…' : 'Сохранить'}
