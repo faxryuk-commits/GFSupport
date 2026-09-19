@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/services/api.service'
+import { BrandPulse } from './BrandPulse'
 import { Card, Chip, Empty, Kpis, fmtDate, money, InlineField, Skeleton , fmtDateTime } from './kit'
 import { useSalesRefs, optionsFor } from './refs'
 import { confirmDialog, promptDialog, alertDialog } from '@/shared/ui'
@@ -256,6 +257,9 @@ export function SalesAccountPage({ accountId }: { accountId?: string } = {}) {
           <Link to="/onboarding" className="text-blue-600 hover:underline">проект внедрения →</Link>
         )}
       </div>
+
+      {/* Пульс бренда: живые заказы из аналитики Delever — только у связанных */}
+      {id && <BrandPulse accountId={id} />}
 
       <div className="grid lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <div className="space-y-4">
