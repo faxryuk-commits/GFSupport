@@ -19,7 +19,7 @@ interface Draft {
   id: string
   created_at: string
   batch_key: string
-  line: 'delever' | 'delever_archive' | 'gfsupport' | 'cycle'
+  line: 'delever' | 'delever_archive' | 'gfsupport' | 'cycle' | 'reaction'
   cycle_role?: string | null
   title: string
   body_ru: string
@@ -34,6 +34,7 @@ interface Source {
   title: string
   url: string
   active: boolean
+  is_brand?: boolean
   added_at: string
 }
 
@@ -48,6 +49,7 @@ const LINE_LABEL: Record<Draft['line'], { label: string; cls: string }> = {
   delever_archive: { label: 'Delever · вечнозелёный', cls: 'bg-sky-50 text-sky-700' },
   gfsupport: { label: 'как мы строим', cls: 'bg-violet-50 text-violet-700' },
   cycle: { label: 'серия', cls: 'bg-amber-50 text-amber-700' },
+  reaction: { label: 'реакция', cls: 'bg-rose-50 text-rose-700' },
 }
 
 const GOAL_LABEL: Record<string, { label: string; cls: string }> = {
@@ -371,6 +373,7 @@ function SourcesTab() {
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
+  const [isBrand, setIsBrand] = useState(false)
   const [busy, setBusy] = useState('')
 
   const load = () => {
@@ -442,11 +445,16 @@ function SourcesTab() {
               className="flex-1 text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
             <input value={url} onChange={e => setUrl(e.target.value)} placeholder="@канал, t.me/…, RSS или ссылка на страницу"
               className="flex-1 text-[12.5px] border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            <label className="flex items-center gap-1.5 text-[12px] text-gray-600 whitespace-nowrap cursor-pointer">
+              <input type="checkbox" checked={isBrand} onChange={e => setIsBrand(e.target.checked)}
+                className="accent-gray-900" />
+              аккаунт бренда
+            </label>
             <button
               onClick={async () => {
                 if (!url.trim()) return
-                await act('add', { title, url })
-                setTitle(''); setUrl(''); setAdding(false)
+                await act('add', { title, url, is_brand: isBrand })
+                setTitle(''); setUrl(''); setIsBrand(false); setAdding(false)
               }}
               className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-gray-900 text-white"
             >Сохранить</button>
@@ -465,6 +473,10 @@ function SourcesTab() {
           {sources?.map(s => (
             <div key={s.id} className={`bg-white border rounded-xl px-4 py-2.5 flex items-center gap-3 ${s.active ? 'border-gray-200' : 'border-gray-100 opacity-55'}`}>
               <span className="text-[10px] font-semibold px-1.5 py-px rounded bg-gray-100 text-gray-500 whitespace-nowrap">{SOURCE_KIND[s.kind]}</span>
+              {s.is_brand && (
+                <span className="text-[10px] font-semibold px-1.5 py-px rounded bg-rose-50 text-rose-600 whitespace-nowrap"
+                  title="Публичные посты этого аккаунта — инфоповоды для рубрики «реакция»">бренд</span>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="text-[12.5px] font-medium text-gray-900 truncate">{s.title}</div>
                 <div className="text-[11px] text-gray-400 truncate">{s.url}</div>

@@ -74,6 +74,10 @@ export async function ensureCreatorSchema(sql: SQL): Promise<void> {
     await sql`ALTER TABLE creator_drafts ADD COLUMN IF NOT EXISTS cycle_id text`
     await sql`ALTER TABLE creator_drafts ADD COLUMN IF NOT EXISTS cycle_role text`
   })
+  await ensureOnce('creator_schema_v3', async () => {
+    // Аккаунты брендов: их публичные посты — инфоповоды для рубрики «реакция»
+    await sql`ALTER TABLE creator_sources ADD COLUMN IF NOT EXISTS is_brand boolean NOT NULL DEFAULT false`
+  })
 }
 
 export function draftId(): string {
@@ -738,6 +742,103 @@ export async function regenerateDraft(sql: SQL, key: string, oldId: string): Pro
     INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
     VALUES (${id}, ${o.batch_key}, ${o.line}, ${draft.title}, ${draft.body_ru}, ${draft.body_en},
             ${JSON.stringify({ url: srcUrl })}::jsonb)`
+  const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
+  return row
+}
+
+// ───────────────────────── Реакции на события брендов ─────────────────────────
+
+/**
+ * Дайджест свежих ПУБЛИЧНЫХ публикаций бренд-аккаунтов (последние ~48 часов
+ * для телеграма; RSS — верх ленты). Единственный допустимый материал для
+ * рубрики «реакция»: знание о брендах из нашей платформы — под запретом.
+ */
+export async function brandDigest(sql: SQL): Promise<string> {
+  const rows = await sql`
+    SELECT kind, title, url FROM creator_sources
+    WHERE active AND is_brand ORDER BY added_at LIMIT 8`
+  const cutoff = Date.now() - 48 * 3600e3
+  const parts: string[] = []
+  for (const s of rows as any[]) {
+    if (s.kind === 'telegram') {
+      const h = tgHandle(String(s.url))
+      if (!h) continue
+      const html = await fetchWithTimeout(`https://t.me/s/${h}`, 4000)
+      if (!html) continue
+      const posts: string[] = []
+      for (const m of html.matchAll(new RegExp(`data-post="${h}\\/(\\d+)"([\\s\\S]*?)(?=data-post="${h}\\/|$)`, 'g'))) {
+        const body = m[2]
+        const dt = body.match(/datetime="([^"]+)"/)?.[1]
+        if (!dt || new Date(dt).getTime() < cutoff) continue
+        const t = body.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/)
+        const text = t ? stripHtml(t[1]) : ''
+        if (text.length > 40) posts.push(text.slice(0, 400))
+      }
+      if (posts.length) parts.push(`Бренд «${s.title}» (за последние 2 дня):\n` + posts.slice(-3).map(p => `— ${p}`).join('\n'))
+    } else {
+      const html = await fetchWithTimeout(String(s.url), 4000)
+      if (!html) continue
+      const text = stripHtml(html).slice(0, 1200)
+      if (text.length > 100) parts.push(`Бренд «${s.title}» (свежесть ленты не гарантирована):\n${text}`)
+    }
+  }
+  return parts.join('\n\n')
+}
+
+/**
+ * Рубрика «реакция»: пост-комментарий к свежему событию бренда. Пишется
+ * только когда событие есть (skip — норма); только публичные факты из
+ * дайджеста; аналитика «что это значит для рынка», не оценка бренда.
+ */
+export async function generateReaction(sql: SQL, key: string, batchKey: string): Promise<any | null> {
+  const digest = await brandDigest(sql)
+  if (!digest || digest.length < 120) return null
+
+  const [samples, recent, profileRow] = await Promise.all([
+    styleSamples(sql, 4),
+    sql`SELECT title, left(body_ru, 100) AS opening FROM creator_drafts
+        ORDER BY created_at DESC LIMIT 12`,
+    sql`SELECT value FROM support_settings WHERE org_id = 'org_delever' AND key = 'creator_founder_profile' LIMIT 1`,
+  ])
+  const avoid = (recent as any[]).map(r => `«${r.title}»: ${String(r.opening).replace(/\s+/g, ' ')}…`)
+  const profile = String((profileRow as any[])[0]?.value || '')
+
+  const user = [
+    'РУБРИКА «РЕАКЦИЯ». Ниже — свежие публичные публикации брендов рынка. Твоя задача: если среди них есть СОБЫТИЕ, достойное комментария фаундера (запуск, изменение условий, партнёрство, крупная новость рынка), — напиши пост-реакцию. Акции «два по цене одного», конкурсы и поздравления событием НЕ считаются — тогда верни {"skip": true, "reason": "..."}.',
+    'ЖЕЛЕЗНЫЕ ПРАВИЛА РЕАКЦИИ:',
+    '- Использовать ТОЛЬКО факты из дайджеста ниже. Любое знание об этих брендах сверх дайджеста (из карточки автора, из общих знаний о их метриках) — ЗАПРЕЩЕНО: часть брендов — клиенты платформы, и непубличное знание о них раскрывать нельзя.',
+    '- Реакция — аналитика «что это значит для рестораторов и рынка», НЕ оценка бренда: без похвал, без критики, без иронии в адрес бренда. Бренд можно назвать по имени — событие публичное.',
+    '- Формат — тот же бутерброд, в конце мысль фаундера.',
+    '\nДайджест публикаций брендов:\n' + digest.slice(0, 4000),
+    avoid.length ? '\nНедавние посты автора (темы и зачины не повторять):\n' + avoid.join('\n') : '',
+    profile ? '\nКарточка автора (для мысли; факты о брендах отсюда брать НЕЛЬЗЯ):\n' + profile.slice(0, 5000) : '',
+    samples.length ? '\nОбразцы тона:\n---\n' + samples.join('\n---\n') : '',
+  ].join('\n')
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      temperature: 0.7,
+      max_tokens: 1400,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: user },
+      ],
+    }),
+  })
+  const data = await res.json()
+  const p = JSON.parse(data?.choices?.[0]?.message?.content || '{}')
+  if (p.skip || !p.body_ru || !p.body_en) return null
+
+  const id = draftId()
+  await sql`
+    INSERT INTO creator_drafts (id, batch_key, line, title, body_ru, body_en, source)
+    VALUES (${id}, ${batchKey}, 'reaction', ${String(p.title || '').slice(0, 200)},
+            ${String(p.body_ru)}, ${String(p.body_en)},
+            ${JSON.stringify({ url: `reaction:${batchKey}` })}::jsonb)`
   const [row] = await sql`SELECT * FROM creator_drafts WHERE id = ${id}`
   return row
 }

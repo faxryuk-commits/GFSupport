@@ -63,15 +63,21 @@ export default async function handler(req: Request): Promise<Response> {
     if (kind === 'telegram' && !tgHandle(url)) return json({ error: 'не похоже на ссылку телеграм-канала' }, 400)
     if (!['telegram', 'rss', 'url'].includes(kind)) kind = 'url'
     const id = sourceId()
+    const isBrand = Boolean(body.is_brand)
     await sql`
-      INSERT INTO creator_sources (id, kind, title, url)
-      VALUES (${id}, ${kind}, ${title.slice(0, 120)}, ${url.slice(0, 500)})`
+      INSERT INTO creator_sources (id, kind, title, url, is_brand)
+      VALUES (${id}, ${kind}, ${title.slice(0, 120)}, ${url.slice(0, 500)}, ${isBrand})`
     const [row] = await sql`SELECT * FROM creator_sources WHERE id = ${id}`
     return json({ source: row })
   }
 
   if (body.action === 'toggle') {
     await sql`UPDATE creator_sources SET active = NOT active WHERE id = ${String(body.id)}`
+    return json({ ok: true })
+  }
+
+  if (body.action === 'toggle_brand') {
+    await sql`UPDATE creator_sources SET is_brand = NOT is_brand WHERE id = ${String(body.id)}`
     return json({ ok: true })
   }
 

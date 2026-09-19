@@ -1,7 +1,7 @@
 import { getSQL, json, getOpenAIKey } from '../_lib/db.js'
 import { assertCron } from '../_lib/cron-auth.js'
 import {
-  ensureCreatorSchema, generateOne, planCycle, generateSeriesDraft,
+  ensureCreatorSchema, generateOne, planCycle, generateSeriesDraft, generateReaction,
   sendOwnerTG, weekKeyOf, GOAL_LABEL, type CreatorLine, type CycleGoal,
 } from '../_lib/creator.js'
 
@@ -60,7 +60,7 @@ export default async function handler(req: Request): Promise<Response> {
   if ((cycle as any).status === 'approved') {
     const already = await sql`
       SELECT id FROM creator_drafts WHERE cycle_id = ${(cycle as any).id} AND batch_key = ${batchKey}`
-    if (already.length) return json({ ok: true, done: true, batchKey })
+    if (already.length) return await tryReaction(sql, key, batchKey)
     try {
       const row: any = await generateSeriesDraft(sql, key, cycle, batchKey)
       if (!row) {
@@ -83,8 +83,8 @@ export default async function handler(req: Request): Promise<Response> {
 /** Старый рубрикатор: три поста в день, по одному за тик. */
 async function fallbackBatch(sql: ReturnType<typeof getSQL>, key: string, batchKey: string): Promise<Response> {
   const existing = await sql`
-    SELECT id FROM creator_drafts WHERE batch_key = ${batchKey} AND cycle_id IS NULL`
-  if (existing.length >= FALLBACK_PLAN.length) return json({ ok: true, done: true, batchKey })
+    SELECT id FROM creator_drafts WHERE batch_key = ${batchKey} AND cycle_id IS NULL AND line != 'reaction'`
+  if (existing.length >= FALLBACK_PLAN.length) return await tryReaction(sql, key, batchKey)
   const line = FALLBACK_PLAN[existing.length]
   try {
     await generateOne(sql, key, line, batchKey)
@@ -99,4 +99,27 @@ async function fallbackBatch(sql: ReturnType<typeof getSQL>, key: string, batchK
     await sendOwnerTG(sql, `✍️ Креатор собрал выпуск ${batchKey} — три черновика ждут одобрения:\n\n${list}`)
   }
   return json({ ok: true, generated: line, notified: isLast })
+}
+
+/**
+ * Рубрика «реакция»: после основного контента дня — одна попытка в сутки
+ * (маркер в support_settings), пишется только если у брендов есть событие.
+ */
+async function tryReaction(sql: ReturnType<typeof getSQL>, key: string, batchKey: string): Promise<Response> {
+  const [mark] = await sql`
+    SELECT value FROM support_settings
+    WHERE org_id = 'org_delever' AND key = 'creator_reaction_attempt' LIMIT 1`
+  if ((mark as any)?.value === batchKey) return json({ ok: true, done: true, batchKey })
+  await sql`
+    INSERT INTO support_settings (org_id, key, value)
+    VALUES ('org_delever', 'creator_reaction_attempt', ${batchKey})
+    ON CONFLICT (org_id, key) DO UPDATE SET value = EXCLUDED.value`
+  try {
+    const row: any = await generateReaction(sql, key, batchKey)
+    if (!row) return json({ ok: true, done: true, reaction: 'skip' })
+    await sendOwnerTG(sql, `⚡ Реакция на событие рынка: «${row.title}» — черновик ждёт в Креаторе.`)
+    return json({ ok: true, reaction: row.id })
+  } catch (e: any) {
+    return json({ ok: true, done: true, reaction: 'error', error: e?.message }, 200)
+  }
 }
