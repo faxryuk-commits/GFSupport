@@ -1,6 +1,8 @@
 import { getSQL, json, corsHeaders } from '../_lib/db.js'
 import { extractAgentContext } from '../_lib/auth.js'
 import { loadChConfig, chQuery, CH_DONE_STATUS } from '../_lib/clickhouse.js'
+import { brandDossier } from '../_lib/brand-dossier.js'
+import { currencyForMarket } from '../_lib/sales-schema.js'
 
 export const config = { runtime: 'edge', regions: ['fra1'] }
 
@@ -33,7 +35,15 @@ export default async function handler(req: Request): Promise<Response> {
 
   const sid = String((map as any).shipper_id).replace(/[^0-9a-f-]/gi, '')
 
-  const [weekly, month, first, meta] = await Promise.all([
+  // Досье: подключения, каналы, сигналы допродажи — цены из прайса в валюте рынка
+  const [acc] = await sql`SELECT market_id FROM sales_accounts WHERE id = ${accountId} LIMIT 1` as any[]
+  const currency = (await currencyForMarket(sql, 'org_delever', acc?.market_id || null)) || 'UZS'
+  const priceRows = await sql`
+    SELECT key, name, unit_kind, prices FROM sales_price_items WHERE org_id = 'org_delever' AND is_active = true` as any[]
+  const prices: Record<string, { name: string; price: number; unit_kind: string }> = {}
+  for (const r of priceRows) prices[r.key] = { name: r.name, unit_kind: r.unit_kind, price: Number(r.prices?.[currency] ?? r.prices?.UZS ?? 0) }
+
+  const [weekly, month, first, meta, dossier] = await Promise.all([
     chQuery(cfg, `
       SELECT toStartOfWeek(created_at) w, count() n
       FROM order_v
@@ -52,6 +62,7 @@ export default async function handler(req: Request): Promise<Response> {
       SELECT min(created_at) f0 FROM order_v
       WHERE shipper_id = '${sid}' AND status_id = ${CH_DONE_STATUS}`),
     chQuery(cfg, `SELECT rating, rating_count FROM shippers WHERE id = '${sid}' LIMIT 1`),
+    brandDossier(sql, cfg, sid, { currency, prices }).catch(() => null),
   ])
 
   if (!weekly.ok || !month.ok) {
@@ -108,5 +119,6 @@ export default async function handler(req: Request): Promise<Response> {
     rating: meta.ok && meta.data?.[0] ? { value: Number(meta.data[0].rating || 0), count: Number(meta.data[0].rating_count || 0) } : null,
     activation,
     decline,
+    dossier,
   })
 }
